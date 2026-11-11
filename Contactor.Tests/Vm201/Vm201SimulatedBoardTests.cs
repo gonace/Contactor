@@ -123,6 +123,8 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
         await stop.CancelAsync();
         await run;
 
+        // The client is connected once it has the status; the board traces it just after sending it.
+        await WaitUntilAsync(() => _traffic.Any(e => e.Direction == BoardTraceDirection.Received && e.Text.StartsWith("Status:", StringComparison.Ordinal)));
         var status = _traffic.First(e => e.Direction == BoardTraceDirection.Received && e.Text.StartsWith("Status:", StringComparison.Ordinal));
         Assert.False(status.IsRoutine);
         Assert.False(first.State.IsConnected);
