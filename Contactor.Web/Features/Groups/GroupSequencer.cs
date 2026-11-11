@@ -30,7 +30,8 @@ public sealed partial class GroupSequencer : BackgroundService
     private bool _wasConnected;
     private int _reconnected;
 
-    // Groups with a relay the board doesn't have whose shut-off is logged and not yet confirmed; under _gate.
+    // Groups with a relay the board doesn't have whose shut-off is saved in the event log and not yet confirmed, as of
+    // the last step that saved; rebuilt by each one. Under _gate.
     private readonly HashSet<int> _shutOffLogged = [];
 
     public GroupSequencer(
@@ -60,6 +61,13 @@ public sealed partial class GroupSequencer : BackgroundService
         _gate.Dispose();
         _wake.Dispose();
         base.Dispose();
+    }
+
+    // Only once the step's events are saved, so a shut-off whose OFF or save failed is logged by the next step.
+    private void RememberShutOffs(HashSet<int> shutOff)
+    {
+        _shutOffLogged.Clear();
+        _shutOffLogged.UnionWith(shutOff);
     }
 
     /// <summary>Whether every relay of the group is on the board; one left from a board with more relays isn't.</summary>
@@ -251,12 +259,14 @@ public sealed partial class GroupSequencer : BackgroundService
             var groups = await db.RelayGroups.Include(g => g.Members).OrderBy(g => g.Id).ToListAsync(cancellationToken);
             if (groups.Count == 0)
             {
+                _shutOffLogged.Clear();
                 return;
             }
 
             var runtimes = await db.GroupRuntimes.ToDictionaryAsync(r => r.GroupId, cancellationToken);
             var all = new GroupCommands();
             List<(int GroupId, GroupEvent Event)> events = [];
+            HashSet<int> shutOff = [];
             foreach (var group in groups)
             {
                 if (!runtimes.TryGetValue(group.Id, out var runtime))
@@ -280,11 +290,7 @@ public sealed partial class GroupSequencer : BackgroundService
                     runtime.OnSinceUtc = null;
                     runtime.AutoOffAtUtc = null;
                     runtime.TurnedOnBy = null;
-                    if (on.Count == 0)
-                    {
-                        _shutOffLogged.Remove(group.Id);
-                    }
-                    else if (_shutOffLogged.Add(group.Id))
+                    if (on.Count > 0 && shutOff.Add(group.Id) && !_shutOffLogged.Contains(group.Id))
                     {
                         // Sent again on every step until the board confirms it, but logged once.
                         // "Fan turned off because Heat was off": the relay the board doesn't have can't be on.
@@ -350,6 +356,7 @@ public sealed partial class GroupSequencer : BackgroundService
                 catch (BoardNotConnectedException) when (!all.Off.IsEmpty)
                 {
                     await SaveAsync(db, events, now, CancellationToken.None);
+                    RememberShutOffs(shutOff);
                     throw;
                 }
             }
@@ -357,6 +364,7 @@ public sealed partial class GroupSequencer : BackgroundService
             // Pages also follow a sequence's own progress, e.g. "Starting" turning into "On since".
             var changed = events.Count > 0 || !all.Off.IsEmpty || !all.On.IsEmpty || db.ChangeTracker.HasChanges();
             await SaveAsync(db, events, now, cancellationToken);
+            RememberShutOffs(shutOff);
             if (changed)
             {
                 _changes.Notify();

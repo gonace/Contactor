@@ -110,6 +110,25 @@ public sealed class RelayCountTests
     }
 
     [Fact]
+    public async Task Should_LogTheShutOff_WhenItsFirstOffFailed()
+    {
+        var board = new FakeRelayBoard(4);
+        await using var database = Create(board);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await AddGroupAsync(database, (4, "Fan"), (5, "Heat"));
+        var sequencer = database.Services.GetRequiredService<GroupSequencer>();
+        await board.TurnOnAsync(ChannelMask.Of(4), Cancel);
+
+        board.FailNextOff = true;
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sequencer.StepAsync(Cancel));
+        await sequencer.StepAsync(Cancel);
+
+        Assert.True(board.State.Relays.IsEmpty);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(1, await db.EventLog.CountAsync(e => e.Action == EventActions.InterlockTrip, Cancel));
+    }
+
+    [Fact]
     public async Task Should_ScheduleAndAutoOffOnlyTheBoardsRelays()
     {
         var board = new FakeRelayBoard(4);

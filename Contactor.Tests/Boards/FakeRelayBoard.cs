@@ -40,8 +40,17 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// <summary>When set, OFF commands are accepted but change nothing, like a relay that won't drop.</summary>
     public bool IgnoreOff { get; set; }
 
+    /// <summary>When set, the next OFF throws <see cref="BoardNotConnectedException"/>, as if the connection had just dropped.</summary>
+    public bool FailNextOff { get; set; }
+
     public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
+        if (FailNextOff)
+        {
+            FailNextOff = false;
+            throw new BoardNotConnectedException();
+        }
+
         if (IgnoreOff)
         {
             EnsureConnected();
