@@ -90,7 +90,7 @@ public sealed class PersistenceTests
         await using var database = TestDatabase.Create();
         await database.Services.InitializeDatabaseAsync(Cancel);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        db.Relays.Add(new Relay { Id = id, Name = "Fel" });
+        db.Relays.Add(new Relay { Id = id, Name = "Wrong" });
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
     }

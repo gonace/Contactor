@@ -11,13 +11,13 @@ public static class ScheduleText
     /// <summary>Monday first, as in ISO 8601.</summary>
     public static readonly IReadOnlyList<(ScheduleDays Day, string Letter, string Short, string Name)> Days =
     [
-        (ScheduleDays.Monday, "M", "Mon", "Monday"),
-        (ScheduleDays.Tuesday, "T", "Tue", "Tuesday"),
-        (ScheduleDays.Wednesday, "W", "Wed", "Wednesday"),
-        (ScheduleDays.Thursday, "T", "Thu", "Thursday"),
-        (ScheduleDays.Friday, "F", "Fri", "Friday"),
-        (ScheduleDays.Saturday, "S", "Sat", "Saturday"),
-        (ScheduleDays.Sunday, "S", "Sun", "Sunday"),
+        (ScheduleDays.Monday, "Mo", "Mon", "Monday"),
+        (ScheduleDays.Tuesday, "Tu", "Tue", "Tuesday"),
+        (ScheduleDays.Wednesday, "We", "Wed", "Wednesday"),
+        (ScheduleDays.Thursday, "Th", "Thu", "Thursday"),
+        (ScheduleDays.Friday, "Fr", "Fri", "Friday"),
+        (ScheduleDays.Saturday, "Sa", "Sat", "Saturday"),
+        (ScheduleDays.Sunday, "Su", "Sun", "Sunday"),
     ];
 
     private static readonly ScheduleDays Weekend = ScheduleDays.Saturday | ScheduleDays.Sunday;

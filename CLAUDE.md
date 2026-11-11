@@ -362,18 +362,18 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Englis
    - A relay in a group shows "This relay is in the group X and is switched from there" and "Open the group" in place of its status, auto-off and schedules.
    - The button "Save".
 3. **New/edit schedule** (`/relay/{id}/schedule/new`, `/group/{id}/schedule/new`, `/schedule/{id}`)
-   - Day buttons M T W T F S S plus "Weekdays" and "Every day".
+   - Day buttons Mo Tu We Th Fr Sa Su plus "Weekdays" and "Every day".
    - The time fields "Turn on" and "Turn off".
    - A plain-language summary: "Monday to Friday: the relay turns on at 06:30 and off at 08:00."
    - The button "Save schedule". When editing also "Delete schedule", with a confirmation.
 4. **Group** (`/group/{id}`)
    - The name, the icon, a status card with a wide TURN ON THE GROUP / TURN OFF THE GROUP button.
    - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Runs on for 5 min"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group and without schedules. Order and members only change while the group is off.
-   - "Turn the group off automatically after", "Schedules" (as on the Relay screen, "Add" goes to `/group/{id}/schedule/new`), the group's latest 4 events, the safety note about wiring the interlock in hardware, "Delete the group" with a confirmation, and "Save".
+   - "Turn off automatically after", "Schedules" (as on the Relay screen, "Add" goes to `/group/{id}/schedule/new`), the group's latest 4 events, the safety note about wiring the interlock in hardware, "Delete the group" with a confirmation, and "Save".
    - Icons are Font Awesome Free solid icons (CC BY 4.0), inlined as SVG in `GroupIcon.razor`; no icon font or script.
 5. **New group** (`/group/new`): a guide in 4 steps, "STEP n OF 4" with a progress bar, "Cancel" on the first step and "Back" after.
    1. "Name and icon": the name and the 8 icons (Fan, Heat, Light, Air, Paint, Pump, Tools, Power).
-   2. "Which relays?": all 8 relays; the order they are picked in (#1, #2 …) is the start order. A relay in another group ("Already in X") or with schedules of its own ("Has its own schedules") can't be picked. At least 2.
+   2. "Which relays?": all 8 relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X") or with schedules of its own ("Has its own schedules") can't be picked. At least 2.
    3. "Order and rules": up/down, "Name in the group" for each relay (its name to begin with) and the waits between the steps.
    4. "Review and create": the card as it will look, and in plain words when it starts, when it stops, the interlock and the auto-off (2 h, changed on the group's page). "Create group" only works while every chosen relay is off.
 6. **Events** (`/events`)
@@ -382,7 +382,7 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Englis
    - Row: time in mono, a round badge with an initial, and text.
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
-     - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan runs on for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
+     - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
    - "Relay board": the board's address ("Address") and "Port", its login ("The board has no login", or "User name" and "Password"; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760" or "No contact with the relay board at …"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
@@ -404,7 +404,7 @@ Blazor Server gives live updates for free. When the board reports a new state (`
 --muted: #5C574F;     /* secondary text, ≥4.5:1 against --bg */
 --line: #E3DED5;      /* card border */
 --line-strong: #CFC8BC; /* input border */
---chip: #E8E3DA;      /* AV button, badges */
+--chip: #E8E3DA;      /* OFF button, badges */
 --accent: #C2410C;    /* ON, links, primary action */
 --accent-tint: #FFF4EC; /* card when the relay is on */
 --accent-border: #F0BE9C;
@@ -414,7 +414,7 @@ font: "IBM Plex Sans" (UI), "IBM Plex Mono" (times, labels)
 radii: 10–14 px. Touch targets ≥ 44 px. Body text 16 px, relay names 18 px, heading 28 px.
 ```
 
-**Dark mode** follows the phone's setting (`prefers-color-scheme: dark`); the app has no switch. `app.css` redefines the tokens (warm near-black `--bg: #16140F`, `--card: #221F1A`, `--ink: #F2EEE7`, `--muted: #B3AA9E`, `--accent: #F06A2C` …), plus a few named for it: `--on-ink` (text on an `--ink` background), `--on-accent`, `--danger-solid` (the "Ta bort" button), `--row-line`, `--line-dashed`, `--inactive-bg`/`--inactive-border` and `--backdrop`. Pages take every colour from a token, never a hex value of their own (a test checks), so a new page is dark too.
+**Dark mode** follows the phone's setting (`prefers-color-scheme: dark`); the app has no switch. `app.css` redefines the tokens (warm near-black `--bg: #16140F`, `--card: #221F1A`, `--ink: #F2EEE7`, `--muted: #B3AA9E`, `--accent: #F06A2C` …), plus a few named for it: `--on-ink` (text on an `--ink` background), `--on-accent`, `--danger-solid` (the "Delete" button), `--row-line`, `--line-dashed`, `--inactive-bg`/`--inactive-border` and `--backdrop`. Pages take every colour from a token, never a hex value of their own (a test checks), so a new page is dark too.
 
 Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF buttons. No emojis and no gradients.
 

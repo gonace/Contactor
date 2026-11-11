@@ -42,8 +42,8 @@ public static class EventText
         return new EventView(isPerson, badge, who, what, target);
     }
 
-    // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan runs on for
-    // 5 min", the red "Safety shut-off: Heat turned off because Fan was off". A relay of a group switched on its own is an
+    // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running
+    // for 5 min", the red "Safety shut-off: Heat turned off because Fan was off". A relay of a group switched on its own is an
     // ordinary on/off and returns null.
     private static (string What, string? Target, bool IsAlert)? GroupText(EventLogEntry entry, string? relayName, string groupName)
     {
@@ -53,7 +53,7 @@ public static class EventText
             EventActions.GroupOn => ("turned on the group", Chain(entry.Details) is { } chain ? $"{groupName} · {chain}" : groupName, false),
             EventActions.GroupOff when entry.Actor == EventActors.AutoOff => ($"turned off the group after {Duration(Number(entry.Details, "afterMinutes"))}", groupName, false),
             EventActions.GroupOff => ("turned off the group", groupName, false),
-            EventActions.RunOnStart => ($"{role} runs on for {Seconds(Number(entry.Details, "seconds"))}", groupName, false),
+            EventActions.RunOnStart => ($"{role} keeps running for {Seconds(Number(entry.Details, "seconds"))}", groupName, false),
             EventActions.RunOnEnd => ($"{role} off", groupName, false),
             EventActions.InterlockTrip => (TripText(entry.Details), groupName, true),
             EventActions.GroupStartFailed => ($"couldn't start {Text(entry.Details, "role") ?? role}", groupName, true),
@@ -129,7 +129,7 @@ public static class EventText
         {
             EventActors.Schedule => "schedule",
             EventActors.AutoOff => "auto-off",
-            EventActors.External => "at the board",
+            EventActors.External => "outside the app",
             EventActors.System => "the system",
             _ => personName ?? actor,
         };
@@ -149,7 +149,7 @@ public static class EventText
             {
                 EventActors.Schedule => "Schedule",
                 EventActors.AutoOff => "Auto-off",
-                EventActors.External => "At the board:",
+                EventActors.External => "Outside the app",
                 _ => "System",
             },
         };
@@ -171,7 +171,7 @@ public static class EventText
             EventActions.ScheduleEdit => (WithSchedule("changed schedule to", "changed a schedule", entry.Details), relayName),
             EventActions.ScheduleDelete => (WithSchedule("deleted schedule", "deleted a schedule", entry.Details), relayName),
             EventActions.ConnectionLost => ("lost contact with the app", null),
-            EventActions.ConnectionRestored => ("is in contact again", null),
+            EventActions.ConnectionRestored => ("reconnected", null),
             EventActions.InputChanged => (Bool(entry.Details, "on") == true ? "turned on" : "turned off", null),
             EventActions.BoardTimersDisabled => ("had its own timers turned off", null),
             EventActions.BoardLoginChanged => ("changed the relay board's login", null),

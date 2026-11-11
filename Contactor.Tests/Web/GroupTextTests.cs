@@ -32,7 +32,7 @@ public sealed class GroupTextTests
     }
 
     [Theory]
-    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on:", "Fan runs on for 5 min")]
+    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on:", "Fan keeps running for 5 min")]
     [InlineData(EventActions.RunOnEnd, """{"role":"Fan"}""", "Run-on done:", "Fan off")]
     [InlineData(EventActions.GroupOff, """{"afterMinutes":120}""", "Auto-off", "turned off the group after 2 h")]
     public void Should_DescribeWhatTheGroupDidByItself(string action, string details, string who, string what)

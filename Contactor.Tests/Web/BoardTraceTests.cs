@@ -27,7 +27,7 @@ public sealed class BoardTraceTests : IDisposable
     [InlineData(Vm201TraceKind.Sent, Vm201Command.Off, 0xFF, "Turn off all")]
     [InlineData(Vm201TraceKind.Sent, Vm201Command.On, 0x15, "Turn on relay 1, 3 and 5")]
     [InlineData(Vm201TraceKind.Sent, Vm201Command.TimerDisable, 0xFF, "Turn off the board's own timers for all")]
-    [InlineData(Vm201TraceKind.Sent, Vm201Command.Toggle, 0x01, "Kommando T")]
+    [InlineData(Vm201TraceKind.Sent, Vm201Command.Toggle, 0x01, "Command T")]
     public void Should_DescribeACommand(Vm201TraceKind kind, byte command, byte mask, string expected)
     {
         var (text, hex, isError) = BoardTraceText.Describe(Packet(kind, command, mask));

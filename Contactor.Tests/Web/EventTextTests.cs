@@ -31,8 +31,8 @@ public sealed class EventTextTests
     [Theory]
     [InlineData(EventActors.Schedule, EventActions.On, "Schedule", "turned on")]
     [InlineData(EventActors.Schedule, EventActions.Off, "Schedule", "turned off")]
-    [InlineData(EventActors.External, EventActions.On, "At the board:", "turned on")]
-    [InlineData(EventActors.External, EventActions.Off, "At the board:", "turned off")]
+    [InlineData(EventActors.External, EventActions.On, "Outside the app", "turned on")]
+    [InlineData(EventActors.External, EventActions.Off, "Outside the app", "turned off")]
     public void Should_ShowAutomaticEventsWithA(string actor, string action, string who, string what)
     {
         var view = EventText.For(Entry(actor, action), Relay, personName: null);
@@ -64,7 +64,7 @@ public sealed class EventTextTests
 
     [Theory]
     [InlineData(EventActions.ConnectionLost, null, "The board", "lost contact with the app", "A")]
-    [InlineData(EventActions.ConnectionRestored, """{"afterSeconds":40}""", "The board", "is in contact again", "A")]
+    [InlineData(EventActions.ConnectionRestored, """{"afterSeconds":40}""", "The board", "reconnected", "A")]
     [InlineData(EventActions.BoardTimersDisabled, """{"mask":255}""", "The board", "had its own timers turned off", "A")]
     [InlineData(EventActions.InputChanged, """{"on":true}""", "The input", "turned on", "I")]
     [InlineData(EventActions.InputChanged, """{"on":false}""", "The input", "turned off", "I")]
@@ -78,7 +78,7 @@ public sealed class EventTextTests
     [Theory]
     [InlineData(EventActors.Schedule, "schedule")]
     [InlineData(EventActors.AutoOff, "auto-off")]
-    [InlineData(EventActors.External, "at the board")]
+    [InlineData(EventActors.External, "outside the app")]
     public void Should_GiveAShortNameForTheStatusLine(string actor, string expected)
     {
         Assert.Equal(expected, EventText.ShortWho(actor, personName: null));

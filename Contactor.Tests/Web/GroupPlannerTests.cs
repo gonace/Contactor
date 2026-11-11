@@ -93,7 +93,7 @@ public sealed class GroupPlannerTests
         // The heat is off: the fan runs on 5 minutes.
         var runOn = Plan(State(1), T0.AddSeconds(1));
         Assert.Equal((EventActions.RunOnStart, (int?)1), (runOn.Events[0].Action, runOn.Events[0].RelayId));
-        Assert.Equal("Fan runs on for 5 min", EventText.For(Logged(runOn.Events[0]), null, null, "Fan heater").What);
+        Assert.Equal("Fan keeps running for 5 min", EventText.For(Logged(runOn.Events[0]), null, null, "Fan heater").What);
         Assert.True(Plan(State(1), T0.AddSeconds(300)).IsEmpty);
 
         var fanOff = Plan(State(1), T0.AddSeconds(301));

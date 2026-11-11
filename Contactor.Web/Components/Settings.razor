@@ -211,7 +211,7 @@
         {
             var error = await Board.SaveAsync(_host, port, _user.Email, CancellationToken.None)
                 ?? await Board.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None);
-            (_boardMessage, _boardSaved) = error is null ? ("Saved. The app connects to the board again.", true) : (error, false);
+            (_boardMessage, _boardSaved) = error is null ? ("Saved. The app reconnects to the board.", true) : (error, false);
             if (error is null)
             {
                 await LoadLoginAsync();
@@ -258,7 +258,7 @@
         {
             await Backup.RunAsync(CancellationToken.None);
             _latest = await Backup.LatestAsync(CancellationToken.None);
-            (_backupMessage, _backupSaved) = ("The copy is made.", true);
+            (_backupMessage, _backupSaved) = ("Copy made.", true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
         {

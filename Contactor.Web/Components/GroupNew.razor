@@ -195,7 +195,7 @@
     private static readonly (string Title, string Lead)[] Titles =
     [
         ("Name and icon", "The icon shows on the group's card in the relay list."),
-        ("Which relays?", "Pick two or more. The order you pick them in is the start order; you can change it in the next step."),
+        ("Which relays?", "Choose two or more. The order you choose them in is the start order; you can change it in the next step."),
         ("Order and rules", "The group starts from the top and stops from the bottom. Set the waits between the steps."),
         ("Review and create", "Check that it does what you expect."),
     ];
@@ -210,9 +210,9 @@
 
     private string SelectedText => _wizard.Members.Count switch
     {
-        0 => "None picked yet",
-        < RelayGroup.MinMembers => $"{_wizard.Members.Count} picked · pick at least {RelayGroup.MinMembers}",
-        _ => $"{_wizard.Members.Count} picked",
+        0 => "None chosen yet",
+        < RelayGroup.MinMembers => $"{_wizard.Members.Count} chosen · choose at least {RelayGroup.MinMembers}",
+        _ => $"{_wizard.Members.Count} chosen",
     };
 
     protected override async Task OnInitializedAsync()

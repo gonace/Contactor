@@ -38,8 +38,8 @@ public static class BoardTraceText
             Vm201Command.TimerDisable when data.Length == 1 => $"Turn off the board's own timers for {Relays(data[0])}",
             Vm201Command.Username => "User name (hidden)",
             Vm201Command.Password => "Password (hidden)",
-            Vm201Command.Closed => "Avsluta anslutningen",
-            _ => $"Kommando {Letter(entry.Command)}",
+            Vm201Command.Closed => "Close the connection",
+            _ => $"Command {Letter(entry.Command)}",
         };
     }
 

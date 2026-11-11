@@ -64,7 +64,7 @@ public sealed class GroupPagesTests
         Assert.Contains("This relay is in the group", html, StringComparison.Ordinal);
         Assert.Contains($"href=\"group/{id}\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("TURN ON", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Aktiv</strong>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Active</strong>", html, StringComparison.Ordinal);
     }
 
     [Fact]

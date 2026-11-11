@@ -72,7 +72,7 @@ over again and run `install.sh`; it keeps the settings.
    online at …" shows when it answers.
 3. With the **Debug** tab open, test what the board does (the open questions in `CLAUDE.md`):
    - Turn a relay on and off in the app: "→ Turn on relay n", then "← Status: relay n on".
-   - Press a button on the board, or use its own web page: the change shows in Events as "At the board".
+   - Press a button on the board, or use its own web page: the change shows in Events as "Outside the app".
    - **How many clients at once?** Open the board's web page while the app is connected. Does either lose its
      connection?
    - **Does it close idle connections?** Leave it for 30 minutes and look for "Connection lost".

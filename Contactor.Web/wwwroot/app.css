@@ -24,7 +24,7 @@
     /* Named so dark mode can change them. */
     --on-ink: #FFFFFF;          /* text on an --ink background (selected pills, Save) */
     --on-accent: #FFFFFF;       /* text on an --accent background (ON) */
-    --danger-solid: #7A1A10;    /* a destructive button's background ("Ta bort") */
+    --danger-solid: #7A1A10;    /* a destructive button's background ("Delete") */
     --row-line: #EEEAE3;        /* between rows in a list */
     --line-dashed: #A39C90;     /* dashed borders: automatic badges, "Show inactive" */
     --inactive-bg: #EFEBE4;
