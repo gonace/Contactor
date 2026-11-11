@@ -10,8 +10,8 @@
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.14" />
-    <!-- Aspire 13.5.4 brings MessagePack 2.5.302, which has a known vulnerability (GHSA-qhrr-8q5h-9q3h). Pinned to the
-         latest release. Drop this once Aspire brings a patched one. -->
+    <!-- Aspire brings MessagePack 2.5.x (2.5.302 with 13.5.4, 2.5.307 with 13.6.5); 2.5.302 has a known vulnerability
+         (GHSA-qhrr-8q5h-9q3h). Pinned to the latest release. Drop this once a restore without it reports no advisory. -->
     <PackageVersion Include="MessagePack" Version="3.1.12" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
