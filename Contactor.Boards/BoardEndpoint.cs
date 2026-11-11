@@ -1,15 +1,13 @@
-namespace Contactor.Boards.Vm201;
+namespace Contactor.Boards;
 
-/// <summary>Where the board is: a host name or IP address and a TCP port (9760 on a VM201).</summary>
-public sealed record Vm201Endpoint(string Host, int Port)
+/// <summary>Where a board is on the network: a host name or IP address and a TCP port.</summary>
+public sealed record BoardEndpoint(string Host, int Port)
 {
-    public const int DefaultPort = 9760;
-
     // A DNS name can't be longer; anything longer isn't an address.
     private const int MaxHostLength = 253;
 
     /// <summary>An endpoint from what someone typed, or null with the reason when it can't be one.</summary>
-    public static Vm201Endpoint? TryCreate(string? host, int port, out string? error)
+    public static BoardEndpoint? TryCreate(string? host, int port, out string? error)
     {
         host = host?.Trim() ?? "";
         if (host.Length == 0)
@@ -26,12 +24,12 @@ public sealed record Vm201Endpoint(string Host, int Port)
 
         if (port is < 1 or > 65535)
         {
-            error = "The port is a number from 1 to 65535 (usually 9760).";
+            error = "The port is a number from 1 to 65535.";
             return null;
         }
 
         error = null;
-        return new Vm201Endpoint(host, port);
+        return new BoardEndpoint(host, port);
     }
 
     public override string ToString()

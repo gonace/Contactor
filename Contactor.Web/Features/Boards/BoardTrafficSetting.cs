@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
-namespace Contactor.Web.Features.Vm201;
+namespace Contactor.Web.Features.Boards;
 
 /// <summary>
 /// Each person's "Debugging" checkbox on the Settings screen: whether they see the board's traffic as toasts and

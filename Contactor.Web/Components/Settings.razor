@@ -1,15 +1,17 @@
 @page "/settings"
 @implements IDisposable
 @using System.Globalization
-@using Contactor.Boards.Vm201
+@using Contactor.Boards
 @using Contactor.Web.Features.Backup
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
-@using Contactor.Web.Features.Vm201
 @inject BoardAddressHandler Board
 @inject UsersHandler Users
 @inject BackupService Backup
-@inject Vm201Client Client
+@inject IRelayBoard Relays
+@inject IBoardConnection Connection
+@inject BoardModel Model
 @inject CurrentUser CurrentUser
 @inject LocalClock Clock
 @inject BoardTrafficSetting Debugging
@@ -24,6 +26,7 @@
     <main class="content">
         <form class="card" @onsubmit="SaveBoardAsync">
             <h2>Relay board</h2>
+            <p class="hint">@Model.Name · @Relays.Capabilities.RelayCount @(Relays.Capabilities.RelayCount == 1 ? "relay" : "relays")</p>
             <div class="fields">
                 <div class="field">
                     <label for="host">Address</label>
@@ -35,8 +38,10 @@
                     <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" @bind="_port" @bind:event="oninput" />
                 </div>
             </div>
-            <p class="hint">The relay board's IP address on the local network. Your router lists it among its connected devices (a Velleman device).</p>
+            <p class="hint">The relay board's IP address on the local network. Your router lists it among its connected devices.</p>
 
+            @if (Model.HasLogin)
+            {
             <label for="no-login" class="check">
                 <input id="no-login" type="checkbox" @bind="_noLogin" />
                 <span>The board has no login</span>
@@ -47,25 +52,26 @@
                     <div class="field">
                         <label for="username">User name</label>
                         <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-                               maxlength="@Vm201Command.CredentialMaxLength" @bind="_username" @bind:event="oninput" />
+                               maxlength="@Model.LoginMaxLength" @bind="_username" @bind:event="oninput" />
                     </div>
                     <div class="field">
                         <label for="password">Password</label>
                         <input id="password" type="password" autocomplete="new-password"
-                               maxlength="@Vm201Command.CredentialMaxLength" placeholder="@(_hasPassword ? "unchanged" : "none")"
+                               maxlength="@Model.LoginMaxLength" placeholder="@(_hasPassword ? "unchanged" : "none")"
                                @bind="_newPassword" @bind:event="oninput" />
                     </div>
                 </div>
-                <p class="hint">The same as on the board's own web page. At most 8 characters, letters a–z, digits and plain symbols only.</p>
+                <p class="hint">The same as on the board's own web page. At most @Model.LoginMaxLength characters.</p>
+            }
             }
 
-            @if (Client.State.IsConnected)
+            @if (Relays.State.IsConnected)
             {
-                <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Client.Endpoint</p>
+                <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Connection.Endpoint</p>
             }
             else
             {
-                <p class="status offline" role="status">No contact with the relay board at @Client.Endpoint</p>
+                <p class="status offline" role="status">No contact with the relay board at @Connection.Endpoint</p>
             }
 
             @if (_boardMessage is not null)
@@ -170,12 +176,12 @@
         await LoadPeopleAsync();
         _latest = await Backup.LatestAsync(CancellationToken.None);
         _debugging = _user is not null && await Debugging.IsOnAsync(_user.Email, CancellationToken.None);
-        Client.StateChanged += OnBoardChanged;
+        Relays.StateChanged += OnBoardChanged;
     }
 
     public void Dispose()
     {
-        Client.StateChanged -= OnBoardChanged;
+        Relays.StateChanged -= OnBoardChanged;
     }
 
     private async Task LoadLoginAsync()
@@ -202,7 +208,7 @@
 
         if (!int.TryParse(_port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
         {
-            (_boardMessage, _boardSaved) = ("The port is a number from 1 to 65535 (usually 9760).", false);
+            (_boardMessage, _boardSaved) = ("The port is a number from 1 to 65535.", false);
             return;
         }
 
@@ -210,7 +216,7 @@
         try
         {
             var error = await Board.SaveAsync(_host, port, _user.Email, CancellationToken.None)
-                ?? await Board.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None);
+                ?? (Model.HasLogin ? await Board.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None) : null);
             (_boardMessage, _boardSaved) = error is null ? ("Saved. The app reconnects to the board.", true) : (error, false);
             if (error is null)
             {
@@ -290,7 +296,7 @@
     }
 
     // From the board's read loop.
-    private void OnBoardChanged(object? sender, Vm201State state)
+    private void OnBoardChanged(object? sender, BoardState state)
     {
         _ = RefreshAsync();
     }

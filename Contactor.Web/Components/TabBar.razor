@@ -1,6 +1,7 @@
 @implements IDisposable
+@using Contactor.Boards
 @using Contactor.Web.Features.Identity
-@using Contactor.Web.Features.Vm201
+@using Contactor.Web.Features.Boards
 @inject CurrentUser CurrentUser
 @inject BoardTrafficSetting Debugging
 @inject BoardTrace Trace
@@ -114,10 +115,10 @@
 
     private static string Arrow(BoardTraceItem item)
     {
-        return item.Kind switch
+        return item.Direction switch
         {
-            Contactor.Boards.Vm201.Vm201TraceKind.Sent => "→",
-            Contactor.Boards.Vm201.Vm201TraceKind.Received => "←",
+            BoardTraceDirection.Sent => "→",
+            BoardTraceDirection.Received => "←",
             _ => "·",
         };
     }

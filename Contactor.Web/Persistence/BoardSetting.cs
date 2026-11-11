@@ -2,8 +2,8 @@ namespace Contactor.Web.Persistence;
 
 /// <summary>
 /// The relay board's address and login as set on the Settings screen. One row; while it doesn't exist (or its
-/// login is null), the app uses <c>Vm201:Host</c>, <c>Port</c>, <c>Username</c> and <c>Password</c> from the settings
-/// (what install.sh asked for).
+/// login is null), the app uses the board's own settings (what install.sh asked for, e.g. <c>Vm201:Host</c>,
+/// <c>Port</c>, <c>Username</c> and <c>Password</c>).
 /// </summary>
 public sealed class BoardSetting
 {

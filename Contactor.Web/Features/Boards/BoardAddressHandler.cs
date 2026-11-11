@@ -1,46 +1,41 @@
 using System.Text.Json;
-using Contactor.Boards.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
-namespace Contactor.Web.Features.Vm201;
+namespace Contactor.Web.Features.Boards;
 
 /// <summary>
 /// The relay board's address and login, set on the Settings screen so they can change without touching the
-/// Raspberry Pi. Saved in the database; until someone saves them, <c>Vm201:Host</c>/<c>Port</c>/<c>Username</c>/
-/// <c>Password</c> from the settings apply.
+/// Raspberry Pi. Saved in the database; until someone saves them, the board's own settings apply (e.g.
+/// <c>Vm201:Host</c>, <c>Port</c>, <c>Username</c> and <c>Password</c>).
 /// </summary>
 public sealed class BoardAddressHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly Vm201Client _client;
-    private readonly Vm201Options _options;
+    private readonly IBoardConnection _connection;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
-        Vm201Client client,
-        IOptions<Vm201Options> options,
+        IBoardConnection connection,
         LocalClock clock,
         RelayChanges changes)
     {
-        ArgumentNullException.ThrowIfNull(options);
         _dbFactory = dbFactory;
-        _client = client;
-        _options = options.Value;
+        _connection = connection;
         _clock = clock;
         _changes = changes;
     }
 
     /// <summary>The address in use: the saved one, or the settings' when none is saved.</summary>
-    public async Task<Vm201Endpoint> GetAsync(CancellationToken cancellationToken)
+    public async Task<BoardEndpoint> GetAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var saved = await db.BoardSettings.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
-        return saved is null ? new Vm201Endpoint(_options.Host, _options.Port) : new Vm201Endpoint(saved.Host, saved.Port);
+        return saved is null ? _connection.DefaultEndpoint : new BoardEndpoint(saved.Host, saved.Port);
     }
 
     /// <summary>The board's login in use: the saved one, or the settings' when none is saved. Shown without its password.</summary>
@@ -53,8 +48,8 @@ public sealed class BoardAddressHandler
     /// <summary>Points the client at the saved address and login, if any. Called before the first connection.</summary>
     public async Task ApplySavedAsync(CancellationToken cancellationToken)
     {
-        _client.SetEndpoint(await GetAsync(cancellationToken));
-        _client.SetLogin(await LoginInUseAsync(cancellationToken));
+        _connection.SetEndpoint(await GetAsync(cancellationToken));
+        _connection.SetLogin(await LoginInUseAsync(cancellationToken));
     }
 
     /// <summary>
@@ -67,7 +62,8 @@ public sealed class BoardAddressHandler
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         var current = await LoginInUseAsync(cancellationToken);
         var password = none ? "" : string.IsNullOrEmpty(newPassword) ? current.Password : newPassword;
-        if (Vm201Login.TryCreate(none ? "" : username?.Trim(), password, out var error) is not { } login)
+        var login = new BoardLogin(none ? "" : username?.Trim() ?? "", password);
+        if (_connection.CheckLogin(login) is { } error)
         {
             return error;
         }
@@ -77,7 +73,7 @@ public sealed class BoardAddressHandler
         if (saved is null)
         {
             // The row also holds the address: start it with the one in use.
-            var endpoint = _client.Endpoint;
+            var endpoint = _connection.Endpoint;
             saved = new BoardSetting { Host = endpoint.Host, Port = endpoint.Port };
             db.BoardSettings.Add(saved);
         }
@@ -99,19 +95,20 @@ public sealed class BoardAddressHandler
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        _client.SetLogin(login);
+        _connection.SetLogin(login);
         _changes.Notify();
         return null;
     }
 
-    private async Task<Vm201Login> LoginInUseAsync(CancellationToken cancellationToken)
+    private async Task<BoardLogin> LoginInUseAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var saved = await db.BoardSettings.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
-        var (username, password) = saved?.Username is not null ? (saved.Username, saved.Password ?? "") : (_options.Username, _options.Password);
+        var login = saved?.Username is not null ? new BoardLogin(saved.Username, saved.Password ?? "") : _connection.DefaultLogin;
 
-        // The database only holds what TryCreate accepted, and the settings are checked at start.
-        return Vm201Login.TryCreate(username, password, out _) ?? Vm201Login.None;
+        // The database only holds what the board accepted, and the settings are checked at start; a login saved for
+        // another model of board that this one can't take falls back to none.
+        return _connection.CheckLogin(login) is null ? login : BoardLogin.None;
     }
 
     /// <summary>
@@ -121,14 +118,14 @@ public sealed class BoardAddressHandler
     public async Task<string?> SaveAsync(string? host, int port, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        if (Vm201Endpoint.TryCreate(host, port, out var error) is not { } endpoint)
+        if (BoardEndpoint.TryCreate(host, port, out var error) is not { } endpoint)
         {
             return error;
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var saved = await db.BoardSettings.SingleOrDefaultAsync(cancellationToken);
-        var current = saved is null ? new Vm201Endpoint(_options.Host, _options.Port) : new Vm201Endpoint(saved.Host, saved.Port);
+        var current = saved is null ? _connection.DefaultEndpoint : new BoardEndpoint(saved.Host, saved.Port);
         if (saved is not null && current == endpoint)
         {
             return null;
@@ -154,7 +151,7 @@ public sealed class BoardAddressHandler
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        _client.SetEndpoint(endpoint);
+        _connection.SetEndpoint(endpoint);
         _changes.Notify();
         return null;
     }

@@ -29,7 +29,7 @@ public sealed class Vm201Client
     private readonly TimeSpan _keepAlive;
     private readonly TimeSpan _idleTimeout;
     private Vm201State _state = Vm201State.Initial;
-    private Vm201Endpoint _endpoint;
+    private BoardEndpoint _endpoint;
     private Vm201Login _login;
 
     // The current connection attempt (connect, session and the wait after it); SetEndpoint cancels it to move at once.
@@ -60,7 +60,7 @@ public sealed class Vm201Client
         _login = Vm201Login.TryCreate(_options.Username, _options.Password, out var loginError)
             ?? throw new ArgumentException($"Vm201:Username or Vm201:Password can't be sent to the board: {loginError}", nameof(options));
 
-        _endpoint = new Vm201Endpoint(_options.Host, _options.Port);
+        _endpoint = new BoardEndpoint(_options.Host, _options.Port);
         _keepAlive = TimeSpan.FromSeconds(_options.KeepAliveSeconds);
         _idleTimeout = _keepAlive * 2;
     }
@@ -69,7 +69,7 @@ public sealed class Vm201Client
     public Vm201State State => Volatile.Read(ref _state);
 
     /// <summary>Where the client connects: <c>Vm201:Host</c>/<c>Port</c> until <see cref="SetEndpoint"/> moves it.</summary>
-    public Vm201Endpoint Endpoint => Volatile.Read(ref _endpoint);
+    public BoardEndpoint Endpoint => Volatile.Read(ref _endpoint);
 
     /// <summary>The login it sends: <c>Vm201:Username</c>/<c>Password</c> until <see cref="SetLogin"/> changes it.</summary>
     public Vm201Login Login => Volatile.Read(ref _login);
@@ -94,7 +94,7 @@ public sealed class Vm201Client
     /// Moves the client to another board address: the current connection (or attempt, or wait before the next
     /// one) ends at once and the client connects to the new address. Nothing happens if the address is the same.
     /// </summary>
-    public void SetEndpoint(Vm201Endpoint endpoint)
+    public void SetEndpoint(BoardEndpoint endpoint)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
         if (Interlocked.Exchange(ref _endpoint, endpoint) == endpoint)

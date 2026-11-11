@@ -1,10 +1,11 @@
+using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Vm201;
 
-public sealed class Vm201EndpointTests
+public sealed class BoardEndpointTests
 {
     private static readonly TimeSpan Fast = TimeSpan.FromSeconds(3);
 
@@ -17,7 +18,7 @@ public sealed class Vm201EndpointTests
     [InlineData("fe80::1", 1)]
     public void Should_AcceptAddresses(string host, int port)
     {
-        var endpoint = Vm201Endpoint.TryCreate(host, port, out var error);
+        var endpoint = BoardEndpoint.TryCreate(host, port, out var error);
 
         Assert.NotNull(endpoint);
         Assert.Null(error);
@@ -30,18 +31,18 @@ public sealed class Vm201EndpointTests
     [InlineData(null, 9760, "Enter the relay board's address, e.g. 192.168.1.50.")]
     [InlineData("192.168.1.50/24", 9760, "192.168.1.50/24 isn't an address. Enter e.g. 192.168.1.50.")]
     [InlineData("http://192.168.1.50", 9760, "http://192.168.1.50 isn't an address. Enter e.g. 192.168.1.50.")]
-    [InlineData("192.168.1.50", 0, "The port is a number from 1 to 65535 (usually 9760).")]
-    [InlineData("192.168.1.50", 70000, "The port is a number from 1 to 65535 (usually 9760).")]
+    [InlineData("192.168.1.50", 0, "The port is a number from 1 to 65535.")]
+    [InlineData("192.168.1.50", 70000, "The port is a number from 1 to 65535.")]
     public void Should_RefuseWhatIsNoAddress(string? host, int port, string message)
     {
-        Assert.Null(Vm201Endpoint.TryCreate(host, port, out var error));
+        Assert.Null(BoardEndpoint.TryCreate(host, port, out var error));
         Assert.Equal(message, error);
     }
 
     [Fact]
     public void Should_RefuseAHostTooLongForDns()
     {
-        Assert.Null(Vm201Endpoint.TryCreate(new string('a', 254), 9760, out _));
+        Assert.Null(BoardEndpoint.TryCreate(new string('a', 254), 9760, out _));
     }
 
     [Fact]
@@ -57,7 +58,7 @@ public sealed class Vm201EndpointTests
         var run = client.RunAsync(cts.Token);
         await WaitUntilAsync(() => client.State.IsConnected, TimeSpan.FromSeconds(10));
 
-        client.SetEndpoint(new Vm201Endpoint("127.0.0.1", second.Port));
+        client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
 
         await WaitUntilAsync(() => second.ConnectionCount == 1 && client.State.IsConnected && client.State.Outputs == 0x08, Fast);
         Assert.Equal(second.Port, client.Endpoint.Port);
@@ -76,7 +77,7 @@ public sealed class Vm201EndpointTests
 
         // Let it fail a few times so the wait grows.
         await Task.Delay(TimeSpan.FromSeconds(1.5), Cancel);
-        client.SetEndpoint(new Vm201Endpoint("127.0.0.1", board.Port));
+        client.SetEndpoint(new BoardEndpoint("127.0.0.1", board.Port));
 
         await WaitUntilAsync(() => client.State.IsConnected, Fast);
         await cts.CancelAsync();
@@ -93,7 +94,7 @@ public sealed class Vm201EndpointTests
         var run = client.RunAsync(cts.Token);
         await WaitUntilAsync(() => client.State.IsConnected, TimeSpan.FromSeconds(10));
 
-        client.SetEndpoint(new Vm201Endpoint("127.0.0.1", board.Port));
+        client.SetEndpoint(new BoardEndpoint("127.0.0.1", board.Port));
         await Task.Delay(300, Cancel);
 
         Assert.Equal(1, board.ConnectionCount);

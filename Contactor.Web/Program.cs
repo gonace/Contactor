@@ -1,6 +1,7 @@
 using Contactor.ServiceDefaults;
 using Contactor.Web.Components;
 using Contactor.Web.Features.Backup;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Health;
@@ -8,7 +9,6 @@ using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
-using Contactor.Web.Features.Vm201;
 
 namespace Contactor.Web;
 
@@ -26,7 +26,7 @@ public sealed partial class Program
         builder.AddServiceDefaults();
         builder.Services.AddLocalClock(builder.Configuration);
         builder.Services.AddPersistence(builder.Configuration);
-        builder.Services.AddVm201(builder.Configuration);
+        builder.Services.AddBoards(builder.Configuration);
         builder.Services.AddCloudflareAccess(builder.Configuration);
         builder.Services.AddRelays(builder.Configuration);
         builder.Services.AddGroups(builder.Configuration);
