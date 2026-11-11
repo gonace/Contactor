@@ -32,7 +32,7 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
         using var response = await GetAsync(http, "/", _tokens.Create("jane@example.com"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("Hej Jane", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Contains("Hi Jane", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
 
         using var response = await GetAsync(http, "/", _tokens.Create("john@example.com"));
 
-        Assert.Contains("Hej John E.", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Contains("Hi John E.", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
         using var response = await GetAsync(http, "/", token: null);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal("Åtkomst nekad.", await response.Content.ReadAsStringAsync(Cancel));
+        Assert.Equal("Access denied.", await response.Content.ReadAsStringAsync(Cancel));
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
         using var response = await GetAsync(http, "/", token: null);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("Hej John", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Contains("Hi John", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     public void Dispose()

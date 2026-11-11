@@ -107,7 +107,7 @@ public sealed partial class GroupSequencer : BackgroundService
             cancellationToken);
     }
 
-    /// <summary>Stops every group, with run-on times ("Alla av").</summary>
+    /// <summary>Stops every group, with run-on times ("All off").</summary>
     public async Task StopAllAsync(string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
@@ -121,13 +121,13 @@ public sealed partial class GroupSequencer : BackgroundService
     }
 
     /// <summary>
-    /// Turns one relay of a group on or off, within the interlock. Returns why it can't, in Swedish, or null when
+    /// Turns one relay of a group on or off, within the interlock. Returns why it can't, or null when
     /// done. Throws <see cref="BoardNotConnectedException"/> without the board.
     /// </summary>
     public async Task<string?> SetMemberAsync(int groupId, int relayId, bool on, string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
-        string? refusal = "Reläet ingår inte i gruppen.";
+        string? refusal = "That relay isn't in the group.";
         await RunAsync(
             (group, members, state, runtime, now, commands) =>
             {
@@ -312,7 +312,7 @@ public sealed partial class GroupSequencer : BackgroundService
                 }
             }
 
-            // Pages also follow a sequence's own progress, e.g. "Startar" turning into "På sedan".
+            // Pages also follow a sequence's own progress, e.g. "Starting" turning into "On since".
             var changed = events.Count > 0 || !all.Off.IsEmpty || !all.On.IsEmpty || db.ChangeTracker.HasChanges();
             await SaveAsync(db, events, now, cancellationToken);
             if (changed)

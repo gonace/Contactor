@@ -1,6 +1,6 @@
-@page "/rele/{RelayId:int}/schema/ny"
-@page "/grupp/{GroupId:int}/schema/ny"
-@page "/schema/{Id:int}"
+@page "/relay/{RelayId:int}/schedule/new"
+@page "/group/{GroupId:int}/schedule/new"
+@page "/schedule/{Id:int}"
 @using System.Globalization
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
@@ -13,17 +13,17 @@
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 
-<PageTitle>@(IsNew ? "Nytt schema" : "Ändra schema") · Contactor</PageTitle>
+<PageTitle>@(IsNew ? "New schedule" : "Edit schedule") · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <a href="@BackUrl" class="back">Avbryt</a>
+        <a href="@BackUrl" class="back">Cancel</a>
     </header>
 
     @if (_loaded && _target is null)
     {
         <main class="content">
-            <p class="missing">@(!IsNew ? "Schemat finns inte längre." : GroupId is not null ? "Gruppen finns inte." : "Reläet finns inte.")</p>
+            <p class="missing">@(!IsNew ? "The schedule no longer exists." : GroupId is not null ? "The group doesn't exist." : "The relay doesn't exist.")</p>
         </main>
     }
     else if (_target is { } target)
@@ -31,32 +31,32 @@
         <form class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="title">
-                    <h1>@(IsNew ? "Nytt schema" : "Ändra schema")</h1>
+                    <h1>@(IsNew ? "New schedule" : "Edit schedule")</h1>
                     <p>@target.Name</p>
                 </div>
 
                 <section class="days">
-                    <h2>Vilka dagar?</h2>
+                    <h2>Which days?</h2>
                     <div class="day-buttons">
                         @foreach (var day in ScheduleText.Days)
                         {
-                            var name = char.ToUpper(day.Name[0], CultureInfo.InvariantCulture) + day.Name[1..];
+                            var name = day.Name;
                             <button type="button" aria-pressed="@(_days.HasFlag(day.Day) ? "true" : "false")" aria-label="@name" @onclick="() => _days ^= day.Day">@day.Letter</button>
                         }
                     </div>
                     <div class="shortcuts">
-                        <button type="button" @onclick="() => _days = ScheduleDays.Weekdays">Vardagar</button>
-                        <button type="button" @onclick="() => _days = ScheduleDays.All">Alla dagar</button>
+                        <button type="button" @onclick="() => _days = ScheduleDays.Weekdays">Weekdays</button>
+                        <button type="button" @onclick="() => _days = ScheduleDays.All">Every day</button>
                     </div>
                 </section>
 
                 <section class="times">
                     <div class="time">
-                        <label for="on">Slå på</label>
+                        <label for="on">Turn on</label>
                         <input id="on" type="time" value="@_on" @oninput="e => _on = e.Value?.ToString() ?? string.Empty" required />
                     </div>
                     <div class="time">
-                        <label for="off">Stäng av</label>
+                        <label for="off">Turn off</label>
                         <input id="off" type="time" value="@_off" @oninput="e => _off = e.Value?.ToString() ?? string.Empty" required />
                     </div>
                 </section>
@@ -71,10 +71,10 @@
                 {
                     <p class="error" role="alert">@_error</p>
                 }
-                <button type="submit" class="save" disabled="@_busy">Spara schema</button>
+                <button type="submit" class="save" disabled="@_busy">Save schedule</button>
                 @if (!IsNew)
                 {
-                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Ta bort schema</button>
+                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Delete schedule</button>
                 }
             </div>
         </form>
@@ -83,11 +83,11 @@
         {
             <div class="backdrop">
                 <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
-                    <h2 id="confirm-title">Ta bort schemat?</h2>
+                    <h2 id="confirm-title">Delete the schedule?</h2>
                     <p>@ScheduleText.Summary(_saved!.Days, _saved.OnTime, _saved.OffTime, IsGroup)</p>
                     <div class="dialog-buttons">
-                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Avbryt</button>
-                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Ta bort</button>
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Cancel</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Delete</button>
                     </div>
                 </div>
             </div>
@@ -123,14 +123,14 @@
 
     private string BackUrl => _target switch
     {
-        { GroupId: { } groupId } => $"grupp/{groupId}",
-        { RelayId: { } relayId } => $"rele/{relayId}",
+        { GroupId: { } groupId } => $"group/{groupId}",
+        { RelayId: { } relayId } => $"relay/{relayId}",
         _ => "",
     };
 
     private string Summary => TryTime(_on, out var on) && TryTime(_off, out var off)
         ? ScheduleText.Summary(_days, on, off, IsGroup)
-        : IsGroup ? "Ange när gruppen ska slås på och stängas av." : "Ange när reläet ska slås på och stängas av.";
+        : IsGroup ? "Enter when the group turns on and off." : "Enter when the relay turns on and off.";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -186,7 +186,7 @@
 
         if (!TryTime(_on, out var on) || !TryTime(_off, out var off))
         {
-            _error = "Ange en tid för både slå på och stäng av.";
+            _error = "Enter a time for both turning on and turning off.";
             return;
         }
 

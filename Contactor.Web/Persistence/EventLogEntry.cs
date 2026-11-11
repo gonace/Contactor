@@ -1,7 +1,7 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// Something that happened, shown on the Händelser screen.
+/// Something that happened, shown on the Events screen.
 /// </summary>
 public sealed class EventLogEntry
 {
@@ -23,6 +23,6 @@ public sealed class EventLogEntry
     /// <summary>One of <see cref="EventActions"/>.</summary>
     public string Action { get; set; } = "";
 
-    /// <summary>JSON, e.g. <c>{"from":"Relä 4","to":"Ventilation – Lackrummet"}</c>.</summary>
+    /// <summary>JSON, e.g. <c>{"from":"Relay 4","to":"Ventilation – Paint shop"}</c>.</summary>
     public string? Details { get; set; }
 }

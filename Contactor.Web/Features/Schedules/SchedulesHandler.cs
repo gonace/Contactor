@@ -63,10 +63,10 @@ public sealed class SchedulesHandler
     {
         if ((days & ScheduleDays.All) == ScheduleDays.None || (days & ~ScheduleDays.All) != ScheduleDays.None)
         {
-            return "Välj minst en dag.";
+            return "Choose at least one day.";
         }
 
-        return onTime == offTime ? "Slå på och stäng av kan inte vara samma tid." : null;
+        return onTime == offTime ? "Turning on and turning off can't be at the same time." : null;
     }
 
     /// <summary>Adds a schedule (Id 0) or changes one. Returns null when saved, otherwise the message to show.</summary>
@@ -88,27 +88,27 @@ public sealed class SchedulesHandler
         {
             if ((model.RelayId is null) == (model.GroupId is null))
             {
-                return "Välj ett relä eller en grupp.";
+                return "Choose a relay or a group.";
             }
 
             if (model.GroupId is { } groupId)
             {
                 if (!await db.RelayGroups.AnyAsync(g => g.Id == groupId, cancellationToken))
                 {
-                    return "Gruppen finns inte.";
+                    return "The group doesn't exist.";
                 }
             }
             else
             {
                 if (!await db.Relays.AnyAsync(r => r.Id == model.RelayId, cancellationToken))
                 {
-                    return "Reläet finns inte.";
+                    return "The relay doesn't exist.";
                 }
 
                 // A relay in a group runs with its group; its own schedule would start it out of order.
                 if (await db.RelayGroupMembers.AnyAsync(m => m.RelayId == model.RelayId, cancellationToken))
                 {
-                    return "Reläet ingår i en grupp. Lägg schemat på gruppen.";
+                    return "This relay is in a group. Add the schedule to the group.";
                 }
             }
 
@@ -121,7 +121,7 @@ public sealed class SchedulesHandler
             var existing = await db.Schedules.SingleOrDefaultAsync(s => s.Id == model.Id, cancellationToken);
             if (existing is null)
             {
-                return "Schemat finns inte längre.";
+                return "The schedule no longer exists.";
             }
 
             if (existing.Days == model.Days && existing.OnTime == onTime && existing.OffTime == offTime)

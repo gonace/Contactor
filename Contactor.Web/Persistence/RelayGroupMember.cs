@@ -17,7 +17,7 @@ public sealed class RelayGroupMember
     /// <summary>1 starts first and stops last.</summary>
     public int Position { get; set; }
 
-    /// <summary>Its name in the group, e.g. "Fläkt" or "Värme".</summary>
+    /// <summary>Its name in the group, e.g. "Fan" or "Heat".</summary>
     public string RoleName { get; set; } = "";
 
     /// <summary>How long to wait, once the relay above is confirmed on, before this one starts. Unused for position 1.</summary>

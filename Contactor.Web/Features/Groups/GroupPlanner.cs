@@ -349,7 +349,7 @@ public static class GroupPlanner
     }
 
     /// <summary>
-    /// Turns one relay on, within the interlock: only when the relay above it is on. Returns why not, in Swedish, or
+    /// Turns one relay on, within the interlock: only when the relay above it is on. Returns why not, or
     /// null when done.
     /// </summary>
     public static string? MemberOn(
@@ -371,7 +371,7 @@ public static class GroupPlanner
         var member = members[position - 1];
         if (position > 1 && !state.IsOn(members[position - 2].RelayId))
         {
-            return $"Kräver att {members[position - 2].RoleName} är på.";
+            return $"Needs {members[position - 2].RoleName} to be on.";
         }
 
         if (state.IsOn(member.RelayId))
@@ -406,7 +406,7 @@ public static class GroupPlanner
     }
 
     /// <summary>
-    /// Turns one relay off: the relays below it go off at once, and this one runs on for its run-on time first if any
+    /// Turns one relay off: the relays below it go off at once, and this one keeps running for its run-on time first if any
     /// were on. Nothing happens when it is off already.
     /// </summary>
     public static void MemberOff(
@@ -455,7 +455,7 @@ public static class GroupPlanner
         Plan(members, state, runtime, now, commands);
     }
 
-    /// <summary>"Fläkt → 3 s → Värme", for the log.</summary>
+    /// <summary>"Fan → 3 s → Heat", for the log.</summary>
     public static string Chain(IReadOnlyList<GroupMemberInfo> members)
     {
         ArgumentNullException.ThrowIfNull(members);

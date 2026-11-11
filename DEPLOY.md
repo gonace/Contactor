@@ -42,8 +42,8 @@ no single quote), or set it later in the app.
 The settings are kept in `/opt/contactor/.env` (readable by root only); the database, its backups and the app's
 keys in `/var/lib/contactor`.
 
-**Check it:** open your hostname on your phone and sign in with the code. Reläer shows
-"Ingen kontakt med reläkortet", which is right without a board. Turn on **Inställningar → Debugging**: the Debug tab
+**Check it:** open your hostname on your phone and sign in with the code. Relays shows
+"No contact with the relay board", which is right without a board. Turn on **Settings → Debugging**: the Debug tab
 then shows the app trying to connect, so the whole chain from the phone to the Pi works.
 
 ## 3. Nightly updates
@@ -68,14 +68,14 @@ over again and run `install.sh`; it keeps the settings.
 
 1. In your router, give the Raspberry Pi and the VM201 **DHCP reservations**, so they keep their addresses. The
    board shows up as a Velleman device in the router's list of clients.
-2. In the app, **Inställningar → Reläkortet**: the board's address, its login if it has one, and **Spara**. "Kortet
-   svarar på …" shows when it answers.
+2. In the app, **Settings → Relay board**: the board's address, its login if it has one, and **Save**. "Board
+   online at …" shows when it answers.
 3. With the **Debug** tab open, test what the board does (the open questions in `CLAUDE.md`):
-   - Turn a relay on and off in the app: "→ Slå på relä n", then "← Status: relä n på".
-   - Press a button on the board, or use its own web page: the change shows in Händelser as "Utanför appen".
+   - Turn a relay on and off in the app: "→ Turn on relay n", then "← Status: relay n on".
+   - Press a button on the board, or use its own web page: the change shows in Events as "Outside the app".
    - **How many clients at once?** Open the board's web page while the app is connected. Does either lose its
      connection?
-   - **Does it close idle connections?** Leave it for 30 minutes and look for "Anslutningen bröts".
+   - **Does it close idle connections?** Leave it for 30 minutes and look for "Connection lost".
    - **A power cut:** turn a relay on, unplug the board and plug it in again. Which state do the relays come back in?
 
    Take a screenshot of the Debug tab for anything that looks odd.
@@ -97,14 +97,14 @@ Both first build the solution and run every test, and publish nothing if one fai
 ## The board's address and login
 
 The installer asks for the address once (and takes a login as variables). After that, change both in the app under
-**Inställningar**: the app reconnects at once, shows whether the board answers, and logs who changed what (never the
+**Settings**: the app reconnects at once, shows whether the board answers, and logs who changed what (never the
 password). What is saved there wins over the installer's; it lives in the database, so it comes back with a restored
 backup. On a fresh install without the old database, the installer's values apply until someone saves others in the
 app.
 
 ## Moving to a new Raspberry Pi (or reinstalling)
 
-1. On the old one, if it still runs: **Inställningar → Säkerhetskopior → Gör en kopia nu**, then **Ladda ner**. You
+1. On the old one, if it still runs: **Settings → Backups → Make a copy now**, then **Download**. You
    get a zip, e.g. `contactor-2026-11-04.zip`; unpack it on your computer (Windows: right-click → Extract All) to
    get `contactor-2026-11-04.db`.
 2. Install the new one as in steps 1–3. Any board address will do: you can correct it in the app.
@@ -119,13 +119,13 @@ sudo rm -f /var/lib/contactor/contactor.db-wal /var/lib/contactor/contactor.db-s
 sudo docker compose -f /opt/contactor/compose.yml start contactor
 ```
 
-4. Open the app and check **Inställningar**: the board should answer. If not, fix its address there.
+4. Open the app and check **Settings**: the board should answer. If not, fix its address there.
 
 ## Backups
 
 The app copies its database every night at 02:30 into `/var/lib/contactor/backups/contactor-YYYY-MM-DD.db` and
-keeps the latest 14. They are on the same disk: download one now and then from **Inställningar → Säkerhetskopior**
-(**Ladda ner**, a zip of the newest copy) and keep it somewhere else. A copy holds everything, also the board's
+keeps the latest 14. They are on the same disk: download one now and then from **Settings → Backups**
+(**Download**, a zip of the newest copy) and keep it somewhere else. A copy holds everything, also the board's
 password and everyone's e-mail address, so keep it like any other private file.
 
 To restore one:
@@ -140,7 +140,7 @@ sudo chown 1654:1654 /var/lib/contactor/contactor.db && sudo docker compose -f /
 ## Watching the board's traffic
 
 The VM201 keeps no log of its own. The quickest way to see what the app and the board send each other, e.g. when
-testing a new board: in the app, Inställningar → Debugging → "Visa trafiken till reläkortet". It is only for you.
+testing a new board: in the app, Settings → Debugging → "Show the traffic to the relay board". It is only for you.
 Each packet then shows for a few seconds at the bottom of every page (not the keep-alive), and the tab Debug lists
 the latest 100 with their bytes. Nothing is stored; a restart empties the list.
 
@@ -165,9 +165,9 @@ rather than `cd` into it first.
 
 - `sudo docker compose -f /opt/contactor/compose.yml ps` shows both containers and whether the app is healthy.
 - `sudo docker compose -f /opt/contactor/compose.yml logs --tail 100 contactor` (or `cloudflared`) shows what they say.
-- "Ingen kontakt med reläkortet" in the app: the app can't reach the VM201. Check the board's address under
-  Inställningar (find it in the router's list of clients) and that the board answers: `nc -vz <address> 9760`.
-- "Åtkomst nekad.": the request didn't come through Cloudflare Access, or the team domain or AUD tag in `.env` is
+- "No contact with the relay board" in the app: the app can't reach the VM201. Check the board's address under
+  Settings (find it in the router's list of clients) and that the board answers: `nc -vz <address> 9760`.
+- "Access denied.": the request didn't come through Cloudflare Access, or the team domain or AUD tag in `.env` is
   wrong.
 - No new version for a while: `journalctl -u contactor-upgrade`. "unauthorized" or "denied" from ghcr.io means the
   read token has expired; renew it as [GitHub](#github) says.
@@ -186,7 +186,7 @@ In Cloudflare Zero Trust (the free plan is enough):
 - **Access application** for that hostname (Access controls → Applications, self-hosted): one-time PIN by e-mail,
   session duration 1 month, a policy with the e-mail addresses that may sign in, and Instant Auth on. Its **AUD tag**
   is under Edit → Additional settings. Add or remove people in the policy.
-- **Login page** (optional): `deploy/cloudflare/access-login.html` is a Swedish login page in the app's style. It
+- **Login page** (optional): `deploy/cloudflare/access-login.html` is a login page in the app's style. It
   needs HTML templates, a paid Zero Trust feature; on the free plan, Cloudflare's own page is used.
 
 ## Signing keys

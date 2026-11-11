@@ -65,7 +65,7 @@ public static class PersistenceServiceCollectionExtensions
                 db.Relays.Add(new Relay
                 {
                     Id = id,
-                    Name = $"Relä {id}",
+                    Name = $"Relay {id}",
                     IsActive = true,
                     MaxOnMinutes = Relay.DefaultMaxOnMinutes,
                     SortOrder = id,
@@ -85,7 +85,7 @@ public static class PersistenceServiceCollectionExtensions
 
         if (!await db.Inputs.AnyAsync(cancellationToken))
         {
-            db.Inputs.Add(new Input { Name = "Ingång", ClosedText = "Stängd", OpenText = "Öppen" });
+            db.Inputs.Add(new Input { Name = "Input", ClosedText = "Closed", OpenText = "Open" });
         }
 
         await db.SaveChangesAsync(cancellationToken);

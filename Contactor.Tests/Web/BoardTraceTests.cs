@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The Debug screen's list of board traffic and its Swedish text.
+/// The Debug screen's list of board traffic and its text.
 /// </summary>
 public sealed class BoardTraceTests : IDisposable
 {
@@ -23,11 +23,11 @@ public sealed class BoardTraceTests : IDisposable
     }
 
     [Theory]
-    [InlineData(Vm201TraceKind.Sent, Vm201Command.On, 0x04, "Slå på relä 3")]
-    [InlineData(Vm201TraceKind.Sent, Vm201Command.Off, 0xFF, "Stäng av alla")]
-    [InlineData(Vm201TraceKind.Sent, Vm201Command.On, 0x15, "Slå på relä 1, 3 och 5")]
-    [InlineData(Vm201TraceKind.Sent, Vm201Command.TimerDisable, 0xFF, "Stäng av kortets egna timers för alla")]
-    [InlineData(Vm201TraceKind.Sent, Vm201Command.Toggle, 0x01, "Kommando T")]
+    [InlineData(Vm201TraceKind.Sent, Vm201Command.On, 0x04, "Turn on relay 3")]
+    [InlineData(Vm201TraceKind.Sent, Vm201Command.Off, 0xFF, "Turn off all")]
+    [InlineData(Vm201TraceKind.Sent, Vm201Command.On, 0x15, "Turn on relay 1, 3 and 5")]
+    [InlineData(Vm201TraceKind.Sent, Vm201Command.TimerDisable, 0xFF, "Turn off the board's own timers for all")]
+    [InlineData(Vm201TraceKind.Sent, Vm201Command.Toggle, 0x01, "Command T")]
     public void Should_DescribeACommand(Vm201TraceKind kind, byte command, byte mask, string expected)
     {
         var (text, hex, isError) = BoardTraceText.Describe(Packet(kind, command, mask));
@@ -42,13 +42,13 @@ public sealed class BoardTraceTests : IDisposable
     {
         var (text, hex, _) = BoardTraceText.Describe(Packet(Vm201TraceKind.Sent, Vm201Command.On, 0x01));
 
-        Assert.Equal(("Slå på relä 1", "02 06 4F 01 A8 03"), (text, hex));
+        Assert.Equal(("Turn on relay 1", "02 06 4F 01 A8 03"), (text, hex));
     }
 
     [Theory]
-    [InlineData(0x00, 0x00, 0x00, "Status: alla av · ingången av")]
-    [InlineData(0x05, 0x00, 0x01, "Status: relä 1 och 3 på · ingången på")]
-    [InlineData(0x80, 0x02, 0x00, "Status: relä 8 på · kortets timers på för relä 2 · ingången av")]
+    [InlineData(0x00, 0x00, 0x00, "Status: all off · input off")]
+    [InlineData(0x05, 0x00, 0x01, "Status: relay 1 and 3 on · input on")]
+    [InlineData(0x80, 0x02, 0x00, "Status: relay 8 on · the board's timers on for relay 2 · input off")]
     public void Should_DescribeAStatus(byte outputs, byte timers, byte input, string expected)
     {
         var (text, _, isError) = BoardTraceText.Describe(Packet(Vm201TraceKind.Received, Vm201Command.Status, outputs, timers, input));
@@ -62,7 +62,7 @@ public sealed class BoardTraceTests : IDisposable
     {
         var (text, _, isError) = BoardTraceText.Describe(Packet(Vm201TraceKind.Received, Vm201Command.AccessDenied));
 
-        Assert.Equal("Fel användarnamn eller lösenord", text);
+        Assert.Equal("Wrong user name or password", text);
         Assert.True(isError);
     }
 
@@ -74,16 +74,16 @@ public sealed class BoardTraceTests : IDisposable
 
         var (text, hex, _) = BoardTraceText.Describe(entry);
 
-        Assert.Equal("Lösenord (dolt)", text);
+        Assert.Equal("Password (hidden)", text);
         Assert.Equal("02 0E 57 …", hex);
     }
 
     [Theory]
-    [InlineData(Vm201TraceKind.Connecting, "192.168.1.50:9760", "Ansluter till 192.168.1.50:9760", false)]
-    [InlineData(Vm201TraceKind.ConnectionLost, "Connection refused", "Anslutningen bröts: Connection refused", true)]
-    [InlineData(Vm201TraceKind.ConnectionLost, Vm201Client.StoppedByApp, "Appen stängde anslutningen", false)]
-    [InlineData(Vm201TraceKind.Reconnecting, "4", "Försöker igen om 4 s", false)]
-    [InlineData(Vm201TraceKind.DiscardedBytes, "3", "Hoppade över 3 trasiga byte från kortet", true)]
+    [InlineData(Vm201TraceKind.Connecting, "192.168.1.50:9760", "Connecting to 192.168.1.50:9760", false)]
+    [InlineData(Vm201TraceKind.ConnectionLost, "Connection refused", "Connection lost: Connection refused", true)]
+    [InlineData(Vm201TraceKind.ConnectionLost, Vm201Client.StoppedByApp, "The app closed the connection", false)]
+    [InlineData(Vm201TraceKind.Reconnecting, "4", "Trying again in 4 s", false)]
+    [InlineData(Vm201TraceKind.DiscardedBytes, "3", "Skipped 3 broken bytes from the board", true)]
     public void Should_DescribeAConnectionStep(Vm201TraceKind kind, string detail, string expected, bool error)
     {
         var (text, hex, isError) = BoardTraceText.Describe(new Vm201TraceEntry(Now, kind, default, detail));
@@ -97,8 +97,8 @@ public sealed class BoardTraceTests : IDisposable
         var empty = new Vm201TraceEntry(Now, Vm201TraceKind.Received, new byte[] { 0x02 }, null);
         var shortStatus = new Vm201TraceEntry(Now, Vm201TraceKind.Received, Vm201PacketCodec.Encode(Vm201Command.Status, 0x01), null);
 
-        Assert.Equal("Okänt svar 0x00", BoardTraceText.Describe(empty).Text);
-        Assert.Equal("Okänt svar S", BoardTraceText.Describe(shortStatus).Text);
+        Assert.Equal("Unknown answer 0x00", BoardTraceText.Describe(empty).Text);
+        Assert.Equal("Unknown answer S", BoardTraceText.Describe(shortStatus).Text);
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public sealed class BoardTraceTests : IDisposable
 
         _trace.Record(Packet(Vm201TraceKind.Sent, Vm201Command.On, 0x04));
 
-        Assert.Equal("Slå på relä 3", Assert.Single(added).Text);
+        Assert.Equal("Turn on relay 3", Assert.Single(added).Text);
     }
 
     private static Vm201TraceEntry Packet(Vm201TraceKind kind, byte command, params byte[] data)

@@ -4,12 +4,12 @@ using Contactor.Web.Persistence;
 
 namespace Contactor.Web.Features.Identity;
 
-/// <summary>A person as the Inställningar screen lists them.</summary>
+/// <summary>A person as the Settings screen lists them.</summary>
 public sealed record UserView(string Email, string DisplayName);
 
 /// <summary>
 /// The people who have signed in, and their names: the app names a new person after their e-mail
-/// ("alex.smith@…" becomes "Alex.smith"), and the Inställningar screen lets anyone give them a proper one.
+/// ("alex.smith@…" becomes "Alex.smith"), and the Settings screen lets anyone give them a proper one.
 /// </summary>
 public sealed class UsersHandler
 {
@@ -36,19 +36,19 @@ public sealed class UsersHandler
         var name = displayName?.Trim() ?? "";
         if (name.Length == 0)
         {
-            return "Skriv ett namn.";
+            return "Enter a name.";
         }
 
         if (name.Length > User.DisplayNameMaxLength)
         {
-            return $"Namnet får vara högst {User.DisplayNameMaxLength} tecken.";
+            return $"The name can be at most {User.DisplayNameMaxLength} characters.";
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var user = await db.Users.SingleOrDefaultAsync(u => u.Email == email, cancellationToken);
         if (user is null)
         {
-            return "Personen finns inte längre.";
+            return "That person no longer exists.";
         }
 
         if (user.DisplayName != name)

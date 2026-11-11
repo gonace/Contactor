@@ -50,7 +50,7 @@ public sealed partial class Vm201HostedService : BackgroundService
         _client.StateChanged += OnStateChanged;
         try
         {
-            // The address saved on the Inställningar screen, if any, before the first connection.
+            // The address saved on the Settings screen, if any, before the first connection.
             await _address.ApplySavedAsync(stoppingToken);
             await _client.RunAsync(stoppingToken);
         }

@@ -6,7 +6,7 @@ running on after the heat goes off), with an interlock that keeps them in that o
 made it.
 
 It is built for a workshop and for people who aren't technical: big buttons, few menus, and a page that works like an
-app on the phone. The interface is in Swedish for now.
+app on the phone.
 
 - **Runs** on a Raspberry Pi next to the board, with Docker Compose.
 - **Sign-in** is done by Cloudflare Access (a one-time code by e-mail); no port is opened to the internet.

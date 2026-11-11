@@ -4,7 +4,7 @@ using Contactor.Web.Persistence;
 namespace Contactor.Web.Features.Vm201;
 
 /// <summary>
-/// Each person's "Debugging" checkbox on the Inställningar screen: whether they see the board's traffic as toasts and
+/// Each person's "Debugging" checkbox on the Settings screen: whether they see the board's traffic as toasts and
 /// get the Debug tab. Only that person; the others don't see it.
 /// </summary>
 public sealed class BoardTrafficSetting

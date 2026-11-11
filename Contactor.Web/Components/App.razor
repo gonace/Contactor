@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="sv">
+<html lang="en">
 <head>
     <meta charset="utf-8" />
     @* No zoom: the app is laid out for a phone with big buttons, and zooming in by mistake hides them. Android follows
@@ -24,14 +24,14 @@
     <Routes @rendermode="InteractiveServer" />
     @* Blazor shows this when the page's live connection breaks on an error it can't recover from. *@
     <div id="blazor-error-ui" role="alert">
-        Något gick fel. <a href="" class="reload">Ladda om sidan</a>
+        Something went wrong. <a href="" class="reload">Reload the page</a>
     </div>
-    @* Blazor's own reconnect messages are in English; this bar replaces them (Blazor finds it by its id, and
+    @* Replaces Blazor's own reconnect dialog with a bar in the app's style (Blazor finds it by its id, and
        reconnect.js handles what happens next). *@
     <div id="components-reconnect-modal" class="reconnect" role="status" aria-live="polite" data-nosnippet>
-        <span class="reconnect-trying">Ansluter igen…</span>
-        <span class="reconnect-failed">Ingen kontakt med appen.</span>
-        <button type="button" id="components-reconnect-button" class="reconnect-failed">Försök igen</button>
+        <span class="reconnect-trying">Reconnecting…</span>
+        <span class="reconnect-failed">No connection to the app.</span>
+        <button type="button" id="components-reconnect-button" class="reconnect-failed">Try again</button>
     </div>
     <script src="_framework/blazor.web.js"></script>
     <script src="@Assets["reconnect.js"]"></script>

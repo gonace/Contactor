@@ -10,7 +10,7 @@ using Contactor.Web.Persistence;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// What the Inställningar screen saves: the board's login, people's names and the backup download.
+/// What the Settings screen saves: the board's login, people's names and the backup download.
 /// </summary>
 public sealed class SettingsHandlersTests
 {
@@ -31,7 +31,7 @@ public sealed class SettingsHandlersTests
         Assert.Equal(("admin", "secret"), (rig.Client.Login.Username, rig.Client.Login.Password));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardLoginChanged);
         Assert.Null(entry.Details);
-        Assert.Equal("ändrade reläkortets inloggning", EventText.For(entry, null, "John").What);
+        Assert.Equal("changed the relay board's login", EventText.For(entry, null, "John").What);
     }
 
     [Fact]
@@ -96,13 +96,13 @@ public sealed class SettingsHandlersTests
         var users = app.Services.GetRequiredService<UsersHandler>();
 
         Assert.Null(await users.RenameAsync(John, "  John E. ", Cancel));
-        Assert.Equal("Skriv ett namn.", await users.RenameAsync(John, " ", Cancel));
-        Assert.Equal("Namnet får vara högst 40 tecken.", await users.RenameAsync(John, new string('a', 41), Cancel));
-        Assert.Equal("Personen finns inte längre.", await users.RenameAsync("nobody@example.com", "X", Cancel));
+        Assert.Equal("Enter a name.", await users.RenameAsync(John, " ", Cancel));
+        Assert.Equal("The name can be at most 40 characters.", await users.RenameAsync(John, new string('a', 41), Cancel));
+        Assert.Equal("That person no longer exists.", await users.RenameAsync("nobody@example.com", "X", Cancel));
 
         Assert.Equal([new UserView(John, "John E.")], await users.ListAsync(Cancel));
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-        Assert.Contains("Hej John E.", html, StringComparison.Ordinal);
+        Assert.Contains("Hi John E.", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class SettingsHandlersTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
 
-        foreach (var text in new[] { "Reläkortet", "Kortet har ingen inloggning", "Personer", John, "Säkerhetskopior", "Ingen kopia än.", "Gör en kopia nu" })
+        foreach (var text in new[] { "Relay board", "The board has no login", "People", John, "Backups", "No copy yet.", "Make a copy now" })
         {
             Assert.Contains(text, html, StringComparison.Ordinal);
         }

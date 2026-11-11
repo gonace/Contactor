@@ -10,7 +10,7 @@ namespace Contactor.Tests.Web;
 
 /// <summary>
 /// Relay groups against the simulator: the sequence through the real board connection, the interlock on a change made
-/// at the board, "Alla av", and how groups are set up.
+/// at the board, "All off", and how groups are set up.
 /// </summary>
 public sealed class GroupSequencerTests
 {
@@ -19,10 +19,10 @@ public sealed class GroupSequencerTests
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     private static GroupDraft FanHeater => new(
-        "Värmefläkt – Svarven",
+        "Fan heater – Lathe",
         GroupIcons.Fan,
         120,
-        [new GroupMemberDraft(1, "Fläkt", 3, 300), new GroupMemberDraft(2, "Värme", 3, 0)]);
+        [new GroupMemberDraft(1, "Fan", 3, 300), new GroupMemberDraft(2, "Heat", 3, 0)]);
 
     [Fact]
     public async Task Should_StartTheFanHeaterInOrder()
@@ -57,7 +57,7 @@ public sealed class GroupSequencerTests
         var notified = 0;
         rig.Database.Services.GetRequiredService<RelayChanges>().Changed += (_, _) => notified++;
 
-        // The board confirmed the fan: nothing is sent, but "Startar · steg 1" moves on.
+        // The board confirmed the fan: nothing is sent, but "Starting · step 1" moves on.
         await rig.Groups.StepAsync(Cancel);
 
         Assert.Equal(1, notified);
@@ -114,7 +114,7 @@ public sealed class GroupSequencerTests
 
         await Assert.ThrowsAsync<Contactor.Web.Features.Relays.RelayInGroupException>(() => rig.Control.TurnOnAsync(2, John, Cancel));
         Assert.Equal(
-            "Kräver att Fläkt är på.",
+            "Needs Fan to be on.",
             await rig.Groups.SetMemberAsync(await GroupIdAsync(rig), 2, on: true, John, Cancel));
         Assert.False(rig.Client.State.IsOn(2));
     }
@@ -138,7 +138,7 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         var id = await CreateAsync(rig, FanHeater);
 
-        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Name = "Värmefläkten" }, John, Cancel));
+        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Name = "Fan heateren" }, John, Cancel));
         Assert.Null(await rig.GroupSetup.DeleteAsync(id, John, Cancel));
 
         var actions = (await rig.EventsAsync()).Where(e => e.GroupId == id).Select(e => e.Action);
@@ -154,27 +154,27 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         var setup = rig.GroupSetup;
 
-        Assert.Equal("Välj minst 2 reläer.", (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt")] }, John, Cancel)).Error);
-        Assert.Equal("Skriv ett namn på gruppen.", (await setup.CreateAsync(FanHeater with { Name = "  " }, John, Cancel)).Error);
+        Assert.Equal("Choose at least 2 relays.", (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fan")] }, John, Cancel)).Error);
+        Assert.Equal("Give the group a name.", (await setup.CreateAsync(FanHeater with { Name = "  " }, John, Cancel)).Error);
         Assert.Equal(
-            "Väntan vid start ska vara 1–60 sekunder.",
-            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt", 0), new(2, "Värme", 61)] }, John, Cancel)).Error);
+            "The wait on start is 1–60 seconds.",
+            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fan", 0), new(2, "Heat", 61)] }, John, Cancel)).Error);
         Assert.Equal(
-            "Eftergången får vara högst 30 minuter.",
-            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt", 3, 1801), new(2, "Värme")] }, John, Cancel)).Error);
+            "The run-on can be at most 30 minutes.",
+            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fan", 3, 1801), new(2, "Heat")] }, John, Cancel)).Error);
         Assert.Equal(
-            "Ett relä kan bara vara med en gång.",
-            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt"), new(1, "Värme")] }, John, Cancel)).Error);
+            "A relay can only be in the group once.",
+            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fan"), new(1, "Heat")] }, John, Cancel)).Error);
 
         await CreateAsync(rig, FanHeater);
         Assert.Equal(
-            "Relä 2 ingår redan i Värmefläkt – Svarven.",
+            "Relay 2 is already in Fan heater – Lathe.",
             (await setup.CreateAsync(FanHeater with { Name = "Annan", Members = [new(2, "A"), new(3, "B")] }, John, Cancel)).Error);
 
         await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(4));
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(4));
         Assert.Equal(
-            "Stäng av Relä 4 först.",
+            "Turn off Relay 4 first.",
             (await setup.CreateAsync(FanHeater with { Name = "Annan", Members = [new(3, "A"), new(4, "B")] }, John, Cancel)).Error);
     }
 
@@ -201,8 +201,8 @@ public sealed class GroupSequencerTests
 
         Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], relays.Select(r => r.RelayId));
         Assert.Equal([3, 5, 6, 7, 8], relays.Where(r => r.IsFree).Select(r => r.RelayId));
-        Assert.Equal("Ingår redan i Värmefläkt – Svarven", relays[0].Note);
-        Assert.Equal("Har egna scheman", relays[3].Note);
+        Assert.Equal("Already in Fan heater – Lathe", relays[0].Note);
+        Assert.Equal("Has its own schedules", relays[3].Note);
     }
 
     [Fact]
@@ -226,7 +226,7 @@ public sealed class GroupSequencerTests
         var (id, error) = await rig.GroupSetup.CreateAsync(FanHeater, John, Cancel);
 
         Assert.Null(id);
-        Assert.Equal("Relä 2 har egna scheman. Ta bort dem först.", error);
+        Assert.Equal("Relay 2 has its own schedules. Delete them first.", error);
     }
 
     [Fact]
@@ -234,15 +234,15 @@ public sealed class GroupSequencerTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         var id = await CreateAsync(rig, FanHeater);
-        var reversed = FanHeater with { Members = [new(2, "Värme"), new(1, "Fläkt")] };
+        var reversed = FanHeater with { Members = [new(2, "Heat"), new(1, "Fan")] };
         await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(1));
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
 
-        Assert.StartsWith("Stäng av gruppen", await rig.GroupSetup.SaveAsync(id, reversed, John, Cancel), StringComparison.Ordinal);
-        Assert.Equal("Stäng av gruppen innan den tas bort.", await rig.GroupSetup.DeleteAsync(id, John, Cancel));
+        Assert.StartsWith("Turn off the group", await rig.GroupSetup.SaveAsync(id, reversed, John, Cancel), StringComparison.Ordinal);
+        Assert.Equal("Turn off the group before deleting it.", await rig.GroupSetup.DeleteAsync(id, John, Cancel));
 
         // The waits can change while it runs.
-        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Members = [new(1, "Fläkt", 5, 600), new(2, "Värme", 5)] }, John, Cancel));
+        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Members = [new(1, "Fan", 5, 600), new(2, "Heat", 5)] }, John, Cancel));
 
         await rig.Simulator.SetOutputsAsync(0);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0);
@@ -263,7 +263,7 @@ public sealed class GroupSequencerTests
             John,
             Cancel);
 
-        Assert.Equal("Reläet ingår i en grupp. Lägg schemat på gruppen.", error);
+        Assert.Equal("This relay is in a group. Add the schedule to the group.", error);
     }
 
     [Fact]
@@ -331,7 +331,7 @@ public sealed class GroupSequencerTests
 
         foreach (var member in new[]
         {
-            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 2, RoleName = "Samma steg" },
+            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 2, RoleName = "Same step" },
             new RelayGroupMember { GroupId = id, RelayId = 3, Position = 3, RoleName = "A", StartDelaySec = 0 },
             new RelayGroupMember { GroupId = id, RelayId = 3, Position = 3, RoleName = "A", RunOnSec = 1801 },
             new RelayGroupMember { GroupId = id, RelayId = 3, Position = 9, RoleName = "A" },

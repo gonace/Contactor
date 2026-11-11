@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Contactor.Web.Features.Vm201;
 
 /// <summary>
-/// The relay board's address and login, set on the Inställningar screen so they can change without touching the
+/// The relay board's address and login, set on the Settings screen so they can change without touching the
 /// Raspberry Pi. Saved in the database; until someone saves them, <c>Vm201:Host</c>/<c>Port</c>/<c>Username</c>/
 /// <c>Password</c> from the settings apply.
 /// </summary>

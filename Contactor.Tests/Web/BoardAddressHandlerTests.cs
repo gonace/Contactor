@@ -37,7 +37,7 @@ public sealed class BoardAddressHandlerTests
         Assert.Equal(new Vm201Endpoint("127.0.0.1", other.Port), await Handler(rig).GetAsync(Cancel));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardAddressChanged);
         Assert.Equal(John, entry.Actor);
-        Assert.Equal($"ändrade reläkortets adress från {from} till 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
+        Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
     }
 
     [Fact]

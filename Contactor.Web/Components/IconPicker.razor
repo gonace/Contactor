@@ -1,4 +1,4 @@
-@* The eight group icons as radio buttons, 4 × 2, with their Swedish names. Put it in a fieldset with a legend. *@
+@* The eight group icons as radio buttons, 4 × 2, with their names. Put it in a fieldset with a legend. *@
 @using Contactor.Web.Persistence
 
 <div class="icons">
@@ -17,14 +17,14 @@
     /// <summary>The icons' names on the screens.</summary>
     public static readonly IReadOnlyDictionary<string, string> Names = new Dictionary<string, string>
     {
-        [GroupIcons.Fan] = "Fläkt",
-        [GroupIcons.Flame] = "Värme",
-        [GroupIcons.Bulb] = "Ljus",
-        [GroupIcons.Wind] = "Luft",
-        [GroupIcons.Spray] = "Lack",
+        [GroupIcons.Fan] = "Fan",
+        [GroupIcons.Flame] = "Heat",
+        [GroupIcons.Bulb] = "Light",
+        [GroupIcons.Wind] = "Air",
+        [GroupIcons.Spray] = "Paint",
         [GroupIcons.Drop] = "Pump",
-        [GroupIcons.Wrench] = "Verktyg",
-        [GroupIcons.Bolt] = "Ström",
+        [GroupIcons.Wrench] = "Tools",
+        [GroupIcons.Bolt] = "Power",
     };
 
     [Parameter]

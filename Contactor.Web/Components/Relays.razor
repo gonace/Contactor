@@ -19,7 +19,7 @@
 @inject GroupSequencer Sequencer
 @inject ILogger<Relays> Log
 
-<PageTitle>Reläer · Contactor</PageTitle>
+<PageTitle>Relays · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -28,32 +28,32 @@
             <p class="summary">
                 @if (_user is not null)
                 {
-                    <text>Hej @_user.DisplayName · </text>
+                    <text>Hi @_user.DisplayName · </text>
                 }
-                <strong>@OnCount av @ActiveCount på</strong>
+                <strong>@OnCount of @ActiveCount on</strong>
             </p>
         </div>
-        <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="TurnAllOffAsync">Alla av</button>
+        <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="TurnAllOffAsync">All off</button>
     </header>
 
     <div class="connection">
         @if (State.IsConnected)
         {
-            <p class="online"><span class="dot" aria-hidden="true"></span>Kortet svarar · uppdaterat @UpdatedText</p>
+            <p class="online"><span class="dot" aria-hidden="true"></span>Board online · updated @UpdatedText</p>
         }
         else
         {
             <div class="offline" role="status">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
                 <div>
-                    <strong>Ingen kontakt med reläkortet</strong>
-                    <span>@(State.LastContactUtc is { } last ? $"Sedan {RelayStatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)}. " : "")Lägena nedan kan vara fel.</span>
+                    <strong>No contact with the relay board</strong>
+                    <span>@(State.LastContactUtc is { } last ? $"Since {RelayStatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)}. " : "")The states below may be wrong.</span>
                 </div>
             </div>
         }
         @if (_allOffFailed)
         {
-            <p class="error" role="alert">Kortet svarar inte. Försök igen.</p>
+            <p class="error" role="alert">The board isn't responding. Try again.</p>
         }
     </div>
 
@@ -66,8 +66,8 @@
             <div class="card group @(lit ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : null)" @key="@($"g{group.Id}")">
                 <div class="top">
                     <span class="icon" aria-hidden="true"><GroupIcon Icon="@group.Icon" /></span>
-                    <a class="text" href="grupp/@group.Id">
-                        <span class="label">GRUPP · @group.Chain</span>
+                    <a class="text" href="group/@group.Id">
+                        <span class="label">GROUP · @group.Chain</span>
                         <span class="name">@group.Name</span>
                         <span class="status @(group.Runtime.Phase != GroupPhases.Idle ? "busy" : null)">@GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id))</span>
                         @if (_failedGroupId == group.Id)
@@ -79,11 +79,11 @@
                             data-vibrate
                             class="toggle"
                             aria-pressed="@(groupOn ? "true" : "false")"
-                            aria-label="@((groupOn ? "Stäng av " : "Slå på ") + group.Name)"
+                            aria-label="@((groupOn ? "Turn off " : "Turn on ") + group.Name)"
                             disabled="@(!State.IsConnected || _busy)"
-                            @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "PÅ" : "AV")</button>
+                            @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "ON" : "OFF")</button>
                 </div>
-                <ol class="chips" aria-label="Reläer i startordning">
+                <ol class="chips" aria-label="Relays in start order">
                     @foreach (var member in group.Members)
                     {
                         var memberOn = State.IsOn(member.RelayId);
@@ -92,7 +92,7 @@
                             {
                                 <span class="arrow" aria-hidden="true">→</span>
                             }
-                            <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@(memberOn ? " (på)" : " (av)")</span></span>
+                            <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@(memberOn ? " (on)" : " (off)")</span></span>
                         </li>
                     }
                 </ol>
@@ -103,35 +103,35 @@
         {
             var on = State.IsOn(relay.Id);
             <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive")" @key="relay.Id">
-                <a class="text" href="rele/@relay.Id">
-                    <span class="label">RELÄ @relay.Id</span>
+                <a class="text" href="relay/@relay.Id">
+                    <span class="label">RELAY @relay.Id</span>
                     <span class="name">@relay.Name</span>
                     <span class="status">@StatusFor(relay, on)</span>
                     @if (_failedRelayId == relay.Id)
                     {
-                        <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "Kortet svarar inte. Försök igen.")</span>
+                        <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</span>
                     }
                 </a>
                 <button type="button"
                         data-vibrate
                         class="toggle"
                         aria-pressed="@(on ? "true" : "false")"
-                        aria-label="@((on ? "Stäng av " : "Slå på ") + relay.Name)"
+                        aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
                         disabled="@(!State.IsConnected || _busy)"
-                        @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "PÅ" : "AV")</button>
+                        @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "ON" : "OFF")</button>
             </div>
         }
 
-        <a href="grupp/ny" class="new-group">
+        <a href="group/new" class="new-group">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            Ny grupp
+            New group
         </a>
 
         @if (InactiveCount > 0)
         {
             <button type="button" class="show-inactive" aria-expanded="@(_showInactive ? "true" : "false")" @onclick="() => _showInactive = !_showInactive">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                @(_showInactive ? "Dölj inaktiva reläer" : $"Visa {InactiveCount} inaktiva reläer")
+                @(_showInactive ? "Hide inactive relays" : $"Show {InactiveCount} inactive relays")
             </button>
         }
     </main>
@@ -173,7 +173,7 @@
         get
         {
             var age = Clock.UtcNow - (State.LastContactUtc?.UtcDateTime ?? Clock.UtcNow);
-            return age < TimeSpan.FromMinutes(1) ? "nyss" : $"för {(int)age.TotalMinutes} min sedan";
+            return age < TimeSpan.FromMinutes(1) ? "just now" : $"{(int)age.TotalMinutes} min ago";
         }
     }
 
@@ -210,7 +210,7 @@
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
         _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
 
-        // The newest "off" event per relay, for "Av sedan i går · Alex".
+        // The newest "off" event per relay, for "Off since yesterday · Alex".
         var lastOffIds = await db.EventLog.AsNoTracking()
             .Where(e => e.Action == EventActions.Off && e.RelayId != null)
             .GroupBy(e => e.RelayId)
@@ -250,17 +250,17 @@
 
         if (email == _user?.Email)
         {
-            return "du";
+            return "you";
         }
 
         if (email == EventActors.Schedule)
         {
-            return "schema";
+            return "schedule";
         }
 
         if (email == EventActors.AutoOff)
         {
-            return "auto-av";
+            return "auto-off";
         }
 
         return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
@@ -298,14 +298,14 @@
         catch (BoardNotConnectedException)
         {
             _failedGroupId = groupId;
-            _groupError = "Kortet svarar inte. Försök igen.";
+            _groupError = "The board isn't responding. Try again.";
         }
         catch (Exception ex)
         {
             // An exception that leaves the handler would end the page's live connection.
             Log.LogError(ex, "Starting or stopping group {GroupId} failed", groupId);
             _failedGroupId = groupId;
-            _groupError = "Något gick fel. Försök igen.";
+            _groupError = "Something went wrong. Try again.";
         }
         finally
         {
