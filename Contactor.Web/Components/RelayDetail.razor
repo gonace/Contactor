@@ -1,13 +1,13 @@
 @page "/rele/{Id:int}"
 @implements IDisposable
+@using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
-@using Contactor.Vm201
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
-@inject Vm201Client Board
+@inject IRelayBoard Board
 @inject RelayControl Control
 @inject RelaySettingsHandler Settings
 @inject SchedulesHandler Schedules
@@ -173,7 +173,7 @@
     [Parameter]
     public int Id { get; set; }
 
-    private bool IsOn => Id is >= 1 and <= Vm201Channel.Count && Board.State.IsOn(Id);
+    private bool IsOn => Id is >= 1 and <= Relay.Count && Board.State.IsOn(Id);
 
     private string StatusSentence
     {
@@ -274,7 +274,7 @@
                 await Control.TurnOnAsync(Id, _user.Email, CancellationToken.None);
             }
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             _toggleFailed = true;
             _inGroup = false;
@@ -332,7 +332,7 @@
         }
     }
 
-    private void OnBoardChanged(object? sender, Vm201State state)
+    private void OnBoardChanged(object? sender, BoardState state)
     {
         _ = RefreshAsync(reload: false);
     }

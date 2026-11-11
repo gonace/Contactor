@@ -1,14 +1,14 @@
 @page "/"
 @implements IDisposable
+@using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
-@using Contactor.Vm201
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
-@inject Vm201Client Board
+@inject IRelayBoard Board
 @inject RelayControl Control
 @inject RelayChanges Changes
 @inject CurrentUser CurrentUser
@@ -157,12 +157,12 @@
     private int? _failedRelayId;
     private bool _inGroup;
 
-    private Vm201State State => Board.State;
+    private BoardState State => Board.State;
 
     // A group counts as one, and its relays aren't listed on their own.
     private int ActiveCount => _relays.Count(r => r.IsActive) + _groups.Count;
 
-    private int OnCount => _relays.Count(r => r.IsActive && State.IsOn(r.Id)) + _groups.Count(g => (State.Outputs & g.Mask) != 0);
+    private int OnCount => _relays.Count(r => r.IsActive && State.IsOn(r.Id)) + _groups.Count(g => State.Relays.Overlaps(g.Mask));
 
     private int InactiveCount => _relays.Count(r => !r.IsActive);
 
@@ -295,7 +295,7 @@
                 await Sequencer.StartGroupAsync(groupId, _user.Email, CancellationToken.None);
             }
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             _failedGroupId = groupId;
             _groupError = "Kortet svarar inte. Försök igen.";
@@ -333,7 +333,7 @@
         {
             await command();
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             _failedRelayId = failedRelayId;
             _allOffFailed = failedRelayId is null;
@@ -350,7 +350,7 @@
     }
 
     // Both events come from other threads (the board's read loop, another person's circuit).
-    private void OnBoardChanged(object? sender, Vm201State state)
+    private void OnBoardChanged(object? sender, BoardState state)
     {
         _ = RefreshAsync(reload: false);
     }

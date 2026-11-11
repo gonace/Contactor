@@ -1,6 +1,6 @@
+using Contactor.Boards.Vm201;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Contactor.Vm201;
 
 namespace Contactor.Tests.Vm201;
 

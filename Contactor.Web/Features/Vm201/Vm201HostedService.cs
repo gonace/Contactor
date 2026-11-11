@@ -1,8 +1,9 @@
 using System.Text.Json;
+using Contactor.Boards;
+using Contactor.Boards.Vm201;
+using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Contactor.Vm201;
-using Contactor.Web.Persistence;
 
 namespace Contactor.Web.Features.Vm201;
 
@@ -91,7 +92,7 @@ public sealed partial class Vm201HostedService : BackgroundService
         {
             // Stopping.
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             // Lost the connection before the command went out: try again on the next connection.
             Volatile.Write(ref _boardTimersHandled, 0);

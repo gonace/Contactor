@@ -1,14 +1,14 @@
 @page "/grupp/{Id:int}"
 @implements IDisposable
+@using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
-@using Contactor.Vm201
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
-@inject Vm201Client Board
+@inject IRelayBoard Board
 @inject GroupsHandler Groups
 @inject GroupSequencer Sequencer
 @inject EventsHandler Events
@@ -141,7 +141,7 @@
                     {
                         <p class="hint">Stäng av gruppen för att ändra vilka reläer som ingår eller deras ordning.</p>
                     }
-                    else if (_members.Count < Vm201Channel.Count && AddableRelays.Any())
+                    else if (_members.Count < Relay.Count && AddableRelays.Any())
                     {
                         <div class="add">
                             <label for="add-relay" class="visually-hidden">Relä att lägga till</label>
@@ -292,7 +292,7 @@
     [Parameter]
     public int Id { get; set; }
 
-    private Vm201State State => Board.State;
+    private BoardState State => Board.State;
 
     private bool GroupOn => _group is not null && _group.IsOn(State);
 
@@ -300,7 +300,7 @@
     private bool CanChangeMembers => _group is not null
         && _group.Runtime.Phase == GroupPhases.Idle
         && State.IsConnected
-        && (State.Outputs & MaskOf(_group.Members.Select(m => m.RelayId).Concat(_members.Select(m => m.RelayId)))) == 0;
+        && !State.Relays.Overlaps(ChannelMask.Of(_group.Members.Select(m => m.RelayId).Concat(_members.Select(m => m.RelayId))));
 
     // One relay at a time follows the saved order; after a change, save first.
     private bool OrderChanged => _group is not null && !_group.Members.Select(m => m.RelayId).SequenceEqual(_members.Select(m => m.RelayId));
@@ -426,11 +426,6 @@
         return offered.Contains(current) ? offered : offered.Append(current).Order();
     }
 
-    private static byte MaskOf(IEnumerable<int> relayIds)
-    {
-        return relayIds.Aggregate((byte)0, (mask, id) => (byte)(mask | Vm201Channel.Mask(id)));
-    }
-
     private void Move(int index, int step)
     {
         var to = index + step;
@@ -520,7 +515,7 @@
                 await Sequencer.StartGroupAsync(Id, _user.Email, CancellationToken.None);
             }
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             _toggleError = "Kortet svarar inte. Försök igen.";
         }
@@ -552,7 +547,7 @@
                 _memberError = (relayId, refusal);
             }
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             _memberError = (relayId, "Kortet svarar inte. Försök igen.");
         }
@@ -653,7 +648,7 @@
         }
     }
 
-    private void OnBoardChanged(object? sender, Vm201State state)
+    private void OnBoardChanged(object? sender, BoardState state)
     {
         _ = RefreshAsync(reload: false);
     }

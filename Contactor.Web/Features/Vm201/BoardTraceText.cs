@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using Contactor.Vm201;
+using Contactor.Boards.Vm201;
 
 namespace Contactor.Web.Features.Vm201;
 

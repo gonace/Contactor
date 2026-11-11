@@ -1,6 +1,7 @@
+using Contactor.Boards;
+using Contactor.Boards.Vm201;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Contactor.Vm201;
 
 namespace Contactor.Tests.Vm201;
 
@@ -49,7 +50,7 @@ public sealed class Vm201ClientTests
         await WaitUntilAsync(() => simulator.DeniedLoginCount >= 2);
 
         Assert.False(run.Client.State.IsConnected);
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => run.Client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -144,7 +145,7 @@ public sealed class Vm201ClientTests
         simulator.DropConnections();
         await lost.Task.WaitAsync(WaitTimeout, TestContext.Current.CancellationToken);
         Assert.False(run.Client.State.IsConnected);
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => run.Client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
 
         // Changed while the client was away; the board's status after the new login is the truth.
         await simulator.SetOutputsAsync(0x02);
@@ -203,10 +204,10 @@ public sealed class Vm201ClientTests
     {
         var client = CreateClient(port: 1);
 
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => client.TurnOffAsync(0x01, TestContext.Current.CancellationToken));
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => client.RequestStatusAsync(TestContext.Current.CancellationToken));
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => client.DisableBoardTimersAsync(0xFF, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.TurnOffAsync(0x01, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.RequestStatusAsync(TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.DisableBoardTimersAsync(0xFF, TestContext.Current.CancellationToken));
     }
 
     [Fact]

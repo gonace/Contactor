@@ -1,20 +1,20 @@
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Relays;
 
 /// <summary>
 /// Turns relays on and off for a person: sends the command to the board first, and only once it went out records
 /// who did it (<see cref="RelayRuntime"/>, auto-off time) and logs the event. If the board is not connected the
-/// command fails with <see cref="Vm201NotConnectedException"/> and nothing is recorded. A relay in a group is only
+/// command fails with <see cref="BoardNotConnectedException"/> and nothing is recorded. A relay in a group is only
 /// turned on and off through its group (<see cref="GroupSequencer"/>), which keeps the group's order and interlock.
 /// </summary>
 public sealed class RelayControl
 {
-    private readonly Vm201Client _client;
+    private readonly IRelayBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
@@ -22,14 +22,14 @@ public sealed class RelayControl
     private readonly GroupSequencer _groups;
 
     public RelayControl(
-        Vm201Client client,
+        IRelayBoard board,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         RelayChanges changes,
         ExpectedChanges expected,
         GroupSequencer groups)
     {
-        _client = client;
+        _board = board;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
@@ -39,11 +39,11 @@ public sealed class RelayControl
 
     public async Task TurnOnAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
-        var mask = Vm201Channel.Mask(relayId);
+        var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         _expected.Expect(mask, on: true);
-        await _client.TurnOnAsync(mask, cancellationToken);
+        await _board.TurnOnAsync(mask, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -59,11 +59,11 @@ public sealed class RelayControl
 
     public async Task TurnOffAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
-        var mask = Vm201Channel.Mask(relayId);
+        var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         _expected.Expect(mask, on: false);
-        await _client.TurnOffAsync(mask, cancellationToken);
+        await _board.TurnOffAsync(mask, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -80,17 +80,17 @@ public sealed class RelayControl
     public async Task TurnAllOffAsync(string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        if (!_client.State.IsConnected)
+        if (!_board.State.IsConnected)
         {
-            throw new Vm201NotConnectedException();
+            throw new BoardNotConnectedException();
         }
 
-        var single = (byte)(Vm201Channel.All & ~await _groups.MemberMaskAsync(cancellationToken));
-        var wasOn = (byte)(_client.State.Outputs & single);
-        if (single != 0)
+        var single = _board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(cancellationToken));
+        var wasOn = _board.State.Relays & single;
+        if (!single.IsEmpty)
         {
             _expected.Expect(wasOn, on: false);
-            await _client.TurnOffAsync(single, cancellationToken);
+            await _board.TurnOffAsync(single, cancellationToken);
         }
 
         var now = _clock.UtcNow;
@@ -100,19 +100,16 @@ public sealed class RelayControl
             Clear(runtime);
         }
 
-        for (var relayId = 1; relayId <= Vm201Channel.Count; relayId++)
+        foreach (var relayId in wasOn.Channels)
         {
-            if ((wasOn & Vm201Channel.Mask(relayId)) != 0)
+            db.EventLog.Add(new EventLogEntry
             {
-                db.EventLog.Add(new EventLogEntry
-                {
-                    TimestampUtc = now,
-                    RelayId = relayId,
-                    Actor = userEmail,
-                    Action = EventActions.Off,
-                    Details = """{"allOff":true}""",
-                });
-            }
+                TimestampUtc = now,
+                RelayId = relayId,
+                Actor = userEmail,
+                Action = EventActions.Off,
+                Details = """{"allOff":true}""",
+            });
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -120,9 +117,9 @@ public sealed class RelayControl
         await _groups.StopAllAsync(userEmail, cancellationToken);
     }
 
-    private async Task EnsureNotInGroupAsync(byte mask, CancellationToken cancellationToken)
+    private async Task EnsureNotInGroupAsync(ChannelMask mask, CancellationToken cancellationToken)
     {
-        if ((await _groups.MemberMaskAsync(cancellationToken) & mask) != 0)
+        if ((await _groups.MemberMaskAsync(cancellationToken)).Overlaps(mask))
         {
             throw new RelayInGroupException();
         }
@@ -151,7 +148,7 @@ public sealed class RelayControl
 /// <summary>
 /// Tells open pages that relay data or the event log changed (someone turned a relay on or off, something happened
 /// at the board), so every phone shows it right away. The board's own status comes from
-/// <see cref="Vm201Client.StateChanged"/>.
+/// <see cref="IRelayBoard.StateChanged"/>.
 /// </summary>
 public sealed class RelayChanges
 {

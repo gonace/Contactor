@@ -1,3 +1,4 @@
+using Contactor.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Events;
 
@@ -16,7 +17,7 @@ public sealed class ExpectedChangesTests
     [Fact]
     public void Should_MatchEachRelayInTheMaskOnce()
     {
-        _expected.Expect(0b0000_0101, on: false);
+        _expected.Expect(new ChannelMask(0b0000_0101), on: false);
 
         Assert.True(_expected.TryConsume(1, on: false, _time.GetUtcNow().UtcDateTime));
         Assert.True(_expected.TryConsume(3, on: false, _time.GetUtcNow().UtcDateTime));
@@ -27,7 +28,7 @@ public sealed class ExpectedChangesTests
     [Fact]
     public void Should_NotMatchTheOppositeChange()
     {
-        _expected.Expect(0b0000_0001, on: true);
+        _expected.Expect(new ChannelMask(0b0000_0001), on: true);
 
         Assert.False(_expected.TryConsume(1, on: false, _time.GetUtcNow().UtcDateTime));
         Assert.True(_expected.TryConsume(1, on: true, _time.GetUtcNow().UtcDateTime));
@@ -36,10 +37,10 @@ public sealed class ExpectedChangesTests
     [Fact]
     public void Should_ForgetAfterFiveSeconds()
     {
-        _expected.Expect(0b0000_0001, on: true);
+        _expected.Expect(new ChannelMask(0b0000_0001), on: true);
 
         _time.Now += ExpectedChanges.Lifetime - TimeSpan.FromMilliseconds(1);
-        _expected.Expect(0b0000_0010, on: true);
+        _expected.Expect(new ChannelMask(0b0000_0010), on: true);
         _time.Now += TimeSpan.FromMilliseconds(1);
 
         Assert.False(_expected.TryConsume(1, on: true, _time.GetUtcNow().UtcDateTime));
@@ -49,7 +50,7 @@ public sealed class ExpectedChangesTests
     [Fact]
     public void Should_Match_WhenTheStatusArrivedInTimeButIsHandledLater()
     {
-        _expected.Expect(0b0000_0001, on: true);
+        _expected.Expect(new ChannelMask(0b0000_0001), on: true);
         var received = _time.GetUtcNow().UtcDateTime + TimeSpan.FromSeconds(1);
 
         _time.Now += TimeSpan.FromMinutes(5);
@@ -60,7 +61,7 @@ public sealed class ExpectedChangesTests
     [Fact]
     public void Should_NotMatch_WhenTheStatusArrivedTooLate()
     {
-        _expected.Expect(0b0000_0001, on: true);
+        _expected.Expect(new ChannelMask(0b0000_0001), on: true);
 
         Assert.False(_expected.TryConsume(1, on: true, _time.GetUtcNow().UtcDateTime + ExpectedChanges.Lifetime));
     }
@@ -68,7 +69,7 @@ public sealed class ExpectedChangesTests
     [Fact]
     public void Should_ExpectNothing_ForAnEmptyMask()
     {
-        _expected.Expect(0, on: false);
+        _expected.Expect(ChannelMask.None, on: false);
 
         for (var relayId = 1; relayId <= 8; relayId++)
         {

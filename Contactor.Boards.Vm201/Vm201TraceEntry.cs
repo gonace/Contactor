@@ -1,4 +1,4 @@
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>What happened on the board connection.</summary>
 public enum Vm201TraceKind

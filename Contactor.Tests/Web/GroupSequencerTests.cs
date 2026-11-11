@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Contactor.Vm201;
+using Contactor.Boards;
+using Contactor.Boards.Vm201;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Contactor.Tests.Web;
 
@@ -127,7 +128,7 @@ public sealed class GroupSequencerTests
         rig.Simulator.DropConnections();
         await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
 
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => rig.Groups.StartGroupAsync(id, John, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Groups.StartGroupAsync(id, John, Cancel));
         Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action == EventActions.GroupOn);
     }
 

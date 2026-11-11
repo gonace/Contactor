@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Schedules;
@@ -179,7 +179,7 @@ public sealed class GroupTextTests
         Assert.False(FanHeater.IsOn(State()));
     }
 
-    private static string Status(GroupView group, Vm201State state, RelayOutlook? outlook = null) =>
+    private static string Status(GroupView group, BoardState state, RelayOutlook? outlook = null) =>
         GroupStatusText.For(group, state, Now, utc => utc, email => email switch
         {
             "john@example.com" => "John",
@@ -187,8 +187,7 @@ public sealed class GroupTextTests
             _ => email,
         }, outlook);
 
-    private static Vm201State State(params int[] on) =>
-        new(true, on.Aggregate((byte)0, (mask, id) => (byte)(mask | Vm201Channel.Mask(id))), 0, false, Now);
+    private static BoardState State(params int[] on) => new(true, ChannelMask.Of(on), ChannelMask.None, Now);
 
     private static EventLogEntry Entry(string actor, string action, string? details) =>
         new() { TimestampUtc = Now, GroupId = 1, RelayId = 1, Actor = actor, Action = action, Details = details };

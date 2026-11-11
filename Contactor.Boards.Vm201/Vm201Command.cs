@@ -1,4 +1,4 @@
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// Command bytes of the VM201 TCP protocol (port 9760).

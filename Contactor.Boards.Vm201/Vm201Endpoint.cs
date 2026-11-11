@@ -1,4 +1,4 @@
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>Where the board is: a host name or IP address and a TCP port (9760 on a VM201).</summary>
 public sealed record Vm201Endpoint(string Host, int Port)

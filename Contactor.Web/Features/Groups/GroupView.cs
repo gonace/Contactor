@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
@@ -26,13 +26,13 @@ public sealed record GroupView(
     public string Chain => "RELÄ " + string.Join(" → ", Members.Select(m => m.RelayId));
 
     /// <summary>The relays of the group, as a channel mask.</summary>
-    public byte Mask => Members.Aggregate((byte)0, (mask, m) => (byte)(mask | Vm201Channel.Mask(m.RelayId)));
+    public ChannelMask Mask => ChannelMask.Of(Members.Select(m => m.RelayId));
 
     /// <summary>
     /// Whether the group counts as on: starting, or any relay on and not on its way down. The big button then reads
     /// PÅ, and a press stops the group; during a run-on it reads AV, and a press starts it again.
     /// </summary>
-    public bool IsOn(Vm201State state)
+    public bool IsOn(BoardState state)
     {
         ArgumentNullException.ThrowIfNull(state);
         return Runtime.Phase == GroupPhases.Starting
@@ -48,7 +48,7 @@ public static class GroupStatusText
     /// <param name="outlook">What the group's schedules say: when a run ends, or when the next one starts.</param>
     public static string For(
         GroupView group,
-        Vm201State state,
+        BoardState state,
         DateTime nowUtc,
         Func<DateTime, DateTime> toLocal,
         Func<string?, string?> nameOf,

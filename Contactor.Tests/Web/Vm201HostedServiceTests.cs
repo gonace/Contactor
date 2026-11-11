@@ -1,13 +1,14 @@
+using Contactor.Boards;
+using Contactor.Boards.Vm201;
+using Contactor.Web;
+using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Relays;
+using Contactor.Web.Features.Vm201;
+using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Contactor.Vm201;
-using Contactor.Web.Features.Groups;
-using Contactor.Web;
-using Contactor.Web.Features.Events;
-using Contactor.Web.Features.Relays;
-using Contactor.Web.Persistence;
-using Contactor.Web.Features.Vm201;
 
 namespace Contactor.Tests.Web;
 
@@ -82,6 +83,21 @@ public sealed class Vm201HostedServiceTests
 
         Assert.Equal(0x0F, simulator.TimerMask);
         Assert.Equal(0, await CountEventsAsync(database));
+    }
+
+    [Fact]
+    public async Task Should_RegisterOneBoard_WithTheRelaysTheDatabaseHolds()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var database = CreateDatabase(simulator, disableBoardTimers: false);
+
+        var board = database.Services.GetRequiredService<IRelayBoard>();
+
+        // One instance, so the client has exactly one subscriber passing its state on.
+        Assert.Same(database.Services.GetRequiredService<Vm201Board>(), board);
+        Assert.Same(board, database.Services.GetRequiredService<IRelayBoard>());
+        Assert.Equal(Relay.Count, board.Capabilities.RelayCount);
     }
 
     private static TestDatabase CreateDatabase(Vm201Simulator simulator, bool disableBoardTimers)

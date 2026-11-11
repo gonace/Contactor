@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// A decoded VM201 packet: the command byte and its data, without framing.

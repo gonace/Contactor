@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Web.Features.Groups;
@@ -14,13 +14,13 @@ public sealed record GroupEvent(string Action, int? RelayId, string Actor, strin
 /// <summary>What to send to the board and log after a planning step. OFF goes first, so a relay never runs alone below a gap.</summary>
 public sealed class GroupCommands
 {
-    public byte Off { get; set; }
+    public ChannelMask Off { get; set; }
 
-    public byte On { get; set; }
+    public ChannelMask On { get; set; }
 
     public List<GroupEvent> Events { get; } = [];
 
-    public bool IsEmpty => Off == 0 && On == 0 && Events.Count == 0;
+    public bool IsEmpty => Off.IsEmpty && On.IsEmpty && Events.Count == 0;
 }
 
 /// <summary>
@@ -42,7 +42,7 @@ public static class GroupPlanner
     public static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>How many relays from the top are on without a gap.</summary>
-    public static int Level(IReadOnlyList<GroupMemberInfo> members, Vm201State state)
+    public static int Level(IReadOnlyList<GroupMemberInfo> members, BoardState state)
     {
         ArgumentNullException.ThrowIfNull(members);
         ArgumentNullException.ThrowIfNull(state);
@@ -56,7 +56,7 @@ public static class GroupPlanner
     }
 
     /// <summary>Whether any relay of the group is on.</summary>
-    public static bool AnyOn(IReadOnlyList<GroupMemberInfo> members, Vm201State state)
+    public static bool AnyOn(IReadOnlyList<GroupMemberInfo> members, BoardState state)
     {
         ArgumentNullException.ThrowIfNull(members);
         ArgumentNullException.ThrowIfNull(state);
@@ -66,7 +66,7 @@ public static class GroupPlanner
     /// <summary>The next step for one group. Updates <paramref name="runtime"/> and adds to <paramref name="commands"/>.</summary>
     public static void Plan(
         IReadOnlyList<GroupMemberInfo> members,
-        Vm201State state,
+        BoardState state,
         GroupRuntime runtime,
         DateTime now,
         GroupCommands commands)
@@ -82,7 +82,7 @@ public static class GroupPlanner
         }
 
         bool On(int position) => state.IsOn(members[position - 1].RelayId);
-        byte Mask(int position) => Vm201Channel.Mask(members[position - 1].RelayId);
+        ChannelMask Mask(int position) => ChannelMask.Of(members[position - 1].RelayId);
         var level = Level(members, state);
 
         // 1. The interlock, before anything else.
@@ -266,7 +266,7 @@ public static class GroupPlanner
     /// </summary>
     public static bool Start(
         IReadOnlyList<GroupMemberInfo> members,
-        Vm201State state,
+        BoardState state,
         GroupRuntime runtime,
         string actor,
         int? maxOnMinutes,
@@ -291,7 +291,7 @@ public static class GroupPlanner
         ClearPending(runtime);
         if (overtaken is { } position)
         {
-            commands.On |= Vm201Channel.Mask(members[position - 1].RelayId);
+            commands.On |= ChannelMask.Of(members[position - 1].RelayId);
             SetPending(runtime, position, on: true, now);
         }
 
@@ -310,7 +310,7 @@ public static class GroupPlanner
     /// <summary>Stops the whole group, from the bottom, with run-on times. Returns false when there is nothing to stop.</summary>
     public static bool Stop(
         IReadOnlyList<GroupMemberInfo> members,
-        Vm201State state,
+        BoardState state,
         GroupRuntime runtime,
         string actor,
         DateTime now,
@@ -339,7 +339,7 @@ public static class GroupPlanner
         commands.Events.Add(new GroupEvent(EventActions.GroupOff, null, actor, null));
         if (overtaken is { } position)
         {
-            commands.Off |= Vm201Channel.Mask(members[position - 1].RelayId);
+            commands.Off |= ChannelMask.Of(members[position - 1].RelayId);
             SetPending(runtime, position, on: false, now);
             return true;
         }
@@ -354,7 +354,7 @@ public static class GroupPlanner
     /// </summary>
     public static string? MemberOn(
         IReadOnlyList<GroupMemberInfo> members,
-        Vm201State state,
+        BoardState state,
         GroupRuntime runtime,
         int position,
         string actor,
@@ -389,7 +389,7 @@ public static class GroupPlanner
             return null;
         }
 
-        commands.On |= Vm201Channel.Mask(member.RelayId);
+        commands.On |= ChannelMask.Of(member.RelayId);
         runtime.Phase = GroupPhases.Idle;
         runtime.TargetLevel = Math.Max(Level(members, state), position);
         runtime.NextStepAtUtc = null;
@@ -411,7 +411,7 @@ public static class GroupPlanner
     /// </summary>
     public static void MemberOff(
         IReadOnlyList<GroupMemberInfo> members,
-        Vm201State state,
+        BoardState state,
         GroupRuntime runtime,
         int position,
         string actor,
@@ -434,17 +434,17 @@ public static class GroupPlanner
         runtime.TargetLevel = position - 1;
         runtime.NextStepAtUtc = null;
         ClearPending(runtime);
-        byte below = 0;
+        var below = ChannelMask.None;
         for (var p = position + 1; p <= members.Count; p++)
         {
             if (state.IsOn(members[p - 1].RelayId))
             {
-                below |= Vm201Channel.Mask(members[p - 1].RelayId);
+                below |= ChannelMask.Of(members[p - 1].RelayId);
             }
         }
 
         commands.Events.Add(new GroupEvent(EventActions.Off, member.RelayId, actor, null));
-        if (below != 0)
+        if (!below.IsEmpty)
         {
             // The ones below at once; this one runs on once they are confirmed off.
             commands.Off |= below;

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// A packet as one log line: its command letter and its bytes in hex, e.g. "O 02 06 4F 01 A8 03". A user name or
