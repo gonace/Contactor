@@ -79,14 +79,30 @@ public sealed class RelayCountTests
         // Turned on at the board itself: the next step turns it off again.
         await board.TurnOnAsync(ChannelMask.Of(4), Cancel);
         await sequencer.StepAsync(Cancel);
-
         Assert.True(board.State.Relays.IsEmpty);
+        await sequencer.StepAsync(Cancel); // as on the board's confirmation
+
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             var trip = await db.EventLog.SingleAsync(e => e.Action == EventActions.InterlockTrip, Cancel);
             Assert.Equal((groupId, EventActors.System), (trip.GroupId!.Value, trip.Actor));
             Assert.Equal("""{"missing":"Heat","off":["Fan"]}""", trip.Details);
         }
+
+        // A relay that won't drop: sent again on every step, logged once.
+        board.IgnoreOff = true;
+        await board.TurnOnAsync(ChannelMask.Of(4), Cancel);
+        await sequencer.StepAsync(Cancel);
+        await sequencer.StepAsync(Cancel);
+        await sequencer.StepAsync(Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.Equal(2, await db.EventLog.CountAsync(e => e.Action == EventActions.InterlockTrip, Cancel));
+        }
+
+        board.IgnoreOff = false;
+        await sequencer.StepAsync(Cancel);
+        Assert.True(board.State.Relays.IsEmpty);
 
         var view = Assert.Single(await groups.ListAsync(Cancel));
         Assert.Equal(5, view.MissingRelay(board.Capabilities.RelayCount));

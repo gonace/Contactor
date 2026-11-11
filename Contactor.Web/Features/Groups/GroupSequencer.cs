@@ -30,6 +30,9 @@ public sealed partial class GroupSequencer : BackgroundService
     private bool _wasConnected;
     private int _reconnected;
 
+    // Groups with a relay the board doesn't have whose shut-off is logged and not yet confirmed; under _gate.
+    private readonly HashSet<int> _shutOffLogged = [];
+
     public GroupSequencer(
         IRelayBoard board,
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -277,8 +280,13 @@ public sealed partial class GroupSequencer : BackgroundService
                     runtime.OnSinceUtc = null;
                     runtime.AutoOffAtUtc = null;
                     runtime.TurnedOnBy = null;
-                    if (on.Count > 0)
+                    if (on.Count == 0)
                     {
+                        _shutOffLogged.Remove(group.Id);
+                    }
+                    else if (_shutOffLogged.Add(group.Id))
+                    {
+                        // Sent again on every step until the board confirms it, but logged once.
                         // "Fan turned off because Heat was off": the relay the board doesn't have can't be on.
                         var missing = group.Members.Where(m => m.RelayId > _board.Capabilities.RelayCount).OrderBy(m => m.Position).First();
                         var details = JsonSerializer.Serialize(new { missing = missing.RoleName, off = on.Select(m => m.RoleName) });

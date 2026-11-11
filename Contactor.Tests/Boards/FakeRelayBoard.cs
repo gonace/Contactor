@@ -37,8 +37,17 @@ internal sealed class FakeRelayBoard : IRelayBoard
         return SwitchAsync(relays, on: true);
     }
 
+    /// <summary>When set, OFF commands are accepted but change nothing, like a relay that won't drop.</summary>
+    public bool IgnoreOff { get; set; }
+
     public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
+        if (IgnoreOff)
+        {
+            EnsureConnected();
+            return Task.CompletedTask;
+        }
+
         return SwitchAsync(relays, on: false);
     }
 
