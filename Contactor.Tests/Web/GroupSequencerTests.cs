@@ -334,7 +334,7 @@ public sealed class GroupSequencerTests
             new RelayGroupMember { GroupId = id, RelayId = 3, Position = 2, RoleName = "Same step" },
             new RelayGroupMember { GroupId = id, RelayId = 3, Position = 3, RoleName = "A", StartDelaySec = 0 },
             new RelayGroupMember { GroupId = id, RelayId = 3, Position = 3, RoleName = "A", RunOnSec = 1801 },
-            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 9, RoleName = "A" },
+            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 65, RoleName = "A" },
         })
         {
             await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);

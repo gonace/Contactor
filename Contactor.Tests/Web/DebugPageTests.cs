@@ -21,7 +21,7 @@ public sealed class DebugPageTests
     public async Task Should_KeepTheSettingPerPerson()
     {
         await using var database = TestDatabase.Create((services, _) => services.AddSingleton<BoardTrafficSetting>());
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             db.Users.AddRange(new User { Email = John, DisplayName = "John" }, new User { Email = Jane, DisplayName = "Jane" });

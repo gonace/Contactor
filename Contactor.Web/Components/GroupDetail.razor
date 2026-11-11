@@ -141,7 +141,7 @@
                     {
                         <p class="hint">Turn the group off to change its relays or their order.</p>
                     }
-                    else if (_members.Count < Relay.Count && AddableRelays.Any())
+                    else if (_members.Count < Board.Capabilities.RelayCount && AddableRelays.Any())
                     {
                         <div class="add">
                             <label for="add-relay" class="visually-hidden">Relay to add</label>

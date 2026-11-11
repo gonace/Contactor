@@ -93,7 +93,7 @@ public sealed class GroupsHandler
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var taken = await db.RelayGroupMembers.Select(m => m.RelayId).ToListAsync(cancellationToken);
         var scheduled = await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken);
-        return await db.Relays.AsNoTracking()
+        return await RelaysOnBoard(db)
             .Where(r => !taken.Contains(r.Id) && !scheduled.Contains(r.Id))
             .OrderBy(r => r.SortOrder).ThenBy(r => r.Id)
             .ToListAsync(cancellationToken);
@@ -107,8 +107,15 @@ public sealed class GroupsHandler
             .Select(m => new { m.RelayId, m.Group!.Name })
             .ToDictionaryAsync(m => m.RelayId, m => m.Name, cancellationToken);
         var scheduled = (await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
-        var relays = await db.Relays.AsNoTracking().OrderBy(r => r.Id).ToListAsync(cancellationToken);
+        var relays = await RelaysOnBoard(db).OrderBy(r => r.Id).ToListAsync(cancellationToken);
         return [.. relays.Select(r => new GroupCandidate(r.Id, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id)))];
+    }
+
+    // The board's relays: a database can hold more, kept from a board that had more, and those aren't offered.
+    private IQueryable<Relay> RelaysOnBoard(ContactorDbContext db)
+    {
+        var count = _board.Capabilities.RelayCount;
+        return db.Relays.AsNoTracking().Where(r => r.Id <= count);
     }
 
     private static GroupView ToView(RelayGroup group, GroupRuntime? runtime)
@@ -133,7 +140,7 @@ public sealed class GroupsHandler
     private async Task<(int? Id, string? Error)> CreateCoreAsync(GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var relays = await db.Relays.AsNoTracking().ToDictionaryAsync(r => r.Id, cancellationToken);
+        var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
         var error = await ValidateAsync(db, draft, relays, groupId: null, cancellationToken)
             ?? AllOff(draft.Members.Select(m => m.RelayId), relays);
         if (error is not null)
@@ -182,7 +189,7 @@ public sealed class GroupsHandler
             return "The group no longer exists.";
         }
 
-        var relays = await db.Relays.AsNoTracking().ToDictionaryAsync(r => r.Id, cancellationToken);
+        var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
         var error = await ValidateAsync(db, draft, relays, groupId, cancellationToken);
         if (error is not null)
         {
@@ -246,7 +253,7 @@ public sealed class GroupsHandler
             return null;
         }
 
-        var relays = await db.Relays.AsNoTracking().ToDictionaryAsync(r => r.Id, cancellationToken);
+        var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
         var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
         if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.Members.Select(m => m.RelayId), relays) is not null)
         {
@@ -293,7 +300,7 @@ public sealed class GroupsHandler
             return $"Choose at least {RelayGroup.MinMembers} relays.";
         }
 
-        if (draft.Members.Count > Relay.Count || draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
+        if (draft.Members.Count > relays.Count || draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
         {
             return "A relay can only be in the group once.";
         }

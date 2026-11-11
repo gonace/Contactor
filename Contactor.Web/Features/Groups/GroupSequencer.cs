@@ -248,6 +248,12 @@ public sealed partial class GroupSequencer : BackgroundService
             List<(int GroupId, GroupEvent Event)> events = [];
             foreach (var group in groups)
             {
+                // A group with a relay the board doesn't have (left from a board with more relays) can't run.
+                if (group.Members.Any(m => m.RelayId > _board.Capabilities.RelayCount))
+                {
+                    continue;
+                }
+
                 if (!runtimes.TryGetValue(group.Id, out var runtime))
                 {
                     runtime = new GroupRuntime { GroupId = group.Id };

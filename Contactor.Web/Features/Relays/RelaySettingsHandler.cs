@@ -18,11 +18,13 @@ public sealed class RelaySettingsHandler
     public static readonly IReadOnlyList<int?> Limits = [60, 120, 240, null];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
+    private readonly IRelayBoard _board;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
-    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, LocalClock clock, RelayChanges changes)
+    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, IRelayBoard board, LocalClock clock, RelayChanges changes)
     {
+        _board = board;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
@@ -31,7 +33,7 @@ public sealed class RelaySettingsHandler
     /// <summary>The relay's settings, or null for an id the board doesn't have.</summary>
     public async Task<RelaySettings?> GetAsync(int relayId, CancellationToken cancellationToken)
     {
-        if (relayId is < 1 or > Relay.Count)
+        if (relayId < 1 || relayId > _board.Capabilities.RelayCount)
         {
             return null;
         }
@@ -71,7 +73,9 @@ public sealed class RelaySettingsHandler
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var relay = await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
+        var relay = settings.Id > _board.Capabilities.RelayCount
+            ? null
+            : await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
         if (relay is null)
         {
             return "The relay doesn't exist.";

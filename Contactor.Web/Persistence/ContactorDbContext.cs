@@ -1,3 +1,4 @@
+using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -75,7 +76,7 @@ public sealed class ContactorDbContext : DbContext
     {
         member.ToTable("RelayGroupMember", t =>
         {
-            t.HasCheckConstraint("CK_RelayGroupMember_Position", $"\"Position\" BETWEEN 1 AND {Relay.Count}");
+            t.HasCheckConstraint("CK_RelayGroupMember_Position", $"\"Position\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
             t.HasCheckConstraint(
                 "CK_RelayGroupMember_StartDelaySec",
                 $"\"StartDelaySec\" BETWEEN {RelayGroupMember.MinStartDelaySec} AND {RelayGroupMember.MaxStartDelaySec}");
@@ -102,7 +103,7 @@ public sealed class ContactorDbContext : DbContext
 
     private static void ConfigureRelay(EntityTypeBuilder<Relay> relay)
     {
-        relay.ToTable("Relay", t => t.HasCheckConstraint("CK_Relay_Id", $"\"Id\" BETWEEN 1 AND {Relay.Count}"));
+        relay.ToTable("Relay", t => t.HasCheckConstraint("CK_Relay_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         relay.Property(r => r.Id).ValueGeneratedNever();
         relay.Property(r => r.Name).HasMaxLength(Relay.NameMaxLength);
         relay.HasMany(r => r.Schedules).WithOne(s => s.Relay).HasForeignKey(s => s.RelayId).OnDelete(DeleteBehavior.Restrict);

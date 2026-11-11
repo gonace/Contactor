@@ -13,7 +13,7 @@ public sealed class PersistenceTests
     {
         await using var database = TestDatabase.Create();
 
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         Assert.True(File.Exists(database.FilePath));
     }
@@ -23,7 +23,7 @@ public sealed class PersistenceTests
     {
         await using var database = TestDatabase.Create();
 
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         var relays = await db.Relays.OrderBy(r => r.Id).ToListAsync(Cancel);
@@ -40,7 +40,7 @@ public sealed class PersistenceTests
     public async Task Should_KeepExistingRows_WhenInitializedAgain()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             var relay = await db.Relays.SingleAsync(r => r.Id == 4, Cancel);
@@ -49,7 +49,7 @@ public sealed class PersistenceTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         await using var check = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(8, await check.Relays.CountAsync(Cancel));
@@ -63,7 +63,7 @@ public sealed class PersistenceTests
     public async Task Should_UseWalJournal()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         Assert.Equal("wal", await PragmaAsync(database.ConnectionString, "journal_mode"));
     }
@@ -72,7 +72,7 @@ public sealed class PersistenceTests
     public async Task Should_SetBusyTimeout_OnEveryConnection()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         await db.Database.OpenConnectionAsync(Cancel);
@@ -84,11 +84,11 @@ public sealed class PersistenceTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(9)]
+    [InlineData(65)]
     public async Task Should_RejectRelay_WhenIdIsNotABoardChannel(int id)
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         db.Relays.Add(new Relay { Id = id, Name = "Wrong" });
 
@@ -99,7 +99,7 @@ public sealed class PersistenceTests
     public async Task Should_RejectSchedule_WithoutDays()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         db.Schedules.Add(new Schedule { RelayId = 1, Days = ScheduleDays.None, CreatedBy = "john@example.com" });
 
@@ -110,7 +110,7 @@ public sealed class PersistenceTests
     public async Task Should_StoreScheduleTimesAsLocalHourAndMinute()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             db.Schedules.Add(new Schedule
@@ -140,7 +140,7 @@ public sealed class PersistenceTests
     public async Task Should_ReadTimesBackAsUtc()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         var timestamp = new DateTime(2026, 3, 29, 1, 30, 0, DateTimeKind.Utc);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {

@@ -150,7 +150,7 @@ The app talks to a relay board only through `IRelayBoard`, so another make of bo
 - `BoardCapabilities`: how many relays and inputs, and whether the board reports changes by itself.
 - `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
 - Board-specific features stay in the board's own project and its `Features/<Board>` folder in the web app: today the VM201's address and login (`BoardAddressHandler`), its own timers (`Vm201HostedService`) and the packet trace on the Debug screen.
-- The database holds `Relay.Count` relays (8, the VM201's).
+- The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
 
 ## The VM201 client (`Contactor.Boards.Vm201`)
 
@@ -172,7 +172,7 @@ The app talks to a relay board only through `IRelayBoard`, so another make of bo
 
 ```
 Relay
-  Id              int PK         1–8, seeded at start, never deleted
+  Id              int PK         1 to the board's relay count (at most 64), seeded at start, never deleted
   Name            text           e.g. "Fan heater – Lathe" (max 40 characters)
   IsActive        bool           false = hidden from the list by default
   MaxOnMinutes    int?           auto-off after a manual on; null = never. Default 120.
@@ -373,7 +373,7 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Englis
    - Icons are Font Awesome Free solid icons (CC BY 4.0), inlined as SVG in `GroupIcon.razor`; no icon font or script.
 5. **New group** (`/group/new`): a guide in 4 steps, "STEP n OF 4" with a progress bar, "Cancel" on the first step and "Back" after.
    1. "Name and icon": the name and the 8 icons (Fan, Heat, Light, Air, Paint, Pump, Tools, Power).
-   2. "Which relays?": all 8 relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X") or with schedules of its own ("Has its own schedules") can't be chosen. At least 2.
+   2. "Which relays?": all the board's relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X") or with schedules of its own ("Has its own schedules") can't be chosen. At least 2.
    3. "Order and rules": up/down, "Name in the group" for each relay (its name to begin with) and the waits between the steps.
    4. "Review and create": the card as it will look, and in plain words when it starts, when it stops, the interlock and the auto-off (2 h, changed on the group's page). "Create group" only works while every chosen relay is off.
 6. **Events** (`/events`)

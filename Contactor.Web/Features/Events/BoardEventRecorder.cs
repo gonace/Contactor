@@ -172,7 +172,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         DateTime receivedUtc,
         CancellationToken cancellationToken)
     {
-        for (var relayId = 1; relayId <= Relay.Count; relayId++)
+        for (var relayId = 1; relayId <= _board.Capabilities.RelayCount; relayId++)
         {
             var wasOn = before.Contains(relayId);
             var isOn = after.Contains(relayId);
