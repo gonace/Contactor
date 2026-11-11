@@ -1,0 +1,59 @@
+using Contactor.Boards;
+using Contactor.Boards.Vm201;
+using Contactor.Web.Features.Boards;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Contactor.Tests.Web;
+
+/// <summary>Choosing the board model with <c>Board:Type</c>.</summary>
+public sealed class BoardCatalogueTests
+{
+    [Theory]
+    [InlineData(null)]
+    [InlineData("vm201")]
+    [InlineData(" VM201 ")]
+    public void Should_RegisterTheVm201_WhenChosenOrNotSet(string? type)
+    {
+        using var services = Build(type);
+
+        Assert.Same(Vm201Model.Model, services.GetRequiredService<BoardModel>());
+        Assert.IsType<Vm201Board>(services.GetRequiredService<IRelayBoard>());
+        Assert.IsType<Vm201Connection>(services.GetRequiredService<IBoardConnection>());
+        Assert.IsType<Vm201Traffic>(services.GetRequiredService<IBoardTraffic>());
+    }
+
+    [Theory]
+    [InlineData("vm204")]
+    [InlineData("")]
+    public void Should_RefuseToStart_WithABoardItDoesNotKnow(string type)
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => Build(type));
+
+        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201.", error.Message);
+    }
+
+    [Fact]
+    public void Should_ListEachModelOnce_InLowerCase()
+    {
+        var ids = BoardCatalogue.All.Select(r => r.Model.Id).ToList();
+
+        Assert.Equal(ids.Distinct().Count(), ids.Count);
+        Assert.All(ids, id => Assert.Equal(id.ToLowerInvariant(), id));
+        Assert.NotNull(BoardCatalogue.Find(BoardCatalogue.DefaultType));
+    }
+
+    private static ServiceProvider Build(string? type)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1" })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddBoards(configuration);
+        return services.BuildServiceProvider();
+    }
+}

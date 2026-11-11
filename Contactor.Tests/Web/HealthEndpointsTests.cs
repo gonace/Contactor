@@ -17,8 +17,8 @@ public sealed class HealthEndpointsTests
         var health = await http.GetFromJsonAsync<HealthResponse>(HealthEndpoints.Path, Cancel);
 
         Assert.NotNull(health);
-        Assert.False(health.Vm201Connected);
-        Assert.Null(health.Vm201LastContactUtc);
+        Assert.False(health.BoardConnected);
+        Assert.Null(health.BoardLastContactUtc);
         Assert.Equal("0.0.0-dev", health.Version);
     }
 

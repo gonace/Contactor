@@ -45,11 +45,11 @@ Contactor.slnx
 global.json                 # SDK version and test runner (Microsoft.Testing.Platform)
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
-Contactor.Boards/           # What any relay board is to the app: IRelayBoard, BoardState, ChannelMask. No dependencies.
-Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and Vm201Board (its IRelayBoard). No web/EF.
+Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel. No dependencies.
+Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF.
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
-  Features/<Feature>/       # One folder per feature
+  Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
 Contactor.Simulator/      # Console app that runs Vm201Simulator on a port (development)
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
@@ -151,7 +151,11 @@ The app talks to a relay board only through `IRelayBoard`, so another make of bo
 - `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.
 - `BoardCapabilities`: how many relays and inputs, and whether the board reports changes by itself.
 - `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
-- Board-specific features stay in the board's own project and its `Features/<Board>` folder in the web app: today the VM201's address and login (`BoardAddressHandler`), its own timers (`Vm201HostedService`) and the packet trace on the Debug screen.
+- `IBoardConnection`: where the board is (`BoardEndpoint`) and its login (`BoardLogin`), with the defaults from the board's own settings, changeable while the app runs; `CheckLogin` says what the board can't take, and `RunAsync` keeps the connection open.
+- `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
+- **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, name, capabilities, default port, login length) and how to register it. `Board:Type` chooses one (default `vm201`); the app refuses to start on a model the catalogue doesn't have. `AddBoards` registers the chosen model and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the connection open.
+- **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, and one line in the catalogue. Nothing else in the app changes.
+- What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
 - The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
 
 ## The VM201 client (`Contactor.Boards.Vm201`)
@@ -166,6 +170,7 @@ The app talks to a relay board only through `IRelayBoard`, so another make of bo
   - `Vm201:LogPackets` (off by default) logs every packet in and out as hex with its command letter (`Vm201PacketTrace`); user name and password packets only as their command and length. The board keeps no log of its own, so this is how to see what a real board does.
   - The `Traced` event reports every packet in and out and every connection step (connecting, lost and why, the wait before the next attempt, skipped bytes) as a `Vm201TraceEntry`. User name and password packets come cut to their first three bytes. The web app keeps the latest 100 in memory (`BoardTrace`) for the Debug screen.
 - `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes); it translates `Vm201State` and refuses relays above 8.
+- `Vm201Connection` and `Vm201Traffic`: the client as an `IBoardConnection` and an `IBoardTraffic` (`Vm201TraceText` puts each packet in plain words). `Vm201Model` is its catalogue entry.
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change and a way to simulate a disconnect. It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
 
 ---
@@ -264,6 +269,7 @@ Input                   (future; create the table now but show nothing in the UI
 ```
 
 - `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` at start.
+- **SQLite stays the database.** Keep SQLite-specific code to `Persistence` (the start-up settings above) and `Features/Backup` (`VACUUM INTO`); everything else goes through EF Core, so a later switch to PostgreSQL stays a small change.
 - **Relay state is not stored.** The VM201 is the source of truth; the app always shows the board's latest `CMD_STATUS`.
 - Every timestamp is stored in UTC and shown in Europe/Stockholm. Schedules are stored as local time, see below.
 - EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/var/lib/contactor/contactor.db`, on the Raspberry Pi's SD card. The app writes little (a row a minute from the scheduler, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
@@ -387,7 +393,7 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Englis
      - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
-   - "Relay board": the board's address ("Address") and "Port", its login ("The board has no login", or "User name" and "Password"; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760" or "No contact with the relay board at …"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
+   - "Relay board": the model ("Velleman VM201 · 8 relays"), the board's address ("Address") and "Port", its login, for a model that has one ("The board has no login", or "User name" and "Password"; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760" or "No contact with the relay board at …"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
    - "People": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Save".
    - "Backups": the newest nightly copy ("Latest: 02:30 · 68 kB"), "Make a copy now" and "Download" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
    - "Debugging": the checkbox "Show the traffic to the relay board", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
@@ -427,6 +433,7 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
 ```json
 {
   "ConnectionStrings": { "Default": "Data Source=/var/lib/contactor/contactor.db" },
+  "Board": { "Type": "vm201" },     // which model, from the board catalogue; vm201 when not set
   "Vm201": {
     "Host": "",                     // the board's address, e.g. 192.168.1.50; install.sh asks for it
     "Port": 9760,
@@ -461,7 +468,7 @@ See `DEPLOY.md` for the steps.
 - **Upgrade:** `contactor-upgrade` (`deploy/upgrade.sh`) only runs an image signed with one of the keys in its `COSIGN_KEYS`; a systemd timer runs it nightly between 03:00 and 04:00 (`deploy/autoupdate-install.sh`). After a healthy start it keeps the 3 newest versions of the app's image (`KEEP_VERSIONS`, never the running one) and removes older ones, so a 16 GB SD card doesn't fill up.
 - **Migration:** run `Database.Migrate()` at start.
 - **Backup:** every night at 02:30 the app copies the database with SQLite's `VACUUM INTO` into `backups/contactor-YYYY-MM-DD.db` and keeps the latest 14 (`Backup:Folder`, `Backup:Keep`, `Backup:At`).
-- **Health check:** `/healthz` (localhost only, otherwise 404) returns 200 and the VM201 connection status. The image has no shell or curl; `dotnet /app/Contactor.Web.dll healthcheck` asks it and exits 0 or 1, and compose uses that.
+- **Health check:** `/healthz` (localhost only, otherwise 404) returns 200 and the board's connection status (`boardConnected`, `boardLastContactUtc`). The image has no shell or curl; `dotnet /app/Contactor.Web.dll healthcheck` asks it and exits 0 or 1, and compose uses that.
 
 ---
 

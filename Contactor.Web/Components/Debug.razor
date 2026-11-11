@@ -1,10 +1,10 @@
 @page "/debug"
 @implements IDisposable
 @using System.Globalization
-@using Contactor.Boards.Vm201
-@using Contactor.Web.Features.Vm201
+@using Contactor.Boards
+@using Contactor.Web.Features.Boards
 @inject BoardTrace Trace
-@inject Vm201Client Client
+@inject IBoardConnection Connection
 @inject LocalClock Clock
 
 <PageTitle>Debug · Contactor</PageTitle>
@@ -14,7 +14,7 @@
         <h1>Debug</h1>
         <p class="hint">
             Everything sent to and from the relay board since the app started, newest first. At most @BoardTrace.Capacity
-            lines; nothing is stored. Board: <span class="mono">@Client.Endpoint</span>
+            lines; nothing is stored. Board: <span class="mono">@Connection.Endpoint</span>
         </p>
         <button type="button" class="clear" disabled="@(_items.Count == 0)" @onclick="Clear">Clear</button>
     </header>
@@ -67,20 +67,20 @@
 
     private static string Arrow(BoardTraceItem item)
     {
-        return item.Kind switch
+        return item.Direction switch
         {
-            Vm201TraceKind.Sent => "→",
-            Vm201TraceKind.Received => "←",
+            BoardTraceDirection.Sent => "→",
+            BoardTraceDirection.Received => "←",
             _ => "·",
         };
     }
 
     private static string Direction(BoardTraceItem item)
     {
-        return item.Kind switch
+        return item.Direction switch
         {
-            Vm201TraceKind.Sent => "to the board",
-            Vm201TraceKind.Received => "from the board",
+            BoardTraceDirection.Sent => "to the board",
+            BoardTraceDirection.Received => "from the board",
             _ => "connection",
         };
     }

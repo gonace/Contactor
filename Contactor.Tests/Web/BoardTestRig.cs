@@ -1,10 +1,10 @@
 using Contactor.Boards.Vm201;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
-using Contactor.Web.Features.Vm201;
 using Contactor.Web.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -61,7 +61,7 @@ internal sealed class BoardTestRig : IAsyncDisposable
             {
                 services.AddLocalClock(configuration);
                 services.AddSingleton<TimeProvider>(time);
-                services.AddVm201(configuration);
+                services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
                 services.AddEvents(configuration);
@@ -78,7 +78,7 @@ internal sealed class BoardTestRig : IAsyncDisposable
 
         // The recorder first, so it sees the first status.
         var hosted = database.Services.GetServices<IHostedService>().ToList();
-        foreach (var service in hosted.OfType<BoardEventRecorder>().Cast<IHostedService>().Concat(hosted.OfType<Vm201HostedService>()))
+        foreach (var service in hosted.OfType<BoardEventRecorder>().Cast<IHostedService>().Concat(hosted.OfType<BoardHostedService>()))
         {
             await service.StartAsync(TestContext.Current.CancellationToken);
             rig._started.Add(service);

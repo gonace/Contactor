@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -13,9 +14,9 @@ using Microsoft.Extensions.Hosting;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The web app's board connection against the simulator over loopback.
+/// The VM201's catalogue entry and its own timers, against the simulator over loopback.
 /// </summary>
-public sealed class Vm201HostedServiceTests
+public sealed class Vm201TimersServiceTests
 {
     private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(10);
 
@@ -30,9 +31,13 @@ public sealed class Vm201HostedServiceTests
         await using var database = CreateDatabase(simulator, disableBoardTimers: true);
         await database.Services.InitializeDatabaseAsync(Cancel);
         var client = database.Services.GetRequiredService<Vm201Client>();
-        var service = database.Services.GetServices<IHostedService>().OfType<Vm201HostedService>().Single();
+        var services = StartOrder(database);
 
-        await service.StartAsync(Cancel);
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
         try
         {
             await WaitUntilAsync(() => simulator.TimerMask == 0);
@@ -46,7 +51,10 @@ public sealed class Vm201HostedServiceTests
         }
         finally
         {
-            await service.StopAsync(Cancel);
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
         }
 
         Assert.Equal(1, simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.TimerDisable));
@@ -67,9 +75,13 @@ public sealed class Vm201HostedServiceTests
         await using var database = CreateDatabase(simulator, disableBoardTimers: false);
         await database.Services.InitializeDatabaseAsync(Cancel);
         var client = database.Services.GetRequiredService<Vm201Client>();
-        var service = database.Services.GetServices<IHostedService>().OfType<Vm201HostedService>().Single();
+        var services = StartOrder(database);
 
-        await service.StartAsync(Cancel);
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
         try
         {
             await WaitUntilAsync(() => client.State.IsConnected);
@@ -78,7 +90,10 @@ public sealed class Vm201HostedServiceTests
         }
         finally
         {
-            await service.StopAsync(Cancel);
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
         }
 
         Assert.Equal(0x0F, simulator.TimerMask);
@@ -108,7 +123,7 @@ public sealed class Vm201HostedServiceTests
             (services, configuration) =>
             {
                 services.AddLocalClock(configuration);
-                services.AddVm201(configuration);
+                services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
                 services.AddEvents(configuration);
@@ -119,6 +134,13 @@ public sealed class Vm201HostedServiceTests
                 ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Vm201:DisableBoardTimers"] = disableBoardTimers ? "true" : "false",
             });
+    }
+
+    // As the app starts them: the VM201's timers listen before the connection runs.
+    private static List<IHostedService> StartOrder(TestDatabase database)
+    {
+        var hosted = database.Services.GetServices<IHostedService>().ToList();
+        return [.. hosted.OfType<Vm201TimersService>(), .. hosted.OfType<BoardHostedService>()];
     }
 
     private static async Task<int> CountEventsAsync(TestDatabase database)

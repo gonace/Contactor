@@ -1,10 +1,10 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
-using Contactor.Web.Features.Vm201;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +23,7 @@ public sealed class RelayControlTests : IAsyncLifetime
 
     private readonly Vm201Simulator _simulator = new();
     private TestDatabase _database = null!;
-    private Vm201HostedService _board = null!;
+    private BoardHostedService _board = null!;
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -39,7 +39,7 @@ public sealed class RelayControlTests : IAsyncLifetime
             {
                 services.AddLocalClock(configuration);
                 services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
-                services.AddVm201(configuration);
+                services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
                 services.AddEvents(configuration);
@@ -51,7 +51,7 @@ public sealed class RelayControlTests : IAsyncLifetime
                 ["Vm201:DisableBoardTimers"] = "false",
             });
         await _database.Services.InitializeDatabaseAsync(Cancel);
-        _board = _database.Services.GetServices<IHostedService>().OfType<Vm201HostedService>().Single();
+        _board = _database.Services.GetServices<IHostedService>().OfType<BoardHostedService>().Single();
         await _board.StartAsync(Cancel);
         await WaitUntilAsync(() => Client.State.IsConnected);
     }

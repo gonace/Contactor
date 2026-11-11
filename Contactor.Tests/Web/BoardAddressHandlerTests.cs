@@ -1,6 +1,7 @@
+using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
-using Contactor.Web.Features.Vm201;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,7 @@ public sealed class BoardAddressHandlerTests
 
         var endpoint = await Handler(rig).GetAsync(Cancel);
 
-        Assert.Equal(new Vm201Endpoint("127.0.0.1", rig.Simulator.Port), endpoint);
+        Assert.Equal(new BoardEndpoint("127.0.0.1", rig.Simulator.Port), endpoint);
     }
 
     [Fact]
@@ -34,7 +35,7 @@ public sealed class BoardAddressHandlerTests
         Assert.Null(await Handler(rig).SaveAsync(" 127.0.0.1 ", other.Port, John, Cancel));
 
         await BoardTestRig.WaitUntilAsync(() => other.ConnectionCount == 1 && rig.Client.State.IsConnected);
-        Assert.Equal(new Vm201Endpoint("127.0.0.1", other.Port), await Handler(rig).GetAsync(Cancel));
+        Assert.Equal(new BoardEndpoint("127.0.0.1", other.Port), await Handler(rig).GetAsync(Cancel));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardAddressChanged);
         Assert.Equal(John, entry.Actor);
         Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
@@ -79,7 +80,7 @@ public sealed class BoardAddressHandlerTests
 
         await Handler(rig).ApplySavedAsync(Cancel);
 
-        Assert.Equal(new Vm201Endpoint("192.168.1.51", 9761), rig.Client.Endpoint);
+        Assert.Equal(new BoardEndpoint("192.168.1.51", 9761), rig.Client.Endpoint);
     }
 
     private static BoardAddressHandler Handler(BoardTestRig rig)

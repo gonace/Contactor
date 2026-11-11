@@ -1,14 +1,12 @@
 using System.Globalization;
 using System.Text;
-using Contactor.Boards.Vm201;
-
-namespace Contactor.Web.Features.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// A step on the board connection in plain words for the Debug screen and its toasts, e.g. "Turn on relay 3" with
 /// "02 06 4F 04 A5 03" below it.
 /// </summary>
-public static class BoardTraceText
+public static class Vm201TraceText
 {
     /// <returns>The text; the packet's bytes in hex, or null when there is no packet; and whether it is an error.</returns>
     public static (string Text, string? Hex, bool IsError) Describe(Vm201TraceEntry entry)

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 namespace Contactor.Web.Features.Health;
 
 /// <summary>The board connection and the running release, as <c>/healthz</c> reports them.</summary>
-public sealed record HealthResponse(bool Vm201Connected, DateTimeOffset? Vm201LastContactUtc, string Version, string? Commit);
+public sealed record HealthResponse(bool BoardConnected, DateTimeOffset? BoardLastContactUtc, string Version, string? Commit);
 
 public static class HealthEndpoints
 {
