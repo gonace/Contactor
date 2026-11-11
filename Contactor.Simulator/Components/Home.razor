@@ -43,7 +43,7 @@
                 }
             </nav>
 
-            <form class="add" @onsubmit="AddAsync">
+            <form class="add" @onsubmit="Add">
                 <span class="label">ADD A BOARD</span>
                 <label for="model" class="visually-hidden">Model</label>
                 <select id="model" @bind="_newType">
@@ -189,7 +189,7 @@
         Simulator.Changed -= OnChanged;
     }
 
-    private async Task AddAsync()
+    private void Add()
     {
         if (!int.TryParse(_newPort.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
         {
@@ -201,12 +201,10 @@
         if (_addError is null)
         {
             _boards = Simulator.Boards;
-            _selectedId = _boards.First(b => b.Board.Port == port).Id;
+            _selectedId = _boards.FirstOrDefault(b => b.Board.Port == port)?.Id;
             _newPort = NextFreePort();
             _newLogin = "";
         }
-
-        await Task.CompletedTask;
     }
 
     private async Task RemoveAsync(RunningBoard board)
@@ -284,10 +282,10 @@
         };
     }
 
-    // From a board's own thread, sometimes under its lock: only hands the work to the page.
+    // From a board's own thread, sometimes under its lock. Handed off, so the board never waits while pages render.
     private void OnChanged(object? sender, EventArgs e)
     {
-        _ = RefreshAsync();
+        _ = Task.Run(RefreshAsync);
     }
 
     private async Task RefreshAsync()

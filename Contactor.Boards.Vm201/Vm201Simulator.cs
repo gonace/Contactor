@@ -406,9 +406,9 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
                 {
                     await SendAsync(connection, after, _stopping.Token).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException)
+                catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
                 {
-                    // That client is gone; its handler cleans up.
+                    // That client is gone, or the simulator is stopping; the handler cleans up.
                 }
             }
         }

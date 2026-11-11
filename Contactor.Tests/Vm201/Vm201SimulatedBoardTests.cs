@@ -182,6 +182,31 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_KeepOnlyTheNewestThousandCommands()
+    {
+        _board.Start();
+        using var tcp = new System.Net.Sockets.TcpClient();
+        await tcp.ConnectAsync("127.0.0.1", _board.Port, Cancel);
+        List<byte> packets = [];
+        for (var i = 0; i < 1000; i++)
+        {
+            packets.AddRange(Vm201PacketCodec.Encode(Vm201Command.StatusRequest));
+        }
+
+        for (byte mask = 1; mask <= 5; mask++)
+        {
+            packets.AddRange(Vm201PacketCodec.Encode(Vm201Command.On, mask));
+        }
+
+        await tcp.GetStream().WriteAsync(packets.ToArray(), Cancel);
+
+        await WaitUntilAsync(() => _board.ReceivedCommands.Count > 0 && _board.ReceivedCommands[^1].Command == Vm201Command.On && _board.ReceivedCommands[^1].Data.Span[0] == 5);
+        var received = _board.ReceivedCommands;
+        Assert.Equal(1000, received.Count);
+        Assert.Equal(995, received.Count(p => p.Command == Vm201Command.StatusRequest));
+    }
+
+    [Fact]
     public async Task Should_KeepRunning_WhenASubscriberThrows()
     {
         _board.Traced += (_, _) => throw new InvalidOperationException("A broken page.");

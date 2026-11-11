@@ -41,11 +41,27 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
     }
 
     /// <summary>
-    /// Starts a board of the model <paramref name="type"/> on <paramref name="port"/>. <paramref name="login"/> is
-    /// "user:password", or empty for a board without a login. Returns null when it runs, otherwise why it can't, in
-    /// words for the page.
+    /// Starts a board as the page asks: <paramref name="login"/> is "user:password", or empty for a board without a
+    /// login. Returns null when it runs, otherwise why it can't, in words for the page.
     /// </summary>
-    public string? Add(string? type, int port, string? login, bool fromSettings = false)
+    public string? Add(string? type, int port, string? login)
+    {
+        if (string.IsNullOrEmpty(login))
+        {
+            return Add(type, port, null, null, fromSettings: false);
+        }
+
+        var colon = login.IndexOf(':', StringComparison.Ordinal);
+        return colon <= 0
+            ? "Write the login as user:password, e.g. john:secret."
+            : Add(type, port, login[..colon], login[(colon + 1)..], fromSettings: false);
+    }
+
+    /// <summary>
+    /// Starts a board of the model <paramref name="type"/> on <paramref name="port"/>, with a login, or none when the
+    /// user name and password are both empty or null. Returns null when it runs, otherwise why it can't.
+    /// </summary>
+    public string? Add(string? type, int port, string? username, string? password, bool fromSettings)
     {
         if (SimulatorCatalogue.Find(type) is not { } model)
         {
@@ -57,17 +73,13 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
             return "The port is a number from 1 to 65535.";
         }
 
-        string? username = null;
-        string? password = null;
-        if (!string.IsNullOrEmpty(login))
+        if (string.IsNullOrEmpty(username) && string.IsNullOrEmpty(password))
         {
-            var colon = login.IndexOf(':', StringComparison.Ordinal);
-            if (colon <= 0)
-            {
-                return "Write the login as user:password, e.g. john:secret.";
-            }
-
-            (username, password) = (login[..colon], login[(colon + 1)..]);
+            (username, password) = (null, null);
+        }
+        else
+        {
+            (username, password) = (username ?? "", password ?? "");
             if (model.CheckLogin(username, password) is { } loginError)
             {
                 return loginError;
@@ -91,10 +103,12 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
             {
                 board.Start(port);
             }
-            catch (SocketException)
+            catch (SocketException ex)
             {
                 board.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                return string.Create(CultureInfo.InvariantCulture, $"Port {port} is already in use on this computer.");
+                return ex.SocketErrorCode == SocketError.AddressAlreadyInUse
+                    ? string.Create(CultureInfo.InvariantCulture, $"Port {port} is already in use on this computer.")
+                    : string.Create(CultureInfo.InvariantCulture, $"Can't listen on port {port}: {ex.Message}");
             }
 
             var running = new RunningBoard(_nextId++, board, username, fromSettings, _time);

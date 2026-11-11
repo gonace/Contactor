@@ -23,8 +23,7 @@ public sealed class SimulatorHostedService : IHostedService
     {
         foreach (var board in _options.Boards.Count > 0 ? _options.Boards : DefaultBoards)
         {
-            var login = board.Username.Length > 0 || board.Password.Length > 0 ? $"{board.Username}:{board.Password}" : null;
-            if (_boards.Add(board.Type, board.Port, login, fromSettings: true) is { } error)
+            if (_boards.Add(board.Type, board.Port, board.Username, board.Password, fromSettings: true) is { } error)
             {
                 throw new InvalidOperationException(string.Create(
                     CultureInfo.InvariantCulture, $"Simulator:Boards: the {board.Type} on port {board.Port} can't start. {error}"));

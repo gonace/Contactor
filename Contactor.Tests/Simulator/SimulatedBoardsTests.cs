@@ -162,6 +162,28 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_KeepAColonInTheSettingsUserName()
+    {
+        var options = new SimulatorOptions { Boards = [new SimulatorBoardOptions { Type = "vm201", Port = FreePort(), Username = "ab:c", Password = "x" }] };
+        var service = new SimulatorHostedService(_boards, Options.Create(options));
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        var board = Assert.Single(_boards.Boards);
+        Assert.Equal("ab:c", board.Username);
+        await using var client = await ConnectAsync(board.Board.Port, "ab:c", "x");
+        Assert.True(client.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public void Should_TakeAnEmptyPassword_FromThePage()
+    {
+        Assert.Null(_boards.Add("vm201", FreePort(), "john:"));
+
+        Assert.Equal("john", Assert.Single(_boards.Boards).Username);
+    }
+
+    [Fact]
     public async Task Should_RefuseToStart_WhenABoardInTheSettingsCannotRun()
     {
         var options = new SimulatorOptions { Boards = [new SimulatorBoardOptions { Type = "vm204", Port = FreePort() }] };
@@ -187,9 +209,9 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
-    private static async Task<ConnectedClient> ConnectAsync(int port)
+    private static async Task<ConnectedClient> ConnectAsync(int port, string username = "", string password = "")
     {
-        var options = new Vm201Options { Host = "127.0.0.1", Port = port };
+        var options = new Vm201Options { Host = "127.0.0.1", Port = port, Username = username, Password = password };
         var client = new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance);
         var stop = new CancellationTokenSource();
         var run = client.RunAsync(stop.Token);
