@@ -22,6 +22,21 @@ public sealed record GroupView(
     public IReadOnlyList<GroupMemberInfo> Infos =>
         [.. Members.Select(m => new GroupMemberInfo(m.Position, m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))];
 
+    /// <summary>
+    /// The first relay of the group the board doesn't have (left from a board with more relays), or null. Such a group
+    /// can't run: its relays are kept off until it is changed or deleted.
+    /// </summary>
+    public int? MissingRelay(int relayCount)
+    {
+        return Members.Where(m => m.RelayId > relayCount).Select(m => (int?)m.RelayId).FirstOrDefault();
+    }
+
+    /// <summary>"Can't run: relay 5 isn't on the board".</summary>
+    public static string MissingRelayText(int relayId)
+    {
+        return $"Can't run: relay {relayId} isn't on the board";
+    }
+
     /// <summary>"RELAY 1 → 2".</summary>
     public string Chain => "RELAY " + string.Join(" → ", Members.Select(m => m.RelayId));
 

@@ -61,6 +61,7 @@
         @foreach (var group in _groups)
         {
             var groupOn = group.IsOn(State);
+            var missing = group.MissingRelay(Board.Capabilities.RelayCount);
             var level = GroupPlanner.Level(group.Infos, State);
             var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && level > 0);
             <div class="card group @(lit ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : null)" @key="@($"g{group.Id}")">
@@ -69,7 +70,7 @@
                     <a class="text" href="group/@group.Id">
                         <span class="label">GROUP · @group.Chain</span>
                         <span class="name">@group.Name</span>
-                        <span class="status @(group.Runtime.Phase != GroupPhases.Idle ? "busy" : null)">@GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id))</span>
+                        <span class="status @(group.Runtime.Phase != GroupPhases.Idle ? "busy" : null)">@(missing is { } m ? GroupView.MissingRelayText(m) : GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
                         @if (_failedGroupId == group.Id)
                         {
                             <span class="error" role="alert">@_groupError</span>
@@ -80,7 +81,7 @@
                             class="toggle"
                             aria-pressed="@(groupOn ? "true" : "false")"
                             aria-label="@((groupOn ? "Turn off " : "Turn on ") + group.Name)"
-                            disabled="@(!State.IsConnected || _busy)"
+                            disabled="@(!State.IsConnected || _busy || missing is not null)"
                             @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "ON" : "OFF")</button>
                 </div>
                 <ol class="chips" aria-label="Relays in start order">

@@ -31,7 +31,7 @@ public sealed record GroupCandidate(int RelayId, string Name, bool IsActive, str
 }
 
 /// <summary>
-/// Creates, changes and deletes relay groups, with the rules a group must keep: 2–8 relays, each in at most one group,
+/// Creates, changes and deletes relay groups, with the rules a group must keep: 2 relays up to the board's count, each in at most one group,
 /// none with schedules of its own, and the waits within their limits. Which relays are in it and their order only
 /// change while the whole group is off, so no running sequence is pulled apart; the same goes for creating and
 /// deleting. Every change is logged.
@@ -300,7 +300,8 @@ public sealed class GroupsHandler
             return $"Choose at least {RelayGroup.MinMembers} relays.";
         }
 
-        if (draft.Members.Count > relays.Count || draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
+        // More members than the board has relays means a repeat or a relay that isn't there; both are caught here or below.
+        if (draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
         {
             return "A relay can only be in the group once.";
         }

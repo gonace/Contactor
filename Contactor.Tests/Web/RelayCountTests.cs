@@ -16,6 +16,9 @@ public sealed class RelayCountTests
 {
     private const string John = "john@example.com";
 
+    // Wednesday 11 November 2026, 11:00 in Stockholm.
+    private static readonly DateTimeOffset Now = new(2026, 11, 11, 10, 0, 0, TimeSpan.Zero);
+
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Theory]
@@ -60,27 +63,77 @@ public sealed class RelayCountTests
     }
 
     [Fact]
-    public async Task Should_LeaveAGroupAlone_WhenItHasARelayTheBoardDoesNotHave()
+    public async Task Should_KeepAGroupOff_AndLetItBeDeleted_WhenItHasARelayTheBoardDoesNotHave()
+    {
+        // Fan on relay 4, Heat on relay 5, and the board now has 4 relays: the group can't keep its order.
+        var board = new FakeRelayBoard(4);
+        await using var database = Create(board);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        var groupId = await AddGroupAsync(database, (4, "Fan"), (5, "Heat"));
+        var sequencer = database.Services.GetRequiredService<GroupSequencer>();
+        var groups = database.Services.GetRequiredService<GroupsHandler>();
+
+        await sequencer.StartGroupAsync(groupId, John, Cancel);
+        Assert.True(board.State.Relays.IsEmpty);
+
+        // Turned on at the board itself: the next step turns it off again.
+        await board.TurnOnAsync(ChannelMask.Of(4), Cancel);
+        await sequencer.StepAsync(Cancel);
+
+        Assert.True(board.State.Relays.IsEmpty);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var trip = await db.EventLog.SingleAsync(e => e.Action == EventActions.InterlockTrip, Cancel);
+            Assert.Equal((groupId, EventActors.System), (trip.GroupId!.Value, trip.Actor));
+            Assert.Equal("""{"missing":"Heat","off":["Fan"]}""", trip.Details);
+        }
+
+        var view = Assert.Single(await groups.ListAsync(Cancel));
+        Assert.Equal(5, view.MissingRelay(board.Capabilities.RelayCount));
+        Assert.Null(await groups.DeleteAsync(groupId, John, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_ScheduleAndAutoOffOnlyTheBoardsRelays()
     {
         var board = new FakeRelayBoard(4);
         await using var database = Create(board);
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
-        int groupId;
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
-            group.Members.Add(new RelayGroupMember { RelayId = 4, Position = 1, RoleName = "Fan", StartDelaySec = 3 });
-            group.Members.Add(new RelayGroupMember { RelayId = 5, Position = 2, RoleName = "Heat", StartDelaySec = 3 });
-            db.RelayGroups.Add(group);
+            foreach (var relayId in new[] { 2, 6 })
+            {
+                db.Schedules.Add(new Schedule
+                {
+                    RelayId = relayId, Days = ScheduleDays.All, OnTime = new TimeOnly(6, 0), OffTime = new TimeOnly(20, 0), IsEnabled = true, CreatedBy = John,
+                });
+            }
+
+            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 7, Cancel);
+            runtime.OnSinceUtc = Now.UtcDateTime.AddHours(-3);
+            runtime.AutoOffAtUtc = Now.UtcDateTime.AddHours(-1);
             await db.SaveChangesAsync(Cancel);
-            groupId = group.Id;
         }
 
-        var sequencer = database.Services.GetRequiredService<GroupSequencer>();
-        await sequencer.StartGroupAsync(groupId, John, Cancel);
-        await sequencer.StepAsync(Cancel);
+        await database.Services.GetRequiredService<SchedulerService>().TickAsync(Cancel);
+        var turnedOff = await database.Services.GetRequiredService<AutoOffService>().CheckAsync(Cancel);
 
-        Assert.True(board.State.Relays.IsEmpty);
+        Assert.Equal(ChannelMask.Of(2), board.State.Relays);
+        Assert.Empty(turnedOff);
+    }
+
+    private static async Task<int> AddGroupAsync(TestDatabase database, params (int RelayId, string Role)[] members)
+    {
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
+        for (var i = 0; i < members.Length; i++)
+        {
+            group.Members.Add(new RelayGroupMember { RelayId = members[i].RelayId, Position = i + 1, RoleName = members[i].Role, StartDelaySec = 3 });
+        }
+
+        db.RelayGroups.Add(group);
+        await db.SaveChangesAsync(Cancel);
+        return group.Id;
     }
 
     [Fact]
@@ -119,6 +172,7 @@ public sealed class RelayCountTests
         return TestDatabase.Create((services, configuration) =>
         {
             services.AddSingleton(board);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
             services.AddLocalClock(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
