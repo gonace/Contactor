@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Contactor.Boards;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -37,11 +38,25 @@ public static class PersistenceServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Brings the database up to date and seeds what must always exist: relays 1–8 and the input. Runs before the
-    /// app starts serving, so every other part can rely on them. Existing rows are left as they are.
+    /// Brings the database up to date and seeds what must always exist: a row for each of the board's relays and the
+    /// input. Runs before the app starts serving, so every other part can rely on them.
     /// </summary>
-    public static async Task InitializeDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken)
+    public static Task InitializeDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        var board = services.GetRequiredService<IRelayBoard>();
+        return services.InitializeDatabaseAsync(board.Capabilities.RelayCount, cancellationToken);
+    }
+
+    /// <summary>
+    /// As <see cref="InitializeDatabaseAsync(IServiceProvider, CancellationToken)"/>, for relays 1 to
+    /// <paramref name="relayCount"/>. Existing rows are left as they are, also relays above the count, which a board with
+    /// more relays left behind: their events and schedules still point to them.
+    /// </summary>
+    public static async Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relayCount, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relayCount, ChannelMask.MaxChannels);
         var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
 
@@ -58,7 +73,7 @@ public static class PersistenceServiceCollectionExtensions
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", cancellationToken);
 
         var existing = await db.Relays.Select(r => r.Id).ToListAsync(cancellationToken);
-        for (var id = 1; id <= Relay.Count; id++)
+        for (var id = 1; id <= relayCount; id++)
         {
             if (!existing.Contains(id))
             {
@@ -75,7 +90,7 @@ public static class PersistenceServiceCollectionExtensions
 
         // One runtime row per relay from the start, so two writers never both try to insert the first one.
         var runtimes = await db.RelayRuntimes.Select(r => r.RelayId).ToListAsync(cancellationToken);
-        for (var id = 1; id <= Relay.Count; id++)
+        for (var id = 1; id <= relayCount; id++)
         {
             if (!runtimes.Contains(id))
             {

@@ -173,7 +173,7 @@
     [Parameter]
     public int Id { get; set; }
 
-    private bool IsOn => Id is >= 1 and <= Relay.Count && Board.State.IsOn(Id);
+    private bool IsOn => Id >= 1 && Id <= Board.Capabilities.RelayCount && Board.State.IsOn(Id);
 
     private string StatusSentence
     {

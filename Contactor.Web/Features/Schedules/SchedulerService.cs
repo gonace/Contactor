@@ -124,7 +124,7 @@ public sealed partial class SchedulerService : BackgroundService
             var changed = false;
             var interrupted = false;
 
-            for (var relayId = 1; relayId <= Relay.Count; relayId++)
+            for (var relayId = 1; relayId <= _board.Capabilities.RelayCount; relayId++)
             {
                 var relayWindows = windows.Where(w => w.RelayId == relayId).ToList();
                 var running = relayWindows.Where(w => w.Contains(now)).OrderByDescending(w => w.OffUtc).FirstOrDefault();

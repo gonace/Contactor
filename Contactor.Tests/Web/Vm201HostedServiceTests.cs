@@ -86,18 +86,20 @@ public sealed class Vm201HostedServiceTests
     }
 
     [Fact]
-    public async Task Should_RegisterOneBoard_WithTheRelaysTheDatabaseHolds()
+    public async Task Should_RegisterOneBoard_AndSeedItsRelays()
     {
         await using var simulator = new Vm201Simulator();
         simulator.Start();
         await using var database = CreateDatabase(simulator, disableBoardTimers: false);
 
         var board = database.Services.GetRequiredService<IRelayBoard>();
+        await database.Services.InitializeDatabaseAsync(Cancel);
 
         // One instance, so the client has exactly one subscriber passing its state on.
         Assert.Same(database.Services.GetRequiredService<Vm201Board>(), board);
         Assert.Same(board, database.Services.GetRequiredService<IRelayBoard>());
-        Assert.Equal(Relay.Count, board.Capabilities.RelayCount);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(Enumerable.Range(1, 8), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
     }
 
     private static TestDatabase CreateDatabase(Vm201Simulator simulator, bool disableBoardTimers)

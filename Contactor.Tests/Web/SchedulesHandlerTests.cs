@@ -1,11 +1,13 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Contactor.Web.Features.Groups;
+using Contactor.Boards;
+using Contactor.Tests.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Contactor.Tests.Web;
 
@@ -29,6 +31,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
             services.AddEvents(configuration);
+            services.AddSingleton<IRelayBoard>(new FakeRelayBoard());
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddSchedules(configuration);

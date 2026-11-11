@@ -52,8 +52,8 @@
                 </fieldset>
 
                 <section class="status @(GroupOn ? "on" : "") @(_group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : "")">
-                    <p>@GroupStatusText.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook)</p>
-                    <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleGroupAsync">
+                    <p>@(Missing is { } missing ? GroupView.MissingRelayText(missing) : GroupStatusText.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook))</p>
+                    <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy || Missing is not null)" @onclick="ToggleGroupAsync">
                         @(GroupOn ? "TURN OFF THE GROUP" : "TURN ON THE GROUP")
                     </button>
                     @if (_toggleError is not null)
@@ -95,7 +95,7 @@
                                             data-vibrate
                                             aria-pressed="@(on ? "true" : "false")"
                                             aria-label="@((on ? "Turn off " : "Turn on ") + member.RoleName)"
-                                            disabled="@(!State.IsConnected || _busy || OrderChanged || (!on && blockedBy is not null))"
+                                            disabled="@(!State.IsConnected || _busy || OrderChanged || Missing is not null || (!on && blockedBy is not null))"
                                             @onclick="() => ToggleMemberAsync(member.RelayId, on)">@(on ? "ON" : "OFF")</button>
                                 </div>
                                 @if (CanChangeMembers && _members.Count > RelayGroup.MinMembers)
@@ -141,7 +141,7 @@
                     {
                         <p class="hint">Turn the group off to change its relays or their order.</p>
                     }
-                    else if (_members.Count < Relay.Count && AddableRelays.Any())
+                    else if (_members.Count < Board.Capabilities.RelayCount && AddableRelays.Any())
                     {
                         <div class="add">
                             <label for="add-relay" class="visually-hidden">Relay to add</label>
@@ -295,6 +295,8 @@
     private BoardState State => Board.State;
 
     private bool GroupOn => _group is not null && _group.IsOn(State);
+
+    private int? Missing => _group?.MissingRelay(Board.Capabilities.RelayCount);
 
     // Which relays and their order only change while the whole group is off and still.
     private bool CanChangeMembers => _group is not null

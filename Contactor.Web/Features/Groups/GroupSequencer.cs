@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
@@ -29,6 +30,10 @@ public sealed partial class GroupSequencer : BackgroundService
     private bool _wasConnected;
     private int _reconnected;
 
+    // Groups with a relay the board doesn't have whose shut-off is saved in the event log and not yet confirmed, as of
+    // the last step that saved; rebuilt by each one. Under _gate.
+    private readonly HashSet<int> _shutOffLogged = [];
+
     public GroupSequencer(
         IRelayBoard board,
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -56,6 +61,20 @@ public sealed partial class GroupSequencer : BackgroundService
         _gate.Dispose();
         _wake.Dispose();
         base.Dispose();
+    }
+
+    // Only once the step's events are saved, so a shut-off whose OFF or save failed is logged by the next step.
+    private void RememberShutOffs(HashSet<int> shutOff)
+    {
+        _shutOffLogged.Clear();
+        _shutOffLogged.UnionWith(shutOff);
+    }
+
+    /// <summary>Whether every relay of the group is on the board; one left from a board with more relays isn't.</summary>
+    private bool IsOnBoard(RelayGroup group)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        return group.Members.All(m => m.RelayId <= _board.Capabilities.RelayCount);
     }
 
     /// <summary>The relays that are in a group.</summary>
@@ -240,18 +259,47 @@ public sealed partial class GroupSequencer : BackgroundService
             var groups = await db.RelayGroups.Include(g => g.Members).OrderBy(g => g.Id).ToListAsync(cancellationToken);
             if (groups.Count == 0)
             {
+                _shutOffLogged.Clear();
                 return;
             }
 
             var runtimes = await db.GroupRuntimes.ToDictionaryAsync(r => r.GroupId, cancellationToken);
             var all = new GroupCommands();
             List<(int GroupId, GroupEvent Event)> events = [];
+            HashSet<int> shutOff = [];
             foreach (var group in groups)
             {
                 if (!runtimes.TryGetValue(group.Id, out var runtime))
                 {
                     runtime = new GroupRuntime { GroupId = group.Id };
                     db.GroupRuntimes.Add(runtime);
+                }
+
+                // A group with a relay the board doesn't have (left from a board with more relays) can't run its order
+                // or its interlock, so its relays are kept off (fail closed) until it is changed or deleted.
+                if (!IsOnBoard(group))
+                {
+                    var on = group.Members.Where(m => state.IsOn(m.RelayId)).OrderBy(m => m.Position).ToList();
+                    all.Off |= ChannelMask.Of(on.Select(m => m.RelayId));
+                    runtime.Phase = GroupPhases.Idle;
+                    runtime.TargetLevel = 0;
+                    runtime.NextStepAtUtc = null;
+                    runtime.PendingPosition = null;
+                    runtime.PendingOn = false;
+                    runtime.PendingSinceUtc = null;
+                    runtime.OnSinceUtc = null;
+                    runtime.AutoOffAtUtc = null;
+                    runtime.TurnedOnBy = null;
+                    if (on.Count > 0 && shutOff.Add(group.Id) && !_shutOffLogged.Contains(group.Id))
+                    {
+                        // Sent again on every step until the board confirms it, but logged once.
+                        // "Fan turned off because Heat was off": the relay the board doesn't have can't be on.
+                        var missing = group.Members.Where(m => m.RelayId > _board.Capabilities.RelayCount).OrderBy(m => m.Position).First();
+                        var details = JsonSerializer.Serialize(new { missing = missing.RoleName, off = on.Select(m => m.RoleName) });
+                        events.Add((group.Id, new GroupEvent(EventActions.InterlockTrip, missing.RelayId, EventActors.System, details)));
+                    }
+
+                    continue;
                 }
 
                 var members = group.Members
@@ -308,6 +356,7 @@ public sealed partial class GroupSequencer : BackgroundService
                 catch (BoardNotConnectedException) when (!all.Off.IsEmpty)
                 {
                     await SaveAsync(db, events, now, CancellationToken.None);
+                    RememberShutOffs(shutOff);
                     throw;
                 }
             }
@@ -315,6 +364,7 @@ public sealed partial class GroupSequencer : BackgroundService
             // Pages also follow a sequence's own progress, e.g. "Starting" turning into "On since".
             var changed = events.Count > 0 || !all.Off.IsEmpty || !all.On.IsEmpty || db.ChangeTracker.HasChanges();
             await SaveAsync(db, events, now, cancellationToken);
+            RememberShutOffs(shutOff);
             if (changed)
             {
                 _changes.Notify();

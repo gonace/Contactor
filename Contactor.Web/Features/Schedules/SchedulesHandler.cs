@@ -1,8 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.EntityFrameworkCore;
+using Contactor.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Schedules;
 
@@ -18,11 +19,13 @@ public sealed record ScheduleModel(int Id, int? RelayId, ScheduleDays Days, Time
 public sealed class SchedulesHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
+    private readonly IRelayBoard _board;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
-    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, LocalClock clock, RelayChanges changes)
+    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, IRelayBoard board, LocalClock clock, RelayChanges changes)
     {
+        _board = board;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
@@ -100,7 +103,7 @@ public sealed class SchedulesHandler
             }
             else
             {
-                if (!await db.Relays.AnyAsync(r => r.Id == model.RelayId, cancellationToken))
+                if (model.RelayId > _board.Capabilities.RelayCount || !await db.Relays.AnyAsync(r => r.Id == model.RelayId, cancellationToken))
                 {
                     return "The relay doesn't exist.";
                 }

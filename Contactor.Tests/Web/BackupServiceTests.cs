@@ -15,7 +15,7 @@ public sealed class BackupServiceTests
     {
         var time = new FixedTimeProvider(new DateTimeOffset(2026, 11, 4, 1, 30, 0, TimeSpan.Zero));
         await using var database = Create(time);
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         var path = await database.Services.GetRequiredService<BackupService>().RunAsync(Cancel);
 
@@ -33,7 +33,7 @@ public sealed class BackupServiceTests
     {
         var time = new FixedTimeProvider(new DateTimeOffset(2026, 11, 1, 1, 30, 0, TimeSpan.Zero));
         await using var database = Create(time, keep: 3);
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         var backup = database.Services.GetRequiredService<BackupService>();
 
         for (var day = 0; day < 5; day++)
@@ -53,7 +53,7 @@ public sealed class BackupServiceTests
         // 23:30 UTC on 3 November is 00:30 on 4 November in Stockholm.
         var time = new FixedTimeProvider(new DateTimeOffset(2026, 11, 3, 23, 30, 0, TimeSpan.Zero));
         await using var database = Create(time);
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         var path = await database.Services.GetRequiredService<BackupService>().RunAsync(Cancel);
 
