@@ -1,4 +1,3 @@
-using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;

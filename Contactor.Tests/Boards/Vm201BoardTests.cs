@@ -15,8 +15,8 @@ public sealed class Vm201BoardTests
     [Fact]
     public void Should_HaveEightRelaysAndOneInput()
     {
-        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true), Vm201Board.Vm201);
-        Assert.Equal(ChannelMask.FirstN(8), Vm201Board.Vm201.AllRelays);
+        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true), Vm201Board.Vm201Capabilities);
+        Assert.Equal(ChannelMask.FirstN(8), Vm201Board.Vm201Capabilities.AllRelays);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class Vm201BoardTests
         await using var simulator = new Vm201Simulator();
         simulator.Start();
         var client = CreateClient(simulator.Port);
-        var board = new Vm201Board(client);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
         BoardState? reported = null;
         board.StateChanged += (_, state) => reported = state;
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
@@ -63,9 +63,36 @@ public sealed class Vm201BoardTests
     }
 
     [Fact]
+    public async Task Should_GiveEverySubscriberTheState_WhenOneFails()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        var client = CreateClient(simulator.Port);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
+        board.StateChanged += (_, _) => throw new InvalidOperationException("A broken subscriber.");
+        BoardState? reported = null;
+        board.StateChanged += (_, state) => reported = state;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+
+        await WaitUntilAsync(() => reported?.IsConnected == true);
+
+        await stop.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(9)]
+    public void Should_RefuseARelayTheBoardDoesntHave(int relay)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => Vm201Board.Vm201Capabilities.Relay(relay));
+    }
+
+    [Fact]
     public async Task Should_RefuseCommands_WithoutTheBoard()
     {
-        var board = new Vm201Board(CreateClient(port: 1));
+        var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
 
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOnAsync(ChannelMask.Of(1), Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.RefreshAsync(Cancel));

@@ -64,7 +64,7 @@ public sealed partial class AutoOffService : BackgroundService
         {
             if (state.IsOn(runtime.RelayId))
             {
-                var mask = ChannelMask.Of(runtime.RelayId);
+                var mask = _board.Capabilities.Relay(runtime.RelayId);
                 _expected.Expect(mask, on: false);
                 try
                 {

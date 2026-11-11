@@ -13,7 +13,10 @@ public interface IRelayBoard
     /// <summary>The latest state the board reported.</summary>
     BoardState State { get; }
 
-    /// <summary>Raised on every new state, and when the connection is lost or comes back. From any thread.</summary>
+    /// <summary>
+    /// Raised on every new state, and when the connection is lost or comes back. From any thread; each subscriber is
+    /// called on its own, so one that throws doesn't keep the state from the others.
+    /// </summary>
     event EventHandler<BoardState>? StateChanged;
 
     /// <summary>Turns on the relays in <paramref name="relays"/>; the others are left as they are.</summary>

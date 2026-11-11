@@ -1,5 +1,4 @@
 using System.Data.Common;
-using Contactor.Boards;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;

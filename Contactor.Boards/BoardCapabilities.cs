@@ -11,4 +11,12 @@ public sealed record BoardCapabilities(int RelayCount, int InputCount, bool Repo
 {
     /// <summary>All of the board's relays.</summary>
     public ChannelMask AllRelays => ChannelMask.FirstN(RelayCount);
+
+    /// <summary>One of the board's relays; throws for a number the board doesn't have, before anything is sent.</summary>
+    public ChannelMask Relay(int relay)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, RelayCount);
+        return ChannelMask.Of(relay);
+    }
 }

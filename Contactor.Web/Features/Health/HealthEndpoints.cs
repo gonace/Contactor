@@ -1,6 +1,5 @@
 using System.Net;
 using Contactor.Boards;
-using Contactor.Boards.Vm201;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Contactor.Web.Features.Health;

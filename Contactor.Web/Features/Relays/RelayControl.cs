@@ -39,7 +39,7 @@ public sealed class RelayControl
 
     public async Task TurnOnAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
-        var mask = ChannelMask.Of(relayId);
+        var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         _expected.Expect(mask, on: true);
@@ -59,7 +59,7 @@ public sealed class RelayControl
 
     public async Task TurnOffAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
-        var mask = ChannelMask.Of(relayId);
+        var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         _expected.Expect(mask, on: false);

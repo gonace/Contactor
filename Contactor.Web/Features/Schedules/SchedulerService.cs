@@ -382,7 +382,7 @@ public sealed partial class SchedulerService : BackgroundService
 
     private async Task<bool> SendAsync(int relayId, bool on, CancellationToken cancellationToken)
     {
-        var mask = ChannelMask.Of(relayId);
+        var mask = _board.Capabilities.Relay(relayId);
         _expected.Expect(mask, on);
         try
         {
