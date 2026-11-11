@@ -19,13 +19,14 @@ public interface ISimulatedBoard : IAsyncDisposable
     /// <summary>Its relays and inputs, and who is connected.</summary>
     SimulatedBoardState State { get; }
 
-    /// <summary>Raised when <see cref="State"/> changes, from any thread.</summary>
+    /// <summary>Raised when <see cref="State"/> changes, from any thread. A handler must be quick.</summary>
     event EventHandler? Changed;
 
     /// <summary>
     /// Raised on every step: a message from the app (<see cref="BoardTraceDirection.Sent"/>, to the board), one to the
-    /// app (<see cref="BoardTraceDirection.Received"/>) or a connection step. From the connection's own thread:
-    /// handlers must be quick. Login messages never show the password.
+    /// app (<see cref="BoardTraceDirection.Received"/>) or a connection step. From any thread, sometimes while the board
+    /// holds its own lock: a handler must be quick and must never wait on the board. Login messages never show the
+    /// password.
     /// </summary>
     event EventHandler<BoardTraceEntry>? Traced;
 
@@ -42,7 +43,7 @@ public interface ISimulatedBoard : IAsyncDisposable
     void DropConnections();
 }
 
-/// <summary>A simulated board's state.</summary>
+/// <summary>A simulated board's state, a snapshot. Two snapshots compare their client lists by reference.</summary>
 /// <param name="Relays">The relays that are on.</param>
 /// <param name="Inputs">The inputs that are on (closed).</param>
 /// <param name="Clients">Where each open connection comes from, e.g. "127.0.0.1:52144".</param>

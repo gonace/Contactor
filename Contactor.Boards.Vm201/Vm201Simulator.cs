@@ -23,7 +23,6 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentDictionary<Connection, byte> _connections = new();
     private readonly ConcurrentQueue<Vm201Packet> _receivedCommands = new();
-    private readonly Vm201TraceDescriber _describer = new();
 
     // One gate for the board state and for every write, so status packets always go out in the order of the changes.
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -221,7 +220,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             while (Unresponsive)
             {
                 // Accepts the connection but never answers, until the client gives up.
-                await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                TracePacket(connection, Vm201TraceKind.Sent, await reader.ReadAsync(cancellationToken).ConfigureAwait(false));
             }
 
             if (!await LoginAsync(connection, reader, cancellationToken).ConfigureAwait(false))
@@ -249,7 +248,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             while (true)
             {
                 var packet = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-                TracePacket(Vm201TraceKind.Sent, packet);
+                TracePacket(connection, Vm201TraceKind.Sent, packet);
                 if (Unresponsive)
                 {
                     continue;
@@ -290,7 +289,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         while (username is null || password is null)
         {
             var packet = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-            TracePacket(Vm201TraceKind.Sent, packet);
+            TracePacket(connection, Vm201TraceKind.Sent, packet);
             switch (packet.Command)
             {
                 case Vm201Command.Username:
@@ -425,19 +424,19 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         await connection.Stream.WriteAsync(packet, cancellationToken).ConfigureAwait(false);
         if (Traced is not null)
         {
-            Trace(_describer.Describe(new Vm201TraceEntry(Now, Vm201TraceKind.Received, Vm201TraceEntry.Redact(packet), null)));
+            Trace(connection.Describer.Describe(new Vm201TraceEntry(Now, Vm201TraceKind.Received, Vm201TraceEntry.Redact(packet), null)));
         }
     }
 
     private DateTimeOffset Now => TimeProvider.GetUtcNow();
 
     // A packet from the app is what the app's own log calls sent: to the board.
-    private void TracePacket(Vm201TraceKind kind, Vm201Packet packet)
+    private void TracePacket(Connection connection, Vm201TraceKind kind, Vm201Packet packet)
     {
         if (Traced is not null)
         {
             var frame = Vm201PacketCodec.Encode(packet.Command, packet.Data.Span);
-            Trace(_describer.Describe(new Vm201TraceEntry(Now, kind, Vm201TraceEntry.Redact(frame), null)));
+            Trace(connection.Describer.Describe(new Vm201TraceEntry(Now, kind, Vm201TraceEntry.Redact(frame), null)));
         }
     }
 
@@ -516,6 +515,9 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
         /// <summary>Where the connection comes from, e.g. "127.0.0.1:52144".</summary>
         public string Remote { get; }
+
+        /// <summary>Its own, so the first status on each connection is never taken for the keep-alive.</summary>
+        public Vm201TraceDescriber Describer { get; } = new();
 
         public TcpClient Tcp { get; }
 

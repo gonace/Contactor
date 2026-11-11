@@ -37,7 +37,8 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
         Assert.Same(Vm201Model.Model, board.Model);
         Assert.False(board.HasLogin);
         Assert.Equal(0, board.Port);
-        Assert.Equal(new SimulatedBoardState(ChannelMask.None, ChannelMask.None, []), board.State with { Clients = [] });
+        Assert.Equal((ChannelMask.None, ChannelMask.None), (board.State.Relays, board.State.Inputs));
+        Assert.Empty(board.State.Clients);
     }
 
     [Fact]
@@ -51,7 +52,7 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
         Assert.Equal(ChannelMask.Of(3), _board.State.Relays);
         await _board.SwitchRelayAsync(3, turnOn: false);
         await WaitUntilAsync(() => client.State.Outputs == 0);
-        Assert.True(Volatile.Read(ref _changes) >= 3, "Connecting and both switches are changes.");
+        Assert.Equal(3, Volatile.Read(ref _changes)); // connecting and both switches
     }
 
     [Fact]
@@ -85,9 +86,9 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
         await _stop.CancelAsync();
         await _run;
 
-        await WaitUntilAsync(() => _board.State.Clients.Count == 0);
+        await WaitUntilAsync(() => _traffic.Any(e => e.Direction == BoardTraceDirection.None && e.Text.StartsWith("The app at 127.0.0.1:", StringComparison.Ordinal) && e.Text.EndsWith(" disconnected", StringComparison.Ordinal)));
+        Assert.Empty(_board.State.Clients);
         Assert.False(client.State.IsConnected);
-        Assert.Contains(_traffic, e => e.Direction == BoardTraceDirection.None && e.Text.StartsWith("The app at 127.0.0.1:", StringComparison.Ordinal) && e.Text.EndsWith(" disconnected", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -104,6 +105,48 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
         Assert.Contains(entries, e => e is { Direction: BoardTraceDirection.Sent, Text: "Turn on relay 3", Bytes: "02 06 4F 04 A5 03" });
         Assert.Contains(entries, e => e is { Direction: BoardTraceDirection.Received, Text: "Status: relay 3 on · input off", IsRoutine: false });
         Assert.Contains(entries, e => e is { Direction: BoardTraceDirection.Received, Text: "The name of relay 1", IsRoutine: true });
+    }
+
+    [Fact]
+    public async Task Should_GiveEachConnectionItsFirstStatus_AsNotRoutine()
+    {
+        var first = await ConnectAsync();
+        await _stop.CancelAsync();
+        await _run;
+        await WaitUntilAsync(() => _board.State.Clients.Count == 0);
+        _traffic.Clear();
+
+        using var stop = new CancellationTokenSource();
+        var second = CreateClient(_board.Port);
+        var run = second.RunAsync(stop.Token);
+        await WaitUntilAsync(() => second.State.IsConnected);
+        await stop.CancelAsync();
+        await run;
+
+        var status = _traffic.First(e => e.Direction == BoardTraceDirection.Received && e.Text.StartsWith("Status:", StringComparison.Ordinal));
+        Assert.False(status.IsRoutine);
+        Assert.False(first.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_TellEveryClient_AndListThemAll()
+    {
+        var first = await ConnectAsync();
+        using var stop = new CancellationTokenSource();
+        var second = CreateClient(_board.Port);
+        var run = second.RunAsync(stop.Token);
+        await WaitUntilAsync(() => second.State.IsConnected && _board.State.Clients.Count == 2);
+        _traffic.Clear();
+
+        await _board.SwitchRelayAsync(2, turnOn: true);
+
+        await WaitUntilAsync(() => first.State.Outputs == 0x02 && second.State.Outputs == 0x02);
+        var pushed = _traffic.Where(e => e.Text == "Status: relay 2 on · input off").ToList();
+        Assert.Equal(2, pushed.Count);
+        Assert.All(pushed, e => Assert.False(e.IsRoutine));
+        Assert.Equal(_board.State.Clients.Order(StringComparer.Ordinal), _board.State.Clients);
+        await stop.CancelAsync();
+        await run;
     }
 
     [Fact]
@@ -153,11 +196,16 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
         _board.Traced += (_, e) => _traffic.Enqueue(e);
         _board.Changed += (_, _) => Interlocked.Increment(ref _changes);
         _board.Start();
-        var options = new Vm201Options { Host = "127.0.0.1", Port = _board.Port, Username = username, Password = password };
-        _client = new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance);
+        _client = CreateClient(_board.Port, username, password);
         _run = _client.RunAsync(_stop.Token);
         await WaitUntilAsync(() => _client.State.IsConnected);
         return _client;
+    }
+
+    private static Vm201Client CreateClient(int port, string username = "", string password = "")
+    {
+        var options = new Vm201Options { Host = "127.0.0.1", Port = port, Username = username, Password = password };
+        return new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
