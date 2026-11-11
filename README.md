@@ -1,18 +1,60 @@
 # Contactor
 
-Control the relays of a Velleman VM201 ethernet relay board from your phone: turn things on and off, run them on
-schedules, start several relays in order as one group (e.g. a fan heater: the fan first, then the heat, and the fan
-running on after the heat goes off), with an interlock that keeps them in that order. Every change is logged with who
-made it.
+Control a relay board from your phone: turn things on and off, run them on schedules, and start several relays in
+order as one group, e.g. a fan heater: the fan first, then the heat, and the fan running on after the heat goes off.
+An interlock keeps the group in that order whatever happens, and every change is logged with who made it.
 
 It is built for a workshop and for people who aren't technical: big buttons, few menus, and a page that works like an
-app on the phone.
+app on the phone, in light and dark mode.
 
-- **Runs** on a Raspberry Pi next to the board, with Docker Compose.
-- **Sign-in** is done by Cloudflare Access (a one-time code by e-mail); no port is opened to the internet.
-- **Built with** .NET 10, Blazor Server and SQLite. No JavaScript framework.
+<p>
+  <img src="docs/screenshots/relays.png" width="250" alt="The relays, with a fan heater group running">
+  <img src="docs/screenshots/group.png" width="250" alt="A group's relays in start order">
+  <img src="docs/screenshots/relays-dark.png" width="250" alt="The relays in dark mode">
+</p>
 
-See `CLAUDE.md` for the architecture, the board's protocol and the domain rules.
+## What it does
+
+- **Relays:** one big on/off button per relay, with who turned it on and when it goes off. "Alla av" turns
+  everything off.
+- **Auto-off:** a relay someone turns on goes off by itself after 1, 2 or 4 hours, unless set to never.
+- **Schedules:** on and off at set times on chosen days, also over midnight and across daylight saving changes.
+- **Groups:** two or more relays that start from the top and stop from the bottom, with a wait between steps and a
+  run-on time, created with a short guide.
+- **Interlock:** a relay in a group may only be on while the ones above it are; if something breaks the order, e.g.
+  someone presses a button on the board itself, the app turns the relays below off at once.
+- **Event log:** every change, by a person, a schedule, auto-off or at the board itself.
+- **Backups:** a copy of the database every night, and a download button.
+
+<p>
+  <img src="docs/screenshots/new-group.png" width="250" alt="Picking the relays for a new group">
+  <img src="docs/screenshots/schedule.png" width="250" alt="A schedule">
+  <img src="docs/screenshots/events.png" width="250" alt="The event log">
+</p>
+
+The interlock in the app is an extra layer, not a safety device: it only works while the app runs. Where safety
+depends on it, e.g. heat without the fan, wire it in the installation as well. Electrical work must be done by a
+qualified electrician.
+
+## Supported boards
+
+| Board | Relays | Status |
+|---|---|---|
+| Velleman VM201 (WMRC201), ethernet | 8, plus 1 input | Supported |
+| Velleman VM204 (WMRC204), ethernet | 4, plus 4 inputs | Planned |
+
+The app talks to a board through one interface, `IRelayBoard`, so another board needs its own small project and
+nothing else. One board per installation for now; several at once is
+[issue #4](https://github.com/gonace/Contactor/issues/4).
+
+## How it runs
+
+- On a Raspberry Pi (or any Linux machine with Docker) next to the board, with Docker Compose.
+- Sign-in is done by Cloudflare Access, with a one-time code by e-mail; no port is opened to the internet.
+- .NET 10, Blazor Server and SQLite. No JavaScript framework.
+
+See [DEPLOY.md](DEPLOY.md) to set it up. A single Docker image that installs in a click is
+[issue #3](https://github.com/gonace/Contactor/issues/3).
 
 ## Development
 
@@ -29,18 +71,18 @@ Run everything locally with Aspire (the dashboard opens on http://localhost:1528
 dotnet run --project Contactor.AppHost
 ```
 
-The AppHost starts the VM201 simulator on port 9760 and the web app against it, signed in as `john@example.com`. Stop
-and start the simulator in the dashboard to test a lost connection to the board.
+The AppHost starts a VM201 simulator on port 9760 and the app against it, signed in as `john@example.com`. Stop and
+start the simulator in the dashboard to test a lost connection to the board. The tests use the same simulator, so no
+hardware is needed.
 
-The tests run the VM201 client against the built-in simulator (`Vm201Simulator`) over localhost, so no hardware is
-needed.
+`CLAUDE.md` describes the architecture, the board's protocol and the rules the app follows.
 
-## Deploying
+### Screenshots
 
-See [DEPLOY.md](DEPLOY.md): setting up Cloudflare, installing on the Raspberry Pi, nightly updates, backups and
-publishing a release.
+The pictures above are taken by a script, with made-up data: it starts the simulator and the app on a temporary
+database, fills it, and photographs the screens at phone size. It needs Node 22 or later and Playwright with
+Chromium.
 
-## Safety
-
-The app's interlock only works while the Raspberry Pi and the app run. Where safety depends on it, e.g. heat without
-the fan, wire it in the installation as well. Electrical work must be done by a qualified electrician.
+```sh
+node scripts/screenshots/take.mjs
+```
