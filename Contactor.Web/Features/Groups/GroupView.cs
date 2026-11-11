@@ -75,7 +75,7 @@ public static class GroupStatusText
         {
             if (level >= 1 && runtime.NextStepAtUtc is { } next && next > nowUtc)
             {
-                return $"Stopping · {group.Members[level - 1].RoleName} runs on for {Remaining(next - nowUtc)}";
+                return $"Stopping · {group.Members[level - 1].RoleName} keeps running for {Remaining(next - nowUtc)}";
             }
 
             return "Stopping";
@@ -131,12 +131,12 @@ public static class GroupPlanText
         return string.Concat(members.Select((m, i) => i == 0 ? m.RoleName : $" → wait {EventText.Seconds(m.StartDelaySec)} → {m.RoleName}"));
     }
 
-    /// <summary>"Heat off → Fan runs on for 5 min, then off": from the bottom, each with its run-on.</summary>
+    /// <summary>"Heat off → Fan keeps running for 5 min, then off": from the bottom, each with its run-on.</summary>
     public static string Stop(IReadOnlyList<GroupMemberDraft> members)
     {
         ArgumentNullException.ThrowIfNull(members);
         return string.Join(" → ", members.Reverse().Select((m, i) => i > 0 && m.RunOnSec > 0
-            ? $"{m.RoleName} runs on for {EventText.Seconds(m.RunOnSec)}, then off"
+            ? $"{m.RoleName} keeps running for {EventText.Seconds(m.RunOnSec)}, then off"
             : $"{m.RoleName} off"));
     }
 

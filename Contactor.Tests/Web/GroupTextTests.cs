@@ -102,7 +102,7 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };
 
-        Assert.Equal("Stopping · Fan runs on for 5 min", Status(group, State(1)));
+        Assert.Equal("Stopping · Fan keeps running for 5 min", Status(group, State(1)));
         Assert.Equal("Stopping", Status(group, State()));
     }
 

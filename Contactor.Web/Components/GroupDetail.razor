@@ -410,7 +410,7 @@
         var level = GroupPlanner.Level(_group.Infos, State);
         if (on && runtime.Phase == GroupPhases.Stopping && index == level - 1 && runtime.NextStepAtUtc is { } next && next > Clock.UtcNow)
         {
-            return $"Runs on for {GroupStatusText.Remaining(next - Clock.UtcNow)}";
+            return $"Keeps running for {GroupStatusText.Remaining(next - Clock.UtcNow)}";
         }
 
         if (on)

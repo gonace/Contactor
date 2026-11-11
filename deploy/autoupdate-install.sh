@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Makes Contactor upgrade itself: a systemd timer runs contactor-upgrade (installed by install.sh) every night
-# between 03:00 and 04:00 Stockholm time, when nobody is likely to be using it. A run with an unchanged image leaves the app
-# untouched, and only images signed with our key are run. Missed nights are not made up at boot, so the app never
-# restarts in the middle of the day. Safe to run again.
+# between 03:00 and 04:00 Stockholm time, when nobody is likely to be using it. A run with an unchanged image leaves
+# the app untouched, and only images signed with our key are run. Missed nights are not made up at boot, so the app
+# never restarts in the middle of the day. Safe to run again.
 #
 #   sudo contactor-autoupdate-install
 #

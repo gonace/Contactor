@@ -406,7 +406,7 @@ public static class GroupPlanner
     }
 
     /// <summary>
-    /// Turns one relay off: the relays below it go off at once, and this one runs on for its run-on time first if any
+    /// Turns one relay off: the relays below it go off at once, and this one keeps running for its run-on time first if any
     /// were on. Nothing happens when it is off already.
     /// </summary>
     public static void MemberOff(
