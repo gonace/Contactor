@@ -1,0 +1,138 @@
+@page "/handelser"
+@implements IDisposable
+@using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Relays
+@inject EventsHandler Handler
+@inject RelayChanges Changes
+
+<PageTitle>Händelser · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <h1>Händelser</h1>
+        <div class="filters">
+            @foreach (var (filter, label) in Filters)
+            {
+                <button type="button" aria-pressed="@(_filter == filter ? "true" : "false")" @onclick="() => SetFilterAsync(filter)">@label</button>
+            }
+        </div>
+    </header>
+
+    <main class="days">
+        @if (_rows.Count == 0)
+        {
+            <p class="empty">Inga händelser än.</p>
+        }
+
+        @foreach (var day in Handler.GroupByDay(_rows))
+        {
+            <section>
+                <h2>@day.Heading</h2>
+                <div class="list">
+                    @foreach (var row in day.Rows)
+                    {
+                        <div class="row @(row.View.IsAlert ? "alert" : null)" @key="row.Id">
+                            <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
+                            <span class="badge @(row.View.IsPerson ? "person" : "automatic")" aria-hidden="true">@row.View.Badge</span>
+                            <div class="text">
+                                <span class="what"><strong>@row.View.Who</strong> @row.View.What</span>
+                                @if (row.View.Target is not null)
+                                {
+                                    <span class="target">@row.View.Target</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        @if (_hasMore)
+        {
+            <button type="button" class="more" disabled="@_loading" @onclick="LoadMoreAsync">Visa fler</button>
+        }
+    </main>
+
+    <TabBar Current="TabBar.Tab.Events" />
+</div>
+
+@code {
+    private static readonly (EventFilter Filter, string Label)[] Filters =
+    [
+        (EventFilter.All, "Alla"),
+        (EventFilter.People, "Personer"),
+        (EventFilter.Automatic, "Automatiskt"),
+    ];
+
+    private List<EventRow> _rows = [];
+    private EventFilter _filter = EventFilter.All;
+    private bool _hasMore;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync(EventsHandler.PageSize);
+        Changes.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Changes.Changed -= OnChanged;
+    }
+
+    private async Task SetFilterAsync(EventFilter filter)
+    {
+        _filter = filter;
+        await ReloadAsync(EventsHandler.PageSize);
+    }
+
+    // Reloads the newest events, as many as are shown (at least a page), so new ones appear on top.
+    private async Task ReloadAsync(int count)
+    {
+        var rows = await Handler.GetAsync(_filter, beforeId: null, count + 1, CancellationToken.None);
+        _hasMore = rows.Count > count;
+        _rows = [.. rows.Take(count)];
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_loading || _rows.Count == 0)
+        {
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var rows = await Handler.GetAsync(_filter, _rows[^1].Id, EventsHandler.PageSize + 1, CancellationToken.None);
+            _hasMore = rows.Count > EventsHandler.PageSize;
+            _rows.AddRange(rows.Take(EventsHandler.PageSize));
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // From another person's circuit or the board's event recorder.
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                await ReloadAsync(Math.Max(EventsHandler.PageSize, _rows.Count));
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

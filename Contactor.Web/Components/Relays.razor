@@ -1,0 +1,382 @@
+@page "/"
+@implements IDisposable
+@using Microsoft.EntityFrameworkCore
+@using Contactor.Vm201
+@using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Groups
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Features.Schedules
+@using Contactor.Web.Persistence
+@inject Vm201Client Board
+@inject RelayControl Control
+@inject RelayChanges Changes
+@inject CurrentUser CurrentUser
+@inject LocalClock Clock
+@inject ScheduleOutlook Outlook
+@inject IDbContextFactory<ContactorDbContext> DbFactory
+@inject GroupsHandler Groups
+@inject GroupSequencer Sequencer
+@inject ILogger<Relays> Log
+
+<PageTitle>Reläer · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <div class="title">
+            <h1>Contactor</h1>
+            <p class="summary">
+                @if (_user is not null)
+                {
+                    <text>Hej @_user.DisplayName · </text>
+                }
+                <strong>@OnCount av @ActiveCount på</strong>
+            </p>
+        </div>
+        <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="TurnAllOffAsync">Alla av</button>
+    </header>
+
+    <div class="connection">
+        @if (State.IsConnected)
+        {
+            <p class="online"><span class="dot" aria-hidden="true"></span>Kortet svarar · uppdaterat @UpdatedText</p>
+        }
+        else
+        {
+            <div class="offline" role="status">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                <div>
+                    <strong>Ingen kontakt med reläkortet</strong>
+                    <span>@(State.LastContactUtc is { } last ? $"Sedan {RelayStatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)}. " : "")Lägena nedan kan vara fel.</span>
+                </div>
+            </div>
+        }
+        @if (_allOffFailed)
+        {
+            <p class="error" role="alert">Kortet svarar inte. Försök igen.</p>
+        }
+    </div>
+
+    <main class="relays">
+        @foreach (var group in _groups)
+        {
+            var groupOn = group.IsOn(State);
+            var level = GroupPlanner.Level(group.Infos, State);
+            var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && level > 0);
+            <div class="card group @(lit ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : null)" @key="@($"g{group.Id}")">
+                <div class="top">
+                    <span class="icon" aria-hidden="true"><GroupIcon Icon="@group.Icon" /></span>
+                    <a class="text" href="grupp/@group.Id">
+                        <span class="label">GRUPP · @group.Chain</span>
+                        <span class="name">@group.Name</span>
+                        <span class="status @(group.Runtime.Phase != GroupPhases.Idle ? "busy" : null)">@GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id))</span>
+                        @if (_failedGroupId == group.Id)
+                        {
+                            <span class="error" role="alert">@_groupError</span>
+                        }
+                    </a>
+                    <button type="button"
+                            data-vibrate
+                            class="toggle"
+                            aria-pressed="@(groupOn ? "true" : "false")"
+                            aria-label="@((groupOn ? "Stäng av " : "Slå på ") + group.Name)"
+                            disabled="@(!State.IsConnected || _busy)"
+                            @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "PÅ" : "AV")</button>
+                </div>
+                <ol class="chips" aria-label="Reläer i startordning">
+                    @foreach (var member in group.Members)
+                    {
+                        var memberOn = State.IsOn(member.RelayId);
+                        <li>
+                            @if (member.Position > 1)
+                            {
+                                <span class="arrow" aria-hidden="true">→</span>
+                            }
+                            <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@(memberOn ? " (på)" : " (av)")</span></span>
+                        </li>
+                    }
+                </ol>
+            </div>
+        }
+
+        @foreach (var relay in VisibleRelays)
+        {
+            var on = State.IsOn(relay.Id);
+            <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive")" @key="relay.Id">
+                <a class="text" href="rele/@relay.Id">
+                    <span class="label">RELÄ @relay.Id</span>
+                    <span class="name">@relay.Name</span>
+                    <span class="status">@StatusFor(relay, on)</span>
+                    @if (_failedRelayId == relay.Id)
+                    {
+                        <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "Kortet svarar inte. Försök igen.")</span>
+                    }
+                </a>
+                <button type="button"
+                        data-vibrate
+                        class="toggle"
+                        aria-pressed="@(on ? "true" : "false")"
+                        aria-label="@((on ? "Stäng av " : "Slå på ") + relay.Name)"
+                        disabled="@(!State.IsConnected || _busy)"
+                        @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "PÅ" : "AV")</button>
+            </div>
+        }
+
+        <a href="grupp/ny" class="new-group">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            Ny grupp
+        </a>
+
+        @if (InactiveCount > 0)
+        {
+            <button type="button" class="show-inactive" aria-expanded="@(_showInactive ? "true" : "false")" @onclick="() => _showInactive = !_showInactive">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                @(_showInactive ? "Dölj inaktiva reläer" : $"Visa {InactiveCount} inaktiva reläer")
+            </button>
+        }
+    </main>
+
+    <TabBar Current="TabBar.Tab.Relays" />
+</div>
+
+@code {
+    private List<Relay> _relays = [];
+    private IReadOnlyList<GroupView> _groups = [];
+    private int? _failedGroupId;
+    private string? _groupError;
+    private Timer? _tick;
+    private Dictionary<int, RelayRuntime> _runtimes = [];
+    private Dictionary<string, string> _names = [];
+    private Dictionary<int, EventLogEntry> _lastOff = [];
+    private IReadOnlyDictionary<int, RelayOutlook> _outlook = new Dictionary<int, RelayOutlook>();
+    private IReadOnlyDictionary<int, RelayOutlook> _groupOutlook = new Dictionary<int, RelayOutlook>();
+    private SignedInUser? _user;
+    private bool _showInactive;
+    private bool _busy;
+    private bool _allOffFailed;
+    private int? _failedRelayId;
+    private bool _inGroup;
+
+    private Vm201State State => Board.State;
+
+    // A group counts as one, and its relays aren't listed on their own.
+    private int ActiveCount => _relays.Count(r => r.IsActive) + _groups.Count;
+
+    private int OnCount => _relays.Count(r => r.IsActive && State.IsOn(r.Id)) + _groups.Count(g => (State.Outputs & g.Mask) != 0);
+
+    private int InactiveCount => _relays.Count(r => !r.IsActive);
+
+    private IEnumerable<Relay> VisibleRelays => _relays.Where(r => r.IsActive || _showInactive);
+
+    private string UpdatedText
+    {
+        get
+        {
+            var age = Clock.UtcNow - (State.LastContactUtc?.UtcDateTime ?? Clock.UtcNow);
+            return age < TimeSpan.FromMinutes(1) ? "nyss" : $"för {(int)age.TotalMinutes} min sedan";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A group's start or stop counts down in seconds; nothing else re-renders the page that often. Made before the
+        // first await, so a page closed while it loads still disposes it.
+        _tick = new Timer(_ =>
+        {
+            if (_groups.Any(g => g.Runtime.Phase != GroupPhases.Idle))
+            {
+                _ = RefreshAsync(reload: false);
+            }
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        _user = await CurrentUser.GetAsync();
+        await LoadAsync();
+        Board.StateChanged += OnBoardChanged;
+        Changes.Changed += OnRelaysChanged;
+    }
+
+    public void Dispose()
+    {
+        Board.StateChanged -= OnBoardChanged;
+        Changes.Changed -= OnRelaysChanged;
+        _tick?.Dispose();
+    }
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _groups = await Groups.ListAsync(CancellationToken.None);
+        var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
+        _relays = (await db.Relays.AsNoTracking().OrderBy(r => r.SortOrder).ThenBy(r => r.Id).ToListAsync()).Where(r => !members.Contains(r.Id)).ToList();
+        _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
+        _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
+
+        // The newest "off" event per relay, for "Av sedan i går · Lars".
+        var lastOffIds = await db.EventLog.AsNoTracking()
+            .Where(e => e.Action == EventActions.Off && e.RelayId != null)
+            .GroupBy(e => e.RelayId)
+            .Select(g => g.Max(e => e.Id))
+            .ToListAsync();
+        _lastOff = await db.EventLog.AsNoTracking()
+            .Where(e => lastOffIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.RelayId!.Value);
+        _outlook = await Outlook.GetAsync(CancellationToken.None);
+        _groupOutlook = await Outlook.GetGroupsAsync(CancellationToken.None);
+    }
+
+    private string StatusFor(Relay relay, bool on)
+    {
+        _runtimes.TryGetValue(relay.Id, out var runtime);
+        var onSince = runtime?.OnSinceUtc is { } since ? Clock.ToLocal(since) : (DateTime?)null;
+        _outlook.TryGetValue(relay.Id, out var outlook);
+
+        // A relay the schedule turned on goes off when its run ends.
+        var offAtUtc = runtime?.TurnedOnBy == EventActors.Schedule ? outlook?.RunningUntilUtc : runtime?.AutoOffAtUtc;
+        var autoOff = offAtUtc is { } offAt ? Clock.ToLocal(offAt) : (DateTime?)null;
+        var nextOn = outlook?.NextOnUtc is { } next ? Clock.ToLocal(next) : (DateTime?)null;
+        _lastOff.TryGetValue(relay.Id, out var lastOff);
+        var offSince = lastOff is null ? (DateTime?)null : Clock.ToLocal(lastOff.TimestampUtc);
+        var offBy = lastOff is null ? null
+            : EventText.IsPersonActor(lastOff.Actor) ? NameOf(lastOff.Actor)
+            : EventText.ShortWho(lastOff.Actor, null);
+        return RelayStatusText.For(on, onSince, NameOf(runtime?.TurnedOnBy), autoOff, Clock.Now, offSince, offBy, nextOn);
+    }
+
+    private string? NameOf(string? email)
+    {
+        if (email is null)
+        {
+            return null;
+        }
+
+        if (email == _user?.Email)
+        {
+            return "du";
+        }
+
+        if (email == EventActors.Schedule)
+        {
+            return "schema";
+        }
+
+        if (email == EventActors.AutoOff)
+        {
+            return "auto-av";
+        }
+
+        return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
+    }
+
+    private async Task ToggleAsync(int relayId, bool isOn)
+    {
+        await RunAsync(
+            () => isOn
+                ? Control.TurnOffAsync(relayId, _user!.Email, CancellationToken.None)
+                : Control.TurnOnAsync(relayId, _user!.Email, CancellationToken.None),
+            failedRelayId: relayId);
+    }
+
+    private async Task ToggleGroupAsync(int groupId, bool isOn)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _failedGroupId = null;
+        try
+        {
+            if (isOn)
+            {
+                await Sequencer.StopGroupAsync(groupId, _user.Email, CancellationToken.None);
+            }
+            else
+            {
+                await Sequencer.StartGroupAsync(groupId, _user.Email, CancellationToken.None);
+            }
+        }
+        catch (Vm201NotConnectedException)
+        {
+            _failedGroupId = groupId;
+            _groupError = "Kortet svarar inte. Försök igen.";
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Starting or stopping group {GroupId} failed", groupId);
+            _failedGroupId = groupId;
+            _groupError = "Något gick fel. Försök igen.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task TurnAllOffAsync()
+    {
+        await RunAsync(() => Control.TurnAllOffAsync(_user!.Email, CancellationToken.None), failedRelayId: null);
+    }
+
+    private async Task RunAsync(Func<Task> command, int? failedRelayId)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _failedRelayId = null;
+        _allOffFailed = false;
+        _inGroup = false;
+        try
+        {
+            await command();
+        }
+        catch (Vm201NotConnectedException)
+        {
+            _failedRelayId = failedRelayId;
+            _allOffFailed = failedRelayId is null;
+        }
+        catch (RelayInGroupException)
+        {
+            _failedRelayId = failedRelayId;
+            _inGroup = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // Both events come from other threads (the board's read loop, another person's circuit).
+    private void OnBoardChanged(object? sender, Vm201State state)
+    {
+        _ = RefreshAsync(reload: false);
+    }
+
+    private void OnRelaysChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync(reload: true);
+    }
+
+    private async Task RefreshAsync(bool reload)
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (reload)
+                {
+                    await LoadAsync();
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

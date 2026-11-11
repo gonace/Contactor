@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8" />
+    @* No zoom: the app is laid out for a phone with big buttons, and zooming in by mistake hides them. Android follows
+       this; iOS ignores it, so phone.js stops the pinch there. viewport-fit=cover: the page reaches the screen's
+       edges, and app.css keeps the content clear of the notch and the home indicator. *@
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <base href="/" />
+    @* The phone's status bar in the page's background, light or dark like the phone. *@
+    <meta name="theme-color" content="#F5F2EC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16140F" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-title" content="Contactor" />
+    @* Sent with the Cloudflare Access cookie: without it Access answers the manifest with its sign-in page. *@
+    <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["Contactor.Web.styles.css"]" />
+    <title>Contactor</title>
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    @* Blazor shows this when the page's live connection breaks on an error it can't recover from. *@
+    <div id="blazor-error-ui" role="alert">
+        Något gick fel. <a href="" class="reload">Ladda om sidan</a>
+    </div>
+    @* Blazor's own reconnect messages are in English; this bar replaces them (Blazor finds it by its id, and
+       reconnect.js handles what happens next). *@
+    <div id="components-reconnect-modal" class="reconnect" role="status" aria-live="polite" data-nosnippet>
+        <span class="reconnect-trying">Ansluter igen…</span>
+        <span class="reconnect-failed">Ingen kontakt med appen.</span>
+        <button type="button" id="components-reconnect-button" class="reconnect-failed">Försök igen</button>
+    </div>
+    <script src="_framework/blazor.web.js"></script>
+    <script src="@Assets["reconnect.js"]"></script>
+    <script src="@Assets["phone.js"]"></script>
+</body>
+</html>

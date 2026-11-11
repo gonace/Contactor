@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Relä – namn och schema</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#C2410C}a:hover{color:#9A3412}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F5F2EC; color: #1D1B18; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="padding: 44px 12px 4px; display: flex; align-items: center">
+    <a href="Main.dc.html" style="min-height: 44px; padding: 0 8px; display: flex; align-items: center; gap: 4px; text-decoration: none; color: #C2410C; font-size: 16px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+      Reläer
+    </a>
+  </header>
+  <main style="flex: 1; overflow-y: auto; padding: 4px 20px 20px; display: flex; flex-direction: column; gap: 22px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <label for="namn" style="font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: #5C574F">RELÄ 1 · NAMN</label>
+      <input id="namn" type="text" value="Värmefläkt – Svarven" style="height: 52px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; border: 1.5px solid #CFC8BC; background: #FFFFFF; font-family: inherit; font-size: 20px; font-weight: 600; color: #1D1B18">
+      <label for="aktiv" style="display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 16px; cursor: pointer">
+        <input id="aktiv" type="checkbox" checked="checked" style="width: 24px; height: 24px; margin: 0; accent-color: #C2410C">
+        <span><strong>Aktiv</strong> – visas i listan. Bocka ur för reläer som inte används.</span>
+      </label>
+    </div>
+
+    <section style="{{cardStyle}}">
+      <p style="margin: 0; font-size: 16px">{{statusText}}</p>
+      <button onClick="{{toggle}}" aria-pressed="{{pressed}}" style="{{btnStyle}}">{{btnLabel}}</button>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700">Stäng av automatiskt efter</h2>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+        <sc-for list="{{limits}}" as="l" hint-placeholder-count="4">
+          <button onClick="{{l.pick}}" aria-pressed="{{l.pressed}}" style="{{l.style}}">{{l.label}}</button>
+        </sc-for>
+      </div>
+      <p style="margin: 0; font-size: 14px; color: #5C574F">Gäller när någon slår på reläet för hand.</p>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 700">Schema</h2>
+        <a href="Schema.dc.html" style="min-height: 44px; display: flex; align-items: center; gap: 4px; text-decoration: none; font-size: 16px; font-weight: 600">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+          Lägg till
+        </a>
+      </div>
+      <sc-for list="{{schedules}}" as="s" hint-placeholder-count="2">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #FFFFFF; border: 1.5px solid #E3DED5">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 17px; font-weight: 600">{{s.days}}</span>
+            <span style="font-size: 15px; font-family: 'IBM Plex Mono', monospace; color: #5C574F">{{s.time}}</span>
+          </div>
+          <button onClick="{{s.toggle}}" aria-pressed="{{s.pressed}}" aria-label="{{s.aria}}" style="{{s.style}}">{{s.label}}</button>
+        </div>
+      </sc-for>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 700">Händelser</h2>
+        <a href="Logg.dc.html" style="min-height: 44px; display: flex; align-items: center; text-decoration: none; font-size: 16px; font-weight: 600">Alla händelser</a>
+      </div>
+      <div style="display: flex; flex-direction: column; background: #FFFFFF; border: 1.5px solid #E3DED5; border-radius: 14px; overflow: hidden">
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px">
+          <span style="width: 46px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #5C574F; padding-top: 9px">14:02</span>
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; background: #E8E3DA; color: #1D1B18">N</span>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+            <span style="font-size: 16px; line-height: 1.35"><strong>Nils</strong> slog på</span>
+            <span style="font-size: 14px; color: #5C574F">Idag</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-top: 1px solid #EEEAE3">
+          <span style="width: 46px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #5C574F; padding-top: 9px">08:00</span>
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; background: #FFFFFF; color: #5C574F; border: 1.5px dashed #A39C90; box-sizing: border-box">A</span>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+            <span style="font-size: 16px; line-height: 1.35"><strong>Schema</strong> stängde av</span>
+            <span style="font-size: 14px; color: #5C574F">Idag</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-top: 1px solid #EEEAE3">
+          <span style="width: 46px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #5C574F; padding-top: 9px">06:30</span>
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; background: #FFFFFF; color: #5C574F; border: 1.5px dashed #A39C90; box-sizing: border-box">A</span>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+            <span style="font-size: 16px; line-height: 1.35"><strong>Schema</strong> slog på</span>
+            <span style="font-size: 14px; color: #5C574F">Idag</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-top: 1px solid #EEEAE3">
+          <span style="width: 46px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #5C574F; padding-top: 9px">09:12</span>
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; background: #E8E3DA; color: #1D1B18">T</span>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+            <span style="font-size: 16px; line-height: 1.35"><strong>Ted</strong> lade till schema mån–fre 06:30–08:00</span>
+            <span style="font-size: 14px; color: #5C574F">Igår</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <div style="padding: 12px 20px 28px; background: #F5F2EC; border-top: 1px solid #E3DED5">
+    <a href="Main.dc.html" style="height: 54px; border-radius: 12px; background: #1D1B18; color: #FFFFFF; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 18px; font-weight: 700">Spara</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const s = this.state || {};
+    const on = s.on !== undefined ? s.on : true;
+    const limit = s.limit || '2 h';
+    const sched = s.sched || { a: true, b: false };
+    const pill = (active) => 'min-height: 48px; border-radius: 10px; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; border: 1.5px solid ' + (active ? '#1D1B18' : '#CFC8BC') + '; background: ' + (active ? '#1D1B18' : '#FFFFFF') + '; color: ' + (active ? '#FFFFFF' : '#1D1B18');
+    const sw = (active) => 'width: 72px; height: 44px; flex-shrink: 0; border-radius: 10px; border: none; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer; background: ' + (active ? '#C2410C' : '#E8E3DA') + '; color: ' + (active ? '#FFFFFF' : '#1D1B18');
+    const list = [
+      { k: 'a', days: 'Mån–Fre', time: '06:30 – 08:00' },
+      { k: 'b', days: 'Lördag', time: '08:00 – 12:00' }
+    ];
+    return {
+      statusText: on ? 'På sedan 14:02 av Nils. Stängs av 16:02.' : 'Av just nu.',
+      pressed: on ? 'true' : 'false',
+      btnLabel: on ? 'STÄNG AV' : 'SLÅ PÅ',
+      cardStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 14px; background: ' + (on ? '#FFF4EC' : '#FFFFFF') + '; border: 1.5px solid ' + (on ? '#F0BE9C' : '#E3DED5'),
+      btnStyle: 'height: 56px; border-radius: 12px; border: none; font-family: inherit; font-size: 18px; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; background: ' + (on ? '#E8E3DA' : '#C2410C') + '; color: ' + (on ? '#1D1B18' : '#FFFFFF'),
+      toggle: () => this.setState({ on: !on }),
+      limits: ['1 h', '2 h', '4 h', 'Aldrig'].map((l) => ({
+        label: l,
+        pressed: l === limit ? 'true' : 'false',
+        style: pill(l === limit),
+        pick: () => this.setState({ limit: l })
+      })),
+      schedules: list.map((x) => ({
+        days: x.days,
+        time: x.time,
+        pressed: sched[x.k] ? 'true' : 'false',
+        label: sched[x.k] ? 'Aktiv' : 'Pausad',
+        aria: x.days + ' ' + x.time,
+        style: sw(sched[x.k]),
+        toggle: () => this.setState({ sched: Object.assign({}, sched, { [x.k]: !sched[x.k] }) })
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

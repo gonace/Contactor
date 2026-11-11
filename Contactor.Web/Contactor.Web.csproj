@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Contactor.Web</RootNamespace>
+  </PropertyGroup>
+
+  <!-- The image (dotnet publish -t:PublishContainer, see scripts/images-publish.sh): arm64 for the Raspberry Pi, x64 to
+       try it on a PC. -->
+  <PropertyGroup>
+    <ContainerRepository>contactor</ContainerRepository>
+    <!-- Chiseled (no shell, no package manager); "extra" adds the time zone data the schedules need
+         (Europe/Stockholm) and ICU. -->
+    <ContainerFamily>resolute-chiseled-extra</ContainerFamily>
+    <RuntimeIdentifiers>linux-arm64;linux-x64</RuntimeIdentifiers>
+    <!-- The SDK cuts label values at the first ':' when it builds for several architectures, which breaks the creation
+         time. -->
+    <ContainerGenerateLabelsImageCreated>false</ContainerGenerateLabelsImageCreated>
+  </PropertyGroup>
+
+  <!-- The .NET image listens on 8080 on all of the container's addresses (ASPNETCORE_HTTP_PORTS), so cloudflared
+       reaches it on the compose network; the port is never published on the Raspberry Pi, so nothing else can. -->
+  <ItemGroup>
+    <ContainerPort Include="8080" Type="tcp" />
+  </ItemGroup>
+
+  <!-- Development settings (DevUserEmail) stay out of the published app and the image. -->
+  <ItemGroup>
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contactor.ServiceDefaults\Contactor.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Contactor.Vm201\Contactor.Vm201.csproj" />
+  </ItemGroup>
+
+</Project>

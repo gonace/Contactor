@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Händelser</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#C2410C}a:hover{color:#9A3412}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F5F2EC; color: #1D1B18; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="padding: 52px 20px 12px; display: flex; flex-direction: column; gap: 14px">
+    <h1 style="margin: 0; font-size: 28px; font-weight: 700">Händelser</h1>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <sc-for list="{{filters}}" as="f" hint-placeholder-count="3">
+        <button onClick="{{f.pick}}" aria-pressed="{{f.pressed}}" style="{{f.style}}">{{f.label}}</button>
+      </sc-for>
+    </div>
+  </header>
+  <main style="flex: 1; overflow-y: auto; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 18px">
+    <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+      <section style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 4px 4px 0; font-size: 13px; font-family: 'IBM Plex Mono', monospace; font-weight: 500; color: #5C574F; letter-spacing: 0.04em">{{g.day}}</h2>
+        <div style="display: flex; flex-direction: column; background: #FFFFFF; border: 1.5px solid #E3DED5; border-radius: 14px; overflow: hidden">
+          <sc-for list="{{g.rows}}" as="e" hint-placeholder-count="4">
+            <div style="{{e.rowStyle}}">
+              <span style="width: 46px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #5C574F; padding-top: 9px">{{e.time}}</span>
+              <span aria-hidden="true" style="{{e.badgeStyle}}">{{e.badge}}</span>
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+                <span style="font-size: 16px; line-height: 1.35"><strong>{{e.who}}</strong> {{e.what}}</span>
+                <span style="font-size: 14px; color: #5C574F">{{e.target}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </sc-for>
+  </main>
+  <nav style="display: flex; border-top: 1px solid #E3DED5; background: #FFFFFF; padding: 6px 0 22px">
+    <a href="Main.dc.html" style="flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5C574F; font-size: 13px; font-weight: 600">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"></path><path d="M6.4 6.4a8 8 0 1 0 11.2 0"></path></svg>
+      Reläer
+    </a>
+    <a href="Logg.dc.html" aria-current="page" style="flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #C2410C; font-size: 13px; font-weight: 600">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+      Händelser
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const filter = (this.state && this.state.filter) || 'Alla';
+    const data = [
+      { day: 'IDAG', rows: [
+        { time: '15:40', who: 'Ted', what: 'slog på', target: 'Värmefläkt – Bänken', kind: 'person' },
+        { time: '14:02', who: 'Nils', what: 'slog på', target: 'Värmefläkt – Svarven', kind: 'person' },
+        { time: '12:15', who: 'Schema', what: 'stängde av', target: 'Ventilation – Lackrummet', kind: 'auto' },
+        { time: '10:30', who: 'Erik', what: 'döpte om Relä 4 till', target: 'Ventilation – Lackrummet', kind: 'person' },
+        { time: '06:30', who: 'Schema', what: 'slog på', target: 'Ventilation – Lackrummet', kind: 'auto' }
+      ]},
+      { day: 'IGÅR', rows: [
+        { time: '18:00', who: 'Auto-av', what: 'stängde av efter 2 h', target: 'Belysning – Förrådet', kind: 'auto' },
+        { time: '16:00', who: 'Lars', what: 'slog på', target: 'Belysning – Förrådet', kind: 'person' },
+        { time: '11:05', who: 'Erik', what: 'gjorde Relä 6 inaktivt', target: 'Relä 6', kind: 'person' },
+        { time: '09:12', who: 'Ted', what: 'lade till schema mån–fre 06:30–08:00', target: 'Värmefläkt – Svarven', kind: 'person' }
+      ]}
+    ];
+    const keep = (r) => filter === 'Alla' || (filter === 'Personer' ? r.kind === 'person' : r.kind !== 'person');
+    const groups = data.map((g) => {
+      const rows = g.rows.filter(keep);
+      return {
+        day: g.day,
+        rows: rows.map((r, i) => ({
+          time: r.time, who: r.who, what: r.what, target: r.target,
+          badge: r.kind === 'person' ? r.who[0] : (r.kind === 'input' ? 'I' : 'A'),
+          badgeStyle: 'width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; ' + (r.kind === 'person' ? 'background: #E8E3DA; color: #1D1B18' : 'background: #FFFFFF; color: #5C574F; border: 1.5px dashed #A39C90; box-sizing: border-box'),
+          rowStyle: 'display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px;' + (i > 0 ? ' border-top: 1px solid #EEEAE3' : '')
+        }))
+      };
+    }).filter((g) => g.rows.length);
+    return {
+      groups,
+      filters: ['Alla', 'Personer', 'Automatiskt'].map((l) => {
+        const key = l === 'Automatiskt' ? 'Auto' : l;
+        const a = key === filter;
+        return {
+          label: l,
+          pressed: a ? 'true' : 'false',
+          style: 'min-height: 40px; padding: 0 14px; border-radius: 20px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; border: 1.5px solid ' + (a ? '#1D1B18' : '#CFC8BC') + '; background: ' + (a ? '#1D1B18' : '#FFFFFF') + '; color: ' + (a ? '#FFFFFF' : '#1D1B18'),
+          pick: () => this.setState({ filter: key })
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

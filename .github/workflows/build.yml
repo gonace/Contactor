@@ -1,0 +1,48 @@
+name: Build
+
+# On every pull request to main, on every merge into main, and by hand.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to a pull request stops its run that is still going, to save Actions minutes. Runs on main all finish.
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  # The test report is a check run on the commit.
+  checks: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Contactor.slnx
+
+      - name: Build
+        run: dotnet build Contactor.slnx --no-restore --configuration Release
+
+      - name: Test
+        # xunit writes a TRX file per run into TestResults for the report below.
+        run: dotnet test --solution Contactor.slnx --no-build --configuration Release --results-directory TestResults -- --report-xunit-trx
+
+      - name: Test report
+        # Also after a failed test, so the failing tests show on the run and the commit.
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
+        with:
+          name: Tests
+          path: TestResults/*.trx
+          reporter: dotnet-trx

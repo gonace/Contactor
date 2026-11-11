@@ -1,0 +1,252 @@
+.screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    padding: 12px 12px 4px;
+}
+
+.back {
+    min-height: 44px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.form {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.content {
+    flex: 1;
+    padding: 8px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.missing {
+    margin: 8px 4px;
+    color: var(--muted);
+}
+
+.title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.title p {
+    margin: 0;
+    color: var(--muted);
+}
+
+h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.days {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.day-buttons {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+}
+
+.day-buttons button {
+    height: 46px;
+    padding: 0;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.day-buttons button[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.shortcuts {
+    display: flex;
+    gap: 8px;
+}
+
+.shortcuts button {
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 22px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.times {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.time {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.time label {
+    font-weight: 600;
+}
+
+.time input {
+    min-height: 52px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 500;
+}
+
+.summary {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+.summary p {
+    margin: 0;
+}
+
+.actions {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 16px max(22px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+.save {
+    height: 54px;
+    border-radius: 12px;
+    border: none;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.delete {
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1.5px solid var(--danger-border);
+    background: transparent;
+    color: var(--danger-ink);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--backdrop);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.dialog {
+    width: 100%;
+    max-width: 360px;
+    padding: 20px;
+    border-radius: 14px;
+    background: var(--card);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dialog p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.dialog-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.dialog-buttons button {
+    min-height: 48px;
+    border-radius: 12px;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cancel {
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+}
+
+.confirm {
+    border: none;
+    background: var(--danger-solid);
+    color: #FFFFFF;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}

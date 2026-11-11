@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Contactor.AppHost/Contactor.AppHost.csproj" />
+  <Project Path="Contactor.ServiceDefaults/Contactor.ServiceDefaults.csproj" />
+  <Project Path="Contactor.Simulator/Contactor.Simulator.csproj" />
+  <Project Path="Contactor.Tests/Contactor.Tests.csproj" />
+  <Project Path="Contactor.Vm201/Contactor.Vm201.csproj" />
+  <Project Path="Contactor.Web/Contactor.Web.csproj" />
+</Solution>

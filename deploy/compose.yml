@@ -1,0 +1,48 @@
+# The relay app and its Cloudflare uplink. install.sh copies this file to /opt/contactor, next to the settings in
+# /opt/contactor/.env (readable by root only), and upgrade.sh brings it up. No port is published on the Raspberry
+# Pi: cloudflared connects out to Cloudflare and forwards the app's hostname to http://contactor:8080 on the
+# network Compose makes for these two.
+name: contactor
+
+x-logging: &logging
+  # Docker keeps logs forever by default; this caps them at 30 MB per container.
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  contactor:
+    image: ${CONTACTOR_IMAGE:-ghcr.io/gonace/contactor:latest}
+    restart: unless-stopped
+    environment:
+      CloudflareAccess__TeamDomain: ${CF_ACCESS_TEAM_DOMAIN:?run install.sh}
+      CloudflareAccess__Audience: ${CF_ACCESS_AUDIENCE:?run install.sh}
+      Vm201__Host: ${VM201_HOST:?run install.sh}
+      Vm201__Username: ${VM201_USERNAME:-}
+      Vm201__Password: ${VM201_PASSWORD:-}
+      # true logs every packet to and from the board (see DEPLOY.md); off by default.
+      Vm201__LogPackets: ${VM201_LOG_PACKETS:-false}
+    # The database and its nightly backups, on the Raspberry Pi's SD card; owned by the image's user (1654).
+    volumes:
+      - /var/lib/contactor:/var/lib/contactor
+    healthcheck:
+      # The image has no shell or curl: the app asks its own /healthz.
+      test: ["CMD", "dotnet", "/app/Contactor.Web.dll", "healthcheck"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 1m
+      start_interval: 5s
+    logging: *logging
+
+  cloudflared:
+    # Pinned by digest: only our own image is checked with cosign, so this one must not change under its tag.
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?run install.sh}
+    depends_on:
+      - contactor
+    logging: *logging

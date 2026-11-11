@@ -1,0 +1,44 @@
+@* The eight group icons as radio buttons, 4 × 2, with their Swedish names. Put it in a fieldset with a legend. *@
+@using Contactor.Web.Persistence
+
+<div class="icons">
+    @foreach (var icon in GroupIcons.All)
+    {
+        var picked = icon == Value;
+        <label class="@(picked ? "picked" : null)">
+            <input type="radio" class="visually-hidden" name="icon" value="@icon" checked="@picked" disabled="@Disabled" @onchange="() => PickAsync(icon)" />
+            <GroupIcon Icon="@icon" Size="26" />
+            <span>@Names[icon]</span>
+        </label>
+    }
+</div>
+
+@code {
+    /// <summary>The icons' names on the screens.</summary>
+    public static readonly IReadOnlyDictionary<string, string> Names = new Dictionary<string, string>
+    {
+        [GroupIcons.Fan] = "Fläkt",
+        [GroupIcons.Flame] = "Värme",
+        [GroupIcons.Bulb] = "Ljus",
+        [GroupIcons.Wind] = "Luft",
+        [GroupIcons.Spray] = "Lack",
+        [GroupIcons.Drop] = "Pump",
+        [GroupIcons.Wrench] = "Verktyg",
+        [GroupIcons.Bolt] = "Ström",
+    };
+
+    [Parameter]
+    public string Value { get; set; } = GroupIcons.Fan;
+
+    [Parameter]
+    public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    private async Task PickAsync(string icon)
+    {
+        Value = icon;
+        await ValueChanged.InvokeAsync(icon);
+    }
+}

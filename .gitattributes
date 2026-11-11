@@ -1,0 +1,9 @@
+# Everything that runs or is read on the Raspberry Pi or in CI must keep Unix line endings (LF), also when checked
+# out on Windows: bash can't run a script with CRLF ("bash\r: No such file or directory"), and a CR in a signing key
+# in upgrade.sh would make the signature check fail.
+*.sh       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.pub      text eol=lf
+deploy/**  text eol=lf
+scripts/** text eol=lf

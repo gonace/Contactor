@@ -1,0 +1,170 @@
+.screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    padding: 20px 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filters button {
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 22px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.filters button[aria-pressed="true"] {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.days {
+    flex: 1;
+    padding: 0 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+h2 {
+    margin: 4px 4px 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+}
+
+.row + .row {
+    border-top: 1px solid var(--row-line);
+}
+
+/* A safety shut-off, or a group that couldn't start. */
+.row.alert {
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+}
+
+.time {
+    width: 46px;
+    flex-shrink: 0;
+    padding-top: 9px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.badge {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.badge.person {
+    background: var(--chip);
+    color: var(--ink);
+}
+
+.badge.automatic {
+    background: var(--card);
+    color: var(--muted);
+    border: 1.5px dashed var(--line-dashed);
+}
+
+.text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 2px;
+}
+
+.what {
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.target {
+    font-size: 14px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+}
+
+.empty {
+    margin: 8px 4px;
+    color: var(--muted);
+}
+
+.more {
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.more:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}

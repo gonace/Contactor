@@ -1,0 +1,229 @@
+@page "/rele/{RelayId:int}/schema/ny"
+@page "/grupp/{GroupId:int}/schema/ny"
+@page "/schema/{Id:int}"
+@using System.Globalization
+@using Contactor.Web.Features.Groups
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Features.Schedules
+@using Contactor.Web.Persistence
+@inject SchedulesHandler Schedules
+@inject RelaySettingsHandler Relays
+@inject GroupsHandler Groups
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+
+<PageTitle>@(IsNew ? "Nytt schema" : "Ändra schema") · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <a href="@BackUrl" class="back">Avbryt</a>
+    </header>
+
+    @if (_loaded && _target is null)
+    {
+        <main class="content">
+            <p class="missing">@(!IsNew ? "Schemat finns inte längre." : GroupId is not null ? "Gruppen finns inte." : "Reläet finns inte.")</p>
+        </main>
+    }
+    else if (_target is { } target)
+    {
+        <form class="form" @onsubmit="SaveAsync">
+            <main class="content">
+                <div class="title">
+                    <h1>@(IsNew ? "Nytt schema" : "Ändra schema")</h1>
+                    <p>@target.Name</p>
+                </div>
+
+                <section class="days">
+                    <h2>Vilka dagar?</h2>
+                    <div class="day-buttons">
+                        @foreach (var day in ScheduleText.Days)
+                        {
+                            var name = char.ToUpper(day.Name[0], CultureInfo.InvariantCulture) + day.Name[1..];
+                            <button type="button" aria-pressed="@(_days.HasFlag(day.Day) ? "true" : "false")" aria-label="@name" @onclick="() => _days ^= day.Day">@day.Letter</button>
+                        }
+                    </div>
+                    <div class="shortcuts">
+                        <button type="button" @onclick="() => _days = ScheduleDays.Weekdays">Vardagar</button>
+                        <button type="button" @onclick="() => _days = ScheduleDays.All">Alla dagar</button>
+                    </div>
+                </section>
+
+                <section class="times">
+                    <div class="time">
+                        <label for="on">Slå på</label>
+                        <input id="on" type="time" value="@_on" @oninput="e => _on = e.Value?.ToString() ?? string.Empty" required />
+                    </div>
+                    <div class="time">
+                        <label for="off">Stäng av</label>
+                        <input id="off" type="time" value="@_off" @oninput="e => _off = e.Value?.ToString() ?? string.Empty" required />
+                    </div>
+                </section>
+
+                <section class="summary">
+                    <p>@Summary</p>
+                </section>
+            </main>
+
+            <div class="actions">
+                @if (_error is not null)
+                {
+                    <p class="error" role="alert">@_error</p>
+                }
+                <button type="submit" class="save" disabled="@_busy">Spara schema</button>
+                @if (!IsNew)
+                {
+                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Ta bort schema</button>
+                }
+            </div>
+        </form>
+
+        @if (_confirmDelete)
+        {
+            <div class="backdrop">
+                <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+                    <h2 id="confirm-title">Ta bort schemat?</h2>
+                    <p>@ScheduleText.Summary(_saved!.Days, _saved.OnTime, _saved.OffTime, IsGroup)</p>
+                    <div class="dialog-buttons">
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Avbryt</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Ta bort</button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    // What the schedule switches: a relay, or a group.
+    private (int? RelayId, int? GroupId, string Name)? _target;
+    private ScheduleModel? _saved;
+    private SignedInUser? _user;
+    private ScheduleDays _days = ScheduleDays.Weekdays;
+    private string _on = "06:30";
+    private string _off = "08:00";
+    private bool _loaded;
+    private bool _busy;
+    private bool _confirmDelete;
+    private string? _error;
+
+    [Parameter]
+    public int? RelayId { get; set; }
+
+    [Parameter]
+    public int? GroupId { get; set; }
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    private bool IsNew => Id is null;
+
+    private bool IsGroup => _target?.GroupId is not null;
+
+    private string BackUrl => _target switch
+    {
+        { GroupId: { } groupId } => $"grupp/{groupId}",
+        { RelayId: { } relayId } => $"rele/{relayId}",
+        _ => "",
+    };
+
+    private string Summary => TryTime(_on, out var on) && TryTime(_off, out var off)
+        ? ScheduleText.Summary(_days, on, off, IsGroup)
+        : IsGroup ? "Ange när gruppen ska slås på och stängas av." : "Ange när reläet ska slås på och stängas av.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loaded = false;
+        _user = await CurrentUser.GetAsync();
+        _target = null;
+        if (Id is { } id)
+        {
+            _saved = await Schedules.GetAsync(id, CancellationToken.None);
+            if (_saved is not null)
+            {
+                _days = _saved.Days;
+                _on = ScheduleText.Time(_saved.OnTime);
+                _off = ScheduleText.Time(_saved.OffTime);
+                _target = await TargetAsync(_saved.RelayId, _saved.GroupId);
+            }
+        }
+        else
+        {
+            _target = await TargetAsync(RelayId, GroupId);
+        }
+
+        _loaded = true;
+    }
+
+    private async Task<(int? RelayId, int? GroupId, string Name)?> TargetAsync(int? relayId, int? groupId)
+    {
+        if (groupId is { } g)
+        {
+            return await Groups.GetAsync(g, CancellationToken.None) is { } group ? (null, group.Id, group.Name) : null;
+        }
+
+        if (relayId is { } r)
+        {
+            return await Relays.GetAsync(r, CancellationToken.None) is { } relay ? (relay.Id, null, relay.Name) : null;
+        }
+
+        return null;
+    }
+
+    // A time field gives "HH:mm", or "HH:mm:ss" in some browsers.
+    private static bool TryTime(string text, out TimeOnly time)
+    {
+        return TimeOnly.TryParseExact(text, ["HH:mm", "HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.None, out time);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_user is null || _target is not { } target || _busy)
+        {
+            return;
+        }
+
+        if (!TryTime(_on, out var on) || !TryTime(_off, out var off))
+        {
+            _error = "Ange en tid för både slå på och stäng av.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var model = new ScheduleModel(Id ?? 0, target.RelayId, _days, on, off, _saved?.IsEnabled ?? true, target.GroupId);
+            _error = await Schedules.SaveAsync(model, _user.Email, CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (_error is null)
+        {
+            Navigation.NavigateTo(BackUrl);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_user is null || _target is null || Id is not { } id || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Schedules.DeleteAsync(id, _user.Email, CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        Navigation.NavigateTo(BackUrl);
+    }
+}

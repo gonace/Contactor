@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Logga in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#C2410C}a:hover{color:#9A3412}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F5F2EC; color: #1D1B18; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; padding: 96px 24px 32px; gap: 36px">
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <div aria-hidden="true" style="width: 64px; height: 64px; border-radius: 16px; background: #C2410C; display: flex; align-items: center; justify-content: center">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"></path><path d="M6.4 6.4a8 8 0 1 0 11.2 0"></path></svg>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.01em">Contactor</h1>
+      <p style="margin: 0; font-size: 18px; line-height: 1.45; color: #5C574F">Skriv din e-post så skickar vi en kod. Inget lösenord behövs.</p>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="epost" style="font-size: 18px; font-weight: 700">E-post</label>
+      <input id="epost" type="email" autocomplete="email" inputmode="email" value="ted@example.com" style="height: 60px; box-sizing: border-box; padding: 0 16px; border-radius: 12px; border: 1.5px solid #CFC8BC; background: #FFFFFF; font-family: inherit; font-size: 20px; color: #1D1B18">
+    </div>
+    <a href="Kod.dc.html" style="height: 60px; border-radius: 12px; background: #C2410C; color: #FFFFFF; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 19px; font-weight: 700">Skicka kod</a>
+  </div>
+
+  <div style="flex: 1"></div>
+
+  <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #5C574F">Bara för verkstadens medlemmar. Kommer du inte in? Fråga den som sköter appen.</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

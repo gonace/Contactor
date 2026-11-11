@@ -1,0 +1,162 @@
+{% comment %}
+  Cloudflare Access custom page, type Login, for the app's hostname. Laid out as docs/sketch/Login.dc.html.
+  Paste it in Zero Trust → Reusable components → Custom pages → Access custom pages → Create custom page, then pick
+  it under the application's Additional settings → Login page.
+
+  The sandbox allows no <script>, <svg>, <link>, <button>, <form> or url() in CSS: so no web fonts (IBM Plex only
+  where the phone has it, else the system font), and the power icon is drawn with CSS.
+  Access draws the e-mail field and its button itself inside <cf-access-authbox>: keep exactly one, outside any
+  {% if %}. The cf-access-authbox rules below restyle them as in the sketch if Access lets page CSS reach them;
+  if it doesn't, they are ignored and Access's own style shows.
+  Liquid takes an empty string as true, so text is checked with .size.
+{% endcomment %}
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Logga in · Contactor</title>
+    <style>
+      :root {
+        --bg: #F5F2EC;
+        --card: #FFFFFF;
+        --ink: #1D1B18;
+        --muted: #5C574F;
+        --line-strong: #CFC8BC;
+        --accent: #C2410C;
+        --accent-dark: #9A3412;
+        --danger-bg: #FDECEA;
+        --danger-border: #E5A29B;
+        --danger-ink: #7A1A10;
+        --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        color-scheme: light;
+      }
+      * { box-sizing: border-box; }
+      html { background: var(--bg); }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--accent); }
+      a:hover { color: var(--accent-dark); }
+      .page {
+        width: 100%;
+        max-width: 440px;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        gap: 36px;
+        padding: 96px 24px 32px;
+      }
+      .intro { display: flex; flex-direction: column; gap: 18px; }
+
+      /* The power symbol from the sketch, in CSS: a ring open at the top and a bar through the gap. */
+      .icon {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 16px;
+        background: var(--accent);
+      }
+      .icon .ring {
+        position: absolute;
+        left: 17px;
+        top: 19px;
+        width: 30px;
+        height: 30px;
+        border: 3px solid #FFFFFF;
+        border-top-color: transparent;
+        border-radius: 50%;
+        transform: rotate(0deg);
+      }
+      .icon .bar {
+        position: absolute;
+        left: 30.5px;
+        top: 13px;
+        width: 3px;
+        height: 18px;
+        border-radius: 2px;
+        background: #FFFFFF;
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+
+      h1 { margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+      .lead { margin: 8px 0 0; font-size: 18px; line-height: 1.45; color: var(--muted); }
+
+      .note {
+        margin: 0;
+        padding: 14px 16px;
+        border: 1.5px solid var(--danger-border);
+        border-radius: 12px;
+        background: var(--danger-bg);
+        color: var(--danger-ink);
+        font-size: 16px;
+        line-height: 1.45;
+      }
+      .note--info { border-color: var(--line-strong); background: var(--card); color: var(--ink); }
+
+      /* The sketch's field and button, for the controls Access puts in the authbox. */
+      cf-access-authbox { display: block; width: 100%; font-family: var(--sans); color: var(--ink); }
+      cf-access-authbox label { font-size: 18px; font-weight: 700; color: var(--ink); }
+      cf-access-authbox input[type="email"],
+      cf-access-authbox input[type="text"] {
+        width: 100%;
+        height: 60px;
+        padding: 0 16px;
+        border: 1.5px solid var(--line-strong);
+        border-radius: 12px;
+        background: var(--card);
+        font-family: inherit;
+        font-size: 20px;
+        color: var(--ink);
+      }
+      cf-access-authbox button,
+      cf-access-authbox input[type="submit"] {
+        width: 100%;
+        height: 60px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--accent);
+        color: #FFFFFF;
+        font-family: inherit;
+        font-size: 19px;
+        font-weight: 700;
+      }
+
+      .spacer { flex: 1; }
+      .footer { margin: 0; font-size: 15px; line-height: 1.5; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="intro">
+        <div class="icon" aria-hidden="true"><span class="ring"></span><span class="bar"></span></div>
+        <div>
+          <h1>Contactor</h1>
+          <p class="lead">Skriv din e-post så skickar vi en kod. Inget lösenord behövs.</p>
+        </div>
+      </header>
+
+      {% if message.text.size > 0 %}
+      <p class="note note--{{ message.level | default: 'info' | escape }}" role="status">{{ message.text | escape }}</p>
+      {% endif %}
+
+      <main>
+        <cf-access-authbox></cf-access-authbox>
+      </main>
+
+      <div class="spacer"></div>
+
+      <p class="footer">Bara för verkstadens medlemmar. Kommer du inte in? Fråga den som sköter appen.</p>
+    </div>
+  </body>
+</html>

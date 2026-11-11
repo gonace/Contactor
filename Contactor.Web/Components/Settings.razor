@@ -1,0 +1,329 @@
+@page "/settings"
+@implements IDisposable
+@using System.Globalization
+@using Contactor.Vm201
+@using Contactor.Web.Features.Backup
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Features.Vm201
+@inject BoardAddressHandler Board
+@inject UsersHandler Users
+@inject BackupService Backup
+@inject Vm201Client Client
+@inject CurrentUser CurrentUser
+@inject LocalClock Clock
+@inject BoardTrafficSetting Debugging
+
+<PageTitle>Inställningar · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <h1>Inställningar</h1>
+    </header>
+
+    <main class="content">
+        <form class="card" @onsubmit="SaveBoardAsync">
+            <h2>Reläkortet</h2>
+            <div class="fields">
+                <div class="field">
+                    <label for="host">Adress</label>
+                    <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
+                           maxlength="253" placeholder="192.168.1.50" @bind="_host" @bind:event="oninput" />
+                </div>
+                <div class="field">
+                    <label for="port">Port</label>
+                    <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" @bind="_port" @bind:event="oninput" />
+                </div>
+            </div>
+            <p class="hint">Reläkortets IP-adress i verkstadens nät. Den står i routerns lista över anslutna enheter (en Velleman-enhet).</p>
+
+            <label for="no-login" class="check">
+                <input id="no-login" type="checkbox" @bind="_noLogin" />
+                <span>Kortet har ingen inloggning</span>
+            </label>
+            @if (!_noLogin)
+            {
+                <div class="fields login">
+                    <div class="field">
+                        <label for="username">Användarnamn</label>
+                        <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                               maxlength="@Vm201Command.CredentialMaxLength" @bind="_username" @bind:event="oninput" />
+                    </div>
+                    <div class="field">
+                        <label for="password">Lösenord</label>
+                        <input id="password" type="password" autocomplete="new-password"
+                               maxlength="@Vm201Command.CredentialMaxLength" placeholder="@(_hasPassword ? "oförändrat" : "inget")"
+                               @bind="_newPassword" @bind:event="oninput" />
+                    </div>
+                </div>
+                <p class="hint">Samma som på kortets egen webbsida. Högst 8 tecken, utan å, ä och ö.</p>
+            }
+
+            @if (Client.State.IsConnected)
+            {
+                <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Kortet svarar på @Client.Endpoint</p>
+            }
+            else
+            {
+                <p class="status offline" role="status">Ingen kontakt med reläkortet på @Client.Endpoint</p>
+            }
+
+            @if (_boardMessage is not null)
+            {
+                <p class="@(_boardSaved ? "saved" : "error")" role="alert">@_boardMessage</p>
+            }
+
+            <button type="submit" class="save" disabled="@_busy">Spara</button>
+        </form>
+
+        <section class="card">
+            <h2>Personer</h2>
+            <p class="hint">Namnen som syns i appen och under Händelser.</p>
+            @foreach (var person in _people)
+            {
+                <form class="person" @key="person.Email" @onsubmit="() => RenameAsync(person)">
+                    <div class="field">
+                        <label for="@($"name-{person.Index}")">@person.Email</label>
+                        <div class="row">
+                            <input id="@($"name-{person.Index}")" type="text" maxlength="@Contactor.Web.Persistence.User.DisplayNameMaxLength"
+                                   autocomplete="off" @bind="person.Name" @bind:event="oninput" />
+                            <button type="submit" class="small" disabled="@_busy">Spara</button>
+                        </div>
+                    </div>
+                    @if (person.Message is not null)
+                    {
+                        <p class="@(person.Saved ? "saved" : "error")" role="alert">@person.Message</p>
+                    }
+                </form>
+            }
+        </section>
+
+        <section class="card">
+            <h2>Säkerhetskopior</h2>
+            <p class="hint">Appen gör en kopia av allt varje natt 02:30 och sparar de senaste 14. Ladda ner en ibland och spara den någon annanstans.</p>
+            @if (_latest is { } latest)
+            {
+                <p class="latest">Senaste: @RelayStatusText.When(Clock.ToLocal(latest.LastWriteTimeUtc), Clock.Now) · @Size(latest.Length)</p>
+            }
+            else
+            {
+                <p class="latest">Ingen kopia än.</p>
+            }
+
+            @if (_backupMessage is not null)
+            {
+                <p class="@(_backupSaved ? "saved" : "error")" role="alert">@_backupMessage</p>
+            }
+
+            <div class="buttons">
+                <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">Gör en kopia nu</button>
+                @if (_latest is not null)
+                {
+                    <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">Ladda ner</a>
+                }
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Debugging</h2>
+            <label for="debugging" class="check">
+                <input id="debugging" type="checkbox" checked="@_debugging" disabled="@(_user is null)" @onchange="SetDebuggingAsync" />
+                <span>Visa trafiken till reläkortet</span>
+            </label>
+            <p class="hint">Bara för dig. Varje meddelande till och från kortet visas en stund längst ner på sidan, och hela listan under fliken Debug.</p>
+        </section>
+    </main>
+
+    <p class="version">@VersionText</p>
+
+    <TabBar Current="TabBar.Tab.Settings" />
+</div>
+
+@code {
+    private static readonly string VersionText = AppBuild.Current is { IsRelease: true } build
+        ? $"Version {build.Version}{(build.ShortCommit is { } commit ? $" · {commit}" : "")}"
+        : $"Utvecklingsversion{(AppBuild.Current.ShortCommit is { } dev ? $" · {dev}" : "")}";
+
+    private SignedInUser? _user;
+    private string _host = "";
+    private string _port = "";
+    private bool _noLogin;
+    private string _username = "";
+    private string _newPassword = "";
+    private bool _hasPassword;
+    private string? _boardMessage;
+    private bool _boardSaved;
+    private List<Person> _people = [];
+    private FileInfo? _latest;
+    private string? _backupMessage;
+    private bool _backupSaved;
+    private bool _busy;
+    private bool _debugging;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await CurrentUser.GetAsync();
+        var endpoint = await Board.GetAsync(CancellationToken.None);
+        _host = endpoint.Host;
+        _port = endpoint.Port.ToString(CultureInfo.InvariantCulture);
+        await LoadLoginAsync();
+        await LoadPeopleAsync();
+        _latest = await Backup.LatestAsync(CancellationToken.None);
+        _debugging = _user is not null && await Debugging.IsOnAsync(_user.Email, CancellationToken.None);
+        Client.StateChanged += OnBoardChanged;
+    }
+
+    public void Dispose()
+    {
+        Client.StateChanged -= OnBoardChanged;
+    }
+
+    private async Task LoadLoginAsync()
+    {
+        var login = await Board.GetLoginAsync(CancellationToken.None);
+        _username = login.Username;
+        _hasPassword = login.HasPassword;
+        _noLogin = login.Username.Length == 0 && !login.HasPassword;
+        _newPassword = "";
+    }
+
+    private async Task LoadPeopleAsync()
+    {
+        var users = await Users.ListAsync(CancellationToken.None);
+        _people = [.. users.Select((u, i) => new Person(i, u.Email, u.DisplayName))];
+    }
+
+    private async Task SaveBoardAsync()
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        if (!int.TryParse(_port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
+        {
+            (_boardMessage, _boardSaved) = ("Porten ska vara ett tal mellan 1 och 65535 (oftast 9760).", false);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var error = await Board.SaveAsync(_host, port, _user.Email, CancellationToken.None)
+                ?? await Board.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None);
+            (_boardMessage, _boardSaved) = error is null ? ("Sparat. Appen ansluter till kortet igen.", true) : (error, false);
+            if (error is null)
+            {
+                await LoadLoginAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RenameAsync(Person person)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var error = await Users.RenameAsync(person.Email, person.Name, CancellationToken.None);
+            (person.Message, person.Saved) = error is null ? ("Sparat.", true) : (error, false);
+            if (error is null)
+            {
+                person.Name = person.Name.Trim();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task BackupNowAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Backup.RunAsync(CancellationToken.None);
+            _latest = await Backup.LatestAsync(CancellationToken.None);
+            (_backupMessage, _backupSaved) = ("Kopian är gjord.", true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            (_backupMessage, _backupSaved) = ("Kopian kunde inte göras. Försök igen om en stund.", false);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // Saved at once: a checkbox needs no Spara.
+    private async Task SetDebuggingAsync(ChangeEventArgs e)
+    {
+        if (_user is null)
+        {
+            return;
+        }
+
+        _debugging = e.Value is true;
+        await Debugging.SetAsync(_user.Email, _debugging, CancellationToken.None);
+    }
+
+    private static string Size(long bytes)
+    {
+        return bytes < 1024 * 1024
+            ? $"{Math.Max(1, bytes / 1024).ToString(CultureInfo.InvariantCulture)} kB"
+            : $"{(bytes / (1024.0 * 1024.0)).ToString("0.0", CultureInfo.GetCultureInfo("sv-SE"))} MB";
+    }
+
+    // From the board's read loop.
+    private void OnBoardChanged(object? sender, Vm201State state)
+    {
+        _ = RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+
+    private sealed class Person
+    {
+        public Person(int index, string email, string name)
+        {
+            Index = index;
+            Email = email;
+            Name = name;
+        }
+
+        public int Index { get; }
+
+        public string Email { get; }
+
+        public string Name { get; set; }
+
+        public string? Message { get; set; }
+
+        public bool Saved { get; set; }
+    }
+}

@@ -1,0 +1,641 @@
+.screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    padding: 12px 12px 4px;
+}
+
+.back {
+    min-height: 44px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.form {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.content {
+    flex: 1;
+    padding: 8px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.missing {
+    margin: 8px 4px;
+    color: var(--muted);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+input[type="text"] {
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.check {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-height: 44px;
+    padding-top: 6px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.check strong {
+    color: var(--ink);
+}
+
+.check input {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.status {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+.status.on {
+    background: var(--accent-tint);
+    border-color: var(--accent-border);
+}
+
+.status p {
+    margin: 0;
+}
+
+.toggle {
+    height: 56px;
+    border-radius: 12px;
+    border: none;
+    background: var(--accent);
+    color: var(--on-accent);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
+
+.toggle[aria-pressed="true"] {
+    background: var(--chip);
+    color: var(--ink);
+}
+
+h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.limits {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.choices {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.choices button {
+    min-height: 48px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.choices button[aria-pressed="true"] {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.warning {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+.schedules {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.schedule {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px 10px 16px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+.schedule-text {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.schedule-days {
+    font-weight: 600;
+}
+
+.schedule-times {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.schedule-toggle {
+    width: 72px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: none;
+    background: var(--chip);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.schedule-toggle[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.events {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.section-head a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+}
+
+.row + .row {
+    border-top: 1px solid var(--row-line);
+}
+
+/* A safety shut-off, or a group that couldn't start. */
+.row.alert {
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+}
+
+.time {
+    width: 46px;
+    flex-shrink: 0;
+    padding-top: 9px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.badge {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.badge.person {
+    background: var(--chip);
+    color: var(--ink);
+}
+
+.badge.automatic {
+    background: var(--card);
+    color: var(--muted);
+    border: 1.5px dashed var(--line-dashed);
+}
+
+.text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 2px;
+}
+
+.day {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.save {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 16px max(22px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.save button {
+    height: 54px;
+    border-radius: 12px;
+    border: none;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+/* The group's own. */
+.status.stopping {
+    border-style: dashed;
+    border-color: var(--accent);
+}
+
+.members {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.section-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.step {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+.step.on {
+    background: var(--accent-tint);
+    border-color: var(--accent-border);
+}
+
+.step-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.number {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--chip);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.step-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.step-text .role {
+    min-height: 40px;
+    padding: 0 8px;
+    margin-left: -8px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.step-text .role:focus {
+    border-color: var(--line-strong);
+    background: var(--card);
+}
+
+.note {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.order {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.order button {
+    width: 44px;
+    height: 30px;
+    border-radius: 8px;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.member-toggle {
+    width: 72px;
+    height: 52px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    border: none;
+    background: var(--chip);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.member-toggle[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.remove {
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: var(--danger-ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* The waits between two steps, on the line that joins them. */
+.gap {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-left: 25px;
+    padding: 10px 0 10px 22px;
+    border-left: 2px dashed var(--line-dashed);
+}
+
+.gap label,
+.add {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.gap select,
+.add select {
+    min-height: 44px;
+    padding: 0 8px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+}
+
+.add button {
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1.5px dashed var(--line-dashed);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.safety p {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.delete {
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1.5px solid var(--danger-border);
+    background: transparent;
+    color: var(--danger-ink);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--backdrop);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.dialog {
+    width: 100%;
+    max-width: 360px;
+    padding: 20px;
+    border-radius: 14px;
+    background: var(--card);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dialog h2 {
+    margin: 0;
+}
+
+.dialog p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.dialog-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.dialog-buttons button {
+    min-height: 48px;
+    border-radius: 12px;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cancel {
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+}
+
+.confirm {
+    border: none;
+    background: var(--danger-solid);
+    color: #FFFFFF;
+}
+
+.icon-field {
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+}
+
+.icon-field legend {
+    padding: 0;
+    margin-bottom: 10px;
+    font-size: 18px;
+    font-weight: 600;
+}

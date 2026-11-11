@@ -1,0 +1,226 @@
+@implements IDisposable
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Vm201
+@inject CurrentUser CurrentUser
+@inject BoardTrafficSetting Debugging
+@inject BoardTrace Trace
+@inject TimeProvider TimeProvider
+
+<div class="bottom">
+    @if (_debugging)
+    {
+        @* Toasts with the board's traffic for whoever turned Debugging on; the keep-alive is left out. *@
+        <div class="toasts" role="log" aria-live="polite" aria-label="Trafik till reläkortet">
+            @foreach (var toast in ToastsNow)
+            {
+                <p class="toast @(toast.Item.IsError ? "error" : null)" @key="toast.Item.Id">
+                    <span class="text">@Arrow(toast.Item) @toast.Item.Text</span>
+                    @if (toast.Item.Hex is not null)
+                    {
+                        <span class="hex">@toast.Item.Hex</span>
+                    }
+                </p>
+            }
+        </div>
+    }
+
+    <nav class="tabs" aria-label="Huvudmeny">
+        <a href="" aria-current="@(Current == Tab.Relays ? "page" : null)">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"></path><path d="M6.4 6.4a8 8 0 1 0 11.2 0"></path></svg>
+            Reläer
+        </a>
+        <a href="handelser" aria-current="@(Current == Tab.Events ? "page" : null)">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+            Händelser
+        </a>
+        <a href="settings" aria-current="@(Current == Tab.Settings ? "page" : null)">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            Inställningar
+        </a>
+        @if (_debugging || Current == Tab.Debug)
+        {
+            <a href="debug" aria-current="@(Current == Tab.Debug ? "page" : null)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"></path><path d="M12 19h8"></path></svg>
+                Debug
+            </a>
+        }
+    </nav>
+</div>
+
+@code {
+    /// <summary>Toasts shown at once; an older one goes when a new one comes.</summary>
+    public const int MaxToasts = 3;
+
+    /// <summary>How long a toast stays.</summary>
+    public static readonly TimeSpan ToastTime = TimeSpan.FromSeconds(6);
+
+    public enum Tab
+    {
+        Relays,
+        Events,
+        Settings,
+        Debug,
+    }
+
+    private readonly List<Toast> _toasts = [];
+    private readonly Lock _lock = new();
+    private string? _email;
+    private bool _debugging;
+    private bool _disposed;
+
+    [Parameter]
+    public Tab Current { get; set; }
+
+    // A copy: the timers change the list off the render thread.
+    private Toast[] ToastsNow
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _toasts];
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _email = (await CurrentUser.GetAsync())?.Email;
+        if (_email is null)
+        {
+            return;
+        }
+
+        Debugging.Changed += OnDebuggingChanged;
+        Trace.Added += OnTraced;
+        _debugging = await Debugging.IsOnAsync(_email, CancellationToken.None);
+    }
+
+    public void Dispose()
+    {
+        Debugging.Changed -= OnDebuggingChanged;
+        Trace.Added -= OnTraced;
+        lock (_lock)
+        {
+            _disposed = true;
+            foreach (var toast in _toasts)
+            {
+                toast.Timer.Dispose();
+            }
+
+            _toasts.Clear();
+        }
+    }
+
+    private static string Arrow(BoardTraceItem item)
+    {
+        return item.Kind switch
+        {
+            Contactor.Vm201.Vm201TraceKind.Sent => "→",
+            Contactor.Vm201.Vm201TraceKind.Received => "←",
+            _ => "·",
+        };
+    }
+
+    // From another page, or this one: the person turned Debugging on or off.
+    private void OnDebuggingChanged(object? sender, string email)
+    {
+        if (email == _email)
+        {
+            _ = ReloadAsync();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var on = await Debugging.IsOnAsync(_email!, CancellationToken.None);
+            await InvokeAsync(() =>
+            {
+                _debugging = on;
+                if (!on)
+                {
+                    RemoveAll();
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed meanwhile.
+        }
+    }
+
+    // From the board connection's loop.
+    private void OnTraced(object? sender, BoardTraceItem item)
+    {
+        if (!_debugging || item.IsRoutine)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            Toast? toast = null;
+            var timer = TimeProvider.CreateTimer(_ => Remove(toast!), null, ToastTime, Timeout.InfiniteTimeSpan);
+            toast = new Toast(item, timer);
+            _toasts.Add(toast);
+            while (_toasts.Count > MaxToasts)
+            {
+                _toasts[0].Timer.Dispose();
+                _toasts.RemoveAt(0);
+            }
+        }
+
+        _ = RefreshAsync();
+    }
+
+    private void Remove(Toast toast)
+    {
+        lock (_lock)
+        {
+            if (!_toasts.Remove(toast))
+            {
+                return;
+            }
+
+            toast.Timer.Dispose();
+        }
+
+        _ = RefreshAsync();
+    }
+
+    private void RemoveAll()
+    {
+        lock (_lock)
+        {
+            foreach (var toast in _toasts)
+            {
+                toast.Timer.Dispose();
+            }
+
+            _toasts.Clear();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+
+    private sealed record Toast(BoardTraceItem Item, ITimer Timer);
+}

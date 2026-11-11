@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Ange kod</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#C2410C}a:hover{color:#9A3412}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F5F2EC; color: #1D1B18; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="padding: 44px 12px 4px; display: flex; align-items: center">
+    <a href="Login.dc.html" style="min-height: 44px; padding: 0 8px; display: flex; align-items: center; gap: 4px; text-decoration: none; color: #C2410C; font-size: 16px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+      Byt e-post
+    </a>
+  </header>
+  <div style="flex: 1; display: flex; flex-direction: column; gap: 32px; padding: 28px 24px 32px">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <h1 style="margin: 0; font-size: 30px; font-weight: 700">Kolla din e-post</h1>
+      <p style="margin: 0; font-size: 18px; line-height: 1.45; color: #5C574F">Vi skickade en kod till <strong style="color: #1D1B18">ted@example.com</strong>. Den gäller i 10 minuter.</p>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <label for="kod" style="font-size: 18px; font-weight: 700">Kod</label>
+        <input id="kod" type="text" inputmode="numeric" autocomplete="one-time-code" value="482 917" style="height: 72px; box-sizing: border-box; padding: 0 16px; border-radius: 12px; border: 1.5px solid #CFC8BC; background: #FFFFFF; font-family: 'IBM Plex Mono', monospace; font-size: 34px; letter-spacing: 0.18em; text-align: center; color: #1D1B18">
+      </div>
+      <a href="Main.dc.html" style="height: 60px; border-radius: 12px; background: #C2410C; color: #FFFFFF; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 19px; font-weight: 700">Logga in</a>
+    </div>
+
+    <div style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; background: #FFFFFF; border: 1.5px solid #E3DED5">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5C574F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px"><rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+      <p style="margin: 0; font-size: 16px; line-height: 1.45">Du förblir inloggad i 30 dagar på den här telefonen.</p>
+    </div>
+
+    <div style="flex: 1"></div>
+
+    <a href="Kod.dc.html" style="align-self: center; min-height: 44px; display: flex; align-items: center; font-size: 16px; font-weight: 600">Fick ingen kod? Skicka igen</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Ingång</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#C2410C}a:hover{color:#9A3412}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F5F2EC; color: #1D1B18; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="padding: 44px 12px 4px; display: flex; align-items: center">
+    <a href="Main.dc.html" style="min-height: 44px; padding: 0 8px; display: flex; align-items: center; gap: 4px; text-decoration: none; color: #C2410C; font-size: 16px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+      Reläer
+    </a>
+  </header>
+  <main style="flex: 1; overflow-y: auto; padding: 4px 20px 20px; display: flex; flex-direction: column; gap: 22px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <label for="namn" style="font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: #5C574F">INGÅNG · NAMN</label>
+      <input id="namn" type="text" value="Garageporten" style="height: 52px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; border: 1.5px solid #CFC8BC; background: #FFFFFF; font-family: inherit; font-size: 20px; font-weight: 600; color: #1D1B18">
+    </div>
+
+    <section style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-radius: 14px; background: #FFFFFF; border: 1.5px solid #E3DED5">
+      <span style="font-size: 16px">Stängd sedan 16:12</span>
+      <span style="padding: 6px 12px; border-radius: 16px; background: #E8E3DA; font-size: 15px; font-weight: 700">Stängd</span>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700">Vad visas i appen?</h2>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="sluten" style="font-size: 14px; color: #5C574F">Kontakten sluten</label>
+          <input id="sluten" type="text" value="Stängd" style="height: 48px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1.5px solid #CFC8BC; background: #FFFFFF; font-family: inherit; font-size: 17px; color: #1D1B18">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="oppen" style="font-size: 14px; color: #5C574F">Kontakten öppen</label>
+          <input id="oppen" type="text" value="Öppen" style="height: 48px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1.5px solid #CFC8BC; background: #FFFFFF; font-family: inherit; font-size: 17px; color: #1D1B18">
+        </div>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 4px">
+      <h2 style="margin: 0 0 6px; font-size: 18px; font-weight: 700">Skicka notis via e-post</h2>
+      <label for="n1" style="display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 16px; cursor: pointer">
+        <input id="n1" type="checkbox" checked="checked" style="width: 24px; height: 24px; margin: 0; accent-color: #C2410C">
+        När den blir Öppen
+      </label>
+      <label for="n2" style="display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 16px; cursor: pointer">
+        <input id="n2" type="checkbox" style="width: 24px; height: 24px; margin: 0; accent-color: #C2410C">
+        När den blir Stängd
+      </label>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 700">Händelser</h2>
+        <a href="Logg.dc.html" style="min-height: 44px; display: flex; align-items: center; text-decoration: none; font-size: 16px; font-weight: 600">Alla händelser</a>
+      </div>
+      <div style="display: flex; flex-direction: column; background: #FFFFFF; border: 1.5px solid #E3DED5; border-radius: 14px; overflow: hidden">
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px">
+          <span style="width: 46px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #5C574F; padding-top: 9px">16:12</span>
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; background: #FFFFFF; color: #5C574F; border: 1.5px dashed #A39C90; box-sizing: border-box">I</span>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+            <span style="font-size: 16px; line-height: 1.35"><strong>Garageporten</strong> blev Stängd</span>
+            <span style="font-size: 14px; color: #5C574F">Idag</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-top: 1px solid #EEEAE3">
+          <span style="width: 46px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #5C574F; padding-top: 9px">15:38</span>
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; background: #FFFFFF; color: #5C574F; border: 1.5px dashed #A39C90; box-sizing: border-box">I</span>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+            <span style="font-size: 16px; line-height: 1.35"><strong>Garageporten</strong> blev Öppen · notis skickad</span>
+            <span style="font-size: 14px; color: #5C574F">Idag</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <div style="padding: 12px 20px 28px; border-top: 1px solid #E3DED5">
+    <a href="Main.dc.html" style="height: 54px; border-radius: 12px; background: #1D1B18; color: #FFFFFF; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 18px; font-weight: 700">Spara</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,705 @@
+@page "/grupp/{Id:int}"
+@implements IDisposable
+@using Microsoft.EntityFrameworkCore
+@using Contactor.Vm201
+@using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Groups
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Features.Schedules
+@using Contactor.Web.Persistence
+@inject Vm201Client Board
+@inject GroupsHandler Groups
+@inject GroupSequencer Sequencer
+@inject EventsHandler Events
+@inject SchedulesHandler Schedules
+@inject ScheduleOutlook Outlook
+@inject RelayChanges Changes
+@inject CurrentUser CurrentUser
+@inject LocalClock Clock
+@inject NavigationManager Navigation
+@inject IDbContextFactory<ContactorDbContext> DbFactory
+@inject ILogger<GroupDetail> Log
+
+<PageTitle>@(_group?.Name ?? "Grupp") · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <a href="" class="back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+            Reläer
+        </a>
+    </header>
+
+    @if (_loaded && _group is null)
+    {
+        <main class="content">
+            <p class="missing">Gruppen finns inte.</p>
+        </main>
+    }
+    else if (_group is not null)
+    {
+        <form class="form" @onsubmit="SaveAsync">
+            <main class="content">
+                <div class="field">
+                    <label for="name" class="label">GRUPP · NAMN</label>
+                    <input id="name" type="text" maxlength="@RelayGroup.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
+                </div>
+
+                <fieldset class="icon-field">
+                    <legend>Ikon</legend>
+                    <IconPicker @bind-Value="_icon" />
+                </fieldset>
+
+                <section class="status @(GroupOn ? "on" : "") @(_group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : "")">
+                    <p>@GroupStatusText.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook)</p>
+                    <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleGroupAsync">
+                        @(GroupOn ? "STÄNG AV GRUPPEN" : "SLÅ PÅ GRUPPEN")
+                    </button>
+                    @if (_toggleError is not null)
+                    {
+                        <p class="error" role="alert">@_toggleError</p>
+                    }
+                </section>
+
+                <section class="members">
+                    <div class="section-text">
+                        <h2>Reläer i startordning</h2>
+                        <p class="hint">Startar uppifrån, stängs av nerifrån. Ett relä kan bara vara på när reläet ovanför är på.</p>
+                    </div>
+                    <ol class="steps">
+                        @for (var i = 0; i < _members.Count; i++)
+                        {
+                            var index = i;
+                            var member = _members[index];
+                            var on = State.IsOn(member.RelayId);
+                            var blockedBy = BlockedBy(index);
+                            <li class="step @(on ? "on" : "")" @key="member.RelayId">
+                                <div class="step-row">
+                                    <span class="number" aria-hidden="true">@(index + 1)</span>
+                                    <div class="step-text">
+                                        <label class="label" for="@($"role-{member.RelayId}")">RELÄ @member.RelayId</label>
+                                        <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
+                                        <span class="note">@NoteFor(index, on, blockedBy)</span>
+                                    </div>
+                                    <div class="order">
+                                        <button type="button" aria-label="@($"Flytta upp {member.RoleName}")" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
+                                        </button>
+                                        <button type="button" aria-label="@($"Flytta ner {member.RoleName}")" disabled="@(!CanChangeMembers || index == _members.Count - 1)" @onclick="() => Move(index, 1)">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+                                        </button>
+                                    </div>
+                                    <button type="button"
+                                            class="member-toggle"
+                                            data-vibrate
+                                            aria-pressed="@(on ? "true" : "false")"
+                                            aria-label="@((on ? "Stäng av " : "Slå på ") + member.RoleName)"
+                                            disabled="@(!State.IsConnected || _busy || OrderChanged || (!on && blockedBy is not null))"
+                                            @onclick="() => ToggleMemberAsync(member.RelayId, on)">@(on ? "PÅ" : "AV")</button>
+                                </div>
+                                @if (CanChangeMembers && _members.Count > RelayGroup.MinMembers)
+                                {
+                                    <button type="button" class="remove" @onclick="() => Remove(index)">Ta bort ur gruppen</button>
+                                }
+                                @if (_memberError is { } error && error.RelayId == member.RelayId)
+                                {
+                                    <p class="error" role="alert">@error.Message</p>
+                                }
+                            </li>
+                            @if (index < _members.Count - 1)
+                            {
+                                var below = _members[index + 1];
+                                <li class="gap" aria-label="@($"Mellan {member.RoleName} och {below.RoleName}")">
+                                    <label>
+                                        Vid start, vänta
+                                        <select @bind="below.StartDelaySec">
+                                            @foreach (var seconds in Choices(GroupsHandler.StartDelayChoices, below.StartDelaySec))
+                                            {
+                                                <option value="@seconds">@EventText.Seconds(seconds)</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label>
+                                        Vid stopp, eftergång
+                                        <select @bind="member.RunOnSec">
+                                            @foreach (var seconds in Choices(GroupsHandler.RunOnChoices, member.RunOnSec))
+                                            {
+                                                <option value="@seconds">@(seconds == 0 ? "Ingen" : EventText.Seconds(seconds))</option>
+                                            }
+                                        </select>
+                                    </label>
+                                </li>
+                            }
+                        }
+                    </ol>
+                    @if (!State.IsConnected)
+                    {
+                        <p class="hint">Ingen kontakt med reläkortet. Vilka reläer som ingår och deras ordning kan ändras när kortet svarar.</p>
+                    }
+                    else if (!CanChangeMembers)
+                    {
+                        <p class="hint">Stäng av gruppen för att ändra vilka reläer som ingår eller deras ordning.</p>
+                    }
+                    else if (_members.Count < Vm201Channel.Count && AddableRelays.Any())
+                    {
+                        <div class="add">
+                            <label for="add-relay" class="visually-hidden">Relä att lägga till</label>
+                            <select id="add-relay" @bind="_addRelayId">
+                                @foreach (var relay in AddableRelays)
+                                {
+                                    <option value="@relay.Id">Relä @relay.Id · @relay.Name</option>
+                                }
+                            </select>
+                            <button type="button" @onclick="AddRelay">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                                Lägg till relä
+                            </button>
+                        </div>
+                    }
+                </section>
+
+                <section class="limits">
+                    <h2>Stäng av gruppen automatiskt efter</h2>
+                    <div class="choices">
+                        @foreach (var limit in RelaySettingsHandler.Limits)
+                        {
+                            <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@(limit is { } m ? $"{m / 60} h" : "Aldrig")</button>
+                        }
+                    </div>
+                    <p class="hint">Gäller när någon slår på gruppen för hand. Stängs av i stoppordning, med eftergång.</p>
+                </section>
+
+                <section class="schedules">
+                    <div class="section-head">
+                        <h2>Schema</h2>
+                        <a href="grupp/@Id/schema/ny">Lägg till</a>
+                    </div>
+                    @if (_schedules.Count == 0)
+                    {
+                        <p class="hint">Inga scheman. Lägg till ett för att slå på gruppen vissa tider.</p>
+                    }
+                    @foreach (var schedule in _schedules)
+                    {
+                        <div class="schedule" @key="schedule.Id">
+                            <a href="schema/@schedule.Id" class="schedule-text">
+                                <span class="schedule-days">@ScheduleText.ShortDays(schedule.Days)</span>
+                                <span class="schedule-times">@ScheduleText.Times(schedule.OnTime, schedule.OffTime)</span>
+                            </a>
+                            <button type="button"
+                                    class="schedule-toggle"
+                                    aria-pressed="@(schedule.IsEnabled ? "true" : "false")"
+                                    aria-label="@($"{ScheduleText.ShortDays(schedule.Days)} {ScheduleText.Times(schedule.OnTime, schedule.OffTime)}")"
+                                    disabled="@_busy"
+                                    @onclick="() => SetEnabledAsync(schedule)">@(schedule.IsEnabled ? "Aktiv" : "Pausad")</button>
+                        </div>
+                    }
+                </section>
+
+                <section class="events">
+                    <div class="section-head">
+                        <h2>Händelser</h2>
+                        <a href="handelser">Alla händelser</a>
+                    </div>
+                    @if (_events.Count == 0)
+                    {
+                        <p class="hint">Inget har hänt med gruppen än.</p>
+                    }
+                    else
+                    {
+                        <div class="list">
+                            @foreach (var row in _events)
+                            {
+                                <div class="row @(row.View.IsAlert ? "alert" : null)" @key="row.Id">
+                                    <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
+                                    <span class="badge @(row.View.IsPerson ? "person" : "automatic")" aria-hidden="true">@row.View.Badge</span>
+                                    <div class="text">
+                                        <span><strong>@row.View.Who</strong> @row.View.What</span>
+                                        <span class="day">@Events.DayLabel(row.TimestampLocal)</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="safety">
+                    <p>Spärren i appen fungerar bara när appen kör. Där säkerheten kräver det, t.ex. värme utan fläkt, ska den också lösas i elen.</p>
+                </section>
+
+                @if (CanChangeMembers)
+                {
+                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Ta bort gruppen</button>
+                }
+            </main>
+
+            <div class="save">
+                @if (_changedElsewhere)
+                {
+                    <p class="warning" role="status">Någon annan har ändrat gruppen medan du hade sidan öppen. Spara skriver över den ändringen.</p>
+                }
+                @if (_saveError is not null)
+                {
+                    <p class="error" role="alert">@_saveError</p>
+                }
+                <button type="submit" disabled="@_busy">Spara</button>
+            </div>
+        </form>
+
+        @if (_confirmDelete)
+        {
+            <div class="backdrop">
+                <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+                    <h2 id="confirm-title">Ta bort gruppen?</h2>
+                    <p>Reläerna blir vanliga reläer igen och styrs var för sig. Gruppens scheman tas också bort.</p>
+                    <div class="dialog-buttons">
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Avbryt</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Ta bort</button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private const int EventCount = 4;
+
+    private GroupView? _group;
+    private List<EditMember> _members = [];
+    private IReadOnlyList<Relay> _free = [];
+    private Dictionary<string, string> _names = [];
+    private List<EventRow> _events = [];
+    private List<ScheduleModel> _schedules = [];
+    private RelayOutlook? _outlook;
+    private SignedInUser? _user;
+    private bool _loaded;
+    private bool _busy;
+    private const string SomethingWentWrong = "Något gick fel. Försök igen.";
+
+    private List<EditMember> _removed = [];
+    private Timer? _tick;
+    private bool _changedElsewhere;
+    private string? _toggleError;
+    private bool _confirmDelete;
+    private string? _saveError;
+    private (int RelayId, string Message)? _memberError;
+    private string _name = "";
+    private string _icon = GroupIcons.Fan;
+    private int? _maxOnMinutes;
+    private int _addRelayId;
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private Vm201State State => Board.State;
+
+    private bool GroupOn => _group is not null && _group.IsOn(State);
+
+    // Which relays and their order only change while the whole group is off and still.
+    private bool CanChangeMembers => _group is not null
+        && _group.Runtime.Phase == GroupPhases.Idle
+        && State.IsConnected
+        && (State.Outputs & MaskOf(_group.Members.Select(m => m.RelayId).Concat(_members.Select(m => m.RelayId)))) == 0;
+
+    // One relay at a time follows the saved order; after a change, save first.
+    private bool OrderChanged => _group is not null && !_group.Members.Select(m => m.RelayId).SequenceEqual(_members.Select(m => m.RelayId));
+
+    // Free relays, and the group's own that were taken out in the form and not saved yet.
+    private IEnumerable<(int Id, string Name)> AddableRelays => _free
+        .Select(r => (r.Id, r.Name))
+        .Concat(_removed.Select(m => (m.RelayId, m.RoleName)))
+        .Where(r => _members.All(m => m.RelayId != r.Item1) && !State.IsOn(r.Item1))
+        .OrderBy(r => r.Item1);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _user = await CurrentUser.GetAsync();
+        _toggleError = null;
+        _memberError = null;
+        _saveError = null;
+        _confirmDelete = false;
+        _changedElsewhere = false;
+        _group = await Groups.GetAsync(Id, CancellationToken.None);
+        if (_group is not null)
+        {
+            _name = _group.Name;
+            _icon = _group.Icon;
+            _maxOnMinutes = _group.MaxOnMinutes;
+            SeedMembers(_group);
+            await LoadLiveAsync();
+        }
+
+        _loaded = true;
+    }
+
+    protected override void OnInitialized()
+    {
+        Board.StateChanged += OnBoardChanged;
+        Changes.Changed += OnRelaysChanged;
+
+        // A start or stop counts down in seconds; nothing else re-renders the page that often.
+        _tick = new Timer(_ =>
+        {
+            if (_group is { } group && group.Runtime.Phase != GroupPhases.Idle)
+            {
+                _ = RefreshAsync(reload: false);
+            }
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    public void Dispose()
+    {
+        Board.StateChanged -= OnBoardChanged;
+        Changes.Changed -= OnRelaysChanged;
+        _tick?.Dispose();
+    }
+
+    private static IEnumerable<(int RelayId, string RoleName, int StartDelaySec, int RunOnSec)> Saved(GroupView group)
+    {
+        return group.Members.Select(m => (m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec));
+    }
+
+    private void SeedMembers(GroupView group)
+    {
+        _members = [.. group.Members.Select(m => new EditMember(m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))];
+        _removed = [];
+    }
+
+    // What others can change while the page is open; the form fields keep what the user typed.
+    private async Task LoadLiveAsync()
+    {
+        var before = _group;
+        var edited = before is not null && !Saved(before).SequenceEqual(_members.Select(m => (m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec)));
+        _group = await Groups.GetAsync(Id, CancellationToken.None) ?? _group;
+
+        // Someone else changed the members: follow them, unless this form has changes of its own to them.
+        if (before is not null && _group is not null && !Saved(before).SequenceEqual(Saved(_group)))
+        {
+            if (edited)
+            {
+                _changedElsewhere = true;
+            }
+            else
+            {
+                SeedMembers(_group);
+            }
+        }
+
+        _free = [.. (await Groups.FreeRelaysAsync(CancellationToken.None))];
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
+        _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, groupId: Id)];
+        _schedules = [.. await Schedules.ListForGroupAsync(Id, CancellationToken.None)];
+        _outlook = (await Outlook.GetGroupsAsync(CancellationToken.None)).GetValueOrDefault(Id);
+        if (_addRelayId == 0 || AddableRelays.All(r => r.Id != _addRelayId))
+        {
+            _addRelayId = AddableRelays.FirstOrDefault().Id;
+        }
+    }
+
+    // The relay above that must be on first, or null.
+    private EditMember? BlockedBy(int index)
+    {
+        return index > 0 && !State.IsOn(_members[index - 1].RelayId) ? _members[index - 1] : null;
+    }
+
+    private string NoteFor(int index, bool on, EditMember? blockedBy)
+    {
+        var runtime = _group!.Runtime;
+        var level = GroupPlanner.Level(_group.Infos, State);
+        if (on && runtime.Phase == GroupPhases.Stopping && index == level - 1 && runtime.NextStepAtUtc is { } next && next > Clock.UtcNow)
+        {
+            return $"Går {GroupStatusText.Remaining(next - Clock.UtcNow)} till";
+        }
+
+        if (on)
+        {
+            return "På";
+        }
+
+        return blockedBy is not null ? $"Kräver att {blockedBy.RoleName} är på" : "Av";
+    }
+
+    private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)
+    {
+        return offered.Contains(current) ? offered : offered.Append(current).Order();
+    }
+
+    private static byte MaskOf(IEnumerable<int> relayIds)
+    {
+        return relayIds.Aggregate((byte)0, (mask, id) => (byte)(mask | Vm201Channel.Mask(id)));
+    }
+
+    private void Move(int index, int step)
+    {
+        var to = index + step;
+        if (to < 0 || to >= _members.Count)
+        {
+            return;
+        }
+
+        (_members[index], _members[to]) = (_members[to], _members[index]);
+    }
+
+    private void Remove(int index)
+    {
+        var member = _members[index];
+        _members.RemoveAt(index);
+        if (_group!.Members.Any(m => m.RelayId == member.RelayId))
+        {
+            _removed.Add(member);
+        }
+
+        if (_addRelayId == 0)
+        {
+            _addRelayId = AddableRelays.FirstOrDefault().Id;
+        }
+    }
+
+    private void AddRelay()
+    {
+        if (!AddableRelays.Any(r => r.Id == _addRelayId))
+        {
+            return;
+        }
+
+        // A relay taken out of this group comes back as it was.
+        var removed = _removed.FirstOrDefault(m => m.RelayId == _addRelayId);
+        if (removed is not null)
+        {
+            _removed.Remove(removed);
+            _members.Add(removed);
+        }
+        else
+        {
+            var relay = _free.First(r => r.Id == _addRelayId);
+            _members.Add(new EditMember(relay.Id, relay.Name, RelayGroupMember.DefaultStartDelaySec, RelayGroupMember.DefaultRunOnSec));
+        }
+
+        _addRelayId = AddableRelays.FirstOrDefault().Id;
+    }
+
+    private string? NameOf(string? email)
+    {
+        if (email is null)
+        {
+            return null;
+        }
+
+        if (email == _user?.Email)
+        {
+            return "du";
+        }
+
+        return email switch
+        {
+            EventActors.Schedule => "schema",
+            EventActors.AutoOff => "auto-av",
+            _ => _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email),
+        };
+    }
+
+    private async Task ToggleGroupAsync()
+    {
+        if (_user is null || _busy || _group is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _toggleError = null;
+        try
+        {
+            if (GroupOn)
+            {
+                await Sequencer.StopGroupAsync(Id, _user.Email, CancellationToken.None);
+            }
+            else
+            {
+                await Sequencer.StartGroupAsync(Id, _user.Email, CancellationToken.None);
+            }
+        }
+        catch (Vm201NotConnectedException)
+        {
+            _toggleError = "Kortet svarar inte. Försök igen.";
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Starting or stopping group {GroupId} failed", Id);
+            _toggleError = SomethingWentWrong;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ToggleMemberAsync(int relayId, bool isOn)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _memberError = null;
+        try
+        {
+            if (await Sequencer.SetMemberAsync(Id, relayId, !isOn, _user.Email, CancellationToken.None) is { } refusal)
+            {
+                _memberError = (relayId, refusal);
+            }
+        }
+        catch (Vm201NotConnectedException)
+        {
+            _memberError = (relayId, "Kortet svarar inte. Försök igen.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Switching relay {RelayId} of group {GroupId} failed", relayId, Id);
+            _memberError = (relayId, SomethingWentWrong);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetEnabledAsync(ScheduleModel schedule)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Schedules.SetEnabledAsync(schedule.Id, !schedule.IsEnabled, _user.Email, CancellationToken.None);
+            await LoadLiveAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Pausing or resuming schedule {ScheduleId} failed", schedule.Id);
+            _saveError = SomethingWentWrong;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_user is null || _group is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var draft = new GroupDraft(
+                _name,
+                _icon,
+                _maxOnMinutes,
+                [.. _members.Select(m => new GroupMemberDraft(m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))]);
+            _saveError = await Groups.SaveAsync(Id, draft, _user.Email, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving group {GroupId} failed", Id);
+            _saveError = SomethingWentWrong;
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (_saveError is null)
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _saveError = await Groups.DeleteAsync(Id, _user.Email, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Deleting group {GroupId} failed", Id);
+            _saveError = SomethingWentWrong;
+        }
+        finally
+        {
+            _busy = false;
+            _confirmDelete = false;
+        }
+
+        if (_saveError is null)
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    private void OnBoardChanged(object? sender, Vm201State state)
+    {
+        _ = RefreshAsync(reload: false);
+    }
+
+    private void OnRelaysChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync(reload: true);
+    }
+
+    private async Task RefreshAsync(bool reload)
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (reload && _group is not null)
+                {
+                    await LoadLiveAsync();
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+
+    // A member as the form edits it.
+    private sealed class EditMember
+    {
+        public EditMember(int relayId, string roleName, int startDelaySec, int runOnSec)
+        {
+            RelayId = relayId;
+            RoleName = roleName;
+            StartDelaySec = startDelaySec;
+            RunOnSec = runOnSec;
+        }
+
+        public int RelayId { get; }
+
+        public string RoleName { get; set; }
+
+        public int StartDelaySec { get; set; }
+
+        public int RunOnSec { get; set; }
+    }
+}

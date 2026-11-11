@@ -1,0 +1,94 @@
+name: Images
+
+# By hand only (Actions → Images → Run workflow). Without Actions minutes, scripts/images-publish.sh does the same
+# from your computer.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+# One release at a time, so two runs on the same day never pick the same version.
+concurrency:
+  group: images
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Only main is published, so "latest" is always what is on main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+
+      - name: Build
+        run: dotnet build Contactor.slnx --configuration Release
+
+      - name: Test
+        # Nothing is published unless every test passes: the Raspberry Pi takes a new image the same night.
+        run: dotnet test --solution Contactor.slnx --no-build --configuration Release
+
+      - name: Compute the version
+        id: version
+        # YYYY.M.D in UTC, plus .N when a release was already made today (see scripts/release-version.sh).
+        run: echo "version=$(bash scripts/release-version.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Check the signing key
+        # Before publishing: a wrong key or password stops the release here (see scripts/images-sign.sh).
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: bash scripts/images-sign.sh --check
+
+      - name: Publish the image
+        id: publish
+        env:
+          SDK_CONTAINER_REGISTRY_UNAME: ${{ github.actor }}
+          SDK_CONTAINER_REGISTRY_PWORD: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          repository="${GITHUB_REPOSITORY_OWNER,,}/$(dotnet msbuild Contactor.Web -getProperty:ContainerRepository)"
+          # -getProperty prints the image index exactly as the publish pushed it; errors still show.
+          index=$(dotnet publish Contactor.Web -c Release -t:PublishContainer \
+            -p:Version="$VERSION" \
+            -p:ContainerRegistry=ghcr.io \
+            -p:ContainerRepository="$repository" \
+            -p:ContainerImageTags="\"$VERSION;latest;sha-${GITHUB_SHA::7}\"" \
+            -getProperty:GeneratedImageIndex)
+          if [[ "$index" != '{'*'"manifests"'*'}' ]]; then
+            echo "::error::Publishing gave no image index."
+            exit 1
+          fi
+          # Its digest is the hash of those bytes: the sign step signs exactly what was pushed, never a tag.
+          digest="sha256:$(printf '%s' "$index" | sha256sum | cut -d' ' -f1)"
+          echo "Published ghcr.io/$repository@$digest ($VERSION)"
+          echo "image=ghcr.io/$repository@$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the image
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          SDK_CONTAINER_REGISTRY_UNAME: ${{ github.actor }}
+          SDK_CONTAINER_REGISTRY_PWORD: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.publish.outputs.image }}
+        run: bash scripts/images-sign.sh "$IMAGE"
+
+      - name: Tag the commit
+        # So each version maps to its exact code.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git tag "v$VERSION" "$GITHUB_SHA"
+          git push origin "v$VERSION"

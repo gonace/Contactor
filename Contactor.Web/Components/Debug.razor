@@ -1,0 +1,109 @@
+@page "/debug"
+@implements IDisposable
+@using System.Globalization
+@using Contactor.Vm201
+@using Contactor.Web.Features.Vm201
+@inject BoardTrace Trace
+@inject Vm201Client Client
+@inject LocalClock Clock
+
+<PageTitle>Debug · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <h1>Debug</h1>
+        <p class="hint">
+            Allt som skickats till och från reläkortet sedan appen startade, nyast först. Högst @BoardTrace.Capacity rader;
+            inget sparas. Kortet: <span class="mono">@Client.Endpoint</span>
+        </p>
+        <button type="button" class="clear" disabled="@(_items.Count == 0)" @onclick="Clear">Rensa</button>
+    </header>
+
+    <main class="list">
+        @if (_items.Count == 0)
+        {
+            <p class="empty">Ingen trafik än.</p>
+        }
+
+        @foreach (var item in _items)
+        {
+            <div class="row @(item.IsError ? "error" : null) @(item.IsRoutine ? "routine" : null)" @key="item.Id">
+                <span class="time">@Clock.ToLocal(item.AtUtc.UtcDateTime).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</span>
+                <span class="arrow" aria-label="@Direction(item)">@Arrow(item)</span>
+                <div class="text">
+                    <span>@item.Text</span>
+                    @if (item.Hex is not null)
+                    {
+                        <span class="hex">@item.Hex</span>
+                    }
+                </div>
+            </div>
+        }
+    </main>
+
+    <TabBar Current="TabBar.Tab.Debug" />
+</div>
+
+@code {
+    private IReadOnlyList<BoardTraceItem> _items = [];
+
+    protected override void OnInitialized()
+    {
+        _items = Trace.Items;
+        Trace.Added += OnChanged;
+        Trace.Cleared += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Trace.Added -= OnChanged;
+        Trace.Cleared -= OnChanged;
+    }
+
+    private void Clear()
+    {
+        Trace.Clear();
+    }
+
+    private static string Arrow(BoardTraceItem item)
+    {
+        return item.Kind switch
+        {
+            Vm201TraceKind.Sent => "→",
+            Vm201TraceKind.Received => "←",
+            _ => "·",
+        };
+    }
+
+    private static string Direction(BoardTraceItem item)
+    {
+        return item.Kind switch
+        {
+            Vm201TraceKind.Sent => "till kortet",
+            Vm201TraceKind.Received => "från kortet",
+            _ => "anslutningen",
+        };
+    }
+
+    // From the board connection's loop, or from Rensa.
+    private void OnChanged(object? sender, object e)
+    {
+        _ = RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _items = Trace.Items;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

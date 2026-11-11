@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Reläer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#C2410C}a:hover{color:#9A3412}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F5F2EC; color: #1D1B18; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+  <header style="padding: 52px 20px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h1 style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em">Contactor</h1>
+      <p style="margin: 0; font-size: 16px; color: #5C574F">Hej Ted · <strong style="color: #1D1B18">{{onCount}} av {{activeCount}} på</strong></p>
+    </div>
+    <button onClick="{{allOff}}" style="min-height: 44px; padding: 0 14px; border-radius: 10px; border: 2px solid #1D1B18; background: transparent; color: #1D1B18; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer">Alla av</button>
+  </header>
+  <div style="padding: 0 16px 12px; display: flex; flex-direction: column; gap: 10px">
+    <sc-if value="{{offline}}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 14px; background: #FDECEA; border: 1.5px solid #E5A29B; color: #7A1A10">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <strong style="font-size: 16px">Ingen kontakt med reläkortet</strong>
+          <span style="font-size: 14px">Sedan 14:30. Lägena nedan kan vara fel.</span>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{online}}" hint-placeholder-val="{{ true }}">
+      <p style="margin: 0 4px; display: flex; align-items: center; gap: 8px; font-size: 14px; color: #5C574F">
+        <span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 5px; background: #2F7D4F"></span>
+        Kortet svarar · uppdaterat nyss
+      </p>
+    </sc-if>
+  </div>
+  <main style="flex: 1; overflow-y: auto; padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 10px">
+    <sc-for list="{{relays}}" as="r" hint-placeholder-count="5">
+      <div style="{{r.cardStyle}}">
+        <a href="Rela.dc.html" style="flex: 1; min-width: 0; text-decoration: none; color: #1D1B18; display: flex; flex-direction: column; gap: 4px; min-height: 44px; justify-content: center">
+          <span style="font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: #5C574F">RELÄ {{r.id}}</span>
+          <span style="font-size: 18px; font-weight: 600; line-height: 1.25">{{r.name}}</span>
+          <span style="font-size: 14px; color: #5C574F">{{r.sub}}</span>
+        </a>
+        <button aria-pressed="{{r.on}}" aria-label="{{r.aria}}" disabled="{{r.disabled}}" onClick="{{r.toggle}}" style="{{r.btnStyle}}">{{r.label}}</button>
+      </div>
+    </sc-for>
+    <button onClick="{{toggleHidden}}" aria-expanded="{{hiddenExpanded}}" style="min-height: 48px; margin-top: 4px; border-radius: 12px; border: 1.5px dashed #A39C90; background: transparent; color: #5C574F; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      {{hiddenLabel}}
+    </button>
+  </main>
+  <nav style="display: flex; border-top: 1px solid #E3DED5; background: #FFFFFF; padding: 6px 0 22px">
+    <a href="Main.dc.html" aria-current="page" style="flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #C2410C; font-size: 13px; font-weight: 600">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"></path><path d="M6.4 6.4a8 8 0 1 0 11.2 0"></path></svg>
+      Reläer
+    </a>
+    <a href="Logg.dc.html" style="flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5C574F; font-size: 13px; font-weight: 600">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+      Händelser
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"anslutning":{"editor":"boolean","default":true},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const base = [
+      { id: 1, name: 'Värmefläkt – Svarven', active: true, onSub: 'På sedan 14:02 · Nils · av 16:02', offSub: 'Av' },
+      { id: 2, name: 'Kompressor', active: true, onSub: 'På nu · du', offSub: 'Schema: på i morgon 06:30' },
+      { id: 3, name: 'Värmefläkt – Bänken', active: true, onSub: 'På sedan 15:40 · Ted · av 17:40', offSub: 'Av' },
+      { id: 4, name: 'Ventilation – Lackrummet', active: true, onSub: 'På nu · du', offSub: 'Av sedan 12:15 · schema' },
+      { id: 5, name: 'Belysning – Förrådet', active: true, onSub: 'På nu · du', offSub: 'Av sedan i går · Lars' },
+      { id: 6, name: 'Relä 6', active: false, onSub: 'På nu · du', offSub: 'Inaktiv' },
+      { id: 7, name: 'Relä 7', active: false, onSub: 'På nu · du', offSub: 'Inaktiv' },
+      { id: 8, name: 'Relä 8', active: false, onSub: 'På nu · du', offSub: 'Inaktiv' }
+    ];
+    const s = this.state || {};
+    const st = s.on || { 1: true, 3: true };
+    const showHidden = !!s.showHidden;
+    const offline = this.props.anslutning === false;
+    const hiddenCount = base.filter((r) => !r.active).length;
+    const visible = base.filter((r) => r.active || showHidden);
+    const relays = visible.map((r) => {
+      const on = !!st[r.id];
+      const bg = on ? '#FFF4EC' : (r.active ? '#FFFFFF' : '#EFEBE4');
+      const border = on ? '#F0BE9C' : (r.active ? '#E3DED5' : '#D8D2C7');
+      return {
+        id: r.id,
+        name: r.name,
+        on: on ? 'true' : 'false',
+        sub: on ? r.onSub : r.offSub,
+        label: on ? 'PÅ' : 'AV',
+        aria: (on ? 'Stäng av ' : 'Slå på ') + r.name,
+        cardStyle: 'display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 16px; border-radius: 14px; background: ' + bg + '; border: 1.5px ' + (r.active ? 'solid ' : 'dashed ') + border,
+        disabled: offline,
+        btnStyle: 'width: 84px; height: 52px; flex-shrink: 0; border-radius: 12px; border: none; font-family: inherit; font-size: 18px; font-weight: 700; letter-spacing: 0.04em; cursor: ' + (offline ? 'not-allowed; opacity: 0.45' : 'pointer') + '; background: ' + (on ? '#C2410C' : '#E8E3DA') + '; color: ' + (on ? '#FFFFFF' : '#1D1B18'),
+        toggle: () => this.setState({ on: Object.assign({}, st, { [r.id]: !on }) })
+      };
+    });
+    const onCount = base.filter((r) => r.active && st[r.id]).length;
+    return {
+      offline,
+      online: !offline,
+      relays,
+      onCount,
+      activeCount: base.filter((r) => r.active).length,
+      hiddenLabel: showHidden ? 'Dölj inaktiva reläer' : 'Visa ' + hiddenCount + ' inaktiva reläer',
+      hiddenExpanded: showHidden ? 'true' : 'false',
+      toggleHidden: () => this.setState({ showHidden: !showHidden }),
+      allOff: () => this.setState({ on: {} })
+    };
+  }
+}
+</script>
+</body>
+</html>

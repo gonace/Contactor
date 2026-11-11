@@ -1,0 +1,25 @@
+<!-- Aspire is pinned to 13.5.4: 13.6.x times out at startup on Windows (https://github.com/microsoft/aspire/issues/20773).
+     The SDK brings Aspire.Hosting.AppHost in the same version. Raise it once a fixed release is out, together with any
+     Aspire.Hosting.* package added later. -->
+<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Contactor.AppHost</RootNamespace>
+    <!-- Plain `dotnet run` works without the Aspire CLI. -->
+    <AspireUseCliBundle>false</AspireUseCliBundle>
+    <!-- ASPIRE010 warns that the CLI bundle is off; that is on purpose, see above. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Overrides Aspire's vulnerable MessagePack; see Directory.Packages.props. -->
+    <PackageReference Include="MessagePack" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contactor.Simulator\Contactor.Simulator.csproj" />
+    <ProjectReference Include="..\Contactor.Web\Contactor.Web.csproj" />
+  </ItemGroup>
+
+</Project>
