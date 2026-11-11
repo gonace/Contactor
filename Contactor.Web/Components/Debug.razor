@@ -1,7 +1,7 @@
 @page "/debug"
 @implements IDisposable
 @using System.Globalization
-@using Contactor.Vm201
+@using Contactor.Boards.Vm201
 @using Contactor.Web.Features.Vm201
 @inject BoardTrace Trace
 @inject Vm201Client Client
@@ -13,16 +13,16 @@
     <header class="header">
         <h1>Debug</h1>
         <p class="hint">
-            Allt som skickats till och från reläkortet sedan appen startade, nyast först. Högst @BoardTrace.Capacity rader;
-            inget sparas. Kortet: <span class="mono">@Client.Endpoint</span>
+            Everything sent to and from the relay board since the app started, newest first. At most @BoardTrace.Capacity
+            lines; nothing is stored. Board: <span class="mono">@Client.Endpoint</span>
         </p>
-        <button type="button" class="clear" disabled="@(_items.Count == 0)" @onclick="Clear">Rensa</button>
+        <button type="button" class="clear" disabled="@(_items.Count == 0)" @onclick="Clear">Clear</button>
     </header>
 
     <main class="list">
         @if (_items.Count == 0)
         {
-            <p class="empty">Ingen trafik än.</p>
+            <p class="empty">No traffic yet.</p>
         }
 
         @foreach (var item in _items)
@@ -79,13 +79,13 @@
     {
         return item.Kind switch
         {
-            Vm201TraceKind.Sent => "till kortet",
-            Vm201TraceKind.Received => "från kortet",
-            _ => "anslutningen",
+            Vm201TraceKind.Sent => "to the board",
+            Vm201TraceKind.Received => "from the board",
+            _ => "connection",
         };
     }
 
-    // From the board connection's loop, or from Rensa.
+    // From the board connection's loop, or from Clear.
     private void OnChanged(object? sender, object e)
     {
         _ = RefreshAsync();

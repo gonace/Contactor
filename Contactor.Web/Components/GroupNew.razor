@@ -1,4 +1,4 @@
-@page "/grupp/ny"
+@page "/group/new"
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
@@ -8,7 +8,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<GroupNew> Log
 
-<PageTitle>Ny grupp · Contactor</PageTitle>
+<PageTitle>New group · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -16,7 +16,7 @@
         {
             <a href="" class="back">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                Avbryt
+                Cancel
             </a>
         }
         else
@@ -24,10 +24,10 @@
             var shown = _wizard.Step;
             <button type="button" class="back" disabled="@_busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                Tillbaka
+                Back
             </button>
         }
-        <span class="step-count">STEG @_wizard.Step AV @GroupWizard.StepCount</span>
+        <span class="step-count">STEP @_wizard.Step OF @GroupWizard.StepCount</span>
     </header>
 
     <div class="progress" aria-hidden="true">
@@ -46,11 +46,11 @@
         @if (_wizard.Step == 1)
         {
             <div class="field">
-                <label for="name">Namn</label>
-                <input id="name" type="text" maxlength="@RelayGroup.NameMaxLength" placeholder="T.ex. Värmefläkt – Svarven" @bind="_wizard.Name" @bind:event="oninput" autocomplete="off" />
+                <label for="name">Name</label>
+                <input id="name" type="text" maxlength="@RelayGroup.NameMaxLength" placeholder="E.g. Fan heater – Lathe" @bind="_wizard.Name" @bind:event="oninput" autocomplete="off" />
             </div>
             <fieldset class="field">
-                <legend>Ikon</legend>
+                <legend>Icon</legend>
                 <IconPicker @bind-Value="_wizard.Icon" />
             </fieldset>
         }
@@ -74,7 +74,7 @@
                             }
                         </span>
                         <span class="option-text">
-                            <span class="label">RELÄ @relay.RelayId</span>
+                            <span class="label">RELAY @relay.RelayId</span>
                             <span class="name">@relay.Name</span>
                             <span class="note">@relay.Note</span>
                         </span>
@@ -99,7 +99,7 @@
                         <div class="step">
                             <span class="number" aria-hidden="true">@(index + 1)</span>
                             <div class="step-text">
-                                <label class="label" for="@($"role-{member.RelayId}")">RELÄ @member.RelayId · NAMN I GRUPPEN</label>
+                                <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.RelayId · NAME IN THE GROUP</label>
                                 <input id="@($"role-{member.RelayId}")" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                             </div>
                             <div class="order">
@@ -114,9 +114,9 @@
                         @if (index < members.Count - 1)
                         {
                             var below = members[index + 1];
-                            <div class="gap" role="group" aria-label="@($"Mellan {label} och {LabelOf(below)}")">
+                            <div class="gap" role="group" aria-label="@($"Between {label} and {LabelOf(below)}")">
                                 <label>
-                                    Vid start, vänta
+                                    On start, wait
                                     <select @bind="below.StartDelaySec">
                                         @foreach (var seconds in GroupsHandler.StartDelayChoices)
                                         {
@@ -125,11 +125,11 @@
                                     </select>
                                 </label>
                                 <label>
-                                    Vid stopp, eftergång
+                                    On stop, run on
                                     <select @bind="member.RunOnSec">
                                         @foreach (var seconds in GroupsHandler.RunOnChoices)
                                         {
-                                            <option value="@seconds">@(seconds == 0 ? "Ingen" : EventText.Seconds(seconds))</option>
+                                            <option value="@seconds">@(seconds == 0 ? "None" : EventText.Seconds(seconds))</option>
                                         }
                                     </select>
                                 </label>
@@ -138,37 +138,37 @@
                     </li>
                 }
             </ol>
-            <p class="info">Spärr: ett relä kan bara vara på när reläet ovanför är på. Slås det på ändå, t.ex. via kortet, stänger appen av det direkt.</p>
+            <p class="info">Interlock: a relay can only be on while the relay above it is on. If it's turned on anyway, e.g. at the board, the app turns it off at once.</p>
         }
         else
         {
             var draft = _wizard.Draft;
-            <span class="label">SÅ HÄR SER DEN UT I LISTAN</span>
+            <span class="label">HOW IT LOOKS IN THE LIST</span>
             <div class="preview">
                 <span class="icon" aria-hidden="true"><GroupIcon Icon="@draft.Icon" /></span>
                 <span class="preview-text">
-                    <span class="label">GRUPP · RELÄ @string.Join(" → ", draft.Members.Select(m => m.RelayId))</span>
+                    <span class="label">GROUP · RELAY @string.Join(" → ", draft.Members.Select(m => m.RelayId))</span>
                     <span class="name">@draft.Name.Trim()</span>
-                    <span class="note">Av</span>
+                    <span class="note">Off</span>
                 </span>
-                <span class="off" aria-hidden="true">AV</span>
+                <span class="off" aria-hidden="true">OFF</span>
             </div>
             <dl class="plan">
                 <div>
-                    <dt class="label">NÄR GRUPPEN SLÅS PÅ</dt>
+                    <dt class="label">WHEN THE GROUP TURNS ON</dt>
                     <dd>@GroupPlanText.Start(draft.Members)</dd>
                 </div>
                 <div>
-                    <dt class="label">NÄR GRUPPEN STÄNGS AV</dt>
+                    <dt class="label">WHEN THE GROUP TURNS OFF</dt>
                     <dd>@GroupPlanText.Stop(draft.Members)</dd>
                 </div>
                 <div>
-                    <dt class="label">SPÄRR</dt>
+                    <dt class="label">INTERLOCK</dt>
                     <dd>@GroupPlanText.Interlock(draft.Members)</dd>
                 </div>
                 <div>
-                    <dt class="label">STÄNGS AV AUTOMATISKT</dt>
-                    <dd>Efter @EventText.Duration(RelayGroup.DefaultMaxOnMinutes). Det kan ändras på gruppens sida.</dd>
+                    <dt class="label">TURNS OFF AUTOMATICALLY</dt>
+                    <dd>After @EventText.Duration(RelayGroup.DefaultMaxOnMinutes). You can change it on the group's page.</dd>
                 </div>
             </dl>
         }
@@ -182,11 +182,11 @@
         @if (_wizard.Step < GroupWizard.StepCount)
         {
             var shown = _wizard.Step;
-            <button type="button" disabled="@(!_wizard.CanGoOn)" @onclick="() => GoOn(shown)">Nästa</button>
+            <button type="button" disabled="@(!_wizard.CanGoOn)" @onclick="() => GoOn(shown)">Next</button>
         }
         else
         {
-            <button type="button" class="create" disabled="@_busy" @onclick="CreateAsync">Skapa grupp</button>
+            <button type="button" class="create" disabled="@_busy" @onclick="CreateAsync">Create group</button>
         }
     </div>
 </div>
@@ -194,10 +194,10 @@
 @code {
     private static readonly (string Title, string Lead)[] Titles =
     [
-        ("Namn och ikon", "Ikonen visas på gruppens kort i reläistan."),
-        ("Vilka reläer ingår?", "Välj två eller fler. Ordningen du väljer i blir startordningen, den kan ändras i nästa steg."),
-        ("Ordning och regler", "Gruppen startar uppifrån och stängs av nerifrån. Ställ in väntetiden mellan stegen."),
-        ("Granska och skapa", "Kontrollera att det blir som du tänkt."),
+        ("Name and icon", "The icon shows on the group's card in the relay list."),
+        ("Which relays?", "Choose two or more. The order you choose them in is the start order; you can change it in the next step."),
+        ("Order and rules", "The group starts from the top and stops from the bottom. Set the waits between the steps."),
+        ("Review and create", "Check that it does what you expect."),
     ];
 
     private readonly GroupWizard _wizard = new();
@@ -210,9 +210,9 @@
 
     private string SelectedText => _wizard.Members.Count switch
     {
-        0 => "Inga valda än",
-        < RelayGroup.MinMembers => $"{_wizard.Members.Count} vald · välj minst {RelayGroup.MinMembers}",
-        _ => $"{_wizard.Members.Count} valda",
+        0 => "None chosen yet",
+        < RelayGroup.MinMembers => $"{_wizard.Members.Count} chosen · choose at least {RelayGroup.MinMembers}",
+        _ => $"{_wizard.Members.Count} chosen",
     };
 
     protected override async Task OnInitializedAsync()
@@ -233,7 +233,7 @@
 
     private static string LabelOf(WizardMember member)
     {
-        return string.IsNullOrWhiteSpace(member.RoleName) ? $"relä {member.RelayId}" : member.RoleName;
+        return string.IsNullOrWhiteSpace(member.RoleName) ? $"relay {member.RelayId}" : member.RoleName;
     }
 
     private void Pick(GroupCandidate relay)
@@ -284,7 +284,7 @@
         {
             // An exception that leaves the handler would end the page's live connection.
             Log.LogError(ex, "Creating a group failed");
-            _error = "Något gick fel. Försök igen.";
+            _error = "Something went wrong. Try again.";
         }
         finally
         {

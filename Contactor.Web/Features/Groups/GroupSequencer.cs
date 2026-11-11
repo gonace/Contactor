@@ -1,8 +1,8 @@
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Groups;
 
@@ -17,7 +17,7 @@ public sealed partial class GroupSequencer : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
 
-    private readonly Vm201Client _client;
+    private readonly IRelayBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly ExpectedChanges _expected;
@@ -30,7 +30,7 @@ public sealed partial class GroupSequencer : BackgroundService
     private int _reconnected;
 
     public GroupSequencer(
-        Vm201Client client,
+        IRelayBoard board,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         ExpectedChanges expected,
@@ -38,7 +38,7 @@ public sealed partial class GroupSequencer : BackgroundService
         TimeProvider timeProvider,
         ILogger<GroupSequencer> logger)
     {
-        _client = client;
+        _board = board;
         _dbFactory = dbFactory;
         _clock = clock;
         _expected = expected;
@@ -47,23 +47,22 @@ public sealed partial class GroupSequencer : BackgroundService
         _logger = logger;
 
         // From the start, not from ExecuteAsync (a background thread): no status may go unseen.
-        _client.StateChanged += OnStateChanged;
+        _board.StateChanged += OnStateChanged;
     }
 
     public override void Dispose()
     {
-        _client.StateChanged -= OnStateChanged;
+        _board.StateChanged -= OnStateChanged;
         _gate.Dispose();
         _wake.Dispose();
         base.Dispose();
     }
 
-    /// <summary>The relays that are in a group, as a channel mask.</summary>
-    public async Task<byte> MemberMaskAsync(CancellationToken cancellationToken)
+    /// <summary>The relays that are in a group.</summary>
+    public async Task<ChannelMask> MemberMaskAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var relayIds = await db.RelayGroupMembers.Select(m => m.RelayId).ToListAsync(cancellationToken);
-        return relayIds.Aggregate((byte)0, (mask, id) => (byte)(mask | Vm201Channel.Mask(id)));
+        return ChannelMask.Of(await db.RelayGroupMembers.Select(m => m.RelayId).ToListAsync(cancellationToken));
     }
 
     /// <summary>Plans and runs the next step of every group. Does nothing while the board is disconnected.</summary>
@@ -72,7 +71,7 @@ public sealed partial class GroupSequencer : BackgroundService
         await RunAsync(null, cancellationToken);
     }
 
-    /// <summary>Starts a group, or carries on from where it is. Throws <see cref="Vm201NotConnectedException"/> without the board.</summary>
+    /// <summary>Starts a group, or carries on from where it is. Throws <see cref="BoardNotConnectedException"/> without the board.</summary>
     public async Task StartGroupAsync(int groupId, string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
@@ -91,7 +90,7 @@ public sealed partial class GroupSequencer : BackgroundService
             cancellationToken);
     }
 
-    /// <summary>Stops a group, with its run-on times. Throws <see cref="Vm201NotConnectedException"/> without the board.</summary>
+    /// <summary>Stops a group, with its run-on times. Throws <see cref="BoardNotConnectedException"/> without the board.</summary>
     public async Task StopGroupAsync(int groupId, string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
@@ -108,7 +107,7 @@ public sealed partial class GroupSequencer : BackgroundService
             cancellationToken);
     }
 
-    /// <summary>Stops every group, with run-on times ("Alla av").</summary>
+    /// <summary>Stops every group, with run-on times ("All off").</summary>
     public async Task StopAllAsync(string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
@@ -122,13 +121,13 @@ public sealed partial class GroupSequencer : BackgroundService
     }
 
     /// <summary>
-    /// Turns one relay of a group on or off, within the interlock. Returns why it can't, in Swedish, or null when
-    /// done. Throws <see cref="Vm201NotConnectedException"/> without the board.
+    /// Turns one relay of a group on or off, within the interlock. Returns why it can't, or null when
+    /// done. Throws <see cref="BoardNotConnectedException"/> without the board.
     /// </summary>
     public async Task<string?> SetMemberAsync(int groupId, int relayId, bool on, string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
-        string? refusal = "Reläet ingår inte i gruppen.";
+        string? refusal = "That relay isn't in the group.";
         await RunAsync(
             (group, members, state, runtime, now, commands) =>
             {
@@ -171,7 +170,7 @@ public sealed partial class GroupSequencer : BackgroundService
             {
                 return;
             }
-            catch (Vm201NotConnectedException)
+            catch (BoardNotConnectedException)
             {
                 // The board went away mid-step: the next step after reconnect picks up.
             }
@@ -224,12 +223,12 @@ public sealed partial class GroupSequencer : BackgroundService
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var state = _client.State;
+            var state = _board.State;
             if (!state.IsConnected)
             {
                 if (request is not null)
                 {
-                    throw new Vm201NotConnectedException();
+                    throw new BoardNotConnectedException();
                 }
 
                 return;
@@ -269,7 +268,7 @@ public sealed partial class GroupSequencer : BackgroundService
                     runtime.PendingSinceUtc = now;
                     if (runtime.PendingOn && runtime.Phase == GroupPhases.Stopping && members.FirstOrDefault(m => m.Position == pending) is { } lost)
                     {
-                        all.On |= Vm201Channel.Mask(lost.RelayId);
+                        all.On |= ChannelMask.Of(lost.RelayId);
                     }
                 }
 
@@ -293,28 +292,28 @@ public sealed partial class GroupSequencer : BackgroundService
             // OFF first, so a relay never runs alone below a gap. Nothing sent: nothing is saved, and the next step
             // plans again. Once anything went out, what was planned is saved even if the rest fails, so a trip or a
             // run-on is never forgotten.
-            if (all.Off != 0)
+            if (!all.Off.IsEmpty)
             {
                 _expected.Expect(all.Off, on: false);
-                await _client.TurnOffAsync(all.Off, cancellationToken);
+                await _board.TurnOffAsync(all.Off, cancellationToken);
             }
 
-            if (all.On != 0)
+            if (!all.On.IsEmpty)
             {
                 _expected.Expect(all.On, on: true);
                 try
                 {
-                    await _client.TurnOnAsync(all.On, cancellationToken);
+                    await _board.TurnOnAsync(all.On, cancellationToken);
                 }
-                catch (Vm201NotConnectedException) when (all.Off != 0)
+                catch (BoardNotConnectedException) when (!all.Off.IsEmpty)
                 {
                     await SaveAsync(db, events, now, CancellationToken.None);
                     throw;
                 }
             }
 
-            // Pages also follow a sequence's own progress, e.g. "Startar" turning into "På sedan".
-            var changed = events.Count > 0 || all.Off != 0 || all.On != 0 || db.ChangeTracker.HasChanges();
+            // Pages also follow a sequence's own progress, e.g. "Starting" turning into "On since".
+            var changed = events.Count > 0 || !all.Off.IsEmpty || !all.On.IsEmpty || db.ChangeTracker.HasChanges();
             await SaveAsync(db, events, now, cancellationToken);
             if (changed)
             {
@@ -372,7 +371,7 @@ public sealed partial class GroupSequencer : BackgroundService
     }
 
     // From the board's read loop: each status is a reason to look again.
-    private void OnStateChanged(object? sender, Vm201State state)
+    private void OnStateChanged(object? sender, BoardState state)
     {
         if (state.IsConnected && !_wasConnected)
         {
@@ -396,7 +395,7 @@ public sealed partial class GroupSequencer : BackgroundService
     private delegate string? GroupRequest(
         RelayGroup group,
         IReadOnlyList<GroupMemberInfo> members,
-        Vm201State state,
+        BoardState state,
         GroupRuntime runtime,
         DateTime now,
         GroupCommands commands);

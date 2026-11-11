@@ -9,7 +9,7 @@ namespace Contactor.Web.Features.Schedules;
 public sealed record RelayOutlook(DateTime? RunningUntilUtc, DateTime? NextOnUtc);
 
 /// <summary>
-/// Reads the schedules for the status lines: "På sedan 06:30 · schema · av 08:00" and "Schema: på i morgon 06:30".
+/// Reads the schedules for the status lines: "On since 06:30 · schedule · off 08:00" and "Schedule: on tomorrow 06:30".
 /// </summary>
 public sealed class ScheduleOutlook
 {

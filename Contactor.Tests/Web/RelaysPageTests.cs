@@ -19,11 +19,11 @@ public sealed class RelaysPageTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
-        Assert.Contains("Hej John", html, StringComparison.Ordinal);
-        Assert.Contains("0 av 8 på", html, StringComparison.Ordinal);
+        Assert.Contains("Hi John", html, StringComparison.Ordinal);
+        Assert.Contains("0 of 8 on", html, StringComparison.Ordinal);
         for (var id = 1; id <= 8; id++)
         {
-            Assert.Contains($"Relä {id}", html, StringComparison.Ordinal);
+            Assert.Contains($"Relay {id}", html, StringComparison.Ordinal);
         }
     }
 
@@ -37,9 +37,9 @@ public sealed class RelaysPageTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
-        Assert.Contains("Ingen kontakt med reläkortet", html, StringComparison.Ordinal);
-        Assert.Contains("Lägena nedan kan vara fel.", html, StringComparison.Ordinal);
-        Assert.Contains("aria-label=\"Slå på Relä 1\"", html, StringComparison.Ordinal);
+        Assert.Contains("No contact with the relay board", html, StringComparison.Ordinal);
+        Assert.Contains("The states below may be wrong.", html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Turn on Relay 1\"", html, StringComparison.Ordinal);
         Assert.Equal(9, CountOccurrences(html, "disabled"));
     }
 

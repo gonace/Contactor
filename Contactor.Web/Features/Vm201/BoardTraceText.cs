@@ -1,11 +1,11 @@
 using System.Globalization;
 using System.Text;
-using Contactor.Vm201;
+using Contactor.Boards.Vm201;
 
 namespace Contactor.Web.Features.Vm201;
 
 /// <summary>
-/// A step on the board connection in plain Swedish for the Debug screen and its toasts, e.g. "Slå på relä 3" with
+/// A step on the board connection in plain words for the Debug screen and its toasts, e.g. "Turn on relay 3" with
 /// "02 06 4F 04 A5 03" below it.
 /// </summary>
 public static class BoardTraceText
@@ -18,11 +18,11 @@ public static class BoardTraceText
         {
             Vm201TraceKind.Sent => (Sent(entry), Hex(entry), false),
             Vm201TraceKind.Received => (Received(entry), Hex(entry), entry.Command == Vm201Command.AccessDenied),
-            Vm201TraceKind.Connecting => ($"Ansluter till {entry.Detail}", null, false),
-            Vm201TraceKind.ConnectionLost when entry.Detail == Vm201Client.StoppedByApp => ("Appen stängde anslutningen", null, false),
-            Vm201TraceKind.ConnectionLost => ($"Anslutningen bröts: {entry.Detail}", null, true),
-            Vm201TraceKind.Reconnecting => ($"Försöker igen om {entry.Detail} s", null, false),
-            Vm201TraceKind.DiscardedBytes => ($"Hoppade över {entry.Detail} trasiga byte från kortet", null, true),
+            Vm201TraceKind.Connecting => ($"Connecting to {entry.Detail}", null, false),
+            Vm201TraceKind.ConnectionLost when entry.Detail == Vm201Client.StoppedByApp => ("The app closed the connection", null, false),
+            Vm201TraceKind.ConnectionLost => ($"Connection lost: {entry.Detail}", null, true),
+            Vm201TraceKind.Reconnecting => ($"Trying again in {entry.Detail} s", null, false),
+            Vm201TraceKind.DiscardedBytes => ($"Skipped {entry.Detail} broken bytes from the board", null, true),
             _ => (entry.Kind.ToString(), null, false),
         };
     }
@@ -32,14 +32,14 @@ public static class BoardTraceText
         var data = entry.Data;
         return entry.Command switch
         {
-            Vm201Command.On when data.Length == 1 => $"Slå på {Relays(data[0])}",
-            Vm201Command.Off when data.Length == 1 => $"Stäng av {Relays(data[0])}",
-            Vm201Command.StatusRequest => "Fråga efter status",
-            Vm201Command.TimerDisable when data.Length == 1 => $"Stäng av kortets egna timers för {Relays(data[0])}",
-            Vm201Command.Username => "Användarnamn (dolt)",
-            Vm201Command.Password => "Lösenord (dolt)",
-            Vm201Command.Closed => "Avsluta anslutningen",
-            _ => $"Kommando {Letter(entry.Command)}",
+            Vm201Command.On when data.Length == 1 => $"Turn on {Relays(data[0])}",
+            Vm201Command.Off when data.Length == 1 => $"Turn off {Relays(data[0])}",
+            Vm201Command.StatusRequest => "Ask for status",
+            Vm201Command.TimerDisable when data.Length == 1 => $"Turn off the board's own timers for {Relays(data[0])}",
+            Vm201Command.Username => "User name (hidden)",
+            Vm201Command.Password => "Password (hidden)",
+            Vm201Command.Closed => "Close the connection",
+            _ => $"Command {Letter(entry.Command)}",
         };
     }
 
@@ -48,41 +48,41 @@ public static class BoardTraceText
         var data = entry.Data;
         return entry.Command switch
         {
-            Vm201Command.Auth => "Kortet vill ha inloggning",
-            Vm201Command.LoggedIn => "Inloggad",
-            Vm201Command.AccessDenied => "Fel användarnamn eller lösenord",
-            Vm201Command.Closed => "Kortet stänger anslutningen",
-            Vm201Command.Name when data.Length >= 1 => data[0] == 9 ? "Namnet på ingången" : $"Namnet på relä {data[0]}",
+            Vm201Command.Auth => "The board asks for a login",
+            Vm201Command.LoggedIn => "Logged in",
+            Vm201Command.AccessDenied => "Wrong user name or password",
+            Vm201Command.Closed => "The board closes the connection",
+            Vm201Command.Name when data.Length >= 1 => data[0] == 9 ? "The input's name" : $"The name of relay {data[0]}",
             Vm201Command.Status when data.Length == Vm201Command.StatusDataLength => Status(data),
-            _ => $"Okänt svar {Letter(entry.Command)}",
+            _ => $"Unknown answer {Letter(entry.Command)}",
         };
     }
 
-    // "Status: relä 1 och 3 på · ingången på", plus the board's timers when any are on.
+    // "Status: relay 1 and 3 on · input on", plus the board's timers when any are on.
     private static string Status(ReadOnlySpan<byte> data)
     {
         var text = new StringBuilder("Status: ");
-        text.Append(data[0] == 0 ? "alla av" : Relays(data[0]) + " på");
+        text.Append(data[0] == 0 ? "all off" : Relays(data[0]) + " on");
         if (data[1] != 0)
         {
-            text.Append(" · kortets timers på för ").Append(Relays(data[1]));
+            text.Append(" · the board's timers on for ").Append(Relays(data[1]));
         }
 
-        text.Append((data[2] & 1) != 0 ? " · ingången på" : " · ingången av");
+        text.Append((data[2] & 1) != 0 ? " · input on" : " · input off");
         return text.ToString();
     }
 
-    /// <summary>"alla", "relä 3" or "relä 1, 3 och 5".</summary>
+    /// <summary>"all", "relay 3" or "relay 1, 3 and 5".</summary>
     public static string Relays(byte mask)
     {
         if (mask == Vm201Channel.All)
         {
-            return "alla";
+            return "all";
         }
 
         if (mask == 0)
         {
-            return "inga relän";
+            return "no relays";
         }
 
         List<string> channels = [];
@@ -95,8 +95,8 @@ public static class BoardTraceText
         }
 
         return channels.Count == 1
-            ? $"relä {channels[0]}"
-            : $"relä {string.Join(", ", channels[..^1])} och {channels[^1]}";
+            ? $"relay {channels[0]}"
+            : $"relay {string.Join(", ", channels[..^1])} and {channels[^1]}";
     }
 
     private static string Letter(byte command)

@@ -4,7 +4,6 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Contactor.Vm201;
 
 namespace Contactor.Web.Persistence;
 
@@ -59,14 +58,14 @@ public static class PersistenceServiceCollectionExtensions
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", cancellationToken);
 
         var existing = await db.Relays.Select(r => r.Id).ToListAsync(cancellationToken);
-        for (var id = 1; id <= Vm201Channel.Count; id++)
+        for (var id = 1; id <= Relay.Count; id++)
         {
             if (!existing.Contains(id))
             {
                 db.Relays.Add(new Relay
                 {
                     Id = id,
-                    Name = $"Relä {id}",
+                    Name = $"Relay {id}",
                     IsActive = true,
                     MaxOnMinutes = Relay.DefaultMaxOnMinutes,
                     SortOrder = id,
@@ -76,7 +75,7 @@ public static class PersistenceServiceCollectionExtensions
 
         // One runtime row per relay from the start, so two writers never both try to insert the first one.
         var runtimes = await db.RelayRuntimes.Select(r => r.RelayId).ToListAsync(cancellationToken);
-        for (var id = 1; id <= Vm201Channel.Count; id++)
+        for (var id = 1; id <= Relay.Count; id++)
         {
             if (!runtimes.Contains(id))
             {
@@ -86,7 +85,7 @@ public static class PersistenceServiceCollectionExtensions
 
         if (!await db.Inputs.AnyAsync(cancellationToken))
         {
-            db.Inputs.Add(new Input { Name = "Ingång", ClosedText = "Stängd", OpenText = "Öppen" });
+            db.Inputs.Add(new Input { Name = "Input", ClosedText = "Closed", OpenText = "Open" });
         }
 
         await db.SaveChangesAsync(cancellationToken);

@@ -5,7 +5,7 @@ order as one group, e.g. a fan heater: the fan first, then the heat, and the fan
 An interlock keeps the group in that order whatever happens, and every change is logged with who made it.
 
 It is built for a workshop and for people who aren't technical: big buttons, few menus, and a page that works like an
-app on the phone, in light and dark mode. The interface is in Swedish for now.
+app on the phone, in light and dark mode.
 
 <p>
   <img src="docs/screenshots/relays.png" width="250" alt="The relays, with a fan heater group running">

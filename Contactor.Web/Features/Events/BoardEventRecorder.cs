@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Threading.Channels;
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Events;
 
@@ -20,28 +20,28 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // How often a lasting disconnect is checked for while there is no new status.
     public static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(1);
 
-    private readonly Vm201Client _client;
+    private readonly IRelayBoard _board;
     private readonly ExpectedChanges _expected;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly ILogger<BoardEventRecorder> _logger;
-    private readonly Channel<Vm201State> _states = Channel.CreateUnbounded<Vm201State>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<BoardState> _states = Channel.CreateUnbounded<BoardState>(new UnboundedChannelOptions { SingleReader = true });
 
     // The last status the board reported while connected; null until the first one after start.
-    private Vm201State? _known;
+    private BoardState? _known;
     private DateTime? _disconnectedSinceUtc;
     private bool _lossLogged;
 
     public BoardEventRecorder(
-        Vm201Client client,
+        IRelayBoard board,
         ExpectedChanges expected,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         RelayChanges changes,
         ILogger<BoardEventRecorder> logger)
     {
-        _client = client;
+        _board = board;
         _expected = expected;
         _dbFactory = dbFactory;
         _clock = clock;
@@ -53,8 +53,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // could arrive before it subscribes, and the next change would then be taken as the starting point.
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _client.StateChanged += OnStateChanged;
-        var state = _client.State;
+        _board.StateChanged += OnStateChanged;
+        var state = _board.State;
         if (state.IsConnected)
         {
             _states.Writer.TryWrite(state);
@@ -100,16 +100,16 @@ public sealed partial class BoardEventRecorder : BackgroundService
         }
         finally
         {
-            _client.StateChanged -= OnStateChanged;
+            _board.StateChanged -= OnStateChanged;
         }
     }
 
-    private void OnStateChanged(object? sender, Vm201State state)
+    private void OnStateChanged(object? sender, BoardState state)
     {
         _states.Writer.TryWrite(state);
     }
 
-    private async Task HandleAsync(Vm201State state, CancellationToken cancellationToken)
+    private async Task HandleAsync(BoardState state, CancellationToken cancellationToken)
     {
         if (!state.IsConnected)
         {
@@ -141,15 +141,17 @@ public sealed partial class BoardEventRecorder : BackgroundService
         // reconnect it is compared with the last status before the loss, so changes made meanwhile are logged.
         if (_known is { } known)
         {
-            await RecordRelayChangesAsync(db, known.Outputs, state.Outputs, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
-            if (known.Input != state.Input)
+            await RecordRelayChangesAsync(db, known.Relays, state.Relays, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
+
+            // The app shows one input (the Input table's), the board's first.
+            if (known.Inputs.Contains(1) != state.Inputs.Contains(1))
             {
                 db.EventLog.Add(new EventLogEntry
                 {
                     TimestampUtc = now,
                     Actor = EventActors.External,
                     Action = EventActions.InputChanged,
-                    Details = JsonSerializer.Serialize(new { on = state.Input }),
+                    Details = JsonSerializer.Serialize(new { on = state.Inputs.Contains(1) }),
                 });
             }
         }
@@ -164,17 +166,16 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     private async Task RecordRelayChangesAsync(
         ContactorDbContext db,
-        byte before,
-        byte after,
+        ChannelMask before,
+        ChannelMask after,
         DateTime now,
         DateTime receivedUtc,
         CancellationToken cancellationToken)
     {
-        for (var relayId = 1; relayId <= Vm201Channel.Count; relayId++)
+        for (var relayId = 1; relayId <= Relay.Count; relayId++)
         {
-            var mask = Vm201Channel.Mask(relayId);
-            var wasOn = (before & mask) != 0;
-            var isOn = (after & mask) != 0;
+            var wasOn = before.Contains(relayId);
+            var isOn = after.Contains(relayId);
             if (wasOn == isOn || _expected.TryConsume(relayId, isOn, receivedUtc))
             {
                 continue;

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// Log messages of the VM201 library. Never add the password to any of them.

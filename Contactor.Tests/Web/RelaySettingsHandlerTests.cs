@@ -40,22 +40,22 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_RenameAndLogTheOldAndNewName()
     {
-        var error = await Handler.SaveAsync(new RelaySettings(4, "  Ventilation – Lackrummet ", true, 120), Sam, Cancel);
+        var error = await Handler.SaveAsync(new RelaySettings(4, "  Ventilation – Paint shop ", true, 120), Sam, Cancel);
 
         Assert.Null(error);
-        Assert.Equal("Ventilation – Lackrummet", (await Handler.GetAsync(4, Cancel))!.Name);
+        Assert.Equal("Ventilation – Paint shop", (await Handler.GetAsync(4, Cancel))!.Name);
         var entry = Assert.Single(await EventsAsync());
         Assert.Equal((EventActions.Rename, Sam, 4), (entry.Action, entry.Actor, entry.RelayId!.Value));
         using var details = System.Text.Json.JsonDocument.Parse(entry.Details!);
-        Assert.Equal("Relä 4", details.RootElement.GetProperty("from").GetString());
-        Assert.Equal("Ventilation – Lackrummet", details.RootElement.GetProperty("to").GetString());
-        Assert.Equal(("döpte om Relä 4 till", "Ventilation – Lackrummet"), (EventText.For(entry, "Ventilation – Lackrummet", "Sam").What, EventText.For(entry, null, "Sam").Target));
+        Assert.Equal("Relay 4", details.RootElement.GetProperty("from").GetString());
+        Assert.Equal("Ventilation – Paint shop", details.RootElement.GetProperty("to").GetString());
+        Assert.Equal(("renamed Relay 4 to", "Ventilation – Paint shop"), (EventText.For(entry, "Ventilation – Paint shop", "Sam").What, EventText.For(entry, null, "Sam").Target));
     }
 
     [Fact]
     public async Task Should_LogNothing_WhenNothingChanged()
     {
-        Assert.Null(await Handler.SaveAsync(new RelaySettings(1, "Relä 1", true, 120), Sam, Cancel));
+        Assert.Null(await Handler.SaveAsync(new RelaySettings(1, "Relay 1", true, 120), Sam, Cancel));
 
         Assert.Empty(await EventsAsync());
     }
@@ -63,24 +63,24 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_LogTheChangeToActive()
     {
-        await Handler.SaveAsync(new RelaySettings(6, "Relä 6", false, 120), Sam, Cancel);
+        await Handler.SaveAsync(new RelaySettings(6, "Relay 6", false, 120), Sam, Cancel);
 
         Assert.Equal([EventActions.Deactivate], (await EventsAsync()).Select(e => e.Action));
         Assert.False((await Handler.GetAsync(6, Cancel))!.IsActive);
 
-        await Handler.SaveAsync(new RelaySettings(6, "Relä 6", true, 120), Sam, Cancel);
+        await Handler.SaveAsync(new RelaySettings(6, "Relay 6", true, 120), Sam, Cancel);
         Assert.Equal([EventActions.Deactivate, EventActions.Activate], (await EventsAsync()).Select(e => e.Action));
     }
 
     [Theory]
-    [InlineData("", "Skriv ett namn.")]
-    [InlineData("   ", "Skriv ett namn.")]
-    [InlineData("12345678901234567890123456789012345678901", "Namnet får vara högst 40 tecken.")]
+    [InlineData("", "Enter a name.")]
+    [InlineData("   ", "Enter a name.")]
+    [InlineData("12345678901234567890123456789012345678901", "The name can be at most 40 characters.")]
     public async Task Should_RefuseNamesThatCannotBeShown(string name, string message)
     {
         Assert.Equal(message, await Handler.SaveAsync(new RelaySettings(1, name, true, 120), Sam, Cancel));
 
-        Assert.Equal("Relä 1", (await Handler.GetAsync(1, Cancel))!.Name);
+        Assert.Equal("Relay 1", (await Handler.GetAsync(1, Cancel))!.Name);
         Assert.Empty(await EventsAsync());
     }
 
@@ -88,7 +88,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
     public async Task Should_RefuseALimitTheScreenDoesNotOffer()
     {
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => Handler.SaveAsync(new RelaySettings(1, "Relä 1", true, 90), Sam, Cancel));
+            () => Handler.SaveAsync(new RelaySettings(1, "Relay 1", true, 90), Sam, Cancel));
     }
 
     [Theory]
@@ -97,7 +97,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
     public async Task Should_FindNoRelay_ForAnIdTheBoardDoesNotHave(int id)
     {
         Assert.Null(await Handler.GetAsync(id, Cancel));
-        Assert.Equal("Reläet finns inte.", await Handler.SaveAsync(new RelaySettings(id, "X", true, 120), Sam, Cancel));
+        Assert.Equal("The relay doesn't exist.", await Handler.SaveAsync(new RelaySettings(id, "X", true, 120), Sam, Cancel));
     }
 
     [Theory]
@@ -109,7 +109,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
         var onSince = Now.AddMinutes(-30);
         await AddRuntimeAsync(new RelayRuntime { RelayId = 2, OnSinceUtc = onSince, AutoOffAtUtc = onSince.AddMinutes(120), TurnedOnBy = Sam });
 
-        await Handler.SaveAsync(new RelaySettings(2, "Relä 2", true, limit), Sam, Cancel);
+        await Handler.SaveAsync(new RelaySettings(2, "Relay 2", true, limit), Sam, Cancel);
 
         var runtime = await RuntimeAsync(2);
         Assert.Equal(minutesAfterOn is { } m ? onSince.AddMinutes(m) : null, runtime.AutoOffAtUtc);
@@ -121,7 +121,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
     {
         await AddRuntimeAsync(new RelayRuntime { RelayId = 2 });
 
-        await Handler.SaveAsync(new RelaySettings(2, "Relä 2", true, 60), Sam, Cancel);
+        await Handler.SaveAsync(new RelaySettings(2, "Relay 2", true, 60), Sam, Cancel);
 
         Assert.Null((await RuntimeAsync(2)).AutoOffAtUtc);
     }
@@ -146,7 +146,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
         var onSince = Now.AddMinutes(-90);
         await AddRuntimeAsync(new RelayRuntime { RelayId = 2, OnSinceUtc = onSince, TurnedOnBy = EventActors.Schedule });
 
-        await Handler.SaveAsync(new RelaySettings(2, "Relä 2", true, 60), Sam, Cancel);
+        await Handler.SaveAsync(new RelaySettings(2, "Relay 2", true, 60), Sam, Cancel);
 
         Assert.Null((await RuntimeAsync(2)).AutoOffAtUtc);
         Assert.Equal(60, (await Handler.GetAsync(2, Cancel))!.MaxOnMinutes);

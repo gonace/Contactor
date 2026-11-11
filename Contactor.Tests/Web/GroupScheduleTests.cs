@@ -10,18 +10,18 @@ namespace Contactor.Tests.Web;
 
 /// <summary>
 /// A group's schedules against the simulator: the scheduler starts the group in its order and stops it with its
-/// run-on. The rig starts on Wednesday 4 November 2026 at 14:00 local; the fan heater is relay 1 (Fläkt, 5 min
-/// run-on) and relay 2 (Värme).
+/// run-on. The rig starts on Wednesday 4 November 2026 at 14:00 local; the fan heater is relay 1 (Fan, 5 min
+/// run-on) and relay 2 (Heat).
 /// </summary>
 public sealed class GroupScheduleTests
 {
     private const string John = "john@example.com";
 
     private static readonly GroupDraft FanHeater = new(
-        "Värmefläkt",
+        "Fan heater",
         GroupIcons.Fan,
         120,
-        [new GroupMemberDraft(1, "Fläkt", 3, 300), new GroupMemberDraft(2, "Värme", 3, 0)]);
+        [new GroupMemberDraft(1, "Fan", 3, 300), new GroupMemberDraft(2, "Heat", 3, 0)]);
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -145,7 +145,7 @@ public sealed class GroupScheduleTests
         Assert.Empty(await schedules.ListAsync(1, Cancel));
         var rows = await rig.Database.Services.GetRequiredService<EventsHandler>()
             .GetAsync(EventFilter.All, beforeId: null, 10, Cancel, groupId: groupId);
-        Assert.Equal(("lade till schema mån–fre 06:30–08:00", "Värmefläkt"), (rows[0].View.What, rows[0].View.Target));
+        Assert.Equal(("added schedule Mon–Fri 06:30–08:00", "Fan heater"), (rows[0].View.What, rows[0].View.Target));
     }
 
     [Theory]
@@ -160,7 +160,7 @@ public sealed class GroupScheduleTests
         var error = await schedules.SaveAsync(
             new ScheduleModel(0, relayId, ScheduleDays.All, new TimeOnly(6, 0), new TimeOnly(7, 0), true, groupId), John, Cancel);
 
-        Assert.Equal("Välj ett relä eller en grupp.", error);
+        Assert.Equal("Choose a relay or a group.", error);
     }
 
     [Theory]
@@ -305,7 +305,7 @@ public sealed class GroupScheduleTests
 
             // Raw SQL: the model of this version no longer matches the old table. Constant SQL, no input.
             await db.Database.ExecuteSqlRawAsync(
-                "INSERT INTO \"Relay\" (\"Id\", \"Name\", \"IsActive\", \"MaxOnMinutes\", \"SortOrder\") VALUES (3, 'Relä 3', 1, 120, 3);"
+                "INSERT INTO \"Relay\" (\"Id\", \"Name\", \"IsActive\", \"MaxOnMinutes\", \"SortOrder\") VALUES (3, 'Relay 3', 1, 120, 3);"
                 + "INSERT INTO \"Schedule\" (\"RelayId\", \"Days\", \"OnTime\", \"OffTime\", \"IsEnabled\", \"CreatedBy\") VALUES (3, 31, '06:30', '08:00', 1, 'john@example.com');",
                 Cancel);
             await migrator.MigrateAsync(cancellationToken: Cancel);

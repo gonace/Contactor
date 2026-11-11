@@ -1,6 +1,6 @@
+using Contactor.Boards.Vm201;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Contactor.Vm201;
 
 namespace Contactor.Tests.Vm201;
 
@@ -21,10 +21,10 @@ public sealed class Vm201LoginTests
     }
 
     [Theory]
-    [InlineData("123456789", "", "Användarnamnet får vara högst 8 tecken på reläkortet.")]
-    [InlineData("", "123456789", "Lösenordet får vara högst 8 tecken på reläkortet.")]
-    [InlineData("åsa", "", "Användarnamnet får bara innehålla bokstäver a–z, siffror och vanliga tecken (inga å, ä, ö).")]
-    [InlineData("", "lösen", "Lösenordet får bara innehålla bokstäver a–z, siffror och vanliga tecken (inga å, ä, ö).")]
+    [InlineData("123456789", "", "The user name can be at most 8 characters on the relay board.")]
+    [InlineData("", "123456789", "The password can be at most 8 characters on the relay board.")]
+    [InlineData("åsa", "", "The user name can only contain letters a–z, digits and plain symbols.")]
+    [InlineData("", "lösen", "The password can only contain letters a–z, digits and plain symbols.")]
     public void Should_RefuseWhatTheBoardCannotTake(string username, string password, string message)
     {
         Assert.Null(Vm201Login.TryCreate(username, password, out var error));

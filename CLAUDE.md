@@ -2,7 +2,7 @@
 
 Contactor is an open-source mobile web app for controlling the 8 relays on a **Velleman VM201** ethernet relay board from a phone, e.g. in a workshop, where the relays drive fan heaters, a compressor, ventilation, lighting and more. It started as the app for one workshop, run by a licensed electrician and a few friends.
 
-The users are not technical. **Simplicity comes before features**: big buttons, Swedish text, no menus that aren't needed.
+The users are not technical. **Simplicity comes before features**: big buttons, plain words, no menus that aren't needed.
 
 The screens are described under User interface below; the running app is the reference for layout, texts, colours and sizes.
 
@@ -10,8 +10,7 @@ The screens are described under User interface below; the running app is the ref
 
 ## Languages
 
-- **The website (all UI text) is in Swedish** for now: the first users are Swedish and not technical. Other languages may come later.
-- **Everything else is in English:** code, comments, log messages, tests, commit messages, pull requests, issues, `README.md` and this file.
+- **Everything is in English:** the UI, code, comments, log messages, tests, commit messages, pull requests, issues, `README.md` and this file. Translations of the UI may come later.
 
 ---
 
@@ -46,7 +45,8 @@ Contactor.slnx
 global.json                 # SDK version and test runner (Microsoft.Testing.Platform)
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
-Contactor.Vm201/          # Pure protocol library: packet codec, client, simulator. No dependencies on web/EF.
+Contactor.Boards/           # What any relay board is to the app: IRelayBoard, BoardState, ChannelMask. No dependencies.
+Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and Vm201Board (its IRelayBoard). No web/EF.
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature
@@ -54,6 +54,7 @@ Contactor.Simulator/      # Console app that runs Vm201Simulator on a port (deve
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
+  Boards/                   # ChannelMask, board adapters
   Vm201/                    # Codec + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
@@ -142,7 +143,18 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 
 ---
 
-## The VM201 client (`Contactor.Vm201`)
+## Boards (`Contactor.Boards`)
+
+The app talks to a relay board only through `IRelayBoard`, so another make of board needs its own project and adapter, and nothing else changes. One board per installation for now; several at once is issue #4.
+
+- `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
+- `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.
+- `BoardCapabilities`: how many relays and inputs, and whether the board reports changes by itself.
+- `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
+- Board-specific features stay in the board's own project and its `Features/<Board>` folder in the web app: today the VM201's address and login (`BoardAddressHandler`), its own timers (`Vm201HostedService`) and the packet trace on the Debug screen.
+- The database holds `Relay.Count` relays (8, the VM201's).
+
+## The VM201 client (`Contactor.Boards.Vm201`)
 
 - `Vm201PacketCodec`: `byte[] Encode(byte cmd, ReadOnlySpan<byte> data)` and an incremental decoder over a `PipeReader` or `Stream`.
 - `Vm201Client`:
@@ -153,6 +165,7 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
   - `SetEndpoint` and `SetLogin` change the address and login while it runs: the current connection, attempt or wait ends at once. The web app applies the saved `BoardSetting` before the first connection. `Vm201Login` is a class, not a record, so its password can't leak through a generated `ToString`.
   - `Vm201:LogPackets` (off by default) logs every packet in and out as hex with its command letter (`Vm201PacketTrace`); user name and password packets only as their command and length. The board keeps no log of its own, so this is how to see what a real board does.
   - The `Traced` event reports every packet in and out and every connection step (connecting, lost and why, the wait before the next attempt, skipped bytes) as a `Vm201TraceEntry`. User name and password packets come cut to their first three bytes. The web app keeps the latest 100 in memory (`BoardTrace`) for the Debug screen.
+- `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes); it translates `Vm201State` and refuses relays above 8.
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change and a way to simulate a disconnect. It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
 
 ---
@@ -162,7 +175,7 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 ```
 Relay
   Id              int PK         1–8, seeded at start, never deleted
-  Name            text           e.g. "Värmefläkt – Svarven" (max 40 characters)
+  Name            text           e.g. "Fan heater – Lathe" (max 40 characters)
   IsActive        bool           false = hidden from the list by default
   MaxOnMinutes    int?           auto-off after a manual on; null = never. Default 120.
   SortOrder       int
@@ -179,7 +192,7 @@ Schedule                (a relay's or a group's: exactly one of RelayId and Grou
 
 User
   Email           text PK        lower case
-  DisplayName     text           "John", "Jane" … shown in the app and in Händelser
+  DisplayName     text           "John", "Jane" … shown in the app and in Events
   ShowBoardTraffic bool          the person's Debugging setting: toasts with the board's traffic and the Debug tab
 
 EventLog
@@ -194,7 +207,7 @@ EventLog
   GroupId         int?           the group it concerns; not a foreign key, events outlive a deleted group
                                  Group actions: "group-on" | "group-off" | "group-start-failed" | "run-on-start" |
                                  "run-on-end" | "interlock-trip" | "group-create" | "group-edit" | "group-delete"
-  Details         text?          JSON, e.g. {"from":"Relä 4","to":"Ventilation – Lackrummet"}
+  Details         text?          JSON, e.g. {"from":"Relay 4","to":"Ventilation – Paint shop"}
 
 RelayRuntime            (internal, for auto-off; one row per relay, seeded at start)
   RelayId         int PK
@@ -206,7 +219,7 @@ SchedulerState          (internal, one row: the scheduler's progress)
   Id              int PK = 1
   LastTickUtc     datetime?      the last minute the scheduler handled
 
-BoardSetting            (one row; the board's address from the Inställningar screen)
+BoardSetting            (one row; the board's address from the Settings screen)
   Id              int PK = 1
   Host            text           IP address or host name
   Port            int            1–65535
@@ -227,7 +240,7 @@ RelayGroupMember
   GroupId         int FK         cascade delete
   RelayId         int FK UNIQUE  a relay is in at most one group
   Position        int            1..n, unique per group; 1 starts first and stops last
-  RoleName        text           its name in the group, e.g. "Fläkt"
+  RoleName        text           its name in the group, e.g. "Fan"
   StartDelaySec   int            1–60 (default 3): wait after the relay above is confirmed on
   RunOnSec        int            0–1800 (default 0): keeps running after the relay below has gone off
 
@@ -244,8 +257,8 @@ GroupRuntime            (internal; the sequence in progress, so it carries on af
 Input                   (future; create the table now but show nothing in the UI)
   Id              int PK = 1
   Name            text
-  ClosedText      text   "Stängd"
-  OpenText        text   "Öppen"
+  ClosedText      text   "Closed"
+  OpenText        text   "Open"
   NotifyOnOpen    bool
   NotifyOnClose   bool
 ```
@@ -260,9 +273,9 @@ Input                   (future; create the table now but show nothing in the UI
 ## Domain rules
 
 ### Manual control
-- The PÅ/AV button sends `CMD_ON`/`CMD_OFF` with a single bit and logs the event with the user's e-mail.
+- The ON/OFF button sends `CMD_ON`/`CMD_OFF` with a single bit and logs the event with the user's e-mail.
 - On a manual ON with `MaxOnMinutes` set: set `RelayRuntime.AutoOffAtUtc`.
-- **"Alla av"** sends `CMD_OFF 0xFF` and is logged as one event per relay that was actually on.
+- **"All off"** sends `CMD_OFF 0xFF` and is logged as one event per relay that was actually on.
 - While the board is disconnected the buttons are disabled. Never queue commands for later.
 
 ### Auto-off
@@ -278,18 +291,18 @@ Input                   (future; create the table now but show nothing in the UI
 - If two schedules overlap: ON wins (an OFF is skipped while another of the relay's schedules is running).
 - **Catch-up:** the scheduler stores the last minute it handled (`SchedulerState.LastTickUtc`). After a restart or a lost connection it handles what it missed, at most 24 h back: a window that is still running is turned on, and a missed OFF is applied only if `RelayRuntime.TurnedOnBy` is `schedule`. A relay a person turned on is never turned off at start. A live tick (OffTime within the last minute) turns the relay off whoever turned it on. While the board is disconnected the scheduler does nothing and doesn't move `LastTickUtc`.
 - A relay the scheduler turned on is turned off at the next tick when no running window covers it any more (its schedule was deleted, paused or moved during the run, or its OFF is older than the catch-up reaches): nothing else would turn it off.
-- **A person's auto-off wins over a schedule.** A relay a person turned on keeps their `AutoOffAtUtc` even when a schedule window starts while it is on. When auto-off turns it off, the schedule doesn't turn it back on during that run; it runs again at its next OnTime. A new "Stäng av automatiskt efter" limit never gives a relay the schedule turned on an auto-off.
-- A relay the scheduler turns on gets `RelayRuntime.TurnedOnBy = "schedule"` and no `AutoOffAtUtc`; its status line reads "På sedan 06:30 · schema · av 08:00". An off relay whose schedule turns it on within 24 h reads "Schema: på i morgon 06:30".
+- **A person's auto-off wins over a schedule.** A relay a person turned on keeps their `AutoOffAtUtc` even when a schedule window starts while it is on. When auto-off turns it off, the schedule doesn't turn it back on during that run; it runs again at its next OnTime. A new "Turn off automatically after" limit never gives a relay the schedule turned on an auto-off.
+- A relay the scheduler turns on gets `RelayRuntime.TurnedOnBy = "schedule"` and no `AutoOffAtUtc`; its status line reads "On since 06:30 · schedule · off 08:00". An off relay whose schedule turns it on within 24 h reads "Schedule: on tomorrow 06:30".
 
 ### Relay groups
 A group runs its relays in a start order, e.g. a fan heater: the fan first, then the heat; heat off, the fan runs on, then the fan off. `GroupPlanner` has the rules (pure, tested without a board); `GroupSequencer` runs them on every status and every second, and saves `GroupRuntime`.
 - **Start:** from the top. The next relay only once the board's status confirms the one above is on **and** its `StartDelaySec` has passed. No confirmation within 5 s: the start stops, what runs keeps running, `group-start-failed`.
-- **Stop:** from the bottom. The lowest relay goes off at once; each one above after its `RunOnSec`, counted from when the one below is confirmed off. PÅ during a run-on carries on from where the group is, restarting nothing.
+- **Stop:** from the bottom. The lowest relay goes off at once; each one above after its `RunOnSec`, counted from when the one below is confirmed off. ON during a run-on carries on from where the group is, restarting nothing.
 - **Interlock:** a relay may only be on while every relay above it is. Checked first on **every** status, whatever caused it (the app, the board's web page or buttons, its timers, a power cut), and at start and reconnect: everything below the gap goes off at once, the missing relay is started so it can run on, then the group stops as usual. Logged as `interlock-trip` with Actor `system`.
-- **One relay at a time** (on the Grupp screen): ON only when the relay above is on ("Kräver att Fläkt är på"). OFF turns the relays below off at once, then this one runs on and stops. That gives "only the fan" without a special mode.
+- **One relay at a time** (on the Group screen): ON only when the relay above is on ("Needs Fan to be on"). OFF turns the relays below off at once, then this one runs on and stops. That gives "only the fan" without a special mode.
 - A relay in a group is only switched through its group (`RelayControl` refuses), has no auto-off or schedule of its own, and can't get a schedule while in it (its group can). A relay with its own schedules can't join a group. Which relays and their order, creating and deleting only change while the whole group is off.
 - **Schedules:** a group has schedules of its own, run by the scheduler by the same rules as a relay's (catch-up, ON wins on overlap, a missed OFF only stops what the schedule started, a person's start and auto-off win). OnTime starts the group in its order through `GroupSequencer`, with Actor `schedule` and no auto-off; OffTime stops it with its run-on times. The sequencer logs both as `group-on`/`group-off`. A group that is already partly on at OnTime (e.g. only the fan, switched by hand) is left as the person set it, with their auto-off; the OffTime still stops it.
-- **Auto-off** (`RelayGroup.MaxOnMinutes`) stops the whole group with its run-on times. **"Alla av"** stops each group with its run-on times and turns the other relays off at once.
+- **Auto-off** (`RelayGroup.MaxOnMinutes`) stops the whole group with its run-on times. **"All off"** stops each group with its run-on times and turns the other relays off at once.
 - **No board:** nothing is sent or queued; run-on times keep counting, and on reconnect the interlock goes first, then what fell due. A command the board hadn't confirmed gets a fresh 5 s to show; the relay a stop needs for its run-on (e.g. the fan after a trip) is sent once more, then given up (`group-start-failed`) if it still doesn't come on.
 - **Safety:** the app's interlock only works while the Pi and the app run. Where safety depends on it (heat without the fan), it must also be wired in hardware, e.g. by feeding the heater relay through the fan relay's output. That is the electrician's decision; the app is an extra layer.
 
@@ -302,13 +315,13 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 
 ### Connection
 - When contact is lost for more than 30 s, `connection-lost` is logged, and `connection-restored` when it comes back.
-- The UI shows a red warning: "Ingen kontakt med reläkortet sedan HH:mm. Lägena nedan kan vara fel."
+- The UI shows a red warning: "No contact with the relay board. Since HH:mm. The states below may be wrong."
 
 ---
 
 ## Identity (Cloudflare Access)
 
-- **Validate `Cf-Access-Jwt-Assertion`** on every request (including static files and Blazor's SignalR connection): RS256, `aud` against the Access application's AUD tag, `iss` against `https://<TeamDomain>`, lifetime against `TimeProvider`. Missing or invalid JWT: answer 403 "Åtkomst nekad.". Configured under `CloudflareAccess:TeamDomain` (the host name only) and `CloudflareAccess:Audience`; the app doesn't start in Production without them.
+- **Validate `Cf-Access-Jwt-Assertion`** on every request (including static files and Blazor's SignalR connection): RS256, `aud` against the Access application's AUD tag, `iss` against `https://<TeamDomain>`, lifetime against `TimeProvider`. Missing or invalid JWT: answer 403 "Access denied.". Configured under `CloudflareAccess:TeamDomain` (the host name only) and `CloudflareAccess:Audience`; the app doesn't start in Production without them.
 - **The e-mail comes from the JWT's `email` claim**, not from the `Cf-Access-Authenticated-User-Email` header: the claim is signed, the header isn't.
 - The JWKS is fetched from `https://<TeamDomain>/cdn-cgi/access/certs` and cached for 1 h. A JWT with an unknown key refetches the list at once, at most once a minute. A failed fetch keeps the keys it had; without keys everyone is denied.
 - `/healthz` needs no JWT (it answers localhost only), and in Development neither do `/health` and `/alive`.
@@ -320,69 +333,69 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 
 ## User interface
 
-Mobile first (390 px), but it must work on a desktop. All UI text is in **Swedish**. Add a PWA manifest so it can be put on the home screen with an icon and the name "Contactor".
+Mobile first (390 px), but it must work on a desktop. All UI text is in **English**. Add a PWA manifest so it can be put on the home screen with an icon and the name "Contactor".
 
 **No zoom.** The pages don't zoom, so nobody zooms in by mistake and loses the big buttons: `user-scalable=no` in the viewport (Android's Chrome follows it), `touch-action: manipulation` against double-tap zoom, and `wwwroot/phone.js`, which cancels the two-finger pinch on iOS, where every browser ignores `user-scalable=no`. Anyone who needs to enlarge can use the phone's own zoom (on iOS: Settings → Accessibility → Zoom).
 
 **Like an app on the phone:**
 - No grey tap flash; buttons show a pressed state, and a long press selects no text and opens no "Copy" menu.
-- A short buzz on PÅ/AV and "Alla av" (`data-vibrate`, `phone.js`; Android only, iOS gives web pages no vibration).
+- A short buzz on ON/OFF and "All off" (`data-vibrate`, `phone.js`; Android only, iOS gives web pages no vibration).
 - The manifest locks the installed app to portrait (Android) and has a fixed `id`. `viewport-fit=cover`, with the content kept clear of the notch and the home indicator.
-- **Reconnecting:** when the live connection drops (the phone slept, an update restarted the Pi), a Swedish bar replaces Blazor's English messages: "Ansluter igen…", and "Ingen kontakt med appen." with "Försök igen" when it gives up; it tries again by itself when the page is looked at. A page the server no longer knows reloads by itself (`wwwroot/reconnect.js`).
+- **Reconnecting:** when the live connection drops (the phone slept, an update restarted the Pi), a bar in the app's style replaces Blazor's own dialog: "Reconnecting…", and "No connection to the app." with "Try again" when it gives up; it tries again by itself when the page is looked at. A page the server no longer knows reloads by itself (`wwwroot/reconnect.js`).
 - `phone.js` and `reconnect.js` are the app's only JavaScript of its own.
 
 ### Screens
 
-1. **Reläer** (`/`)
-   - Heading "Contactor", "Hej {DisplayName} · {number on} av {number active} på" and the button "Alla av".
-   - Connection line: a green dot with "Kortet svarar · uppdaterat nyss", or a red warning box.
-   - One card per active relay: a small mono label "RELÄ n", the name and a status line, plus a big PÅ/AV button (84×52).
-     - Status line when on: "På sedan 14:02 · Jane · av 16:02".
-     - Status line when off: "Av", "Schema: på i morgon 06:30" or "Av sedan i går · Alex".
-   - The link "Ny grupp" under the cards, then the button "Visa N inaktiva reläer" / "Dölj inaktiva reläer". Inactive relays have a dashed border.
-   - One card per group, before the relays: its icon, "GRUPP · RELÄ 1 → 2", the name, a status line ("Startar · steg 2 av 2", "Stänger av · Fläkt går 5 min till", "På sedan 14:02 · John · av 16:02 · bara Fläkt", "Schema: på i morgon 06:30") and one PÅ/AV for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
-   - Tab bar at the bottom: Reläer | Händelser | Inställningar, plus Debug for a person who has Debugging on.
-2. **Relä** (`/rele/{id}`)
-   - A name field and the checkbox "Aktiv – visas i listan".
-   - A status card with a wide STÄNG AV / SLÅ PÅ button.
-   - "Stäng av automatiskt efter": 1 h / 2 h / 4 h / Aldrig.
-   - "Schema": a list with an Aktiv/Pausad button per schedule, and "Lägg till".
-   - "Händelser": the latest 4 for the relay and the link "Alla händelser".
-   - A relay in a group shows "Reläet ingår i gruppen X och styrs därifrån" and "Öppna gruppen" in place of its status, auto-off and schedules.
-   - The button "Spara".
-3. **New/edit schedule** (`/rele/{id}/schema/ny`, `/grupp/{id}/schema/ny`, `/schema/{id}`)
-   - Day buttons M T O T F L S plus "Vardagar" and "Alla dagar".
-   - The time fields "Slå på" and "Stäng av".
-   - A plain-language summary: "Måndag till fredag: reläet slås på 06:30 och stängs av 08:00."
-   - The button "Spara schema". When editing also "Ta bort schema", with a confirmation.
-4. **Grupp** (`/grupp/{id}`)
-   - The name, the icon, a status card with a wide SLÅ PÅ GRUPPEN / STÄNG AV GRUPPEN button.
-   - "Reläer i startordning": each relay with its number, role name, state ("Kräver att Fläkt är på", "Går 5 min till"), its own PÅ/AV within the interlock, up/down and "Ta bort ur gruppen"; between two relays "Vid start, vänta" (seconds) and "Vid stopp, eftergång". Adding a relay offers only relays in no group and without schedules. Order and members only change while the group is off.
-   - "Stäng av automatiskt efter", "Schema" (as on the Relä screen, "Lägg till" goes to `/grupp/{id}/schema/ny`), the group's latest 4 events, the safety note about wiring the interlock in hardware, "Ta bort gruppen" with a confirmation, and "Spara".
+1. **Relays** (`/`)
+   - Heading "Contactor", "Hi {DisplayName} · {number on} of {number active} on" and the button "All off".
+   - Connection line: a green dot with "Board online · updated just now", or a red warning box.
+   - One card per active relay: a small mono label "RELAY n", the name and a status line, plus a big ON/OFF button (84×52).
+     - Status line when on: "On since 14:02 · Jane · off 16:02".
+     - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
+   - The link "New group" under the cards, then the button "Show N inactive relays" / "Hide inactive relays". Inactive relays have a dashed border.
+   - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · step 2 of 2", "Stopping · Fan keeps running for 5 min", "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
+   - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.
+2. **Relay** (`/relay/{id}`)
+   - A name field and the checkbox "Active: shown in the list".
+   - A status card with a wide TURN OFF / TURN ON button.
+   - "Turn off automatically after": 1 h / 2 h / 4 h / Never.
+   - "Schedules": a list with an Active/Paused button per schedule, and "Add".
+   - "Events": the latest 4 for the relay and the link "All events".
+   - A relay in a group shows "This relay is in the group X and is switched from there" and "Open the group" in place of its status, auto-off and schedules.
+   - The button "Save".
+3. **New/edit schedule** (`/relay/{id}/schedule/new`, `/group/{id}/schedule/new`, `/schedule/{id}`)
+   - Day buttons Mo Tu We Th Fr Sa Su plus "Weekdays" and "Every day".
+   - The time fields "Turn on" and "Turn off".
+   - A plain-language summary: "Monday to Friday: the relay turns on at 06:30 and off at 08:00."
+   - The button "Save schedule". When editing also "Delete schedule", with a confirmation.
+4. **Group** (`/group/{id}`)
+   - The name, the icon, a status card with a wide TURN ON THE GROUP / TURN OFF THE GROUP button.
+   - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Keeps running for 5 min"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group and without schedules. Order and members only change while the group is off.
+   - "Turn off automatically after", "Schedules" (as on the Relay screen, "Add" goes to `/group/{id}/schedule/new`), the group's latest 4 events, the safety note about wiring the interlock in hardware, "Delete the group" with a confirmation, and "Save".
    - Icons are Font Awesome Free solid icons (CC BY 4.0), inlined as SVG in `GroupIcon.razor`; no icon font or script.
-5. **Ny grupp** (`/grupp/ny`): a guide in 4 steps, "STEG n AV 4" with a progress bar, "Avbryt" on the first step and "Tillbaka" after.
-   1. "Namn och ikon": the name and the 8 icons (Fläkt, Värme, Ljus, Luft, Lack, Pump, Verktyg, Ström).
-   2. "Vilka reläer ingår?": all 8 relays; the order they are picked in (#1, #2 …) is the start order. A relay in another group ("Ingår redan i X") or with schedules of its own ("Har egna scheman") can't be picked. At least 2.
-   3. "Ordning och regler": up/down, "Namn i gruppen" for each relay (its name to begin with) and the waits between the steps.
-   4. "Granska och skapa": the card as it will look, and in plain words when it starts, when it stops, the interlock and the auto-off (2 h, changed on the group's page). "Skapa grupp" only works while every chosen relay is off.
-6. **Händelser** (`/handelser`)
-   - Filter: Alla / Personer / Automatiskt.
-   - Grouped by day (IDAG, IGÅR, date).
+5. **New group** (`/group/new`): a guide in 4 steps, "STEP n OF 4" with a progress bar, "Cancel" on the first step and "Back" after.
+   1. "Name and icon": the name and the 8 icons (Fan, Heat, Light, Air, Paint, Pump, Tools, Power).
+   2. "Which relays?": all 8 relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X") or with schedules of its own ("Has its own schedules") can't be chosen. At least 2.
+   3. "Order and rules": up/down, "Name in the group" for each relay (its name to begin with) and the waits between the steps.
+   4. "Review and create": the card as it will look, and in plain words when it starts, when it stops, the interlock and the auto-off (2 h, changed on the group's page). "Create group" only works while every chosen relay is off.
+6. **Events** (`/events`)
+   - Filter: All / People / Automatic.
+   - Grouped by day (TODAY, YESTERDAY, date).
    - Row: time in mono, a round badge with an initial, and text.
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
-     - Group events name the group: "John slog på gruppen Värmefläkt · Fläkt → 3 s → Värme", "Eftergång: Fläkt går 5 min till". A safety shut-off ("Värme stängdes av eftersom Fläkt var av") and a start that failed show as a red row.
-   - 50 at a time, with the button "Visa fler" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
-7. **Inställningar** (`/settings`; new URLs are English)
-   - "Reläkortet": the board's address ("Adress") and "Port", its login ("Kortet har ingen inloggning", or "Användarnamn" and "Lösenord"; the password is never shown, an empty field keeps it), the live status ("Kortet svarar på 192.168.1.50:9760" or "Ingen kontakt med reläkortet på …"), and "Spara". Saving moves the connection at once and is logged ("John ändrade reläkortets adress från … till …", "John ändrade reläkortets inloggning", never the values).
-   - "Personer": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Spara".
-   - "Säkerhetskopior": the newest nightly copy ("Senaste: i natt 02:30 · 68 kB"), "Gör en kopia nu" and "Ladda ner" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
-   - "Debugging": the checkbox "Visa trafiken till reläkortet", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
-   - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Utvecklingsversion" for local builds); the only place it shows.
+     - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
+   - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
+7. **Settings** (`/settings`)
+   - "Relay board": the board's address ("Address") and "Port", its login ("The board has no login", or "User name" and "Password"; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760" or "No contact with the relay board at …"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
+   - "People": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Save".
+   - "Backups": the newest nightly copy ("Latest: 02:30 · 68 kB"), "Make a copy now" and "Download" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
+   - "Debugging": the checkbox "Show the traffic to the relay board", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
+   - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Development version" for local builds); the only place it shows.
 8. **Debug** (`/debug`; the tab only shows while the person has Debugging on)
-   - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in Swedish ("Slå på relä 3", "Status: relä 1 och 3 på · ingången av", "Anslutningen bröts: …") and the packet's bytes. The button "Rensa".
+   - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in plain words ("Turn on relay 3", "Status: relay 1 and 3 on · input off", "Connection lost: …") and the packet's bytes. The button "Clear".
 
-Blazor Server gives live updates for free. When `Vm201Client` reports a new status, every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
+Blazor Server gives live updates for free. When the board reports a new state (`IRelayBoard.StateChanged`), every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
 
 ### Design tokens
 
@@ -393,8 +406,8 @@ Blazor Server gives live updates for free. When `Vm201Client` reports a new stat
 --muted: #5C574F;     /* secondary text, ≥4.5:1 against --bg */
 --line: #E3DED5;      /* card border */
 --line-strong: #CFC8BC; /* input border */
---chip: #E8E3DA;      /* AV button, badges */
---accent: #C2410C;    /* PÅ, links, primary action */
+--chip: #E8E3DA;      /* OFF button, badges */
+--accent: #C2410C;    /* ON, links, primary action */
 --accent-tint: #FFF4EC; /* card when the relay is on */
 --accent-border: #F0BE9C;
 --ok: #2F7D4F;
@@ -403,9 +416,9 @@ font: "IBM Plex Sans" (UI), "IBM Plex Mono" (times, labels)
 radii: 10–14 px. Touch targets ≥ 44 px. Body text 16 px, relay names 18 px, heading 28 px.
 ```
 
-**Dark mode** follows the phone's setting (`prefers-color-scheme: dark`); the app has no switch. `app.css` redefines the tokens (warm near-black `--bg: #16140F`, `--card: #221F1A`, `--ink: #F2EEE7`, `--muted: #B3AA9E`, `--accent: #F06A2C` …), plus a few named for it: `--on-ink` (text on an `--ink` background), `--on-accent`, `--danger-solid` (the "Ta bort" button), `--row-line`, `--line-dashed`, `--inactive-bg`/`--inactive-border` and `--backdrop`. Pages take every colour from a token, never a hex value of their own (a test checks), so a new page is dark too.
+**Dark mode** follows the phone's setting (`prefers-color-scheme: dark`); the app has no switch. `app.css` redefines the tokens (warm near-black `--bg: #16140F`, `--card: #221F1A`, `--ink: #F2EEE7`, `--muted: #B3AA9E`, `--accent: #F06A2C` …), plus a few named for it: `--on-ink` (text on an `--ink` background), `--on-accent`, `--danger-solid` (the "Delete" button), `--row-line`, `--line-dashed`, `--inactive-bg`/`--inactive-border` and `--backdrop`. Pages take every colour from a token, never a hex value of their own (a test checks), so a new page is dark too.
 
-Use real `<button>` and `<label>` elements, and `aria-pressed` on the PÅ/AV buttons. No emojis and no gradients.
+Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF buttons. No emojis and no gradients.
 
 ---
 
@@ -442,7 +455,7 @@ Anything specific to the installation or secret (the Access team domain and AUD 
 
 See `DEPLOY.md` for the steps.
 
-- **Versions:** `YYYY.M.D` in UTC without leading zeros, plus `.N` for a later release the same day (`scripts/release-version.sh`). A release is built with `-p:Version=<version>`; every other build is `0.0.0-dev` (`Directory.Build.props`). `AppBuild` reads the version and commit; they show in `/healthz`, the start log, the image label `org.opencontainers.image.version`, the upgrade's output and at the bottom of Inställningar.
+- **Versions:** `YYYY.M.D` in UTC without leading zeros, plus `.N` for a later release the same day (`scripts/release-version.sh`). A release is built with `-p:Version=<version>`; every other build is `0.0.0-dev` (`Directory.Build.props`). `AppBuild` reads the version and commit; they show in `/healthz`, the start log, the image label `org.opencontainers.image.version`, the upgrade's output and at the bottom of Settings.
 - **Publish:** the Images workflow (started by hand) or `scripts/images-publish.sh` builds the solution and runs every test (a failure publishes nothing), builds the image with `dotnet publish -t:PublishContainer`, tags it `YYYY.M.D[.N]`, `latest` and `sha-<commit>`, signs it with cosign by digest (`scripts/images-sign.sh`, keys in `deploy/cosign/`) and tags the commit `v<version>`.
 - **Run:** Docker Compose on the Raspberry Pi (Raspberry Pi OS Lite 64-bit on an SD card, an endurance card recommended), from `/opt/contactor` with `compose.yml` and `.env`. The app's container runs as the image's user 1654; `/var/lib/contactor` (database, `backups/`, `keys/`) is a bind mount owned by it. `cloudflared` is pinned by digest and runs a remotely managed tunnel: `<your hostname> → http://contactor:8080`.
 - **Upgrade:** `contactor-upgrade` (`deploy/upgrade.sh`) only runs an image signed with one of the keys in its `COSIGN_KEYS`; a systemd timer runs it nightly between 03:00 and 04:00 (`deploy/autoupdate-install.sh`). After a healthy start it keeps the 3 newest versions of the app's image (`KEEP_VERSIONS`, never the running one) and removes older ones, so a 16 GB SD card doesn't fill up.
@@ -463,10 +476,10 @@ See `DEPLOY.md` for the steps.
 
 ## Build order
 
-1. `Contactor.Vm201`: codec, simulator and client, with tests. **Test against the real VM201 before going further.**
-2. Web shell: EF model and migration, `CurrentUser` middleware, the Reläer screen with live status and ON/OFF.
-3. Event log and the Händelser screen.
-4. The Relä screen: name, active, auto-off.
+1. `Contactor.Boards.Vm201`: codec, simulator and client, with tests. **Test against the real VM201 before going further.**
+2. Web shell: EF model and migration, `CurrentUser` middleware, the Relays screen with live status and ON/OFF.
+3. Event log and the Events screen.
+4. The Relay screen: name, active, auto-off.
 5. Schedules and the scheduler.
 6. PWA manifest, operations files and a README with installation steps.
 
@@ -475,4 +488,4 @@ See `DEPLOY.md` for the steps.
 - Nullable on, `TreatWarningsAsErrors` in Release.
 - Time: inject `TimeProvider`. Never use `DateTime.Now` directly.
 - Log with `ILogger` and structured fields. Never log the VM201 password.
-- UI text in Swedish; everything else in English (see Languages).
+- Everything in English (see Languages).

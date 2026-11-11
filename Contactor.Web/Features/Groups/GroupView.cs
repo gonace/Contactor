@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
@@ -22,17 +22,17 @@ public sealed record GroupView(
     public IReadOnlyList<GroupMemberInfo> Infos =>
         [.. Members.Select(m => new GroupMemberInfo(m.Position, m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))];
 
-    /// <summary>"RELÄ 1 → 2".</summary>
-    public string Chain => "RELÄ " + string.Join(" → ", Members.Select(m => m.RelayId));
+    /// <summary>"RELAY 1 → 2".</summary>
+    public string Chain => "RELAY " + string.Join(" → ", Members.Select(m => m.RelayId));
 
     /// <summary>The relays of the group, as a channel mask.</summary>
-    public byte Mask => Members.Aggregate((byte)0, (mask, m) => (byte)(mask | Vm201Channel.Mask(m.RelayId)));
+    public ChannelMask Mask => ChannelMask.Of(Members.Select(m => m.RelayId));
 
     /// <summary>
     /// Whether the group counts as on: starting, or any relay on and not on its way down. The big button then reads
-    /// PÅ, and a press stops the group; during a run-on it reads AV, and a press starts it again.
+    /// ON, and a press stops the group; during a run-on it reads OFF, and a press starts it again.
     /// </summary>
-    public bool IsOn(Vm201State state)
+    public bool IsOn(BoardState state)
     {
         ArgumentNullException.ThrowIfNull(state);
         return Runtime.Phase == GroupPhases.Starting
@@ -40,15 +40,15 @@ public sealed record GroupView(
     }
 }
 
-/// <summary>The status line under a group's name, in Swedish.</summary>
+/// <summary>The status line under a group's name.</summary>
 public static class GroupStatusText
 {
     /// <param name="toLocal">From UTC to local time.</param>
-    /// <param name="nameOf">"du" for the viewer, otherwise a person's name, "schema" or "auto-av".</param>
+    /// <param name="nameOf">"you" for the viewer, otherwise a person's name, "schedule" or "auto-off".</param>
     /// <param name="outlook">What the group's schedules say: when a run ends, or when the next one starts.</param>
     public static string For(
         GroupView group,
-        Vm201State state,
+        BoardState state,
         DateTime nowUtc,
         Func<DateTime, DateTime> toLocal,
         Func<string?, string?> nameOf,
@@ -63,35 +63,35 @@ public static class GroupStatusText
         var n = group.Members.Count;
         if (n == 0)
         {
-            return "Av";
+            return "Off";
         }
 
         if (runtime.Phase == GroupPhases.Starting)
         {
-            return $"Startar · steg {Math.Clamp(level + 1, 1, n)} av {n}";
+            return $"Starting · step {Math.Clamp(level + 1, 1, n)} of {n}";
         }
 
         if (runtime.Phase == GroupPhases.Stopping)
         {
             if (level >= 1 && runtime.NextStepAtUtc is { } next && next > nowUtc)
             {
-                return $"Stänger av · {group.Members[level - 1].RoleName} går {Remaining(next - nowUtc)} till";
+                return $"Stopping · {group.Members[level - 1].RoleName} keeps running for {Remaining(next - nowUtc)}";
             }
 
-            return "Stänger av";
+            return "Stopping";
         }
 
         if (!GroupPlanner.AnyOn(group.Infos, state))
         {
             return outlook?.NextOnUtc is { } nextOn
-                ? $"Schema: på {RelayStatusText.When(toLocal(nextOn), toLocal(nowUtc))}"
-                : "Av";
+                ? $"Schedule: on {RelayStatusText.When(toLocal(nextOn), toLocal(nowUtc))}"
+                : "Off";
         }
 
         // A relay is on while the one above it is off, e.g. switched at the board: the interlock turns it off.
         if (level == 0)
         {
-            return "I fel ordning · stängs av";
+            return "Out of order · turning off";
         }
 
         // A group the schedule started goes off when its run ends.
@@ -107,7 +107,7 @@ public static class GroupStatusText
         // Only some of it runs, e.g. the fan alone.
         if (level < n)
         {
-            text += " · bara " + string.Join(", ", group.Members.Take(level).Select(m => m.RoleName));
+            text += " · only " + string.Join(", ", group.Members.Take(level).Select(m => m.RoleName));
         }
 
         return text;
@@ -121,29 +121,29 @@ public static class GroupStatusText
     }
 }
 
-/// <summary>What a group will do, in plain Swedish, for "Granska och skapa".</summary>
+/// <summary>What a group will do, in plain words, for "Review and create".</summary>
 public static class GroupPlanText
 {
-    /// <summary>"Fläkt → vänta 3 s → Värme".</summary>
+    /// <summary>"Fan → wait 3 s → Heat".</summary>
     public static string Start(IReadOnlyList<GroupMemberDraft> members)
     {
         ArgumentNullException.ThrowIfNull(members);
-        return string.Concat(members.Select((m, i) => i == 0 ? m.RoleName : $" → vänta {EventText.Seconds(m.StartDelaySec)} → {m.RoleName}"));
+        return string.Concat(members.Select((m, i) => i == 0 ? m.RoleName : $" → wait {EventText.Seconds(m.StartDelaySec)} → {m.RoleName}"));
     }
 
-    /// <summary>"Värme av → Fläkt går 5 min till, sedan av": from the bottom, each with its run-on.</summary>
+    /// <summary>"Heat off → Fan keeps running for 5 min, then off": from the bottom, each with its run-on.</summary>
     public static string Stop(IReadOnlyList<GroupMemberDraft> members)
     {
         ArgumentNullException.ThrowIfNull(members);
         return string.Join(" → ", members.Reverse().Select((m, i) => i > 0 && m.RunOnSec > 0
-            ? $"{m.RoleName} går {EventText.Seconds(m.RunOnSec)} till, sedan av"
-            : $"{m.RoleName} av"));
+            ? $"{m.RoleName} keeps running for {EventText.Seconds(m.RunOnSec)}, then off"
+            : $"{m.RoleName} off"));
     }
 
-    /// <summary>"Värme kan bara vara på när Fläkt är på."</summary>
+    /// <summary>"Heat can only be on while Fan is on."</summary>
     public static string Interlock(IReadOnlyList<GroupMemberDraft> members)
     {
         ArgumentNullException.ThrowIfNull(members);
-        return string.Join(" ", members.Skip(1).Select((m, i) => $"{m.RoleName} kan bara vara på när {members[i].RoleName} är på."));
+        return string.Join(" ", members.Skip(1).Select((m, i) => $"{m.RoleName} can only be on while {members[i].RoleName} is on."));
     }
 }

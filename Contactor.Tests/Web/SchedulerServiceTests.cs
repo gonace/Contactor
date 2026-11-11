@@ -1,8 +1,8 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Contactor.Vm201;
+using Contactor.Boards.Vm201;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Contactor.Tests.Web;
 
@@ -305,7 +305,7 @@ public sealed class SchedulerServiceTests
 
         rig.Time.Now = Local(15, 10);
         var settings = rig.Database.Services.GetRequiredService<RelaySettingsHandler>();
-        await settings.SaveAsync(new RelaySettings(5, "Relä 5", true, 60), Jane, Cancel);
+        await settings.SaveAsync(new RelaySettings(5, "Relay 5", true, 60), Jane, Cancel);
 
         Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
         Assert.True(rig.Client.State.IsOn(5));

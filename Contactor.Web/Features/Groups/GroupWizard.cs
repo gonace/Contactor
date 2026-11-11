@@ -3,7 +3,7 @@ using Contactor.Web.Persistence;
 namespace Contactor.Web.Features.Groups;
 
 /// <summary>
-/// What "Ny grupp" holds between its four steps. The relays' order is one list: the order they were picked in, changed
+/// What "New group" holds between its four steps. The relays' order is one list: the order they were picked in, changed
 /// by the arrows in step 3, so step 2's #1, #2 … and step 3 always show the same start order.
 /// </summary>
 public sealed class GroupWizard
@@ -100,7 +100,7 @@ public sealed class GroupWizard
     }
 }
 
-/// <summary>A relay as "Ny grupp" sets it up.</summary>
+/// <summary>A relay as "New group" sets it up.</summary>
 public sealed class WizardMember
 {
     public WizardMember(int relayId, string roleName)

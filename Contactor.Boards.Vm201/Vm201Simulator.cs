@@ -5,7 +5,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// A fake VM201 on a local TCP port, implementing the whole protocol: optional login, channel names, status pushed

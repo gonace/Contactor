@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Persistence;
@@ -17,15 +17,15 @@ public sealed class GroupPlannerTests
     // The fan heater: the fan (relay 1) first, the heat (relay 2) three seconds later; the fan runs on 5 minutes.
     private static readonly IReadOnlyList<GroupMemberInfo> FanHeater =
     [
-        new(1, 1, "Fläkt", 3, 300),
-        new(2, 2, "Värme", 3, 0),
+        new(1, 1, "Fan", 3, 300),
+        new(2, 2, "Heat", 3, 0),
     ];
 
     // Three relays with different waits: ventilation, compressor, compressed air.
     private static readonly IReadOnlyList<GroupMemberInfo> Spray =
     [
         new(1, 5, "Ventilation", 3, 120),
-        new(2, 6, "Kompressor", 10, 60),
+        new(2, 6, "Compressor", 10, 60),
         new(3, 7, "Tryckluft", 2, 0),
     ];
 
@@ -37,7 +37,7 @@ public sealed class GroupPlannerTests
     {
         var commands = new GroupCommands();
         Assert.True(GroupPlanner.Start(FanHeater, State(), _runtime, John, 120, T0, commands));
-        Assert.Equal((Mask(1), (byte)0), (commands.On, commands.Off));
+        Assert.Equal((Mask(1), ChannelMask.None), (commands.On, commands.Off));
         Assert.Equal(EventActions.GroupOn, Assert.Single(commands.Events).Action);
 
         // Not confirmed yet: nothing more.
@@ -63,7 +63,7 @@ public sealed class GroupPlannerTests
         Assert.True(Plan(State(), T0.AddSeconds(4.9)).IsEmpty);
         var failed = Plan(State(), T0.AddSeconds(5));
 
-        Assert.Equal((byte)0, failed.On);
+        Assert.Equal(ChannelMask.None, failed.On);
         Assert.Equal(EventActions.GroupStartFailed, Assert.Single(failed.Events).Action);
         Assert.Equal(GroupPhases.Idle, _runtime.Phase);
         Assert.True(Plan(State(), T0.AddSeconds(30)).IsEmpty);
@@ -78,7 +78,7 @@ public sealed class GroupPlannerTests
 
         var failed = Plan(State(1), T0.AddSeconds(9));
 
-        Assert.Equal(((byte)0, (byte)0), (failed.On, failed.Off));
+        Assert.Equal((ChannelMask.None, ChannelMask.None), (failed.On, failed.Off));
         Assert.Equal((EventActions.GroupStartFailed, (int?)2), (failed.Events[0].Action, failed.Events[0].RelayId));
     }
 
@@ -93,13 +93,13 @@ public sealed class GroupPlannerTests
         // The heat is off: the fan runs on 5 minutes.
         var runOn = Plan(State(1), T0.AddSeconds(1));
         Assert.Equal((EventActions.RunOnStart, (int?)1), (runOn.Events[0].Action, runOn.Events[0].RelayId));
-        Assert.Equal("Fläkt går 5 min till", EventText.For(Logged(runOn.Events[0]), null, null, "Värmefläkt").What);
+        Assert.Equal("Fan keeps running for 5 min", EventText.For(Logged(runOn.Events[0]), null, null, "Fan heater").What);
         Assert.True(Plan(State(1), T0.AddSeconds(300)).IsEmpty);
 
         var fanOff = Plan(State(1), T0.AddSeconds(301));
         Assert.Equal(Mask(1), fanOff.Off);
         var ended = Assert.Single(fanOff.Events);
-        Assert.Equal("Fläkt avstängd", EventText.For(Logged(ended), null, null, "Värmefläkt").What);
+        Assert.Equal("Fan off", EventText.For(Logged(ended), null, null, "Fan heater").What);
 
         Plan(State(), T0.AddSeconds(302));
         Plan(State(), T0.AddSeconds(303));
@@ -116,7 +116,7 @@ public sealed class GroupPlannerTests
         var start = new GroupCommands();
         GroupPlanner.Start(FanHeater, State(1), _runtime, John, null, T0.AddSeconds(60), start);
 
-        Assert.Equal(((byte)0, Mask(2)), (start.Off, start.On));
+        Assert.Equal((ChannelMask.None, Mask(2)), (start.Off, start.On));
     }
 
     [Fact]
@@ -152,8 +152,8 @@ public sealed class GroupPlannerTests
         Assert.Equal((EventActions.InterlockTrip, EventActors.System), (e.Action, e.Actor));
         using (var details = System.Text.Json.JsonDocument.Parse(e.Details!))
         {
-            Assert.Equal("Fläkt", details.RootElement.GetProperty("missing").GetString());
-            Assert.Equal(["Värme"], details.RootElement.GetProperty("off").EnumerateArray().Select(x => x.GetString()));
+            Assert.Equal("Fan", details.RootElement.GetProperty("missing").GetString());
+            Assert.Equal(["Heat"], details.RootElement.GetProperty("off").EnumerateArray().Select(x => x.GetString()));
         }
 
         // The same old status again before the board reports back: nothing new.
@@ -191,7 +191,7 @@ public sealed class GroupPlannerTests
 
         var refusal = GroupPlanner.MemberOn(FanHeater, State(), _runtime, 2, John, null, T0, commands);
 
-        Assert.Equal("Kräver att Fläkt är på.", refusal);
+        Assert.Equal("Needs Fan to be on.", refusal);
         Assert.True(commands.IsEmpty);
     }
 
@@ -288,9 +288,9 @@ public sealed class GroupPlannerTests
         Assert.Equal(Mask(2), stop.Off);
 
         // The board reports the heat on, then off; the fan runs on the full 5 minutes from there.
-        Assert.Equal((byte)0, Plan(State(1, 2), T0.AddSeconds(4.6)).Off & Mask(1));
+        Assert.Equal(ChannelMask.None, Plan(State(1, 2), T0.AddSeconds(4.6)).Off & Mask(1));
         Assert.Equal(EventActions.RunOnStart, Plan(State(1), T0.AddSeconds(4.7)).Events[0].Action);
-        Assert.Equal((byte)0, Plan(State(1), T0.AddSeconds(300)).Off);
+        Assert.Equal(ChannelMask.None, Plan(State(1), T0.AddSeconds(300)).Off);
         Assert.Equal(Mask(1), Plan(State(1), T0.AddSeconds(305)).Off);
     }
 
@@ -312,7 +312,7 @@ public sealed class GroupPlannerTests
 
         // The heat went off, the fan never came on.
         var failed = Plan(State(), T0.AddSeconds(5));
-        Assert.Equal((byte)0, failed.On);
+        Assert.Equal(ChannelMask.None, failed.On);
         Assert.Equal((EventActions.GroupStartFailed, (int?)1), (failed.Events[0].Action, failed.Events[0].RelayId));
         for (var second = 6; second < 60; second++)
         {
@@ -388,19 +388,18 @@ public sealed class GroupPlannerTests
         Assert.True(commands.IsEmpty);
     }
 
-    private GroupCommands Plan(Vm201State state, DateTime now)
+    private GroupCommands Plan(BoardState state, DateTime now)
     {
         var commands = new GroupCommands();
         GroupPlanner.Plan(_members, state, _runtime, now, commands);
         return commands;
     }
 
-    private static byte Mask(int relayId) => Vm201Channel.Mask(relayId);
+    private static ChannelMask Mask(int relayId) => ChannelMask.Of(relayId);
 
-    private static Vm201State State(params int[] on) =>
-        new(true, on.Aggregate((byte)0, (mask, id) => (byte)(mask | Vm201Channel.Mask(id))), 0, false, T0);
+    private static BoardState State(params int[] on) => new(true, ChannelMask.Of(on), ChannelMask.None, T0);
 
-    // As the sequencer stores it, so the run-on texts in Händelser read the role from it.
+    // As the sequencer stores it, so the run-on texts in Events read the role from it.
     private static EventLogEntry Logged(GroupEvent e) =>
         new() { GroupId = 1, RelayId = e.RelayId, Actor = e.Actor, Action = e.Action, Details = e.Details };
 }

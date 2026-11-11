@@ -10,7 +10,7 @@ document.addEventListener("touchmove", (e) => {
     }
 }, { passive: false });
 
-// A short buzz when a button marked data-vibrate is tapped (PÅ/AV, Alla av), so you feel the tap went through.
+// A short buzz when a button marked data-vibrate is tapped (ON/OFF, All off), so you feel the tap went through.
 // Android only: iOS gives web pages no vibration. A disabled button gets no click, so it doesn't buzz either.
 document.addEventListener("click", (e) => {
     if (e.target instanceof Element && e.target.closest("[data-vibrate]") && "vibrate" in navigator) {

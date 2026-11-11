@@ -1,7 +1,7 @@
+using Contactor.Boards.Vm201;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Contactor.Vm201;
 
 namespace Contactor.Simulator;
 

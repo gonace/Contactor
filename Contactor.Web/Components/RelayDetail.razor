@@ -1,13 +1,13 @@
-@page "/rele/{Id:int}"
+@page "/relay/{Id:int}"
 @implements IDisposable
+@using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
-@using Contactor.Vm201
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
-@inject Vm201Client Board
+@inject IRelayBoard Board
 @inject RelayControl Control
 @inject RelaySettingsHandler Settings
 @inject SchedulesHandler Schedules
@@ -19,20 +19,20 @@
 @inject NavigationManager Navigation
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 
-<PageTitle>@(_relay?.Name ?? "Relä") · Contactor</PageTitle>
+<PageTitle>@(_relay?.Name ?? "Relay") · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            Reläer
+            Relays
         </a>
     </header>
 
     @if (_loaded && _relay is null)
     {
         <main class="content">
-            <p class="missing">Reläet finns inte.</p>
+            <p class="missing">The relay doesn't exist.</p>
         </main>
     }
     else if (_relay is not null)
@@ -40,13 +40,13 @@
         <form class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">RELÄ @Id · NAMN</label>
+                    <label for="name" class="label">RELAY @Id · NAME</label>
                     <input id="name" type="text" maxlength="@Relay.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                     @if (_group is null)
                     {
                         <label for="active" class="check">
                             <input id="active" type="checkbox" @bind="_isActive" />
-                            <span><strong>Aktiv</strong> – visas i listan. Bocka ur för reläer som inte används.</span>
+                            <span><strong>Active</strong>: shown in the list. Untick it for relays that aren't used.</span>
                         </label>
                     }
                 </div>
@@ -54,49 +54,49 @@
                 @if (_group is { } group)
                 {
                     <section class="in-group">
-                        <p>Reläet ingår i gruppen <strong>@group.Name</strong> och styrs därifrån, i gruppens ordning.</p>
-                        <a href="grupp/@group.Id">Öppna gruppen</a>
+                        <p>This relay is in the group <strong>@group.Name</strong> and is switched from there, in the group's order.</p>
+                        <a href="group/@group.Id">Open the group</a>
                     </section>
                 }
                 else
                 {
                 <section class="status @(IsOn ? "on" : "")">
                     <p>@StatusSentence</p>
-                    <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!Board.State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "STÄNG AV" : "SLÅ PÅ")</button>
+                    <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!Board.State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "TURN OFF" : "TURN ON")</button>
                     @if (_toggleFailed)
                     {
-                        <p class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "Kortet svarar inte. Försök igen.")</p>
+                        <p class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</p>
                     }
                 </section>
 
                 <section class="limits">
-                    <h2>Stäng av automatiskt efter</h2>
+                    <h2>Turn off automatically after</h2>
                     <div class="choices">
                         @foreach (var limit in RelaySettingsHandler.Limits)
                         {
                             <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@LimitLabel(limit)</button>
                         }
                     </div>
-                    <p class="hint">Gäller när någon slår på reläet för hand.</p>
+                    <p class="hint">Applies when someone turns the relay on by hand.</p>
                     @if (IsOn && RelaySettingsHandler.WouldTurnOffAtOnce(_runtime, _maxOnMinutes, Clock.UtcNow) && _maxOnMinutes != _relay.MaxOnMinutes)
                     {
-                        <p class="warning">Reläet har varit på längre än så och stängs av när du sparar.</p>
+                        <p class="warning">The relay has been on longer than that and turns off when you save.</p>
                     }
                 </section>
 
                 <section class="schedules">
                     <div class="section-head">
-                        <h2>Schema</h2>
-                        <a href="rele/@Id/schema/ny">Lägg till</a>
+                        <h2>Schedules</h2>
+                        <a href="relay/@Id/schedule/new">Add</a>
                     </div>
                     @if (_schedules.Count == 0)
                     {
-                        <p class="hint">Inga scheman. Lägg till ett för att slå på reläet vissa tider.</p>
+                        <p class="hint">No schedules. Add one to turn the relay on at set times.</p>
                     }
                     @foreach (var schedule in _schedules)
                     {
                         <div class="schedule" @key="schedule.Id">
-                            <a href="schema/@schedule.Id" class="schedule-text">
+                            <a href="schedule/@schedule.Id" class="schedule-text">
                                 <span class="schedule-days">@ScheduleText.ShortDays(schedule.Days)</span>
                                 <span class="schedule-times">@ScheduleText.Times(schedule.OnTime, schedule.OffTime)</span>
                             </a>
@@ -105,7 +105,7 @@
                                     aria-pressed="@(schedule.IsEnabled ? "true" : "false")"
                                     aria-label="@($"{ScheduleText.ShortDays(schedule.Days)} {ScheduleText.Times(schedule.OnTime, schedule.OffTime)}")"
                                     disabled="@_busy"
-                                    @onclick="() => SetEnabledAsync(schedule)">@(schedule.IsEnabled ? "Aktiv" : "Pausad")</button>
+                                    @onclick="() => SetEnabledAsync(schedule)">@(schedule.IsEnabled ? "Active" : "Paused")</button>
                         </div>
                     }
                 </section>
@@ -113,12 +113,12 @@
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>Händelser</h2>
-                        <a href="handelser">Alla händelser</a>
+                        <h2>Events</h2>
+                        <a href="events">All events</a>
                     </div>
                     @if (_events.Count == 0)
                     {
-                        <p class="hint">Inget har hänt med reläet än.</p>
+                        <p class="hint">Nothing has happened to this relay yet.</p>
                     }
                     else
                     {
@@ -144,7 +144,7 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">Spara</button>
+                <button type="submit" disabled="@_busy">Save</button>
             </div>
         </form>
     }
@@ -173,7 +173,7 @@
     [Parameter]
     public int Id { get; set; }
 
-    private bool IsOn => Id is >= 1 and <= Vm201Channel.Count && Board.State.IsOn(Id);
+    private bool IsOn => Id is >= 1 and <= Relay.Count && Board.State.IsOn(Id);
 
     private string StatusSentence
     {
@@ -238,12 +238,12 @@
 
         if (email == _user?.Email)
         {
-            return "du";
+            return "you";
         }
 
         if (email == EventActors.Schedule)
         {
-            return "schema";
+            return "schedule";
         }
 
         return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
@@ -251,7 +251,7 @@
 
     private static string LimitLabel(int? minutes)
     {
-        return minutes is { } m ? $"{m / 60} h" : "Aldrig";
+        return minutes is { } m ? $"{m / 60} h" : "Never";
     }
 
     private async Task ToggleAsync()
@@ -274,7 +274,7 @@
                 await Control.TurnOnAsync(Id, _user.Email, CancellationToken.None);
             }
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             _toggleFailed = true;
             _inGroup = false;
@@ -332,7 +332,7 @@
         }
     }
 
-    private void OnBoardChanged(object? sender, Vm201State state)
+    private void OnBoardChanged(object? sender, BoardState state)
     {
         _ = RefreshAsync(reload: false);
     }

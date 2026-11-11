@@ -1,4 +1,4 @@
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// Reads whole VM201 packets from a stream, one at a time, using <see cref="Vm201PacketDecoder"/>.

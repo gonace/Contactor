@@ -56,7 +56,7 @@ public sealed partial class CloudflareAccessMiddleware
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Åtkomst nekad.", context.RequestAborted);
+            await context.Response.WriteAsync("Access denied.", context.RequestAborted);
             return;
         }
 

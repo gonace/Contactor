@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contactor.ServiceDefaults\Contactor.ServiceDefaults.csproj" />
-    <ProjectReference Include="..\Contactor.Vm201\Contactor.Vm201.csproj" />
+    <ProjectReference Include="..\Contactor.Boards.Vm201\Contactor.Boards.Vm201.csproj" />
   </ItemGroup>
 
 </Project>

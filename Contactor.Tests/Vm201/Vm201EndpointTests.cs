@@ -1,6 +1,6 @@
+using Contactor.Boards.Vm201;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Contactor.Vm201;
 
 namespace Contactor.Tests.Vm201;
 
@@ -25,13 +25,13 @@ public sealed class Vm201EndpointTests
     }
 
     [Theory]
-    [InlineData("", 9760, "Skriv reläkortets adress, t.ex. 192.168.1.50.")]
-    [InlineData("   ", 9760, "Skriv reläkortets adress, t.ex. 192.168.1.50.")]
-    [InlineData(null, 9760, "Skriv reläkortets adress, t.ex. 192.168.1.50.")]
-    [InlineData("192.168.1.50/24", 9760, "192.168.1.50/24 är ingen adress. Skriv t.ex. 192.168.1.50.")]
-    [InlineData("http://192.168.1.50", 9760, "http://192.168.1.50 är ingen adress. Skriv t.ex. 192.168.1.50.")]
-    [InlineData("192.168.1.50", 0, "Porten ska vara ett tal mellan 1 och 65535 (oftast 9760).")]
-    [InlineData("192.168.1.50", 70000, "Porten ska vara ett tal mellan 1 och 65535 (oftast 9760).")]
+    [InlineData("", 9760, "Enter the relay board's address, e.g. 192.168.1.50.")]
+    [InlineData("   ", 9760, "Enter the relay board's address, e.g. 192.168.1.50.")]
+    [InlineData(null, 9760, "Enter the relay board's address, e.g. 192.168.1.50.")]
+    [InlineData("192.168.1.50/24", 9760, "192.168.1.50/24 isn't an address. Enter e.g. 192.168.1.50.")]
+    [InlineData("http://192.168.1.50", 9760, "http://192.168.1.50 isn't an address. Enter e.g. 192.168.1.50.")]
+    [InlineData("192.168.1.50", 0, "The port is a number from 1 to 65535 (usually 9760).")]
+    [InlineData("192.168.1.50", 70000, "The port is a number from 1 to 65535 (usually 9760).")]
     public void Should_RefuseWhatIsNoAddress(string? host, int port, string message)
     {
         Assert.Null(Vm201Endpoint.TryCreate(host, port, out var error));

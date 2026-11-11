@@ -56,14 +56,14 @@ function utc(minutesAgo) {
 function seed() {
     const db = new DatabaseSync(database);
     const relays = [
-        [1, 'Fläkt – Svarven', 1],
-        [2, 'Värme – Svarven', 1],
-        [3, 'Kompressor', 1],
-        [4, 'Ventilation – Lackrummet', 1],
-        [5, 'Belysning – Förrådet', 1],
-        [6, 'Relä 6', 0],
-        [7, 'Relä 7', 0],
-        [8, 'Relä 8', 0],
+        [1, 'Fan – Lathe', 1],
+        [2, 'Heat – Lathe', 1],
+        [3, 'Compressor', 1],
+        [4, 'Ventilation – Paint shop', 1],
+        [5, 'Lighting – Storeroom', 1],
+        [6, 'Relay 6', 0],
+        [7, 'Relay 7', 0],
+        [8, 'Relay 8', 0],
     ];
     const rename = db.prepare('UPDATE "Relay" SET "Name" = ?, "IsActive" = ? WHERE "Id" = ?');
     for (const [id, name, active] of relays) {
@@ -76,10 +76,10 @@ function seed() {
     user.run('alex@example.com', 'Alex');
 
     db.prepare('INSERT INTO "RelayGroup" ("Id", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, ?, \'fan\', 120, 1, 1)')
-        .run('Värmefläkt – Svarven');
+        .run('Fan heater – Lathe');
     const member = db.prepare('INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "Position", "RoleName", "StartDelaySec", "RunOnSec") VALUES (1, ?, ?, ?, 3, ?)');
-    member.run(1, 1, 'Fläkt', 300);
-    member.run(2, 2, 'Värme', 0);
+    member.run(1, 1, 'Fan', 300);
+    member.run(2, 2, 'Heat', 0);
     db.prepare('INSERT INTO "GroupRuntime" ("GroupId", "Phase", "TargetLevel", "PendingOn") VALUES (1, \'idle\', 0, 0)').run();
 
     const schedule = db.prepare('INSERT INTO "Schedule" ("RelayId", "GroupId", "Days", "OnTime", "OffTime", "IsEnabled", "CreatedBy") VALUES (?, ?, ?, ?, ?, 1, ?)');
@@ -92,8 +92,8 @@ function seed() {
     event.run(utc(24 * 60 + 30), 5, null, 'auto-off', 'off', '{"afterMinutes":120}');
     event.run(utc(6 * 60), 3, null, 'schedule', 'on', null);
     event.run(utc(4 * 60 + 30), 3, null, 'schedule', 'off', null);
-    event.run(utc(3 * 60), 4, null, 'jane@example.com', 'rename', '{"from":"Relä 4","to":"Ventilation – Lackrummet"}');
-    event.run(utc(90), null, 1, 'alex@example.com', 'group-create', '{"name":"Värmefläkt – Svarven","steps":["Fläkt","Värme"]}');
+    event.run(utc(3 * 60), 4, null, 'jane@example.com', 'rename', '{"from":"Relay 4","to":"Ventilation – Paint shop"}');
+    event.run(utc(90), null, 1, 'alex@example.com', 'group-create', '{"name":"Fan heater – Lathe","steps":["Fan","Heat"]}');
     db.close();
 }
 
@@ -129,25 +129,25 @@ try {
     await john.goto(base);
     await john.waitForFunction(() => window.Blazor !== undefined);
     await john.waitForTimeout(1500);
-    await john.click('button[aria-label="Slå på Värmefläkt – Svarven"]');
-    await john.waitForSelector('button[aria-label="Stäng av Värmefläkt – Svarven"]');
+    await john.click('button[aria-label="Turn on Fan heater – Lathe"]');
+    await john.waitForSelector('button[aria-label="Turn off Fan heater – Lathe"]');
     await john.waitForTimeout(5000);
-    await john.click('button[aria-label="Slå på Belysning – Förrådet"]');
-    await john.waitForSelector('button[aria-label="Stäng av Belysning – Förrådet"]');
+    await john.click('button[aria-label="Turn on Lighting – Storeroom"]');
+    await john.waitForSelector('button[aria-label="Turn off Lighting – Storeroom"]');
     await john.close();
 
     const shots = [
         ['relays', '', null, false],
-        ['group', 'grupp/1', null, false],
-        ['new-group', 'grupp/ny', async (page) => {
-            await page.fill('#name', 'Lackering');
-            await page.click('.icons label:has-text("Lack")');
+        ['group', 'group/1', null, false],
+        ['new-group', 'group/new', async (page) => {
+            await page.fill('#name', 'Painting');
+            await page.click('.icons label:has-text("Paint")');
             await page.click('.next button');
-            await page.click('button.option:has-text("RELÄ 4")');
-            await page.click('button.option:has-text("RELÄ 5")');
+            await page.click('button.option:has-text("RELAY 4")');
+            await page.click('button.option:has-text("RELAY 5")');
         }, false],
-        ['schedule', 'schema/1', null, false],
-        ['events', 'handelser', null, false],
+        ['schedule', 'schedule/1', null, false],
+        ['events', 'events', null, false],
         ['settings', 'settings', null, false],
     ];
     await shoot(browser, 'light', shots);

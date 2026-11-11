@@ -80,7 +80,7 @@ public sealed class PwaTests
     }
 
     [Fact]
-    public async Task Should_RejoinInSwedish()
+    public async Task Should_ShowItsOwnReconnectBar()
     {
         await using var app = CreateApp();
         using var http = app.CreateClient();
@@ -88,8 +88,8 @@ public sealed class PwaTests
         var html = System.Net.WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
         Assert.Matches("<div id=\"components-reconnect-modal\"[^>]*>", html);
-        Assert.Contains("Ansluter igen…", html, StringComparison.Ordinal);
-        Assert.Matches("<button[^>]*id=\"components-reconnect-button\"[^>]*>Försök igen</button>", html);
+        Assert.Contains("Reconnecting…", html, StringComparison.Ordinal);
+        Assert.Matches("<button[^>]*id=\"components-reconnect-button\"[^>]*>Try again</button>", html);
         var reconnect = await http.GetStringAsync("/" + ScriptPath(html, "reconnect"), Cancel);
         Assert.Contains("location.reload()", reconnect, StringComparison.Ordinal);
         Assert.Contains("Blazor.resumeCircuit()", reconnect, StringComparison.Ordinal);
@@ -116,7 +116,7 @@ public sealed class PwaTests
     public void Should_TakeEveryPageColourFromTheTokens()
     {
         // A colour written into a page's CSS stays the same in dark mode; the tokens in app.css change. The only one
-        // allowed is white text on the red "Ta bort" button, which is dark enough in both.
+        // allowed is white text on the red "Delete" button, which is dark enough in both.
         var folder = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Contactor.Web", "Components");
         var colours = new System.Text.RegularExpressions.Regex(@"#[0-9A-Fa-f]{3,8}\b");
         List<string> found = [];

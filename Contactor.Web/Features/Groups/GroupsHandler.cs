@@ -1,8 +1,8 @@
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Groups;
 
@@ -16,18 +16,18 @@ public sealed record GroupMemberDraft(
     int StartDelaySec = RelayGroupMember.DefaultStartDelaySec,
     int RunOnSec = RelayGroupMember.DefaultRunOnSec);
 
-/// <summary>A relay as "Ny grupp" offers it.</summary>
+/// <summary>A relay as "New group" offers it.</summary>
 /// <param name="GroupName">The group it is already in, or null.</param>
 /// <param name="HasSchedules">It has schedules of its own, so it can't join a group.</param>
 public sealed record GroupCandidate(int RelayId, string Name, bool IsActive, string? GroupName, bool HasSchedules)
 {
     public bool IsFree => GroupName is null && !HasSchedules;
 
-    /// <summary>"Ledigt", "Inaktivt · ledigt", "Ingår redan i Lackering" or "Har egna scheman".</summary>
-    public string Note => GroupName is not null ? $"Ingår redan i {GroupName}"
-        : HasSchedules ? "Har egna scheman"
-        : IsActive ? "Ledigt"
-        : "Inaktivt · ledigt";
+    /// <summary>"Free", "Inactive · free", "Already in Painting" or "Has its own schedules".</summary>
+    public string Note => GroupName is not null ? $"Already in {GroupName}"
+        : HasSchedules ? "Has its own schedules"
+        : IsActive ? "Free"
+        : "Inactive · free";
 }
 
 /// <summary>
@@ -45,20 +45,20 @@ public sealed class GroupsHandler
     public static readonly IReadOnlyList<int> StartDelayChoices = [1, 3, 10, 30, 60];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly Vm201Client _client;
+    private readonly IRelayBoard _board;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
 
     public GroupsHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
-        Vm201Client client,
+        IRelayBoard board,
         LocalClock clock,
         RelayChanges changes,
         GroupSequencer sequencer)
     {
         _dbFactory = dbFactory;
-        _client = client;
+        _board = board;
         _clock = clock;
         _changes = changes;
         _sequencer = sequencer;
@@ -99,7 +99,7 @@ public sealed class GroupsHandler
             .ToListAsync(cancellationToken);
     }
 
-    /// <summary>Every relay, and whether it can join a new group, for "Ny grupp".</summary>
+    /// <summary>Every relay, and whether it can join a new group, for "New group".</summary>
     public async Task<IReadOnlyList<GroupCandidate>> CandidatesAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -122,7 +122,7 @@ public sealed class GroupsHandler
             runtime ?? new GroupRuntime { GroupId = group.Id });
     }
 
-    /// <summary>Creates a group. Returns its id, or the message to show (in Swedish).</summary>
+    /// <summary>Creates a group. Returns its id, or the message to show.</summary>
     public Task<(int? Id, string? Error)> CreateAsync(GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -164,7 +164,7 @@ public sealed class GroupsHandler
 
     /// <summary>
     /// Saves a group. The name, icon, auto-off, role names and waits can change any time; which relays and their order
-    /// only while the whole group is off. Returns null when saved, otherwise the message to show (in Swedish).
+    /// only while the whole group is off. Returns null when saved, otherwise the message to show.
     /// </summary>
     public Task<string?> SaveAsync(int groupId, GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
@@ -179,7 +179,7 @@ public sealed class GroupsHandler
         var group = await db.RelayGroups.Include(g => g.Members).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
         if (group is null)
         {
-            return "Gruppen finns inte längre.";
+            return "The group no longer exists.";
         }
 
         var relays = await db.Relays.AsNoTracking().ToDictionaryAsync(r => r.Id, cancellationToken);
@@ -197,7 +197,7 @@ public sealed class GroupsHandler
             var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
             if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(before.Concat(after), relays) is not null)
             {
-                return "Stäng av gruppen och reläerna du lägger till innan du ändrar vilka reläer som ingår eller deras ordning.";
+                return "Turn off the group, and the relays you add, before you change its relays or their order.";
             }
 
             // Replaced in two saves: the unique position per group would clash while rows move.
@@ -229,7 +229,7 @@ public sealed class GroupsHandler
 
     /// <summary>
     /// Deletes a group while it is off; its relays are ordinary relays again. Returns null when deleted, otherwise the
-    /// message to show (in Swedish).
+    /// message to show.
     /// </summary>
     public Task<string?> DeleteAsync(int groupId, string userEmail, CancellationToken cancellationToken)
     {
@@ -250,7 +250,7 @@ public sealed class GroupsHandler
         var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
         if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.Members.Select(m => m.RelayId), relays) is not null)
         {
-            return "Stäng av gruppen innan den tas bort.";
+            return "Turn off the group before deleting it.";
         }
 
         db.RelayGroups.Remove(group);
@@ -270,59 +270,59 @@ public sealed class GroupsHandler
         var name = draft.Name?.Trim() ?? "";
         if (name.Length == 0)
         {
-            return "Skriv ett namn på gruppen.";
+            return "Give the group a name.";
         }
 
         if (name.Length > RelayGroup.NameMaxLength)
         {
-            return $"Namnet får vara högst {RelayGroup.NameMaxLength} tecken.";
+            return $"The name can be at most {RelayGroup.NameMaxLength} characters.";
         }
 
         if (!GroupIcons.All.Contains(draft.Icon))
         {
-            return "Välj en ikon.";
+            return "Choose an icon.";
         }
 
         if (!RelaySettingsHandler.Limits.Contains(draft.MaxOnMinutes))
         {
-            return "Välj hur länge gruppen får vara på.";
+            return "Choose how long the group may stay on.";
         }
 
         if (draft.Members is null || draft.Members.Count < RelayGroup.MinMembers)
         {
-            return $"Välj minst {RelayGroup.MinMembers} reläer.";
+            return $"Choose at least {RelayGroup.MinMembers} relays.";
         }
 
-        if (draft.Members.Count > Vm201Channel.Count || draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
+        if (draft.Members.Count > Relay.Count || draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
         {
-            return "Ett relä kan bara vara med en gång.";
+            return "A relay can only be in the group once.";
         }
 
         foreach (var member in draft.Members)
         {
             if (!relays.TryGetValue(member.RelayId, out var relay))
             {
-                return $"Relä {member.RelayId} finns inte.";
+                return $"Relay {member.RelayId} doesn't exist.";
             }
 
             if ((member.RoleName?.Trim().Length ?? 0) > RelayGroupMember.RoleNameMaxLength)
             {
-                return $"Namnet i gruppen får vara högst {RelayGroupMember.RoleNameMaxLength} tecken.";
+                return $"The name in the group can be at most {RelayGroupMember.RoleNameMaxLength} characters.";
             }
 
             if (member.StartDelaySec is < RelayGroupMember.MinStartDelaySec or > RelayGroupMember.MaxStartDelaySec)
             {
-                return $"Väntan vid start ska vara {RelayGroupMember.MinStartDelaySec}–{RelayGroupMember.MaxStartDelaySec} sekunder.";
+                return $"The wait on start is {RelayGroupMember.MinStartDelaySec}–{RelayGroupMember.MaxStartDelaySec} seconds.";
             }
 
             if (member.RunOnSec is < 0 or > RelayGroupMember.MaxRunOnSec)
             {
-                return $"Eftergången får vara högst {RelayGroupMember.MaxRunOnSec / 60} minuter.";
+                return $"The run-on can be at most {RelayGroupMember.MaxRunOnSec / 60} minutes.";
             }
 
             if (await db.Schedules.AnyAsync(s => s.RelayId == member.RelayId, cancellationToken))
             {
-                return $"{relay.Name} har egna scheman. Ta bort dem först.";
+                return $"{relay.Name} has its own schedules. Delete them first.";
             }
         }
 
@@ -331,20 +331,20 @@ public sealed class GroupsHandler
             .Where(m => ids.Contains(m.RelayId) && m.GroupId != groupId)
             .Select(m => new { m.RelayId, Group = m.Group!.Name })
             .FirstOrDefaultAsync(cancellationToken);
-        return taken is null ? null : $"{relays[taken.RelayId].Name} ingår redan i {taken.Group}.";
+        return taken is null ? null : $"{relays[taken.RelayId].Name} is already in {taken.Group}.";
     }
 
     // The board must say each relay is off: a group never starts with a relay running outside its order.
     private string? AllOff(IEnumerable<int> relayIds, Dictionary<int, Relay> relays)
     {
-        var state = _client.State;
+        var state = _board.State;
         if (!state.IsConnected)
         {
-            return "Ingen kontakt med reläkortet. Det behövs för att se att reläerna är av.";
+            return "No contact with the relay board. It's needed to see that the relays are off.";
         }
 
         var on = relayIds.Distinct().FirstOrDefault(state.IsOn);
-        return on == 0 ? null : $"Stäng av {(relays.TryGetValue(on, out var relay) ? relay.Name : $"relä {on}")} först.";
+        return on == 0 ? null : $"Turn off {(relays.TryGetValue(on, out var relay) ? relay.Name : $"relay {on}")} first.";
     }
 
     private static void AddMembers(RelayGroup group, GroupDraft draft, Dictionary<int, Relay> relays)

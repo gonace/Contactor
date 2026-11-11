@@ -1,7 +1,7 @@
 @page "/settings"
 @implements IDisposable
 @using System.Globalization
-@using Contactor.Vm201
+@using Contactor.Boards.Vm201
 @using Contactor.Web.Features.Backup
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
@@ -14,19 +14,19 @@
 @inject LocalClock Clock
 @inject BoardTrafficSetting Debugging
 
-<PageTitle>Inställningar · Contactor</PageTitle>
+<PageTitle>Settings · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>Inställningar</h1>
+        <h1>Settings</h1>
     </header>
 
     <main class="content">
         <form class="card" @onsubmit="SaveBoardAsync">
-            <h2>Reläkortet</h2>
+            <h2>Relay board</h2>
             <div class="fields">
                 <div class="field">
-                    <label for="host">Adress</label>
+                    <label for="host">Address</label>
                     <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
                            maxlength="253" placeholder="192.168.1.50" @bind="_host" @bind:event="oninput" />
                 </div>
@@ -35,37 +35,37 @@
                     <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" @bind="_port" @bind:event="oninput" />
                 </div>
             </div>
-            <p class="hint">Reläkortets IP-adress i verkstadens nät. Den står i routerns lista över anslutna enheter (en Velleman-enhet).</p>
+            <p class="hint">The relay board's IP address on the local network. Your router lists it among its connected devices (a Velleman device).</p>
 
             <label for="no-login" class="check">
                 <input id="no-login" type="checkbox" @bind="_noLogin" />
-                <span>Kortet har ingen inloggning</span>
+                <span>The board has no login</span>
             </label>
             @if (!_noLogin)
             {
                 <div class="fields login">
                     <div class="field">
-                        <label for="username">Användarnamn</label>
+                        <label for="username">User name</label>
                         <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
                                maxlength="@Vm201Command.CredentialMaxLength" @bind="_username" @bind:event="oninput" />
                     </div>
                     <div class="field">
-                        <label for="password">Lösenord</label>
+                        <label for="password">Password</label>
                         <input id="password" type="password" autocomplete="new-password"
-                               maxlength="@Vm201Command.CredentialMaxLength" placeholder="@(_hasPassword ? "oförändrat" : "inget")"
+                               maxlength="@Vm201Command.CredentialMaxLength" placeholder="@(_hasPassword ? "unchanged" : "none")"
                                @bind="_newPassword" @bind:event="oninput" />
                     </div>
                 </div>
-                <p class="hint">Samma som på kortets egen webbsida. Högst 8 tecken, utan å, ä och ö.</p>
+                <p class="hint">The same as on the board's own web page. At most 8 characters, letters a–z, digits and plain symbols only.</p>
             }
 
             @if (Client.State.IsConnected)
             {
-                <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Kortet svarar på @Client.Endpoint</p>
+                <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Client.Endpoint</p>
             }
             else
             {
-                <p class="status offline" role="status">Ingen kontakt med reläkortet på @Client.Endpoint</p>
+                <p class="status offline" role="status">No contact with the relay board at @Client.Endpoint</p>
             }
 
             @if (_boardMessage is not null)
@@ -73,12 +73,12 @@
                 <p class="@(_boardSaved ? "saved" : "error")" role="alert">@_boardMessage</p>
             }
 
-            <button type="submit" class="save" disabled="@_busy">Spara</button>
+            <button type="submit" class="save" disabled="@_busy">Save</button>
         </form>
 
         <section class="card">
-            <h2>Personer</h2>
-            <p class="hint">Namnen som syns i appen och under Händelser.</p>
+            <h2>People</h2>
+            <p class="hint">The names shown in the app and under Events.</p>
             @foreach (var person in _people)
             {
                 <form class="person" @key="person.Email" @onsubmit="() => RenameAsync(person)">
@@ -87,7 +87,7 @@
                         <div class="row">
                             <input id="@($"name-{person.Index}")" type="text" maxlength="@Contactor.Web.Persistence.User.DisplayNameMaxLength"
                                    autocomplete="off" @bind="person.Name" @bind:event="oninput" />
-                            <button type="submit" class="small" disabled="@_busy">Spara</button>
+                            <button type="submit" class="small" disabled="@_busy">Save</button>
                         </div>
                     </div>
                     @if (person.Message is not null)
@@ -99,15 +99,15 @@
         </section>
 
         <section class="card">
-            <h2>Säkerhetskopior</h2>
-            <p class="hint">Appen gör en kopia av allt varje natt 02:30 och sparar de senaste 14. Ladda ner en ibland och spara den någon annanstans.</p>
+            <h2>Backups</h2>
+            <p class="hint">The app copies everything every night at 02:30 and keeps the latest 14. Download one now and then and keep it somewhere else.</p>
             @if (_latest is { } latest)
             {
-                <p class="latest">Senaste: @RelayStatusText.When(Clock.ToLocal(latest.LastWriteTimeUtc), Clock.Now) · @Size(latest.Length)</p>
+                <p class="latest">Latest: @RelayStatusText.When(Clock.ToLocal(latest.LastWriteTimeUtc), Clock.Now) · @Size(latest.Length)</p>
             }
             else
             {
-                <p class="latest">Ingen kopia än.</p>
+                <p class="latest">No copy yet.</p>
             }
 
             @if (_backupMessage is not null)
@@ -116,10 +116,10 @@
             }
 
             <div class="buttons">
-                <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">Gör en kopia nu</button>
+                <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">Make a copy now</button>
                 @if (_latest is not null)
                 {
-                    <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">Ladda ner</a>
+                    <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">Download</a>
                 }
             </div>
         </section>
@@ -128,9 +128,9 @@
             <h2>Debugging</h2>
             <label for="debugging" class="check">
                 <input id="debugging" type="checkbox" checked="@_debugging" disabled="@(_user is null)" @onchange="SetDebuggingAsync" />
-                <span>Visa trafiken till reläkortet</span>
+                <span>Show the traffic to the relay board</span>
             </label>
-            <p class="hint">Bara för dig. Varje meddelande till och från kortet visas en stund längst ner på sidan, och hela listan under fliken Debug.</p>
+            <p class="hint">Only for you. Every message to and from the board shows for a moment at the bottom of the page, and the whole list under the Debug tab.</p>
         </section>
     </main>
 
@@ -142,7 +142,7 @@
 @code {
     private static readonly string VersionText = AppBuild.Current is { IsRelease: true } build
         ? $"Version {build.Version}{(build.ShortCommit is { } commit ? $" · {commit}" : "")}"
-        : $"Utvecklingsversion{(AppBuild.Current.ShortCommit is { } dev ? $" · {dev}" : "")}";
+        : $"Development version{(AppBuild.Current.ShortCommit is { } dev ? $" · {dev}" : "")}";
 
     private SignedInUser? _user;
     private string _host = "";
@@ -202,7 +202,7 @@
 
         if (!int.TryParse(_port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
         {
-            (_boardMessage, _boardSaved) = ("Porten ska vara ett tal mellan 1 och 65535 (oftast 9760).", false);
+            (_boardMessage, _boardSaved) = ("The port is a number from 1 to 65535 (usually 9760).", false);
             return;
         }
 
@@ -211,7 +211,7 @@
         {
             var error = await Board.SaveAsync(_host, port, _user.Email, CancellationToken.None)
                 ?? await Board.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None);
-            (_boardMessage, _boardSaved) = error is null ? ("Sparat. Appen ansluter till kortet igen.", true) : (error, false);
+            (_boardMessage, _boardSaved) = error is null ? ("Saved. The app reconnects to the board.", true) : (error, false);
             if (error is null)
             {
                 await LoadLoginAsync();
@@ -234,7 +234,7 @@
         try
         {
             var error = await Users.RenameAsync(person.Email, person.Name, CancellationToken.None);
-            (person.Message, person.Saved) = error is null ? ("Sparat.", true) : (error, false);
+            (person.Message, person.Saved) = error is null ? ("Saved.", true) : (error, false);
             if (error is null)
             {
                 person.Name = person.Name.Trim();
@@ -258,11 +258,11 @@
         {
             await Backup.RunAsync(CancellationToken.None);
             _latest = await Backup.LatestAsync(CancellationToken.None);
-            (_backupMessage, _backupSaved) = ("Kopian är gjord.", true);
+            (_backupMessage, _backupSaved) = ("Copy made.", true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
         {
-            (_backupMessage, _backupSaved) = ("Kopian kunde inte göras. Försök igen om en stund.", false);
+            (_backupMessage, _backupSaved) = ("The copy couldn't be made. Try again in a while.", false);
         }
         finally
         {
@@ -270,7 +270,7 @@
         }
     }
 
-    // Saved at once: a checkbox needs no Spara.
+    // Saved at once: a checkbox needs no Save.
     private async Task SetDebuggingAsync(ChangeEventArgs e)
     {
         if (_user is null)
@@ -286,7 +286,7 @@
     {
         return bytes < 1024 * 1024
             ? $"{Math.Max(1, bytes / 1024).ToString(CultureInfo.InvariantCulture)} kB"
-            : $"{(bytes / (1024.0 * 1024.0)).ToString("0.0", CultureInfo.GetCultureInfo("sv-SE"))} MB";
+            : $"{(bytes / (1024.0 * 1024.0)).ToString("0.0", CultureInfo.InvariantCulture)} MB";
     }
 
     // From the board's read loop.

@@ -1,9 +1,9 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Contactor.Vm201;
+using Contactor.Boards.Vm201;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Contactor.Tests.Web;
 
@@ -37,7 +37,7 @@ public sealed class BoardAddressHandlerTests
         Assert.Equal(new Vm201Endpoint("127.0.0.1", other.Port), await Handler(rig).GetAsync(Cancel));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardAddressChanged);
         Assert.Equal(John, entry.Actor);
-        Assert.Equal($"ändrade reläkortets adress från {from} till 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
+        Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
     }
 
     [Fact]

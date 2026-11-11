@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards.Vm201;
 
 namespace Contactor.Web.Features.Vm201;
 
@@ -6,7 +6,7 @@ namespace Contactor.Web.Features.Vm201;
 /// <param name="Id">Increases by one per item, so a page can tell new ones apart.</param>
 /// <param name="AtUtc">When it happened.</param>
 /// <param name="Kind">What happened.</param>
-/// <param name="Text">In Swedish, e.g. "Slå på relä 3".</param>
+/// <param name="Text">In plain words, e.g. "Turn on relay 3".</param>
 /// <param name="Hex">The packet's bytes, or null when there is no packet.</param>
 /// <param name="IsError">Shown in red.</param>
 /// <param name="IsRoutine">

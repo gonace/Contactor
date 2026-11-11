@@ -1,4 +1,4 @@
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// The board's last reported status. The board is the source of truth: outputs are never stored by the app. While

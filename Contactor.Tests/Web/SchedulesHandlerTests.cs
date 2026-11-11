@@ -50,7 +50,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
         Assert.Equal((ScheduleDays.Weekdays, SixThirty, Eight, true), (schedule.Days, schedule.OnTime, schedule.OffTime, schedule.IsEnabled));
         var entry = Assert.Single(await EventsAsync());
         Assert.Equal((EventActions.ScheduleAdd, John, 1), (entry.Action, entry.Actor, entry.RelayId!.Value));
-        Assert.Equal("lade till schema mån–fre 06:30–08:00", EventText.For(entry, "Relä 1", "John").What);
+        Assert.Equal("added schedule Mon–Fri 06:30–08:00", EventText.For(entry, "Relay 1", "John").What);
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
         var schedule = await Handler.GetAsync(id, Cancel);
         Assert.Equal((ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0)), (schedule!.Days, schedule.OnTime, schedule.OffTime));
         var edit = (await EventsAsync())[1];
-        Assert.Equal("ändrade schema till lördag 22:00–01:00", EventText.For(edit, "Relä 1", "Jane").What);
+        Assert.Equal("changed schedule to Saturday 22:00–01:00", EventText.For(edit, "Relay 1", "Jane").What);
     }
 
     [Fact]
@@ -98,8 +98,8 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
         Assert.True(await Handler.SetEnabledAsync(id, true, John, Cancel));
 
         Assert.True((await Handler.GetAsync(id, Cancel))!.IsEnabled);
-        var texts = (await EventsAsync()).Skip(1).Select(e => EventText.For(e, "Relä 1", "John").What);
-        Assert.Equal(["pausade schema mån–fre 06:30–08:00", "aktiverade schema mån–fre 06:30–08:00"], texts);
+        var texts = (await EventsAsync()).Skip(1).Select(e => EventText.For(e, "Relay 1", "John").What);
+        Assert.Equal(["paused schedule Mon–Fri 06:30–08:00", "resumed schedule Mon–Fri 06:30–08:00"], texts);
     }
 
     [Fact]
@@ -112,14 +112,14 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
 
         Assert.Empty(await Handler.ListAsync(2, Cancel));
         Assert.Null(await Handler.GetAsync(id, Cancel));
-        Assert.Equal("tog bort schema varje dag 06:30–08:00", EventText.For((await EventsAsync())[1], "Relä 2", "John").What);
+        Assert.Equal("deleted schedule Every day 06:30–08:00", EventText.For((await EventsAsync())[1], "Relay 2", "John").What);
         Assert.False(await Handler.SetEnabledAsync(id, false, John, Cancel));
     }
 
     [Theory]
-    [InlineData(ScheduleDays.None, 6, 30, 8, 0, "Välj minst en dag.")]
-    [InlineData((ScheduleDays)128, 6, 30, 8, 0, "Välj minst en dag.")]
-    [InlineData(ScheduleDays.Monday, 7, 0, 7, 0, "Slå på och stäng av kan inte vara samma tid.")]
+    [InlineData(ScheduleDays.None, 6, 30, 8, 0, "Choose at least one day.")]
+    [InlineData((ScheduleDays)128, 6, 30, 8, 0, "Choose at least one day.")]
+    [InlineData(ScheduleDays.Monday, 7, 0, 7, 0, "Turning on and turning off can't be at the same time.")]
     public async Task Should_RefuseSchedulesThatCannotRun(ScheduleDays days, int onHour, int onMinute, int offHour, int offMinute, string message)
     {
         var model = new ScheduleModel(0, 1, days, new TimeOnly(onHour, onMinute), new TimeOnly(offHour, offMinute), true);
@@ -131,13 +131,13 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_RefuseAScheduleForARelayThatDoesNotExist()
     {
-        Assert.Equal("Reläet finns inte.", await Handler.SaveAsync(new ScheduleModel(0, 9, ScheduleDays.All, SixThirty, Eight, true), John, Cancel));
+        Assert.Equal("The relay doesn't exist.", await Handler.SaveAsync(new ScheduleModel(0, 9, ScheduleDays.All, SixThirty, Eight, true), John, Cancel));
     }
 
     [Fact]
     public async Task Should_SaySoWhenEditingADeletedSchedule()
     {
-        Assert.Equal("Schemat finns inte längre.", await Handler.SaveAsync(new ScheduleModel(42, 1, ScheduleDays.All, SixThirty, Eight, true), John, Cancel));
+        Assert.Equal("The schedule no longer exists.", await Handler.SaveAsync(new ScheduleModel(42, 1, ScheduleDays.All, SixThirty, Eight, true), John, Cancel));
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
 
         var list = await Handler.ListAsync(1, Cancel);
 
-        Assert.Equal(["Mån–Fre 06:30", "Mån–Fre 16:00", "Lördag 08:00"], list.Select(s => $"{ScheduleText.ShortDays(s.Days)} {ScheduleText.Time(s.OnTime)}"));
+        Assert.Equal(["Mon–Fri 06:30", "Mon–Fri 16:00", "Saturday 08:00"], list.Select(s => $"{ScheduleText.ShortDays(s.Days)} {ScheduleText.Time(s.OnTime)}"));
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     {
         var entry = new EventLogEntry { Actor = John, Action = EventActions.ScheduleAdd, RelayId = 1, Details = """{"days":999}""" };
 
-        Assert.Equal("lade till ett schema", EventText.For(entry, "Relä 1", "John").What);
+        Assert.Equal("added a schedule", EventText.For(entry, "Relay 1", "John").What);
     }
 
     private async Task<List<EventLogEntry>> EventsAsync()
