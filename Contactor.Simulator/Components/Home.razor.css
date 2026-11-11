@@ -1,0 +1,429 @@
+/* A developer tool for a desktop browser: the whole window, the boards on the left, the traffic filling the rest. */
+.screen {
+    height: 100vh;
+    min-width: 1000px;
+    display: flex;
+    flex-direction: column;
+}
+
+.top {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 14px 24px;
+    background: var(--bar);
+    color: var(--on-bar);
+}
+
+.top .title {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.top .count,
+.top .mono {
+    font-size: 14px;
+    color: var(--on-bar-muted);
+}
+
+.mono {
+    font-family: var(--font-mono);
+}
+
+.hint {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+}
+
+.body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
+
+.side {
+    flex: none;
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border-right: 1px solid var(--line);
+}
+
+.side > .label {
+    padding: 16px 16px 8px;
+}
+
+.boards {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 8px;
+}
+
+.board {
+    height: auto;
+    width: 100%;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.board:hover {
+    background: var(--bg);
+}
+
+.board.selected {
+    background: var(--accent-tint);
+    border-color: var(--accent-border);
+}
+
+.board .line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.board .name {
+    font-weight: 600;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--muted);
+}
+
+.dot.on,
+.connection.on .dot {
+    border: none;
+    background: var(--ok);
+}
+
+.lamps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.lamp {
+    width: 20px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--chip);
+}
+
+.lamp.on {
+    background: var(--accent);
+}
+
+.empty {
+    padding: 12px;
+    margin: 0;
+}
+
+.add {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    border-top: 1px solid var(--line);
+}
+
+.add .row {
+    display: flex;
+    gap: 8px;
+}
+
+.field {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.field.port {
+    flex: none;
+    width: 84px;
+}
+
+.field label {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+select,
+input:not([type="checkbox"]) {
+    height: 40px;
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--card);
+}
+
+button {
+    height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--card);
+    cursor: pointer;
+}
+
+button:disabled {
+    color: var(--muted);
+    cursor: default;
+}
+
+button.primary {
+    border: 0;
+    background: var(--ink);
+    color: var(--on-ink);
+    font-weight: 600;
+}
+
+button.danger {
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+}
+
+.error {
+    margin: 0;
+    font-size: 13px;
+    color: var(--danger-ink);
+}
+
+.main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px 24px;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+}
+
+.controls {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 18px 20px;
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.head .title {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.connection {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.connection.on {
+    color: var(--ok);
+}
+
+.actions {
+    display: flex;
+    gap: 8px;
+}
+
+.split {
+    display: flex;
+    align-items: flex-end;
+    gap: 32px;
+}
+
+.relays-box {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.relays {
+    display: grid;
+    gap: 8px;
+}
+
+.relay {
+    height: 64px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border-color: var(--line);
+    background: var(--chip);
+}
+
+.relay .mono {
+    font-size: 12px;
+}
+
+.relay .state {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.relay.on {
+    border-color: var(--accent-border);
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.extras {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    font-size: 14px;
+}
+
+.check input {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--accent);
+}
+
+.traffic {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.traffic-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+}
+
+.traffic-head .title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+
+h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 96px 150px minmax(0, 1fr) 300px;
+    gap: 16px;
+    padding: 9px 20px;
+}
+
+.header-row {
+    flex: none;
+    padding-block: 8px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+}
+
+.rows {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 14px;
+}
+
+.row {
+    border-bottom: 1px solid var(--row-line);
+}
+
+.row .time,
+.row .muted,
+.row .bytes {
+    color: var(--muted);
+}
+
+.row .bytes {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.row.error,
+.row.error .time,
+.row.error .bytes {
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+}
+
+.none {
+    padding: 24px;
+}

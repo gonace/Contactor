@@ -13,8 +13,11 @@ public static class Program
     {
         var builder = DistributedApplication.CreateBuilder(args);
 
-        var simulator = builder.AddProject<Projects.Contactor_Simulator>("vm201-simulator")
-            .WithEndpoint(port: Vm201Port, scheme: "tcp", name: "vm201", env: "Simulator__Port", isProxied: false);
+        // The simulator's page is its http endpoint, linked from the dashboard; the board itself is its own port.
+        var simulator = builder.AddProject<Projects.Contactor_Simulator>("simulator")
+            .WithEnvironment("Simulator__Boards__0__Type", "vm201")
+            .WithEndpoint(port: Vm201Port, scheme: "tcp", name: "vm201", env: "Simulator__Boards__0__Port", isProxied: false)
+            .WithHttpHealthCheck("/health");
 
         // Development settings come from the web app's appsettings.Development.json (a local database file); this
         // points it at the simulator.
