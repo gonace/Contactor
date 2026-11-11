@@ -12,7 +12,7 @@ namespace Contactor.Boards.Vm201;
 /// on every change and no reply to a command that changes nothing (as the real board). Used by the tests and, in
 /// development, by Contactor.Simulator (started by the Aspire AppHost). It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm201Simulator : IAsyncDisposable
+public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 {
     private const int NameLength = Vm201Command.NameDataLength - 1;
     private const int InputChannel = 9;
@@ -54,8 +54,26 @@ public sealed class Vm201Simulator : IAsyncDisposable
         _logger = logger;
     }
 
+    public event EventHandler? Changed;
+
+    public event EventHandler<BoardTraceEntry>? Traced;
+
+    public BoardModel Model => Vm201Model.Model;
+
+    /// <summary>The clock for the traffic's times.</summary>
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
     /// <summary>The port it listens on, after <see cref="Start"/>.</summary>
     public int Port { get; private set; }
+
+    public bool HasLogin => _username is not null;
+
+    public SimulatedBoardState State => new(
+        new ChannelMask(Outputs),
+        Input ? ChannelMask.Of(1) : ChannelMask.None,
+        [.. _connections.Keys.Select(c => c.Remote).Order(StringComparer.Ordinal)]);
+
+    public ChannelMask Timers => new(TimerMask);
 
     public byte Outputs => Volatile.Read(ref _outputs);
 
@@ -111,6 +129,28 @@ public sealed class Vm201Simulator : IAsyncDisposable
         return ChangeAsync(() => _input = input);
     }
 
+    public Task SwitchRelayAsync(int relay, bool turnOn)
+    {
+        var mask = (byte)Model.Capabilities.Relay(relay).Bits;
+        return turnOn ? ChangeAsync(() => _outputs |= mask) : ChangeAsync(() => _outputs &= (byte)~mask);
+    }
+
+    public Task SetInputAsync(int input, bool closed)
+    {
+        ArgumentOutOfRangeException.ThrowIfNotEqual(input, 1);
+        return SetInputAsync(closed);
+    }
+
+    public Task SetTimersAsync(ChannelMask timers)
+    {
+        if (!Model.Capabilities.AllRelays.ContainsAll(timers))
+        {
+            throw new ArgumentOutOfRangeException(nameof(timers), timers, "The VM201 has relays 1–8 only.");
+        }
+
+        return SetTimerMaskAsync((byte)timers.Bits);
+    }
+
     /// <summary>Closes every open connection, as if the network dropped.</summary>
     public void DropConnections()
     {
@@ -164,6 +204,8 @@ public sealed class Vm201Simulator : IAsyncDisposable
     {
         var connection = new Connection(tcp);
         _connections.TryAdd(connection, 0);
+        TraceStep($"The app connected from {connection.Remote}");
+        RaiseChanged();
         try
         {
             if (RejectConnections)
@@ -171,11 +213,14 @@ public sealed class Vm201Simulator : IAsyncDisposable
                 return;
             }
 
-            var reader = new Vm201PacketReader(connection.Stream, new Vm201PacketDecoder(_logger));
+            var decoder = new Vm201PacketDecoder(_logger);
+            decoder.Discarded += (_, count) => Trace(new BoardTraceEntry(
+                Now, BoardTraceDirection.Sent, $"Skipped {count} broken bytes from the app", null, IsError: true, IsRoutine: false));
+            var reader = new Vm201PacketReader(connection.Stream, decoder);
             while (Unresponsive)
             {
                 // Accepts the connection but never answers, until the client gives up.
-                await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                TracePacket(connection, Vm201TraceKind.Sent, await reader.ReadAsync(cancellationToken).ConfigureAwait(false));
             }
 
             if (!await LoginAsync(connection, reader, cancellationToken).ConfigureAwait(false))
@@ -203,6 +248,7 @@ public sealed class Vm201Simulator : IAsyncDisposable
             while (true)
             {
                 var packet = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                TracePacket(connection, Vm201TraceKind.Sent, packet);
                 if (Unresponsive)
                 {
                     continue;
@@ -225,6 +271,8 @@ public sealed class Vm201Simulator : IAsyncDisposable
         {
             _connections.TryRemove(connection, out _);
             tcp.Dispose();
+            TraceStep($"The app at {connection.Remote} disconnected");
+            RaiseChanged();
         }
     }
 
@@ -241,6 +289,7 @@ public sealed class Vm201Simulator : IAsyncDisposable
         while (username is null || password is null)
         {
             var packet = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            TracePacket(connection, Vm201TraceKind.Sent, packet);
             switch (packet.Command)
             {
                 case Vm201Command.Username:
@@ -316,6 +365,7 @@ public sealed class Vm201Simulator : IAsyncDisposable
     private async Task ChangeAsync(Action change)
     {
         await _gate.WaitAsync(_stopping.Token).ConfigureAwait(false);
+        var changed = false;
         try
         {
             var before = EncodeStatus();
@@ -325,6 +375,8 @@ public sealed class Vm201Simulator : IAsyncDisposable
             {
                 return;
             }
+
+            changed = true;
 
             foreach (var connection in _connections.Keys)
             {
@@ -346,6 +398,10 @@ public sealed class Vm201Simulator : IAsyncDisposable
         finally
         {
             _gate.Release();
+            if (changed)
+            {
+                RaiseChanged();
+            }
         }
     }
 
@@ -363,9 +419,75 @@ public sealed class Vm201Simulator : IAsyncDisposable
     }
 
     // Callers hold _gate.
-    private static async Task SendAsync(Connection connection, byte[] packet, CancellationToken cancellationToken)
+    private async Task SendAsync(Connection connection, byte[] packet, CancellationToken cancellationToken)
     {
         await connection.Stream.WriteAsync(packet, cancellationToken).ConfigureAwait(false);
+        if (Traced is not null)
+        {
+            Trace(connection.Describer.Describe(new Vm201TraceEntry(Now, Vm201TraceKind.Received, Vm201TraceEntry.Redact(packet), null)));
+        }
+    }
+
+    private DateTimeOffset Now => TimeProvider.GetUtcNow();
+
+    // A packet from the app is what the app's own log calls sent: to the board.
+    private void TracePacket(Connection connection, Vm201TraceKind kind, Vm201Packet packet)
+    {
+        if (Traced is not null)
+        {
+            var frame = Vm201PacketCodec.Encode(packet.Command, packet.Data.Span);
+            Trace(connection.Describer.Describe(new Vm201TraceEntry(Now, kind, Vm201TraceEntry.Redact(frame), null)));
+        }
+    }
+
+    private void TraceStep(string text)
+    {
+        Trace(new BoardTraceEntry(Now, BoardTraceDirection.None, text, null, IsError: false, IsRoutine: false));
+    }
+
+    // Each handler on its own, so one that throws can't stop the board or keep the step from the others.
+    private void Trace(BoardTraceEntry entry)
+    {
+        if (Traced is not { } handlers)
+        {
+            return;
+        }
+
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<BoardTraceEntry>>())
+        {
+            try
+            {
+                handler(this, entry);
+            }
+#pragma warning disable CA1031 // A subscriber's bug must not take down the simulated board.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _logger.SubscriberFailed(ex);
+            }
+        }
+    }
+
+    private void RaiseChanged()
+    {
+        if (Changed is not { } handlers)
+        {
+            return;
+        }
+
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler>())
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+#pragma warning disable CA1031 // A subscriber's bug must not take down the simulated board.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _logger.SubscriberFailed(ex);
+            }
+        }
     }
 
     private byte[] EncodeStatus()
@@ -388,7 +510,14 @@ public sealed class Vm201Simulator : IAsyncDisposable
         {
             Tcp = tcp;
             Stream = tcp.GetStream();
+            Remote = tcp.Client.RemoteEndPoint?.ToString() ?? "unknown";
         }
+
+        /// <summary>Where the connection comes from, e.g. "127.0.0.1:52144".</summary>
+        public string Remote { get; }
+
+        /// <summary>Its own, so the first status on each connection is never taken for the keep-alive.</summary>
+        public Vm201TraceDescriber Describer { get; } = new();
 
         public TcpClient Tcp { get; }
 

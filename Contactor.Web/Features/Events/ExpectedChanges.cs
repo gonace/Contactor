@@ -6,11 +6,15 @@ namespace Contactor.Web.Features.Events;
 /// The relay changes the app itself just asked the board for. When the board's status then shows such a change it
 /// is the app's own, not an external one. An expectation lasts 5 s: the board answers in well under a second, and a
 /// command that changed nothing gets no status at all, so its expectation must not linger and hide a later
-/// external change.
+/// external change. Expiry is judged by when statuses arrived, not by the clock when one is handled: the recorder may
+/// still be behind, and an expectation it hasn't reached yet must not be thrown away by a newer command.
 /// </summary>
 public sealed class ExpectedChanges
 {
     public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(5);
+
+    // Only a safety limit, e.g. for commands while no status is handled at all: far more than the app ever has waiting.
+    private const int MaxExpected = 256;
 
     private readonly LocalClock _clock;
     private readonly Lock _lock = new();
@@ -27,10 +31,14 @@ public sealed class ExpectedChanges
         var expires = _clock.UtcNow + Lifetime;
         lock (_lock)
         {
-            RemoveExpired();
             foreach (var relayId in mask.Channels)
             {
                 _expected.Add((relayId, on, expires));
+            }
+
+            if (_expected.Count > MaxExpected)
+            {
+                _expected.RemoveRange(0, _expected.Count - MaxExpected);
             }
         }
     }
@@ -55,14 +63,10 @@ public sealed class ExpectedChanges
                 _expected.RemoveAt(index);
             }
 
-            RemoveExpired();
+            // Statuses are handled in the order they arrived, so one that had expired when this status arrived can't
+            // match a later one.
+            _expected.RemoveAll(e => e.ExpiresUtc <= receivedUtc);
             return index >= 0;
         }
-    }
-
-    private void RemoveExpired()
-    {
-        var now = _clock.UtcNow;
-        _expected.RemoveAll(e => e.ExpiresUtc <= now);
     }
 }
