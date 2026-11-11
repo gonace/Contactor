@@ -62,7 +62,9 @@ deploy/
   upgrade.sh                # Pulls, checks the cosign signature, restarts, waits until healthy
   autoupdate-install.sh     # systemd timer: upgrade every night 03:00–04:00
   cosign/                   # Public signing keys and how to make them
+docs/screenshots/           # The README's screenshots, taken by scripts/screenshots/take.mjs
 scripts/
+  screenshots/take.mjs      # Takes them: simulator, app and made-up data on a temporary database, Playwright
   release-version.sh        # YYYY.M.D[.N]
   images-publish.sh         # Publish and sign the image from your computer
   images-sign.sh            # cosign, by digest
