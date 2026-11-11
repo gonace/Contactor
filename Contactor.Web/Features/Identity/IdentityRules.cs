@@ -27,7 +27,7 @@ public static class IdentityRules
     }
 
     /// <summary>
-    /// The part before @ with a capital first letter, e.g. <c>nils@example.com</c> → "Nils", cut to the stored
+    /// The part before @ with a capital first letter, e.g. <c>jane@example.com</c> → "Jane", cut to the stored
     /// length.
     /// </summary>
     public static string DisplayNameFor(string email)

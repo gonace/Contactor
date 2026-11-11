@@ -11,7 +11,7 @@ public sealed class User
     /// <summary>Lower case.</summary>
     public string Email { get; set; } = "";
 
-    /// <summary>"Ted", "Nils" …, shown in the app and in the event log.</summary>
+    /// <summary>"John", "Jane" …, shown in the app and in the event log.</summary>
     public string DisplayName { get; set; } = "";
 
     /// <summary>The person's "Debugging" setting: the board's traffic as toasts and the Debug tab. Off by default.</summary>

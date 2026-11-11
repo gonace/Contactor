@@ -83,7 +83,7 @@ public sealed class GroupPagesTests
                 OnTime = new TimeOnly(6, 30),
                 OffTime = new TimeOnly(8, 0),
                 IsEnabled = true,
-                CreatedBy = "ted@example.com",
+                CreatedBy = "john@example.com",
             });
             await db.SaveChangesAsync(Cancel);
         }
@@ -114,7 +114,7 @@ public sealed class GroupPagesTests
     {
         return new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
     }
 
     // Straight into the database: setting up through GroupsHandler needs a board to see the relays are off.

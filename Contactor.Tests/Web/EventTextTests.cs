@@ -15,9 +15,9 @@ public sealed class EventTextTests
     [InlineData(EventActions.ScheduleAdd, "lade till ett schema")]
     public void Should_ShowAPersonWithTheirInitial(string action, string what)
     {
-        var view = EventText.For(Entry("nils@example.com", action), Relay, "Nils");
+        var view = EventText.For(Entry("jane@example.com", action), Relay, "Jane");
 
-        Assert.Equal(new EventView(true, "N", "Nils", what, Relay), view);
+        Assert.Equal(new EventView(true, "J", "Jane", what, Relay), view);
     }
 
     [Fact]
@@ -55,9 +55,9 @@ public sealed class EventTextTests
     [Fact]
     public void Should_ShowTheOldAndNewName_WhenRenamed()
     {
-        var entry = Entry("erik@example.com", EventActions.Rename, """{"from":"Relä 4","to":"Ventilation – Lackrummet"}""");
+        var entry = Entry("sam@example.com", EventActions.Rename, """{"from":"Relä 4","to":"Ventilation – Lackrummet"}""");
 
-        var view = EventText.For(entry, "Ventilation – Lackrummet", "Erik");
+        var view = EventText.For(entry, "Ventilation – Lackrummet", "Sam");
 
         Assert.Equal(("döpte om Relä 4 till", "Ventilation – Lackrummet"), (view.What, view.Target));
     }

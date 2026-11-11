@@ -29,7 +29,7 @@ Run everything locally with Aspire (the dashboard opens on http://localhost:1528
 dotnet run --project Contactor.AppHost
 ```
 
-The AppHost starts the VM201 simulator on port 9760 and the web app against it, signed in as `ted@example.com`. Stop
+The AppHost starts the VM201 simulator on port 9760 and the web app against it, signed in as `john@example.com`. Stop
 and start the simulator in the dashboard to test a lost connection to the board.
 
 The tests run the VM201 client against the built-in simulator (`Vm201Simulator`) over localhost, so no hardware is

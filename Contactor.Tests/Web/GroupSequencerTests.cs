@@ -13,7 +13,7 @@ namespace Contactor.Tests.Web;
 /// </summary>
 public sealed class GroupSequencerTests
 {
-    private const string Ted = "ted@example.com";
+    private const string John = "john@example.com";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -29,7 +29,7 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         var id = await CreateAsync(rig, FanHeater);
 
-        await rig.Groups.StartGroupAsync(id, Ted, Cancel);
+        await rig.Groups.StartGroupAsync(id, John, Cancel);
 
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
         Assert.False(rig.Simulator.Outputs == 0b11);
@@ -42,7 +42,7 @@ public sealed class GroupSequencerTests
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(2));
 
         var started = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.GroupOn);
-        Assert.Equal((id, Ted), (started.GroupId!.Value, started.Actor));
+        Assert.Equal((id, John), (started.GroupId!.Value, started.Actor));
         Assert.DoesNotContain(await rig.EventsAsync(), e => e.Actor == EventActors.External);
     }
 
@@ -51,7 +51,7 @@ public sealed class GroupSequencerTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         var id = await CreateAsync(rig, FanHeater);
-        await rig.Groups.StartGroupAsync(id, Ted, Cancel);
+        await rig.Groups.StartGroupAsync(id, John, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
         var notified = 0;
         rig.Database.Services.GetRequiredService<RelayChanges>().Changed += (_, _) => notified++;
@@ -94,14 +94,14 @@ public sealed class GroupSequencerTests
         await rig.Simulator.SetOutputsAsync(0b0000_0111);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0000_0111);
 
-        await rig.Control.TurnAllOffAsync(Ted, Cancel);
+        await rig.Control.TurnAllOffAsync(John, Cancel);
 
         // Relay 3 and the heat at once; the fan keeps running for its run-on.
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0000_0001);
         await rig.Groups.StepAsync(Cancel);
         var events = await rig.EventsAsync();
         Assert.Contains(events, e => e.Action == EventActions.Off && e.RelayId == 3);
-        Assert.Contains(events, e => e.Action == EventActions.GroupOff && e.Actor == Ted);
+        Assert.Contains(events, e => e.Action == EventActions.GroupOff && e.Actor == John);
         Assert.Contains(events, e => e.Action == EventActions.RunOnStart && e.RelayId == 1);
     }
 
@@ -111,10 +111,10 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         await CreateAsync(rig, FanHeater);
 
-        await Assert.ThrowsAsync<Contactor.Web.Features.Relays.RelayInGroupException>(() => rig.Control.TurnOnAsync(2, Ted, Cancel));
+        await Assert.ThrowsAsync<Contactor.Web.Features.Relays.RelayInGroupException>(() => rig.Control.TurnOnAsync(2, John, Cancel));
         Assert.Equal(
             "Kräver att Fläkt är på.",
-            await rig.Groups.SetMemberAsync(await GroupIdAsync(rig), 2, on: true, Ted, Cancel));
+            await rig.Groups.SetMemberAsync(await GroupIdAsync(rig), 2, on: true, John, Cancel));
         Assert.False(rig.Client.State.IsOn(2));
     }
 
@@ -127,7 +127,7 @@ public sealed class GroupSequencerTests
         rig.Simulator.DropConnections();
         await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
 
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => rig.Groups.StartGroupAsync(id, Ted, Cancel));
+        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => rig.Groups.StartGroupAsync(id, John, Cancel));
         Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action == EventActions.GroupOn);
     }
 
@@ -137,8 +137,8 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         var id = await CreateAsync(rig, FanHeater);
 
-        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Name = "Värmefläkten" }, Ted, Cancel));
-        Assert.Null(await rig.GroupSetup.DeleteAsync(id, Ted, Cancel));
+        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Name = "Värmefläkten" }, John, Cancel));
+        Assert.Null(await rig.GroupSetup.DeleteAsync(id, John, Cancel));
 
         var actions = (await rig.EventsAsync()).Where(e => e.GroupId == id).Select(e => e.Action);
         Assert.Equal([EventActions.GroupCreate, EventActions.GroupEdit, EventActions.GroupDelete], actions);
@@ -153,28 +153,28 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         var setup = rig.GroupSetup;
 
-        Assert.Equal("Välj minst 2 reläer.", (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt")] }, Ted, Cancel)).Error);
-        Assert.Equal("Skriv ett namn på gruppen.", (await setup.CreateAsync(FanHeater with { Name = "  " }, Ted, Cancel)).Error);
+        Assert.Equal("Välj minst 2 reläer.", (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt")] }, John, Cancel)).Error);
+        Assert.Equal("Skriv ett namn på gruppen.", (await setup.CreateAsync(FanHeater with { Name = "  " }, John, Cancel)).Error);
         Assert.Equal(
             "Väntan vid start ska vara 1–60 sekunder.",
-            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt", 0), new(2, "Värme", 61)] }, Ted, Cancel)).Error);
+            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt", 0), new(2, "Värme", 61)] }, John, Cancel)).Error);
         Assert.Equal(
             "Eftergången får vara högst 30 minuter.",
-            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt", 3, 1801), new(2, "Värme")] }, Ted, Cancel)).Error);
+            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt", 3, 1801), new(2, "Värme")] }, John, Cancel)).Error);
         Assert.Equal(
             "Ett relä kan bara vara med en gång.",
-            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt"), new(1, "Värme")] }, Ted, Cancel)).Error);
+            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fläkt"), new(1, "Värme")] }, John, Cancel)).Error);
 
         await CreateAsync(rig, FanHeater);
         Assert.Equal(
             "Relä 2 ingår redan i Värmefläkt – Svarven.",
-            (await setup.CreateAsync(FanHeater with { Name = "Annan", Members = [new(2, "A"), new(3, "B")] }, Ted, Cancel)).Error);
+            (await setup.CreateAsync(FanHeater with { Name = "Annan", Members = [new(2, "A"), new(3, "B")] }, John, Cancel)).Error);
 
         await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(4));
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(4));
         Assert.Equal(
             "Stäng av Relä 4 först.",
-            (await setup.CreateAsync(FanHeater with { Name = "Annan", Members = [new(3, "A"), new(4, "B")] }, Ted, Cancel)).Error);
+            (await setup.CreateAsync(FanHeater with { Name = "Annan", Members = [new(3, "A"), new(4, "B")] }, John, Cancel)).Error);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class GroupSequencerTests
                 OnTime = new TimeOnly(6, 0),
                 OffTime = new TimeOnly(7, 0),
                 IsEnabled = true,
-                CreatedBy = Ted,
+                CreatedBy = John,
             });
             await db.SaveChangesAsync(Cancel);
         }
@@ -217,12 +217,12 @@ public sealed class GroupSequencerTests
                 OnTime = new TimeOnly(6, 0),
                 OffTime = new TimeOnly(7, 0),
                 IsEnabled = true,
-                CreatedBy = Ted,
+                CreatedBy = John,
             });
             await db.SaveChangesAsync(Cancel);
         }
 
-        var (id, error) = await rig.GroupSetup.CreateAsync(FanHeater, Ted, Cancel);
+        var (id, error) = await rig.GroupSetup.CreateAsync(FanHeater, John, Cancel);
 
         Assert.Null(id);
         Assert.Equal("Relä 2 har egna scheman. Ta bort dem först.", error);
@@ -237,15 +237,15 @@ public sealed class GroupSequencerTests
         await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(1));
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
 
-        Assert.StartsWith("Stäng av gruppen", await rig.GroupSetup.SaveAsync(id, reversed, Ted, Cancel), StringComparison.Ordinal);
-        Assert.Equal("Stäng av gruppen innan den tas bort.", await rig.GroupSetup.DeleteAsync(id, Ted, Cancel));
+        Assert.StartsWith("Stäng av gruppen", await rig.GroupSetup.SaveAsync(id, reversed, John, Cancel), StringComparison.Ordinal);
+        Assert.Equal("Stäng av gruppen innan den tas bort.", await rig.GroupSetup.DeleteAsync(id, John, Cancel));
 
         // The waits can change while it runs.
-        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Members = [new(1, "Fläkt", 5, 600), new(2, "Värme", 5)] }, Ted, Cancel));
+        Assert.Null(await rig.GroupSetup.SaveAsync(id, FanHeater with { Members = [new(1, "Fläkt", 5, 600), new(2, "Värme", 5)] }, John, Cancel));
 
         await rig.Simulator.SetOutputsAsync(0);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0);
-        Assert.Null(await rig.GroupSetup.SaveAsync(id, reversed, Ted, Cancel));
+        Assert.Null(await rig.GroupSetup.SaveAsync(id, reversed, John, Cancel));
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal([2, 1], await db.RelayGroupMembers.OrderBy(m => m.Position).Select(m => m.RelayId).ToListAsync(Cancel));
     }
@@ -259,7 +259,7 @@ public sealed class GroupSequencerTests
 
         var error = await schedules.SaveAsync(
             new Contactor.Web.Features.Schedules.ScheduleModel(0, 2, ScheduleDays.All, new TimeOnly(6, 0), new TimeOnly(7, 0), true),
-            Ted,
+            John,
             Cancel);
 
         Assert.Equal("Reläet ingår i en grupp. Lägg schemat på gruppen.", error);
@@ -274,7 +274,7 @@ public sealed class GroupSequencerTests
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b11);
 
         // The heat's OFF goes out; the connection drops before the app looks at the board's answer.
-        await rig.Groups.StopGroupAsync(id, Ted, Cancel);
+        await rig.Groups.StopGroupAsync(id, John, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Simulator.Outputs == 0b01);
         rig.Simulator.DropConnections();
         await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
@@ -373,7 +373,7 @@ public sealed class GroupSequencerTests
 
     private static async Task<int> CreateAsync(BoardTestRig rig, GroupDraft draft)
     {
-        var (id, error) = await rig.GroupSetup.CreateAsync(draft, Ted, Cancel);
+        var (id, error) = await rig.GroupSetup.CreateAsync(draft, John, Cancel);
         Assert.Null(error);
         return id!.Value;
     }

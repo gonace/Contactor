@@ -11,7 +11,7 @@ namespace Contactor.Tests.Web;
 
 public sealed class SchedulesHandlerTests : IAsyncLifetime
 {
-    private const string Ted = "ted@example.com";
+    private const string John = "john@example.com";
     private static readonly DateTime Now = new(2026, 11, 4, 13, 0, 0, DateTimeKind.Utc);
     private static readonly TimeOnly SixThirty = new(6, 30);
     private static readonly TimeOnly Eight = new(8, 0);
@@ -44,19 +44,19 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_AddAnActiveScheduleAndLogIt()
     {
-        Assert.Null(await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, false), Ted, Cancel));
+        Assert.Null(await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, false), John, Cancel));
 
         var schedule = Assert.Single(await Handler.ListAsync(1, Cancel));
         Assert.Equal((ScheduleDays.Weekdays, SixThirty, Eight, true), (schedule.Days, schedule.OnTime, schedule.OffTime, schedule.IsEnabled));
         var entry = Assert.Single(await EventsAsync());
-        Assert.Equal((EventActions.ScheduleAdd, Ted, 1), (entry.Action, entry.Actor, entry.RelayId!.Value));
-        Assert.Equal("lade till schema mån–fre 06:30–08:00", EventText.For(entry, "Relä 1", "Ted").What);
+        Assert.Equal((EventActions.ScheduleAdd, John, 1), (entry.Action, entry.Actor, entry.RelayId!.Value));
+        Assert.Equal("lade till schema mån–fre 06:30–08:00", EventText.For(entry, "Relä 1", "John").What);
     }
 
     [Fact]
     public async Task Should_KeepTimesToTheMinute()
     {
-        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.All, new TimeOnly(6, 30, 45), new TimeOnly(8, 0, 10), true), Ted, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.All, new TimeOnly(6, 30, 45), new TimeOnly(8, 0, 10), true), John, Cancel);
 
         var schedule = Assert.Single(await Handler.ListAsync(1, Cancel));
         Assert.Equal((SixThirty, Eight), (schedule.OnTime, schedule.OffTime));
@@ -65,24 +65,24 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_ChangeAScheduleAndLogTheNewTimes()
     {
-        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), Ted, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), John, Cancel);
         var id = (await Handler.ListAsync(1, Cancel))[0].Id;
 
-        await Handler.SaveAsync(new ScheduleModel(id, 1, ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0), true), "nils@example.com", Cancel);
+        await Handler.SaveAsync(new ScheduleModel(id, 1, ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0), true), "jane@example.com", Cancel);
 
         var schedule = await Handler.GetAsync(id, Cancel);
         Assert.Equal((ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0)), (schedule!.Days, schedule.OnTime, schedule.OffTime));
         var edit = (await EventsAsync())[1];
-        Assert.Equal("ändrade schema till lördag 22:00–01:00", EventText.For(edit, "Relä 1", "Nils").What);
+        Assert.Equal("ändrade schema till lördag 22:00–01:00", EventText.For(edit, "Relä 1", "Jane").What);
     }
 
     [Fact]
     public async Task Should_LogNothing_WhenSavedUnchanged()
     {
-        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), Ted, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), John, Cancel);
         var id = (await Handler.ListAsync(1, Cancel))[0].Id;
 
-        Assert.Null(await Handler.SaveAsync(new ScheduleModel(id, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), Ted, Cancel));
+        Assert.Null(await Handler.SaveAsync(new ScheduleModel(id, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), John, Cancel));
 
         Assert.Single(await EventsAsync());
     }
@@ -90,30 +90,30 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_PauseAndResumeAndLogBoth()
     {
-        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), Ted, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), John, Cancel);
         var id = (await Handler.ListAsync(1, Cancel))[0].Id;
 
-        Assert.True(await Handler.SetEnabledAsync(id, false, Ted, Cancel));
-        Assert.True(await Handler.SetEnabledAsync(id, false, Ted, Cancel));
-        Assert.True(await Handler.SetEnabledAsync(id, true, Ted, Cancel));
+        Assert.True(await Handler.SetEnabledAsync(id, false, John, Cancel));
+        Assert.True(await Handler.SetEnabledAsync(id, false, John, Cancel));
+        Assert.True(await Handler.SetEnabledAsync(id, true, John, Cancel));
 
         Assert.True((await Handler.GetAsync(id, Cancel))!.IsEnabled);
-        var texts = (await EventsAsync()).Skip(1).Select(e => EventText.For(e, "Relä 1", "Ted").What);
+        var texts = (await EventsAsync()).Skip(1).Select(e => EventText.For(e, "Relä 1", "John").What);
         Assert.Equal(["pausade schema mån–fre 06:30–08:00", "aktiverade schema mån–fre 06:30–08:00"], texts);
     }
 
     [Fact]
     public async Task Should_DeleteAndStillSayWhichScheduleItWas()
     {
-        await Handler.SaveAsync(new ScheduleModel(0, 2, ScheduleDays.All, SixThirty, Eight, true), Ted, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 2, ScheduleDays.All, SixThirty, Eight, true), John, Cancel);
         var id = (await Handler.ListAsync(2, Cancel))[0].Id;
 
-        await Handler.DeleteAsync(id, Ted, Cancel);
+        await Handler.DeleteAsync(id, John, Cancel);
 
         Assert.Empty(await Handler.ListAsync(2, Cancel));
         Assert.Null(await Handler.GetAsync(id, Cancel));
-        Assert.Equal("tog bort schema varje dag 06:30–08:00", EventText.For((await EventsAsync())[1], "Relä 2", "Ted").What);
-        Assert.False(await Handler.SetEnabledAsync(id, false, Ted, Cancel));
+        Assert.Equal("tog bort schema varje dag 06:30–08:00", EventText.For((await EventsAsync())[1], "Relä 2", "John").What);
+        Assert.False(await Handler.SetEnabledAsync(id, false, John, Cancel));
     }
 
     [Theory]
@@ -124,28 +124,28 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     {
         var model = new ScheduleModel(0, 1, days, new TimeOnly(onHour, onMinute), new TimeOnly(offHour, offMinute), true);
 
-        Assert.Equal(message, await Handler.SaveAsync(model, Ted, Cancel));
+        Assert.Equal(message, await Handler.SaveAsync(model, John, Cancel));
         Assert.Empty(await Handler.ListAsync(1, Cancel));
     }
 
     [Fact]
     public async Task Should_RefuseAScheduleForARelayThatDoesNotExist()
     {
-        Assert.Equal("Reläet finns inte.", await Handler.SaveAsync(new ScheduleModel(0, 9, ScheduleDays.All, SixThirty, Eight, true), Ted, Cancel));
+        Assert.Equal("Reläet finns inte.", await Handler.SaveAsync(new ScheduleModel(0, 9, ScheduleDays.All, SixThirty, Eight, true), John, Cancel));
     }
 
     [Fact]
     public async Task Should_SaySoWhenEditingADeletedSchedule()
     {
-        Assert.Equal("Schemat finns inte längre.", await Handler.SaveAsync(new ScheduleModel(42, 1, ScheduleDays.All, SixThirty, Eight, true), Ted, Cancel));
+        Assert.Equal("Schemat finns inte längre.", await Handler.SaveAsync(new ScheduleModel(42, 1, ScheduleDays.All, SixThirty, Eight, true), John, Cancel));
     }
 
     [Fact]
     public async Task Should_ListLikeACalendarWeek()
     {
-        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Saturday, new TimeOnly(8, 0), new TimeOnly(12, 0), true), Ted, Cancel);
-        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, new TimeOnly(16, 0), new TimeOnly(18, 0), true), Ted, Cancel);
-        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), Ted, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Saturday, new TimeOnly(8, 0), new TimeOnly(12, 0), true), John, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, new TimeOnly(16, 0), new TimeOnly(18, 0), true), John, Cancel);
+        await Handler.SaveAsync(new ScheduleModel(0, 1, ScheduleDays.Weekdays, SixThirty, Eight, true), John, Cancel);
 
         var list = await Handler.ListAsync(1, Cancel);
 
@@ -155,9 +155,9 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     [Fact]
     public void Should_ShowThePlainWords_WhenTheDetailsAreMissing()
     {
-        var entry = new EventLogEntry { Actor = Ted, Action = EventActions.ScheduleAdd, RelayId = 1, Details = """{"days":999}""" };
+        var entry = new EventLogEntry { Actor = John, Action = EventActions.ScheduleAdd, RelayId = 1, Details = """{"days":999}""" };
 
-        Assert.Equal("lade till ett schema", EventText.For(entry, "Relä 1", "Ted").What);
+        Assert.Equal("lade till ett schema", EventText.For(entry, "Relä 1", "John").What);
     }
 
     private async Task<List<EventLogEntry>> EventsAsync()

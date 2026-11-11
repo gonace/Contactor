@@ -14,7 +14,7 @@ namespace Contactor.Tests.Web;
 /// </summary>
 public sealed class SettingsHandlersTests
 {
-    private const string Ted = "ted@example.com";
+    private const string John = "john@example.com";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -25,13 +25,13 @@ public sealed class SettingsHandlersTests
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
 
         Assert.Equal(new BoardLoginView("", false), await board.GetLoginAsync(Cancel));
-        Assert.Null(await board.SaveLoginAsync("admin", "secret", none: false, Ted, Cancel));
+        Assert.Null(await board.SaveLoginAsync("admin", "secret", none: false, John, Cancel));
 
         Assert.Equal(new BoardLoginView("admin", true), await board.GetLoginAsync(Cancel));
         Assert.Equal(("admin", "secret"), (rig.Client.Login.Username, rig.Client.Login.Password));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardLoginChanged);
         Assert.Null(entry.Details);
-        Assert.Equal("ändrade reläkortets inloggning", EventText.For(entry, null, "Ted").What);
+        Assert.Equal("ändrade reläkortets inloggning", EventText.For(entry, null, "John").What);
     }
 
     [Fact]
@@ -39,9 +39,9 @@ public sealed class SettingsHandlersTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
-        await board.SaveLoginAsync("admin", "secret", none: false, Ted, Cancel);
+        await board.SaveLoginAsync("admin", "secret", none: false, John, Cancel);
 
-        Assert.Null(await board.SaveLoginAsync("boss", "", none: false, Ted, Cancel));
+        Assert.Null(await board.SaveLoginAsync("boss", "", none: false, John, Cancel));
 
         Assert.Equal(("boss", "secret"), (rig.Client.Login.Username, rig.Client.Login.Password));
     }
@@ -51,9 +51,9 @@ public sealed class SettingsHandlersTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
-        await board.SaveLoginAsync("admin", "secret", none: false, Ted, Cancel);
+        await board.SaveLoginAsync("admin", "secret", none: false, John, Cancel);
 
-        Assert.Null(await board.SaveLoginAsync("admin", "ignored", none: true, Ted, Cancel));
+        Assert.Null(await board.SaveLoginAsync("admin", "ignored", none: true, John, Cancel));
 
         Assert.True(rig.Client.Login.IsNone);
         Assert.Equal(new BoardLoginView("", false), await board.GetLoginAsync(Cancel));
@@ -65,7 +65,7 @@ public sealed class SettingsHandlersTests
         await using var rig = await BoardTestRig.StartAsync();
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
 
-        Assert.NotNull(await board.SaveLoginAsync("admin", "far too long", none: false, Ted, Cancel));
+        Assert.NotNull(await board.SaveLoginAsync("admin", "far too long", none: false, John, Cancel));
 
         Assert.True(rig.Client.Login.IsNone);
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
@@ -95,14 +95,14 @@ public sealed class SettingsHandlersTests
         await http.GetAsync("/", Cancel);
         var users = app.Services.GetRequiredService<UsersHandler>();
 
-        Assert.Null(await users.RenameAsync(Ted, "  Ted E. ", Cancel));
-        Assert.Equal("Skriv ett namn.", await users.RenameAsync(Ted, " ", Cancel));
-        Assert.Equal("Namnet får vara högst 40 tecken.", await users.RenameAsync(Ted, new string('a', 41), Cancel));
+        Assert.Null(await users.RenameAsync(John, "  John E. ", Cancel));
+        Assert.Equal("Skriv ett namn.", await users.RenameAsync(John, " ", Cancel));
+        Assert.Equal("Namnet får vara högst 40 tecken.", await users.RenameAsync(John, new string('a', 41), Cancel));
         Assert.Equal("Personen finns inte längre.", await users.RenameAsync("nobody@example.com", "X", Cancel));
 
-        Assert.Equal([new UserView(Ted, "Ted E.")], await users.ListAsync(Cancel));
+        Assert.Equal([new UserView(John, "John E.")], await users.ListAsync(Cancel));
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-        Assert.Contains("Hej Ted E.", html, StringComparison.Ordinal);
+        Assert.Contains("Hej John E.", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class SettingsHandlersTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
 
-        foreach (var text in new[] { "Reläkortet", "Kortet har ingen inloggning", "Personer", Ted, "Säkerhetskopior", "Ingen kopia än.", "Gör en kopia nu" })
+        foreach (var text in new[] { "Reläkortet", "Kortet har ingen inloggning", "Personer", John, "Säkerhetskopior", "Ingen kopia än.", "Gör en kopia nu" })
         {
             Assert.Contains(text, html, StringComparison.Ordinal);
         }
@@ -193,6 +193,6 @@ public sealed class SettingsHandlersTests
 
     private static TestWebApp CreateApp()
     {
-        return new TestWebApp("Development", new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = Ted });
+        return new TestWebApp("Development", new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = John });
     }
 }

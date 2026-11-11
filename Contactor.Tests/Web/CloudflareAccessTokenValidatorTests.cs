@@ -39,9 +39,9 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
     [Fact]
     public async Task Should_ReturnNormalizedEmail_WhenTokenIsValid()
     {
-        var email = await _validator.ValidateAsync(_tokens.Create(" Nils@Example.COM "), Cancel);
+        var email = await _validator.ValidateAsync(_tokens.Create(" Jane@Example.COM "), Cancel);
 
-        Assert.Equal("nils@example.com", email);
+        Assert.Equal("jane@example.com", email);
         Assert.Equal(new Uri("https://team.example.com/cdn-cgi/access/certs"), _handler.LastRequestUri);
     }
 
@@ -116,7 +116,7 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
 
     [Theory]
     [InlineData(null)]
-    [InlineData("nils")]
+    [InlineData("jane")]
     [InlineData("@example.com")]
     public async Task Should_Reject_WhenTokenHasNoUsableEmail(string? email)
     {
@@ -156,7 +156,7 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
 
         var email = await _validator.ValidateAsync(rotated.Create(notBefore: _time.Now.AddMinutes(-1)), Cancel);
 
-        Assert.Equal("nils@example.com", email);
+        Assert.Equal("jane@example.com", email);
         Assert.Equal(2, _handler.RequestCount);
     }
 

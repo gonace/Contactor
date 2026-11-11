@@ -38,10 +38,10 @@ public sealed class RelayDetailPageTests
         {
             for (var i = 0; i < 6; i++)
             {
-                db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 3, Actor = "ted@example.com", Action = EventActions.On });
+                db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 3, Actor = "john@example.com", Action = EventActions.On });
             }
 
-            db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 4, Actor = "ted@example.com", Action = EventActions.Off });
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 4, Actor = "john@example.com", Action = EventActions.Off });
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -83,6 +83,6 @@ public sealed class RelayDetailPageTests
     {
         return new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
     }
 }

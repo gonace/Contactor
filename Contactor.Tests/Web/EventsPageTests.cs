@@ -21,7 +21,7 @@ public sealed class EventsPageTests
         {
             TimestampUtc = DateTime.UtcNow,
             RelayId = 2,
-            Actor = "ted@example.com",
+            Actor = "john@example.com",
             Action = EventActions.On,
         });
 
@@ -29,7 +29,7 @@ public sealed class EventsPageTests
 
         Assert.Matches("<h1[^>]*>Händelser</h1>", html);
         Assert.Contains("IDAG", html, StringComparison.Ordinal);
-        Assert.Matches("<strong[^>]*>Ted</strong> slog på", html);
+        Assert.Matches("<strong[^>]*>John</strong> slog på", html);
         Assert.Contains("Relä 2", html, StringComparison.Ordinal);
         foreach (var filter in new[] { "Alla", "Personer", "Automatiskt" })
         {
@@ -46,7 +46,7 @@ public sealed class EventsPageTests
         using var http = app.CreateClient();
         for (var i = 0; i < 51; i++)
         {
-            await AddEventAsync(app, new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 1, Actor = "ted@example.com", Action = EventActions.On });
+            await AddEventAsync(app, new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 1, Actor = "john@example.com", Action = EventActions.On });
         }
 
         var html = await http.GetStringAsync("/handelser", Cancel);
@@ -71,12 +71,12 @@ public sealed class EventsPageTests
     {
         await using var app = CreateApp();
         using var http = app.CreateClient();
-        await AddEventAsync(app, new EventLogEntry { TimestampUtc = DateTime.UtcNow.AddMinutes(-1), RelayId = 3, Actor = "lars@example.com", Action = EventActions.Off });
+        await AddEventAsync(app, new EventLogEntry { TimestampUtc = DateTime.UtcNow.AddMinutes(-1), RelayId = 3, Actor = "alex@example.com", Action = EventActions.Off });
         await AddEventAsync(app, new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 4, Actor = EventActors.Schedule, Action = EventActions.Off });
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
-        Assert.Matches(@"Av sedan \d\d:\d\d · Lars", html);
+        Assert.Matches(@"Av sedan \d\d:\d\d · Alex", html);
         Assert.Matches(@"Av sedan \d\d:\d\d · schema", html);
     }
 
@@ -84,7 +84,7 @@ public sealed class EventsPageTests
     {
         return new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
     }
 
     private static async Task AddEventAsync(TestWebApp app, EventLogEntry entry)

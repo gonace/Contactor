@@ -38,17 +38,17 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     public async Task Should_ListNewestFirst_WithNamesFromTheDatabase()
     {
         await AddAsync(
-            Event("nils@example.com", EventActions.On, Now.AddHours(-2), relayId: 1),
+            Event("jane@example.com", EventActions.On, Now.AddHours(-2), relayId: 1),
             Event(EventActors.Schedule, EventActions.Off, Now.AddHours(-1), relayId: 1));
         await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.Users.Add(new User { Email = "nils@example.com", DisplayName = "Nils" });
+            db.Users.Add(new User { Email = "jane@example.com", DisplayName = "Jane" });
             await db.SaveChangesAsync(Cancel);
         }
 
         var rows = await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel);
 
-        Assert.Equal(["Schema", "Nils"], rows.Select(r => r.View.Who));
+        Assert.Equal(["Schema", "Jane"], rows.Select(r => r.View.Who));
         Assert.Equal("Relä 1", rows[0].View.Target);
         Assert.Equal(new DateTime(2026, 11, 4, 14, 0, 0), rows[0].TimestampLocal);
     }
@@ -60,7 +60,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     public async Task Should_FilterPeopleFromAutomatic(EventFilter filter, string[] actions)
     {
         await AddAsync(
-            Event("nils@example.com", EventActions.On, Now.AddHours(-3), relayId: 1),
+            Event("jane@example.com", EventActions.On, Now.AddHours(-3), relayId: 1),
             Event(EventActors.AutoOff, EventActions.Off, Now.AddHours(-2), relayId: 1),
             Event(EventActors.System, EventActions.ConnectionLost, Now.AddHours(-1), relayId: null));
 
@@ -72,23 +72,23 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_PageByIdWithoutRepeatingRows()
     {
-        await AddAsync([.. Enumerable.Range(0, 120).Select(i => Event("nils@example.com", EventActions.On, Now.AddMinutes(-i), relayId: 1))]);
+        await AddAsync([.. Enumerable.Range(0, 120).Select(i => Event("jane@example.com", EventActions.On, Now.AddMinutes(-i), relayId: 1))]);
 
         var first = await Handler.GetAsync(EventFilter.All, beforeId: null, EventsHandler.PageSize, Cancel);
-        await AddAsync(Event("ted@example.com", EventActions.Off, Now, relayId: 1));
+        await AddAsync(Event("john@example.com", EventActions.Off, Now, relayId: 1));
         var second = await Handler.GetAsync(EventFilter.All, first[^1].Id, EventsHandler.PageSize, Cancel);
         var third = await Handler.GetAsync(EventFilter.All, second[^1].Id, EventsHandler.PageSize, Cancel);
 
         Assert.Equal((50, 50, 20), (first.Count, second.Count, third.Count));
         Assert.Equal(120, first.Concat(second).Concat(third).Select(r => r.Id).Distinct().Count());
-        Assert.DoesNotContain(second, r => r.View.Who == "ted@example.com");
+        Assert.DoesNotContain(second, r => r.View.Who == "john@example.com");
     }
 
     [Fact]
     public async Task Should_OrderByTime_WhenAnEventIsLoggedLate()
     {
         await AddAsync(
-            Event("nils@example.com", EventActions.On, Now.AddMinutes(-10), relayId: 1),
+            Event("jane@example.com", EventActions.On, Now.AddMinutes(-10), relayId: 1),
             Event(EventActors.System, EventActions.ConnectionLost, Now.AddMinutes(-20), relayId: null));
 
         var rows = await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel);
@@ -99,7 +99,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_PageAcrossEventsWithTheSameTime()
     {
-        await AddAsync([.. Enumerable.Range(0, 5).Select(_ => Event("nils@example.com", EventActions.On, Now, relayId: 1))]);
+        await AddAsync([.. Enumerable.Range(0, 5).Select(_ => Event("jane@example.com", EventActions.On, Now, relayId: 1))]);
 
         var first = await Handler.GetAsync(EventFilter.All, beforeId: null, 2, Cancel);
         var second = await Handler.GetAsync(EventFilter.All, first[^1].Id, 2, Cancel);
@@ -112,7 +112,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     [Fact]
     public async Task Should_ReturnNothing_WhenPagingFromAnUnknownEvent()
     {
-        await AddAsync(Event("nils@example.com", EventActions.On, Now, relayId: 1));
+        await AddAsync(Event("jane@example.com", EventActions.On, Now, relayId: 1));
 
         Assert.Empty(await Handler.GetAsync(EventFilter.All, beforeId: 999, 50, Cancel));
     }
@@ -149,11 +149,11 @@ public sealed class EventsHandlerTests : IAsyncLifetime
             await db.SaveChangesAsync(Cancel);
         }
 
-        var groupOn = Event("nils@example.com", EventActions.GroupOn, Now.AddHours(-2), relayId: null);
+        var groupOn = Event("jane@example.com", EventActions.GroupOn, Now.AddHours(-2), relayId: null);
         groupOn.GroupId = 1;
         var otherGroup = Event(EventActors.System, EventActions.GroupOff, Now.AddHours(-1), relayId: null);
         otherGroup.GroupId = 2;
-        await AddAsync(groupOn, otherGroup, Event("nils@example.com", EventActions.On, Now, relayId: 1));
+        await AddAsync(groupOn, otherGroup, Event("jane@example.com", EventActions.On, Now, relayId: 1));
 
         var rows = await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel, groupId: 1);
 

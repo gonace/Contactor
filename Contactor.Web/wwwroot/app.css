@@ -21,7 +21,7 @@
     --danger-bg: #FDECEA;
     --danger-border: #E5A29B;
     --danger-ink: #7A1A10;
-    /* Not in the sketches; named so dark mode can change them. */
+    /* Named so dark mode can change them. */
     --on-ink: #FFFFFF;          /* text on an --ink background (selected pills, Spara) */
     --on-accent: #FFFFFF;       /* text on an --accent background (PÅ) */
     --danger-solid: #7A1A10;    /* a destructive button's background ("Ta bort") */

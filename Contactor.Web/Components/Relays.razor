@@ -210,7 +210,7 @@
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
         _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
 
-        // The newest "off" event per relay, for "Av sedan i går · Lars".
+        // The newest "off" event per relay, for "Av sedan i går · Alex".
         var lastOffIds = await db.EventLog.AsNoTracking()
             .Where(e => e.Action == EventActions.Off && e.RelayId != null)
             .GroupBy(e => e.RelayId)

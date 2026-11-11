@@ -1,12 +1,12 @@
 {% comment %}
-  Cloudflare Access custom page, type Login, for the app's hostname. Laid out as docs/sketch/Login.dc.html.
+  Cloudflare Access custom page, type Login, for the app's hostname. Laid out like the app.
   Paste it in Zero Trust → Reusable components → Custom pages → Access custom pages → Create custom page, then pick
   it under the application's Additional settings → Login page.
 
   The sandbox allows no <script>, <svg>, <link>, <button>, <form> or url() in CSS: so no web fonts (IBM Plex only
   where the phone has it, else the system font), and the power icon is drawn with CSS.
   Access draws the e-mail field and its button itself inside <cf-access-authbox>: keep exactly one, outside any
-  {% if %}. The cf-access-authbox rules below restyle them as in the sketch if Access lets page CSS reach them;
+  {% if %}. The cf-access-authbox rules below restyle them in the app's style if Access lets page CSS reach them;
   if it doesn't, they are ignored and Access's own style shows.
   Liquid takes an empty string as true, so text is checked with .size.
 {% endcomment %}
@@ -59,7 +59,7 @@
       }
       .intro { display: flex; flex-direction: column; gap: 18px; }
 
-      /* The power symbol from the sketch, in CSS: a ring open at the top and a bar through the gap. */
+      /* The app's power symbol, in CSS: a ring open at the top and a bar through the gap. */
       .icon {
         position: relative;
         width: 64px;
@@ -104,7 +104,7 @@
       }
       .note--info { border-color: var(--line-strong); background: var(--card); color: var(--ink); }
 
-      /* The sketch's field and button, for the controls Access puts in the authbox. */
+      /* The app's field and button, for the controls Access puts in the authbox. */
       cf-access-authbox { display: block; width: 100%; font-family: var(--sans); color: var(--ink); }
       cf-access-authbox label { font-size: 18px; font-weight: 700; color: var(--ink); }
       cf-access-authbox input[type="email"],

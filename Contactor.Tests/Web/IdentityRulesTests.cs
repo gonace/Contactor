@@ -5,9 +5,9 @@ namespace Contactor.Tests.Web;
 public sealed class IdentityRulesTests
 {
     [Theory]
-    [InlineData("nils@example.com", "Nils")]
+    [InlineData("jane@example.com", "Jane")]
     [InlineData("åsa@example.com", "Åsa")]
-    [InlineData("lars.berg@example.com", "Lars.berg")]
+    [InlineData("alex.smith@example.com", "Alex.smith")]
     [InlineData("t@example.com", "T")]
     public void Should_NameUserAfterTheirAddress(string email, string displayName)
     {
@@ -23,10 +23,10 @@ public sealed class IdentityRulesTests
     }
 
     [Theory]
-    [InlineData("nils@example.com", true)]
-    [InlineData("nils", false)]
+    [InlineData("jane@example.com", true)]
+    [InlineData("jane", false)]
     [InlineData("@example.com", false)]
-    [InlineData("nils@", false)]
+    [InlineData("jane@", false)]
     [InlineData("a@b@example.com", false)]
     [InlineData("ni ls@example.com", false)]
     [InlineData("", false)]

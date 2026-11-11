@@ -9,7 +9,7 @@ public sealed record UserView(string Email, string DisplayName);
 
 /// <summary>
 /// The people who have signed in, and their names: the app names a new person after their e-mail
-/// ("lars.berg@…" becomes "Lars.berg"), and the Inställningar screen lets anyone give them a proper one.
+/// ("alex.smith@…" becomes "Alex.smith"), and the Inställningar screen lets anyone give them a proper one.
 /// </summary>
 public sealed class UsersHandler
 {

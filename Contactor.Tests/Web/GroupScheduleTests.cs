@@ -15,7 +15,7 @@ namespace Contactor.Tests.Web;
 /// </summary>
 public sealed class GroupScheduleTests
 {
-    private const string Ted = "ted@example.com";
+    private const string John = "john@example.com";
 
     private static readonly GroupDraft FanHeater = new(
         "Värmefläkt",
@@ -88,7 +88,7 @@ public sealed class GroupScheduleTests
         var groupId = await CreateAsync(rig);
         await AddScheduleAsync(rig, groupId, 14, 5, 14, 10);
         await rig.Scheduler.TickAsync(Cancel);
-        await rig.Groups.StartGroupAsync(groupId, Ted, Cancel);
+        await rig.Groups.StartGroupAsync(groupId, John, Cancel);
         await StartedAsync(rig);
         await TickAtAsync(rig, 14, 5);
 
@@ -97,7 +97,7 @@ public sealed class GroupScheduleTests
 
         Assert.True(rig.Client.State.IsOn(2));
         var runtime = await RuntimeAsync(rig, groupId);
-        Assert.Equal(Ted, runtime.TurnedOnBy);
+        Assert.Equal(John, runtime.TurnedOnBy);
         Assert.NotNull(runtime.AutoOffAtUtc);
     }
 
@@ -111,7 +111,7 @@ public sealed class GroupScheduleTests
         await TickAtAsync(rig, 14, 5);
         await StartedAsync(rig);
 
-        await rig.Database.Services.GetRequiredService<SchedulesHandler>().DeleteAsync(scheduleId, Ted, Cancel);
+        await rig.Database.Services.GetRequiredService<SchedulesHandler>().DeleteAsync(scheduleId, John, Cancel);
         await TickAtAsync(rig, 14, 20);
 
         await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsOn(2));
@@ -124,7 +124,7 @@ public sealed class GroupScheduleTests
         var groupId = await CreateAsync(rig);
         await AddScheduleAsync(rig, groupId, 6, 0, 7, 0);
 
-        Assert.Null(await rig.GroupSetup.DeleteAsync(groupId, Ted, Cancel));
+        Assert.Null(await rig.GroupSetup.DeleteAsync(groupId, John, Cancel));
 
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         Assert.Empty(await db.Schedules.ToListAsync(Cancel));
@@ -138,7 +138,7 @@ public sealed class GroupScheduleTests
         var schedules = rig.Database.Services.GetRequiredService<SchedulesHandler>();
 
         Assert.Null(await schedules.SaveAsync(
-            new ScheduleModel(0, null, ScheduleDays.Weekdays, new TimeOnly(6, 30), new TimeOnly(8, 0), true, groupId), Ted, Cancel));
+            new ScheduleModel(0, null, ScheduleDays.Weekdays, new TimeOnly(6, 30), new TimeOnly(8, 0), true, groupId), John, Cancel));
 
         var saved = Assert.Single(await schedules.ListForGroupAsync(groupId, Cancel));
         Assert.Equal((null, groupId), (saved.RelayId, saved.GroupId));
@@ -158,7 +158,7 @@ public sealed class GroupScheduleTests
         var schedules = rig.Database.Services.GetRequiredService<SchedulesHandler>();
 
         var error = await schedules.SaveAsync(
-            new ScheduleModel(0, relayId, ScheduleDays.All, new TimeOnly(6, 0), new TimeOnly(7, 0), true, groupId), Ted, Cancel);
+            new ScheduleModel(0, relayId, ScheduleDays.All, new TimeOnly(6, 0), new TimeOnly(7, 0), true, groupId), John, Cancel);
 
         Assert.Equal("Välj ett relä eller en grupp.", error);
     }
@@ -179,7 +179,7 @@ public sealed class GroupScheduleTests
             OnTime = new TimeOnly(6, 0),
             OffTime = new TimeOnly(7, 0),
             IsEnabled = true,
-            CreatedBy = Ted,
+            CreatedBy = John,
         });
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
@@ -211,7 +211,7 @@ public sealed class GroupScheduleTests
         var groupId = await CreateAsync(rig);
         await AddScheduleAsync(rig, groupId, 14, 5, 14, 10);
         await rig.Scheduler.TickAsync(Cancel);
-        await rig.Groups.StartGroupAsync(groupId, Ted, Cancel);
+        await rig.Groups.StartGroupAsync(groupId, John, Cancel);
         await StartedAsync(rig);
         await TickAtAsync(rig, 14, 5);
 
@@ -227,11 +227,11 @@ public sealed class GroupScheduleTests
         var groupId = await CreateAsync(rig);
         await AddScheduleAsync(rig, groupId, 14, 5, 18, 0);
         await rig.Scheduler.TickAsync(Cancel);
-        await rig.Groups.StartGroupAsync(groupId, Ted, Cancel);
+        await rig.Groups.StartGroupAsync(groupId, John, Cancel);
         await StartedAsync(rig);
         await TickAtAsync(rig, 14, 5);
 
-        // Ted's 2 h end at 16:00: the group stops with its run-on, and the schedule leaves it off.
+        // John's 2 h end at 16:00: the group stops with its run-on, and the schedule leaves it off.
         rig.Time.Now = Local(16, 1);
         await rig.Groups.StepAsync(Cancel);
         await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsOn(2));
@@ -276,9 +276,9 @@ public sealed class GroupScheduleTests
         var groupId = await CreateAsync(rig);
         await AddScheduleAsync(rig, groupId, 14, 5, 15, 0);
         await rig.Scheduler.TickAsync(Cancel);
-        await rig.Groups.StartGroupAsync(groupId, Ted, Cancel);
+        await rig.Groups.StartGroupAsync(groupId, John, Cancel);
         await StartedAsync(rig);
-        await rig.Groups.StopGroupAsync(groupId, Ted, Cancel);
+        await rig.Groups.StopGroupAsync(groupId, John, Cancel);
         await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsOn(2));
         await rig.Groups.StepAsync(Cancel);
         Assert.True(rig.Client.State.IsOn(1));
@@ -306,7 +306,7 @@ public sealed class GroupScheduleTests
             // Raw SQL: the model of this version no longer matches the old table. Constant SQL, no input.
             await db.Database.ExecuteSqlRawAsync(
                 "INSERT INTO \"Relay\" (\"Id\", \"Name\", \"IsActive\", \"MaxOnMinutes\", \"SortOrder\") VALUES (3, 'Relä 3', 1, 120, 3);"
-                + "INSERT INTO \"Schedule\" (\"RelayId\", \"Days\", \"OnTime\", \"OffTime\", \"IsEnabled\", \"CreatedBy\") VALUES (3, 31, '06:30', '08:00', 1, 'ted@example.com');",
+                + "INSERT INTO \"Schedule\" (\"RelayId\", \"Days\", \"OnTime\", \"OffTime\", \"IsEnabled\", \"CreatedBy\") VALUES (3, 31, '06:30', '08:00', 1, 'john@example.com');",
                 Cancel);
             await migrator.MigrateAsync(cancellationToken: Cancel);
         }
@@ -331,7 +331,7 @@ public sealed class GroupScheduleTests
 
     private static async Task<int> CreateAsync(BoardTestRig rig)
     {
-        var (id, error) = await rig.GroupSetup.CreateAsync(FanHeater, Ted, Cancel);
+        var (id, error) = await rig.GroupSetup.CreateAsync(FanHeater, John, Cancel);
         Assert.Null(error);
         return id!.Value;
     }
@@ -346,7 +346,7 @@ public sealed class GroupScheduleTests
             OnTime = new TimeOnly(onHour, onMinute),
             OffTime = new TimeOnly(offHour, offMinute),
             IsEnabled = true,
-            CreatedBy = Ted,
+            CreatedBy = John,
         };
         db.Schedules.Add(schedule);
         await db.SaveChangesAsync(Cancel);
