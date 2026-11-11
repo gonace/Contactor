@@ -15,6 +15,9 @@ public sealed class BoardLogin : IEquatable<BoardLogin>
         Password = password;
     }
 
+    /// <summary>The longest user name or password the app stores, for any board; a model's own limit is lower.</summary>
+    public const int MaxLength = 64;
+
     public static BoardLogin None { get; } = new("", "");
 
     public string Username { get; }

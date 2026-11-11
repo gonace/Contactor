@@ -145,7 +145,7 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 
 ## Boards (`Contactor.Boards`)
 
-The app talks to a relay board only through `IRelayBoard`, so another make of board needs its own project and adapter, and nothing else changes. One board per installation for now; several at once is issue #4.
+The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, and knows its model from the board catalogue, so another make of board needs its own project with those adapters, a reference from `Contactor.Web` and a line in the catalogue, and nothing else changes. One board per installation for now; several at once is issue #4.
 
 - `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
 - `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.

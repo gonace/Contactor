@@ -28,14 +28,14 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Password")
-                        .HasMaxLength(8)
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Port")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Username")
-                        .HasMaxLength(8)
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");

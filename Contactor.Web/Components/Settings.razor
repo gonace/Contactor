@@ -26,7 +26,7 @@
     <main class="content">
         <form class="card" @onsubmit="SaveBoardAsync">
             <h2>Relay board</h2>
-            <p class="hint">@Model.Name · @Model.Capabilities.RelayCount relays</p>
+            <p class="hint">@Model.Name · @Relays.Capabilities.RelayCount @(Relays.Capabilities.RelayCount == 1 ? "relay" : "relays")</p>
             <div class="fields">
                 <div class="field">
                     <label for="host">Address</label>
@@ -208,7 +208,7 @@
 
         if (!int.TryParse(_port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
         {
-            (_boardMessage, _boardSaved) = ($"The port is a number from 1 to 65535 (usually {Model.DefaultPort}).", false);
+            (_boardMessage, _boardSaved) = ("The port is a number from 1 to 65535.", false);
             return;
         }
 

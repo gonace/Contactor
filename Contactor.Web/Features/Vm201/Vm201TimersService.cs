@@ -37,10 +37,17 @@ public sealed partial class Vm201TimersService : BackgroundService
         _logger = logger;
     }
 
+    // Subscribes here rather than in ExecuteAsync, which .NET runs on a background thread: BoardHostedService could
+    // connect, and the board send its first status, before this listens.
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        _client.StateChanged += OnStateChanged;
+        return base.StartAsync(cancellationToken);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _stoppingToken = stoppingToken;
-        _client.StateChanged += OnStateChanged;
         try
         {
             // Listens until the app stops; BoardHostedService runs the connection itself.

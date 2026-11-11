@@ -1,5 +1,4 @@
 using Contactor.Boards;
-using Contactor.Boards.Vm201;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -170,8 +169,8 @@ public sealed class ContactorDbContext : DbContext
         });
         setting.Property(s => s.Id).ValueGeneratedNever();
         setting.Property(s => s.Host).HasMaxLength(BoardSetting.HostMaxLength);
-        setting.Property(s => s.Username).HasMaxLength(Vm201Command.CredentialMaxLength);
-        setting.Property(s => s.Password).HasMaxLength(Vm201Command.CredentialMaxLength);
+        setting.Property(s => s.Username).HasMaxLength(BoardLogin.MaxLength);
+        setting.Property(s => s.Password).HasMaxLength(BoardLogin.MaxLength);
     }
 
     private static void ConfigureInput(EntityTypeBuilder<Input> input)
