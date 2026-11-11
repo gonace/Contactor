@@ -36,7 +36,7 @@ Phone ──HTTPS──▶ <your hostname>: Cloudflare Access (e-mail OTP) ─�
 - .NET 10 (LTS), C#, Blazor Server (interactive server rendering), EF Core + `Microsoft.EntityFrameworkCore.Sqlite`
 - No JavaScript framework. No external CSS framework; one small stylesheet of our own, following the design tokens below.
 - Target: a container image (`ghcr.io/gonace/contactor`, linux-arm64 and linux-x64) on Ubuntu chiseled-extra, which includes the time zone data the schedules need; run with Docker Compose on the Raspberry Pi.
-- Local development with Aspire 13.6.5 (13.6.5 fixes GHSA-f7vh-h5g3-7jrh; earlier 13.6 releases hung at startup on Windows, aspire#20773). The AppHost starts the simulator on port 9760 and the web app against it.
+- Local development with Aspire 13.6.5 (13.6.5 fixes GHSA-f7vh-h5g3-7jrh; earlier 13.6 releases hung at startup on Windows, aspire#20773). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the web app against it.
 
 No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Vm201/`, `Web/` …). Don't create more test projects.
 
@@ -50,11 +50,12 @@ Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
-Contactor.Simulator/      # Console app that runs Vm201Simulator on a port (development)
+Contactor.Simulator/      # Development: simulated boards, each on its own port, with a page to drive them and see their traffic
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
   Boards/                   # ChannelMask, board adapters
+  Simulator/                # The simulator's boards and page
   Vm201/                    # Codec + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
@@ -173,6 +174,14 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes); it translates `Vm201State` and refuses relays above 8.
 - `Vm201Connection` and `Vm201Traffic`: the client as an `IBoardConnection` and an `IBoardTraffic` (`Vm201TraceText` puts each packet in plain words). `Vm201Model` is its catalogue entry.
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
+
+## The simulator (`Contactor.Simulator`)
+
+A small Blazor web app for development, laid out for a desktop browser and filling the window; not for phones. English, like the app.
+- `Simulator:Boards` lists the boards that start with it (`Type`, `Port`, optional `Username` and `Password`); none listed: one VM201 on 9760. Boards added on the page last until it stops. Each board listens on its own port on 127.0.0.1, so several run at once.
+- `SimulatorCatalogue`: the models it can simulate, each with its `ISimulatedBoard`. A new model is one line there.
+- `SimulatedBoards` runs them; `RunningBoard` keeps each board's latest 100 traffic lines in memory, with the keep-alive left out and counted, and logs what is done on the page as "at the board".
+- The page: the boards on the left with "Add a board"; the selected board's relays (a click switches one as the board's own button would), input, own timers, "Drop connection" and "Remove"; its traffic as a table below (time, direction, what, bytes; errors red).
 
 ---
 

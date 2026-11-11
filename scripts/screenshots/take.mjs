@@ -20,6 +20,7 @@ const out = 'docs/screenshots';
 const webPort = 5291;
 const boardPort = 9761;
 const base = `http://127.0.0.1:${webPort}/`;
+const simulatorBase = 'http://127.0.0.1:5292/';
 const data = mkdtempSync(join(tmpdir(), 'contactor-screenshots-'));
 const database = join(data, 'contactor.db');
 const children = [];
@@ -113,7 +114,11 @@ async function shoot(browser, colorScheme, shots) {
 
 try {
     execFileSync('dotnet', ['build', 'Contactor.slnx', '-v', 'q'], { stdio: 'inherit' });
-    start('Contactor.Simulator', { Simulator__Port: String(boardPort) });
+    start('Contactor.Simulator', {
+        ASPNETCORE_URLS: simulatorBase,
+        Simulator__Boards__0__Type: 'vm201',
+        Simulator__Boards__0__Port: String(boardPort),
+    });
     start('Contactor.Web', {
         ASPNETCORE_URLS: base,
         ConnectionStrings__Default: `Data Source=${database}`,

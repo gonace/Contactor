@@ -1,23 +1,32 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Contactor.ServiceDefaults;
+using Contactor.Simulator.Components;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Contactor.Simulator;
 
 /// <summary>
-/// A fake VM201 relay board on a local TCP port, for development. Started by Contactor.AppHost.
+/// Fake relay boards for development, each on its own local TCP port, with a page to see and drive them. Started by
+/// Contactor.AppHost.
 /// </summary>
-public static class Program
+public sealed class Program
 {
     public static void Main(string[] args)
     {
-        var builder = Host.CreateApplicationBuilder(args);
+        var builder = WebApplication.CreateBuilder(args);
         builder.AddServiceDefaults();
         builder.Services.AddOptions<SimulatorOptions>()
             .Bind(builder.Configuration.GetSection(SimulatorOptions.SectionName))
-            .Validate(o => o.Port is >= 1 and <= 65535, "Simulator:Port must be 1–65535.")
             .ValidateOnStart();
-        builder.Services.AddHostedService<SimulatorService>();
-        builder.Build().Run();
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<SimulatedBoards>();
+        builder.Services.AddHostedService<SimulatorHostedService>();
+        builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
+        var app = builder.Build();
+        app.UseAntiforgery();
+        app.MapStaticAssets();
+        app.MapDefaultEndpoints();
+        app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+        app.Run();
     }
 }

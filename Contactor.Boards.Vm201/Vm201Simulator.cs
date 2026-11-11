@@ -17,6 +17,9 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     private const int NameLength = Vm201Command.NameDataLength - 1;
     private const int InputChannel = 9;
 
+    // Received commands kept for the tests; a long-running simulator keeps only the newest.
+    private const int ReceivedCommandsKept = 1000;
+
     private readonly string? _username;
     private readonly string? _password;
     private readonly ILogger _logger;
@@ -95,7 +98,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     /// </summary>
     public bool Unresponsive { get; set; }
 
-    /// <summary>Every packet received from logged-in clients, in order.</summary>
+    /// <summary>The packets received from logged-in clients, in order: the newest 1,000.</summary>
     public IReadOnlyList<Vm201Packet> ReceivedCommands => [.. _receivedCommands];
 
     /// <summary>Starts listening on 127.0.0.1. Port 0 picks a free port.</summary>
@@ -255,6 +258,9 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
                 }
 
                 _receivedCommands.Enqueue(packet);
+                while (_receivedCommands.Count > ReceivedCommandsKept && _receivedCommands.TryDequeue(out _))
+                {
+                }
                 if (packet.Command == Vm201Command.Closed)
                 {
                     return;
@@ -361,10 +367,21 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         await ChangeAsync(change).ConfigureAwait(false);
     }
 
-    /// <summary>Applies a change and pushes the status to every logged-in client, but only if something changed.</summary>
+    /// <summary>
+    /// Applies a change and pushes the status to every logged-in client, but only if something changed. Does nothing
+    /// once the simulator is stopping or stopped, so a button pressed on a page as it shuts down is no error.
+    /// </summary>
     private async Task ChangeAsync(Action change)
     {
-        await _gate.WaitAsync(_stopping.Token).ConfigureAwait(false);
+        try
+        {
+            await _gate.WaitAsync(_stopping.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+
         var changed = false;
         try
         {
@@ -389,15 +406,23 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
                 {
                     await SendAsync(connection, after, _stopping.Token).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException)
+                catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
                 {
-                    // That client is gone; its handler cleans up.
+                    // That client is gone, or the simulator is stopping; the handler cleans up.
                 }
             }
         }
         finally
         {
-            _gate.Release();
+            try
+            {
+                _gate.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Stopped while the change went out.
+            }
+
             if (changed)
             {
                 RaiseChanged();

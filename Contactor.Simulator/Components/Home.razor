@@ -1,0 +1,306 @@
+@page "/"
+@implements IDisposable
+@using System.Globalization
+@using Contactor.Boards
+@inject SimulatedBoards Simulator
+
+<PageTitle>Contactor simulator</PageTitle>
+
+<div class="screen">
+    <header class="top">
+        <div class="title">
+            <h1>Contactor simulator</h1>
+            <span class="count">@BoardCount · listening on 127.0.0.1</span>
+        </div>
+        <span class="mono">Point the app at 127.0.0.1 and the board's port</span>
+    </header>
+
+    <div class="body">
+        <aside class="side">
+            <div class="label">BOARDS</div>
+            <nav class="boards">
+                @foreach (var board in _boards)
+                {
+                    var state = board.Board.State;
+                    <button type="button" class="board @(board.Id == Selected?.Id ? "selected" : null)" aria-current="@(board.Id == Selected?.Id ? "true" : null)"
+                            @key="board.Id" @onclick="() => _selectedId = board.Id">
+                        <span class="line">
+                            <span class="name">@Short(board)</span>
+                            <span class="dot @(state.Clients.Count > 0 ? "on" : null)" aria-hidden="true"></span>
+                        </span>
+                        <span class="hint">@Status(board) · @(board.FromSettings ? "from the settings" : "added here")@LoginText(board)</span>
+                        <span class="lamps" aria-label="@RelaysText(board)">
+                            @for (var relay = 1; relay <= board.Board.Model.Capabilities.RelayCount; relay++)
+                            {
+                                <span class="lamp @(state.Relays.Contains(relay) ? "on" : null)"></span>
+                            }
+                        </span>
+                    </button>
+                }
+                @if (_boards.Count == 0)
+                {
+                    <p class="hint empty">No boards. Add one below.</p>
+                }
+            </nav>
+
+            <form class="add" @onsubmit="Add">
+                <span class="label">ADD A BOARD</span>
+                <label for="model" class="visually-hidden">Model</label>
+                <select id="model" @bind="_newType">
+                    @foreach (var model in SimulatorCatalogue.All)
+                    {
+                        <option value="@model.Model.Id">@model.Model.Name</option>
+                    }
+                </select>
+                <div class="row">
+                    <div class="field port">
+                        <label for="port">Port</label>
+                        <input id="port" class="mono" inputmode="numeric" maxlength="5" autocomplete="off" @bind="_newPort" />
+                    </div>
+                    <div class="field">
+                        <label for="login">Login (optional)</label>
+                        <input id="login" class="mono" placeholder="user:password" autocomplete="off" spellcheck="false" @bind="_newLogin" />
+                    </div>
+                </div>
+                <button type="submit" class="primary">Add board</button>
+                @if (_addError is not null)
+                {
+                    <p class="error" role="alert">@_addError</p>
+                }
+                <span class="hint">Boards added here last until the simulator stops.</span>
+            </form>
+        </aside>
+
+        <main class="main">
+            @if (Selected is { } current)
+            {
+                var state = current.Board.State;
+                var capabilities = current.Board.Model.Capabilities;
+                <section class="card controls">
+                    <div class="head">
+                        <div class="title">
+                            <h2>@current.Board.Model.Name · port @current.Board.Port</h2>
+                            <span class="connection @(state.Clients.Count > 0 ? "on" : null)">
+                                <span class="dot" aria-hidden="true"></span>@Connection(current)
+                            </span>
+                        </div>
+                        <div class="actions">
+                            <button type="button" disabled="@(state.Clients.Count == 0)" @onclick="current.DropConnections">Drop connection</button>
+                            <button type="button" class="danger" @onclick="() => RemoveAsync(current)">Remove</button>
+                        </div>
+                    </div>
+
+                    <div class="split">
+                        <div class="relays-box">
+                            <span class="hint">Relays: click one to switch it, like the board's own buttons</span>
+                            <div class="relays" style="grid-template-columns: repeat(@capabilities.RelayCount.ToString(CultureInfo.InvariantCulture), minmax(0, 1fr))">
+                                @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                {
+                                    var number = relay;
+                                    var on = state.Relays.Contains(number);
+                                    <button type="button" class="relay @(on ? "on" : null)" aria-pressed="@(on ? "true" : "false")"
+                                            @onclick="() => current.SwitchRelayAsync(number, !on)">
+                                        <span class="mono">RELAY @number</span>
+                                        <span class="state">@(on ? "ON" : "OFF")</span>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        <div class="extras">
+                            @for (var input = 1; input <= capabilities.InputCount; input++)
+                            {
+                                var number = input;
+                                var closed = state.Inputs.Contains(number);
+                                <label class="check">
+                                    <input type="checkbox" checked="@closed" @onchange="e => current.SetInputAsync(number, e.Value is true)" />
+                                    Input @number closed
+                                </label>
+                            }
+                            @if (current.Board is ISimulatedBoardTimers timers)
+                            {
+                                <label class="check">
+                                    <input type="checkbox" checked="@(!timers.Timers.IsEmpty)" @onchange="e => current.SetTimersAsync(e.Value is true)" />
+                                    Board's own timers on@(timers.Timers.IsEmpty ? "" : $" ({TimersText(timers.Timers, capabilities)})")
+                                </label>
+                            }
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card traffic">
+                    <div class="traffic-head">
+                        <div class="title">
+                            <h3>Traffic</h3>
+                            <span class="hint">newest first · @current.HiddenRoutine.ToString(CultureInfo.InvariantCulture) keep-alives hidden</span>
+                        </div>
+                        <button type="button" @onclick="current.ClearTraffic">Clear</button>
+                    </div>
+                    <div class="grid header-row" aria-hidden="true">
+                        <span>TIME</span><span>DIRECTION</span><span>WHAT</span><span>BYTES</span>
+                    </div>
+                    <div class="rows">
+                        @foreach (var item in current.Traffic)
+                        {
+                            <div class="grid row @(item.IsError ? "error" : null)" @key="item.Id">
+                                <span class="mono time">@item.At.ToLocalTime().ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
+                                <span class="@(item.Kind is TrafficKind.AtBoard or TrafficKind.Connection ? "muted" : null)">@Direction(item.Kind)</span>
+                                <span>@item.Text</span>
+                                <span class="mono bytes">@item.Bytes</span>
+                            </div>
+                        }
+                        @if (current.Traffic.Count == 0)
+                        {
+                            <p class="hint empty">@(state.Clients.Count == 0 ? $"Nothing yet. Set the app's board to 127.0.0.1, port {current.Board.Port}{(current.Username is null ? "" : $", user {current.Username}")}." : "Nothing new.")</p>
+                        }
+                    </div>
+                </section>
+            }
+            else
+            {
+                <section class="card none">
+                    <p class="hint">No board selected. Add one on the left.</p>
+                </section>
+            }
+        </main>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<RunningBoard> _boards = [];
+    private int? _selectedId;
+    private string _newType = SimulatorCatalogue.All[0].Model.Id;
+    private string _newPort = "";
+    private string _newLogin = "";
+    private string? _addError;
+
+    private RunningBoard? Selected => _boards.FirstOrDefault(b => b.Id == _selectedId) ?? _boards.FirstOrDefault();
+
+    private string BoardCount => _boards.Count == 1 ? "1 board" : $"{_boards.Count.ToString(CultureInfo.InvariantCulture)} boards";
+
+    protected override void OnInitialized()
+    {
+        _boards = Simulator.Boards;
+        _newPort = NextFreePort();
+        Simulator.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Simulator.Changed -= OnChanged;
+    }
+
+    private void Add()
+    {
+        if (!int.TryParse(_newPort.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
+        {
+            _addError = "The port is a number from 1 to 65535.";
+            return;
+        }
+
+        _addError = Simulator.Add(_newType, port, _newLogin.Trim());
+        if (_addError is null)
+        {
+            _boards = Simulator.Boards;
+            _selectedId = _boards.FirstOrDefault(b => b.Board.Port == port)?.Id;
+            _newPort = NextFreePort();
+            _newLogin = "";
+        }
+    }
+
+    private async Task RemoveAsync(RunningBoard board)
+    {
+        await Simulator.RemoveAsync(board.Id);
+        _boards = Simulator.Boards;
+        _newPort = NextFreePort();
+    }
+
+    // The board's default port, or the first free one after it.
+    private string NextFreePort()
+    {
+        var model = SimulatorCatalogue.Find(_newType) ?? SimulatorCatalogue.All[0];
+        var port = model.Model.DefaultPort;
+        while (_boards.Any(b => b.Board.Port == port) && port < 65535)
+        {
+            port++;
+        }
+
+        return port.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string Short(RunningBoard board)
+    {
+        return $"{board.Board.Model.Id.ToUpperInvariant()} · {board.Board.Port.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string Status(RunningBoard board)
+    {
+        return board.Board.State.Clients.Count > 0 ? "App connected" : "Waiting for the app";
+    }
+
+    private static string LoginText(RunningBoard board)
+    {
+        return board.Username is null ? "" : $" · login {board.Username}";
+    }
+
+    private static string Connection(RunningBoard board)
+    {
+        var clients = board.Board.State.Clients;
+        var login = board.Username is null ? "no login" : $"login {board.Username}";
+        return clients.Count switch
+        {
+            0 => $"Waiting for the app · {login}",
+            1 => $"App connected from {clients[0]} · {login}",
+            _ => $"{clients.Count.ToString(CultureInfo.InvariantCulture)} apps connected ({string.Join(", ", clients)}) · {login}",
+        };
+    }
+
+    private static string RelaysText(RunningBoard board)
+    {
+        var on = board.Board.State.Relays;
+        return on.IsEmpty ? "all relays off" : $"on: relay {string.Join(", ", on.Channels)}";
+    }
+
+    private static string TimersText(ChannelMask timers, BoardCapabilities capabilities)
+    {
+        if (timers == capabilities.AllRelays)
+        {
+            return "all relays";
+        }
+
+        var channels = timers.Channels.ToList();
+        return channels.Count == 1 ? $"relay {channels[0]}" : $"relays {string.Join(", ", channels)}";
+    }
+
+    private static string Direction(TrafficKind kind)
+    {
+        return kind switch
+        {
+            TrafficKind.AppToBoard => "app → board",
+            TrafficKind.BoardToApp => "board → app",
+            TrafficKind.AtBoard => "at the board",
+            _ => "connection",
+        };
+    }
+
+    // From a board's own thread, sometimes under its lock. Handed off, so the board never waits while pages render.
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        _ = Task.Run(RefreshAsync);
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _boards = Simulator.Boards;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}
