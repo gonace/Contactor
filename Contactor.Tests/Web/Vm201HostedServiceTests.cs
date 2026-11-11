@@ -89,6 +89,7 @@ public sealed class Vm201HostedServiceTests
     public async Task Should_RegisterOneBoard_WithTheRelaysTheDatabaseHolds()
     {
         await using var simulator = new Vm201Simulator();
+        simulator.Start();
         await using var database = CreateDatabase(simulator, disableBoardTimers: false);
 
         var board = database.Services.GetRequiredService<IRelayBoard>();
