@@ -1,15 +1,15 @@
-@page "/handelser"
+@page "/events"
 @implements IDisposable
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Relays
 @inject EventsHandler Handler
 @inject RelayChanges Changes
 
-<PageTitle>Händelser · Contactor</PageTitle>
+<PageTitle>Events · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>Händelser</h1>
+        <h1>Events</h1>
         <div class="filters">
             @foreach (var (filter, label) in Filters)
             {
@@ -21,7 +21,7 @@
     <main class="days">
         @if (_rows.Count == 0)
         {
-            <p class="empty">Inga händelser än.</p>
+            <p class="empty">No events yet.</p>
         }
 
         @foreach (var day in Handler.GroupByDay(_rows))
@@ -49,7 +49,7 @@
 
         @if (_hasMore)
         {
-            <button type="button" class="more" disabled="@_loading" @onclick="LoadMoreAsync">Visa fler</button>
+            <button type="button" class="more" disabled="@_loading" @onclick="LoadMoreAsync">Show more</button>
         }
     </main>
 
@@ -59,9 +59,9 @@
 @code {
     private static readonly (EventFilter Filter, string Label)[] Filters =
     [
-        (EventFilter.All, "Alla"),
-        (EventFilter.People, "Personer"),
-        (EventFilter.Automatic, "Automatiskt"),
+        (EventFilter.All, "All"),
+        (EventFilter.People, "People"),
+        (EventFilter.Automatic, "Automatic"),
     ];
 
     private List<EventRow> _rows = [];

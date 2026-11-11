@@ -1,4 +1,4 @@
-@page "/grupp/{Id:int}"
+@page "/group/{Id:int}"
 @implements IDisposable
 @using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
@@ -21,20 +21,20 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject ILogger<GroupDetail> Log
 
-<PageTitle>@(_group?.Name ?? "Grupp") · Contactor</PageTitle>
+<PageTitle>@(_group?.Name ?? "Group") · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            Reläer
+            Relays
         </a>
     </header>
 
     @if (_loaded && _group is null)
     {
         <main class="content">
-            <p class="missing">Gruppen finns inte.</p>
+            <p class="missing">The group doesn't exist.</p>
         </main>
     }
     else if (_group is not null)
@@ -42,19 +42,19 @@
         <form class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">GRUPP · NAMN</label>
+                    <label for="name" class="label">GROUP · NAME</label>
                     <input id="name" type="text" maxlength="@RelayGroup.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                 </div>
 
                 <fieldset class="icon-field">
-                    <legend>Ikon</legend>
+                    <legend>Icon</legend>
                     <IconPicker @bind-Value="_icon" />
                 </fieldset>
 
                 <section class="status @(GroupOn ? "on" : "") @(_group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : "")">
                     <p>@GroupStatusText.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook)</p>
                     <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleGroupAsync">
-                        @(GroupOn ? "STÄNG AV GRUPPEN" : "SLÅ PÅ GRUPPEN")
+                        @(GroupOn ? "TURN OFF THE GROUP" : "TURN ON THE GROUP")
                     </button>
                     @if (_toggleError is not null)
                     {
@@ -64,8 +64,8 @@
 
                 <section class="members">
                     <div class="section-text">
-                        <h2>Reläer i startordning</h2>
-                        <p class="hint">Startar uppifrån, stängs av nerifrån. Ett relä kan bara vara på när reläet ovanför är på.</p>
+                        <h2>Relays in start order</h2>
+                        <p class="hint">Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</p>
                     </div>
                     <ol class="steps">
                         @for (var i = 0; i < _members.Count; i++)
@@ -78,15 +78,15 @@
                                 <div class="step-row">
                                     <span class="number" aria-hidden="true">@(index + 1)</span>
                                     <div class="step-text">
-                                        <label class="label" for="@($"role-{member.RelayId}")">RELÄ @member.RelayId</label>
+                                        <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.RelayId</label>
                                         <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                                         <span class="note">@NoteFor(index, on, blockedBy)</span>
                                     </div>
                                     <div class="order">
-                                        <button type="button" aria-label="@($"Flytta upp {member.RoleName}")" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
+                                        <button type="button" aria-label="@($"Move {member.RoleName} up")" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
                                         </button>
-                                        <button type="button" aria-label="@($"Flytta ner {member.RoleName}")" disabled="@(!CanChangeMembers || index == _members.Count - 1)" @onclick="() => Move(index, 1)">
+                                        <button type="button" aria-label="@($"Move {member.RoleName} down")" disabled="@(!CanChangeMembers || index == _members.Count - 1)" @onclick="() => Move(index, 1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
                                         </button>
                                     </div>
@@ -94,13 +94,13 @@
                                             class="member-toggle"
                                             data-vibrate
                                             aria-pressed="@(on ? "true" : "false")"
-                                            aria-label="@((on ? "Stäng av " : "Slå på ") + member.RoleName)"
+                                            aria-label="@((on ? "Turn off " : "Turn on ") + member.RoleName)"
                                             disabled="@(!State.IsConnected || _busy || OrderChanged || (!on && blockedBy is not null))"
-                                            @onclick="() => ToggleMemberAsync(member.RelayId, on)">@(on ? "PÅ" : "AV")</button>
+                                            @onclick="() => ToggleMemberAsync(member.RelayId, on)">@(on ? "ON" : "OFF")</button>
                                 </div>
                                 @if (CanChangeMembers && _members.Count > RelayGroup.MinMembers)
                                 {
-                                    <button type="button" class="remove" @onclick="() => Remove(index)">Ta bort ur gruppen</button>
+                                    <button type="button" class="remove" @onclick="() => Remove(index)">Remove from the group</button>
                                 }
                                 @if (_memberError is { } error && error.RelayId == member.RelayId)
                                 {
@@ -110,9 +110,9 @@
                             @if (index < _members.Count - 1)
                             {
                                 var below = _members[index + 1];
-                                <li class="gap" aria-label="@($"Mellan {member.RoleName} och {below.RoleName}")">
+                                <li class="gap" aria-label="@($"Between {member.RoleName} and {below.RoleName}")">
                                     <label>
-                                        Vid start, vänta
+                                        On start, wait
                                         <select @bind="below.StartDelaySec">
                                             @foreach (var seconds in Choices(GroupsHandler.StartDelayChoices, below.StartDelaySec))
                                             {
@@ -121,11 +121,11 @@
                                         </select>
                                     </label>
                                     <label>
-                                        Vid stopp, eftergång
+                                        On stop, run on
                                         <select @bind="member.RunOnSec">
                                             @foreach (var seconds in Choices(GroupsHandler.RunOnChoices, member.RunOnSec))
                                             {
-                                                <option value="@seconds">@(seconds == 0 ? "Ingen" : EventText.Seconds(seconds))</option>
+                                                <option value="@seconds">@(seconds == 0 ? "None" : EventText.Seconds(seconds))</option>
                                             }
                                         </select>
                                     </label>
@@ -135,54 +135,54 @@
                     </ol>
                     @if (!State.IsConnected)
                     {
-                        <p class="hint">Ingen kontakt med reläkortet. Vilka reläer som ingår och deras ordning kan ändras när kortet svarar.</p>
+                        <p class="hint">No contact with the relay board. The relays and their order can be changed once the board responds.</p>
                     }
                     else if (!CanChangeMembers)
                     {
-                        <p class="hint">Stäng av gruppen för att ändra vilka reläer som ingår eller deras ordning.</p>
+                        <p class="hint">Turn the group off to change its relays or their order.</p>
                     }
                     else if (_members.Count < Relay.Count && AddableRelays.Any())
                     {
                         <div class="add">
-                            <label for="add-relay" class="visually-hidden">Relä att lägga till</label>
+                            <label for="add-relay" class="visually-hidden">Relay to add</label>
                             <select id="add-relay" @bind="_addRelayId">
                                 @foreach (var relay in AddableRelays)
                                 {
-                                    <option value="@relay.Id">Relä @relay.Id · @relay.Name</option>
+                                    <option value="@relay.Id">Relay @relay.Id · @relay.Name</option>
                                 }
                             </select>
                             <button type="button" @onclick="AddRelay">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                                Lägg till relä
+                                Add relay
                             </button>
                         </div>
                     }
                 </section>
 
                 <section class="limits">
-                    <h2>Stäng av gruppen automatiskt efter</h2>
+                    <h2>Turn the group off automatically after</h2>
                     <div class="choices">
                         @foreach (var limit in RelaySettingsHandler.Limits)
                         {
-                            <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@(limit is { } m ? $"{m / 60} h" : "Aldrig")</button>
+                            <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@(limit is { } m ? $"{m / 60} h" : "Never")</button>
                         }
                     </div>
-                    <p class="hint">Gäller när någon slår på gruppen för hand. Stängs av i stoppordning, med eftergång.</p>
+                    <p class="hint">Applies when someone turns the group on by hand. It stops in its stop order, with its run-on times.</p>
                 </section>
 
                 <section class="schedules">
                     <div class="section-head">
-                        <h2>Schema</h2>
-                        <a href="grupp/@Id/schema/ny">Lägg till</a>
+                        <h2>Schedules</h2>
+                        <a href="group/@Id/schedule/new">Add</a>
                     </div>
                     @if (_schedules.Count == 0)
                     {
-                        <p class="hint">Inga scheman. Lägg till ett för att slå på gruppen vissa tider.</p>
+                        <p class="hint">No schedules. Add one to turn the group on at set times.</p>
                     }
                     @foreach (var schedule in _schedules)
                     {
                         <div class="schedule" @key="schedule.Id">
-                            <a href="schema/@schedule.Id" class="schedule-text">
+                            <a href="schedule/@schedule.Id" class="schedule-text">
                                 <span class="schedule-days">@ScheduleText.ShortDays(schedule.Days)</span>
                                 <span class="schedule-times">@ScheduleText.Times(schedule.OnTime, schedule.OffTime)</span>
                             </a>
@@ -191,19 +191,19 @@
                                     aria-pressed="@(schedule.IsEnabled ? "true" : "false")"
                                     aria-label="@($"{ScheduleText.ShortDays(schedule.Days)} {ScheduleText.Times(schedule.OnTime, schedule.OffTime)}")"
                                     disabled="@_busy"
-                                    @onclick="() => SetEnabledAsync(schedule)">@(schedule.IsEnabled ? "Aktiv" : "Pausad")</button>
+                                    @onclick="() => SetEnabledAsync(schedule)">@(schedule.IsEnabled ? "Active" : "Paused")</button>
                         </div>
                     }
                 </section>
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>Händelser</h2>
-                        <a href="handelser">Alla händelser</a>
+                        <h2>Events</h2>
+                        <a href="events">All events</a>
                     </div>
                     @if (_events.Count == 0)
                     {
-                        <p class="hint">Inget har hänt med gruppen än.</p>
+                        <p class="hint">Nothing has happened to this group yet.</p>
                     }
                     else
                     {
@@ -224,25 +224,25 @@
                 </section>
 
                 <section class="safety">
-                    <p>Spärren i appen fungerar bara när appen kör. Där säkerheten kräver det, t.ex. värme utan fläkt, ska den också lösas i elen.</p>
+                    <p>The app's interlock only works while the app runs. Where safety depends on it, e.g. heat without the fan, it must also be wired in the installation.</p>
                 </section>
 
                 @if (CanChangeMembers)
                 {
-                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Ta bort gruppen</button>
+                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Delete the group</button>
                 }
             </main>
 
             <div class="save">
                 @if (_changedElsewhere)
                 {
-                    <p class="warning" role="status">Någon annan har ändrat gruppen medan du hade sidan öppen. Spara skriver över den ändringen.</p>
+                    <p class="warning" role="status">Someone else changed the group while you had this page open. Saving overwrites their change.</p>
                 }
                 @if (_saveError is not null)
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">Spara</button>
+                <button type="submit" disabled="@_busy">Save</button>
             </div>
         </form>
 
@@ -250,11 +250,11 @@
         {
             <div class="backdrop">
                 <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
-                    <h2 id="confirm-title">Ta bort gruppen?</h2>
-                    <p>Reläerna blir vanliga reläer igen och styrs var för sig. Gruppens scheman tas också bort.</p>
+                    <h2 id="confirm-title">Delete the group?</h2>
+                    <p>Its relays become ordinary relays again, switched one by one. The group's schedules are deleted too.</p>
                     <div class="dialog-buttons">
-                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Avbryt</button>
-                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Ta bort</button>
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Cancel</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Delete</button>
                     </div>
                 </div>
             </div>
@@ -275,7 +275,7 @@
     private SignedInUser? _user;
     private bool _loaded;
     private bool _busy;
-    private const string SomethingWentWrong = "Något gick fel. Försök igen.";
+    private const string SomethingWentWrong = "Something went wrong. Try again.";
 
     private List<EditMember> _removed = [];
     private Timer? _tick;
@@ -410,15 +410,15 @@
         var level = GroupPlanner.Level(_group.Infos, State);
         if (on && runtime.Phase == GroupPhases.Stopping && index == level - 1 && runtime.NextStepAtUtc is { } next && next > Clock.UtcNow)
         {
-            return $"Går {GroupStatusText.Remaining(next - Clock.UtcNow)} till";
+            return $"Runs on for {GroupStatusText.Remaining(next - Clock.UtcNow)}";
         }
 
         if (on)
         {
-            return "På";
+            return "On";
         }
 
-        return blockedBy is not null ? $"Kräver att {blockedBy.RoleName} är på" : "Av";
+        return blockedBy is not null ? $"Needs {blockedBy.RoleName} to be on" : "Off";
     }
 
     private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)
@@ -484,13 +484,13 @@
 
         if (email == _user?.Email)
         {
-            return "du";
+            return "you";
         }
 
         return email switch
         {
-            EventActors.Schedule => "schema",
-            EventActors.AutoOff => "auto-av",
+            EventActors.Schedule => "schedule",
+            EventActors.AutoOff => "auto-off",
             _ => _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email),
         };
     }
@@ -517,7 +517,7 @@
         }
         catch (BoardNotConnectedException)
         {
-            _toggleError = "Kortet svarar inte. Försök igen.";
+            _toggleError = "The board isn't responding. Try again.";
         }
         catch (Exception ex)
         {
@@ -549,7 +549,7 @@
         }
         catch (BoardNotConnectedException)
         {
-            _memberError = (relayId, "Kortet svarar inte. Försök igen.");
+            _memberError = (relayId, "The board isn't responding. Try again.");
         }
         catch (Exception ex)
         {

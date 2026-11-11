@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The Debugging setting on Inställningar, the Debug tab it adds for that person, and the Debug screen.
+/// The Debugging setting on Settings, the Debug tab it adds for that person, and the Debug screen.
 /// </summary>
 public sealed class DebugPageTests
 {
@@ -53,12 +53,12 @@ public sealed class DebugPageTests
         using var http = app.CreateClient();
 
         var before = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
-        Assert.Contains("Visa trafiken till reläkortet", before, StringComparison.Ordinal);
+        Assert.Contains("Show the traffic to the relay board", before, StringComparison.Ordinal);
         Assert.DoesNotContain("href=\"debug\"", before, StringComparison.Ordinal);
 
         await app.Services.GetRequiredService<BoardTrafficSetting>().SetAsync(John, true, Cancel);
 
-        foreach (var path in new[] { "/", "/handelser", "/settings" })
+        foreach (var path in new[] { "/", "/events", "/settings" })
         {
             var html = WebUtility.HtmlDecode(await http.GetStringAsync(path, Cancel));
             Assert.Contains("href=\"debug\"", html, StringComparison.Ordinal);
@@ -83,11 +83,11 @@ public sealed class DebugPageTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/debug", Cancel));
 
         Assert.Matches("<h1[^>]*>Debug</h1>", html);
-        Assert.Contains("Ansluter till 127.0.0.1:1", html, StringComparison.Ordinal);
-        Assert.Contains("Anslutningen bröts", html, StringComparison.Ordinal);
+        Assert.Contains("Connecting to 127.0.0.1:1", html, StringComparison.Ordinal);
+        Assert.Contains("Connection lost", html, StringComparison.Ordinal);
         Assert.Contains("href=\"debug\" aria-current=\"page\"", html, StringComparison.Ordinal);
         Assert.True(
-            html.IndexOf("Anslutningen bröts", StringComparison.Ordinal) < html.LastIndexOf("Ansluter till", StringComparison.Ordinal),
+            html.IndexOf("Connection lost", StringComparison.Ordinal) < html.LastIndexOf("Connecting to", StringComparison.Ordinal),
             "The newest step comes first.");
     }
 

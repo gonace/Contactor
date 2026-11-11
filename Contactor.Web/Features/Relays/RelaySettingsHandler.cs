@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Relays;
 
-/// <summary>What the Relä screen edits.</summary>
+/// <summary>What the Relay screen edits.</summary>
 public sealed record RelaySettings(int Id, string Name, bool IsActive, int? MaxOnMinutes);
 
 /// <summary>
@@ -49,7 +49,7 @@ public sealed class RelaySettingsHandler
     /// "1 h" means it should not run longer than that. If that time has passed, auto-off turns it off at its next
     /// check. A relay a schedule turned on is left alone.
     /// </summary>
-    /// <returns>Null when saved, otherwise the message to show (in Swedish).</returns>
+    /// <returns>Null when saved, otherwise the message to show.</returns>
     public async Task<string?> SaveAsync(RelaySettings settings, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -62,19 +62,19 @@ public sealed class RelaySettingsHandler
         var name = settings.Name.Trim();
         if (name.Length == 0)
         {
-            return "Skriv ett namn.";
+            return "Enter a name.";
         }
 
         if (name.Length > Relay.NameMaxLength)
         {
-            return $"Namnet får vara högst {Relay.NameMaxLength} tecken.";
+            return $"The name can be at most {Relay.NameMaxLength} characters.";
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var relay = await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
         if (relay is null)
         {
-            return "Reläet finns inte.";
+            return "The relay doesn't exist.";
         }
 
         var now = _clock.UtcNow;

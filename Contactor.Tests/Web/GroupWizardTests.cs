@@ -3,15 +3,15 @@ using Contactor.Web.Persistence;
 
 namespace Contactor.Tests.Web;
 
-/// <summary>"Ny grupp" between its steps: one start order, and taps that arrive after the page moved on.</summary>
+/// <summary>"New group" between its steps: one start order, and taps that arrive after the page moved on.</summary>
 public sealed class GroupWizardTests
 {
     [Fact]
     public void Should_KeepStepTwosNumbers_InTheOrderStepThreeChose()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(3, "Relä 3");
-        wizard.Toggle(1, "Relä 1");
+        wizard.Toggle(3, "Relay 3");
+        wizard.Toggle(1, "Relay 1");
         Assert.True(wizard.GoOn(2));
 
         wizard.Move(1, -1);
@@ -25,26 +25,26 @@ public sealed class GroupWizardTests
     public void Should_PutARelayPickedAgainLast_KeepingItsNameAndWaits()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(3, "Relä 3");
-        wizard.Toggle(1, "Relä 1");
-        wizard.Toggle(5, "Relä 5");
-        wizard.Members[0].RoleName = "Fläkt";
+        wizard.Toggle(3, "Relay 3");
+        wizard.Toggle(1, "Relay 1");
+        wizard.Toggle(5, "Relay 5");
+        wizard.Members[0].RoleName = "Fan";
         wizard.Members[0].RunOnSec = 300;
 
-        wizard.Toggle(3, "Relä 3");
-        wizard.Toggle(3, "Relä 3");
+        wizard.Toggle(3, "Relay 3");
+        wizard.Toggle(3, "Relay 3");
 
         Assert.Equal([1, 5, 3], wizard.Members.Select(m => m.RelayId));
         Assert.Equal(3, wizard.OrderOf(3));
-        Assert.Equal(("Fläkt", 300), (wizard.Members[2].RoleName, wizard.Members[2].RunOnSec));
+        Assert.Equal(("Fan", 300), (wizard.Members[2].RoleName, wizard.Members[2].RunOnSec));
     }
 
     [Fact]
     public void Should_IgnoreASecondTap_ThatArrivesAfterThePageMovedOn()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(1, "Relä 1");
-        wizard.Toggle(2, "Relä 2");
+        wizard.Toggle(1, "Relay 1");
+        wizard.Toggle(2, "Relay 2");
 
         Assert.True(wizard.Back(2));
         Assert.False(wizard.Back(2));
@@ -64,30 +64,30 @@ public sealed class GroupWizardTests
         Assert.False(wizard.GoOn(1));
         wizard.Name = "   ";
         Assert.False(wizard.GoOn(1));
-        wizard.Name = "Värmefläkt";
+        wizard.Name = "Fan heater";
         Assert.True(wizard.GoOn(1));
 
-        wizard.Toggle(1, "Relä 1");
+        wizard.Toggle(1, "Relay 1");
         Assert.False(wizard.GoOn(2));
-        wizard.Toggle(2, "Relä 2");
+        wizard.Toggle(2, "Relay 2");
         Assert.True(wizard.GoOn(2));
 
         wizard.Members[1].RoleName = " ";
         Assert.False(wizard.GoOn(3));
-        wizard.Members[1].RoleName = " Värme ";
+        wizard.Members[1].RoleName = " Heat ";
         Assert.True(wizard.GoOn(3));
 
         Assert.False(wizard.GoOn(4));
         Assert.Equal(GroupWizard.StepCount, wizard.Step);
-        Assert.Equal("Värme", wizard.Draft.Members[1].RoleName);
+        Assert.Equal("Heat", wizard.Draft.Members[1].RoleName);
     }
 
     [Fact]
     public void Should_IgnoreMovesOutsideTheList()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(1, "Relä 1");
-        wizard.Toggle(2, "Relä 2");
+        wizard.Toggle(1, "Relay 1");
+        wizard.Toggle(2, "Relay 2");
 
         wizard.Move(0, -1);
         wizard.Move(1, 1);
@@ -109,7 +109,7 @@ public sealed class GroupWizardTests
 
     private static GroupWizard AtStepTwo()
     {
-        var wizard = new GroupWizard { Name = "Värmefläkt" };
+        var wizard = new GroupWizard { Name = "Fan heater" };
         Assert.True(wizard.GoOn(1));
         return wizard;
     }

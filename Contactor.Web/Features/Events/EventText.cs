@@ -8,14 +8,14 @@ namespace Contactor.Web.Features.Events;
 /// <summary>How an event is drawn: the badge, who did it, what they did, and to what.</summary>
 /// <param name="IsPerson">A person (filled badge with their initial) rather than something automatic (dashed badge).</param>
 /// <param name="Badge">The letter in the badge.</param>
-/// <param name="Who">Shown in bold, e.g. "Jane" or "Schema".</param>
-/// <param name="What">Follows it, e.g. "slog på".</param>
+/// <param name="Who">Shown in bold, e.g. "Jane" or "Schedule".</param>
+/// <param name="What">Follows it, e.g. "turned on".</param>
 /// <param name="Target">The line below, usually the relay's name; null when there is none.</param>
 /// <param name="IsAlert">Shown in red: a safety shut-off, or a group that couldn't start.</param>
 public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false);
 
 /// <summary>
-/// Turns stored events into the Swedish text of the Händelser screen.
+/// Turns stored events into the text of the Events screen.
 /// </summary>
 public static class EventText
 {
@@ -31,7 +31,7 @@ public static class EventText
         var badge = !isPerson ? entry.Action == EventActions.InputChanged ? "I" : "A"
             : who.Length > 0 ? who[..1].ToUpper(CultureInfo.InvariantCulture)
             : "?";
-        var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? "gruppen";
+        var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? "the group";
         if (group is not null && GroupText(entry, relayName, group) is { } text)
         {
             return new EventView(isPerson, badge, who, text.What, text.Target, text.IsAlert);
@@ -42,41 +42,41 @@ public static class EventText
         return new EventView(isPerson, badge, who, what, target);
     }
 
-    // A group's own events: "John slog på gruppen" over "Värmefläkt · Fläkt → 3 s → Värme", "Eftergång: Fläkt går 5 min
-    // till", the red "Säkerhetsavstängning: Värme stängdes av eftersom Fläkt var av". A relay of a group switched on its
-    // own is an ordinary on/off and returns null.
+    // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan runs on for
+    // 5 min", the red "Safety shut-off: Heat turned off because Fan was off". A relay of a group switched on its own is an
+    // ordinary on/off and returns null.
     private static (string What, string? Target, bool IsAlert)? GroupText(EventLogEntry entry, string? relayName, string groupName)
     {
-        var role = Text(entry.Details, "role") ?? relayName ?? "reläet";
+        var role = Text(entry.Details, "role") ?? relayName ?? "the relay";
         return entry.Action switch
         {
-            EventActions.GroupOn => ("slog på gruppen", Chain(entry.Details) is { } chain ? $"{groupName} · {chain}" : groupName, false),
-            EventActions.GroupOff when entry.Actor == EventActors.AutoOff => ($"stängde av gruppen efter {Duration(Number(entry.Details, "afterMinutes"))}", groupName, false),
-            EventActions.GroupOff => ("stängde av gruppen", groupName, false),
-            EventActions.RunOnStart => ($"{role} går {Seconds(Number(entry.Details, "seconds"))} till", groupName, false),
-            EventActions.RunOnEnd => ($"{role} avstängd", groupName, false),
+            EventActions.GroupOn => ("turned on the group", Chain(entry.Details) is { } chain ? $"{groupName} · {chain}" : groupName, false),
+            EventActions.GroupOff when entry.Actor == EventActors.AutoOff => ($"turned off the group after {Duration(Number(entry.Details, "afterMinutes"))}", groupName, false),
+            EventActions.GroupOff => ("turned off the group", groupName, false),
+            EventActions.RunOnStart => ($"{role} runs on for {Seconds(Number(entry.Details, "seconds"))}", groupName, false),
+            EventActions.RunOnEnd => ($"{role} off", groupName, false),
             EventActions.InterlockTrip => (TripText(entry.Details), groupName, true),
-            EventActions.GroupStartFailed => ($"kunde inte starta {Text(entry.Details, "role") ?? role}", groupName, true),
-            EventActions.GroupCreate => ("skapade gruppen", groupName, false),
-            EventActions.GroupEdit => ("ändrade gruppen", groupName, false),
-            EventActions.GroupDelete => ("tog bort gruppen", groupName, false),
+            EventActions.GroupStartFailed => ($"couldn't start {Text(entry.Details, "role") ?? role}", groupName, true),
+            EventActions.GroupCreate => ("created the group", groupName, false),
+            EventActions.GroupEdit => ("changed the group", groupName, false),
+            EventActions.GroupDelete => ("deleted the group", groupName, false),
             _ => null,
         };
     }
 
-    // "Värme stängdes av eftersom Fläkt var av", from {"missing":"Fläkt","off":["Värme"]}.
+    // "Heat turned off because Fan was off", from {"missing":"Fan","off":["Heat"]}.
     private static string TripText(string? details)
     {
-        var missing = Text(details, "missing") ?? "reläet ovanför";
+        var missing = Text(details, "missing") ?? "the relay above";
         var off = Read(details, "off") is { ValueKind: JsonValueKind.Array } array
             ? array.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToList()
             : [];
         return off.Count == 0
-            ? $"{missing} startades"
-            : $"{string.Join(" och ", off)} stängdes av eftersom {missing} var av";
+            ? $"{missing} was started"
+            : $"{string.Join(" and ", off)} turned off because {missing} was off";
     }
 
-    // "Fläkt → 3 s → Värme", from {"steps":["Fläkt","Värme"],"delays":[3]}.
+    // "Fan → 3 s → Heat", from {"steps":["Fan","Heat"],"delays":[3]}.
     private static string? Chain(string? details)
     {
         if (Read(details, "steps") is not { ValueKind: JsonValueKind.Array } steps)
@@ -107,7 +107,7 @@ public static class EventText
     {
         return seconds switch
         {
-            null or < 0 => "en stund",
+            null or < 0 => "a while",
             < 60 => $"{seconds} s",
             _ when seconds % 60 == 0 => Duration(seconds / 60),
             _ => $"{((long)seconds + 59) / 60} min",
@@ -121,16 +121,16 @@ public static class EventText
         return actor.Contains('@', StringComparison.Ordinal);
     }
 
-    /// <summary>The short form for the relay screen's status line, e.g. "Av sedan 12:15 · schema".</summary>
+    /// <summary>The short form for the relay screen's status line, e.g. "Off since 12:15 · schedule".</summary>
     public static string ShortWho(string actor, string? personName)
     {
         ArgumentNullException.ThrowIfNull(actor);
         return actor switch
         {
-            EventActors.Schedule => "schema",
-            EventActors.AutoOff => "auto-av",
-            EventActors.External => "utanför appen",
-            EventActors.System => "systemet",
+            EventActors.Schedule => "schedule",
+            EventActors.AutoOff => "auto-off",
+            EventActors.External => "at the board",
+            EventActors.System => "the system",
             _ => personName ?? actor,
         };
     }
@@ -139,49 +139,48 @@ public static class EventText
     {
         return entry.Action switch
         {
-            EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled => "Kortet",
-            EventActions.InputChanged => "Ingången",
-            EventActions.RunOnStart => "Eftergång:",
-            EventActions.RunOnEnd => "Eftergång klar:",
-            EventActions.InterlockTrip => "Säkerhetsavstängning:",
-            EventActions.GroupStartFailed => "Gruppen",
+            EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled => "The board",
+            EventActions.InputChanged => "The input",
+            EventActions.RunOnStart => "Run-on:",
+            EventActions.RunOnEnd => "Run-on done:",
+            EventActions.InterlockTrip => "Safety shut-off:",
+            EventActions.GroupStartFailed => "The group",
             _ => entry.Actor switch
             {
-                EventActors.Schedule => "Schema",
-                EventActors.AutoOff => "Auto-av",
-                EventActors.External => "Utanför appen",
-                _ => "Systemet",
+                EventActors.Schedule => "Schedule",
+                EventActors.AutoOff => "Auto-off",
+                EventActors.External => "At the board:",
+                _ => "System",
             },
         };
     }
 
     private static (string What, string? Target) WhatFor(EventLogEntry entry, string? relayName)
     {
-        var external = entry.Actor == EventActors.External;
         return entry.Action switch
         {
-            EventActions.On => (external ? "slogs på" : "slog på", relayName),
-            EventActions.Off when entry.Actor == EventActors.AutoOff => ($"stängde av efter {Duration(Number(entry.Details, "afterMinutes"))}", relayName),
-            EventActions.Off => (external ? "stängdes av" : "stängde av", relayName),
-            EventActions.Rename => ($"döpte om {Text(entry.Details, "from") ?? relayName} till", Text(entry.Details, "to") ?? relayName),
-            EventActions.Activate => ("gjorde reläet aktivt", relayName),
-            EventActions.Deactivate => ("gjorde reläet inaktivt", relayName),
-            EventActions.ScheduleAdd => (WithSchedule("lade till schema", "lade till ett schema", entry.Details), relayName),
-            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is false => (WithSchedule("pausade schema", "pausade ett schema", entry.Details), relayName),
-            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is true => (WithSchedule("aktiverade schema", "aktiverade ett schema", entry.Details), relayName),
-            EventActions.ScheduleEdit => (WithSchedule("ändrade schema till", "ändrade ett schema", entry.Details), relayName),
-            EventActions.ScheduleDelete => (WithSchedule("tog bort schema", "tog bort ett schema", entry.Details), relayName),
-            EventActions.ConnectionLost => ("tappade kontakten med appen", null),
-            EventActions.ConnectionRestored => ("fick kontakt igen", null),
-            EventActions.InputChanged => (Bool(entry.Details, "on") == true ? "slogs på" : "slogs av", null),
-            EventActions.BoardTimersDisabled => ("fick sina egna timers avstängda", null),
-            EventActions.BoardLoginChanged => ("ändrade reläkortets inloggning", null),
-            EventActions.BoardAddressChanged => ($"ändrade reläkortets adress från {Text(entry.Details, "from") ?? "?"} till {Text(entry.Details, "to") ?? "?"}", null),
+            EventActions.On => ("turned on", relayName),
+            EventActions.Off when entry.Actor == EventActors.AutoOff => ($"turned off after {Duration(Number(entry.Details, "afterMinutes"))}", relayName),
+            EventActions.Off => ("turned off", relayName),
+            EventActions.Rename => ($"renamed {Text(entry.Details, "from") ?? relayName} to", Text(entry.Details, "to") ?? relayName),
+            EventActions.Activate => ("made the relay active", relayName),
+            EventActions.Deactivate => ("made the relay inactive", relayName),
+            EventActions.ScheduleAdd => (WithSchedule("added schedule", "added a schedule", entry.Details), relayName),
+            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is false => (WithSchedule("paused schedule", "paused a schedule", entry.Details), relayName),
+            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is true => (WithSchedule("resumed schedule", "resumed a schedule", entry.Details), relayName),
+            EventActions.ScheduleEdit => (WithSchedule("changed schedule to", "changed a schedule", entry.Details), relayName),
+            EventActions.ScheduleDelete => (WithSchedule("deleted schedule", "deleted a schedule", entry.Details), relayName),
+            EventActions.ConnectionLost => ("lost contact with the app", null),
+            EventActions.ConnectionRestored => ("is in contact again", null),
+            EventActions.InputChanged => (Bool(entry.Details, "on") == true ? "turned on" : "turned off", null),
+            EventActions.BoardTimersDisabled => ("had its own timers turned off", null),
+            EventActions.BoardLoginChanged => ("changed the relay board's login", null),
+            EventActions.BoardAddressChanged => ($"changed the relay board's address from {Text(entry.Details, "from") ?? "?"} to {Text(entry.Details, "to") ?? "?"}", null),
             _ => (entry.Action, relayName),
         };
     }
 
-    // "lade till schema mån–fre 06:30–08:00", or the plain words when the details can't be read.
+    // "added schedule Mon–Fri 06:30–08:00", or the plain words when the details can't be read.
     private static string WithSchedule(string words, string fallback, string? details)
     {
         var days = Number(details, "days");
@@ -202,7 +201,7 @@ public static class EventText
     {
         return minutes switch
         {
-            null or <= 0 => "en stund",
+            null or <= 0 => "a while",
             _ when minutes % 60 == 0 => $"{minutes / 60} h",
             _ => $"{minutes} min",
         };

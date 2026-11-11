@@ -4,7 +4,7 @@ using Contactor.Web.Persistence;
 
 namespace Contactor.Web.Features.Events;
 
-/// <summary>Which events the Händelser screen shows.</summary>
+/// <summary>Which events the Events screen shows.</summary>
 public enum EventFilter
 {
     All,
@@ -12,21 +12,20 @@ public enum EventFilter
     Automatic,
 }
 
-/// <summary>One row on the Händelser screen.</summary>
+/// <summary>One row on the Events screen.</summary>
 public sealed record EventRow(int Id, DateTime TimestampLocal, EventView View);
 
-/// <summary>A day's events under its heading, e.g. "IDAG".</summary>
+/// <summary>A day's events under its heading, e.g. "TODAY".</summary>
 public sealed record EventDay(string Heading, IReadOnlyList<EventRow> Rows);
 
 /// <summary>
-/// Reads the event log for the Händelser screen, newest first, a page at a time.
+/// Reads the event log for the Events screen, newest first, a page at a time.
 /// </summary>
 public sealed class EventsHandler
 {
     public const int PageSize = 50;
 
-    private static readonly string[] Weekdays = ["SÖNDAG", "MÅNDAG", "TISDAG", "ONSDAG", "TORSDAG", "FREDAG", "LÖRDAG"];
-    private static readonly string[] Months = ["JAN", "FEB", "MARS", "APR", "MAJ", "JUNI", "JULI", "AUG", "SEP", "OKT", "NOV", "DEC"];
+    private static readonly string[] Months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
@@ -109,33 +108,32 @@ public sealed class EventsHandler
             .Select(g => new EventDay(Heading(g.Key, today), [.. g]))];
     }
 
-    /// <summary>The day under an event on the Relä screen: "Idag", "I går", otherwise e.g. "Måndag 2 nov".</summary>
+    /// <summary>The day under an event on the Relay screen: "Today", "Yesterday", otherwise e.g. "Monday 2 Nov".</summary>
     public string DayLabel(DateTime local)
     {
-        var heading = Heading(local, _clock.Now);
-        return heading switch
-        {
-            "IDAG" => "Idag",
-            "IGÅR" => "I går",
-            _ => string.Concat(heading[..1], heading[1..].ToLower(CultureInfo.InvariantCulture)),
-        };
+        return Day(local, _clock.Now);
     }
 
-    /// <summary>"IDAG", "IGÅR", otherwise e.g. "MÅNDAG 2 NOV" (with the year when it isn't this year).</summary>
+    /// <summary>"TODAY", "YESTERDAY", otherwise e.g. "MONDAY 2 NOV" (with the year when it isn't this year).</summary>
     public static string Heading(DateTime day, DateTime today)
+    {
+        return Day(day, today).ToUpper(CultureInfo.InvariantCulture);
+    }
+
+    private static string Day(DateTime day, DateTime today)
     {
         var days = (today.Date - day.Date).Days;
         if (days == 0)
         {
-            return "IDAG";
+            return "Today";
         }
 
         if (days == 1)
         {
-            return "IGÅR";
+            return "Yesterday";
         }
 
-        var heading = $"{Weekdays[(int)day.DayOfWeek]} {day.Day.ToString(CultureInfo.InvariantCulture)} {Months[day.Month - 1]}";
-        return day.Year == today.Year ? heading : $"{heading} {day.Year.ToString(CultureInfo.InvariantCulture)}";
+        var text = $"{day.DayOfWeek} {day.Day.ToString(CultureInfo.InvariantCulture)} {Months[day.Month - 1]}";
+        return day.Year == today.Year ? text : $"{text} {day.Year.ToString(CultureInfo.InvariantCulture)}";
     }
 }

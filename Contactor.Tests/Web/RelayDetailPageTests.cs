@@ -6,7 +6,7 @@ using Contactor.Web.Persistence;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The Relä screen as the server first renders it, with no board connected.
+/// The Relay screen as the server first renders it, with no board connected.
 /// </summary>
 public sealed class RelayDetailPageTests
 {
@@ -18,14 +18,14 @@ public sealed class RelayDetailPageTests
         await using var app = CreateApp();
         using var http = app.CreateClient();
 
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/rele/3", Cancel));
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/3", Cancel));
 
-        Assert.Contains("RELÄ 3 · NAMN", html, StringComparison.Ordinal);
-        Assert.Contains("value=\"Relä 3\"", html, StringComparison.Ordinal);
-        Assert.Contains("Av just nu.", html, StringComparison.Ordinal);
-        Assert.Contains("SLÅ PÅ", html, StringComparison.Ordinal);
+        Assert.Contains("RELAY 3 · NAME", html, StringComparison.Ordinal);
+        Assert.Contains("value=\"Relay 3\"", html, StringComparison.Ordinal);
+        Assert.Contains("Off right now.", html, StringComparison.Ordinal);
+        Assert.Contains("TURN ON", html, StringComparison.Ordinal);
         Assert.Matches("aria-pressed=\"true\"[^>]*>2 h</button>", html);
-        Assert.Contains("Inget har hänt med reläet än.", html, StringComparison.Ordinal);
+        Assert.Contains("Nothing has happened to this relay yet.", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -45,16 +45,16 @@ public sealed class RelayDetailPageTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/rele/3", Cancel));
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/3", Cancel));
 
-        Assert.Equal(4, html.Split("slog på").Length - 1);
-        Assert.DoesNotContain("stängde av", html, StringComparison.Ordinal);
-        Assert.Contains("Idag", html, StringComparison.Ordinal);
+        Assert.Equal(4, html.Split("turned on").Length - 1);
+        Assert.DoesNotContain("turned off", html, StringComparison.Ordinal);
+        Assert.Contains("Today", html, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("/rele/9")]
-    [InlineData("/rele/0")]
+    [InlineData("/relay/9")]
+    [InlineData("/relay/0")]
     public async Task Should_SayTheRelayDoesNotExist(string path)
     {
         await using var app = CreateApp();
@@ -62,7 +62,7 @@ public sealed class RelayDetailPageTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync(path, Cancel));
 
-        Assert.Contains("Reläet finns inte.", html, StringComparison.Ordinal);
+        Assert.Contains("The relay doesn't exist.", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class RelayDetailPageTests
 
         for (var id = 1; id <= 8; id++)
         {
-            Assert.Contains($"href=\"rele/{id}\"", html, StringComparison.Ordinal);
+            Assert.Contains($"href=\"relay/{id}\"", html, StringComparison.Ordinal);
         }
     }
 

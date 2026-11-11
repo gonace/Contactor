@@ -48,8 +48,8 @@ public sealed class EventsHandlerTests : IAsyncLifetime
 
         var rows = await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel);
 
-        Assert.Equal(["Schema", "Jane"], rows.Select(r => r.View.Who));
-        Assert.Equal("Relä 1", rows[0].View.Target);
+        Assert.Equal(["Schedule", "Jane"], rows.Select(r => r.View.Who));
+        Assert.Equal("Relay 1", rows[0].View.Target);
         Assert.Equal(new DateTime(2026, 11, 4, 14, 0, 0), rows[0].TimestampLocal);
     }
 
@@ -128,13 +128,13 @@ public sealed class EventsHandlerTests : IAsyncLifetime
 
         var days = Handler.GroupByDay(await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel));
 
-        Assert.Equal(["IDAG", "IGÅR", "MÅNDAG 2 NOV"], days.Select(d => d.Heading));
+        Assert.Equal(["TODAY", "YESTERDAY", "MONDAY 2 NOV"], days.Select(d => d.Heading));
         Assert.All(days, d => Assert.Single(d.Rows));
     }
 
     [Theory]
-    [InlineData(2026, 10, 25, "SÖNDAG 25 OKT")]
-    [InlineData(2025, 12, 31, "ONSDAG 31 DEC 2025")]
+    [InlineData(2026, 10, 25, "SUNDAY 25 OCT")]
+    [InlineData(2025, 12, 31, "WEDNESDAY 31 DEC 2025")]
     public void Should_NameOlderDays(int year, int month, int day, string heading)
     {
         Assert.Equal(heading, EventsHandler.Heading(new DateTime(year, month, day), new DateTime(2026, 11, 4)));
@@ -145,7 +145,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     {
         await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.RelayGroups.Add(new RelayGroup { Name = "Värmefläkt", Icon = GroupIcons.Fan });
+            db.RelayGroups.Add(new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan });
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -158,7 +158,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
         var rows = await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel, groupId: 1);
 
         var row = Assert.Single(rows);
-        Assert.Equal(("slog på gruppen", "Värmefläkt"), (row.View.What, row.View.Target));
+        Assert.Equal(("turned on the group", "Fan heater"), (row.View.What, row.View.Target));
     }
 
     private static EventLogEntry Event(string actor, string action, DateTime timestampUtc, int? relayId)

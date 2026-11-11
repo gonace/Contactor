@@ -4,54 +4,53 @@ using Contactor.Web.Persistence;
 namespace Contactor.Web.Features.Schedules;
 
 /// <summary>
-/// The Swedish words for a schedule's days and times, e.g. "Mån–Fre" in a list and "Måndag till fredag" in a
-/// sentence.
+/// The words for a schedule's days and times, e.g. "Mon–Fri" in a list and "Monday to Friday" in a sentence.
 /// </summary>
 public static class ScheduleText
 {
-    /// <summary>Monday first, as on a Swedish calendar.</summary>
+    /// <summary>Monday first, as in ISO 8601.</summary>
     public static readonly IReadOnlyList<(ScheduleDays Day, string Letter, string Short, string Name)> Days =
     [
-        (ScheduleDays.Monday, "M", "Mån", "måndag"),
-        (ScheduleDays.Tuesday, "T", "Tis", "tisdag"),
-        (ScheduleDays.Wednesday, "O", "Ons", "onsdag"),
-        (ScheduleDays.Thursday, "T", "Tor", "torsdag"),
-        (ScheduleDays.Friday, "F", "Fre", "fredag"),
-        (ScheduleDays.Saturday, "L", "Lör", "lördag"),
-        (ScheduleDays.Sunday, "S", "Sön", "söndag"),
+        (ScheduleDays.Monday, "M", "Mon", "Monday"),
+        (ScheduleDays.Tuesday, "T", "Tue", "Tuesday"),
+        (ScheduleDays.Wednesday, "W", "Wed", "Wednesday"),
+        (ScheduleDays.Thursday, "T", "Thu", "Thursday"),
+        (ScheduleDays.Friday, "F", "Fri", "Friday"),
+        (ScheduleDays.Saturday, "S", "Sat", "Saturday"),
+        (ScheduleDays.Sunday, "S", "Sun", "Sunday"),
     ];
 
     private static readonly ScheduleDays Weekend = ScheduleDays.Saturday | ScheduleDays.Sunday;
 
-    /// <summary>For lists: "Varje dag", "Mån–Fre", "Lör–Sön", "Lördag", or "Mån, Ons, Fre".</summary>
+    /// <summary>For lists: "Every day", "Mon–Fri", "Sat–Sun", "Saturday", or "Mon, Wed, Fri".</summary>
     public static string ShortDays(ScheduleDays days)
     {
         var chosen = Chosen(days);
         return days switch
         {
-            ScheduleDays.All => "Varje dag",
-            _ when days == Weekend => "Lör–Sön",
-            _ when chosen.Count == 1 => Capitalize(chosen[0].Name),
+            ScheduleDays.All => "Every day",
+            _ when days == Weekend => "Sat–Sun",
+            _ when chosen.Count == 1 => chosen[0].Name,
             _ when IsRun(chosen) => $"{chosen[0].Short}–{chosen[^1].Short}",
             _ => string.Join(", ", chosen.Select(d => d.Short)),
         };
     }
 
-    /// <summary>For sentences: "Varje dag", "Måndag till fredag", "Lördag och söndag", or "Måndag, onsdag och fredag".</summary>
+    /// <summary>For sentences: "Every day", "Monday to Friday", "Saturday and Sunday", or "Monday, Wednesday and Friday".</summary>
     public static string LongDays(ScheduleDays days)
     {
         var chosen = Chosen(days);
         return days switch
         {
-            ScheduleDays.None => "Inga dagar valda",
-            ScheduleDays.All => "Varje dag",
-            _ when chosen.Count == 1 => Capitalize(chosen[0].Name),
-            _ when IsRun(chosen) => Capitalize($"{chosen[0].Name} till {chosen[^1].Name}"),
-            _ => Capitalize($"{string.Join(", ", chosen.SkipLast(1).Select(d => d.Name))} och {chosen[^1].Name}"),
+            ScheduleDays.None => "No days chosen",
+            ScheduleDays.All => "Every day",
+            _ when chosen.Count == 1 => chosen[0].Name,
+            _ when IsRun(chosen) => $"{chosen[0].Name} to {chosen[^1].Name}",
+            _ => $"{string.Join(", ", chosen.SkipLast(1).Select(d => d.Name))} and {chosen[^1].Name}",
         };
     }
 
-    // Three or more days in a row, Monday first ("Mån–Fre", "Tis–Lör"); two days read better as a list.
+    // Three or more days in a row, Monday first ("Mon–Fri", "Tue–Sat"); two days read better as a list.
     private static bool IsRun(List<(ScheduleDays Day, string Letter, string Short, string Name)> chosen)
     {
         if (chosen.Count < 3)
@@ -63,16 +62,16 @@ public static class ScheduleText
         return chosen.Select((d, i) => Days[first + i].Day == d.Day).All(inRun => inRun);
     }
 
-    /// <summary>"Måndag till fredag: reläet slås på 06:30 och stängs av 08:00." ("… dagen efter." over midnight).</summary>
+    /// <summary>"Monday to Friday: the relay turns on at 06:30 and off at 08:00." ("… the next day." over midnight).</summary>
     public static string Summary(ScheduleDays days, TimeOnly on, TimeOnly off, bool group = false)
     {
         if (days == ScheduleDays.None)
         {
-            return "Inga dagar valda.";
+            return "No days chosen.";
         }
 
-        var nextDay = off < on ? " dagen efter" : "";
-        return $"{LongDays(days)}: {(group ? "gruppen" : "reläet")} slås på {Time(on)} och stängs av {Time(off)}{nextDay}.";
+        var nextDay = off < on ? " the next day" : "";
+        return $"{LongDays(days)}: the {(group ? "group" : "relay")} turns on at {Time(on)} and off at {Time(off)}{nextDay}.";
     }
 
     /// <summary>"06:30 – 08:00" for a list row.</summary>
@@ -81,10 +80,10 @@ public static class ScheduleText
         return $"{Time(on)} – {Time(off)}";
     }
 
-    /// <summary>"mån–fre 06:30–08:00", for the event log.</summary>
+    /// <summary>"Mon–Fri 06:30–08:00", for the event log.</summary>
     public static string Inline(ScheduleDays days, TimeOnly on, TimeOnly off)
     {
-        return $"{ShortDays(days).ToLower(CultureInfo.InvariantCulture)} {Time(on)}–{Time(off)}";
+        return $"{ShortDays(days)} {Time(on)}–{Time(off)}";
     }
 
     public static string Time(TimeOnly time)
@@ -95,10 +94,5 @@ public static class ScheduleText
     private static List<(ScheduleDays Day, string Letter, string Short, string Name)> Chosen(ScheduleDays days)
     {
         return [.. Days.Where(d => days.HasFlag(d.Day))];
-    }
-
-    private static string Capitalize(string text)
-    {
-        return text.Length == 0 ? text : char.ToUpper(text[0], CultureInfo.InvariantCulture) + text[1..];
     }
 }

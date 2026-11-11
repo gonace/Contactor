@@ -6,7 +6,7 @@ using Contactor.Web.Persistence;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The Händelser screen and the relay screen's off line, as the server first renders them.
+/// The Events screen and the relay screen's off line, as the server first renders them.
 /// </summary>
 public sealed class EventsPageTests
 {
@@ -25,18 +25,18 @@ public sealed class EventsPageTests
             Action = EventActions.On,
         });
 
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/handelser", Cancel));
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/events", Cancel));
 
-        Assert.Matches("<h1[^>]*>Händelser</h1>", html);
-        Assert.Contains("IDAG", html, StringComparison.Ordinal);
-        Assert.Matches("<strong[^>]*>John</strong> slog på", html);
-        Assert.Contains("Relä 2", html, StringComparison.Ordinal);
-        foreach (var filter in new[] { "Alla", "Personer", "Automatiskt" })
+        Assert.Matches("<h1[^>]*>Events</h1>", html);
+        Assert.Contains("TODAY", html, StringComparison.Ordinal);
+        Assert.Matches("<strong[^>]*>John</strong> turned on", html);
+        Assert.Contains("Relay 2", html, StringComparison.Ordinal);
+        foreach (var filter in new[] { "All", "People", "Automatic" })
         {
             Assert.Contains($">{filter}</button>", html, StringComparison.Ordinal); // The attributes come before ">".
         }
 
-        Assert.DoesNotContain("Visa fler", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Show more", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -49,9 +49,9 @@ public sealed class EventsPageTests
             await AddEventAsync(app, new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 1, Actor = "john@example.com", Action = EventActions.On });
         }
 
-        var html = await http.GetStringAsync("/handelser", Cancel);
+        var html = await http.GetStringAsync("/events", Cancel);
 
-        Assert.Contains("Visa fler", html, StringComparison.Ordinal);
+        Assert.Contains("Show more", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -60,10 +60,10 @@ public sealed class EventsPageTests
         await using var app = CreateApp();
         using var http = app.CreateClient();
 
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/handelser", Cancel));
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/events", Cancel));
 
-        Assert.Contains("Inga händelser än.", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Utvecklingsversion", html, StringComparison.Ordinal);
+        Assert.Contains("No events yet.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Development version", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -76,8 +76,8 @@ public sealed class EventsPageTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
-        Assert.Matches(@"Av sedan \d\d:\d\d · Alex", html);
-        Assert.Matches(@"Av sedan \d\d:\d\d · schema", html);
+        Assert.Matches(@"Off since \d\d:\d\d · Alex", html);
+        Assert.Matches(@"Off since \d\d:\d\d · schedule", html);
     }
 
     private static TestWebApp CreateApp()

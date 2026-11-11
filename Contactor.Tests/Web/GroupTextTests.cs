@@ -6,42 +6,42 @@ using Contactor.Web.Persistence;
 
 namespace Contactor.Tests.Web;
 
-/// <summary>A relay group's events in Händelser, and the status line under a group's name.</summary>
+/// <summary>A relay group's events in Events, and the status line under a group's name.</summary>
 public sealed class GroupTextTests
 {
     private static readonly DateTime Now = new(2026, 11, 8, 14, 2, 0, DateTimeKind.Utc);
 
     private static readonly GroupView FanHeater = new(
         1,
-        "Värmefläkt",
+        "Fan heater",
         GroupIcons.Fan,
         120,
-        [new GroupMemberView(1, 1, "Fläkt", 3, 300), new GroupMemberView(2, 2, "Värme", 3, 0)],
+        [new GroupMemberView(1, 1, "Fan", 3, 300), new GroupMemberView(2, 2, "Heat", 3, 0)],
         new GroupRuntime { GroupId = 1 });
 
     [Fact]
     public void Should_TellWhoStartedTheGroup_AndInWhatOrder()
     {
         var view = EventText.For(
-            Entry("john@example.com", EventActions.GroupOn, """{"steps":["Fläkt","Värme"],"delays":[3]}"""),
+            Entry("john@example.com", EventActions.GroupOn, """{"steps":["Fan","Heat"],"delays":[3]}"""),
             relayName: null,
             personName: "John",
-            groupName: "Värmefläkt");
+            groupName: "Fan heater");
 
-        Assert.Equal(("John", "slog på gruppen", "Värmefläkt · Fläkt → 3 s → Värme", false), (view.Who, view.What, view.Target, view.IsAlert));
+        Assert.Equal(("John", "turned on the group", "Fan heater · Fan → 3 s → Heat", false), (view.Who, view.What, view.Target, view.IsAlert));
     }
 
     [Theory]
-    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fläkt"}""", "Eftergång:", "Fläkt går 5 min till")]
-    [InlineData(EventActions.RunOnEnd, """{"role":"Fläkt"}""", "Eftergång klar:", "Fläkt avstängd")]
-    [InlineData(EventActions.GroupOff, """{"afterMinutes":120}""", "Auto-av", "stängde av gruppen efter 2 h")]
+    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on:", "Fan runs on for 5 min")]
+    [InlineData(EventActions.RunOnEnd, """{"role":"Fan"}""", "Run-on done:", "Fan off")]
+    [InlineData(EventActions.GroupOff, """{"afterMinutes":120}""", "Auto-off", "turned off the group after 2 h")]
     public void Should_DescribeWhatTheGroupDidByItself(string action, string details, string who, string what)
     {
         var actor = action == EventActions.GroupOff ? EventActors.AutoOff : EventActors.System;
 
-        var view = EventText.For(Entry(actor, action, details), "Relä 1", null, "Värmefläkt");
+        var view = EventText.For(Entry(actor, action, details), "Relay 1", null, "Fan heater");
 
-        Assert.Equal((who, what, "Värmefläkt", "A"), (view.Who, view.What, view.Target, view.Badge));
+        Assert.Equal((who, what, "Fan heater", "A"), (view.Who, view.What, view.Target, view.Badge));
         Assert.False(view.IsAlert);
     }
 
@@ -49,44 +49,44 @@ public sealed class GroupTextTests
     public void Should_ShowASafetyShutOffInRed()
     {
         var view = EventText.For(
-            Entry(EventActors.System, EventActions.InterlockTrip, """{"missing":"Fläkt","off":["Värme"]}"""),
-            "Relä 1",
+            Entry(EventActors.System, EventActions.InterlockTrip, """{"missing":"Fan","off":["Heat"]}"""),
+            "Relay 1",
             null,
-            "Värmefläkt");
+            "Fan heater");
 
-        Assert.Equal(("Säkerhetsavstängning:", "Värme stängdes av eftersom Fläkt var av", true), (view.Who, view.What, view.IsAlert));
+        Assert.Equal(("Safety shut-off:", "Heat turned off because Fan was off", true), (view.Who, view.What, view.IsAlert));
     }
 
     [Fact]
     public void Should_ShowAStartThatFailedInRed()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.GroupStartFailed, """{"step":2,"role":"Värme"}"""), "Relä 2", null, "Värmefläkt");
+        var view = EventText.For(Entry(EventActors.System, EventActions.GroupStartFailed, """{"step":2,"role":"Heat"}"""), "Relay 2", null, "Fan heater");
 
-        Assert.Equal(("Gruppen", "kunde inte starta Värme", true), (view.Who, view.What, view.IsAlert));
+        Assert.Equal(("The group", "couldn't start Heat", true), (view.Who, view.What, view.IsAlert));
     }
 
     [Fact]
     public void Should_NameADeletedGroup_FromItsEvent()
     {
-        var view = EventText.For(Entry("john@example.com", EventActions.GroupDelete, """{"name":"Lackering"}"""), null, "John", groupName: null);
+        var view = EventText.For(Entry("john@example.com", EventActions.GroupDelete, """{"name":"Painting"}"""), null, "John", groupName: null);
 
-        Assert.Equal(("tog bort gruppen", "Lackering"), (view.What, view.Target));
+        Assert.Equal(("deleted the group", "Painting"), (view.What, view.Target));
     }
 
     [Fact]
     public void Should_ReadMalformedDetailsWithoutFailing()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.InterlockTrip, "{not json"), null, null, "Värmefläkt");
+        var view = EventText.For(Entry(EventActors.System, EventActions.InterlockTrip, "{not json"), null, null, "Fan heater");
 
-        Assert.Equal("reläet ovanför startades", view.What);
+        Assert.Equal("the relay above was started", view.What);
     }
 
     [Fact]
     public void Should_ShowAPlainOnForARelayOfAGroup()
     {
-        var view = EventText.For(Entry("john@example.com", EventActions.On, null), "Relä 1", "John", "Värmefläkt");
+        var view = EventText.For(Entry("john@example.com", EventActions.On, null), "Relay 1", "John", "Fan heater");
 
-        Assert.Equal(("slog på", "Relä 1"), (view.What, view.Target));
+        Assert.Equal(("turned on", "Relay 1"), (view.What, view.Target));
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting } };
 
-        Assert.Equal("Startar · steg 2 av 2", Status(group, State(1)));
+        Assert.Equal("Starting · step 2 of 2", Status(group, State(1)));
     }
 
     [Fact]
@@ -102,8 +102,8 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };
 
-        Assert.Equal("Stänger av · Fläkt går 5 min till", Status(group, State(1)));
-        Assert.Equal("Stänger av", Status(group, State()));
+        Assert.Equal("Stopping · Fan runs on for 5 min", Status(group, State(1)));
+        Assert.Equal("Stopping", Status(group, State()));
     }
 
     [Fact]
@@ -111,15 +111,15 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with { Runtime = new GroupRuntime { OnSinceUtc = Now, TurnedOnBy = "john@example.com", AutoOffAtUtc = Now.AddHours(2) } };
 
-        Assert.Equal("På sedan 14:02 · John · av 16:02", Status(group, State(1, 2)));
-        Assert.Equal("På sedan 14:02 · John · av 16:02 · bara Fläkt", Status(group, State(1)));
-        Assert.Equal("Av", Status(group, State()));
+        Assert.Equal("On since 14:02 · John · off 16:02", Status(group, State(1, 2)));
+        Assert.Equal("On since 14:02 · John · off 16:02 · only Fan", Status(group, State(1)));
+        Assert.Equal("Off", Status(group, State()));
     }
 
     [Fact]
     public void Should_SayARelayIsOutOfOrder_WhenTheOneAboveIsOff()
     {
-        Assert.Equal("I fel ordning · stängs av", Status(FanHeater, State(2)));
+        Assert.Equal("Out of order · turning off", Status(FanHeater, State(2)));
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public sealed class GroupTextTests
     {
         var empty = FanHeater with { Members = [], Runtime = new GroupRuntime { Phase = GroupPhases.Starting } };
 
-        Assert.Equal("Av", Status(empty, State()));
+        Assert.Equal("Off", Status(empty, State()));
     }
 
     [Theory]
@@ -137,7 +137,7 @@ public sealed class GroupTextTests
     [InlineData(7200, "2 h")]
     [InlineData(7201, "121 min")]
     [InlineData(int.MaxValue, "35791395 min")]
-    [InlineData(-1, "en stund")]
+    [InlineData(-1, "a while")]
     public void Should_WriteSecondsForPeople(int seconds, string expected)
     {
         Assert.Equal(expected, EventText.Seconds(seconds));
@@ -148,7 +148,7 @@ public sealed class GroupTextTests
     {
         var outlook = new RelayOutlook(null, new DateTime(2026, 11, 9, 6, 30, 0, DateTimeKind.Utc));
 
-        Assert.Equal("Schema: på i morgon 06:30", Status(FanHeater, State(), outlook));
+        Assert.Equal("Schedule: on tomorrow 06:30", Status(FanHeater, State(), outlook));
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public sealed class GroupTextTests
         var group = FanHeater with { Runtime = new GroupRuntime { OnSinceUtc = Now, TurnedOnBy = EventActors.Schedule, AutoOffAtUtc = Now.AddHours(2) } };
         var outlook = new RelayOutlook(Now.AddMinutes(58), null);
 
-        Assert.Equal("På sedan 14:02 · schema · av 15:00", Status(group, State(1, 2), outlook));
+        Assert.Equal("On since 14:02 · schedule · off 15:00", Status(group, State(1, 2), outlook));
     }
 
     [Theory]
@@ -183,7 +183,7 @@ public sealed class GroupTextTests
         GroupStatusText.For(group, state, Now, utc => utc, email => email switch
         {
             "john@example.com" => "John",
-            EventActors.Schedule => "schema",
+            EventActors.Schedule => "schedule",
             _ => email,
         }, outlook);
 

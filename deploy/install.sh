@@ -15,7 +15,7 @@
 #   CLOUDFLARE_TUNNEL_TOKEN  the token of the Cloudflare tunnel made for Contactor
 #   GITHUB_TOKEN             a classic GitHub token with only read:packages, to pull the private image
 #   VM201_HOST               the relay board's first address, e.g. 192.168.1.50; change it later in
-#                            the app under Inställningar, where the saved address wins over this one
+#                            the app under Settings, where the saved address wins over this one
 # Optional:
 #   VM201_USERNAME, VM201_PASSWORD  the board's login, when it has one (max 8 characters each)
 #   CONTACTOR_IMAGE        another image, e.g. a pinned version: ghcr.io/gonace/contactor:2026.11.4

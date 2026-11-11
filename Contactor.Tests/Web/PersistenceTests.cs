@@ -28,12 +28,12 @@ public sealed class PersistenceTests
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         var relays = await db.Relays.OrderBy(r => r.Id).ToListAsync(Cancel);
         Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], relays.Select(r => r.Id));
-        Assert.Equal("Relä 1", relays[0].Name);
+        Assert.Equal("Relay 1", relays[0].Name);
         Assert.All(relays, r => Assert.True(r.IsActive));
         Assert.All(relays, r => Assert.Equal(Relay.DefaultMaxOnMinutes, r.MaxOnMinutes));
         Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], await db.RelayRuntimes.OrderBy(r => r.RelayId).Select(r => r.RelayId).ToListAsync(Cancel));
         var input = Assert.Single(await db.Inputs.ToListAsync(Cancel));
-        Assert.Equal(("Stängd", "Öppen"), (input.ClosedText, input.OpenText));
+        Assert.Equal(("Closed", "Open"), (input.ClosedText, input.OpenText));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class PersistenceTests
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             var relay = await db.Relays.SingleAsync(r => r.Id == 4, Cancel);
-            relay.Name = "Ventilation – Lackrummet";
+            relay.Name = "Ventilation – Paint shop";
             relay.IsActive = false;
             await db.SaveChangesAsync(Cancel);
         }
@@ -55,7 +55,7 @@ public sealed class PersistenceTests
         Assert.Equal(8, await check.Relays.CountAsync(Cancel));
         Assert.Equal(1, await check.Inputs.CountAsync(Cancel));
         var renamed = await check.Relays.SingleAsync(r => r.Id == 4, Cancel);
-        Assert.Equal("Ventilation – Lackrummet", renamed.Name);
+        Assert.Equal("Ventilation – Paint shop", renamed.Name);
         Assert.False(renamed.IsActive);
     }
 

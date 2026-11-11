@@ -74,7 +74,7 @@ public sealed class RelayControl
     }
 
     /// <summary>
-    /// "Alla av": turns every relay outside a group off with one command and logs one event for each that was on, then
+    /// "All off": turns every relay outside a group off with one command and logs one event for each that was on, then
     /// stops every group in its own order, with its run-on times.
     /// </summary>
     public async Task TurnAllOffAsync(string userEmail, CancellationToken cancellationToken)
@@ -164,7 +164,7 @@ public sealed class RelayChanges
 public sealed class RelayInGroupException : InvalidOperationException
 {
     /// <summary>What a page shows.</summary>
-    public const string Text = "Reläet ingår i en grupp och styrs från gruppen.";
+    public const string Text = "This relay is in a group and is switched from the group.";
 
     public RelayInGroupException()
         : base("The relay is in a group; turn it on and off through the group.")
