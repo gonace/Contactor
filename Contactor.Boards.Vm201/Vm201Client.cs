@@ -3,12 +3,12 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// Holds exactly one connection to the VM201 board, logs in, tracks the status the board pushes and reconnects with
 /// exponential backoff. Commands go through one channel per connection, so only one writer touches the socket.
-/// Commands are never queued while disconnected: they fail at once with <see cref="Vm201NotConnectedException"/>.
+/// Commands are never queued while disconnected: they fail at once with <see cref="BoardNotConnectedException"/>.
 /// </summary>
 public sealed class Vm201Client
 {
@@ -223,13 +223,13 @@ public sealed class Vm201Client
         var session = Volatile.Read(ref _session);
         if (session is null || !State.IsConnected)
         {
-            throw new Vm201NotConnectedException();
+            throw new BoardNotConnectedException();
         }
 
         var write = new PendingWrite(packet, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
         if (!session.Commands.Writer.TryWrite(write))
         {
-            throw new Vm201NotConnectedException("The VM201 connection is closing or busy; the command was not sent.");
+            throw new BoardNotConnectedException("The VM201 connection is closing or busy; the command was not sent.");
         }
 
         await write.Completion!.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -406,7 +406,7 @@ public sealed class Vm201Client
             catch (Exception ex)
             {
                 write.Completion?.TrySetException(
-                    new Vm201NotConnectedException("The VM201 connection failed; the command was not sent.", ex));
+                    new BoardNotConnectedException("The VM201 connection failed; the command was not sent.", ex));
                 throw;
             }
         }
@@ -602,7 +602,7 @@ public sealed class Vm201Client
             while (Commands.Reader.TryRead(out var write))
             {
                 write.Completion?.TrySetException(
-                    new Vm201NotConnectedException("The VM201 connection was lost; the command was not sent."));
+                    new BoardNotConnectedException("The VM201 connection was lost; the command was not sent."));
             }
         }
     }

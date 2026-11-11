@@ -1,6 +1,7 @@
 using System.Net;
+using Contactor.Boards;
+using Contactor.Boards.Vm201;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Contactor.Vm201;
 
 namespace Contactor.Web.Features.Health;
 
@@ -21,7 +22,7 @@ public static class HealthEndpoints
         return endpoints;
     }
 
-    private static Results<Ok<HealthResponse>, NotFound> GetHealth(HttpContext context, Vm201Client client)
+    private static Results<Ok<HealthResponse>, NotFound> GetHealth(HttpContext context, IRelayBoard board)
     {
         var remote = context.Connection.RemoteIpAddress;
         if (remote is null || !IPAddress.IsLoopback(remote))
@@ -29,7 +30,7 @@ public static class HealthEndpoints
             return TypedResults.NotFound();
         }
 
-        var state = client.State;
+        var state = board.State;
         var build = AppBuild.Current;
         return TypedResults.Ok(new HealthResponse(state.IsConnected, state.LastContactUtc, build.Version, build.Commit));
     }

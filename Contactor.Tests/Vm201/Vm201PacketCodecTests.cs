@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards.Vm201;
 
 namespace Contactor.Tests.Vm201;
 

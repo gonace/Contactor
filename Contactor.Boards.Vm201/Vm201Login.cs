@@ -1,4 +1,4 @@
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// The board's login: empty user name and password for a board without one. A class rather than a record, so the

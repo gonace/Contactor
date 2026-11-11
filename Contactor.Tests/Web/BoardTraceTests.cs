@@ -1,7 +1,7 @@
+using Contactor.Boards.Vm201;
+using Contactor.Web.Features.Vm201;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Contactor.Vm201;
-using Contactor.Web.Features.Vm201;
 
 namespace Contactor.Tests.Web;
 

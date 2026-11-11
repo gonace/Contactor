@@ -1,8 +1,8 @@
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Relays;
 
@@ -17,7 +17,7 @@ public sealed partial class AutoOffService : BackgroundService
 {
     public static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(15);
 
-    private readonly Vm201Client _client;
+    private readonly IRelayBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly ExpectedChanges _expected;
@@ -26,7 +26,7 @@ public sealed partial class AutoOffService : BackgroundService
     private readonly ILogger<AutoOffService> _logger;
 
     public AutoOffService(
-        Vm201Client client,
+        IRelayBoard board,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         ExpectedChanges expected,
@@ -34,7 +34,7 @@ public sealed partial class AutoOffService : BackgroundService
         TimeProvider timeProvider,
         ILogger<AutoOffService> logger)
     {
-        _client = client;
+        _board = board;
         _dbFactory = dbFactory;
         _clock = clock;
         _expected = expected;
@@ -46,7 +46,7 @@ public sealed partial class AutoOffService : BackgroundService
     /// <summary>Handles every auto-off that is due now. Returns the relays it turned off.</summary>
     public async Task<IReadOnlyList<int>> CheckAsync(CancellationToken cancellationToken)
     {
-        var state = _client.State;
+        var state = _board.State;
         if (!state.IsConnected)
         {
             return [];
@@ -64,13 +64,13 @@ public sealed partial class AutoOffService : BackgroundService
         {
             if (state.IsOn(runtime.RelayId))
             {
-                var mask = Vm201Channel.Mask(runtime.RelayId);
+                var mask = ChannelMask.Of(runtime.RelayId);
                 _expected.Expect(mask, on: false);
                 try
                 {
-                    await _client.TurnOffAsync(mask, cancellationToken);
+                    await _board.TurnOffAsync(mask, cancellationToken);
                 }
-                catch (Vm201NotConnectedException)
+                catch (BoardNotConnectedException)
                 {
                     // Lost the board mid-way: the rest waits for the next check.
                     break;

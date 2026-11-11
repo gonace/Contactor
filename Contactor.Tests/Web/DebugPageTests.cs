@@ -1,8 +1,8 @@
 using System.Net;
-using Microsoft.Extensions.DependencyInjection;
 using Contactor.Web;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Persistence;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Contactor.Tests.Web;
 
@@ -79,7 +79,7 @@ public sealed class DebugPageTests
         var trace = app.Services.GetRequiredService<BoardTrace>();
 
         // Nothing listens on the test board's port, so the client's own attempts show up.
-        await WaitUntilAsync(() => trace.Items.Any(i => i.Kind == Contactor.Vm201.Vm201TraceKind.ConnectionLost));
+        await WaitUntilAsync(() => trace.Items.Any(i => i.Kind == Contactor.Boards.Vm201.Vm201TraceKind.ConnectionLost));
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/debug", Cancel));
 
         Assert.Matches("<h1[^>]*>Debug</h1>", html);

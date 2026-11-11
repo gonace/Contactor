@@ -46,7 +46,8 @@ Contactor.slnx
 global.json                 # SDK version and test runner (Microsoft.Testing.Platform)
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
-Contactor.Vm201/          # Pure protocol library: packet codec, client, simulator. No dependencies on web/EF.
+Contactor.Boards/           # What any relay board is to the app: IRelayBoard, BoardState, ChannelMask. No dependencies.
+Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and Vm201Board (its IRelayBoard). No web/EF.
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature
@@ -54,6 +55,7 @@ Contactor.Simulator/      # Console app that runs Vm201Simulator on a port (deve
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
+  Boards/                   # ChannelMask, board adapters
   Vm201/                    # Codec + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
@@ -140,7 +142,18 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 
 ---
 
-## The VM201 client (`Contactor.Vm201`)
+## Boards (`Contactor.Boards`)
+
+The app talks to a relay board only through `IRelayBoard`, so another make of board needs its own project and adapter, and nothing else changes. One board per installation for now; several at once is issue #4.
+
+- `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
+- `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.
+- `BoardCapabilities`: how many relays and inputs, and whether the board reports changes by itself.
+- `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
+- Board-specific features stay in the board's own project and its `Features/<Board>` folder in the web app: today the VM201's address and login (`BoardAddressHandler`), its own timers (`Vm201HostedService`) and the packet trace on the Debug screen.
+- The database holds `Relay.Count` relays (8, the VM201's).
+
+## The VM201 client (`Contactor.Boards.Vm201`)
 
 - `Vm201PacketCodec`: `byte[] Encode(byte cmd, ReadOnlySpan<byte> data)` and an incremental decoder over a `PipeReader` or `Stream`.
 - `Vm201Client`:
@@ -151,6 +164,7 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
   - `SetEndpoint` and `SetLogin` change the address and login while it runs: the current connection, attempt or wait ends at once. The web app applies the saved `BoardSetting` before the first connection. `Vm201Login` is a class, not a record, so its password can't leak through a generated `ToString`.
   - `Vm201:LogPackets` (off by default) logs every packet in and out as hex with its command letter (`Vm201PacketTrace`); user name and password packets only as their command and length. The board keeps no log of its own, so this is how to see what a real board does.
   - The `Traced` event reports every packet in and out and every connection step (connecting, lost and why, the wait before the next attempt, skipped bytes) as a `Vm201TraceEntry`. User name and password packets come cut to their first three bytes. The web app keeps the latest 100 in memory (`BoardTrace`) for the Debug screen.
+- `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes); it translates `Vm201State` and refuses relays above 8.
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change and a way to simulate a disconnect. It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
 
 ---
@@ -380,7 +394,7 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Swedis
 8. **Debug** (`/debug`; the tab only shows while the person has Debugging on)
    - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in Swedish ("Slå på relä 3", "Status: relä 1 och 3 på · ingången av", "Anslutningen bröts: …") and the packet's bytes. The button "Rensa".
 
-Blazor Server gives live updates for free. When `Vm201Client` reports a new status, every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
+Blazor Server gives live updates for free. When the board reports a new state (`IRelayBoard.StateChanged`), every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
 
 ### Design tokens
 
@@ -461,7 +475,7 @@ See `DEPLOY.md` for the steps.
 
 ## Build order
 
-1. `Contactor.Vm201`: codec, simulator and client, with tests. **Test against the real VM201 before going further.**
+1. `Contactor.Boards.Vm201`: codec, simulator and client, with tests. **Test against the real VM201 before going further.**
 2. Web shell: EF model and migration, `CurrentUser` middleware, the Reläer screen with live status and ON/OFF.
 3. Event log and the Händelser screen.
 4. The Relä screen: name, active, auto-off.

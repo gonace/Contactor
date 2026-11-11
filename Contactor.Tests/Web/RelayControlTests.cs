@@ -1,13 +1,14 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Contactor.Vm201;
-using Contactor.Web.Features.Groups;
+using Contactor.Boards;
+using Contactor.Boards.Vm201;
 using Contactor.Web;
 using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Contactor.Tests.Web;
 
@@ -137,9 +138,9 @@ public sealed class RelayControlTests : IAsyncLifetime
         _simulator.DropConnections();
         await WaitUntilAsync(() => !Client.State.IsConnected);
 
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnOnAsync(1, Jane, Cancel));
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnOffAsync(1, Jane, Cancel));
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnAllOffAsync(Jane, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOnAsync(1, Jane, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOffAsync(1, Jane, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnAllOffAsync(Jane, Cancel));
 
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(0, await db.EventLog.CountAsync(Cancel));

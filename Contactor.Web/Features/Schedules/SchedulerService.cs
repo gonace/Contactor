@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Schedules;
 
@@ -38,7 +38,7 @@ public sealed partial class SchedulerService : BackgroundService
     // An OFF this late is a catch-up, not the minute's own work.
     private static readonly TimeSpan OnTimeTolerance = TimeSpan.FromMinutes(1);
 
-    private readonly Vm201Client _client;
+    private readonly IRelayBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly GroupSequencer _groups;
@@ -60,7 +60,7 @@ public sealed partial class SchedulerService : BackgroundService
     private readonly Dictionary<int, bool> _retryGroups = [];
 
     public SchedulerService(
-        Vm201Client client,
+        IRelayBoard board,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         GroupSequencer groups,
@@ -69,7 +69,7 @@ public sealed partial class SchedulerService : BackgroundService
         TimeProvider timeProvider,
         ILogger<SchedulerService> logger)
     {
-        _client = client;
+        _board = board;
         _dbFactory = dbFactory;
         _clock = clock;
         _groups = groups;
@@ -79,12 +79,12 @@ public sealed partial class SchedulerService : BackgroundService
         _logger = logger;
 
         // From the start, not from ExecuteAsync (a background thread): a reconnect must never go unnoticed.
-        _client.StateChanged += OnStateChanged;
+        _board.StateChanged += OnStateChanged;
     }
 
     public override void Dispose()
     {
-        _client.StateChanged -= OnStateChanged;
+        _board.StateChanged -= OnStateChanged;
         _wake.Dispose();
         _tickGate.Dispose();
         base.Dispose();
@@ -99,7 +99,7 @@ public sealed partial class SchedulerService : BackgroundService
         await _tickGate.WaitAsync(cancellationToken);
         try
         {
-            var state = _client.State;
+            var state = _board.State;
             if (!state.IsConnected)
             {
                 return;
@@ -124,7 +124,7 @@ public sealed partial class SchedulerService : BackgroundService
             var changed = false;
             var interrupted = false;
 
-            for (var relayId = 1; relayId <= Vm201Channel.Count; relayId++)
+            for (var relayId = 1; relayId <= Relay.Count; relayId++)
             {
                 var relayWindows = windows.Where(w => w.RelayId == relayId).ToList();
                 var running = relayWindows.Where(w => w.Contains(now)).OrderByDescending(w => w.OffUtc).FirstOrDefault();
@@ -243,7 +243,7 @@ public sealed partial class SchedulerService : BackgroundService
             bool? retry = _retryGroups.Remove(group.Id, out var wanted) ? wanted : null;
 
             // As the screens count it: starting, or a relay on and not on its way down.
-            var state = _client.State;
+            var state = _board.State;
             var phase = runtime?.Phase ?? GroupPhases.Idle;
             var isOn = phase == GroupPhases.Starting
                 || (phase != GroupPhases.Stopping && group.Members.Any(m => state.IsOn(m.RelayId)));
@@ -264,7 +264,7 @@ public sealed partial class SchedulerService : BackgroundService
                     await _groups.StopGroupAsync(group.Id, Actor, cancellationToken);
                 }
             }
-            catch (Vm201NotConnectedException)
+            catch (BoardNotConnectedException)
             {
                 // Lost the board mid-way: the minute is handled again once it is back.
                 Interlocked.Increment(ref _connectGeneration);
@@ -359,7 +359,7 @@ public sealed partial class SchedulerService : BackgroundService
         }
     }
 
-    private void OnStateChanged(object? sender, Vm201State state)
+    private void OnStateChanged(object? sender, BoardState state)
     {
         if (state.IsConnected && !_wasConnected)
         {
@@ -382,22 +382,22 @@ public sealed partial class SchedulerService : BackgroundService
 
     private async Task<bool> SendAsync(int relayId, bool on, CancellationToken cancellationToken)
     {
-        var mask = Vm201Channel.Mask(relayId);
+        var mask = ChannelMask.Of(relayId);
         _expected.Expect(mask, on);
         try
         {
             if (on)
             {
-                await _client.TurnOnAsync(mask, cancellationToken);
+                await _board.TurnOnAsync(mask, cancellationToken);
             }
             else
             {
-                await _client.TurnOffAsync(mask, cancellationToken);
+                await _board.TurnOffAsync(mask, cancellationToken);
             }
 
             return true;
         }
-        catch (Vm201NotConnectedException)
+        catch (BoardNotConnectedException)
         {
             // Lost the board mid-way: the minute is handled again once it is back.
             Interlocked.Increment(ref _connectGeneration);

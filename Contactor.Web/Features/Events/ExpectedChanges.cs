@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards;
 
 namespace Contactor.Web.Features.Events;
 
@@ -22,18 +22,15 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>Expects every relay in <paramref name="mask"/> to become <paramref name="on"/>.</summary>
-    public void Expect(byte mask, bool on)
+    public void Expect(ChannelMask mask, bool on)
     {
         var expires = _clock.UtcNow + Lifetime;
         lock (_lock)
         {
             RemoveExpired();
-            for (var relayId = 1; relayId <= Vm201Channel.Count; relayId++)
+            foreach (var relayId in mask.Channels)
             {
-                if ((mask & Vm201Channel.Mask(relayId)) != 0)
-                {
-                    _expected.Add((relayId, on, expires));
-                }
+                _expected.Add((relayId, on, expires));
             }
         }
     }

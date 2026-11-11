@@ -1,8 +1,8 @@
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Groups;
 
@@ -45,20 +45,20 @@ public sealed class GroupsHandler
     public static readonly IReadOnlyList<int> StartDelayChoices = [1, 3, 10, 30, 60];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly Vm201Client _client;
+    private readonly IRelayBoard _board;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
 
     public GroupsHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
-        Vm201Client client,
+        IRelayBoard board,
         LocalClock clock,
         RelayChanges changes,
         GroupSequencer sequencer)
     {
         _dbFactory = dbFactory;
-        _client = client;
+        _board = board;
         _clock = clock;
         _changes = changes;
         _sequencer = sequencer;
@@ -293,7 +293,7 @@ public sealed class GroupsHandler
             return $"Välj minst {RelayGroup.MinMembers} reläer.";
         }
 
-        if (draft.Members.Count > Vm201Channel.Count || draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
+        if (draft.Members.Count > Relay.Count || draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
         {
             return "Ett relä kan bara vara med en gång.";
         }
@@ -337,7 +337,7 @@ public sealed class GroupsHandler
     // The board must say each relay is off: a group never starts with a relay running outside its order.
     private string? AllOff(IEnumerable<int> relayIds, Dictionary<int, Relay> relays)
     {
-        var state = _client.State;
+        var state = _board.State;
         if (!state.IsConnected)
         {
             return "Ingen kontakt med reläkortet. Det behövs för att se att reläerna är av.";

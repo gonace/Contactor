@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards.Vm201;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Tests.Web;
 

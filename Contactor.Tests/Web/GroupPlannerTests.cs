@@ -1,4 +1,4 @@
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Persistence;
@@ -37,7 +37,7 @@ public sealed class GroupPlannerTests
     {
         var commands = new GroupCommands();
         Assert.True(GroupPlanner.Start(FanHeater, State(), _runtime, John, 120, T0, commands));
-        Assert.Equal((Mask(1), (byte)0), (commands.On, commands.Off));
+        Assert.Equal((Mask(1), ChannelMask.None), (commands.On, commands.Off));
         Assert.Equal(EventActions.GroupOn, Assert.Single(commands.Events).Action);
 
         // Not confirmed yet: nothing more.
@@ -63,7 +63,7 @@ public sealed class GroupPlannerTests
         Assert.True(Plan(State(), T0.AddSeconds(4.9)).IsEmpty);
         var failed = Plan(State(), T0.AddSeconds(5));
 
-        Assert.Equal((byte)0, failed.On);
+        Assert.Equal(ChannelMask.None, failed.On);
         Assert.Equal(EventActions.GroupStartFailed, Assert.Single(failed.Events).Action);
         Assert.Equal(GroupPhases.Idle, _runtime.Phase);
         Assert.True(Plan(State(), T0.AddSeconds(30)).IsEmpty);
@@ -78,7 +78,7 @@ public sealed class GroupPlannerTests
 
         var failed = Plan(State(1), T0.AddSeconds(9));
 
-        Assert.Equal(((byte)0, (byte)0), (failed.On, failed.Off));
+        Assert.Equal((ChannelMask.None, ChannelMask.None), (failed.On, failed.Off));
         Assert.Equal((EventActions.GroupStartFailed, (int?)2), (failed.Events[0].Action, failed.Events[0].RelayId));
     }
 
@@ -116,7 +116,7 @@ public sealed class GroupPlannerTests
         var start = new GroupCommands();
         GroupPlanner.Start(FanHeater, State(1), _runtime, John, null, T0.AddSeconds(60), start);
 
-        Assert.Equal(((byte)0, Mask(2)), (start.Off, start.On));
+        Assert.Equal((ChannelMask.None, Mask(2)), (start.Off, start.On));
     }
 
     [Fact]
@@ -288,9 +288,9 @@ public sealed class GroupPlannerTests
         Assert.Equal(Mask(2), stop.Off);
 
         // The board reports the heat on, then off; the fan runs on the full 5 minutes from there.
-        Assert.Equal((byte)0, Plan(State(1, 2), T0.AddSeconds(4.6)).Off & Mask(1));
+        Assert.Equal(ChannelMask.None, Plan(State(1, 2), T0.AddSeconds(4.6)).Off & Mask(1));
         Assert.Equal(EventActions.RunOnStart, Plan(State(1), T0.AddSeconds(4.7)).Events[0].Action);
-        Assert.Equal((byte)0, Plan(State(1), T0.AddSeconds(300)).Off);
+        Assert.Equal(ChannelMask.None, Plan(State(1), T0.AddSeconds(300)).Off);
         Assert.Equal(Mask(1), Plan(State(1), T0.AddSeconds(305)).Off);
     }
 
@@ -312,7 +312,7 @@ public sealed class GroupPlannerTests
 
         // The heat went off, the fan never came on.
         var failed = Plan(State(), T0.AddSeconds(5));
-        Assert.Equal((byte)0, failed.On);
+        Assert.Equal(ChannelMask.None, failed.On);
         Assert.Equal((EventActions.GroupStartFailed, (int?)1), (failed.Events[0].Action, failed.Events[0].RelayId));
         for (var second = 6; second < 60; second++)
         {
@@ -388,17 +388,16 @@ public sealed class GroupPlannerTests
         Assert.True(commands.IsEmpty);
     }
 
-    private GroupCommands Plan(Vm201State state, DateTime now)
+    private GroupCommands Plan(BoardState state, DateTime now)
     {
         var commands = new GroupCommands();
         GroupPlanner.Plan(_members, state, _runtime, now, commands);
         return commands;
     }
 
-    private static byte Mask(int relayId) => Vm201Channel.Mask(relayId);
+    private static ChannelMask Mask(int relayId) => ChannelMask.Of(relayId);
 
-    private static Vm201State State(params int[] on) =>
-        new(true, on.Aggregate((byte)0, (mask, id) => (byte)(mask | Vm201Channel.Mask(id))), 0, false, T0);
+    private static BoardState State(params int[] on) => new(true, ChannelMask.Of(on), ChannelMask.None, T0);
 
     // As the sequencer stores it, so the run-on texts in Händelser read the role from it.
     private static EventLogEntry Logged(GroupEvent e) =>

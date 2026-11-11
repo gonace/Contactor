@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Contactor.Vm201;
+namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// Incremental decoder for a VM201 byte stream. TCP may split a packet over several reads or merge several packets

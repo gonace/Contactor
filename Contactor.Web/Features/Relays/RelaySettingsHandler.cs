@@ -1,8 +1,8 @@
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
-using Contactor.Vm201;
+using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Relays;
 
@@ -31,7 +31,7 @@ public sealed class RelaySettingsHandler
     /// <summary>The relay's settings, or null for an id the board doesn't have.</summary>
     public async Task<RelaySettings?> GetAsync(int relayId, CancellationToken cancellationToken)
     {
-        if (relayId is < 1 or > Vm201Channel.Count)
+        if (relayId is < 1 or > Relay.Count)
         {
             return null;
         }
