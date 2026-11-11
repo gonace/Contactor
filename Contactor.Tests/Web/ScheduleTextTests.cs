@@ -23,7 +23,7 @@ public sealed class ScheduleTextTests
     }
 
     [Fact]
-    public void Should_SummarizeLikeTheSketch()
+    public void Should_SummarizeInPlainSwedish()
     {
         Assert.Equal(
             "Måndag till fredag: reläet slås på 06:30 och stängs av 08:00.",

@@ -7,7 +7,7 @@ namespace Contactor.Tests.Web;
 
 public sealed class BoardEventRecorderTests
 {
-    private const string Nils = "nils@example.com";
+    private const string Jane = "jane@example.com";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -40,27 +40,27 @@ public sealed class BoardEventRecorderTests
     {
         await using var rig = await BoardTestRig.StartAsync();
 
-        await rig.Control.TurnOnAsync(2, Nils, Cancel);
+        await rig.Control.TurnOnAsync(2, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(2));
-        await rig.Control.TurnAllOffAsync(Nils, Cancel);
+        await rig.Control.TurnAllOffAsync(Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0);
         await rig.Client.RequestStatusAsync(Cancel);
         await Task.Delay(200, Cancel);
 
         var events = await rig.EventsAsync();
         Assert.Equal([EventActions.On, EventActions.Off], events.Select(e => e.Action));
-        Assert.All(events, e => Assert.Equal(Nils, e.Actor));
+        Assert.All(events, e => Assert.Equal(Jane, e.Actor));
     }
 
     [Fact]
     public async Task Should_LogExternal_WhenTheExpectationHasExpired()
     {
         await using var rig = await BoardTestRig.StartAsync();
-        await rig.Control.TurnOnAsync(2, Nils, Cancel);
+        await rig.Control.TurnOnAsync(2, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(2));
 
         // The app asked for "on" again while it was on; the board answers nothing, so that expectation lingers.
-        await rig.Control.TurnOnAsync(2, Nils, Cancel);
+        await rig.Control.TurnOnAsync(2, Jane, Cancel);
         rig.Time.Now += ExpectedChanges.Lifetime;
         await rig.Simulator.SetOutputsAsync(0);
         await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(2));
@@ -72,7 +72,7 @@ public sealed class BoardEventRecorderTests
     public async Task Should_ForgetWhoTurnedItOn_WhenItIsTurnedOffAtTheBoard()
     {
         await using var rig = await BoardTestRig.StartAsync();
-        await rig.Control.TurnOnAsync(3, Nils, Cancel);
+        await rig.Control.TurnOnAsync(3, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(3));
 
         await rig.Simulator.SetOutputsAsync(0);

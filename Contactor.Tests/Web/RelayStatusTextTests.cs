@@ -9,15 +9,15 @@ public sealed class RelayStatusTextTests
     [Fact]
     public void Should_SayOff_WhenOff()
     {
-        Assert.Equal("Av", RelayStatusText.For(false, Now.AddHours(-1), "Nils", Now.AddHours(1), Now));
+        Assert.Equal("Av", RelayStatusText.For(false, Now.AddHours(-1), "Jane", Now.AddHours(1), Now));
     }
 
     [Fact]
     public void Should_SayWhenAndWho_WhenTurnedOff()
     {
-        var text = RelayStatusText.For(false, null, null, null, Now, new DateTime(2026, 11, 3, 18, 0, 0), "Lars");
+        var text = RelayStatusText.For(false, null, null, null, Now, new DateTime(2026, 11, 3, 18, 0, 0), "Alex");
 
-        Assert.Equal("Av sedan i går 18:00 · Lars", text);
+        Assert.Equal("Av sedan i går 18:00 · Alex", text);
     }
 
     [Fact]
@@ -37,9 +37,9 @@ public sealed class RelayStatusTextTests
     [Fact]
     public void Should_SayWhenWhoAndUntil_WhenTurnedOnInTheApp()
     {
-        var text = RelayStatusText.For(true, new DateTime(2026, 11, 4, 14, 2, 0), "Nils", new DateTime(2026, 11, 4, 16, 2, 0), Now);
+        var text = RelayStatusText.For(true, new DateTime(2026, 11, 4, 14, 2, 0), "Jane", new DateTime(2026, 11, 4, 16, 2, 0), Now);
 
-        Assert.Equal("På sedan 14:02 · Nils · av 16:02", text);
+        Assert.Equal("På sedan 14:02 · Jane · av 16:02", text);
     }
 
     [Fact]
@@ -60,11 +60,11 @@ public sealed class RelayStatusTextTests
         var text = RelayStatusText.For(
             true,
             new DateTime(2026, 11, 3, 23, 10, 0),
-            "Lars",
+            "Alex",
             new DateTime(2026, 11, 5, 1, 10, 0),
             Now);
 
-        Assert.Equal("På sedan i går 23:10 · Lars · av i morgon 01:10", text);
+        Assert.Equal("På sedan i går 23:10 · Alex · av i morgon 01:10", text);
     }
 
     [Theory]
@@ -80,8 +80,8 @@ public sealed class RelayStatusTextTests
     public void Should_WriteWholeSentences_ForTheRelayScreen()
     {
         Assert.Equal(
-            "På sedan 14:02 av Nils. Stängs av 16:02.",
-            RelayStatusText.Sentence(true, new DateTime(2026, 11, 4, 14, 2, 0), "Nils", new DateTime(2026, 11, 4, 16, 2, 0), Now));
+            "På sedan 14:02 av Jane. Stängs av 16:02.",
+            RelayStatusText.Sentence(true, new DateTime(2026, 11, 4, 14, 2, 0), "Jane", new DateTime(2026, 11, 4, 16, 2, 0), Now));
         Assert.Equal("På sedan 14:02 av dig.", RelayStatusText.Sentence(true, new DateTime(2026, 11, 4, 14, 2, 0), "du", null, Now));
         Assert.Equal("På just nu.", RelayStatusText.Sentence(true, null, null, null, Now));
         Assert.Equal("Av just nu.", RelayStatusText.Sentence(false, null, null, null, Now));
@@ -90,7 +90,7 @@ public sealed class RelayStatusTextTests
     [Fact]
     public void Should_SayWhenTheScheduleTurnsItOn_BeforeWhoTurnedItOff()
     {
-        var text = RelayStatusText.For(false, null, null, null, Now, new DateTime(2026, 11, 3, 18, 0, 0), "Lars", new DateTime(2026, 11, 5, 6, 30, 0));
+        var text = RelayStatusText.For(false, null, null, null, Now, new DateTime(2026, 11, 3, 18, 0, 0), "Alex", new DateTime(2026, 11, 5, 6, 30, 0));
 
         Assert.Equal("Schema: på i morgon 06:30", text);
     }

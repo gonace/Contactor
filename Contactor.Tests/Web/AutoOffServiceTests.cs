@@ -8,7 +8,7 @@ namespace Contactor.Tests.Web;
 
 public sealed class AutoOffServiceTests
 {
-    private const string Nils = "nils@example.com";
+    private const string Jane = "jane@example.com";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -16,7 +16,7 @@ public sealed class AutoOffServiceTests
     public async Task Should_TurnOffAndLog_WhenTheTimeHasPassed()
     {
         await using var rig = await BoardTestRig.StartAsync();
-        await rig.Control.TurnOnAsync(3, Nils, Cancel);
+        await rig.Control.TurnOnAsync(3, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(3));
 
         rig.Time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
@@ -36,7 +36,7 @@ public sealed class AutoOffServiceTests
     public async Task Should_NotLogTheBoardsAnswerAsExternal()
     {
         await using var rig = await BoardTestRig.StartAsync();
-        await rig.Control.TurnOnAsync(3, Nils, Cancel);
+        await rig.Control.TurnOnAsync(3, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(3));
         rig.Time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
 
@@ -52,7 +52,7 @@ public sealed class AutoOffServiceTests
     public async Task Should_WaitUntilTheTime()
     {
         await using var rig = await BoardTestRig.StartAsync();
-        await rig.Control.TurnOnAsync(3, Nils, Cancel);
+        await rig.Control.TurnOnAsync(3, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(3));
 
         rig.Time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes) - TimeSpan.FromSeconds(1);
@@ -72,7 +72,7 @@ public sealed class AutoOffServiceTests
                 RelayId = 2,
                 OnSinceUtc = BoardTestRig.Start.AddHours(-3),
                 AutoOffAtUtc = BoardTestRig.Start.AddHours(-1),
-                TurnedOnBy = Nils,
+                TurnedOnBy = Jane,
             });
             await db.SaveChangesAsync(Cancel);
         }
@@ -89,7 +89,7 @@ public sealed class AutoOffServiceTests
     public async Task Should_WaitForTheBoard_WhenDisconnected()
     {
         await using var rig = await BoardTestRig.StartAsync();
-        await rig.Control.TurnOnAsync(3, Nils, Cancel);
+        await rig.Control.TurnOnAsync(3, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(3));
         rig.Simulator.RejectConnections = true;
         rig.Simulator.DropConnections();
@@ -118,7 +118,7 @@ public sealed class AutoOffServiceTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        await rig.Control.TurnOnAsync(4, Nils, Cancel);
+        await rig.Control.TurnOnAsync(4, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(4));
         rig.Time.Now += TimeSpan.FromDays(2);
 

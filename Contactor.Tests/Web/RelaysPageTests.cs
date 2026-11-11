@@ -14,12 +14,12 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
-        Assert.Contains("Hej Ted", html, StringComparison.Ordinal);
+        Assert.Contains("Hej John", html, StringComparison.Ordinal);
         Assert.Contains("0 av 8 på", html, StringComparison.Ordinal);
         for (var id = 1; id <= 8; id++)
         {
@@ -32,7 +32,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
@@ -48,7 +48,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
         using var http = app.CreateClient();
 
         using var response = await http.GetAsync("/fonts/ibm-plex-sans-latin-400-normal.woff2", Cancel);

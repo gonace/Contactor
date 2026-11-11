@@ -29,10 +29,10 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
         await using var app = CreateApp();
         using var http = app.CreateClient();
 
-        using var response = await GetAsync(http, "/", _tokens.Create("nils@example.com"));
+        using var response = await GetAsync(http, "/", _tokens.Create("jane@example.com"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("Hej Nils", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Contains("Hej Jane", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -43,15 +43,15 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
 
         for (var i = 0; i < 3; i++)
         {
-            using var response = await GetAsync(http, "/", _tokens.Create("Lars.Berg@Example.com"));
+            using var response = await GetAsync(http, "/", _tokens.Create("Alex.Smith@Example.com"));
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(Cancel);
         var user = await db.Users.SingleAsync(Cancel);
-        Assert.Equal("lars.berg@example.com", user.Email);
-        Assert.Equal("Lars.berg", user.DisplayName);
+        Assert.Equal("alex.smith@example.com", user.Email);
+        Assert.Equal("Alex.smith", user.DisplayName);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
     {
         await using var app = CreateApp();
         using var http = app.CreateClient();
-        using (var first = await GetAsync(http, "/", _tokens.Create("ted@example.com")))
+        using (var first = await GetAsync(http, "/", _tokens.Create("john@example.com")))
         {
             Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         }
@@ -67,14 +67,14 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
         var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using (var db = await factory.CreateDbContextAsync(Cancel))
         {
-            var ted = await db.Users.SingleAsync(Cancel);
-            ted.DisplayName = "Ted E.";
+            var john = await db.Users.SingleAsync(Cancel);
+            john.DisplayName = "John E.";
             await db.SaveChangesAsync(Cancel);
         }
 
-        using var response = await GetAsync(http, "/", _tokens.Create("ted@example.com"));
+        using var response = await GetAsync(http, "/", _tokens.Create("john@example.com"));
 
-        Assert.Contains("Hej Ted E.", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Contains("Hej John E.", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
         await using var app = CreateApp();
         using var http = app.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/");
-        request.Headers.Add("Cf-Access-Authenticated-User-Email", "ted@example.com");
+        request.Headers.Add("Cf-Access-Authenticated-User-Email", "john@example.com");
 
         using var response = await http.SendAsync(request, Cancel);
 
@@ -138,7 +138,7 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
     [Fact]
     public async Task Should_RefuseToStart_WhenDevUserIsSetInProduction()
     {
-        await using var app = CreateApp(new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+        await using var app = CreateApp(new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
 
         var error = Assert.Throws<OptionsValidationException>(() => app.CreateClient());
 
@@ -161,13 +161,13 @@ public sealed class CloudflareAccessMiddlewareTests : IDisposable
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
         using var http = app.CreateClient();
 
         using var response = await GetAsync(http, "/", token: null);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("Hej Ted", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Contains("Hej John", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     public void Dispose()

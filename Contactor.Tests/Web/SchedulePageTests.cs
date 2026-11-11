@@ -34,7 +34,7 @@ public sealed class SchedulePageTests
         using var http = app.CreateClient();
         await http.GetAsync("/", Cancel);
         var schedules = app.Services.GetRequiredService<SchedulesHandler>();
-        await schedules.SaveAsync(new ScheduleModel(0, 3, ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0), true), "ted@example.com", Cancel);
+        await schedules.SaveAsync(new ScheduleModel(0, 3, ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0), true), "john@example.com", Cancel);
         var id = (await schedules.ListAsync(3, Cancel))[0].Id;
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync($"/schema/{id}", Cancel));
@@ -68,6 +68,6 @@ public sealed class SchedulePageTests
     {
         return new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
     }
 }

@@ -11,7 +11,7 @@ namespace Contactor.Tests.Web;
 /// </summary>
 public sealed class GroupPlannerTests
 {
-    private const string Ted = "ted@example.com";
+    private const string John = "john@example.com";
     private static readonly DateTime T0 = new(2026, 11, 8, 14, 0, 0, DateTimeKind.Utc);
 
     // The fan heater: the fan (relay 1) first, the heat (relay 2) three seconds later; the fan runs on 5 minutes.
@@ -36,7 +36,7 @@ public sealed class GroupPlannerTests
     public void Should_StartFromTheTop_EachStepAfterConfirmationAndItsDelay()
     {
         var commands = new GroupCommands();
-        Assert.True(GroupPlanner.Start(FanHeater, State(), _runtime, Ted, 120, T0, commands));
+        Assert.True(GroupPlanner.Start(FanHeater, State(), _runtime, John, 120, T0, commands));
         Assert.Equal((Mask(1), (byte)0), (commands.On, commands.Off));
         Assert.Equal(EventActions.GroupOn, Assert.Single(commands.Events).Action);
 
@@ -52,13 +52,13 @@ public sealed class GroupPlannerTests
         Plan(State(1, 2), T0.AddSeconds(4.5));
         Plan(State(1, 2), T0.AddSeconds(5));
         Assert.Equal(GroupPhases.Idle, _runtime.Phase);
-        Assert.Equal((T0, Ted, T0.AddMinutes(120)), (_runtime.OnSinceUtc!.Value, _runtime.TurnedOnBy, _runtime.AutoOffAtUtc!.Value));
+        Assert.Equal((T0, John, T0.AddMinutes(120)), (_runtime.OnSinceUtc!.Value, _runtime.TurnedOnBy, _runtime.AutoOffAtUtc!.Value));
     }
 
     [Fact]
     public void Should_StopStarting_WhenTheBoardNeverConfirms()
     {
-        GroupPlanner.Start(FanHeater, State(), _runtime, Ted, null, T0, new GroupCommands());
+        GroupPlanner.Start(FanHeater, State(), _runtime, John, null, T0, new GroupCommands());
 
         Assert.True(Plan(State(), T0.AddSeconds(4.9)).IsEmpty);
         var failed = Plan(State(), T0.AddSeconds(5));
@@ -72,7 +72,7 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_KeepWhatRuns_WhenALaterStepIsNeverConfirmed()
     {
-        GroupPlanner.Start(FanHeater, State(), _runtime, Ted, null, T0, new GroupCommands());
+        GroupPlanner.Start(FanHeater, State(), _runtime, John, null, T0, new GroupCommands());
         Plan(State(1), T0.AddSeconds(1));
         Plan(State(1), T0.AddSeconds(4));
 
@@ -86,7 +86,7 @@ public sealed class GroupPlannerTests
     public void Should_StopFromTheBottom_WithRunOn()
     {
         var stop = new GroupCommands();
-        Assert.True(GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, Ted, T0, stop));
+        Assert.True(GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, John, T0, stop));
         Assert.Equal(Mask(2), stop.Off);
         Assert.Equal(EventActions.GroupOff, stop.Events[0].Action);
 
@@ -110,11 +110,11 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_CarryOn_WhenStartedDuringRunOn()
     {
-        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, Ted, T0, new GroupCommands());
+        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, John, T0, new GroupCommands());
         Plan(State(1), T0.AddSeconds(1));
 
         var start = new GroupCommands();
-        GroupPlanner.Start(FanHeater, State(1), _runtime, Ted, null, T0.AddSeconds(60), start);
+        GroupPlanner.Start(FanHeater, State(1), _runtime, John, null, T0.AddSeconds(60), start);
 
         Assert.Equal(((byte)0, Mask(2)), (start.Off, start.On));
     }
@@ -123,7 +123,7 @@ public sealed class GroupPlannerTests
     public void Should_RunThreeRelays_WithTheirOwnWaits()
     {
         _members = Spray;
-        GroupPlanner.Start(Spray, State(), _runtime, Ted, null, T0, new GroupCommands());
+        GroupPlanner.Start(Spray, State(), _runtime, John, null, T0, new GroupCommands());
         Plan(State(5), T0);
         Assert.Equal(T0.AddSeconds(10), _runtime.NextStepAtUtc);
         Assert.Equal(Mask(6), Plan(State(5), T0.AddSeconds(10)).On);
@@ -132,7 +132,7 @@ public sealed class GroupPlannerTests
         Assert.Equal(Mask(7), Plan(State(5, 6), T0.AddSeconds(12)).On);
         Plan(State(5, 6, 7), T0.AddSeconds(12));
 
-        GroupPlanner.Stop(Spray, State(5, 6, 7), _runtime, Ted, T0.AddSeconds(100), new GroupCommands());
+        GroupPlanner.Stop(Spray, State(5, 6, 7), _runtime, John, T0.AddSeconds(100), new GroupCommands());
         Plan(State(5, 6), T0.AddSeconds(100));
         Assert.Equal(T0.AddSeconds(160), _runtime.NextStepAtUtc);
         Assert.Equal(Mask(6), Plan(State(5, 6), T0.AddSeconds(160)).Off);
@@ -189,7 +189,7 @@ public sealed class GroupPlannerTests
     {
         var commands = new GroupCommands();
 
-        var refusal = GroupPlanner.MemberOn(FanHeater, State(), _runtime, 2, Ted, null, T0, commands);
+        var refusal = GroupPlanner.MemberOn(FanHeater, State(), _runtime, 2, John, null, T0, commands);
 
         Assert.Equal("Kräver att Fläkt är på.", refusal);
         Assert.True(commands.IsEmpty);
@@ -200,7 +200,7 @@ public sealed class GroupPlannerTests
     {
         var commands = new GroupCommands();
 
-        Assert.Null(GroupPlanner.MemberOn(FanHeater, State(), _runtime, 1, Ted, 60, T0, commands));
+        Assert.Null(GroupPlanner.MemberOn(FanHeater, State(), _runtime, 1, John, 60, T0, commands));
 
         Assert.Equal(Mask(1), commands.On);
         Assert.Equal((EventActions.On, (int?)1), (commands.Events[0].Action, commands.Events[0].RelayId));
@@ -211,7 +211,7 @@ public sealed class GroupPlannerTests
     public void Should_StopTheRelaysBelow_ThenRunOn_WhenTheFanIsTurnedOff()
     {
         var off = new GroupCommands();
-        GroupPlanner.MemberOff(FanHeater, State(1, 2), _runtime, 1, Ted, T0, off);
+        GroupPlanner.MemberOff(FanHeater, State(1, 2), _runtime, 1, John, T0, off);
 
         Assert.Equal(Mask(2), off.Off);
         Assert.Equal(EventActions.RunOnStart, Plan(State(1), T0.AddSeconds(1)).Events[0].Action);
@@ -223,7 +223,7 @@ public sealed class GroupPlannerTests
     {
         var off = new GroupCommands();
 
-        GroupPlanner.MemberOff(FanHeater, State(1, 2), _runtime, 2, Ted, T0, off);
+        GroupPlanner.MemberOff(FanHeater, State(1, 2), _runtime, 2, John, T0, off);
 
         Assert.Equal(Mask(2), off.Off);
         Plan(State(1), T0.AddSeconds(1));
@@ -234,7 +234,7 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_StopTheGroup_WhenItsAutoOffTimeHasPassed()
     {
-        GroupPlanner.Start(FanHeater, State(), _runtime, Ted, 60, T0, new GroupCommands());
+        GroupPlanner.Start(FanHeater, State(), _runtime, John, 60, T0, new GroupCommands());
         Plan(State(1), T0.AddSeconds(1));
         Plan(State(1), T0.AddSeconds(4));
         Plan(State(1, 2), T0.AddSeconds(5));
@@ -258,7 +258,7 @@ public sealed class GroupPlannerTests
             TargetLevel = 0,
             NextStepAtUtc = T0.AddMinutes(5),
             OnSinceUtc = T0.AddMinutes(-30),
-            TurnedOnBy = Ted,
+            TurnedOnBy = John,
         };
         var commands = new GroupCommands();
 
@@ -270,7 +270,7 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_SendTheStopAgain_WhenTheBoardDoesNotConfirmIt()
     {
-        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, Ted, T0, new GroupCommands());
+        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, John, T0, new GroupCommands());
 
         Assert.Equal(Mask(2), Plan(State(1, 2), T0.AddSeconds(5)).Off);
     }
@@ -278,13 +278,13 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_RunOn_WhenAStopOvertakesTheHeatOnItsWay()
     {
-        GroupPlanner.Start(FanHeater, State(), _runtime, Ted, null, T0, new GroupCommands());
+        GroupPlanner.Start(FanHeater, State(), _runtime, John, null, T0, new GroupCommands());
         Plan(State(1), T0.AddSeconds(1));
         Assert.Equal(Mask(2), Plan(State(1), T0.AddSeconds(4)).On);
 
         // Stop before the board reports the heat on: the heat gets an OFF, the fan stays.
         var stop = new GroupCommands();
-        Assert.True(GroupPlanner.Stop(FanHeater, State(1), _runtime, Ted, T0.AddSeconds(4.5), stop));
+        Assert.True(GroupPlanner.Stop(FanHeater, State(1), _runtime, John, T0.AddSeconds(4.5), stop));
         Assert.Equal(Mask(2), stop.Off);
 
         // The board reports the heat on, then off; the fan runs on the full 5 minutes from there.
@@ -297,10 +297,10 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_StopTheFan_WhenStoppedRightAfterItWasTurnedOn()
     {
-        GroupPlanner.MemberOn(FanHeater, State(), _runtime, 1, Ted, null, T0, new GroupCommands());
+        GroupPlanner.MemberOn(FanHeater, State(), _runtime, 1, John, null, T0, new GroupCommands());
         var stop = new GroupCommands();
 
-        Assert.True(GroupPlanner.Stop(FanHeater, State(), _runtime, Ted, T0.AddSeconds(0.5), stop));
+        Assert.True(GroupPlanner.Stop(FanHeater, State(), _runtime, John, T0.AddSeconds(0.5), stop));
 
         Assert.Equal(Mask(1), stop.Off);
     }
@@ -337,10 +337,10 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_LeaveAStartAlone_WhenTheFanIsTurnedOnAgain()
     {
-        GroupPlanner.Start(FanHeater, State(), _runtime, Ted, null, T0, new GroupCommands());
+        GroupPlanner.Start(FanHeater, State(), _runtime, John, null, T0, new GroupCommands());
         Plan(State(1), T0.AddSeconds(1));
 
-        GroupPlanner.MemberOn(FanHeater, State(1), _runtime, 1, Ted, null, T0.AddSeconds(2), new GroupCommands());
+        GroupPlanner.MemberOn(FanHeater, State(1), _runtime, 1, John, null, T0.AddSeconds(2), new GroupCommands());
 
         Assert.Equal(Mask(2), Plan(State(1), T0.AddSeconds(4)).On);
     }
@@ -359,10 +359,10 @@ public sealed class GroupPlannerTests
     [Fact]
     public void Should_KeepTheFan_WhenItIsTurnedOnDuringItsRunOn()
     {
-        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, Ted, T0, new GroupCommands());
+        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, John, T0, new GroupCommands());
         Plan(State(1), T0.AddSeconds(1));
 
-        Assert.Null(GroupPlanner.MemberOn(FanHeater, State(1), _runtime, 1, Ted, null, T0.AddSeconds(60), new GroupCommands()));
+        Assert.Null(GroupPlanner.MemberOn(FanHeater, State(1), _runtime, 1, John, null, T0.AddSeconds(60), new GroupCommands()));
 
         Assert.True(Plan(State(1), T0.AddSeconds(400)).IsEmpty);
         Assert.Equal(GroupPhases.Idle, _runtime.Phase);
@@ -372,7 +372,7 @@ public sealed class GroupPlannerTests
     public void Should_TimeTheRunOn_FromAConfirmationAfterAReconnect()
     {
         // The heat's OFF went out before the connection dropped; the sequencer gives the board a fresh timeout.
-        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, Ted, T0, new GroupCommands());
+        GroupPlanner.Stop(FanHeater, State(1, 2), _runtime, John, T0, new GroupCommands());
         _runtime.PendingSinceUtc = T0.AddMinutes(3);
 
         Assert.Equal(EventActions.RunOnStart, Plan(State(1), T0.AddMinutes(3)).Events[0].Action);
@@ -384,7 +384,7 @@ public sealed class GroupPlannerTests
     {
         var commands = new GroupCommands();
 
-        Assert.False(GroupPlanner.Stop(FanHeater, State(), _runtime, Ted, T0, commands));
+        Assert.False(GroupPlanner.Stop(FanHeater, State(), _runtime, John, T0, commands));
         Assert.True(commands.IsEmpty);
     }
 

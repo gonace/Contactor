@@ -16,7 +16,7 @@ namespace Contactor.Tests.Web;
 /// </summary>
 public sealed class RelayControlTests : IAsyncLifetime
 {
-    private const string Nils = "nils@example.com";
+    private const string Jane = "jane@example.com";
     private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(10);
     private static readonly DateTime Now = new(2026, 11, 4, 13, 2, 0, DateTimeKind.Utc);
 
@@ -65,17 +65,17 @@ public sealed class RelayControlTests : IAsyncLifetime
     [Fact]
     public async Task Should_TurnOnAndRecordWhoAndWhenItTurnsOff()
     {
-        await Control.TurnOnAsync(3, Nils, Cancel);
+        await Control.TurnOnAsync(3, Jane, Cancel);
 
         await WaitUntilAsync(() => Client.State.IsOn(3));
         Assert.Equal(Vm201Channel.Mask(3), _simulator.Outputs);
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
         Assert.Equal(Now, runtime.OnSinceUtc);
-        Assert.Equal(Nils, runtime.TurnedOnBy);
+        Assert.Equal(Jane, runtime.TurnedOnBy);
         Assert.Equal(Now.AddMinutes(Relay.DefaultMaxOnMinutes), runtime.AutoOffAtUtc);
         var entry = await db.EventLog.SingleAsync(Cancel);
-        Assert.Equal((3, Nils, EventActions.On, Now), (entry.RelayId!.Value, entry.Actor, entry.Action, entry.TimestampUtc));
+        Assert.Equal((3, Jane, EventActions.On, Now), (entry.RelayId!.Value, entry.Actor, entry.Action, entry.TimestampUtc));
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class RelayControlTests : IAsyncLifetime
             await db.SaveChangesAsync(Cancel);
         }
 
-        await Control.TurnOnAsync(2, Nils, Cancel);
+        await Control.TurnOnAsync(2, Jane, Cancel);
 
         await using var check = await _database.Factory.CreateDbContextAsync(Cancel);
         var runtime = await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
@@ -99,34 +99,34 @@ public sealed class RelayControlTests : IAsyncLifetime
     [Fact]
     public async Task Should_TurnOffAndForgetWhoTurnedItOn()
     {
-        await Control.TurnOnAsync(1, Nils, Cancel);
+        await Control.TurnOnAsync(1, Jane, Cancel);
         await WaitUntilAsync(() => Client.State.IsOn(1));
 
-        await Control.TurnOffAsync(1, "ted@example.com", Cancel);
+        await Control.TurnOffAsync(1, "john@example.com", Cancel);
 
         await WaitUntilAsync(() => !Client.State.IsOn(1));
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 1, Cancel);
         Assert.Equal((null, null, null), (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy));
         var actions = await db.EventLog.OrderBy(e => e.Id).Select(e => new { e.Action, e.Actor }).ToListAsync(Cancel);
-        Assert.Equal([(EventActions.On, Nils), (EventActions.Off, "ted@example.com")], actions.Select(a => (a.Action, a.Actor)));
+        Assert.Equal([(EventActions.On, Jane), (EventActions.Off, "john@example.com")], actions.Select(a => (a.Action, a.Actor)));
     }
 
     [Fact]
     public async Task Should_TurnAllOffAndLogOnlyThoseThatWereOn()
     {
-        await Control.TurnOnAsync(2, Nils, Cancel);
+        await Control.TurnOnAsync(2, Jane, Cancel);
         await _simulator.SetOutputsAsync(0b0010_0010); // Relay 6 turned on at the board itself.
         await WaitUntilAsync(() => Client.State.Outputs == 0b0010_0010);
 
-        await Control.TurnAllOffAsync("ted@example.com", Cancel);
+        await Control.TurnAllOffAsync("john@example.com", Cancel);
 
         await WaitUntilAsync(() => Client.State.Outputs == 0);
         Assert.Equal(1, _simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.Off));
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         var offs = await db.EventLog.Where(e => e.Action == EventActions.Off).OrderBy(e => e.RelayId).ToListAsync(Cancel);
         Assert.Equal([2, 6], offs.Select(e => e.RelayId!.Value));
-        Assert.All(offs, e => Assert.Equal("ted@example.com", e.Actor));
+        Assert.All(offs, e => Assert.Equal("john@example.com", e.Actor));
         Assert.All(await db.RelayRuntimes.ToListAsync(Cancel), r => Assert.Null(r.OnSinceUtc));
     }
 
@@ -137,9 +137,9 @@ public sealed class RelayControlTests : IAsyncLifetime
         _simulator.DropConnections();
         await WaitUntilAsync(() => !Client.State.IsConnected);
 
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnOnAsync(1, Nils, Cancel));
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnOffAsync(1, Nils, Cancel));
-        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnAllOffAsync(Nils, Cancel));
+        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnOnAsync(1, Jane, Cancel));
+        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnOffAsync(1, Jane, Cancel));
+        await Assert.ThrowsAsync<Vm201NotConnectedException>(() => Control.TurnAllOffAsync(Jane, Cancel));
 
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(0, await db.EventLog.CountAsync(Cancel));
@@ -151,7 +151,7 @@ public sealed class RelayControlTests : IAsyncLifetime
     [InlineData(9)]
     public async Task Should_RejectRelaysTheBoardDoesNotHave(int relayId)
     {
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Control.TurnOnAsync(relayId, Nils, Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Control.TurnOnAsync(relayId, Jane, Cancel));
         Assert.DoesNotContain(_simulator.ReceivedCommands, p => p.Command == Vm201Command.On);
     }
 
@@ -161,9 +161,9 @@ public sealed class RelayControlTests : IAsyncLifetime
         var notified = 0;
         _database.Services.GetRequiredService<RelayChanges>().Changed += (_, _) => Interlocked.Increment(ref notified);
 
-        await Control.TurnOnAsync(1, Nils, Cancel);
-        await Control.TurnOffAsync(1, Nils, Cancel);
-        await Control.TurnAllOffAsync(Nils, Cancel);
+        await Control.TurnOnAsync(1, Jane, Cancel);
+        await Control.TurnOffAsync(1, Jane, Cancel);
+        await Control.TurnAllOffAsync(Jane, Cancel);
 
         Assert.Equal(3, notified);
     }

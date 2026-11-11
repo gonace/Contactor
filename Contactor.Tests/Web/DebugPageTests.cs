@@ -11,8 +11,8 @@ namespace Contactor.Tests.Web;
 /// </summary>
 public sealed class DebugPageTests
 {
-    private const string Ted = "ted@example.com";
-    private const string Nils = "nils@example.com";
+    private const string John = "john@example.com";
+    private const string Jane = "jane@example.com";
     private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(10);
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
@@ -24,7 +24,7 @@ public sealed class DebugPageTests
         await database.Services.InitializeDatabaseAsync(Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.Users.AddRange(new User { Email = Ted, DisplayName = "Ted" }, new User { Email = Nils, DisplayName = "Nils" });
+            db.Users.AddRange(new User { Email = John, DisplayName = "John" }, new User { Email = Jane, DisplayName = "Jane" });
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -32,16 +32,16 @@ public sealed class DebugPageTests
         List<string> changed = [];
         setting.Changed += (_, email) => changed.Add(email);
 
-        await setting.SetAsync(Ted, true, Cancel);
-        await setting.SetAsync(Ted, true, Cancel);
+        await setting.SetAsync(John, true, Cancel);
+        await setting.SetAsync(John, true, Cancel);
 
-        Assert.True(await setting.IsOnAsync(Ted, Cancel));
-        Assert.False(await setting.IsOnAsync(Nils, Cancel));
+        Assert.True(await setting.IsOnAsync(John, Cancel));
+        Assert.False(await setting.IsOnAsync(Jane, Cancel));
         Assert.False(await setting.IsOnAsync("nobody@example.com", Cancel));
-        Assert.Equal([Ted], changed);
+        Assert.Equal([John], changed);
 
-        await setting.SetAsync(Ted, false, Cancel);
-        Assert.False(await setting.IsOnAsync(Ted, Cancel));
+        await setting.SetAsync(John, false, Cancel);
+        Assert.False(await setting.IsOnAsync(John, Cancel));
     }
 
     [Fact]
@@ -49,14 +49,14 @@ public sealed class DebugPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = Ted });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = John });
         using var http = app.CreateClient();
 
         var before = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
         Assert.Contains("Visa trafiken till reläkortet", before, StringComparison.Ordinal);
         Assert.DoesNotContain("href=\"debug\"", before, StringComparison.Ordinal);
 
-        await app.Services.GetRequiredService<BoardTrafficSetting>().SetAsync(Ted, true, Cancel);
+        await app.Services.GetRequiredService<BoardTrafficSetting>().SetAsync(John, true, Cancel);
 
         foreach (var path in new[] { "/", "/handelser", "/settings" })
         {
@@ -73,7 +73,7 @@ public sealed class DebugPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = Ted });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = John });
         using var http = app.CreateClient();
         await http.GetStringAsync("/", Cancel);
         var trace = app.Services.GetRequiredService<BoardTrace>();

@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Contactor.Web.Features.Relays;
 
 /// <summary>
-/// The status line under a relay's name, in Swedish, e.g. "På sedan 14:02 · Nils · av 16:02".
+/// The status line under a relay's name, in Swedish, e.g. "På sedan 14:02 · Jane · av 16:02".
 /// </summary>
 public static class RelayStatusText
 {
@@ -64,7 +64,7 @@ public static class RelayStatusText
     }
 
     /// <summary>
-    /// The status card on the Relä screen, in whole sentences: "På sedan 14:02 av Nils. Stängs av 16:02." or
+    /// The status card on the Relä screen, in whole sentences: "På sedan 14:02 av Jane. Stängs av 16:02." or
     /// "Av just nu.".
     /// </summary>
     /// <param name="turnedOnBy">"du" for the viewer, otherwise their name.</param>

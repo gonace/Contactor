@@ -52,7 +52,7 @@ public sealed class GroupNewTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "ted@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
         using var http = app.CreateClient();
 
         var list = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));

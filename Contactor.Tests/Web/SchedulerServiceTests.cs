@@ -11,7 +11,7 @@ namespace Contactor.Tests.Web;
 /// </summary>
 public sealed class SchedulerServiceTests
 {
-    private const string Nils = "nils@example.com";
+    private const string Jane = "jane@example.com";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -60,7 +60,7 @@ public sealed class SchedulerServiceTests
         await TickAtAsync(rig, 14, 5);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
 
-        await rig.Control.TurnOffAsync(1, Nils, Cancel);
+        await rig.Control.TurnOffAsync(1, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsOn(1));
         await TickAtAsync(rig, 14, 6);
         await TickAtAsync(rig, 14, 7);
@@ -92,7 +92,7 @@ public sealed class SchedulerServiceTests
         await using var rig = await BoardTestRig.StartAsync();
         await AddScheduleAsync(rig, relayId: 4, 14, 5, 14, 10);
         await rig.Scheduler.TickAsync(Cancel);
-        await rig.Control.TurnOnAsync(4, Nils, Cancel);
+        await rig.Control.TurnOnAsync(4, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(4));
 
         await TickAtAsync(rig, 14, 5);
@@ -127,7 +127,7 @@ public sealed class SchedulerServiceTests
         await using var rig = await BoardTestRig.StartAsync();
         await AddScheduleAsync(rig, relayId: 6, 14, 5, 14, 10);
         await rig.Scheduler.TickAsync(Cancel);
-        await rig.Control.TurnOnAsync(6, Nils, Cancel);
+        await rig.Control.TurnOnAsync(6, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(6));
         await TickAtAsync(rig, 14, 5);
 
@@ -262,7 +262,7 @@ public sealed class SchedulerServiceTests
     public async Task Should_LeaveAPersonsRelayOn_WhenNoScheduleCoversIt()
     {
         await using var rig = await BoardTestRig.StartAsync();
-        await rig.Control.TurnOnAsync(3, Nils, Cancel);
+        await rig.Control.TurnOnAsync(3, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(3));
 
         await rig.Scheduler.TickAsync(Cancel);
@@ -275,14 +275,14 @@ public sealed class SchedulerServiceTests
     [Fact]
     public async Task Should_LetAPersonsAutoOffEndTheRun_AndNotTurnItBackOn()
     {
-        // The user's decision: Nils chose 2 h, so it goes off at 16:00 although a schedule runs 14:05–18:00.
+        // The user's decision: Jane chose 2 h, so it goes off at 16:00 although a schedule runs 14:05–18:00.
         await using var rig = await BoardTestRig.StartAsync();
         await AddScheduleAsync(rig, relayId: 4, 14, 5, 18, 0);
         await rig.Scheduler.TickAsync(Cancel);
-        await rig.Control.TurnOnAsync(4, Nils, Cancel);
+        await rig.Control.TurnOnAsync(4, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(4));
         await TickAtAsync(rig, 14, 5);
-        Assert.Equal(Nils, (await RuntimeAsync(rig, 4)).TurnedOnBy);
+        Assert.Equal(Jane, (await RuntimeAsync(rig, 4)).TurnedOnBy);
 
         rig.Time.Now = Local(16, 0);
         Assert.Equal([4], await AutoOff(rig).CheckAsync(Cancel));
@@ -305,7 +305,7 @@ public sealed class SchedulerServiceTests
 
         rig.Time.Now = Local(15, 10);
         var settings = rig.Database.Services.GetRequiredService<RelaySettingsHandler>();
-        await settings.SaveAsync(new RelaySettings(5, "Relä 5", true, 60), Nils, Cancel);
+        await settings.SaveAsync(new RelaySettings(5, "Relä 5", true, 60), Jane, Cancel);
 
         Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
         Assert.True(rig.Client.State.IsOn(5));
@@ -353,7 +353,7 @@ public sealed class SchedulerServiceTests
             OnTime = new TimeOnly(onHour, onMinute),
             OffTime = new TimeOnly(offHour, offMinute),
             IsEnabled = true,
-            CreatedBy = Nils,
+            CreatedBy = Jane,
         };
         db.Schedules.Add(schedule);
         await db.SaveChangesAsync(Cancel);

@@ -101,7 +101,7 @@ public sealed class PersistenceTests
         await using var database = TestDatabase.Create();
         await database.Services.InitializeDatabaseAsync(Cancel);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        db.Schedules.Add(new Schedule { RelayId = 1, Days = ScheduleDays.None, CreatedBy = "ted@example.com" });
+        db.Schedules.Add(new Schedule { RelayId = 1, Days = ScheduleDays.None, CreatedBy = "john@example.com" });
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
     }
@@ -120,7 +120,7 @@ public sealed class PersistenceTests
                 OnTime = new TimeOnly(6, 30),
                 OffTime = new TimeOnly(8, 0),
                 IsEnabled = true,
-                CreatedBy = "ted@example.com",
+                CreatedBy = "john@example.com",
             });
             await db.SaveChangesAsync(Cancel);
         }

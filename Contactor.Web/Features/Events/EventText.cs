@@ -8,7 +8,7 @@ namespace Contactor.Web.Features.Events;
 /// <summary>How an event is drawn: the badge, who did it, what they did, and to what.</summary>
 /// <param name="IsPerson">A person (filled badge with their initial) rather than something automatic (dashed badge).</param>
 /// <param name="Badge">The letter in the badge.</param>
-/// <param name="Who">Shown in bold, e.g. "Nils" or "Schema".</param>
+/// <param name="Who">Shown in bold, e.g. "Jane" or "Schema".</param>
 /// <param name="What">Follows it, e.g. "slog på".</param>
 /// <param name="Target">The line below, usually the relay's name; null when there is none.</param>
 /// <param name="IsAlert">Shown in red: a safety shut-off, or a group that couldn't start.</param>
@@ -42,7 +42,7 @@ public static class EventText
         return new EventView(isPerson, badge, who, what, target);
     }
 
-    // A group's own events: "Ted slog på gruppen" over "Värmefläkt · Fläkt → 3 s → Värme", "Eftergång: Fläkt går 5 min
+    // A group's own events: "John slog på gruppen" over "Värmefläkt · Fläkt → 3 s → Värme", "Eftergång: Fläkt går 5 min
     // till", the red "Säkerhetsavstängning: Värme stängdes av eftersom Fläkt var av". A relay of a group switched on its
     // own is an ordinary on/off and returns null.
     private static (string What, string? Target, bool IsAlert)? GroupText(EventLogEntry entry, string? relayName, string groupName)

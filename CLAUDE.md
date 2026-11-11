@@ -4,7 +4,7 @@ Contactor is an open-source mobile web app for controlling the 8 relays on a **V
 
 The users are not technical. **Simplicity comes before features**: big buttons, Swedish text, no menus that aren't needed.
 
-Sketch: the source files are in `docs/sketch/` (one `.dc.html` per screen: Login, Kod, Main = Reläer, Rela = Relä, Schema, Logg = Händelser, Ingang = the future input). They use a design-tool runtime and don't render on their own. Read them as the reference for layout, texts, colours and sizes, and build the UI in Blazor from them. The sketches' top padding (44–96 px) leaves room for a drawn phone status bar; the real page already starts below the status bar, so the app keeps only the gap under it (12–20 px). Screenshots may sit next to them as PNG.
+The screens are described under User interface below; the running app is the reference for layout, texts, colours and sizes.
 
 ---
 
@@ -56,7 +56,6 @@ Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resi
 Contactor.Tests/          # The only test project
   Vm201/                    # Codec + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
-docs/sketch/                # Sketches (.dc.html)
 deploy/
   compose.yml               # The app + cloudflared on the Raspberry Pi; no published ports
   install.sh                # Run on the Pi: settings to /opt/contactor/.env, data folder, ghcr.io login, first start
@@ -178,7 +177,7 @@ Schedule                (a relay's or a group's: exactly one of RelayId and Grou
 
 User
   Email           text PK        lower case
-  DisplayName     text           "Ted", "Nils" … shown in the app and in Händelser
+  DisplayName     text           "John", "Jane" … shown in the app and in Händelser
   ShowBoardTraffic bool          the person's Debugging setting: toasts with the board's traffic and the Debug tab
 
 EventLog
@@ -330,16 +329,16 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Swedis
 - **Reconnecting:** when the live connection drops (the phone slept, an update restarted the Pi), a Swedish bar replaces Blazor's English messages: "Ansluter igen…", and "Ingen kontakt med appen." with "Försök igen" when it gives up; it tries again by itself when the page is looked at. A page the server no longer knows reloads by itself (`wwwroot/reconnect.js`).
 - `phone.js` and `reconnect.js` are the app's only JavaScript of its own.
 
-### Screens (see the sketch)
+### Screens
 
 1. **Reläer** (`/`)
    - Heading "Contactor", "Hej {DisplayName} · {number on} av {number active} på" and the button "Alla av".
    - Connection line: a green dot with "Kortet svarar · uppdaterat nyss", or a red warning box.
    - One card per active relay: a small mono label "RELÄ n", the name and a status line, plus a big PÅ/AV button (84×52).
-     - Status line when on: "På sedan 14:02 · Nils · av 16:02".
-     - Status line when off: "Av", "Schema: på i morgon 06:30" or "Av sedan i går · Lars".
+     - Status line when on: "På sedan 14:02 · Jane · av 16:02".
+     - Status line when off: "Av", "Schema: på i morgon 06:30" or "Av sedan i går · Alex".
    - The link "Ny grupp" under the cards, then the button "Visa N inaktiva reläer" / "Dölj inaktiva reläer". Inactive relays have a dashed border.
-   - One card per group, before the relays: its icon, "GRUPP · RELÄ 1 → 2", the name, a status line ("Startar · steg 2 av 2", "Stänger av · Fläkt går 5 min till", "På sedan 14:02 · Ted · av 16:02 · bara Fläkt", "Schema: på i morgon 06:30") and one PÅ/AV for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
+   - One card per group, before the relays: its icon, "GRUPP · RELÄ 1 → 2", the name, a status line ("Startar · steg 2 av 2", "Stänger av · Fläkt går 5 min till", "På sedan 14:02 · John · av 16:02 · bara Fläkt", "Schema: på i morgon 06:30") and one PÅ/AV for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Reläer | Händelser | Inställningar, plus Debug for a person who has Debugging on.
 2. **Relä** (`/rele/{id}`)
    - A name field and the checkbox "Aktiv – visas i listan".
@@ -370,11 +369,11 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Swedis
    - Row: time in mono, a round badge with an initial, and text.
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
-     - Group events name the group: "Ted slog på gruppen Värmefläkt · Fläkt → 3 s → Värme", "Eftergång: Fläkt går 5 min till". A safety shut-off ("Värme stängdes av eftersom Fläkt var av") and a start that failed show as a red row.
+     - Group events name the group: "John slog på gruppen Värmefläkt · Fläkt → 3 s → Värme", "Eftergång: Fläkt går 5 min till". A safety shut-off ("Värme stängdes av eftersom Fläkt var av") and a start that failed show as a red row.
    - 50 at a time, with the button "Visa fler" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Inställningar** (`/settings`; new URLs are English)
-   - "Reläkortet": the board's address ("Adress") and "Port", its login ("Kortet har ingen inloggning", or "Användarnamn" and "Lösenord"; the password is never shown, an empty field keeps it), the live status ("Kortet svarar på 192.168.1.50:9760" or "Ingen kontakt med reläkortet på …"), and "Spara". Saving moves the connection at once and is logged ("Ted ändrade reläkortets adress från … till …", "Ted ändrade reläkortets inloggning", never the values).
-   - "Personer": everyone who has signed in, by e-mail, with their name ("Lars.berg" → "Lars") and "Spara".
+   - "Reläkortet": the board's address ("Adress") and "Port", its login ("Kortet har ingen inloggning", or "Användarnamn" and "Lösenord"; the password is never shown, an empty field keeps it), the live status ("Kortet svarar på 192.168.1.50:9760" or "Ingen kontakt med reläkortet på …"), and "Spara". Saving moves the connection at once and is logged ("John ändrade reläkortets adress från … till …", "John ändrade reläkortets inloggning", never the values).
+   - "Personer": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Spara".
    - "Säkerhetskopior": the newest nightly copy ("Senaste: i natt 02:30 · 68 kB"), "Gör en kopia nu" and "Ladda ner" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
    - "Debugging": the checkbox "Visa trafiken till reläkortet", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
    - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Utvecklingsversion" for local builds); the only place it shows.
