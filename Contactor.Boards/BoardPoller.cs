@@ -23,7 +23,8 @@ public enum BoardPollStep
 public sealed record PolledState<TReading>(bool IsConnected, TReading? Reading, DateTimeOffset? LastContactUtc);
 
 /// <summary>
-/// A board that doesn't report changes by itself, as <see cref="BoardPoller{TReading}"/> drives it. The callbacks run
+/// A board that doesn't report changes by itself, as <see cref="BoardPoller{TReading}"/> drives it. The poller calls
+/// <see cref="ConnectAsync"/> and <see cref="ReadAsync"/> one at a time, never while a command runs. The callbacks run
 /// on the poller's loop: they must be quick and must not throw.
 /// </summary>
 public interface IPolledBoard<TReading>
@@ -31,7 +32,11 @@ public interface IPolledBoard<TReading>
     /// <summary>Opens a connection, e.g. logs in. Throws when it can't; the poller tries again later.</summary>
     Task ConnectAsync(CancellationToken cancellationToken);
 
-    /// <summary>Asks the board for its state once. Throws when it can't; that counts as a failed poll.</summary>
+    /// <summary>
+    /// Asks the board for its state once. Throws when it can't; that counts as a failed poll. When
+    /// <paramref name="cancellationToken"/> is cancelled because a command takes the poll's place, it throws
+    /// <see cref="OperationCanceledException"/>, which doesn't count.
+    /// </summary>
     Task<TReading> ReadAsync(CancellationToken cancellationToken);
 
     /// <summary>The connection or the reading changed (not called for a poll that changed nothing).</summary>
@@ -46,9 +51,10 @@ public interface IPolledBoard<TReading>
 /// reports the state only when it changed. <see cref="State"/> itself is refreshed on every poll, so its
 /// <see cref="PolledState{TReading}.LastContactUtc"/> is always current. After <see cref="FailuresBeforeLost"/> failed
 /// polls in a row the board counts as disconnected and the poller connects again, with a wait that doubles from 1 s
-/// to 30 s while it keeps failing. Protocol-neutral: the board's own code does the talking.
+/// to 30 s while it keeps failing. Commands go through <see cref="RunCommandAsync"/>: never behind a poll, and never
+/// to a board that is lost. Protocol-neutral: the board's own code does the talking.
 /// </summary>
-public sealed class BoardPoller<TReading>
+public sealed class BoardPoller<TReading> : IDisposable
 {
     public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
@@ -58,11 +64,18 @@ public sealed class BoardPoller<TReading>
     private readonly IPolledBoard<TReading> _board;
     private readonly TimeProvider _timeProvider;
     private readonly IEqualityComparer<TReading> _comparer;
+
+    // One talk with the board at a time: a connect, a poll or a command. Whether the board is connected changes only
+    // under it, so a command can't slip in between a poll's last failure and the board counting as lost.
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private PolledState<TReading> _state = new(false, default, null);
     private TaskCompletionSource _wake = NewWake();
 
     // The current attempt (connect, polls and the wait after it); Restart cancels it.
     private CancellationTokenSource? _attempt;
+
+    // The poll under way; a command cancels it to go at once.
+    private CancellationTokenSource? _poll;
     private int _running;
 
     /// <param name="board">The board to poll.</param>
@@ -102,23 +115,57 @@ public sealed class BoardPoller<TReading>
     /// <summary>The latest state.</summary>
     public PolledState<TReading> State => Volatile.Read(ref _state);
 
-    /// <summary>Polls at once instead of at the end of the wait, e.g. right after a command so its change shows quickly.</summary>
+    /// <summary>Polls at once instead of at the end of the wait. Does nothing while disconnected.</summary>
     public void PollNow()
     {
-        Volatile.Read(ref _wake).TrySetResult();
+        if (State.IsConnected)
+        {
+            Volatile.Read(ref _wake).TrySetResult();
+        }
     }
 
     /// <summary>Ends the current connection, attempt or wait, and connects again at once, e.g. with a new address.</summary>
     public void Restart()
     {
+        Cancel(ref _attempt);
+    }
+
+    /// <summary>
+    /// Runs a command on the board at once: a poll under way is given up (it doesn't count as failed) and the command
+    /// waits only for it to stop, never for the next one. Throws <see cref="BoardNotConnectedException"/> when the
+    /// board is not connected, decided under the same lock as the poller's. What the command returns is the board's
+    /// state right after it, taken as a poll's answer, so the change shows without asking again. A command that
+    /// throws changes nothing here.
+    /// </summary>
+    public async Task RunCommandAsync(Func<CancellationToken, Task<TReading>> command, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (!State.IsConnected)
+        {
+            throw new BoardNotConnectedException();
+        }
+
+        Cancel(ref _poll);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            Volatile.Read(ref _attempt)?.Cancel();
+            if (!State.IsConnected)
+            {
+                throw new BoardNotConnectedException();
+            }
+
+            Apply(await command(cancellationToken).ConfigureAwait(false));
         }
-        catch (ObjectDisposedException)
+        finally
         {
-            // That attempt had just ended; the next one starts anyway.
+            _gate.Release();
         }
+    }
+
+    /// <summary>Frees the lock; call it once <see cref="RunAsync"/> has ended.</summary>
+    public void Dispose()
+    {
+        _gate.Dispose();
     }
 
     /// <summary>Connects and polls until <paramref name="cancellationToken"/> is cancelled. Call it once.</summary>
@@ -189,19 +236,39 @@ public sealed class BoardPoller<TReading>
     private async Task<bool> RunSessionAsync(CancellationToken cancellationToken)
     {
         var answered = false;
+        var lost = false;
         try
         {
             _board.OnStep(BoardPollStep.Connecting, null);
-            await _board.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _board.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+
+            // A PollNow from before the connection is no reason to poll twice.
+            Interlocked.Exchange(ref _wake, NewWake());
             var failures = 0;
             while (true)
             {
+                // Set before taking the gate, so a command that comes now always finds the poll to give up.
+                using var poll = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                Volatile.Write(ref _poll, poll);
+                await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
-                    var reading = await _board.ReadAsync(cancellationToken).ConfigureAwait(false);
+                    var reading = await _board.ReadAsync(poll.Token).ConfigureAwait(false);
                     failures = 0;
                     answered = true;
                     Apply(reading);
+                }
+                catch (OperationCanceledException) when (poll.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    // A command took the poll's place: no failure, and the command brings the state.
                 }
 #pragma warning disable CA1031 // Whatever a poll throws counts as a failed poll; the loop must go on.
                 catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -210,27 +277,51 @@ public sealed class BoardPoller<TReading>
                     failures++;
                     if (failures >= FailuresBeforeLost)
                     {
+                        // Still under the gate: no command gets through from here on.
+                        lost = true;
+                        SetDisconnected();
                         _board.OnStep(BoardPollStep.Lost, ex.Message);
                         return answered;
                     }
+                }
+                finally
+                {
+                    Volatile.Write(ref _poll, null);
+                    _gate.Release();
                 }
 
                 await WaitAsync(cancellationToken).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _board.OnStep(BoardPollStep.Stopped, null);
-        }
 #pragma warning disable CA1031 // A failed connect is logged by the board and tried again; the loop must go on.
-        catch (Exception ex)
+        catch (Exception ex) when (!lost)
 #pragma warning restore CA1031
         {
-            _board.OnStep(BoardPollStep.Lost, ex.Message);
+            // Whatever ended it once the app restarted or stopped it, the app did.
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _board.OnStep(BoardPollStep.Stopped, null);
+            }
+            else
+            {
+                _board.OnStep(BoardPollStep.Lost, ex.Message);
+            }
         }
         finally
         {
-            SetDisconnected();
+            if (!lost)
+            {
+                // A command that is under way finishes first; it takes at most its own timeout.
+                await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    SetDisconnected();
+                }
+                finally
+                {
+                    _gate.Release();
+                }
+            }
         }
 
         return answered;
@@ -257,6 +348,7 @@ public sealed class BoardPoller<TReading>
         cancellationToken.ThrowIfCancellationRequested();
     }
 
+    // Callers hold _gate.
     private void Apply(TReading reading)
     {
         var before = State;
@@ -268,6 +360,7 @@ public sealed class BoardPoller<TReading>
         }
     }
 
+    // Callers hold _gate.
     private void SetDisconnected()
     {
         var state = State;
@@ -276,6 +369,18 @@ public sealed class BoardPoller<TReading>
             var after = state with { IsConnected = false };
             Volatile.Write(ref _state, after);
             _board.OnStateChanged(after);
+        }
+    }
+
+    private static void Cancel(ref CancellationTokenSource? source)
+    {
+        try
+        {
+            Volatile.Read(ref source)?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // It had just ended.
         }
     }
 

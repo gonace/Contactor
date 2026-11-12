@@ -65,6 +65,26 @@ public sealed class BoardTraceTests : IDisposable
     }
 
     [Fact]
+    public void Should_CountRoutineSteps_WithoutListingThemOrTellingTheScreens()
+    {
+        var added = 0;
+        _trace.Added += (_, _) => added++;
+        _trace.Record(Step(Now, "Connecting"));
+
+        for (var i = 0; i < BoardTrace.Capacity * 3; i++)
+        {
+            _traffic.Raise(new BoardTraceEntry(Now.AddSeconds(i), BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true));
+        }
+
+        Assert.Equal("Connecting", Assert.Single(_trace.Items).Text);
+        Assert.Equal(BoardTrace.Capacity * 3, _trace.RoutineLeftOut);
+        Assert.Equal(1, added);
+
+        _trace.Clear();
+        Assert.Equal(0, _trace.RoutineLeftOut);
+    }
+
+    [Fact]
     public void Should_StopListening_WhenDisposed()
     {
         _trace.Dispose();

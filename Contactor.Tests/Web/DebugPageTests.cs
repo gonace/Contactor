@@ -89,6 +89,13 @@ public sealed class DebugPageTests
         Assert.True(
             html.IndexOf("Connection lost", StringComparison.Ordinal) < html.LastIndexOf("Connecting to", StringComparison.Ordinal),
             "The newest step comes first.");
+        Assert.DoesNotContain("routine", html, StringComparison.Ordinal);
+
+        trace.Record(new Contactor.Boards.BoardTraceEntry(DateTimeOffset.UnixEpoch, Contactor.Boards.BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true));
+        trace.Record(new Contactor.Boards.BoardTraceEntry(DateTimeOffset.UnixEpoch, Contactor.Boards.BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true));
+        html = WebUtility.HtmlDecode(await http.GetStringAsync("/debug", Cancel));
+        Assert.Contains("2 routine steps left out: status requests and answers that changed nothing.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ask for status", html, StringComparison.Ordinal);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

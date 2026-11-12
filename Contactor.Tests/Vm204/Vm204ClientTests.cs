@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using Contactor.Boards;
 using Contactor.Boards.Vm204;
+using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -247,6 +248,80 @@ public sealed class Vm204ClientTests
     }
 
     [Fact]
+    public async Task Should_CountARequestTheBoardNeverAnswers_AsAFailedPoll()
+    {
+        var time = new ManualTimeProvider();
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 2, time: time);
+        await WaitUntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
+
+        board.HangStatus = true;
+        time.Advance(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => board.Hanging == 1 && time.PendingTimers == 1);
+        time.Advance(Vm204Client.RequestTimeout);
+
+        await WaitUntilAsync(() => run.Traces.Any(t => t.Text == "No answer: The VM204 did not answer within 5 s." && t.IsError));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Connection lost", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_SendACommandAtOnce_WhileAPollWaitsForTheBoard()
+    {
+        var time = new ManualTimeProvider();
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 2, time: time);
+        await WaitUntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
+        board.HangStatus = true;
+        time.Advance(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => board.Hanging == 1);
+        var statusRequests = board.Targets.Count(t => t.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal));
+
+        await run.Client.TurnOnAsync(0b0010, Cancel);
+
+        // Confirmed by the command's own answer: nothing else was asked, and no time had to pass.
+        Assert.Equal(0b0010, run.Client.State.Relays);
+        Assert.Contains(run.Changes, s => s.Relays == 0b0010);
+        Assert.Equal(statusRequests, board.Targets.Count(t => t.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal)));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_DropTheKey_WhenACommandIsRefused_AndLogInAgain()
+    {
+        await using var simulator = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port, "admin", "VM204", pollSeconds: 60);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        simulator.RegenerateKey();
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+
+        // The refusal asks for a poll at once, which logs in again: no wait for the next poll a minute away.
+        var key = simulator.Key;
+        await WaitUntilAsync(() => simulator.ReceivedTargets.Contains($"{Vm204Api.StatusPath}?key={key}"));
+        Assert.Equal(0, simulator.Relays);
+        await run.Client.TurnOnAsync(0b0001, Cancel);
+        Assert.Equal(0b0001, simulator.Relays);
+    }
+
+    [Fact]
+    public async Task Should_LogInAgainAtOnce_WithANewLogin()
+    {
+        await using var simulator = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port, "admin", "wrong", pollSeconds: 60);
+        await WaitUntilAsync(() => simulator.DeniedLoginCount == 1);
+
+        run.Client.SetLogin(Vm204Login.TryCreate("admin", "VM204", out _)!);
+
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal("admin", run.Client.Login.Username);
+        Assert.Contains($"{Vm204Api.AuthPath}?user=admin&password=VM204", simulator.ReceivedTargets);
+    }
+
+    [Fact]
     public void Should_RefuseSettingsItCantUse()
     {
         Assert.Throws<ArgumentException>(() => CreateClient(80, host: " "));
@@ -254,10 +329,10 @@ public sealed class Vm204ClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(80, pollSeconds: 0));
     }
 
-    private static Vm204Client CreateClient(int port, string username = "", string password = "", int pollSeconds = 1, string host = "127.0.0.1")
+    private static Vm204Client CreateClient(int port, string username = "", string password = "", int pollSeconds = 1, string host = "127.0.0.1", TimeProvider? time = null)
     {
         var options = new Vm204Options { Host = host, Port = port, Username = username, Password = password, PollSeconds = pollSeconds };
-        return new Vm204Client(Options.Create(options), TimeProvider.System, NullLogger<Vm204Client>.Instance);
+        return new Vm204Client(Options.Create(options), time ?? TimeProvider.System, NullLogger<Vm204Client>.Instance);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -326,9 +401,9 @@ public sealed class Vm204ClientTests
             }
         }
 
-        public static ClientRun Start(int port, string username = "", string password = "", int pollSeconds = 1)
+        public static ClientRun Start(int port, string username = "", string password = "", int pollSeconds = 1, TimeProvider? time = null)
         {
-            return new ClientRun(CreateClient(port, username, password, pollSeconds), new CancellationTokenSource());
+            return new ClientRun(CreateClient(port, username, password, pollSeconds, time: time), new CancellationTokenSource());
         }
 
         public async ValueTask DisposeAsync()
@@ -398,6 +473,126 @@ public sealed class Vm204ClientTests
             catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException)
             {
                 // Stopped.
+            }
+        }
+    }
+
+    /// <summary>
+    /// A VM204 the test drives: it logs anyone in, switches relays, and answers the status, or never answers it while
+    /// <see cref="HangStatus"/> is set.
+    /// </summary>
+    private sealed class ScriptedBoard : IAsyncDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly CancellationTokenSource _stop = new();
+        private readonly Task _loop;
+        private readonly List<string> _targets = [];
+        private int _relays;
+        private int _hanging;
+
+        private ScriptedBoard(TcpListener listener)
+        {
+            _listener = listener;
+            _loop = ServeAsync();
+        }
+
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        public bool HangStatus { get; set; }
+
+        /// <summary>Status requests left without an answer.</summary>
+        public int Hanging => Volatile.Read(ref _hanging);
+
+        public List<string> Targets
+        {
+            get
+            {
+                lock (_targets)
+                {
+                    return [.. _targets];
+                }
+            }
+        }
+
+        public static ScriptedBoard Start()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            return new ScriptedBoard(listener);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stop.CancelAsync();
+            _listener.Stop();
+            await _loop;
+            _listener.Dispose();
+            _stop.Dispose();
+        }
+
+        private async Task ServeAsync()
+        {
+            List<Task> requests = [];
+            try
+            {
+                while (true)
+                {
+                    var tcp = await _listener.AcceptTcpClientAsync(_stop.Token);
+                    requests.Add(AnswerAsync(tcp));
+                }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException)
+            {
+                // Stopped.
+            }
+
+            await Task.WhenAll(requests);
+        }
+
+        private async Task AnswerAsync(TcpClient tcp)
+        {
+            using (tcp)
+            {
+                try
+                {
+                    var stream = tcp.GetStream();
+                    var buffer = new byte[4096];
+                    var read = await stream.ReadAsync(buffer, _stop.Token);
+                    var target = Encoding.ASCII.GetString(buffer, 0, read).Split(' ')[1];
+                    lock (_targets)
+                    {
+                        _targets.Add(target);
+                    }
+
+                    string body;
+                    if (target.StartsWith(Vm204Api.AuthPath, StringComparison.Ordinal))
+                    {
+                        body = Vm204Json.WriteKey("abc123");
+                    }
+                    else if (target.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal) && HangStatus)
+                    {
+                        Interlocked.Increment(ref _hanging);
+                        await Task.Delay(Timeout.Infinite, _stop.Token);
+                        return;
+                    }
+                    else
+                    {
+                        if (target.StartsWith(Vm204Api.RelayOnPath, StringComparison.Ordinal))
+                        {
+                            Interlocked.Or(ref _relays, Vm204TraceText.RelayMask(target.Split('?')[1]));
+                        }
+
+                        body = Vm204Json.WriteStatus(new Vm204Status((byte)Volatile.Read(ref _relays), 0, 0));
+                    }
+
+                    var content = Encoding.ASCII.GetBytes(body);
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {content.Length}\r\nConnection: close\r\n\r\n"), _stop.Token);
+                    await stream.WriteAsync(content, _stop.Token);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
+                {
+                    // The client gave up, or the test ended.
+                }
             }
         }
     }

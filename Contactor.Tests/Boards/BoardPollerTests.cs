@@ -174,6 +174,154 @@ public sealed class BoardPollerTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new BoardPoller<int>(board, time) { FailuresBeforeLost = 0 });
     }
 
+    [Fact]
+    public async Task Should_GiveUpAPollUnderWay_ForACommand_WithoutCountingItAsFailed()
+    {
+        var time = new ManualTimeProvider();
+        var hanging = new HangingRead();
+        var board = new FakePolledBoard(1, hanging, 1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, FailuresBeforeLost = 1 };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        time.Advance(Interval);
+        await WaitUntilAsync(() => hanging.Started);
+
+        // The command's own answer is the confirmation: no second request.
+        await poller.RunCommandAsync(_ => Task.FromResult(5), Cancel);
+
+        Assert.True(hanging.IsCancelled);
+        Assert.Equal(new PolledState<int>(true, 5, time.GetUtcNow()), poller.State);
+        Assert.Equal(5, board.Changes[^1].Reading);
+        await WaitUntilAsync(() => time.PendingTimers == 1);
+        Assert.Equal(2, board.Reads);
+        Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Lost);
+
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 3);
+        Assert.True(poller.State.IsConnected);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_RefuseACommand_WhenThePollUnderWayLosesTheBoard()
+    {
+        var time = new ManualTimeProvider();
+        var hanging = new HangingRead(honourCancel: false);
+        var board = new FakePolledBoard(1, hanging);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, FailuresBeforeLost = 1 };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        time.Advance(Interval);
+        await WaitUntilAsync(() => hanging.Started);
+        var sent = false;
+
+        var command = poller.RunCommandAsync(
+            _ =>
+            {
+                sent = true;
+                return Task.FromResult(5);
+            },
+            Cancel);
+        hanging.Fail(new IOException("gone"));
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => command);
+        Assert.False(sent);
+        Assert.False(poller.State.IsConnected);
+        Assert.Contains((BoardPollStep.Lost, "gone"), board.Steps);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_RefuseACommand_WhileDisconnected_AndLeaveTheStateAlone_WhenItFails()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { FailConnect = true };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => poller.RunCommandAsync(_ => Task.FromResult(5), Cancel));
+
+        board.FailConnect = false;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        await Assert.ThrowsAsync<IOException>(() => poller.RunCommandAsync(_ => Task.FromException<int>(new IOException("no")), Cancel));
+        Assert.Equal(1, poller.State.Reading);
+        Assert.True(poller.State.IsConnected);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_ConnectAgainAtOnce_WhenRestartedDuringTheWait()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { FailConnect = true };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")) && time.PendingTimers == 1);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "2")) && time.PendingTimers == 1);
+
+        board.FailConnect = false;
+        poller.Restart();
+
+        await WaitForPollAsync(board, time, reads: 1);
+        Assert.Equal(3, board.Connects);
+        Assert.True(poller.State.IsConnected);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_SayStopped_WhenRestartEndsAConnectThatThenFails()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { HangConnect = true };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.Connects == 1);
+
+        board.HangConnect = false;
+        poller.Restart();
+
+        await WaitForPollAsync(board, time, reads: 1);
+        Assert.Contains((BoardPollStep.Stopped, null), board.Steps);
+        Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Lost);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_NotPollTwice_ForAPollNowWhileDisconnected()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1).On(time);
+        board.FailConnect = true;
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")) && time.PendingTimers == 1);
+
+        poller.PollNow();
+        board.FailConnect = false;
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitForPollAsync(board, time, reads: 1);
+        time.Advance(Interval);
+        await WaitUntilAsync(() => board.Reads >= 2 && time.PendingTimers == 1);
+
+        // The second poll came when it was due, not straight after the first.
+        var reads = board.ReadTimes;
+        Assert.Equal(Interval, reads[1] - reads[0]);
+        await stop.CancelAsync();
+        await run;
+    }
+
     // Until the board answered this many polls and the poller waits for the next one.
     private static Task WaitForPollAsync(FakePolledBoard board, ManualTimeProvider time, int reads)
     {
@@ -201,13 +349,34 @@ public sealed class BoardPollerTests
         private readonly Queue<object> _answers;
         private readonly List<PolledState<int>> _changes = [];
         private readonly List<(BoardPollStep Kind, string? Detail)> _steps = [];
+        private readonly List<DateTimeOffset> _readTimes = [];
         private object _last = 0;
         private int _reads;
         private int _connects;
 
+        private TimeProvider? _time;
+
         public FakePolledBoard(params object[] answers)
         {
             _answers = new Queue<object>(answers);
+        }
+
+        /// <summary>Records when each read happened on this clock.</summary>
+        public FakePolledBoard On(TimeProvider time)
+        {
+            _time = time;
+            return this;
+        }
+
+        public List<DateTimeOffset> ReadTimes
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _readTimes];
+                }
+            }
         }
 
         public bool FailConnect { get; set; }
@@ -238,9 +407,19 @@ public sealed class BoardPollerTests
             }
         }
 
+        /// <summary>When true, a connect hangs until cancelled, and then fails with an IOException, not a cancellation.</summary>
+        public bool HangConnect { get; set; }
+
         public Task ConnectAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _connects);
+            if (HangConnect)
+            {
+                var aborted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                cancellationToken.Register(() => aborted.TrySetException(new IOException("The socket was closed.")));
+                return aborted.Task;
+            }
+
             return FailConnect ? Task.FromException(new IOException("refused")) : Task.CompletedTask;
         }
 
@@ -257,8 +436,18 @@ public sealed class BoardPollerTests
                 answer = _last;
             }
 
+            lock (_lock)
+            {
+                _readTimes.Add(_time?.GetUtcNow() ?? default);
+            }
+
             Interlocked.Increment(ref _reads);
-            return answer is Exception ex ? Task.FromException<int>(ex) : Task.FromResult((int)answer);
+            return answer switch
+            {
+                HangingRead hanging => hanging.Start(cancellationToken),
+                Exception ex => Task.FromException<int>(ex),
+                _ => Task.FromResult((int)answer),
+            };
         }
 
         public void OnStateChanged(PolledState<int> state)
@@ -275,6 +464,41 @@ public sealed class BoardPollerTests
             {
                 _steps.Add((kind, detail));
             }
+        }
+    }
+
+    /// <summary>A read that waits until the test ends it, as a request to a board that doesn't answer.</summary>
+    private sealed class HangingRead
+    {
+        private readonly TaskCompletionSource<int> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _started;
+
+        /// <param name="honourCancel">Whether it gives up when the poll is cancelled, as a real request does.</param>
+        public HangingRead(bool honourCancel = true)
+        {
+            HonourCancel = honourCancel;
+        }
+
+        public bool HonourCancel { get; }
+
+        public bool Started => Volatile.Read(ref _started) == 1;
+
+        public bool IsCancelled => _result.Task.IsCanceled;
+
+        public Task<int> Start(CancellationToken cancellationToken)
+        {
+            Volatile.Write(ref _started, 1);
+            if (HonourCancel)
+            {
+                cancellationToken.Register(() => _result.TrySetCanceled(cancellationToken));
+            }
+
+            return _result.Task;
+        }
+
+        public void Fail(Exception exception)
+        {
+            _result.TrySetException(exception);
         }
     }
 }

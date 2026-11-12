@@ -24,7 +24,8 @@ public sealed record BoardTraceItem(long Id, BoardTraceEntry Entry)
 /// <summary>
 /// The latest steps on the board connection, in memory only (nothing is stored, and a restart empties it), for the
 /// Debug screen. It listens from the moment it is created, which <see cref="BoardHostedService"/> makes happen before
-/// the first connection.
+/// the first connection. Routine steps (a keep-alive, a poll that changes nothing) are only counted, so they never
+/// push the steps worth reading out of the list, however often a board sends them.
 /// </summary>
 public sealed class BoardTrace : IDisposable
 {
@@ -34,6 +35,7 @@ public sealed class BoardTrace : IDisposable
     private readonly Lock _lock = new();
     private readonly Queue<BoardTraceItem> _items = new(Capacity);
     private long _nextId = 1;
+    private long _routineLeftOut;
 
     public BoardTrace(IBoardTraffic traffic)
     {
@@ -41,7 +43,10 @@ public sealed class BoardTrace : IDisposable
         _traffic.Traced += OnTraced;
     }
 
-    /// <summary>Raised with each new item, on the board connection's loop: handlers must be quick.</summary>
+    /// <summary>
+    /// Raised with each new item, on the board connection's loop: handlers must be quick. Not raised for a routine step,
+    /// which is only counted.
+    /// </summary>
     public event EventHandler<BoardTraceItem>? Added;
 
     /// <summary>Raised when <see cref="Clear"/> empties the list.</summary>
@@ -59,11 +64,24 @@ public sealed class BoardTrace : IDisposable
         }
     }
 
+    /// <summary>How many routine steps were counted instead of listed since the start or the last <see cref="Clear"/>.</summary>
+    public long RoutineLeftOut
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _routineLeftOut;
+            }
+        }
+    }
+
     public void Clear()
     {
         lock (_lock)
         {
             _items.Clear();
+            _routineLeftOut = 0;
         }
 
         Cleared?.Invoke(this, EventArgs.Empty);
@@ -79,13 +97,19 @@ public sealed class BoardTrace : IDisposable
         Record(entry);
     }
 
-    /// <summary>Adds a step; the board's <see cref="IBoardTraffic.Traced"/> calls it, and the tests do.</summary>
+    /// <summary>Adds a step, or counts a routine one; the board's <see cref="IBoardTraffic.Traced"/> calls it, and the tests do.</summary>
     public void Record(BoardTraceEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
         BoardTraceItem item;
         lock (_lock)
         {
+            if (entry.IsRoutine)
+            {
+                _routineLeftOut++;
+                return;
+            }
+
             item = new BoardTraceItem(_nextId++, entry);
             if (_items.Count == Capacity)
             {

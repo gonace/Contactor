@@ -20,6 +20,7 @@ public sealed class Vm204Board : IRelayBoard
     public Vm204Board(Vm204Client client, ILogger<Vm204Board> logger)
     {
         ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(logger);
         _client = client;
         _logger = logger;
         _client.StateChanged += OnStateChanged;

@@ -214,11 +214,11 @@
         _newPort = NextFreePort();
     }
 
-    // The board's default port, or the first free one after it.
+    // The model's suggested port, or the first free one after it.
     private string NextFreePort()
     {
         var model = SimulatorCatalogue.Find(_newType) ?? SimulatorCatalogue.All[0];
-        var port = model.Model.DefaultPort;
+        var port = model.Port;
         while (_boards.Any(b => b.Board.Port == port) && port < 65535)
         {
             port++;

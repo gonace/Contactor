@@ -47,6 +47,10 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         var vm204 = _boards.Boards.Single(b => b.Board.Model == Vm204Model.Model);
         Assert.True(vm204.Board.HasLogin);
         Assert.Equal("admin", vm204.Username);
+
+        // Port 80 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8204, 80), (SimulatorCatalogue.Find("vm204")!.Port, Vm204Model.Model.DefaultPort));
+        Assert.Equal(9760, SimulatorCatalogue.Find("vm201")!.Port);
     }
 
     [Theory]

@@ -8,13 +8,15 @@ namespace Contactor.Boards.Vm204;
 
 /// <summary>
 /// Talks to a VM204 over its web API (<see cref="Vm204Api"/>): logs in for the key, polls the status through
-/// <see cref="BoardPoller{TReading}"/> and switches relays. One request at a time, as the board serves only three
-/// connections. Commands are never queued: without a connection they fail at once with
-/// <see cref="BoardNotConnectedException"/>, and after one the board is polled at once, so the change shows quickly.
+/// <see cref="BoardPoller{TReading}"/> and switches relays. One request at a time (the poller sees to it), as the board
+/// serves only three connections. Commands are never queued: without a connection they fail at once with
+/// <see cref="BoardNotConnectedException"/>, a poll under way gives way to them, and the board's answer to one, its
+/// status right after, is reported at once.
 /// </summary>
 public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
 {
-    internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+    /// <summary>How long a request may take before it counts as unanswered.</summary>
+    public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
     private const int MaxResponseHeadersKilobytes = 8;
 
@@ -23,8 +25,6 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
     private readonly HttpClient _http;
     private readonly BoardPoller<Vm204Status> _poller;
 
-    // One request at a time, the polls' and the commands'.
-    private readonly SemaphoreSlim _gate = new(1, 1);
     private BoardEndpoint _endpoint;
     private Vm204Login _login;
     private string? _key;
@@ -161,36 +161,21 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
     public void Dispose()
     {
         _http.Dispose();
-        _gate.Dispose();
+        _poller.Dispose();
     }
 
-    async Task IPolledBoard<Vm204Status>.ConnectAsync(CancellationToken cancellationToken)
+    // The poller calls these one at a time, never while a command runs.
+    Task IPolledBoard<Vm204Status>.ConnectAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            await LogInAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        return LogInAsync(cancellationToken);
     }
 
     async Task<Vm204Status> IPolledBoard<Vm204Status>.ReadAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            // The key is dropped when the board refuses it (someone made a new one on its web page): log in again.
-            var key = Volatile.Read(ref _key) ?? await LogInAsync(cancellationToken).ConfigureAwait(false);
-            var answer = await SendAsync($"{Vm204Api.StatusPath}?key={key}", routine: true, cancellationToken).ConfigureAwait(false);
-            return ReadStatusAnswer(answer, key);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        // The key is dropped when the board refuses it (someone made a new one on its web page): log in again.
+        var key = Volatile.Read(ref _key) ?? await LogInAsync(cancellationToken).ConfigureAwait(false);
+        var answer = await SendAsync($"{Vm204Api.StatusPath}?key={key}", routine: true, cancellationToken).ConfigureAwait(false);
+        return ReadStatusAnswer(answer, key);
     }
 
     void IPolledBoard<Vm204Status>.OnStateChanged(PolledState<Vm204Status> state)
@@ -261,45 +246,38 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             return;
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            // The connection may have gone while this waited for the poll before it: never sent late.
-            var key = Volatile.Read(ref _key);
-            if (!State.IsConnected || key is null)
+        // A poll under way gives way; the board's answer, its status right after the command, is the confirmation.
+        await _poller.RunCommandAsync(
+            async token =>
             {
-                throw new BoardNotConnectedException();
-            }
+                var key = Volatile.Read(ref _key) ?? throw new BoardNotConnectedException();
+                Answer answer;
+                try
+                {
+                    answer = await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+                {
+                    _poller.PollNow();
+                    throw new BoardNotConnectedException("The VM204 didn't answer; the command may not have been carried out.", ex);
+                }
 
-            Answer answer;
-            try
-            {
-                answer = await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-            {
-                throw new BoardNotConnectedException("The VM204 didn't answer; the command may not have been carried out.", ex);
-            }
-
-            try
-            {
-                // The answer is the status as it was right after; the poll below is what reports it.
-                ReadStatusAnswer(answer, key);
-            }
-            catch (Exception ex) when (ex is Vm204AccessDeniedException or Vm204ProtocolException)
-            {
-                throw new BoardNotConnectedException($"The VM204 didn't take the command: {ex.Message}", ex);
-            }
-        }
-        finally
-        {
-            _gate.Release();
-            _poller.PollNow();
-        }
+                try
+                {
+                    return ReadStatusAnswer(answer, key);
+                }
+                catch (Exception ex) when (ex is Vm204AccessDeniedException or Vm204ProtocolException)
+                {
+                    // A refused key is dropped: the next poll logs in again.
+                    _poller.PollNow();
+                    throw new BoardNotConnectedException($"The VM204 didn't take the command: {ex.Message}", ex);
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
-    // Callers hold _gate. Returns the key.
+    // Called one at a time, by the poller. Returns the key.
     private async Task<string> LogInAsync(CancellationToken cancellationToken)
     {
         var login = Login;
@@ -322,7 +300,6 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         return key;
     }
 
-    // Callers hold _gate.
     private Vm204Status ReadStatusAnswer(Answer answer, string key)
     {
         if (answer.StatusCode == HttpStatusCode.BadRequest)
