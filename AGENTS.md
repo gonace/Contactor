@@ -531,7 +531,15 @@ See `DEPLOY.md` for the steps.
 ## Workflow
 
 ### Branches
-- A short name for the work, in lower case with hyphens, e.g. `setup-guide`, `vm204`, `responsive-layout`, `nitpicks-10-14`. No prefix (no `feature/`, `claude/` or user name) and no random suffix.
+- `type/issue-short-description`: the type, the issue number, and a few words in lower case with hyphens, e.g. `feature/12-setup-guide`. Without an issue, leave the number out (`chore/upgrade-aspire`). No user name, no `claude/` and no random suffix.
+- The types:
+  - `feature/`: adding, removing or changing a feature, e.g. `feature/30-vm208`
+  - `bugfix/`: a bug that isn't urgent, e.g. `bugfix/41-login-button-align`
+  - `hotfix/`: an urgent, critical fix that goes straight to production, e.g. `hotfix/52-scheduler-crash`
+  - `refactor/`: cleaning up or restructuring code without changing what it does, e.g. `refactor/clean-board-client`
+  - `docs/`: documentation, e.g. `docs/update-readme`
+  - `test/`: adding or updating tests, e.g. `test/scheduler-daylight-saving`
+  - `chore/`: maintenance, dependencies or build settings, e.g. `chore/upgrade-aspire`
 - One branch per pull request.
 - A branch starts from the latest `main`. When it changes the same files or area as another open branch, it is stacked on that branch instead, and its pull request is chained to the other's (based on its branch, not `main`), so they merge in order.
 
