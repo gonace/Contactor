@@ -534,6 +534,8 @@ See `DEPLOY.md` for the steps.
 - Ask the user only what you can't decide yourself from the code, these rules and the project's goals. The most important goal is simplicity for people who aren't technical (see the top of this file). Don't ask about that.
 - Before writing code, explain what you plan to implement (files, types, behaviour) and wait for the user's tweaks and approval.
 - **Scope is locked at the approved plan.** Anything outside it becomes its own issue, never more work in the same pull request. Only the user widens the scope.
+- On your own working branch, commit and push freely, and keep its pull request up to date. No permission is needed for that.
+- Never commit or push to `main`, and never merge a pull request, without explicit permission from the user. Permission to merge is explicit only when the user tells you to merge and names the pull requests. If it is unclear whether the user will merge themselves, ask.
 
 ### Branches
 - `type/issue-short-description`: the type, the issue number, and a few words in lower case with hyphens, e.g. `feature/12-setup-guide`. Without an issue, leave the number out (`chore/upgrade-aspire`). No user name, no `claude/` and no random suffix.
