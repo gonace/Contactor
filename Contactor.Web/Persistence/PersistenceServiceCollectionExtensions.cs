@@ -111,18 +111,20 @@ public static class PersistenceServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         var board = services.GetRequiredService<IRelayBoard>();
-        return services.InitializeDatabaseAsync(board.Capabilities.RelayCount, cancellationToken);
+        return services.InitializeDatabaseAsync(board.Capabilities.RelayCount, cancellationToken, board.Capabilities.InputCount);
     }
 
     /// <summary>
     /// As <see cref="InitializeDatabaseAsync(IServiceProvider, CancellationToken)"/>, for relays 1 to
-    /// <paramref name="relayCount"/>. Existing rows are left as they are, also relays above the count, which a board with
-    /// more relays left behind: their events and schedules still point to them.
+    /// <paramref name="relayCount"/> and inputs 1 to <paramref name="inputCount"/>. Existing rows are left as they are,
+    /// also relays and inputs above the count, which a board with more left behind: their events still point to them.
     /// </summary>
-    public static async Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, CancellationToken cancellationToken)
+    public static async Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, CancellationToken cancellationToken, int inputCount = 1)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(relayCount, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(relayCount, ChannelMask.MaxChannels);
+        ArgumentOutOfRangeException.ThrowIfNegative(inputCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(inputCount, ChannelMask.MaxChannels);
         var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
 
@@ -164,9 +166,13 @@ public static class PersistenceServiceCollectionExtensions
             }
         }
 
-        if (!await db.Inputs.AnyAsync(cancellationToken))
+        var inputs = await db.Inputs.Select(i => i.Id).ToListAsync(cancellationToken);
+        for (var id = 1; id <= inputCount; id++)
         {
-            db.Inputs.Add(new Input { Name = "Input", ClosedText = "Closed", OpenText = "Open" });
+            if (!inputs.Contains(id))
+            {
+                db.Inputs.Add(new Input { Id = id, Name = Input.DefaultName(id), ClosedText = "Closed", OpenText = "Open" });
+            }
         }
 
         await db.SaveChangesAsync(cancellationToken);

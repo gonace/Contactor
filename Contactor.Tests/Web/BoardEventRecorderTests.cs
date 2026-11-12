@@ -1,3 +1,8 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Contactor.Web.Features.Relays;
+using Contactor.Web.Features.Groups;
+using Contactor.Web;
 using Contactor.Boards.Vm201;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
@@ -110,7 +115,47 @@ public sealed class BoardEventRecorderTests
 
         await rig.WaitForEventsAsync(events => events.Count == 1);
         var entry = Assert.Single(await rig.EventsAsync());
-        Assert.Equal((EventActions.InputChanged, """{"on":true}""", (int?)null), (entry.Action, entry.Details, entry.RelayId));
+        Assert.Equal((EventActions.InputChanged, """{"on":true}""", (int?)null, (int?)1), (entry.Action, entry.Details, entry.RelayId, entry.InputId));
+    }
+
+    // A board with several inputs, e.g. the VM204: each change is logged with its input.
+    [Fact]
+    public async Task Should_LogEveryInput_WithItsNumber()
+    {
+        var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 4);
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddSingleton<Contactor.Boards.IRelayBoard>(board);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel, inputCount: 4);
+        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            board.SetInput(3, on: true);
+            board.SetInput(1, on: true);
+            board.SetInput(3, on: false);
+
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count == 3);
+            Assert.Equal(
+                [(3, """{"on":true}"""), (1, """{"on":true}"""), (3, """{"on":false}""")],
+                Events(database).Select(e => (e.InputId ?? 0, e.Details ?? "")));
+        }
+        finally
+        {
+            await recorder.StopAsync(Cancel);
+        }
+    }
+
+    private static List<EventLogEntry> Events(TestDatabase database)
+    {
+        using var db = database.Factory.CreateDbContext();
+        return [.. db.EventLog.OrderBy(e => e.Id)];
     }
 
     [Fact]

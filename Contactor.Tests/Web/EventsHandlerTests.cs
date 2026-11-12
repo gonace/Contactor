@@ -26,7 +26,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
             services.AddEvents(configuration);
         });
-        await _database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await _database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 4);
     }
 
     public async ValueTask DisposeAsync()
@@ -159,6 +159,29 @@ public sealed class EventsHandlerTests : IAsyncLifetime
 
         var row = Assert.Single(rows);
         Assert.Equal(("turned on the group", "Fan heater"), (row.View.What, row.View.Target));
+    }
+
+    [Fact]
+    public async Task Should_ListAnInputsEvents_InItsOwnWords()
+    {
+        var door = Event(EventActors.External, EventActions.InputChanged, Now.AddMinutes(-2), relayId: null);
+        door.InputId = 2;
+        door.Details = """{"on":false}""";
+        var other = Event(EventActors.External, EventActions.InputChanged, Now.AddMinutes(-1), relayId: null);
+        other.InputId = 1;
+        other.Details = """{"on":true}""";
+        await AddAsync(door, other, Event("jane@example.com", EventActions.On, Now, relayId: 1));
+        await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var input = await db.Inputs.SingleAsync(i => i.Id == 2, Cancel);
+            (input.Name, input.OpenText) = ("Door", "Ajar");
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        var rows = await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel, inputId: 2);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(("Door:", "Ajar"), (row.View.Who, row.View.What));
     }
 
     private static EventLogEntry Event(string actor, string action, DateTime timestampUtc, int? relayId)

@@ -169,7 +169,7 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, and one line in the catalogue. Nothing else in the app changes.
 - `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`).
 - What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
-- The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
+- The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
 
 ## The VM201 client (`Contactor.Boards.Vm201`)
 
@@ -245,6 +245,7 @@ EventLog
                                  "connection-lost" | "connection-restored" | "input-changed" |
                                  "board-timers-disabled" | "board-address-changed" | "board-login-changed"
   GroupId         int?           the group it concerns; not a foreign key, events outlive a deleted group
+  InputId         int?           the input an "input-changed" concerns; not a foreign key
                                  Group actions: "group-on" | "group-off" | "group-start-failed" | "run-on-start" |
                                  "run-on-end" | "interlock-trip" | "group-create" | "group-edit" | "group-delete"
   Details         text?          JSON, e.g. {"from":"Relay 4","to":"Ventilation – Paint shop"}
@@ -300,12 +301,13 @@ Installation            (one row; none on a new installation)
   SetupDoneUtc    datetime?      when the setup guide was finished or skipped; null: "/" opens on the guide
                                  The migration that added it marked installations already in use as done.
 
-Input                   (future; create the table now but show nothing in the UI)
-  Id              int PK = 1
-  Name            text
-  ClosedText      text   "Closed"
-  OpenText        text   "Open"
-  NotifyOnOpen    bool
+Input                   (one per digital input on the board, seeded at start like relays, never deleted)
+  Id              int PK         1 to the board's input count (at most 64)
+  Name            text           e.g. "Door" (max 40); "Input n" to begin with
+  ClosedText      text           "Closed": the board reads the input as on
+  OpenText        text           "Open"
+  IsActive        bool           false = hidden from the list by default
+  NotifyOnOpen    bool           for later: notifications (not shown yet)
   NotifyOnClose   bool
 ```
 
@@ -439,6 +441,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - Row: time in mono, a round badge with an initial, and text.
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
+     - An input's change is in its own words: "Door: Open" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
      - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)

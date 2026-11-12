@@ -14,6 +14,9 @@ namespace Contactor.Web.Features.Events;
 /// <param name="IsAlert">Shown in red: a safety shut-off, or a group that couldn't start.</param>
 public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false);
 
+/// <summary>An input's current name and the words for its two states, for its events.</summary>
+public sealed record InputWords(string Name, string ClosedText, string OpenText);
+
 /// <summary>
 /// Turns stored events into the text of the Events screen.
 /// </summary>
@@ -23,12 +26,18 @@ public static class EventText
     /// <param name="relayName">The relay's current name, or null for events without a relay.</param>
     /// <param name="personName">The display name of the person behind it, when the actor is an e-mail.</param>
     /// <param name="groupName">The group's current name, for a group's events; null for others or a deleted group.</param>
-    public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null)
+    /// <param name="input">The input's name and state words, for an input's changes; null for others.</param>
+    public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, InputWords? input = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        if (entry.Action == EventActions.InputChanged)
+        {
+            return InputChange(entry, input);
+        }
+
         var isPerson = IsPersonActor(entry.Actor);
         var who = isPerson ? personName ?? entry.Actor : WhoFor(entry);
-        var badge = !isPerson ? entry.Action == EventActions.InputChanged ? "I" : "A"
+        var badge = !isPerson ? "A"
             : who.Length > 0 ? who[..1].ToUpper(CultureInfo.InvariantCulture)
             : "?";
         var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? "the group";
@@ -40,6 +49,16 @@ public static class EventText
         // A group's schedule names the group where a relay's names the relay.
         var (what, target) = WhatFor(entry, relayName ?? group);
         return new EventView(isPerson, badge, who, what, target);
+    }
+
+    // "Door: Open", in the input's own words. An input that is on is closed. Without its words (an event from before
+    // inputs had names, or an input no longer on the board): "Input 1: Closed".
+    private static EventView InputChange(EventLogEntry entry, InputWords? input)
+    {
+        var on = Bool(entry.Details, "on") == true;
+        var name = input?.Name ?? Input.DefaultName(entry.InputId ?? 1);
+        var state = input is null ? on ? "Closed" : "Open" : on ? input.ClosedText : input.OpenText;
+        return new EventView(false, "I", $"{name}:", state, null);
     }
 
     // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running
@@ -140,7 +159,6 @@ public static class EventText
         return entry.Action switch
         {
             EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled => "The board",
-            EventActions.InputChanged => "The input",
             EventActions.RunOnStart => "Run-on:",
             EventActions.RunOnEnd => "Run-on done:",
             EventActions.InterlockTrip => "Safety shut-off:",
@@ -172,7 +190,6 @@ public static class EventText
             EventActions.ScheduleDelete => (WithSchedule("deleted schedule", "deleted a schedule", entry.Details), relayName),
             EventActions.ConnectionLost => ("lost contact with the app", null),
             EventActions.ConnectionRestored => ("reconnected", null),
-            EventActions.InputChanged => (Bool(entry.Details, "on") == true ? "turned on" : "turned off", null),
             EventActions.BoardTimersDisabled => ("had its own timers turned off", null),
             EventActions.BoardLoginChanged => ("changed the relay board's login", null),
             EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from

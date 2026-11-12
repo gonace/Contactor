@@ -193,6 +193,50 @@ public sealed class PersistenceTests
         Assert.Equal(1L, await ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM \"RelayGroup\";"));
     }
 
+    [Fact]
+    public async Task Should_SeedOneInputPerBoardInput_AndKeepTheRest()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 4);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 1);
+
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var inputs = await db.Inputs.OrderBy(i => i.Id).ToListAsync(Cancel);
+        Assert.Equal(["Input 1", "Input 2", "Input 3", "Input 4"], inputs.Select(i => i.Name));
+        Assert.All(inputs, i => Assert.Equal(("Closed", "Open", true), (i.ClosedText, i.OpenText, i.IsActive)));
+    }
+
+    // Before, there was one input row named "Input", and only input 1 was logged, without its number.
+    [Fact]
+    public async Task Should_NumberTheEarlierInputAndItsEvents_WhenUpgraded()
+    {
+        await using var database = TestDatabase.Create();
+        Directory.CreateDirectory(Path.GetDirectoryName(database.FilePath)!);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.GetService<IMigrator>().MigrateAsync("20261112114304_AddInstallation", cancellationToken: Cancel);
+        }
+
+        await ExecuteAsync(database.ConnectionString, "INSERT INTO \"Input\" (\"Id\", \"Name\", \"ClosedText\", \"OpenText\", \"NotifyOnOpen\", \"NotifyOnClose\") VALUES (1, 'Input', 'Closed', 'Open', 0, 0);");
+        await ExecuteAsync(database.ConnectionString, "INSERT INTO \"EventLog\" (\"TimestampUtc\", \"Actor\", \"Action\", \"Details\") VALUES ('2026-11-01 10:00:00', 'external', 'input-changed', '{\"on\":true}'), ('2026-11-01 10:01:00', 'system', 'connection-lost', NULL);");
+
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 1);
+
+        Assert.Equal("Input 1", await ScalarAsync(database.ConnectionString, "SELECT \"Name\" FROM \"Input\" WHERE \"Id\" = 1;"));
+        Assert.Equal(1L, await ScalarAsync(database.ConnectionString, "SELECT \"IsActive\" FROM \"Input\" WHERE \"Id\" = 1;"));
+        Assert.Equal("1", await ScalarAsync(database.ConnectionString, "SELECT group_concat(coalesce(\"InputId\", '-')) FROM \"EventLog\" WHERE \"Action\" = 'input-changed';"));
+        Assert.Equal("-", await ScalarAsync(database.ConnectionString, "SELECT coalesce(\"InputId\", '-') FROM \"EventLog\" WHERE \"Action\" = 'connection-lost';"));
+    }
+
+    private static async Task ExecuteAsync(string connectionString, string sql)
+    {
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(Cancel);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(Cancel);
+    }
+
     private static async Task<object?> ScalarAsync(string connectionString, string sql)
     {
         await using var connection = new SqliteConnection(connectionString);
