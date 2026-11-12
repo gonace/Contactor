@@ -246,18 +246,6 @@ button:disabled {
     font-weight: 600;
 }
 
-/* The ⓘ beside the reason "since" is unknown, lined up with its first line. */
-.why-hint {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-}
-
-.why-hint svg {
-    flex-shrink: 0;
-    margin-top: 2px;
-}
-
 .now-row {
     display: flex;
     align-items: center;
