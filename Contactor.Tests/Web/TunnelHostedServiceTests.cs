@@ -371,7 +371,7 @@ public sealed class CloudflaredProcessTests
     }
 
     [Fact]
-    public async Task Should_StopTheProcess_WhenCancelled()
+    public async Task Should_Throw_WhenCancelled()
     {
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
