@@ -124,9 +124,9 @@
             padding: 0 12px;
             font-family: var(--font-mono);
             font-size: 11px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            line-height: 1.5;
+            white-space: pre-line;
+            overflow-wrap: anywhere;
             font-weight: 500;
             color: var(--muted);
         }

@@ -46,7 +46,8 @@
             </a>
         }
         @* Only in the desktop's side menu; on a phone and a tablet the version is at the bottom of Settings. *@
-        <span class="version">@AppBuild.Current.Text</span>
+        @* The commit on a line of its own, so the narrow menu never cuts it off. *@
+        <span class="version">@AppBuild.Current.Text.Replace(" · ", "\n", StringComparison.Ordinal)</span>
     </nav>
 </div>
 
