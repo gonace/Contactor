@@ -49,6 +49,7 @@ qualified electrician.
 |---|---|---|
 | Velleman VM201 (WMRC201), ethernet | 8, plus 1 input | Supported |
 | Velleman VM204 (WMRC204), ethernet | 4, plus 4 inputs and 1 analog input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
+| Velleman VM208, ethernet or WLAN | 4, plus 1 input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
 
 The app talks to a board through one interface, `IRelayBoard`, so another board needs its own small project and
 nothing else. One board per installation for now; several at once is
