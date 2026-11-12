@@ -259,6 +259,9 @@
     private bool _busy;
     private bool _allOffFailed;
     private int? _failedRelayId;
+
+    // A press the board didn't confirm, shown under its relay until the person chooses.
+    private UnconfirmedPress? _unconfirmed;
     private bool _inGroup;
 
     private BoardState State => Board.State;
@@ -395,33 +398,36 @@
 
     private async Task ToggleAsync(int relayId, bool isOn)
     {
-        await SwitchAsync(new Unconfirmed(relayId, !isOn));
+        await SwitchAsync(new UnconfirmedPress(relayId, !isOn));
     }
 
-    private Task TryAgainAsync(Unconfirmed press)
+    private Task TryAgainAsync(UnconfirmedPress press)
     {
         return SwitchAsync(press);
     }
 
     // A press the board didn't confirm (no answer, an unreadable one, or no connection) is shown until the person
     // chooses, or until the board shows the relay as they wanted it.
-    private async Task SwitchAsync(Unconfirmed press)
+    private async Task SwitchAsync(UnconfirmedPress press)
     {
         await RunAsync(
             () => press.On
                 ? Control.TurnOnAsync(press.RelayId, _user!.Email, CancellationToken.None)
                 : Control.TurnOffAsync(press.RelayId, _user!.Email, CancellationToken.None),
             failedRelayId: press.RelayId);
-        _unconfirmed = _failedRelayId == press.RelayId && !_inGroup ? press : null;
-        if (_unconfirmed is not null)
+        if (_failedRelayId == press.RelayId && !_inGroup)
         {
+            _unconfirmed = press;
             _failedRelayId = null;
+        }
+        else if (_unconfirmed?.RelayId == press.RelayId)
+        {
+            // Another relay's press leaves this relay's question open.
+            _unconfirmed = null;
         }
     }
 
-    private sealed record Unconfirmed(int RelayId, bool On);
 
-    private Unconfirmed? _unconfirmed;
 
     private async Task ToggleGroupAsync(int groupId, bool isOn)
     {
@@ -520,7 +526,7 @@
                 }
 
                 // The board shows the relay as the person wanted it: nothing left to decide.
-                if (_unconfirmed is { } press && State.IsConnected && State.IsOn(press.RelayId) == press.On)
+                if (_unconfirmed?.IsSettledBy(State) == true)
                 {
                     _unconfirmed = null;
                 }

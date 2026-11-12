@@ -146,6 +146,7 @@ h1 {
 
 .card {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 12px;
     padding: 14px 14px 14px 16px;
@@ -476,10 +477,6 @@ button:disabled {
 }
 
 /* A press the board didn't confirm: a box under the card's row, with the two choices. */
-.card {
-    flex-wrap: wrap;
-}
-
 .unconfirmed {
     flex-basis: 100%;
     display: flex;

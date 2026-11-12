@@ -40,6 +40,26 @@ public sealed class SchedulerServiceTests
         Assert.Null((await RuntimeAsync(rig, 2)).TurnedOnBy);
     }
 
+    // Switched on at the board just before its schedule's window: during the window it is the schedule's, so it goes
+    // off at the OffTime and not after an auto-off of its own.
+    [Fact]
+    public async Task Should_TakeOverARelayOnOutsideTheApp_DuringItsWindow()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await AddScheduleAsync(rig, relayId: 3, 14, 5, 18, 0);
+        await rig.Scheduler.TickAsync(Cancel);
+        await TickAtAsync(rig, 14, 4);
+
+        await rig.Simulator.SetOutputsAsync(0x04);
+        await BoardTestRig.WaitUntilAsync(() => RuntimeAsync(rig, 3).GetAwaiter().GetResult().TurnedOnBy == EventActors.External);
+        Assert.NotNull((await RuntimeAsync(rig, 3)).AutoOffAtUtc);
+
+        await TickAtAsync(rig, 14, 5);
+
+        var runtime = await RuntimeAsync(rig, 3);
+        Assert.Equal((SchedulerActor, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+    }
+
     [Fact]
     public async Task Should_TurnOnARunningScheduleAtStart()
     {

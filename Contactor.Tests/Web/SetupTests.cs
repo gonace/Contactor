@@ -425,8 +425,8 @@ public sealed class SetupTests
         Assert.Equal("Fan heater", (await rig.Setup.RelaysAsync(Cancel))[1].GroupName);
     }
 
-    // The board switched the relay on although "Try"'s ON was reported as failed: the ON is credited to the person, and
-    // the relay is turned off after the try, not left on for its full auto-off.
+    // The board switched the relay on although "Try"'s ON was reported as failed: it is turned off after the try, not
+    // left on for its full auto-off.
     [Fact]
     public async Task Should_TurnATriedRelayOff_WhenItsOnFailedButCameOn()
     {

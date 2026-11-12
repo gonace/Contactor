@@ -231,7 +231,7 @@ Relay
   Id              int PK         1 to the board's relay count (at most 64), seeded at start, never deleted
   Name            text           e.g. "Fan heater – Lathe" (max 40 characters)
   IsActive        bool           false = hidden from the list by default
-  MaxOnMinutes    int?           auto-off after a manual on; null = never. Default 120.
+  MaxOnMinutes    int?           auto-off after a manual on, or after it came on outside the app; null = never. Default 120.
   SortOrder       int
 
 Schedule                (a relay's or a group's: exactly one of RelayId and GroupId is set)
@@ -268,7 +268,8 @@ RelayRuntime            (internal, for auto-off; one row per relay, seeded at st
   RelayId         int PK
   OnSinceUtc      datetime?
   AutoOffAtUtc    datetime?
-  TurnedOnBy      text?          e-mail, "input:n" (counts as a person), or "schedule"
+  TurnedOnBy      text?          e-mail, "input:n" (counts as a person), "schedule", or "external" (on outside the app,
+                                 with the relay's own auto-off; a running schedule window takes it over)
 
 SchedulerState          (internal, one row: the scheduler's progress)
   Id              int PK = 1
@@ -360,7 +361,7 @@ InputAction             (a relay or a group an input switches: exactly one of Re
 ### Auto-off
 - A `BackgroundService` checks every 15 seconds. When `AutoOffAtUtc` has passed and the relay is still on, it sends OFF and logs the event with Actor `auto-off` and Details `{"afterMinutes":120}`.
 - Does **not** apply to relays turned on by a schedule. There the schedule's OffTime is the end.
-- **Every relay that is on gets an auto-off.** A relay on without an owner (switched at the board's own button or web page, during an outage, or after a press the board didn't confirm) gets the relay's own "Turn off automatically after", counted from when the app saw it on (`BoardEventRecorder`: on an external ON, and at start for a relay that is on with nobody's run). `TurnedOnBy` is `external`, and its status line reads "On since 14:02 · outside the app · off 16:02". A group on without an owner gets the group's own auto-off the same way (`GroupPlanner.GiveOwnerlessAutoOff`). Nobody guesses who switched it.
+- **Every relay that is on gets an auto-off.** A relay on without an owner (switched at the board's own button or web page, during an outage, or after a press the board didn't confirm) gets the relay's own "Turn off automatically after", counted from when the app saw it on (`BoardEventRecorder`: on an external ON, and at start for a relay that is on with nobody's run). `TurnedOnBy` is `external`, and its status line reads "On since 14:02 · outside the app · off 16:02". A group on without an owner gets the group's own auto-off the same way (`GroupPlanner.GiveOwnerlessAutoOff`). During a running window of its schedule, the scheduler takes such a relay or group over (`schedule`, no auto-off), so it goes off at the OffTime. Nobody guesses who switched it.
 
 ### Scheduling
 - A `BackgroundService` ticks every minute, on the minute.

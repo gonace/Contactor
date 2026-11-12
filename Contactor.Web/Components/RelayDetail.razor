@@ -194,6 +194,9 @@
     private bool _loaded;
     private bool _busy;
     private bool _toggleFailed;
+
+    // What the last press asked for, so "Try again" repeats it.
+    private bool _wanted;
     private bool _inGroup;
     private string? _saveError;
     private string _name = "";
@@ -288,9 +291,6 @@
     {
         return minutes is { } m ? $"{m / 60} h" : "Never";
     }
-
-    // What the last press asked for, so "Try again" repeats it.
-    private bool _wanted;
 
     private Task ToggleAsync()
     {
@@ -398,7 +398,7 @@
                 }
 
                 // The board shows the relay as the person wanted it: nothing left to decide.
-                if (_toggleFailed && !_inGroup && Board.State.IsConnected && IsOn == _wanted)
+                if (_toggleFailed && !_inGroup && new UnconfirmedPress(Id, _wanted).IsSettledBy(Board.State))
                 {
                     _toggleFailed = false;
                 }

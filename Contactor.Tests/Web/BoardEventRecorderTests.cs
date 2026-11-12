@@ -369,6 +369,31 @@ public sealed class BoardEventRecorderTests
         Assert.Equal(("jane@example.com", (DateTime?)BoardTestRig.Start.AddMinutes(90)), (Runtime(setup.Database, 2).TurnedOnBy, Runtime(setup.Database, 2).AutoOffAtUtc));
     }
 
+    // A relay in a group gets no auto-off of its own (its group's run applies), and one set to "Never" none at all,
+    // though it shows as on outside the app.
+    [Fact]
+    public async Task Should_GiveNoOwnAutoOff_ToAGroupsRelay_OrOneSetToNever()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await using (var db = await setup.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan };
+            group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
+            group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
+            db.RelayGroups.Add(group);
+            (await db.Relays.SingleAsync(r => r.Id == 4, Cancel)).MaxOnMinutes = null;
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await setup.StartAsync();
+        setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
+        setup.Board.SetRelayAndInput(relay: 4, input: 2, on: true);
+        await BoardTestRig.WaitUntilAsync(() => Runtime(setup.Database, 4).TurnedOnBy == EventActors.External);
+
+        Assert.Null(Runtime(setup.Database, 4).AutoOffAtUtc);
+        Assert.Null(Runtime(setup.Database, 1).TurnedOnBy);
+    }
+
     private static RelayRuntime Runtime(TestDatabase database, int relayId)
     {
         using var db = database.Factory.CreateDbContext();
