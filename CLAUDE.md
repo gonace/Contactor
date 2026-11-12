@@ -543,3 +543,4 @@ See `DEPLOY.md` for the steps.
 - Time: inject `TimeProvider`. Never use `DateTime.Now` directly.
 - Log with `ILogger` and structured fields. Never log the VM201 password.
 - Everything in English (see Languages).
+- Branches: a short name for the work, in lower case with hyphens, e.g. `setup-guide`, `vm204`, `responsive-layout`, `nitpicks-10-14`. No prefix (no `feature/`, `claude/` or user name) and no random suffix. One branch per pull request.
