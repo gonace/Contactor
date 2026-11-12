@@ -82,7 +82,8 @@ public sealed class SetupHandler
 
     /// <summary>
     /// Saves the model of board, which wins over <c>Board:Type</c> from now on. Returns true when it isn't the model
-    /// the app runs with, so the app has to restart to use it.
+    /// the app runs with, so the app has to restart to use it. Throws <see cref="InvalidOperationException"/> once the
+    /// guide is done: the model is never changed afterwards (replacing the board is issue #32).
     /// </summary>
     public async Task<bool> ChooseBoardAsync(string type, CancellationToken cancellationToken)
     {
@@ -90,6 +91,11 @@ public sealed class SetupHandler
             ?? throw new ArgumentException($"\"{type}\" isn't a board in the catalogue.", nameof(type));
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var installation = await GetAsync(db, cancellationToken);
+        if (installation.SetupDoneUtc is not null)
+        {
+            throw new InvalidOperationException("The setup guide is done; the board's model is no longer chosen there.");
+        }
+
         installation.BoardType = model.Id;
         await db.SaveChangesAsync(cancellationToken);
         var restart = model.Id != _model.Id;
@@ -143,12 +149,21 @@ public sealed class SetupHandler
     /// <summary>
     /// "Try": turns the relay on for <see cref="TryLength"/>, so the person can hear which one it is, through
     /// <see cref="RelayControl"/> (so a relay in a group is refused, and both steps are logged). Returns once it is
-    /// on; it is turned off again even if the page is closed. Throws <see cref="BoardNotConnectedException"/> without
-    /// a board, and <see cref="RelayInGroupException"/> for a relay in a group.
+    /// on; it is turned off again even if the page is closed. Its auto-off is set to the same moment, so
+    /// <see cref="AutoOffService"/> turns it off should the app stop or the board drop before that. Throws
+    /// <see cref="BoardNotConnectedException"/> without a board, and <see cref="RelayInGroupException"/> for a relay in
+    /// a group.
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
         await _control.TurnOnAsync(relayId, userEmail, cancellationToken);
+        await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == relayId, cancellationToken);
+            runtime.AutoOffAtUtc = _clock.UtcNow + TryLength;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         _ = TurnOffLaterAsync(relayId, userEmail);
     }
 
@@ -161,7 +176,7 @@ public sealed class SetupHandler
         }
         catch (Exception ex)
         {
-            // Not switched off: its auto-off (2 h by default) still ends it, and the relay list shows it on.
+            // Not switched off here: its auto-off, set to the same moment, ends it at the next check.
             _logger.TryNotEnded(ex, relayId);
         }
     }

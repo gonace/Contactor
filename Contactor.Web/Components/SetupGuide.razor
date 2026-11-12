@@ -421,6 +421,13 @@
 
     private async Task ChooseBoardAsync()
     {
+        // Someone else finished the guide while this page was open: the model is never changed afterwards.
+        if (await Setup.IsDoneAsync(CancellationToken.None))
+        {
+            Navigation.NavigateTo("");
+            return;
+        }
+
         if (!await Setup.ChooseBoardAsync(_type, CancellationToken.None))
         {
             Move(3);
@@ -448,6 +455,8 @@
         _notFound = false;
         try
         {
+            // Watching from before the save: the board may be back at its new address before the save returns.
+            using var contact = BoardContact.Watch(Board);
             if (!await SaveAddressAsync())
             {
                 return;
@@ -455,7 +464,7 @@
 
             _checking = true;
             StateHasChanged();
-            var found = await BoardContact.WaitAsync(Board, _moving, BoardContact.Timeout, Time, CancellationToken.None);
+            var found = await contact.WaitAsync(_moving, BoardContact.Timeout, Time, CancellationToken.None);
             _checking = false;
             _notFound = !found;
             if (found && goOn)
@@ -488,7 +497,7 @@
             return false;
         }
 
-        var before = (Connection.Endpoint, Connection.Login);
+        var (endpoint, login) = (Connection.Endpoint, Connection.Login);
         _error = await Address.SaveAsync(_host, port, _user.Email, CancellationToken.None)
             ?? (Model.HasLogin ? await Address.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None) : null);
         if (_error is not null)
@@ -496,9 +505,8 @@
             return false;
         }
 
-        _moving = before != (Connection.Endpoint, Connection.Login);
-        var login = await Address.GetLoginAsync(CancellationToken.None);
-        _hasPassword = login.HasPassword;
+        _moving = BoardContact.HasMoved(Connection, endpoint, login);
+        _hasPassword = (await Address.GetLoginAsync(CancellationToken.None)).HasPassword;
         _newPassword = "";
         return true;
     }

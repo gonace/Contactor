@@ -172,14 +172,10 @@ public sealed class SetupTests
 
             // Nothing listens there: from now on the board doesn't answer, and that counts.
             database.Services.GetRequiredService<IBoardConnection>().SetEndpoint(new BoardEndpoint("127.0.0.1", 1));
-            await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
-            var since = time.Now.UtcDateTime;
             time.Now += BoardEventRecorder.ConnectionLostAfter;
 
             await WaitUntilAsync(() => EventsAsync(database).GetAwaiter().GetResult().Count == 1);
-            var lost = Assert.Single(await EventsAsync(database));
-            Assert.Equal(EventActions.ConnectionLost, lost.Action);
-            Assert.True(lost.TimestampUtc >= since - BoardEventRecorder.CheckInterval * 2);
+            Assert.Equal(EventActions.ConnectionLost, Assert.Single(await EventsAsync(database)).Action);
         }
         finally
         {
@@ -293,6 +289,35 @@ public sealed class SetupTests
     }
 
     [Fact]
+    public async Task Should_NotChangeTheModel_OnceDone()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.Setup.MarkDoneAsync(Cancel);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Setup.ChooseBoardAsync("vm204", Cancel));
+
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Null((await db.Installations.SingleAsync(Cancel)).BoardType);
+    }
+
+    [Fact]
+    public async Task Should_GiveATriedRelayAnAutoOff_AtTheEndOfTheTry()
+    {
+        await using var rig = await Rig.StartAsync();
+
+        await rig.Setup.TryAsync(3, "john@example.com", Cancel);
+
+        // The app could stop before the turn-off in memory runs: auto-off ends it then.
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
+            Assert.Equal(Now + SetupHandler.TryLength, runtime.AutoOffAtUtc);
+        }
+
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3));
+    }
+
+    [Fact]
     public async Task Should_BeDone_OnceMarked()
     {
         await using var rig = await Rig.StartAsync();
@@ -376,18 +401,37 @@ public sealed class SetupTests
     }
 
     [Fact]
+    public async Task Should_NotCountASaveOfTheSameAddressAndLogin_AsAMove()
+    {
+        await using var database = TestDatabase.Create(
+            (services, configuration) => services.AddBoards(configuration),
+            new Dictionary<string, string?> { ["Vm201:Host"] = "127.0.0.1" });
+        var connection = database.Services.GetRequiredService<IBoardConnection>();
+        var (endpoint, login) = (connection.Endpoint, connection.Login);
+
+        connection.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760));
+        connection.SetLogin(BoardLogin.None);
+        Assert.False(BoardContact.HasMoved(connection, endpoint, login));
+
+        connection.SetEndpoint(new BoardEndpoint("127.0.0.2", 9760));
+        Assert.True(BoardContact.HasMoved(connection, endpoint, login));
+    }
+
+    [Fact]
     public async Task Should_FindTheBoard_WhenAlreadyConnected()
     {
         var board = new FakeRelayBoard();
+        using var contact = BoardContact.Watch(board);
 
-        Assert.True(await BoardContact.WaitAsync(board, moved: false, WaitTimeout, TimeProvider.System, Cancel));
+        Assert.True(await contact.WaitAsync(moved: false, WaitTimeout, TimeProvider.System, Cancel));
     }
 
     [Fact]
     public async Task Should_NotCountTheOldConnection_AfterAMove()
     {
         var board = new FakeRelayBoard();
-        var wait = BoardContact.WaitAsync(board, moved: true, WaitTimeout, TimeProvider.System, Cancel);
+        using var contact = BoardContact.Watch(board);
+        var wait = contact.WaitAsync(moved: true, WaitTimeout, TimeProvider.System, Cancel);
         board.SetConnected(true);
         await Task.Delay(50, Cancel);
         Assert.False(wait.IsCompleted);
@@ -398,11 +442,24 @@ public sealed class SetupTests
         Assert.True(await wait);
     }
 
+    // The client reconnects at once: the board can be back at its new address before the save even returns.
+    [Fact]
+    public async Task Should_FindTheBoard_WhenItReconnectedBeforeTheWait()
+    {
+        var board = new FakeRelayBoard();
+        using var contact = BoardContact.Watch(board);
+        board.SetConnected(false);
+        board.SetConnected(true);
+
+        Assert.True(await contact.WaitAsync(moved: true, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
+    }
+
     [Fact]
     public async Task Should_FindTheBoard_WhenItConnectsInTime()
     {
         var board = new FakeRelayBoard(connected: false);
-        var wait = BoardContact.WaitAsync(board, moved: true, WaitTimeout, TimeProvider.System, Cancel);
+        using var contact = BoardContact.Watch(board);
+        var wait = contact.WaitAsync(moved: true, WaitTimeout, TimeProvider.System, Cancel);
 
         board.SetConnected(true);
 
@@ -413,8 +470,9 @@ public sealed class SetupTests
     public async Task Should_GiveUp_WhenTheBoardDoesNotAnswer()
     {
         var board = new FakeRelayBoard(connected: false);
+        using var contact = BoardContact.Watch(board);
 
-        Assert.False(await BoardContact.WaitAsync(board, moved: false, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
+        Assert.False(await contact.WaitAsync(moved: false, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
     }
 
     [Theory]

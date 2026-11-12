@@ -441,7 +441,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
-   - "Relay board": the model ("Velleman VM201 · 8 relays"), the board's address ("Address") and "Port" (the model's default port as its placeholder), its login, for a model that has one ("The board has no login", or "User name" and "Password", with the model's login hint, e.g. "At most 8 characters: letters a–z, digits and plain symbols.", or else "At most N characters."; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760" or "No contact with the relay board at …"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
+   - "Relay board": the model ("Velleman VM201 · 8 relays"), the board's address ("Address") and "Port" (the model's default port as its placeholder), its login, for a model that has one ("The board has no login", or "User name" and "Password", with the model's login hint, e.g. "At most 8 characters: letters a–z, digits and plain symbols.", or else "At most N characters."; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760", "No contact with the relay board at …" or "The relay board has no address yet"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
    - "People": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Save".
    - "Backups": the newest nightly copy ("Latest: 02:30 · 68 kB"), "Make a copy now" and "Download" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
    - "Debugging": the checkbox "Show the traffic to the relay board", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
@@ -491,7 +491,7 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
   "ConnectionStrings": { "Default": "Data Source=/data/contactor.db" },
   "Board": { "Type": "vm201" },     // which model, from the board catalogue; vm201 when not set
   "Vm201": {
-    "Host": "",                     // the board's address, e.g. 192.168.1.50; install.sh asks for it, may be empty (the setup guide asks)
+    "Host": "",                     // the board's address, e.g. 192.168.1.50; install.sh asks for it. Empty (without install.sh): the setup guide asks
     "Port": 9760,
     "Username": "",
     "Password": "",
