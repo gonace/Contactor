@@ -1,0 +1,14 @@
+# Only the sources the image is built from: no build output, history, tests or local settings.
+**/bin/
+**/obj/
+.git/
+.github/
+docs/
+deploy/
+scripts/
+Contactor.Tests/
+Contactor.AppHost/
+Contactor.Simulator/
+**/*.user
+**/.env
+**/contactor.db*

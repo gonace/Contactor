@@ -8,9 +8,37 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Contactor.Web.Persistence;
 
+/// <summary>Where the database is, and whether it is still in the folder images before 2026-11 used.</summary>
+public sealed record DatabaseLocation(string Path, bool IsEarlierFolder);
+
 public static class PersistenceServiceCollectionExtensions
 {
     public const string ConnectionStringName = "Default";
+
+    /// <summary>The image keeps everything in /data.</summary>
+    public const string ImagePath = "/data/contactor.db";
+
+    /// <summary>Where images before 2026-11 kept the database, and an installation's old compose.yml still maps it.</summary>
+    public const string EarlierPath = "/var/lib/contactor/contactor.db";
+
+    /// <summary>
+    /// The connection string to use. An installation whose compose.yml predates the /data folder maps its data to
+    /// <see cref="EarlierPath"/>, and the image's default would start it on an empty database: so while there is no
+    /// database at <see cref="ImagePath"/> and there is one at the earlier path, that one is used (and the app says to
+    /// run install.sh, which writes the new compose.yml). Remove once every installation has run it.
+    /// </summary>
+    public static (string ConnectionString, DatabaseLocation Location) Resolve(string connectionString, Func<string, bool> fileExists)
+    {
+        ArgumentNullException.ThrowIfNull(fileExists);
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        if (builder.DataSource == ImagePath && !fileExists(ImagePath) && fileExists(EarlierPath))
+        {
+            builder.DataSource = EarlierPath;
+            return (builder.ToString(), new DatabaseLocation(EarlierPath, IsEarlierFolder: true));
+        }
+
+        return (connectionString, new DatabaseLocation(builder.DataSource, IsEarlierFolder: false));
+    }
 
     /// <summary>
     /// Registers a <see cref="ContactorDbContext"/> factory: Blazor Server components and background services each
@@ -25,6 +53,8 @@ public static class PersistenceServiceCollectionExtensions
             throw new InvalidOperationException($"ConnectionStrings:{ConnectionStringName} is required.");
         }
 
+        (connectionString, var location) = Resolve(connectionString, File.Exists);
+        services.AddSingleton(location);
         services.AddDbContextFactory<ContactorDbContext>(options => Configure(options, connectionString));
 
         // ASP.NET Core's keys (antiforgery, Blazor's circuit state) live next to the database: inside the container

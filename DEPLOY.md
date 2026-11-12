@@ -1,12 +1,12 @@
 # Deploying Contactor
 
-Contactor runs on a Raspberry Pi next to the relay board, with Docker Compose: the app's container and `cloudflared`,
-which connects out to Cloudflare. No port is opened on the router or published on the Raspberry Pi. Everyone signs
+Contactor runs on a Raspberry Pi next to the relay board, with Docker Compose: one container, in which the app also
+runs `cloudflared`, which connects out to Cloudflare. No port is opened on the router or published on the Raspberry Pi. Everyone signs
 in through Cloudflare Access on a hostname of your own.
 
 ```
 Phone ─▶ Cloudflare Access ─▶ Cloudflare Tunnel ─▶ cloudflared ─▶ contactor:8080 ─▶ VM201 (TCP 9760)
-                                                   (Raspberry Pi, Docker Compose)
+                                                   └── the contactor container (Raspberry Pi) ──┘
 ```
 
 You need a domain on Cloudflare and a Cloudflare Zero Trust account (the free plan is enough). Set up Cloudflare
@@ -40,7 +40,11 @@ If the board has a login, you can give it on the first run:
 no single quote), or set it later in the app.
 
 The settings are kept in `/opt/contactor/.env` (readable by root only); the database, its backups and the app's
-keys in `/var/lib/contactor`.
+keys in `/var/lib/contactor`, which the container sees as `/data`.
+
+**Installed before November 2026?** Run `install.sh` again once (as above; it keeps your settings). It writes the new
+`compose.yml`: one container instead of two, with the data folder mapped to `/data`. Until then the app keeps working
+on the old `compose.yml` and says so in its log.
 
 **Check it:** open your hostname on your phone and sign in with the code. Relays shows
 "No contact with the relay board", which is right without a board. Turn on **Settings → Debugging**: the Debug tab
@@ -163,8 +167,9 @@ it writes a few lines every 15 seconds, so turn it off again afterwards: remove 
 `/opt/contactor` holds the secrets, so only root can open it: run compose through `sudo` with `-f`, as below,
 rather than `cd` into it first.
 
-- `sudo docker compose -f /opt/contactor/compose.yml ps` shows both containers and whether the app is healthy.
-- `sudo docker compose -f /opt/contactor/compose.yml logs --tail 100 contactor` (or `cloudflared`) shows what they say.
+- `sudo docker compose -f /opt/contactor/compose.yml ps` shows the container and whether the app is healthy.
+- `sudo docker compose -f /opt/contactor/compose.yml logs --tail 100 contactor` shows what it says, `cloudflared`'s
+  lines included.
 - "No contact with the relay board" in the app: the app can't reach the VM201. Check the board's address under
   Settings (find it in the router's list of clients) and that the board answers: `nc -vz <address> 9760`.
 - "Access denied.": the request didn't come through Cloudflare Access, or the team domain or AUD tag in `.env` is

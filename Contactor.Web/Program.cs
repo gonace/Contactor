@@ -8,6 +8,7 @@ using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
+using Contactor.Web.Features.Tunnel;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Web;
@@ -33,10 +34,15 @@ public sealed partial class Program
         builder.Services.AddEvents(builder.Configuration);
         builder.Services.AddSchedules(builder.Configuration);
         builder.Services.AddBackup(builder.Configuration);
+        builder.Services.AddTunnel(builder.Configuration);
         builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
         var app = builder.Build();
         LogBuild(app.Logger, AppBuild.Current.Version, AppBuild.Current.Commit ?? "unknown");
+        if (app.Services.GetRequiredService<DatabaseLocation>() is { IsEarlierFolder: true } location)
+        {
+            LogEarlierFolder(app.Logger, location.Path);
+        }
         app.Services.InitializeDatabaseAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         app.UseCloudflareAccess();
@@ -49,6 +55,9 @@ public sealed partial class Program
         app.Run();
         return 0;
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Using the database at {Path}, where earlier images kept it: run install.sh again so compose.yml maps it to /data")]
+    private static partial void LogEarlierFolder(ILogger logger, string path);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Contactor {Version} (commit {Commit})")]
     private static partial void LogBuild(ILogger logger, string version, string commit);
