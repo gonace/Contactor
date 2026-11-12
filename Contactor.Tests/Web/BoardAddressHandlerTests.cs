@@ -41,53 +41,27 @@ public sealed class BoardAddressHandlerTests
         Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
     }
 
-    // Another board may be at the new address: who turned the old board's relays and groups on, and their auto-off,
-    // must not apply to it. The same address keeps them.
+    // The app can't tell a new board from the same board at a new IP, so a relay's run is kept: for the same board
+    // clearing it would leave a fan heater without its auto-off.
     [Fact]
-    public async Task Should_ClearTheOldBoardsRuns_AtANewAddressOnly()
+    public async Task Should_KeepTheRelaysRuns_AtANewAddress()
     {
         await using var rig = await BoardTestRig.StartAsync();
         await using var other = new Vm201Simulator();
         other.Start();
-        int groupId;
+        var autoOff = BoardTestRig.Start.AddHours(2);
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
             var relay = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
-            (relay.OnSinceUtc, relay.AutoOffAtUtc, relay.TurnedOnBy) = (BoardTestRig.Start, BoardTestRig.Start.AddHours(2), John);
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan };
-            group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
-            group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
-            db.RelayGroups.Add(group);
-            await db.SaveChangesAsync(Cancel);
-            groupId = group.Id;
-            db.GroupRuntimes.Add(new GroupRuntime
-            {
-                GroupId = groupId,
-                Phase = GroupPhases.Stopping,
-                NextStepAtUtc = BoardTestRig.Start.AddMinutes(2),
-                PendingPosition = 1,
-                OnSinceUtc = BoardTestRig.Start,
-                AutoOffAtUtc = BoardTestRig.Start.AddHours(2),
-                TurnedOnBy = John,
-            });
+            (relay.OnSinceUtc, relay.AutoOffAtUtc, relay.TurnedOnBy) = (BoardTestRig.Start, autoOff, John);
             await db.SaveChangesAsync(Cancel);
         }
-
-        Assert.Null(await Handler(rig).SaveAsync("127.0.0.1", rig.Simulator.Port, John, Cancel));
-        Assert.Equal(John, (await RuntimesAsync(rig)).Relay.TurnedOnBy);
 
         Assert.Null(await Handler(rig).SaveAsync("127.0.0.1", other.Port, John, Cancel));
 
-        var (relayAfter, groupAfter) = await RuntimesAsync(rig);
-        Assert.Equal(((DateTime?)null, (DateTime?)null, (string?)null), (relayAfter.OnSinceUtc, relayAfter.AutoOffAtUtc, relayAfter.TurnedOnBy));
-        Assert.Equal((GroupPhases.Idle, (int?)null, (DateTime?)null, (string?)null), (groupAfter.Phase, groupAfter.PendingPosition, groupAfter.AutoOffAtUtc, groupAfter.TurnedOnBy));
-
-        async Task<(RelayRuntime Relay, GroupRuntime Group)> RuntimesAsync(BoardTestRig r)
-        {
-            await using var db = await r.Database.Factory.CreateDbContextAsync(Cancel);
-            return (await db.RelayRuntimes.AsNoTracking().SingleAsync(x => x.RelayId == 3, Cancel),
-                await db.GroupRuntimes.AsNoTracking().SingleAsync(x => x.GroupId == groupId, Cancel));
-        }
+        await using var check = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        var after = await check.RelayRuntimes.AsNoTracking().SingleAsync(r => r.RelayId == 3, Cancel);
+        Assert.Equal(((DateTime?)autoOff, John), (after.AutoOffAtUtc, after.TurnedOnBy));
     }
 
     [Fact]
