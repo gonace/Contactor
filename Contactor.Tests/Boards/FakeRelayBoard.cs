@@ -60,11 +60,31 @@ internal sealed class FakeRelayBoard : IRelayBoard
         return SwitchAsync(relays, on: false);
     }
 
+    /// <summary>When set, status requests go out but the board never answers them.</summary>
+    public bool IgnoreRefresh { get; set; }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         EnsureConnected();
+        if (IgnoreRefresh)
+        {
+            return Task.CompletedTask;
+        }
+
         StateChanged?.Invoke(this, State);
         return Task.CompletedTask;
+    }
+
+    /// <summary>The connection opens or ends, and the board reports it, as a real board's client does.</summary>
+    public void SetConnected(bool connected)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with { IsConnected = connected };
+        }
+
+        StateChanged?.Invoke(this, state);
     }
 
     private Task SwitchAsync(ChannelMask relays, bool on)

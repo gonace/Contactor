@@ -71,6 +71,9 @@ function seed() {
         rename.run(name, active, id);
     }
 
+    // Past the setup guide, so the app opens on the relays.
+    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "BoardType", "SetupDoneUtc") VALUES (1, NULL, ?)').run('2026-11-01 08:00:00');
+
     const user = db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (?, ?, 0)');
     user.run('john@example.com', 'John');
     user.run('jane@example.com', 'Jane');

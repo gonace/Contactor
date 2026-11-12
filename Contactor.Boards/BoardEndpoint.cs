@@ -6,6 +6,12 @@ public sealed record BoardEndpoint(string Host, int Port)
     // A DNS name can't be longer; anything longer isn't an address.
     private const int MaxHostLength = 253;
 
+    /// <summary>
+    /// Whether there is an address at all. A new installation has none until someone enters it, and nothing connects
+    /// before.
+    /// </summary>
+    public bool HasHost => !string.IsNullOrWhiteSpace(Host);
+
     /// <summary>An endpoint from what someone typed, or null with the reason when it can't be one.</summary>
     public static BoardEndpoint? TryCreate(string? host, int port, out string? error)
     {

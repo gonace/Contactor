@@ -36,11 +36,6 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
         var settings = options.Value;
-        if (string.IsNullOrWhiteSpace(settings.Host))
-        {
-            throw new ArgumentException("Vm204:Host is required.", nameof(options));
-        }
-
         if (settings.PollSeconds < 1)
         {
             throw new ArgumentException("Vm204:PollSeconds must be at least 1.", nameof(options));

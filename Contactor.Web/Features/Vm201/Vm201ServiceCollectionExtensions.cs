@@ -16,7 +16,6 @@ public static class Vm201ServiceCollectionExtensions
         services.AddOptions<Vm201Options>()
             .Bind(configuration.GetSection(Vm201Options.SectionName))
             .ValidateDataAnnotations()
-            .Validate(o => !string.IsNullOrWhiteSpace(o.Host), "Vm201:Host is required.")
             .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<Vm201Client>();

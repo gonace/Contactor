@@ -47,9 +47,15 @@ keeps your settings). It writes the new `compose.yml`: one container instead of 
 `/data`. Until then the app keeps working on the old `compose.yml` and says so in its log. Don't run it before that
 image is out: the new `compose.yml` has no separate `cloudflared`, so an older image would have no tunnel.
 
-**Check it:** open your hostname on your phone and sign in with the code. Relays shows
-"No contact with the relay board", which is right without a board. Turn on **Settings → Debugging**: the Debug tab
-then shows the app trying to connect, so the whole chain from the phone to the Pi works.
+**Check it:** open your hostname on your phone and sign in with the code. A new installation opens on a short setup
+guide: your name, which relay board, its address and login (with a live "Board online" check), and names for the
+relays, with "Try" to hear which is which. Without a board, choose "Go on without a connection"; "Skip for now" on
+the first step opens the app at once. Relays then shows "No contact with the relay board", which is right without a
+board. Turn on **Settings → Debugging**: the Debug tab then shows the app trying to connect, so the whole chain from
+the phone to the Pi works.
+
+Choosing a board other than the VM201 in the guide restarts the app once (compose starts it again by itself), and
+the guide carries on where it was.
 
 ## 3. Nightly updates
 
