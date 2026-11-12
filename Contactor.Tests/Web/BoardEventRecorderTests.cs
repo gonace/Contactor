@@ -292,6 +292,25 @@ public sealed class BoardEventRecorderTests
         Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
     }
 
+    // A failed ON credited by a status whose save fails is still credited on the next try.
+    [Fact]
+    public async Task Should_CreditAFailedOnAgain_WhenTheSaveFails()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await setup.StartAsync();
+        setup.Database.Services.GetRequiredService<ExpectedChanges>().RememberFailedOn(1, "jane@example.com");
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+
+        setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.Count > 0);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+        setup.Board.SetInput(2, on: true);
+
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
+        var entry = Assert.Single(Events(setup.Database), e => e.RelayId == 1);
+        Assert.Equal(("jane@example.com", EventActions.On), (entry.Actor, entry.Action));
+    }
+
     private static List<EventLogEntry> InputEvents(TestDatabase database)
     {
         return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];

@@ -14,6 +14,40 @@ public sealed class ExpectedChangesTests
         _expected = new ExpectedChanges(new LocalClock(TimeZoneInfo.Utc, _time));
     }
 
+    // A failed ON is credited once, the newest for the relay, and only to a status that arrived within the lifetime.
+    [Fact]
+    public void Should_RememberAFailedOn_ForItsLifetime()
+    {
+        var start = _time.GetUtcNow().UtcDateTime;
+        _expected.RememberFailedOn(3, "jane@example.com");
+        _expected.RememberFailedOn(3, "alex@example.com");
+        _expected.RememberFailedOn(4, "jane@example.com");
+
+        Assert.Null(_expected.TakeFailedOn(2, start));
+        Assert.Equal("alex@example.com", _expected.TakeFailedOn(3, start)?.Actor);
+        Assert.Equal("jane@example.com", _expected.TakeFailedOn(3, start)?.Actor);
+        Assert.Null(_expected.TakeFailedOn(3, start));
+
+        // Too late: the board showed relay 4 on only after the note had expired.
+        Assert.Null(_expected.TakeFailedOn(4, start + ExpectedChanges.Lifetime));
+    }
+
+    // A note taken by a status whose recording then failed is put back as it was, expiry included.
+    [Fact]
+    public void Should_PutBackAFailedOn_AsItWas()
+    {
+        var start = _time.GetUtcNow().UtcDateTime;
+        _expected.RememberFailedOn(3, "jane@example.com");
+        var note = _expected.TakeFailedOn(3, start)!;
+
+        _time.Now += TimeSpan.FromSeconds(4);
+        _expected.RememberFailedOn(note);
+
+        Assert.Equal(note, _expected.TakeFailedOn(3, start.AddSeconds(4)));
+        _expected.RememberFailedOn(note);
+        Assert.Null(_expected.TakeFailedOn(3, start + ExpectedChanges.Lifetime));
+    }
+
     // Pending until the board shows it or it expires, and only in its own direction.
     [Fact]
     public void Should_TellWhetherACommandIsStillOnItsWay()

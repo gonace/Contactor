@@ -53,6 +53,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     // The app's own changes the status in hand matched, to expect again if recording it fails.
     private readonly List<(int RelayId, bool On)> _consumed = [];
+
+    // The failed ONs the status in hand was credited to, to remember again if recording it fails.
+    private readonly List<FailedOn> _consumedFailures = [];
     private DateTime? _contactSavedUtc;
     private bool _lossLogged;
 
@@ -154,6 +157,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         // status starts over: the changes, a gap that just ended and a restored connection are recorded then.
         var before = (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc);
         _consumed.Clear();
+        _consumedFailures.Clear();
         _seenInputChanges.Clear();
         try
         {
@@ -168,6 +172,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
             foreach (var (relayId, on) in _consumed)
             {
                 _expected.Expect(ChannelMask.Of(relayId), on);
+            }
+
+            foreach (var note in _consumedFailures)
+            {
+                _expected.RememberFailedOn(note);
             }
 
             throw;
@@ -354,6 +363,17 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 continue;
             }
 
+            var runtime = await db.RelayRuntimes.SingleOrDefaultAsync(r => r.RelayId == relayId, cancellationToken);
+
+            // Someone pressed ON and was told it failed, but the board switched it on: it is their ON, with their
+            // auto-off, so a fan heater doesn't run until someone notices.
+            if (isOn && _expected.TakeFailedOn(relayId, receivedUtc) is { } failed)
+            {
+                _consumedFailures.Add(failed);
+                await CreditFailedOnAsync(db, relayId, failed.Actor, runtime, now, cancellationToken);
+                continue;
+            }
+
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
@@ -364,7 +384,6 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
             // Whoever turned it on in the app no longer has it on: the status line must not keep their name, and
             // auto-off must not act on it.
-            var runtime = await db.RelayRuntimes.SingleOrDefaultAsync(r => r.RelayId == relayId, cancellationToken);
             if (runtime is not null)
             {
                 runtime.OnSinceUtc = null;
@@ -372,6 +391,35 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 runtime.TurnedOnBy = null;
             }
         }
+    }
+
+    // As RelayControl records a successful ON, logged with Details {"afterFailedCommand":true}.
+    private static async Task CreditFailedOnAsync(
+        ContactorDbContext db,
+        int relayId,
+        string actor,
+        RelayRuntime? runtime,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var maxOnMinutes = await db.Relays.Where(r => r.Id == relayId).Select(r => r.MaxOnMinutes).SingleOrDefaultAsync(cancellationToken);
+        if (runtime is null)
+        {
+            runtime = new RelayRuntime { RelayId = relayId };
+            db.RelayRuntimes.Add(runtime);
+        }
+
+        runtime.OnSinceUtc = now;
+        runtime.TurnedOnBy = actor;
+        runtime.AutoOffAtUtc = maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
+        db.EventLog.Add(new EventLogEntry
+        {
+            TimestampUtc = now,
+            RelayId = relayId,
+            Actor = actor,
+            Action = EventActions.On,
+            Details = """{"afterFailedCommand":true}""",
+        });
     }
 
     private async Task CheckConnectionLostAsync(CancellationToken cancellationToken)
