@@ -165,7 +165,7 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
 - `IBoardConnection`: where the board is (`BoardEndpoint`) and its login (`BoardLogin`), with the defaults from the board's own settings, changeable while the app runs; `CheckLogin` says what the board can't take, and `RunAsync` keeps the connection open.
 - `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
-- **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, name, capabilities, default port, login length and an optional login hint in plain words) and how to register it. `Board:Type` chooses one (default `vm201`); the app refuses to start on a model the catalogue doesn't have. `AddBoards` registers the chosen model and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the connection open.
+- **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, name, capabilities, default port, login length and an optional login hint in plain words) and how to register it. The model chosen in the setup guide (`Installation.BoardType`, read before the services are built: `ReadSavedBoardType`) wins; until one is saved, `Board:Type` chooses (default `vm201`). The app refuses to start on a model the catalogue doesn't have. A model is never switched on its own afterwards: replacing the board is issue #32. `AddBoards` registers the chosen model and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the connection open.
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, and one line in the catalogue. Nothing else in the app changes.
 - `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`).
 - What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
@@ -294,6 +294,12 @@ GroupRuntime            (internal; the sequence in progress, so it carries on af
   PendingSinceUtc datetime?
   OnSinceUtc, AutoOffAtUtc, TurnedOnBy   as in RelayRuntime, for the group
 
+Installation            (one row; none on a new installation)
+  Id              int PK = 1
+  BoardType       text?          the model chosen in the setup guide (catalogue id); wins over Board:Type
+  SetupDoneUtc    datetime?      when the setup guide was finished or skipped; null: "/" opens on the guide
+                                 The migration that added it marked installations already in use as done.
+
 Input                   (future; create the table now but show nothing in the UI)
   Id              int PK = 1
   Name            text
@@ -355,6 +361,7 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
   - Implementation: keep a short list of "expected changes" that is cleared after 5 s.
 
 ### Connection
+- A new installation may have no address for its board (`Vm201:Host` empty): nothing connects, and no contact is lost, until one is saved (in the setup guide or on Settings). `BoardHostedService` waits for it.
 - When contact is lost for more than 30 s, `connection-lost` is logged, and `connection-restored` when it comes back.
 - The UI shows a red warning: "No contact with the relay board. Since HH:mm. The states below may be wrong."
 
@@ -443,6 +450,13 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in plain words ("Turn on relay 3", "Status: relay 1 and 3 on · input off", "Connection lost: …") and the packet's bytes. The button "Clear".
    - Routine steps (the VM201's keep-alive and channel names, the VM204's polls and answers that change nothing) are only counted (`BoardTrace.RoutineLeftOut`): "N routine steps left out, such as status checks that changed nothing", kept current at most once a second (`RoutineCounted`), so a board that is asked every 2 s can't push the rest out of the list.
 
+9. **Setup** (`/setup`, `SetupGuide.razor`, `Features/Setup`): a new installation opens on it ("/" redirects there) until someone finishes or skips it; anyone signed in may go through it. No tab bar; "STEP n OF 5" with a progress bar, "Skip for now" on the first step (marks it done) and "Back" after.
+   1. "Welcome to Contactor": "Your name" (saved as the person's DisplayName) and "YOU'LL NEED".
+   2. "Which relay board?": the models in the catalogue with what they have ("8 relays · 1 input"). Another model than the running one is saved and the app restarts once (`AppRestart` stops it; compose starts it again), and the page comes back at `/setup?step=3`.
+   3. "Where is the board?": address, port (empty: the model's default) and login, saved through `BoardAddressHandler`; "Next" waits up to 10 s for the board (`BoardContact`, which ignores a connection to the old address) and shows "Board online" or "No answer from …". "Go on without a connection" saves what was typed and goes on.
+   4. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes.
+   5. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
+
 Blazor Server gives live updates for free. When the board reports a new state (`IRelayBoard.StateChanged`), every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
 
 ### Design tokens
@@ -477,7 +491,7 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
   "ConnectionStrings": { "Default": "Data Source=/data/contactor.db" },
   "Board": { "Type": "vm201" },     // which model, from the board catalogue; vm201 when not set
   "Vm201": {
-    "Host": "",                     // the board's address, e.g. 192.168.1.50; install.sh asks for it
+    "Host": "",                     // the board's address, e.g. 192.168.1.50; install.sh asks for it, may be empty (the setup guide asks)
     "Port": 9760,
     "Username": "",
     "Password": "",

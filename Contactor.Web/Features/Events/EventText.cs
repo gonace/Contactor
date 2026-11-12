@@ -175,7 +175,9 @@ public static class EventText
             EventActions.InputChanged => (Bool(entry.Details, "on") == true ? "turned on" : "turned off", null),
             EventActions.BoardTimersDisabled => ("had its own timers turned off", null),
             EventActions.BoardLoginChanged => ("changed the relay board's login", null),
-            EventActions.BoardAddressChanged => ($"changed the relay board's address from {Text(entry.Details, "from") ?? "?"} to {Text(entry.Details, "to") ?? "?"}", null),
+            EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from
+                ? ($"changed the relay board's address from {from} to {Text(entry.Details, "to") ?? "?"}", null)
+                : ($"set the relay board's address to {Text(entry.Details, "to") ?? "?"}", null),
             _ => (entry.Action, relayName),
         };
     }

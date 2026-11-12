@@ -1,10 +1,13 @@
 using System.Data.Common;
+using System.Reflection;
 using Contactor.Boards;
+using Contactor.Web.Persistence.Migrations;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Contactor.Web.Persistence;
 
@@ -68,6 +71,39 @@ public static class PersistenceServiceCollectionExtensions
     }
 
     /// <summary>
+    /// The board model the setup guide saved (<see cref="Installation.BoardType"/>), read before the app's services
+    /// are built, since the model decides which board's services are registered. Null when there is no database
+    /// yet, it predates the Installation table, or no model is saved; the database is never created or changed here.
+    /// </summary>
+    public static string? ReadSavedBoardType(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var connectionString = configuration.GetConnectionString(ConnectionStringName);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return null;
+        }
+
+        (connectionString, _) = Resolve(connectionString, File.Exists);
+        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
+        if (dataSource == ":memory:" || !File.Exists(dataSource))
+        {
+            return null;
+        }
+
+        var options = new DbContextOptionsBuilder<ContactorDbContext>();
+        Configure(options, connectionString);
+        using var db = new ContactorDbContext(options.Options);
+        var migration = typeof(AddInstallation).GetCustomAttribute<MigrationAttribute>()?.Id;
+        if (migration is null || !db.Database.GetAppliedMigrations().Contains(migration))
+        {
+            return null;
+        }
+
+        return db.Installations.AsNoTracking().Select(i => i.BoardType).SingleOrDefault();
+    }
+
+    /// <summary>
     /// Brings the database up to date and seeds what must always exist: a row for each of the board's relays and the
     /// input. Runs before the app starts serving, so every other part can rely on them.
     /// </summary>
@@ -110,7 +146,7 @@ public static class PersistenceServiceCollectionExtensions
                 db.Relays.Add(new Relay
                 {
                     Id = id,
-                    Name = $"Relay {id}",
+                    Name = Relay.DefaultName(id),
                     IsActive = true,
                     MaxOnMinutes = Relay.DefaultMaxOnMinutes,
                     SortOrder = id,

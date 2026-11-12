@@ -4,28 +4,35 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Contactor.Web;
+using Contactor.Web.Persistence;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>
 /// The whole web app in memory with its own database file, a board port where nothing listens, and every request
-/// coming from <see cref="RemoteAddress"/> (the in-memory test server has no address of its own).
+/// coming from <see cref="RemoteAddress"/> (the in-memory test server has no address of its own). Unless asked for a
+/// new installation, it has been through the setup guide, so the app opens on the relay list.
 /// </summary>
 internal sealed class TestWebApp : WebApplicationFactory<Program>
 {
     private readonly string _environment;
     private readonly IReadOnlyDictionary<string, string?> _settings;
     private readonly Action<IServiceCollection>? _configureServices;
+    private readonly bool _setUp;
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "contactor-tests", Guid.NewGuid().ToString("N"));
 
     public TestWebApp(
         string environment = "Development",
         IReadOnlyDictionary<string, string?>? settings = null,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        bool setUp = true)
     {
         _environment = environment;
+        _setUp = setUp;
         _settings = settings ?? new Dictionary<string, string?>();
         _configureServices = configureServices;
     }
@@ -50,6 +57,20 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
             services.AddSingleton<IStartupFilter>(new RemoteAddressStartupFilter(this));
             _configureServices?.Invoke(services);
         });
+    }
+
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        var host = base.CreateHost(builder);
+        if (_setUp)
+        {
+            var factory = host.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+            using var db = factory.CreateDbContext();
+            db.Installations.Add(new Installation { SetupDoneUtc = DateTime.UtcNow });
+            db.SaveChanges();
+        }
+
+        return host;
     }
 
     public override async ValueTask DisposeAsync()

@@ -161,6 +161,26 @@ namespace Contactor.Web.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Contactor.Web.Persistence.Installation", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BoardType")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SetupDoneUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Installation", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Installation_Id", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.Relay", b =>
                 {
                     b.Property<int>("Id")

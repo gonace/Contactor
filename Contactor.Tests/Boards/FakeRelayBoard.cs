@@ -67,6 +67,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
         return Task.CompletedTask;
     }
 
+    /// <summary>The connection opens or ends, and the board reports it, as a real board's client does.</summary>
+    public void SetConnected(bool connected)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with { IsConnected = connected };
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
     private Task SwitchAsync(ChannelMask relays, bool on)
     {
         EnsureConnected();

@@ -46,11 +46,6 @@ public sealed class Vm201Client
         _timeProvider = timeProvider;
         _logger = logger;
 
-        if (string.IsNullOrWhiteSpace(_options.Host))
-        {
-            throw new ArgumentException("Vm201:Host is required.", nameof(options));
-        }
-
         if (_options.KeepAliveSeconds < 1)
         {
             throw new ArgumentException("Vm201:KeepAliveSeconds must be at least 1.", nameof(options));

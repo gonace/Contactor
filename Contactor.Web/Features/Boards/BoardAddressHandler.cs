@@ -146,7 +146,10 @@ public sealed class BoardAddressHandler
                 TimestampUtc = _clock.UtcNow,
                 Actor = userEmail,
                 Action = EventActions.BoardAddressChanged,
-                Details = JsonSerializer.Serialize(new { from = current.ToString(), to = endpoint.ToString() }),
+                // A new installation's first address replaces none.
+                Details = current.HasHost
+                    ? JsonSerializer.Serialize(new { from = current.ToString(), to = endpoint.ToString() })
+                    : JsonSerializer.Serialize(new { to = endpoint.ToString() }),
             });
         }
 
