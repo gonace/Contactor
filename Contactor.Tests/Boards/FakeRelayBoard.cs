@@ -143,6 +143,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
+    /// <summary>The board's state is forgotten, as a client does when its address changes: nothing is known.</summary>
+    public void Forget()
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = new BoardState(false, ChannelMask.None, ChannelMask.None, null);
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
     /// <summary>The connection opens or ends, and the board reports it, as a real board's client does.</summary>
     public void SetConnected(bool connected)
     {

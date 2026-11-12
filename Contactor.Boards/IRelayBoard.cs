@@ -14,7 +14,8 @@ public interface IRelayBoard
     BoardState State { get; }
 
     /// <summary>
-    /// Raised on every new state, and when the connection is lost or comes back. From any thread; each subscriber is
+    /// Raised on every new state, when the connection is lost or comes back, and when the state is forgotten for a new
+    /// address (<see cref="IBoardConnection.SetEndpoint"/>). From any thread; each subscriber is
     /// called on its own, so one that throws doesn't keep the state from the others.
     /// </summary>
     event EventHandler<BoardState>? StateChanged;

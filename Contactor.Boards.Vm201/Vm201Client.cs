@@ -29,6 +29,10 @@ public sealed class Vm201Client
     private readonly TimeSpan _keepAlive;
     private readonly TimeSpan _idleTimeout;
     private Vm201State _state = Vm201State.Initial;
+
+    // The state is written, and its change reported, under this lock, so a status from the old address can't overtake
+    // SetEndpoint's reset.
+    private readonly Lock _stateLock = new();
     private BoardEndpoint _endpoint;
     private Vm201Login _login;
 
@@ -98,6 +102,10 @@ public sealed class Vm201Client
         }
 
         _logger.EndpointChanged(endpoint.Host, endpoint.Port);
+
+        // Another board may be at the new address: nothing is known about it until it answers, and a status from the
+        // old one still on its way is dropped (ApplyStatus).
+        SetState(Vm201State.Initial);
         Reconnect();
     }
 
@@ -115,8 +123,10 @@ public sealed class Vm201Client
     }
 
     /// <summary>
-    /// Raised on the connection's read loop whenever <see cref="State"/> changes: on every status from the board
-    /// (including the keep-alive) and when the connection is lost. Handlers must be quick and must not block.
+    /// Raised whenever <see cref="State"/> changes: on the connection's read loop for every status from the board
+    /// (including the keep-alive) and when the connection is lost, and on the caller's thread when
+    /// <see cref="SetEndpoint"/> forgets the state. Raised while a lock is held: handlers must be quick and must not
+    /// block.
     /// </summary>
     public event EventHandler<Vm201State>? StateChanged;
 
@@ -266,7 +276,7 @@ public sealed class Vm201Client
             session = new Session();
             Volatile.Write(ref _session, session);
             using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var readLoop = ReadLoopAsync(reader, sessionCts.Token);
+            var readLoop = ReadLoopAsync(reader, endpoint, sessionCts.Token);
             var writeLoop = WriteLoopAsync(stream, session, sessionCts.Token);
             var keepAliveLoop = KeepAliveLoopAsync(session, sessionCts.Token);
 
@@ -361,7 +371,7 @@ public sealed class Vm201Client
     /// Reads until the board closes the session. Fails if nothing arrives within the idle timeout, which also catches
     /// a half-open connection where the socket never reports an error.
     /// </summary>
-    private async Task ReadLoopAsync(Vm201PacketReader reader, CancellationToken cancellationToken)
+    private async Task ReadLoopAsync(Vm201PacketReader reader, BoardEndpoint endpoint, CancellationToken cancellationToken)
     {
         while (true)
         {
@@ -375,7 +385,7 @@ public sealed class Vm201Client
             switch (packet.Command)
             {
                 case Vm201Command.Status:
-                    ApplyStatus(packet);
+                    ApplyStatus(packet, endpoint);
                     break;
                 case Vm201Command.Name:
                     // The board's channel names may contain firmware garbage; the app keeps its own names.
@@ -474,7 +484,8 @@ public sealed class Vm201Client
         }
     }
 
-    private void ApplyStatus(Vm201Packet packet)
+    // A status from an address SetEndpoint has moved away from is dropped.
+    private void ApplyStatus(Vm201Packet packet, BoardEndpoint from)
     {
         if (packet.Data.Length != Vm201Command.StatusDataLength)
         {
@@ -483,21 +494,38 @@ public sealed class Vm201Client
         }
 
         var data = packet.Data.Span;
-        SetState(new Vm201State(true, data[0], data[1], (data[2] & 1) != 0, _timeProvider.GetUtcNow()));
+        SetState(new Vm201State(true, data[0], data[1], (data[2] & 1) != 0, _timeProvider.GetUtcNow()), from);
     }
 
     private void SetDisconnected()
     {
-        var state = State;
-        if (state.IsConnected)
+        lock (_stateLock)
         {
-            SetState(state with { IsConnected = false });
+            var state = State;
+            if (state.IsConnected)
+            {
+                SetState(state with { IsConnected = false });
+            }
         }
     }
 
-    private void SetState(Vm201State state)
+    // With from set, only while the client is still at that address.
+    private void SetState(Vm201State state, BoardEndpoint? from = null)
     {
-        Volatile.Write(ref _state, state);
+        lock (_stateLock)
+        {
+            if (from is not null && !Equals(from, Endpoint))
+            {
+                return;
+            }
+
+            Volatile.Write(ref _state, state);
+            RaiseStateChanged(state);
+        }
+    }
+
+    private void RaiseStateChanged(Vm201State state)
+    {
         var handlers = StateChanged;
         if (handlers is null)
         {
