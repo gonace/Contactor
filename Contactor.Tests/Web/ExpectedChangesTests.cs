@@ -26,6 +26,24 @@ public sealed class ExpectedChangesTests
     }
 
     [Fact]
+    public void Should_ForgetAFailedCommandsExpectation_AndOnlyThatOne()
+    {
+        _expected.Expect(new ChannelMask(0b0000_0011), on: true);
+        _expected.Expect(new ChannelMask(0b0000_0001), on: true);
+        _expected.Expect(new ChannelMask(0b0000_0001), on: false);
+
+        // The second command failed: one "relay 1 on" goes, the first command's stays, and so does the "off".
+        _expected.Forget(new ChannelMask(0b0000_0001), on: true);
+        _expected.Forget(new ChannelMask(0b0000_0100), on: true);
+
+        var now = _time.GetUtcNow().UtcDateTime;
+        Assert.True(_expected.TryConsume(1, on: true, now));
+        Assert.False(_expected.TryConsume(1, on: true, now));
+        Assert.True(_expected.TryConsume(2, on: true, now));
+        Assert.True(_expected.TryConsume(1, on: false, now));
+    }
+
+    [Fact]
     public void Should_NotMatchTheOppositeChange()
     {
         _expected.Expect(new ChannelMask(0b0000_0001), on: true);

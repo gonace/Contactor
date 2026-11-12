@@ -373,6 +373,7 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 ### External changes
 - If `CMD_STATUS` shows a change the app didn't ask for (through the board's web GUI, the physical button or timers): log it with Actor `external`.
   - Implementation: keep a short list of "expected changes" that is cleared after 5 s.
+  - A command that fails (refused, unreadable or no answer) logs nothing, and drops the expectation it added (`ExpectedChanges.Forget`), so a relay the board switched anyway shows on the next status as an external change instead of being taken for the app's own and lost. That holds for single relays, "All off", groups, auto-off and schedules alike.
 
 ### Connection
 - A new installation may have no address for its board (`Vm201:Host` empty): nothing connects, and no contact is lost, until one is saved (in the setup guide or on Settings). `BoardHostedService` waits for it.
