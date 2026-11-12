@@ -28,8 +28,8 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     {
         var (first, second) = (FreePort(), FreePort());
 
-        Assert.Null(_boards.Add("vm201", second, null));
-        Assert.Null(_boards.Add(" VM201 ", first, "john:secret"));
+        Assert.Null(_boards.Add("vm201", second, null, null));
+        Assert.Null(_boards.Add(" VM201 ", first, "john", "secret"));
 
         Assert.Equal(new[] { first, second }.Order(), _boards.Boards.Select(b => b.Board.Port));
         var withLogin = _boards.Boards.Single(b => b.Board.Port == first);
@@ -42,8 +42,8 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Fact]
     public void Should_RunAVm204_NextToAVm201()
     {
-        Assert.Null(_boards.Add("vm201", FreePort(), null));
-        Assert.Null(_boards.Add("vm204", FreePort(), "admin:VM204"));
+        Assert.Null(_boards.Add("vm201", FreePort(), null, null));
+        Assert.Null(_boards.Add("vm204", FreePort(), "admin", "VM204"));
 
         var vm204 = _boards.Boards.Single(b => b.Board.Model == Vm204Model.Model);
         Assert.True(vm204.Board.HasLogin);
@@ -57,7 +57,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Fact]
     public void Should_RunAVm208_WithoutALogin()
     {
-        Assert.Null(_boards.Add("vm208", FreePort(), null));
+        Assert.Null(_boards.Add("vm208", FreePort(), "", ""));
 
         var vm208 = _boards.Boards.Single(b => b.Board.Model == Vm208Model.Model);
         Assert.False(vm208.Board.HasLogin);
@@ -68,32 +68,44 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     }
 
     [Theory]
-    [InlineData("vm209", 9760, null, "Choose a model.")]
-    [InlineData("vm208", 9760, "admin:secret", "The VM208 takes no login.")]
-    [InlineData("", 9760, null, "Choose a model.")]
-    [InlineData("vm201", 0, null, "The port is a number from 1 to 65535.")]
-    [InlineData("vm201", 65536, null, "The port is a number from 1 to 65535.")]
-    [InlineData("vm201", 9760, "john", "Write the login as user:password, e.g. john:secret.")]
-    [InlineData("vm201", 9760, ":secret", "Write the login as user:password, e.g. john:secret.")]
-    [InlineData("vm201", 9760, "johnathan:secret", "The user name can be at most 8 characters on the relay board.")]
-    [InlineData("vm204", 9760, "admin:a&b", "The password can only contain letters a–z, digits and - . _ ~ ! $ ' ( ) * + , ; : @ on the relay board.")]
-    public void Should_SaySo_ForABoardThatCannotRun(string type, int port, string? login, string message)
+    [InlineData("vm209", 9760, null, null, "Choose a model.")]
+    [InlineData("vm208", 9760, "admin", "secret", "The VM208 takes no login.")]
+    [InlineData("", 9760, null, null, "Choose a model.")]
+    [InlineData("vm201", 0, null, null, "The port is a number from 1 to 65535.")]
+    [InlineData("vm201", 65536, null, null, "The port is a number from 1 to 65535.")]
+    [InlineData("vm201", 9760, "", "secret", "Write the user name too, or leave both empty.")]
+    [InlineData("vm201", 9760, "johnathan", "secret", "The user name can be at most 8 characters on the relay board.")]
+    [InlineData("vm204", 9760, "admin", "a&b", "The password can only contain letters a–z, digits and - . _ ~ ! $ ' ( ) * + , ; : @ on the relay board.")]
+    public void Should_SaySo_ForABoardThatCannotRun(string type, int port, string? username, string? password, string message)
     {
-        Assert.Equal(message, _boards.Add(type, port, login));
+        Assert.Equal(message, _boards.Add(type, port, username, password));
         Assert.Empty(_boards.Boards);
+    }
+
+    [Fact]
+    public void Should_TakeALogin_WithAColonInTheUserNameAndThePassword()
+    {
+        // A VM204 user name may hold ':', so the page asks for the user name and the password apart.
+        Assert.Null(_boards.Add("vm204", FreePort(), "ad:min", "p:w"));
+        Assert.Null(_boards.Add("vm201", FreePort(), "john", ""));
+
+        var vm204 = _boards.Boards.Single(b => b.Board.Model == Vm204Model.Model);
+        Assert.Equal("ad:min", vm204.Username);
+        Assert.True(vm204.Board.HasLogin);
+        Assert.Equal("john", _boards.Boards.Single(b => b.Board.Model == Vm201Model.Model).Username);
     }
 
     [Fact]
     public void Should_SaySo_WhenThePortIsTaken()
     {
         var port = FreePort();
-        Assert.Null(_boards.Add("vm201", port, null));
-        Assert.Equal($"Port {port} is already used by another board here.", _boards.Add("vm201", port, null));
+        Assert.Null(_boards.Add("vm201", port, null, null));
+        Assert.Equal($"Port {port} is already used by another board here.", _boards.Add("vm201", port, null, null));
 
         using var other = new TcpListener(IPAddress.Loopback, 0);
         other.Start();
         var taken = ((IPEndPoint)other.LocalEndpoint).Port;
-        Assert.Equal($"Port {taken} is already in use on this computer.", _boards.Add("vm201", taken, null));
+        Assert.Equal($"Port {taken} is already in use on this computer.", _boards.Add("vm201", taken, null, null));
         Assert.Single(_boards.Boards);
     }
 
@@ -101,7 +113,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     public async Task Should_FreeThePort_WhenABoardIsRemoved()
     {
         var port = FreePort();
-        Assert.Null(_boards.Add("vm201", port, null));
+        Assert.Null(_boards.Add("vm201", port, null, null));
         var changes = 0;
         _boards.Changed += (_, _) => changes++;
 
@@ -110,7 +122,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
 
         Assert.Empty(_boards.Boards);
         Assert.Equal(1, changes);
-        Assert.Null(_boards.Add("vm201", port, null));
+        Assert.Null(_boards.Add("vm201", port, null, null));
     }
 
     [Fact]
@@ -118,13 +130,13 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     {
         await _boards.DisposeAsync();
 
-        Assert.Equal("The simulator is stopping.", _boards.Add("vm201", FreePort(), null));
+        Assert.Equal("The simulator is stopping.", _boards.Add("vm201", FreePort(), null, null));
     }
 
     [Fact]
     public async Task Should_LogWhatIsDoneAtTheBoard_AndLeaveTheKeepAliveOut()
     {
-        Assert.Null(_boards.Add("vm201", FreePort(), null));
+        Assert.Null(_boards.Add("vm201", FreePort(), null, null));
         var board = _boards.Boards.Single();
         await using var client = await ConnectAsync(board.Board.Port);
 
@@ -154,7 +166,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Fact]
     public async Task Should_KeepTheLatestHundredLines()
     {
-        Assert.Null(_boards.Add("vm201", FreePort(), null));
+        Assert.Null(_boards.Add("vm201", FreePort(), null, null));
         var board = _boards.Boards.Single();
 
         for (var i = 0; i < RunningBoard.Capacity + 20; i++)
@@ -169,7 +181,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Fact]
     public async Task Should_IgnoreAButtonPressed_AfterTheBoardStopped()
     {
-        Assert.Null(_boards.Add("vm201", FreePort(), null));
+        Assert.Null(_boards.Add("vm201", FreePort(), null, null));
         var board = _boards.Boards.Single();
         await _boards.RemoveAsync(board.Id);
 
@@ -210,7 +222,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Fact]
     public void Should_TakeAnEmptyPassword_FromThePage()
     {
-        Assert.Null(_boards.Add("vm201", FreePort(), "john:"));
+        Assert.Null(_boards.Add("vm201", FreePort(), "john", ""));
 
         Assert.Equal("john", Assert.Single(_boards.Boards).Username);
     }
