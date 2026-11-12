@@ -31,17 +31,26 @@ public sealed class RelaysPageTests
     }
 
     [Fact]
-    public async Task Should_ShowNoSectionHeadings_WithoutGroups()
+    public async Task Should_ShowNoSectionHeadings_WithOnlyRelays()
     {
         await using var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+
+        // The board's one input hidden: only relays are left, so they need no heading.
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).IsActive = false;
+            await db.SaveChangesAsync(Cancel);
+        }
+
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
         Assert.DoesNotContain("id=\"groups-heading\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"inputs-heading\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("aria-labelledby", html, StringComparison.Ordinal);
     }
 

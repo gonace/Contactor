@@ -315,11 +315,19 @@ Installation            (one row; none on a new installation)
   SetupDoneUtc    datetime?      when the setup guide was finished or skipped; null: "/" opens on the guide
                                  The migration that added it marked installations already in use as done.
 
+BoardWatchState         (one row; the app's contact with the board over time, kept by BoardEventRecorder)
+  Id              int PK = 1
+  LastContactUtc  datetime?      saved every 5 minutes while there is contact (spares the SD card)
+  LongGapEndedUtc datetime?      when the app last came back after more than 10 min without contact (a crash,
+                                 a board that was off). A reboot or an upgrade is a short gap: the inputs' times
+                                 stay. At start the inputs are compared with their last logged state; one that
+                                 changed meanwhile, or changed during a lost contact, is logged with
+                                 {"noticed":true} and its time is unknown.
+
 Input                   (one per digital input on the board, seeded at start like relays, never deleted)
   Id              int PK         1 to the board's input count (at most 64)
-  Name            text           e.g. "Door" (max 40); "Input n" to begin with
-  ClosedText      text           "Closed": the board reads the input as on
-  OpenText        text           "Open"
+  Name            text           e.g. "Door" (max 40); "Input n" to begin with. Its state is always "Closed"
+                                 (the board reads it as on) or "Open": an input is an electrical contact
   IsActive        bool           false = hidden from the list by default
   NotifyOnOpen    bool           for later: notifications (not shown yet)
   NotifyOnClose   bool
@@ -329,7 +337,7 @@ Input                   (one per digital input on the board, seeded at start lik
 - **SQLite stays the database.** Keep SQLite-specific code to `Persistence` (the start-up settings above) and `Features/Backup` (`VACUUM INTO`); everything else goes through EF Core, so a later switch to PostgreSQL stays a small change.
 - **Relay state is not stored.** The VM201 is the source of truth; the app always shows the board's latest `CMD_STATUS`.
 - Every timestamp is stored in UTC and shown in Europe/Stockholm. Schedules are stored as local time, see below.
-- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
+- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the time of contact every 5 minutes, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
 
 ---
 
@@ -423,8 +431,9 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - One card per active relay: a small mono label "RELAY n", the name and a status line, plus a big ON/OFF button (84×52).
      - Status line when on: "On since 14:02 · Jane · off 16:02".
      - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
-   - The link "New group" under the cards, then the button "Show N inactive relays" / "Hide inactive relays". Inactive relays have a dashed border.
-   - With groups, the list has two sections, each with a small heading: "Groups" first, then "Relays", each in a grid of its own, so the cards line up and Tab goes row by row. Without groups there are no headings, and without a relay card to show (every relay in a group, or the rest hidden as inactive) there is no "Relays" heading.
+   - The link "New group" under the cards, then one button for inactive relays and inputs: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" for both, and "Hide inactive …". Inactive relays and inputs have a dashed border.
+   - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`); its text links to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`), or else "Open since unknown" with an ⓘ right after it (`WhyUnknown.razor`), whose reason shows as a tooltip on hover, on keyboard focus, or when pressed (a second press or a tap elsewhere closes it). The board only reports what an input reads now, so the time is unknown for a change the app only noticed after a gap in contact, or when a long gap came after it (see `BoardWatchState`). Beside it, a badge with its state, "Open" or "Closed" (green when closed). No button: the app can't switch an input.
+   - The list has a section each for "Groups", "Relays" and "Inputs", in that order, each with a small heading and a grid of its own, so the cards line up and Tab goes row by row. With only relays (no groups and no input shown) there are no headings. "Relays" has no heading and no section when there is no relay card to show (every relay in a group, or the rest hidden as inactive).
    - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.
 2. **Relay** (`/relay/{id}`)
@@ -456,7 +465,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - Row: time in mono, a round badge with an initial, and text.
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
-     - An input's change is in its own words: "Door: Open" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
+     - An input's change names it: "Door: Open" or "Door: Closed" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
      - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
@@ -475,6 +484,9 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    3. "Where is the board?": address, port (empty: the model's default) and login, saved through `BoardAddressHandler`; "Next" waits up to 10 s for the board (`BoardContact`, which ignores a connection to the old address) and shows "Board online" or "No answer from …". "Go on without a connection" saves what was typed and goes on.
    4. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes.
    5. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
+
+10. **Input** (`/input/{id}`, `InputDetail.razor`, `Features/Inputs`)
+   - "INPUT n · NAME", the checkbox "Active: shown in the list", the state now ("NOW", "Open since 14:02" or "Open since unknown" with the same ⓘ, and its badge), its latest 4 events with "All events", and "Save". Saving isn't logged. Like the Relay screen: the side menu on a desktop, two columns and Save at the top right.
 
 Blazor Server gives live updates for free. When the board reports a new state (`IRelayBoard.StateChanged`), every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
 

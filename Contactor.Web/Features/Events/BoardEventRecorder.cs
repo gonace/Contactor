@@ -20,6 +20,15 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // How often a lasting disconnect is checked for while there is no new status.
     public static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(1);
 
+    /// <summary>A gap in contact longer than this, e.g. a crash or a board that was off, makes the inputs' times unknown.</summary>
+    public static readonly TimeSpan LongGap = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How often the time of contact is saved while there is contact: rarely, to spare the SD card. A gap is measured
+    /// from it, so it can read up to this much longer than it was.
+    /// </summary>
+    public static readonly TimeSpan ContactSaveInterval = TimeSpan.FromMinutes(5);
+
     private readonly IRelayBoard _board;
     private readonly ExpectedChanges _expected;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
@@ -32,6 +41,13 @@ public sealed partial class BoardEventRecorder : BackgroundService
     private BoardState? _known;
     private DateTime? _disconnectedSinceUtc;
     private readonly IBoardConnection? _connection;
+
+    // Whether the app has had contact since the last gap, and when it last saved that it had.
+    private bool _watching;
+
+    // The app's own changes the status in hand matched, to expect again if recording it fails.
+    private readonly List<(int RelayId, bool On)> _consumed = [];
+    private DateTime? _contactSavedUtc;
     private bool _lossLogged;
 
     public BoardEventRecorder(
@@ -95,6 +111,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 }
 
                 await HandleSafelyAsync(() => CheckConnectionLostAsync(stoppingToken));
+                await HandleSafelyAsync(() => SaveContactAsync(stoppingToken));
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -118,11 +135,45 @@ public sealed partial class BoardEventRecorder : BackgroundService
         {
             // Contact was lost after the last status, the same time the warning on the relay screen shows.
             _disconnectedSinceUtc ??= state.LastContactUtc?.UtcDateTime ?? _clock.UtcNow;
+            _watching = false;
             return;
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var now = _clock.UtcNow;
+
+        // What this status changes, kept so a failure on the way (a read or the save) puts it all back and the next
+        // status starts over: the changes, a gap that just ended and a restored connection are recorded then.
+        var before = (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc);
+        _consumed.Clear();
+        try
+        {
+            await RecordAsync(db, state, now, cancellationToken);
+        }
+        catch
+        {
+            (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc) = before;
+
+            // The app's own changes this status matched are expected again, or the next try would call them external
+            // and clear their runtime, e.g. a relay's auto-off.
+            foreach (var (relayId, on) in _consumed)
+            {
+                _expected.Expect(ChannelMask.Of(relayId), on);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task RecordAsync(ContactorDbContext db, BoardState state, DateTime now, CancellationToken cancellationToken)
+    {
+        // Contact again, after the start or a lost contact: was the gap long enough that the inputs' times can't be trusted?
+        var afterGap = !_watching;
+        if (afterGap)
+        {
+            await StartWatchingAsync(db, now, cancellationToken);
+        }
+
         if (_disconnectedSinceUtc is { } since)
         {
             if (_lossLogged)
@@ -140,27 +191,18 @@ public sealed partial class BoardEventRecorder : BackgroundService
             _lossLogged = false;
         }
 
-        // The first status after start has nothing to compare with: what happened before is unknown. After a
-        // reconnect it is compared with the last status before the loss, so changes made meanwhile are logged.
+        // The first status after start has nothing to compare the relays with: what happened before is unknown. After
+        // a reconnect it is compared with the last status before the loss, so changes made meanwhile are logged.
         if (_known is { } known)
         {
             await RecordRelayChangesAsync(db, known.Relays, state.Relays, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
-
-            // Every input on the board, each logged on its own.
-            for (var input = 1; input <= _board.Capabilities.InputCount; input++)
-            {
-                if (known.Inputs.Contains(input) != state.Inputs.Contains(input))
-                {
-                    db.EventLog.Add(new EventLogEntry
-                    {
-                        TimestampUtc = now,
-                        InputId = input,
-                        Actor = EventActors.External,
-                        Action = EventActions.InputChanged,
-                        Details = JsonSerializer.Serialize(new { on = state.Inputs.Contains(input) }),
-                    });
-                }
-            }
+            RecordInputChanges(db, known.Inputs, state.Inputs, now, noticed: afterGap);
+        }
+        else
+        {
+            // At start the inputs are compared with what the event log last says about each: one that changed while
+            // the app was down is logged now, as noticed, so its "since" reads unknown.
+            RecordInputChanges(db, await LastLoggedInputsAsync(db, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
         }
 
         _known = state;
@@ -169,6 +211,104 @@ public sealed partial class BoardEventRecorder : BackgroundService
             await db.SaveChangesAsync(cancellationToken);
             _changes.Notify();
         }
+    }
+
+    // Every input on the board, each logged on its own. A change the app only noticed after a gap is marked so: it
+    // happened at a time nobody knows.
+    private void RecordInputChanges(ContactorDbContext db, ChannelMask before, ChannelMask after, DateTime now, bool noticed)
+    {
+        for (var input = 1; input <= _board.Capabilities.InputCount; input++)
+        {
+            if (before.Contains(input) != after.Contains(input))
+            {
+                db.EventLog.Add(new EventLogEntry
+                {
+                    TimestampUtc = now,
+                    InputId = input,
+                    Actor = EventActors.External,
+                    Action = EventActions.InputChanged,
+                    Details = noticed
+                        ? JsonSerializer.Serialize(new { on = after.Contains(input), noticed = true })
+                        : JsonSerializer.Serialize(new { on = after.Contains(input) }),
+                });
+            }
+        }
+    }
+
+    // The inputs as the event log last left them; an input never logged counts as matching the status in hand.
+    private async Task<ChannelMask> LastLoggedInputsAsync(ContactorDbContext db, ChannelMask current, CancellationToken cancellationToken)
+    {
+        var lastIds = db.EventLog
+            .Where(e => e.Action == EventActions.InputChanged && e.InputId != null)
+            .GroupBy(e => e.InputId)
+            .Select(g => g.Max(e => e.Id));
+        var last = await db.EventLog.AsNoTracking()
+            .Where(e => lastIds.Contains(e.Id))
+            .Select(e => new { InputId = e.InputId!.Value, e.Details })
+            .ToListAsync(cancellationToken);
+        var logged = last.ToDictionary(e => e.InputId, e => EventText.InputOn(e.Details));
+        var inputs = ChannelMask.None;
+        for (var input = 1; input <= _board.Capabilities.InputCount; input++)
+        {
+            var on = logged.GetValueOrDefault(input) ?? current.Contains(input);
+            if (on)
+            {
+                inputs |= ChannelMask.Of(input);
+            }
+        }
+
+        return inputs;
+    }
+
+    // Measures the gap since the last contact (before a restart: the saved one) and saves when a long gap ended. A short
+    // gap, e.g. a reboot or an upgrade, keeps the inputs' times: it's taken that nothing changed and changed back.
+    private async Task StartWatchingAsync(ContactorDbContext db, DateTime now, CancellationToken cancellationToken)
+    {
+        var saved = await db.BoardWatchStates.SingleOrDefaultAsync(cancellationToken);
+        if (saved is null)
+        {
+            saved = new BoardWatchState();
+            db.BoardWatchStates.Add(saved);
+        }
+
+        // After a lost contact, the later of the board's last answer and the app's own last save of the time of contact.
+        var lastContact = _known is null ? saved.LastContactUtc : Later(_disconnectedSinceUtc, _contactSavedUtc);
+        // A clock that went back (a Raspberry Pi has no clock of its own: after a power cut it starts from its last
+        // saved time until it reaches a time server) can't measure the gap, so it counts as long.
+        if (lastContact is not { } last || now < last || now - last > LongGap)
+        {
+            saved.LongGapEndedUtc = now;
+        }
+
+        saved.LastContactUtc = now;
+        _contactSavedUtc = now;
+        _watching = true;
+    }
+
+    private static DateTime? Later(DateTime? a, DateTime? b)
+    {
+        return a is null ? b : b is null ? a : a > b ? a : b;
+    }
+
+    // Every few minutes while there is contact, so the next start can tell how long the app was away.
+    private async Task SaveContactAsync(CancellationToken cancellationToken)
+    {
+        var now = _clock.UtcNow;
+        if (!_watching || !_board.State.IsConnected || (_contactSavedUtc is { } saved && now - saved < ContactSaveInterval))
+        {
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var state = await db.BoardWatchStates.SingleOrDefaultAsync(cancellationToken);
+        if (state is null)
+        {
+            return;
+        }
+
+        state.LastContactUtc = now;
+        await db.SaveChangesAsync(cancellationToken);
+        _contactSavedUtc = now;
     }
 
     private async Task RecordRelayChangesAsync(
@@ -183,8 +323,14 @@ public sealed partial class BoardEventRecorder : BackgroundService
         {
             var wasOn = before.Contains(relayId);
             var isOn = after.Contains(relayId);
-            if (wasOn == isOn || _expected.TryConsume(relayId, isOn, receivedUtc))
+            if (wasOn == isOn)
             {
+                continue;
+            }
+
+            if (_expected.TryConsume(relayId, isOn, receivedUtc))
+            {
+                _consumed.Add((relayId, isOn));
                 continue;
             }
 

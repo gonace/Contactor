@@ -14,8 +14,6 @@ namespace Contactor.Web.Features.Events;
 /// <param name="IsAlert">Shown in red: a safety shut-off, or a group that couldn't start.</param>
 public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false);
 
-/// <summary>An input's current name and the words for its two states, for its events.</summary>
-public sealed record InputWords(string Name, string ClosedText, string OpenText);
 
 /// <summary>
 /// Turns stored events into the text of the Events screen.
@@ -26,13 +24,13 @@ public static class EventText
     /// <param name="relayName">The relay's current name, or null for events without a relay.</param>
     /// <param name="personName">The display name of the person behind it, when the actor is an e-mail.</param>
     /// <param name="groupName">The group's current name, for a group's events; null for others or a deleted group.</param>
-    /// <param name="input">The input's name and state words, for an input's changes; null for others.</param>
-    public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, InputWords? input = null)
+    /// <param name="inputName">The input's current name, for an input's changes; null for others.</param>
+    public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, string? inputName = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         if (entry.Action == EventActions.InputChanged)
         {
-            return InputChange(entry, input);
+            return InputChange(entry, inputName);
         }
 
         var isPerson = IsPersonActor(entry.Actor);
@@ -51,14 +49,11 @@ public static class EventText
         return new EventView(isPerson, badge, who, what, target);
     }
 
-    // "Door: Open", in the input's own words. An input that is on is closed. Without its words (an event from before
-    // inputs had names, or an input no longer on the board): "Input 1: Closed".
-    private static EventView InputChange(EventLogEntry entry, InputWords? input)
+    // "Door: Open". An input that is on is closed. Without its name (an input no longer on the board): "Input 1: Closed".
+    private static EventView InputChange(EventLogEntry entry, string? inputName)
     {
-        var on = Bool(entry.Details, "on") == true;
-        var name = input?.Name ?? Input.DefaultName(entry.InputId ?? 1);
-        var state = input is null ? on ? "Closed" : "Open" : on ? input.ClosedText : input.OpenText;
-        return new EventView(false, "I", $"{name}:", state, null);
+        var name = inputName ?? Input.DefaultName(entry.InputId ?? 1);
+        return new EventView(false, "I", $"{name}:", Input.StateText(Bool(entry.Details, "on") == true), null);
     }
 
     // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running
@@ -234,6 +229,18 @@ public static class EventText
     private static int? Number(string? json, string property)
     {
         return Read(json, property) is { ValueKind: JsonValueKind.Number } value && value.TryGetInt32(out var number) ? number : null;
+    }
+
+    /// <summary>Whether an "input-changed" event says the input turned on (closed); null when it can't be read.</summary>
+    public static bool? InputOn(string? details)
+    {
+        return Bool(details, "on");
+    }
+
+    /// <summary>Whether an "input-changed" event was only noticed after a gap, so its time is when it was noticed.</summary>
+    public static bool InputNoticed(string? details)
+    {
+        return Bool(details, "noticed") == true;
     }
 
     private static bool? Bool(string? json, string property)

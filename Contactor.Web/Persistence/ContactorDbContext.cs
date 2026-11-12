@@ -39,6 +39,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<Installation> Installations => Set<Installation>();
 
+    public DbSet<BoardWatchState> BoardWatchStates => Set<BoardWatchState>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         ArgumentNullException.ThrowIfNull(configurationBuilder);
@@ -64,6 +66,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<RelayGroupMember>(ConfigureRelayGroupMember);
         modelBuilder.Entity<GroupRuntime>(ConfigureGroupRuntime);
         modelBuilder.Entity<Installation>(ConfigureInstallation);
+        modelBuilder.Entity<BoardWatchState>(ConfigureBoardWatchState);
     }
 
     private static void ConfigureRelayGroup(EntityTypeBuilder<RelayGroup> group)
@@ -184,13 +187,17 @@ public sealed class ContactorDbContext : DbContext
         installation.Property(i => i.BoardType).HasMaxLength(Installation.BoardTypeMaxLength);
     }
 
+    private static void ConfigureBoardWatchState(EntityTypeBuilder<BoardWatchState> state)
+    {
+        state.ToTable("BoardWatchState", t => t.HasCheckConstraint("CK_BoardWatchState_Id", $"\"Id\" = {BoardWatchState.SingletonId}"));
+        state.Property(s => s.Id).ValueGeneratedNever();
+    }
+
     private static void ConfigureInput(EntityTypeBuilder<Input> input)
     {
         input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         input.Property(i => i.Id).ValueGeneratedNever();
         input.Property(i => i.Name).HasMaxLength(Input.TextMaxLength);
-        input.Property(i => i.ClosedText).HasMaxLength(Input.TextMaxLength);
-        input.Property(i => i.OpenText).HasMaxLength(Input.TextMaxLength);
     }
 
     private sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>

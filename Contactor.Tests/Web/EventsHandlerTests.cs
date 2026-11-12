@@ -162,7 +162,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Should_ListAnInputsEvents_InItsOwnWords()
+    public async Task Should_ListAnInputsEvents_WithItsName()
     {
         var door = Event(EventActors.External, EventActions.InputChanged, Now.AddMinutes(-2), relayId: null);
         door.InputId = 2;
@@ -174,14 +174,14 @@ public sealed class EventsHandlerTests : IAsyncLifetime
         await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
         {
             var input = await db.Inputs.SingleAsync(i => i.Id == 2, Cancel);
-            (input.Name, input.OpenText) = ("Door", "Ajar");
+            input.Name = "Door";
             await db.SaveChangesAsync(Cancel);
         }
 
         var rows = await Handler.GetAsync(EventFilter.All, beforeId: null, 50, Cancel, inputId: 2);
 
         var row = Assert.Single(rows);
-        Assert.Equal(("Door:", "Ajar"), (row.View.Who, row.View.What));
+        Assert.Equal(("Door:", "Open"), (row.View.Who, row.View.What));
     }
 
     private static EventLogEntry Event(string actor, string action, DateTime timestampUtc, int? relayId)

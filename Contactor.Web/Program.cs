@@ -6,6 +6,7 @@ using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
+using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Features.Setup;
@@ -33,6 +34,7 @@ public sealed partial class Program
         builder.Services.AddRelays(builder.Configuration);
         builder.Services.AddGroups(builder.Configuration);
         builder.Services.AddEvents(builder.Configuration);
+        builder.Services.AddInputs(builder.Configuration);
         builder.Services.AddSchedules(builder.Configuration);
         builder.Services.AddBackup(builder.Configuration);
         builder.Services.AddSetup(builder.Configuration);
