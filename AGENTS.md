@@ -530,6 +530,11 @@ See `DEPLOY.md` for the steps.
 
 ## Workflow
 
+- The user drives. Never decide the next step yourself.
+- Ask the user only what you can't decide yourself from the code, these rules and the project's goals. The most important goal is simplicity for people who aren't technical (see the top of this file). Don't ask about that.
+- Before writing code, explain what you plan to implement (files, types, behaviour) and wait for the user's tweaks and approval.
+- **Scope is locked at the approved plan.** Anything outside it becomes its own issue, never more work in the same pull request. Only the user widens the scope.
+
 ### Branches
 - `type/issue-short-description`: the type, the issue number, and a few words in lower case with hyphens, e.g. `feature/12-setup-guide`. Without an issue, leave the number out (`chore/upgrade-aspire`). No user name, no `claude/` and no random suffix.
 - The types:
