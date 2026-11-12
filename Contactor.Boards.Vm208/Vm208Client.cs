@@ -234,8 +234,8 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         }
         catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
         {
-            // The poller counted a missing answer as a failed poll; the next poll comes when it is due and shows
-            // whatever the board did.
+            // The poller counted a missing answer as a failed poll and reads the board at once, which shows what it
+            // did.
             throw new BoardNotConnectedException("The VM208 didn't answer; the command may not have been carried out.", ex);
         }
     }
@@ -244,7 +244,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
     private async Task<Vm208Status> SwitchEachAsync(byte mask, bool turnOn, CancellationToken cancellationToken)
     {
         Vm208Status? status = null;
-        var refused = false;
+        string? refusal = null;
         for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
         {
             if ((mask & (1 << (relay - 1))) == 0)
@@ -263,7 +263,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
             {
                 // The board answered, but not with a status the app can read (an error, too busy, too long): the
                 // relay may or may not have switched. The others still go; a poll straight after shows the truth.
-                refused = true;
+                refusal ??= ex.Message;
                 Trace(
                     BoardTraceDirection.None,
                     string.Create(CultureInfo.InvariantCulture, $"The VM208 didn't take the command for relay {relay}: {ex.Message}"),
@@ -271,13 +271,21 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
             }
         }
 
-        if (refused)
+        if (refusal is null)
         {
-            _poller.PollNow();
+            return status!;
         }
 
-        // Nothing readable came back: the state stays as the last poll had it until the poll asked for above.
-        return status ?? _poller.State.Reading ?? throw new BoardNotConnectedException();
+        // Not one relay was taken: the command failed, as on a board that takes the mask at once, and nothing is
+        // counted as switched. The poller reads the board at once, which shows what really happened.
+        if (status is null)
+        {
+            throw new BoardNotConnectedException($"The VM208 didn't take the command: {refusal}");
+        }
+
+        // Some were: the last readable answer is the state for now, and a read at once confirms the rest.
+        _poller.PollNow();
+        return status;
     }
 
     // A request that got no answer at all: it counts as a failed poll, whether a poll or a command sent it.

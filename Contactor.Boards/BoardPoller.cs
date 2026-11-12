@@ -145,8 +145,8 @@ public sealed class BoardPoller<TReading> : IDisposable
     /// waits only for it to stop, never for the next one. Throws <see cref="BoardNotConnectedException"/> when the
     /// board is not connected, decided under the same lock as the poller's. What the command returns is the board's
     /// state right after it, taken as a poll's answer, so the change shows without asking again. A command that
-    /// throws for want of an answer (<see cref="IsNoAnswer"/>) counts as a failed poll; any other exception changes
-    /// nothing here.
+    /// throws for want of an answer (<see cref="IsNoAnswer"/>) counts as one failed poll. Whatever a command throws
+    /// (refused, unreadable or unanswered), the board's state is read at once afterwards, as by <see cref="PollNow"/>.
     /// </summary>
     public async Task RunCommandAsync(Func<CancellationToken, Task<TReading>> command, CancellationToken cancellationToken = default)
     {
@@ -170,9 +170,17 @@ public sealed class BoardPoller<TReading> : IDisposable
             {
                 reading = await command(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsNoAnswer(ex) && !cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                CountFailure(ex.Message);
+                // Counted once, here; the read that follows is an ordinary poll and counts on its own if it fails too.
+                if (IsNoAnswer(ex))
+                {
+                    CountFailure(ex.Message);
+                }
+
+                // The change was refused or got no answer: read what the board really did at once, not at the next
+                // poll. Nothing to read when that lost the board; the poller is already connecting again.
+                PollNow();
                 throw;
             }
 

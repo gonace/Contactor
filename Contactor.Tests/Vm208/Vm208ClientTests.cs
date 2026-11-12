@@ -267,7 +267,7 @@ public sealed class Vm208ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
-        board.BadAnswerFor = 2;
+        board.BadAnswerFor = 0b0010;
         board.BadAnswer = (code, body);
 
         await run.Client.TurnOnAsync(0b1111, Cancel);
@@ -281,65 +281,70 @@ public sealed class Vm208ClientTests
         Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task Should_KeepTheLastState_AndPollAtOnce_WhenNoAnswerCanBeRead()
+    [Theory]
+    [InlineData(0b0001, 0b0001)]
+    [InlineData(0b1111, 0b1111)]
+    public async Task Should_Throw_AndReadTheBoardOnce_WhenNoRelayIsTaken(int mask, int refused)
     {
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
-        board.BadAnswerFor = 1;
+        board.BadAnswerFor = refused;
         board.BadAnswer = (200, "{\"Channels\":[]}");
 
-        await run.Client.TurnOnAsync(0b0001, Cancel);
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync((byte)mask, Cancel));
 
-        // The command returns; the poll it asks for is the confirmation (the board did switch relay 1).
-        Assert.Equal(0, run.Client.State.Relays);
-        await Wait.UntilAsync(() => run.Client.State.Relays == 0b0001);
+        // Nothing counts as switched; one read at once, not in a minute, shows that the board did switch them.
+        Assert.Equal("The VM208 didn't take the command: The VM208 was busy and sent no relays.", error.Message);
+        Assert.Equal(mask, board.Switched);
+        await Wait.UntilAsync(() => run.Client.State.Relays == mask && run.Time.PendingTimers == 1);
+        Assert.Equal(2, board.Requests.Count(r => r.StartsWith(StatusRequest, StringComparison.Ordinal)));
         Assert.True(run.Client.State.IsConnected);
     }
 
     [Fact]
-    public async Task Should_StopTheMask_AndCountIt_WhenARelayGetsNoAnswer()
+    public async Task Should_StopTheMask_AndReadTheBoardAtOnce_WhenARelayGetsNoAnswer()
     {
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
         board.HangRelay = 2;
 
-        for (var command = 1; command <= BoardPoller<Vm208Status>.DefaultFailuresBeforeLost; command++)
-        {
-            Assert.True(run.Client.State.IsConnected);
-            var sent = run.Client.TurnOnAsync(0b1111, Cancel);
-            var expected = command;
-            await Wait.UntilAsync(() => board.Hanging == expected && run.Time.PendingTimers == 2);
-            run.Time.Advance(Vm208Client.RequestTimeout);
-            var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
-            Assert.Equal("The VM208 didn't answer; the command may not have been carried out.", error.Message);
-        }
+        var sent = run.Client.TurnOnAsync(0b1111, Cancel);
+        await Wait.UntilAsync(() => board.Hanging == 1 && run.Time.PendingTimers == 2);
+        run.Time.Advance(Vm208Client.RequestTimeout);
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
 
-        // Relays 3 and 4 never went, and three commands without an answer lost the board.
+        // Relays 3 and 4 never went; the read at once shows relay 1, which the board took before.
+        Assert.Equal("The VM208 didn't answer; the command may not have been carried out.", error.Message);
         Assert.Equal(0b0011, board.Switched);
-        Assert.False(run.Client.State.IsConnected);
-        Assert.Contains(run.Traces, t => t.Text == "Connection lost: The VM208 did not answer within 5 s." && t.IsError);
+        await Wait.UntilAsync(() => run.Client.State.Relays == 0b0001 && run.Time.PendingTimers == 1);
+        Assert.True(run.Client.State.IsConnected);
     }
 
     [Fact]
-    public async Task Should_LoseABoardThatNeverAnswers_WhileCommandsKeepComing()
+    public async Task Should_LoseABoardThatNeverAnswers_AfterThreeRequestsInARow()
     {
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
         board.HangAll = true;
 
-        for (var command = 1; command <= 3; command++)
-        {
-            Assert.True(run.Client.State.IsConnected);
-            var sent = run.Client.TurnOnAsync(0b0001, Cancel);
-            var expected = command;
-            await Wait.UntilAsync(() => board.Hanging == expected && run.Time.PendingTimers == 2);
-            run.Time.Advance(Vm208Client.RequestTimeout);
-            await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
-        }
+        // A command without an answer (1), and the read it brings at once, without an answer too (2).
+        var first = run.Client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => board.Hanging == 1 && run.Time.PendingTimers == 2);
+        run.Time.Advance(Vm208Client.RequestTimeout);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => first);
+        await Wait.UntilAsync(() => board.Hanging == 2 && run.Time.PendingTimers == 1);
+        run.Time.Advance(Vm208Client.RequestTimeout);
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && run.Time.PendingTimers == 1);
+        Assert.True(run.Client.State.IsConnected);
+
+        // The next command is the third in a row.
+        var third = run.Client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => board.Hanging == 3 && run.Time.PendingTimers == 2);
+        run.Time.Advance(Vm208Client.RequestTimeout);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => third);
 
         Assert.False(run.Client.State.IsConnected);
         Assert.Contains(run.Traces, t => t.Text == "Connection lost: The VM208 did not answer within 5 s." && t.IsError);
@@ -569,7 +574,10 @@ public sealed class Vm208ClientTests
         /// <summary>Never answers a command for this relay.</summary>
         public int HangRelay { get; set; }
 
-        /// <summary>Switches this relay (it only ever turns it on) but answers it with <see cref="BadAnswer"/>.</summary>
+        /// <summary>
+        /// Switches these relays (bit 0 = relay 1; it only ever turns them on) but answers each with
+        /// <see cref="BadAnswer"/>.
+        /// </summary>
         public int BadAnswerFor { get; set; }
 
         public (int Code, string Body)? BadAnswer { get; set; }
@@ -665,7 +673,7 @@ public sealed class Vm208ClientTests
                         return;
                     }
 
-                    if (command is { } refused && refused.Relay == BadAnswerFor && BadAnswer is { } bad)
+                    if (command is { } refused && (BadAnswerFor & (1 << (refused.Relay - 1))) != 0 && BadAnswer is { } bad)
                     {
                         var mask = 1 << (refused.Relay - 1);
                         Interlocked.Or(ref _relays, mask);
