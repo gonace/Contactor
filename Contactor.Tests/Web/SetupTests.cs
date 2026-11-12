@@ -111,6 +111,19 @@ public sealed class SetupTests
     }
 
     [Fact]
+    public async Task Should_Start_WithoutAVm208Address()
+    {
+        var settings = new Dictionary<string, string?>(John) { ["Board:Type"] = "vm208", ["Vm208:Host"] = "" };
+        await using var app = new TestWebApp("Development", settings);
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+
+        Assert.Contains("Velleman VM208", html, StringComparison.Ordinal);
+        Assert.Contains("The relay board has no address yet", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Should_NotConnect_UntilTheBoardHasAnAddress()
     {
         await using var simulator = new Vm201Simulator();

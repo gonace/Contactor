@@ -36,11 +36,6 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
         var settings = options.Value;
-        if (string.IsNullOrWhiteSpace(settings.Host))
-        {
-            throw new ArgumentException("Vm208:Host is required.", nameof(options));
-        }
-
         if (settings.PollSeconds < 1)
         {
             throw new ArgumentException("Vm208:PollSeconds must be at least 1.", nameof(options));
@@ -230,37 +225,59 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
             return;
         }
 
-        // A poll under way gives way. The firmware switches one relay per request; the answer to the last one, the
-        // board's status right after, is the confirmation.
+        // A poll under way gives way. The firmware switches one relay per request, and the whole mask goes out, as one
+        // command on a board that takes a mask would: a group's interlock and "All off" rely on every OFF being sent.
+        // Only a request that gets no answer at all (the board is gone) stops it.
         try
         {
-            await _poller.RunCommandAsync(
-                async token =>
-                {
-                    Vm208Status? status = null;
-                    for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
-                    {
-                        if ((mask & (1 << (relay - 1))) == 0)
-                        {
-                            continue;
-                        }
-
-                        // No answer (IsNoAnswer) is thrown as it is, so the poller counts it as a failed poll.
-                        var answer = await SendAsync(HttpMethod.Post, Vm208Api.RelayPath, Vm208Api.RelayForm(relay, turnOn), routine: false, token)
-                            .ConfigureAwait(false);
-                        status = ReadStatusAnswer(answer);
-                    }
-
-                    return status!;
-                },
-                cancellationToken).ConfigureAwait(false);
+            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, token), cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (IsNoAnswer(ex) || ex is Vm208ProtocolException or UriFormatException)
+        catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
         {
             // The poller counted a missing answer as a failed poll; the next poll comes when it is due and shows
             // whatever the board did.
             throw new BoardNotConnectedException("The VM208 didn't answer; the command may not have been carried out.", ex);
         }
+    }
+
+    // Under the poller's lock. Returns the last status the board answered with, which the poller takes as a poll's.
+    private async Task<Vm208Status> SwitchEachAsync(byte mask, bool turnOn, CancellationToken cancellationToken)
+    {
+        Vm208Status? status = null;
+        var refused = false;
+        for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
+        {
+            if ((mask & (1 << (relay - 1))) == 0)
+            {
+                continue;
+            }
+
+            // No answer (IsNoAnswer) is thrown as it is, so the poller counts it as a failed poll.
+            try
+            {
+                var answer = await SendAsync(HttpMethod.Post, Vm208Api.RelayPath, Vm208Api.RelayForm(relay, turnOn), routine: false, cancellationToken)
+                    .ConfigureAwait(false);
+                status = ReadStatusAnswer(answer);
+            }
+            catch (Vm208ProtocolException ex)
+            {
+                // The board answered, but not with a status the app can read (an error, too busy, too long): the
+                // relay may or may not have switched. The others still go; a poll straight after shows the truth.
+                refused = true;
+                Trace(
+                    BoardTraceDirection.None,
+                    string.Create(CultureInfo.InvariantCulture, $"The VM208 didn't take the command for relay {relay}: {ex.Message}"),
+                    isError: true);
+            }
+        }
+
+        if (refused)
+        {
+            _poller.PollNow();
+        }
+
+        // Nothing readable came back: the state stays as the last poll had it until the poll asked for above.
+        return status ?? _poller.State.Reading ?? throw new BoardNotConnectedException();
     }
 
     // A request that got no answer at all: it counts as a failed poll, whether a poll or a command sent it.
@@ -306,10 +323,16 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         {
             return await SendCoreAsync(method, pathAndQuery, form, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or TimeoutException or Vm208ProtocolException or UriFormatException)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or TimeoutException or UriFormatException)
         {
             // One failed poll doesn't lose the connection, so it shows here.
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+            throw;
+        }
+        catch (Vm208ProtocolException ex)
+        {
+            // An answer too long to be a VM208's: it answered, but nothing of it is read.
+            Trace(BoardTraceDirection.Received, $"Answer too long: {ex.Message}", isError: true);
             throw;
         }
     }

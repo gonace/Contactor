@@ -17,7 +17,6 @@ public static class Vm208ServiceCollectionExtensions
         services.AddOptions<Vm208Options>()
             .Bind(configuration.GetSection(Vm208Options.SectionName))
             .ValidateDataAnnotations()
-            .Validate(o => !string.IsNullOrWhiteSpace(o.Host), "Vm208:Host is required.")
             .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<Vm208Client>();

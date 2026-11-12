@@ -311,6 +311,13 @@ public sealed class Vm208Simulator : ISimulatedBoard
             Interlocked.Increment(ref _authorizationCount);
         }
 
+        // ESPAsyncWebServer reads a body's parameters only from a form (AsyncWebServerRequest::_isPlainPost); any
+        // other body leaves the request without them.
+        if (!lines.Skip(1).Any(IsFormContentType))
+        {
+            form = "";
+        }
+
         var (method, target) = (parts[0], parts[1]);
         var question = target.IndexOf('?', StringComparison.Ordinal);
         var path = question < 0 ? target : target[..question];
@@ -354,6 +361,14 @@ public sealed class Vm208Simulator : ISimulatedBoard
 
         // Pulses, timers, schedules and settings aren't simulated; the app doesn't use them.
         return Respond(HttpStatusCode.NotFound, "", "Not found", isError: true);
+    }
+
+    private static bool IsFormContentType(string headerLine)
+    {
+        var colon = headerLine.IndexOf(':', StringComparison.Ordinal);
+        return colon > 0
+            && headerLine[..colon].Trim().Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
+            && headerLine[(colon + 1)..].Trim().StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Value(string pair)

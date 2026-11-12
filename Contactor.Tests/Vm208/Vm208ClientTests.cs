@@ -216,9 +216,10 @@ public sealed class Vm208ClientTests
         await using var server = CannedBoard.Start(new byte[1024 * 1024], contentLength);
         await using var run = ClientRun.Start(server.Port);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.Contains("longer than 8192 bytes", StringComparison.Ordinal)));
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Answer too long: The VM208's answer is longer than 8192 bytes." && t.IsError));
 
         Assert.False(run.Client.State.IsConnected);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -255,6 +256,71 @@ public sealed class Vm208ClientTests
         Assert.Equal(2, board.Requests.Count(r => r.StartsWith(StatusRequest, StringComparison.Ordinal)));
         Assert.True(run.Client.State.IsConnected);
         Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(200, "{\"Channels\":[]}")]
+    [InlineData(500, "")]
+    [InlineData(200, "not json")]
+    public async Task Should_SendTheWholeMask_WhenOneRelaysAnswerCantBeRead(int code, string body)
+    {
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        board.BadAnswerFor = 2;
+        board.BadAnswer = (code, body);
+
+        await run.Client.TurnOnAsync(0b1111, Cancel);
+
+        // Relays 3 and 4 still went, the last good answer is the state, and a poll comes at once, not in a minute.
+        Assert.Equal(0b1111, board.Switched);
+        Assert.Equal(0b1111, run.Client.State.Relays);
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("The VM208 didn't take the command for relay 2: ", StringComparison.Ordinal) && t.IsError);
+        await Wait.UntilAsync(() => board.Requests.Count(r => r.StartsWith(StatusRequest, StringComparison.Ordinal)) == 2);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_KeepTheLastState_AndPollAtOnce_WhenNoAnswerCanBeRead()
+    {
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        board.BadAnswerFor = 1;
+        board.BadAnswer = (200, "{\"Channels\":[]}");
+
+        await run.Client.TurnOnAsync(0b0001, Cancel);
+
+        // The command returns; the poll it asks for is the confirmation (the board did switch relay 1).
+        Assert.Equal(0, run.Client.State.Relays);
+        await Wait.UntilAsync(() => run.Client.State.Relays == 0b0001);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_StopTheMask_AndCountIt_WhenARelayGetsNoAnswer()
+    {
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        board.HangRelay = 2;
+
+        for (var command = 1; command <= BoardPoller<Vm208Status>.DefaultFailuresBeforeLost; command++)
+        {
+            Assert.True(run.Client.State.IsConnected);
+            var sent = run.Client.TurnOnAsync(0b1111, Cancel);
+            var expected = command;
+            await Wait.UntilAsync(() => board.Hanging == expected && run.Time.PendingTimers == 2);
+            run.Time.Advance(Vm208Client.RequestTimeout);
+            var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
+            Assert.Equal("The VM208 didn't answer; the command may not have been carried out.", error.Message);
+        }
+
+        // Relays 3 and 4 never went, and three commands without an answer lost the board.
+        Assert.Equal(0b0011, board.Switched);
+        Assert.False(run.Client.State.IsConnected);
+        Assert.Contains(run.Traces, t => t.Text == "Connection lost: The VM208 did not answer within 5 s." && t.IsError);
     }
 
     [Fact]
@@ -314,9 +380,16 @@ public sealed class Vm208ClientTests
     }
 
     [Fact]
+    public void Should_StartWithoutAnAddress()
+    {
+        using var client = CreateClient(80, TimeProvider.System, host: "");
+
+        Assert.False(client.Endpoint.HasHost);
+    }
+
+    [Fact]
     public void Should_RefuseSettingsItCantUse()
     {
-        Assert.Throws<ArgumentException>(() => CreateClient(80, TimeProvider.System, host: " "));
         Assert.Throws<ArgumentException>(() => CreateClient(80, TimeProvider.System, pollSeconds: 0));
     }
 
@@ -477,6 +550,7 @@ public sealed class Vm208ClientTests
         private readonly List<string> _requests = [];
         private int _relays;
         private int _hanging;
+        private int _switched;
         private int _dropNext;
 
         private ScriptedBoard(TcpListener listener)
@@ -491,6 +565,17 @@ public sealed class Vm208ClientTests
 
         /// <summary>Never answers anything: the board is gone.</summary>
         public bool HangAll { get; set; }
+
+        /// <summary>Never answers a command for this relay.</summary>
+        public int HangRelay { get; set; }
+
+        /// <summary>Switches this relay (it only ever turns it on) but answers it with <see cref="BadAnswer"/>.</summary>
+        public int BadAnswerFor { get; set; }
+
+        public (int Code, string Body)? BadAnswer { get; set; }
+
+        /// <summary>The relays a command came for, whatever the answer; bit 0 = relay 1.</summary>
+        public int Switched => Volatile.Read(ref _switched);
 
         /// <summary>Closes this many of the next connections as soon as their request came, without an answer.</summary>
         public int DropNext
@@ -567,17 +652,33 @@ public sealed class Vm208ClientTests
                     }
 
                     var isStatus = request.StartsWith(StatusRequest, StringComparison.Ordinal);
-                    if ((isStatus && HangStatus) || HangAll)
+                    var command = isStatus ? null : Vm208TraceText.ReadRelayForm(request[(request.LastIndexOf("\r\n\r\n", StringComparison.Ordinal) + 4)..]);
+                    if (command is { } asked)
+                    {
+                        Interlocked.Or(ref _switched, 1 << (asked.Relay - 1));
+                    }
+
+                    if ((isStatus && HangStatus) || HangAll || (command is { } hung && hung.Relay == HangRelay))
                     {
                         Interlocked.Increment(ref _hanging);
                         await Task.Delay(Timeout.Infinite, _stop.Token);
                         return;
                     }
 
-                    if (!isStatus && Vm208TraceText.ReadRelayForm(request[(request.LastIndexOf("\r\n\r\n", StringComparison.Ordinal) + 4)..]) is { } command)
+                    if (command is { } refused && refused.Relay == BadAnswerFor && BadAnswer is { } bad)
                     {
-                        var mask = 1 << (command.Relay - 1);
-                        if (command.TurnOn)
+                        var mask = 1 << (refused.Relay - 1);
+                        Interlocked.Or(ref _relays, mask);
+                        var badContent = Encoding.ASCII.GetBytes(bad.Body);
+                        await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {bad.Code} X\r\nContent-Length: {badContent.Length}\r\nConnection: close\r\n\r\n"), _stop.Token);
+                        await stream.WriteAsync(badContent, _stop.Token);
+                        return;
+                    }
+
+                    if (command is { } switched)
+                    {
+                        var mask = 1 << (switched.Relay - 1);
+                        if (switched.TurnOn)
                         {
                             Interlocked.Or(ref _relays, mask);
                         }

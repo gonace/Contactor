@@ -53,6 +53,15 @@ public sealed class BoardCatalogueTests
         Assert.IsType<Vm208Traffic>(services.GetRequiredService<IBoardTraffic>());
     }
 
+    [Fact]
+    public void Should_BuildTheVm208_WithoutAnAddress()
+    {
+        using var services = Build("vm208", vm208Host: "");
+
+        Assert.False(services.GetRequiredService<IBoardConnection>().Endpoint.HasHost);
+        Assert.Equal("", services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Vm208Options>>().Value.Host);
+    }
+
     [Theory]
     [InlineData("vm209")]
     [InlineData("")]
@@ -73,10 +82,10 @@ public sealed class BoardCatalogueTests
         Assert.NotNull(BoardCatalogue.Find(BoardCatalogue.DefaultType));
     }
 
-    private static ServiceProvider Build(string? type)
+    private static ServiceProvider Build(string? type, string vm208Host = "127.0.0.1")
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1", ["Vm208:Host"] = "127.0.0.1" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1", ["Vm208:Host"] = vm208Host })
             .Build();
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
