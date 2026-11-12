@@ -407,7 +407,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - Status line when on: "On since 14:02 · Jane · off 16:02".
      - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
    - The link "New group" under the cards, then the button "Show N inactive relays" / "Hide inactive relays". Inactive relays have a dashed border.
-   - With groups, the list has two sections, each with a small heading: "Groups" first, then "Relays", each in a grid of its own, so the cards line up and Tab goes row by row. Without groups there are no headings.
+   - With groups, the list has two sections, each with a small heading: "Groups" first, then "Relays", each in a grid of its own, so the cards line up and Tab goes row by row. Without groups there are no headings, and without a relay card to show (every relay in a group, or the rest hidden as inactive) there is no "Relays" heading.
    - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.
 2. **Relay** (`/relay/{id}`)

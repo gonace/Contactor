@@ -119,8 +119,8 @@
             </section>
         }
 
-        <section class="section" aria-labelledby="@(_groups.Count > 0 ? "relays-heading" : null)">
-            @if (_groups.Count > 0)
+        <section class="section" aria-labelledby="@(ShowRelaysHeading ? "relays-heading" : null)">
+            @if (ShowRelaysHeading)
             {
                 <h2 class="section-title" id="relays-heading">Relays</h2>
             }
@@ -195,6 +195,10 @@
     private int InactiveCount => _relays.Count(r => !r.IsActive);
 
     private IEnumerable<Relay> VisibleRelays => _relays.Where(r => r.IsActive || _showInactive);
+
+    // "Relays" only sets the relays apart from the groups, and only over cards: not when every relay is in a group
+    // or the rest are hidden as inactive.
+    private bool ShowRelaysHeading => _groups.Count > 0 && VisibleRelays.Any();
 
     private string UpdatedText
     {

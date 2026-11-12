@@ -42,6 +42,37 @@ public sealed class RelaysPageTests
 
         Assert.DoesNotContain("id=\"groups-heading\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("aria-labelledby", html, StringComparison.Ordinal);
+    }
+
+    // With every relay in a group there is no relay card, so no "Relays" heading over an empty grid.
+    [Fact]
+    public async Task Should_ShowNoRelaysHeading_WhenEveryRelayIsInAGroup()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            for (var g = 0; g < 4; g++)
+            {
+                var group = new RelayGroup { Name = $"Group {g + 1}", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
+                group.Members.Add(new RelayGroupMember { RelayId = (g * 2) + 1, Position = 1, RoleName = "Fan" });
+                group.Members.Add(new RelayGroupMember { RelayId = (g * 2) + 2, Position = 2, RoleName = "Heat" });
+                db.RelayGroups.Add(group);
+            }
+
+            await db.SaveChangesAsync(Cancel);
+            db.GroupRuntimes.AddRange(db.RelayGroups.Select(g => new GroupRuntime { GroupId = g.Id }));
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        using var http = app.CreateClient();
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+
+        Assert.Contains("id=\"groups-heading\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("aria-labelledby=\"relays-heading\"", html, StringComparison.Ordinal);
     }
 
     // Groups first and relays after, each in a section of its own, so the cards line up and Tab goes row by row.
