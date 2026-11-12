@@ -119,36 +119,40 @@
             </section>
         }
 
-        <section class="section" aria-labelledby="@(ShowRelaysHeading ? "relays-heading" : null)">
-            @if (ShowRelaysHeading)
-            {
-                <h2 class="section-title" id="relays-heading">Relays</h2>
-            }
-            <div class="cards relay-cards">
-                @foreach (var relay in VisibleRelays)
+        @* No relay card to show (all in groups, or the rest hidden as inactive): no empty section and no extra gap. *@
+        @if (VisibleRelays.Any())
+        {
+            <section class="section" aria-labelledby="@(ShowRelaysHeading ? "relays-heading" : null)">
+                @if (ShowRelaysHeading)
                 {
-                    var on = State.IsOn(relay.Id);
-                    <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive")" @key="relay.Id">
-                        <a class="text" href="relay/@relay.Id">
-                            <span class="label">RELAY @relay.Id</span>
-                            <span class="name">@relay.Name</span>
-                            <span class="status">@StatusFor(relay, on)</span>
-                            @if (_failedRelayId == relay.Id)
-                            {
-                                <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</span>
-                            }
-                        </a>
-                        <button type="button"
-                                data-vibrate
-                                class="toggle"
-                                aria-pressed="@(on ? "true" : "false")"
-                                aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
-                                disabled="@(!State.IsConnected || _busy)"
-                                @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "ON" : "OFF")</button>
-                    </div>
+                    <h2 class="section-title" id="relays-heading">Relays</h2>
                 }
-            </div>
-        </section>
+                <div class="cards relay-cards">
+                    @foreach (var relay in VisibleRelays)
+                    {
+                        var on = State.IsOn(relay.Id);
+                        <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive")" @key="relay.Id">
+                            <a class="text" href="relay/@relay.Id">
+                                <span class="label">RELAY @relay.Id</span>
+                                <span class="name">@relay.Name</span>
+                                <span class="status">@StatusFor(relay, on)</span>
+                                @if (_failedRelayId == relay.Id)
+                                {
+                                    <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</span>
+                                }
+                            </a>
+                            <button type="button"
+                                    data-vibrate
+                                    class="toggle"
+                                    aria-pressed="@(on ? "true" : "false")"
+                                    aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
+                                    disabled="@(!State.IsConnected || _busy)"
+                                    @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "ON" : "OFF")</button>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
 
         <a href="group/new" class="new-group">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
