@@ -528,6 +528,12 @@ See `DEPLOY.md` for the steps.
 - **CI:** the Build workflow runs `dotnet build` and `dotnet test` on every pull request to `main`, on every merge into `main` and by hand, and shows the results as a "Tests" check (`dorny/test-reporter`). A new push to a pull request cancels its older run. Run the related tests locally before pushing.
 - **While the Build workflow is disabled** (to save Actions minutes during heavy development): ignore the missing GitHub checks and don't bring them up. The gate is a full local run instead: a Release build and every test on a clean checkout of the pull request's latest commit, with the commit and the result in the pull request's description.
 
+## Workflow
+
+### Branches
+- A short name for the work, in lower case with hyphens, e.g. `setup-guide`, `vm204`, `responsive-layout`, `nitpicks-10-14`. No prefix (no `feature/`, `claude/` or user name) and no random suffix.
+- One branch per pull request.
+
 ## Build order
 
 1. `Contactor.Boards.Vm201`: codec, simulator and client, with tests. **Test against the real VM201 before going further.**
@@ -543,4 +549,3 @@ See `DEPLOY.md` for the steps.
 - Time: inject `TimeProvider`. Never use `DateTime.Now` directly.
 - Log with `ILogger` and structured fields. Never log the VM201 password.
 - Everything in English (see Languages).
-- Branches: a short name for the work, in lower case with hyphens, e.g. `setup-guide`, `vm204`, `responsive-layout`, `nitpicks-10-14`. No prefix (no `feature/`, `claude/` or user name) and no random suffix. One branch per pull request.
