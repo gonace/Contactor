@@ -19,6 +19,11 @@ public sealed record AppBuild(string Version, string? Commit)
 
     public bool IsRelease => Version != Development;
 
+    /// <summary>How the app shows it: "Version 2026.11.4 · 1fdaf34", or "Development version · 1fdaf34".</summary>
+    public string Text => IsRelease
+        ? $"Version {Version}{(ShortCommit is { } commit ? $" · {commit}" : "")}"
+        : $"Development version{(ShortCommit is { } dev ? $" · {dev}" : "")}";
+
     /// <summary>The commit shortened to 7 characters, as in the image tag <c>sha-&lt;commit&gt;</c>.</summary>
     public string? ShortCommit => Commit is { Length: > 7 } commit ? commit[..7] : Commit;
 

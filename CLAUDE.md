@@ -417,7 +417,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - "People": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Save".
    - "Backups": the newest nightly copy ("Latest: 02:30 · 68 kB"), "Make a copy now" and "Download" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
    - "Debugging": the checkbox "Show the traffic to the relay board", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
-   - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Development version" for local builds); the only place it shows.
+   - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Development version" for local builds; `AppBuild.Text`); the only place it shows, except on a desktop, where it sits at the bottom of the side menu instead.
 8. **Debug** (`/debug`; the tab only shows while the person has Debugging on)
    - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in plain words ("Turn on relay 3", "Status: relay 1 and 3 on · input off", "Connection lost: …") and the packet's bytes. The button "Clear".
 

@@ -255,6 +255,13 @@ button:disabled {
         padding: 12px 12px 0;
     }
 
+    /* The version is at the bottom of the side menu instead (TabBar). */
+    @supports selector(:has(a)) {
+        .version {
+            display: none;
+        }
+    }
+
     .content {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -146,9 +146,7 @@
 </div>
 
 @code {
-    private static readonly string VersionText = AppBuild.Current is { IsRelease: true } build
-        ? $"Version {build.Version}{(build.ShortCommit is { } commit ? $" · {commit}" : "")}"
-        : $"Development version{(AppBuild.Current.ShortCommit is { } dev ? $" · {dev}" : "")}";
+    private static readonly string VersionText = AppBuild.Current.Text;
 
     private SignedInUser? _user;
     private string _host = "";

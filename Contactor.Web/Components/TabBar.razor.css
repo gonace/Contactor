@@ -7,6 +7,10 @@
     display: none;
 }
 
+.tabs .version {
+    display: none;
+}
+
 .tabs {
     display: flex;
     border-top: 1px solid var(--line);
@@ -112,6 +116,19 @@
 
         .tabs a[aria-current="page"] {
             background: var(--accent-tint);
+        }
+
+        .tabs .version {
+            display: block;
+            margin-top: auto;
+            padding: 0 12px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 500;
+            color: var(--muted);
         }
 
         .toasts {
