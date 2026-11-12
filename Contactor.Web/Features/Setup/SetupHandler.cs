@@ -33,7 +33,7 @@ public sealed class SetupHandler
     public static readonly TimeSpan TryAutoOffAfter = TryLength + TimeSpan.FromSeconds(5);
 
     // After a failed ON: how often the relay is looked at, and how long past the credit's lifetime.
-    private static readonly TimeSpan CreditCheckEvery = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan CreditCheckEvery = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan CreditGrace = TimeSpan.FromSeconds(1);
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
@@ -41,6 +41,7 @@ public sealed class SetupHandler
     private readonly IRelayBoard _board;
     private readonly RelayControl _control;
     private readonly RelaySettingsHandler _relays;
+    private readonly ExpectedChanges _expected;
     private readonly LocalClock _clock;
     private readonly TimeProvider _time;
     private readonly ILogger<SetupHandler> _logger;
@@ -54,6 +55,7 @@ public sealed class SetupHandler
         IRelayBoard board,
         RelayControl control,
         RelaySettingsHandler relays,
+        ExpectedChanges expected,
         LocalClock clock,
         TimeProvider time,
         ILogger<SetupHandler> logger)
@@ -63,6 +65,7 @@ public sealed class SetupHandler
         _board = board;
         _control = control;
         _relays = relays;
+        _expected = expected;
         _clock = clock;
         _time = time;
         _logger = logger;
@@ -192,22 +195,28 @@ public sealed class SetupHandler
 
     // After an ON that failed: the relay is turned off only once the board shows it on and the ON was credited to this
     // person (BoardEventRecorder), so a command that never reached the board leaves no OFF and no event, and a relay that
-    // came on for another reason (a schedule, an input, someone else) is left alone. Watched for as long as a failed ON
-    // can be credited, plus a little for the recorder to save it.
+    // came on for another reason (a schedule, an input, someone else) is left alone. Watched for as long as the failed ON
+    // can be credited (ExpectedChanges.HasFailedOn), at least its first few seconds and at most FailedOnLimit, plus a
+    // little for the recorder to save the credit.
     private async Task TurnOffIfCreditedAsync(int relayId, string userEmail, DateTime failedUtc)
     {
         try
         {
             await Task.Delay(TryLength, _time);
+
+            // How long the failed ON has no longer been creditable: a credit just taken may still be on its way to the
+            // database, so that lasts a little before the watch ends.
+            var settled = TimeSpan.Zero;
             for (var waited = TryLength; ; waited += CreditCheckEvery)
             {
+                settled = _expected.HasFailedOn(relayId, userEmail) ? TimeSpan.Zero : settled + CreditCheckEvery;
                 if (_board.State.IsOn(relayId) && await IsCreditedAsync(relayId, userEmail, failedUtc))
                 {
                     await _control.TurnOffAsync(relayId, userEmail, CancellationToken.None);
                     return;
                 }
 
-                if (waited >= ExpectedChanges.Lifetime + CreditGrace)
+                if ((settled > CreditGrace && waited >= ExpectedChanges.Lifetime + CreditGrace) || waited >= ExpectedChanges.FailedOnLimit + CreditGrace)
                 {
                     _logger.TryNotOn(relayId);
                     return;

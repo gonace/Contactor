@@ -238,6 +238,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
             _changes.Notify();
         }
 
+        // Recorded: a failed ON from before this status that it didn't show coming on has had its first status.
+        _expected.StatusRecorded(state.LastContactUtc?.UtcDateTime ?? now);
+
         // Only once logged, so the input's change comes before what it did in Events, and a failed save doesn't act
         // twice when the next status records the change again.
         foreach (var (input, on) in _seenInputChanges)

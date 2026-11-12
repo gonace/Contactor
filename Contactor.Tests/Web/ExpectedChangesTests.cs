@@ -29,7 +29,41 @@ public sealed class ExpectedChangesTests
         Assert.Null(_expected.TakeFailedOn(3, start));
 
         // Too late: the board showed relay 4 on only after the note had expired.
-        Assert.Null(_expected.TakeFailedOn(4, start + ExpectedChanges.Lifetime));
+        Assert.Null(_expected.TakeFailedOn(4, start + ExpectedChanges.FailedOnLimit));
+    }
+
+    // Credited within its first few seconds whatever the status, and later only by the board's first status after the
+    // failure: one that didn't show the relay on (here at 1 s) ends that.
+    [Fact]
+    public void Should_CreditAFailedOn_ByTheFirstStatusAfterIt_HoweverLate()
+    {
+        var start = _time.GetUtcNow().UtcDateTime;
+        _expected.RememberFailedOn(3, "jane@example.com");
+        _expected.RememberFailedOn(4, "jane@example.com");
+
+        // Relay 3's board comes back after 20 s, its first status since: credited.
+        Assert.Equal("jane@example.com", _expected.TakeFailedOn(3, start.AddSeconds(20))?.Actor);
+
+        // Relay 4: a status at 1 s showed it off; at 3 s it still counts, at 6 s no longer.
+        _expected.StatusRecorded(start.AddSeconds(1));
+        Assert.True(_expected.HasFailedOn(4, "jane@example.com"));
+        Assert.NotNull(_expected.TakeFailedOn(4, start.AddSeconds(3)));
+        _expected.RememberFailedOn(4, "jane@example.com");
+        _expected.StatusRecorded(start.AddSeconds(1));
+        Assert.Null(_expected.TakeFailedOn(4, start.AddSeconds(6)));
+        Assert.False(_expected.HasFailedOn(4, "alex@example.com"));
+    }
+
+    // A status that arrived before the failure doesn't count as the first after it.
+    [Fact]
+    public void Should_NotCountAStatusFromBefore_AsTheFirstAfterAFailedOn()
+    {
+        var start = _time.GetUtcNow().UtcDateTime;
+        _expected.RememberFailedOn(3, "jane@example.com");
+
+        _expected.StatusRecorded(start.AddSeconds(-1));
+
+        Assert.NotNull(_expected.TakeFailedOn(3, start.AddSeconds(30)));
     }
 
     // A note taken by a status whose recording then failed is put back until the next status can come: a VM201's
@@ -46,7 +80,7 @@ public sealed class ExpectedChangesTests
 
         Assert.Equal("jane@example.com", _expected.TakeFailedOn(3, start.AddSeconds(16))?.Actor);
         _expected.PutBackFailedOn(note);
-        Assert.Null(_expected.TakeFailedOn(3, start.AddSeconds(1) + ExpectedChanges.RetryLifetime));
+        Assert.Null(_expected.TakeFailedOn(3, start + ExpectedChanges.FailedOnLimit));
     }
 
     // Pending until the board shows it or it expires, and only in its own direction.

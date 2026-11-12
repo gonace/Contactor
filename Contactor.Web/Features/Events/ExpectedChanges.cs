@@ -19,6 +19,12 @@ public sealed class ExpectedChanges
     /// </summary>
     public static readonly TimeSpan RetryLifetime = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// How long a failed ON waits for the board's first status after it, at most: that status can come late, e.g. a
+    /// VM201 that connects again, or a VM204 that logs in again first.
+    /// </summary>
+    public static readonly TimeSpan FailedOnLimit = TimeSpan.FromMinutes(2);
+
     // Only a safety limit, e.g. for commands while no status is handled at all: far more than the app ever has waiting.
     private const int MaxExpected = 256;
 
@@ -80,18 +86,50 @@ public sealed class ExpectedChanges
     /// </summary>
     public void RememberFailedOn(int relayId, string actor)
     {
-        Add(new FailedOn(relayId, actor, _clock.UtcNow + Lifetime));
+        var now = _clock.UtcNow;
+        Add(new FailedOn(relayId, actor, now, now + FailedOnLimit));
+    }
+
+    /// <summary>
+    /// The board's status that arrived at <paramref name="receivedUtc"/> has been recorded: a failed ON from before it
+    /// whose relay it didn't show coming on is now only credited within <see cref="Lifetime"/> of its failure.
+    /// </summary>
+    public void StatusRecorded(DateTime receivedUtc)
+    {
+        lock (_lock)
+        {
+            for (var i = 0; i < _failedOn.Count; i++)
+            {
+                if (!_failedOn[i].StatusSeen && _failedOn[i].FailedUtc < receivedUtc)
+                {
+                    _failedOn[i] = _failedOn[i] with { StatusSeen = true };
+                }
+            }
+
+            _failedOn.RemoveAll(f => !f.IsCredited(receivedUtc) && f.FailedUtc + Lifetime <= receivedUtc);
+        }
+    }
+
+    /// <summary>Whether a failed ON of this relay by this actor may still be credited.</summary>
+    public bool HasFailedOn(int relayId, string actor)
+    {
+        var now = _clock.UtcNow;
+        lock (_lock)
+        {
+            return _failedOn.Exists(f => f.RelayId == relayId && f.Actor == actor && f.IsCredited(now));
+        }
     }
 
     /// <summary>
     /// Puts back a note <see cref="TakeFailedOn"/> took, when recording the change failed. The change is recorded
-    /// again only with the next status, so the note lasts at least <see cref="RetryLifetime"/> from now.
+    /// again only with the next status, so the note waits for it again, and lasts at least
+    /// <see cref="RetryLifetime"/> from now.
     /// </summary>
     public void PutBackFailedOn(FailedOn note)
     {
         ArgumentNullException.ThrowIfNull(note);
         var retryUntil = _clock.UtcNow + RetryLifetime;
-        Add(note.ExpiresUtc > retryUntil ? note : note with { ExpiresUtc = retryUntil });
+        Add(note with { StatusSeen = false, ExpiresUtc = note.ExpiresUtc > retryUntil ? note.ExpiresUtc : retryUntil });
     }
 
     private void Add(FailedOn note)
@@ -107,14 +145,14 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>
-    /// The newest failed ON for this relay that hadn't expired when the status showing it on arrived, if any; it is used
-    /// up. Notes that had expired by then are dropped.
+    /// The newest failed ON for this relay that can be credited to the status showing it on, which arrived at
+    /// <paramref name="receivedUtc"/>, if any; it is used up. Notes that can no longer be credited are dropped.
     /// </summary>
     public FailedOn? TakeFailedOn(int relayId, DateTime receivedUtc)
     {
         lock (_lock)
         {
-            var index = _failedOn.FindLastIndex(f => f.RelayId == relayId && f.ExpiresUtc > receivedUtc);
+            var index = _failedOn.FindLastIndex(f => f.RelayId == relayId && f.IsCredited(receivedUtc));
             var note = index >= 0 ? _failedOn[index] : null;
             if (index >= 0)
             {
@@ -167,5 +205,17 @@ public sealed class ExpectedChanges
     }
 }
 
-/// <summary>An ON from a person or an input whose command was reported as failed, until <paramref name="ExpiresUtc"/>.</summary>
-public sealed record FailedOn(int RelayId, string Actor, DateTime ExpiresUtc);
+/// <summary>
+/// An ON from a person or an input whose command was reported as failed at <paramref name="FailedUtc"/>. A status
+/// showing the relay on is credited to them when it arrives within <see cref="ExpectedChanges.Lifetime"/> of the
+/// failure, or later, until <paramref name="ExpiresUtc"/>, while it is the board's first status after the failure
+/// (<paramref name="StatusSeen"/> false).
+/// </summary>
+public sealed record FailedOn(int RelayId, string Actor, DateTime FailedUtc, DateTime ExpiresUtc, bool StatusSeen = false)
+{
+    /// <summary>Whether a status showing the relay on that arrived then is credited to the actor.</summary>
+    public bool IsCredited(DateTime receivedUtc)
+    {
+        return receivedUtc < ExpiresUtc && (receivedUtc < FailedUtc + ExpectedChanges.Lifetime || !StatusSeen);
+    }
+}

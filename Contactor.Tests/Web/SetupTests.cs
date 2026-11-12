@@ -439,19 +439,18 @@ public sealed class SetupTests
         await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && OffLogged(rig, JohnEmail));
     }
 
-    // The board's status showing the relay on comes after the try's 2 s, but while a failed ON can still be credited:
-    // it is turned off all the same.
+    // The board drops the connection and comes back long after the failed ON, with the relay on: its first status
+    // after the failure is credited to the person, however late, and the try turns the relay off.
     [Fact]
     public async Task Should_TurnATriedRelayOff_WhenItCameOnLate()
     {
         await using var rig = await Rig.StartAsync(startRecorder: true);
         rig.Board.SetConnected(false);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
-        rig.Board.SetConnected(true);
 
-        // Past the try's 2 s, within the 5 s a failed ON can be credited. Real time: the handler's waits run on it.
-        await Task.Delay(TimeSpan.FromSeconds(3), Cancel);
+        rig.Time.Now += TimeSpan.FromSeconds(20);
         rig.Board.SetRelay(3, on: true);
+        rig.Board.SetConnected(true);
 
         await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && OffLogged(rig, JohnEmail));
     }
@@ -464,8 +463,9 @@ public sealed class SetupTests
         await using var rig = await Rig.StartAsync(logs, startRecorder: true);
         rig.Board.SetConnected(false);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
-        rig.Board.SetConnected(true);
 
+        rig.Time.Now += TimeSpan.FromSeconds(1);
+        rig.Board.SetConnected(true);
         rig.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(3), on: true);
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
@@ -476,12 +476,21 @@ public sealed class SetupTests
 
         rig.Board.SetRelay(3, on: true);
 
+        // Past the few seconds in which a failed ON is credited whatever the status: the try's watch ends.
+        await WaitUntilAsync(() => Events(rig).Any(e => e.RelayId == 3 && e.Action == EventActions.On) || rig.Board.State.IsOn(3));
+        rig.Time.Now += ExpectedChanges.Lifetime;
         await WaitUntilAsync(() => logs.Contains("\"Try\" of relay 3 failed and the relay didn't come on for it"));
         Assert.True(rig.Board.State.IsOn(3));
         Assert.False(OffLogged(rig, JohnEmail));
     }
 
     private const string JohnEmail = "john@example.com";
+
+    private static List<EventLogEntry> Events(Rig rig)
+    {
+        using var db = rig.Database.Factory.CreateDbContext();
+        return [.. db.EventLog];
+    }
 
     private static bool OffLogged(Rig rig, string actor)
     {
@@ -498,7 +507,11 @@ public sealed class SetupTests
         rig.Board.SetConnected(false);
 
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+
+        // The board's first status after the failure shows the relay off, and the few seconds pass.
+        rig.Time.Now += TimeSpan.FromSeconds(1);
         rig.Board.SetConnected(true);
+        rig.Time.Now += ExpectedChanges.Lifetime;
 
         await WaitUntilAsync(() => logs.Contains("\"Try\" of relay 3 failed and the relay didn't come on for it"));
         Assert.False(rig.Board.State.IsOn(3));
@@ -673,11 +686,15 @@ public sealed class SetupTests
 
         public FakeRelayBoard Board { get; }
 
+        /// <summary>The app's clock, which a test moves by hand; the board's statuses carry its time.</summary>
+        public FixedTimeProvider Time { get; private init; } = null!;
+
         public SetupHandler Setup => Database.Services.GetRequiredService<SetupHandler>();
 
         public static async Task<Rig> StartAsync(ILoggerProvider? logs = null, bool startRecorder = false)
         {
-            var board = new FakeRelayBoard();
+            var time = new FixedTimeProvider(new DateTimeOffset(Now));
+            var board = new FakeRelayBoard { Clock = time };
             var database = TestDatabase.Create((services, configuration) =>
             {
                 if (logs is not null)
@@ -686,7 +703,7 @@ public sealed class SetupTests
                 }
 
                 services.AddLocalClock(configuration);
-                services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
+                services.AddSingleton<TimeProvider>(time);
                 services.AddSingleton(Vm201Model.Model);
                 services.AddEvents(configuration);
                 services.AddSingleton<IRelayBoard>(board);
@@ -695,7 +712,7 @@ public sealed class SetupTests
                 services.AddSetup(configuration);
             });
             await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
-            var rig = new Rig(database, board);
+            var rig = new Rig(database, board) { Time = time };
             if (startRecorder)
             {
                 // Credits a failed ON to the person when the relay comes on all the same.
