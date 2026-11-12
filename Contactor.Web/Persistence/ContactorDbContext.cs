@@ -41,6 +41,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<BoardWatchState> BoardWatchStates => Set<BoardWatchState>();
 
+    public DbSet<InputAction> InputActions => Set<InputAction>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         ArgumentNullException.ThrowIfNull(configurationBuilder);
@@ -67,6 +69,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<GroupRuntime>(ConfigureGroupRuntime);
         modelBuilder.Entity<Installation>(ConfigureInstallation);
         modelBuilder.Entity<BoardWatchState>(ConfigureBoardWatchState);
+        modelBuilder.Entity<InputAction>(ConfigureInputAction);
     }
 
     private static void ConfigureRelayGroup(EntityTypeBuilder<RelayGroup> group)
@@ -198,6 +201,26 @@ public sealed class ContactorDbContext : DbContext
         input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         input.Property(i => i.Id).ValueGeneratedNever();
         input.Property(i => i.Name).HasMaxLength(Input.NameMaxLength);
+    }
+
+    private static void ConfigureInputAction(EntityTypeBuilder<InputAction> action)
+    {
+        action.ToTable("InputAction", t =>
+        {
+            // An input's action switches a relay or a group, never both and never neither.
+            t.HasCheckConstraint("CK_InputAction_Target", "(\"RelayId\" IS NULL) <> (\"GroupId\" IS NULL)");
+        });
+
+        // One row per relay or group an input controls.
+        action.HasIndex(a => new { a.InputId, a.RelayId }).IsUnique();
+        action.HasIndex(a => new { a.InputId, a.GroupId }).IsUnique();
+        action.HasIndex(a => a.RelayId);
+        action.HasIndex(a => a.GroupId);
+        action.HasOne<Input>().WithMany().HasForeignKey(a => a.InputId).OnDelete(DeleteBehavior.Restrict);
+        action.HasOne(a => a.Relay).WithMany().HasForeignKey(a => a.RelayId).OnDelete(DeleteBehavior.Restrict);
+
+        // A group's actions go with the group.
+        action.HasOne(a => a.Group).WithMany().HasForeignKey(a => a.GroupId).OnDelete(DeleteBehavior.Cascade);
     }
 
     private sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>

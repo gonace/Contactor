@@ -21,7 +21,7 @@ public static class EventText
 {
     /// <param name="entry">The event.</param>
     /// <param name="relayName">The relay's current name, or null for events without a relay.</param>
-    /// <param name="personName">The display name of the person behind it, when the actor is an e-mail.</param>
+    /// <param name="personName">The display name of the person behind it, when the actor is an e-mail, or the input's name when it is an input.</param>
     /// <param name="groupName">The group's current name, for a group's events; null for others or a deleted group.</param>
     /// <param name="inputName">The input's current name, for an input's changes; null for others.</param>
     public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, string? inputName = null)
@@ -33,8 +33,12 @@ public static class EventText
         }
 
         var isPerson = IsPersonActor(entry.Actor);
-        var who = isPerson ? personName ?? entry.Actor : WhoFor(entry);
-        var badge = !isPerson ? "A"
+        var byInput = EventActors.TryInput(entry.Actor, out var inputId);
+        var who = isPerson ? personName ?? entry.Actor
+            : byInput ? personName ?? Input.DefaultName(inputId)
+            : WhoFor(entry);
+        var badge = byInput ? "I"
+            : !isPerson ? "A"
             : who.Length > 0 ? who[..1].ToUpper(CultureInfo.InvariantCulture)
             : "?";
         var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? "the group";
@@ -144,6 +148,7 @@ public static class EventText
             EventActors.AutoOff => "auto-off",
             EventActors.External => "outside the app",
             EventActors.System => "the system",
+            _ when EventActors.TryInput(actor, out var inputId) => personName ?? Input.DefaultName(inputId),
             _ => personName ?? actor,
         };
     }

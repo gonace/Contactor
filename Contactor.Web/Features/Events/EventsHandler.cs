@@ -92,7 +92,7 @@ public sealed class EventsHandler
 
         var entries = await query.OrderByDescending(e => e.TimestampUtc).ThenByDescending(e => e.Id).Take(count).ToListAsync(cancellationToken);
         var relayNames = await db.Relays.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name, cancellationToken);
-        var personNames = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName, cancellationToken);
+        var personNames = await ActorNames.LoadAsync(db, cancellationToken);
         var groupNames = await db.RelayGroups.AsNoTracking().ToDictionaryAsync(g => g.Id, g => g.Name, cancellationToken);
         var inputNames = await db.Inputs.AsNoTracking().ToDictionaryAsync(i => i.Id, i => i.Name, cancellationToken);
 

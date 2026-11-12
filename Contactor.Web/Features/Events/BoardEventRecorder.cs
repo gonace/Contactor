@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using Contactor.Boards;
+using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -10,8 +11,9 @@ namespace Contactor.Web.Features.Events;
 /// <summary>
 /// Logs what happens at the board without the app asking: relays turned on or off through the board's web page,
 /// its button or its timers (Actor <c>external</c>), changes to the inputs, and the connection being lost for more
-/// than 30 s and coming back. The board's status arrives on its read loop; it is queued and handled here one at a
-/// time, so the database work never holds up the connection.
+/// than 30 s and coming back. An input's change seen as it happened is handed on to its actions
+/// (<see cref="InputChangeFeed"/>) once it is logged. The board's status arrives on its read loop; it is queued and
+/// handled here one at a time, so the database work never holds up the connection.
 /// </summary>
 public sealed partial class BoardEventRecorder : BackgroundService
 {
@@ -41,6 +43,10 @@ public sealed partial class BoardEventRecorder : BackgroundService
     private BoardState? _known;
     private DateTime? _disconnectedSinceUtc;
     private readonly IBoardConnection? _connection;
+    private readonly InputChangeFeed? _inputChanges;
+
+    // The inputs' changes in the status in hand that the app saw happen, handed on once they are saved.
+    private readonly List<(int InputId, bool On)> _seenInputChanges = [];
 
     // Whether the app has had contact since the last gap, and when it last saved that it had.
     private bool _watching;
@@ -57,10 +63,12 @@ public sealed partial class BoardEventRecorder : BackgroundService
         LocalClock clock,
         RelayChanges changes,
         ILogger<BoardEventRecorder> logger,
-        IBoardConnection? connection = null)
+        IBoardConnection? connection = null,
+        InputChangeFeed? inputChanges = null)
     {
         _board = board;
         _connection = connection;
+        _inputChanges = inputChanges;
         _expected = expected;
         _dbFactory = dbFactory;
         _clock = clock;
@@ -146,6 +154,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         // status starts over: the changes, a gap that just ended and a restored connection are recorded then.
         var before = (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc);
         _consumed.Clear();
+        _seenInputChanges.Clear();
         try
         {
             await RecordAsync(db, state, now, cancellationToken);
@@ -211,6 +220,13 @@ public sealed partial class BoardEventRecorder : BackgroundService
             await db.SaveChangesAsync(cancellationToken);
             _changes.Notify();
         }
+
+        // Only once logged, so the input's change comes before what it did in Events, and a failed save doesn't act
+        // twice when the next status records the change again.
+        foreach (var (input, on) in _seenInputChanges)
+        {
+            _inputChanges?.Enqueue(input, on);
+        }
     }
 
     // Every input on the board, each logged on its own. A change the app only noticed after a gap is marked so: it
@@ -231,6 +247,10 @@ public sealed partial class BoardEventRecorder : BackgroundService
                         ? JsonSerializer.Serialize(new { on = after.Contains(input), noticed = true })
                         : JsonSerializer.Serialize(new { on = after.Contains(input) }),
                 });
+                if (!noticed)
+                {
+                    _seenInputChanges.Add((input, after.Contains(input)));
+                }
             }
         }
     }

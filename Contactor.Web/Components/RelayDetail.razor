@@ -230,7 +230,7 @@
             .Select(m => new { m.GroupId, m.Group!.Name })
             .SingleOrDefaultAsync();
         _group = group is null ? null : (group.GroupId, group.Name);
-        _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
+        _names = await ActorNames.LoadAsync(db, CancellationToken.None);
         _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, relayId: Id)];
         _schedules = [.. await Schedules.ListAsync(Id, CancellationToken.None)];
         _outlook = (await Outlook.GetAsync(CancellationToken.None)).GetValueOrDefault(Id);

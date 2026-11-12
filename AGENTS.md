@@ -253,7 +253,7 @@ EventLog
   Id              int PK
   TimestampUtc    datetime
   RelayId         int?           null for events that don't concern one relay
-  Actor           text           e-mail, or "schedule" | "auto-off" | "external" | "system"
+  Actor           text           e-mail, or "schedule" | "auto-off" | "external" | "system" | "input:n" (an input's actions)
   Action          text           "on" | "off" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
@@ -268,7 +268,7 @@ RelayRuntime            (internal, for auto-off; one row per relay, seeded at st
   RelayId         int PK
   OnSinceUtc      datetime?
   AutoOffAtUtc    datetime?
-  TurnedOnBy      text?          e-mail, or "schedule"
+  TurnedOnBy      text?          e-mail, "input:n" (counts as a person), or "schedule"
 
 SchedulerState          (internal, one row: the scheduler's progress)
   Id              int PK = 1
@@ -331,6 +331,14 @@ Input                   (one per digital input on the board, seeded at start lik
   IsActive        bool           false = hidden from the list by default
   NotifyOnOpen    bool           for later: notifications (not shown yet)
   NotifyOnClose   bool
+
+InputAction             (a relay or a group an input switches: exactly one of RelayId and GroupId is set)
+  Id              int PK
+  InputId         int FK
+  RelayId         int? FK        a relay in no group; UNIQUE with InputId
+  GroupId         int? FK        cascade delete with the group; UNIQUE with InputId
+  WhenClosed      bool?          true = turn on, false = turn off, null = nothing
+  WhenOpened      bool?
 ```
 
 - `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` at start.
@@ -371,11 +379,17 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 - **Stop:** from the bottom. The lowest relay goes off at once; each one above after its `RunOnSec`, counted from when the one below is confirmed off. ON during a run-on carries on from where the group is, restarting nothing.
 - **Interlock:** a relay may only be on while every relay above it is. Checked first on **every** status, whatever caused it (the app, the board's web page or buttons, its timers, a power cut), and at start and reconnect: everything below the gap goes off at once, the missing relay is started so it can run on, then the group stops as usual. Logged as `interlock-trip` with Actor `system`.
 - **One relay at a time** (on the Group screen): ON only when the relay above is on ("Needs Fan to be on"). OFF turns the relays below off at once, then this one runs on and stops. That gives "only the fan" without a special mode.
-- A relay in a group is only switched through its group (`RelayControl` refuses), has no auto-off or schedule of its own, and can't get a schedule while in it (its group can). A relay with its own schedules can't join a group. Which relays and their order, creating and deleting only change while the whole group is off.
+- A relay in a group is only switched through its group (`RelayControl` refuses), has no auto-off or schedule of its own, and can't get a schedule while in it (its group can). A relay with its own schedules, or one an input controls, can't join a group. Which relays and their order, creating and deleting only change while the whole group is off.
 - **Schedules:** a group has schedules of its own, run by the scheduler by the same rules as a relay's (catch-up, ON wins on overlap, a missed OFF only stops what the schedule started, a person's start and auto-off win). OnTime starts the group in its order through `GroupSequencer`, with Actor `schedule` and no auto-off; OffTime stops it with its run-on times. The sequencer logs both as `group-on`/`group-off`. A group that is already partly on at OnTime (e.g. only the fan, switched by hand) is left as the person set it, with their auto-off; the OffTime still stops it.
 - **Auto-off** (`RelayGroup.MaxOnMinutes`) stops the whole group with its run-on times. **"All off"** stops each group with its run-on times and turns the other relays off at once.
 - **No board:** nothing is sent or queued; run-on times keep counting, and on reconnect the interlock goes first, then what fell due. A command the board hadn't confirmed gets a fresh 5 s to show; the relay a stop needs for its run-on (e.g. the fan after a trip) is sent once more, then given up (`group-start-failed`) if it still doesn't come on.
 - **Safety:** the app's interlock only works while the Pi and the app run. Where safety depends on it (heat without the fan), it must also be wired in hardware, e.g. by feeding the heater relay through the fan relay's output. That is the electrician's decision; the app is an extra layer.
+
+### Inputs that switch relays and groups
+- An input can control any number of relays and groups (`InputAction`, `InputActionsHandler`), each with its own action when it closes and when it opens: turn on, turn off or nothing. A relay in a group only through its group.
+- `InputActionService` acts like a press of the button at that moment, with the input as the actor (`input:n`): a relay through `RelayControl` (with its auto-off), a group through `GroupSequencer` (in its order, with its run-on and auto-off). What is already in that state is left alone.
+- Only a change the app saw as it happened acts: `BoardEventRecorder` hands it on (`InputChangeFeed`) once it is logged. A change noticed after a gap, or at start, does nothing. Without the board nothing is sent or queued.
+- Events name the input as who did it: "Door turned off the group Fan heater" (a dashed badge with "I").
 
 ### The board's own timers
 - The board's built-in timer programs compete with the app's schedules. On the first successful connection: send `CMD_TMR_DIS 0xFF` and log it with Actor `system`. Configurable through `Vm201:DisableBoardTimers=true`.
@@ -456,7 +470,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - Icons are Font Awesome Free solid icons (CC BY 4.0), inlined as SVG in `GroupIcon.razor`; no icon font or script.
 5. **New group** (`/group/new`): a guide in 4 steps, "STEP n OF 4" with a progress bar, "Cancel" on the first step and "Back" after.
    1. "Name and icon": the name and the 8 icons (Fan, Heat, Light, Air, Paint, Pump, Tools, Power).
-   2. "Which relays?": all the board's relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X") or with schedules of its own ("Has its own schedules") can't be chosen. At least 2.
+   2. "Which relays?": all the board's relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X"), with schedules of its own ("Has its own schedules") or controlled by an input ("Controlled by Door") can't be chosen. At least 2.
    3. "Order and rules": up/down, "Name in the group" for each relay (its name to begin with) and the waits between the steps.
    4. "Review and create": the card as it will look, and in plain words when it starts, when it stops, the interlock and the auto-off (2 h, changed on the group's page). "Create group" only works while every chosen relay is off.
 6. **Events** (`/events`)
@@ -486,7 +500,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    5. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
 
 10. **Input** (`/input/{id}`, `InputDetail.razor`, `Features/Inputs`)
-   - "INPUT n · NAME", the checkbox "Active: shown in the list", the state now ("NOW", "Open since 14:02" or "Open since unknown" with the same ⓘ, and its badge), its latest 4 events with "All events", and "Save". Saving isn't logged. Like the Relay screen: the side menu on a desktop, two columns and Save at the top right.
+   - "INPUT n · NAME", the checkbox "Active: shown in the list", the state now ("NOW", "Open since 14:02" or "Open since unknown" with the same ⓘ, and its badge), "Groups and relays" (a card per relay or group it controls: "Group: Fan heater" or "Relay 4: Lighting", "CLOSES" and "OPENS" each with Turn on / Turn off / Nothing, and "Remove"; "+ Add a group or relay" offers what it doesn't control yet, groups first), its latest 4 events with "All events", and "Save". Saving isn't logged. Like the Relay screen: the side menu on a desktop, two columns and Save at the top right.
 
 Blazor Server gives live updates for free. When the board reports a new state (`IRelayBoard.StateChanged`), every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
 
