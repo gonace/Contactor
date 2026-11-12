@@ -172,6 +172,7 @@ public sealed class SetupTests
 
             // Nothing listens there: from now on the board doesn't answer, and that counts.
             database.Services.GetRequiredService<IBoardConnection>().SetEndpoint(new BoardEndpoint("127.0.0.1", 1));
+            await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
             time.Now += BoardEventRecorder.ConnectionLostAfter;
 
             await WaitUntilAsync(() => EventsAsync(database).GetAwaiter().GetResult().Count == 1);
@@ -311,7 +312,7 @@ public sealed class SetupTests
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
             var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
-            Assert.Equal(Now + SetupHandler.TryLength, runtime.AutoOffAtUtc);
+            Assert.Equal(Now + SetupHandler.TryAutoOffAfter, runtime.AutoOffAtUtc);
         }
 
         await WaitUntilAsync(() => !rig.Board.State.IsOn(3));
@@ -370,6 +371,26 @@ public sealed class SetupTests
         await WaitUntilAsync(() => db.EventLog.Count() == 2);
         var actions = await db.EventLog.OrderBy(e => e.Id).Select(e => e.Action).ToListAsync(Cancel);
         Assert.Equal([EventActions.On, EventActions.Off], actions);
+    }
+
+    [Fact]
+    public async Task Should_StillTurnATriedRelayOff_WhenItsAutoOffCannotBeSaved()
+    {
+        await using var rig = await Rig.StartAsync();
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            // Refuses an update that only sets the auto-off: the one "Try" makes after ON has gone out.
+            await db.Database.ExecuteSqlRawAsync(
+                "CREATE TRIGGER fail_auto_off BEFORE UPDATE OF \"AutoOffAtUtc\" ON \"RelayRuntime\" " +
+                "WHEN NEW.\"OnSinceUtc\" IS OLD.\"OnSinceUtc\" AND NEW.\"AutoOffAtUtc\" IS NOT NULL " +
+                "BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+                Cancel);
+        }
+
+        await Assert.ThrowsAnyAsync<Exception>(() => rig.Setup.TryAsync(3, "john@example.com", Cancel));
+
+        Assert.True(rig.Board.State.IsOn(3));
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3));
     }
 
     [Fact]

@@ -25,6 +25,12 @@ public sealed class SetupHandler
     /// <summary>How long "Try" keeps a relay on: long enough to hear which one it is.</summary>
     public static readonly TimeSpan TryLength = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// When auto-off ends a try that wasn't turned off: a little after <see cref="TryLength"/>, so it is only a
+    /// backstop and never sends OFF at the same time as the turn-off.
+    /// </summary>
+    public static readonly TimeSpan TryAutoOffAfter = TryLength + TimeSpan.FromSeconds(5);
+
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardModel _model;
     private readonly IRelayBoard _board;
@@ -149,7 +155,7 @@ public sealed class SetupHandler
     /// <summary>
     /// "Try": turns the relay on for <see cref="TryLength"/>, so the person can hear which one it is, through
     /// <see cref="RelayControl"/> (so a relay in a group is refused, and both steps are logged). Returns once it is
-    /// on; it is turned off again even if the page is closed. Its auto-off is set to the same moment, so
+    /// on; it is turned off again even if the page is closed. Its auto-off is set a little later, so
     /// <see cref="AutoOffService"/> turns it off should the app stop or the board drop before that. Throws
     /// <see cref="BoardNotConnectedException"/> without a board, and <see cref="RelayInGroupException"/> for a relay in
     /// a group.
@@ -157,14 +163,13 @@ public sealed class SetupHandler
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
         await _control.TurnOnAsync(relayId, userEmail, cancellationToken);
-        await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
-        {
-            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == relayId, cancellationToken);
-            runtime.AutoOffAtUtc = _clock.UtcNow + TryLength;
-            await db.SaveChangesAsync(cancellationToken);
-        }
 
+        // ON has gone out: the turn-off starts now, whatever happens to the save below.
         _ = TurnOffLaterAsync(relayId, userEmail);
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == relayId, cancellationToken);
+        runtime.AutoOffAtUtc = _clock.UtcNow + TryAutoOffAfter;
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task TurnOffLaterAsync(int relayId, string userEmail)
@@ -176,7 +181,7 @@ public sealed class SetupHandler
         }
         catch (Exception ex)
         {
-            // Not switched off here: its auto-off, set to the same moment, ends it at the next check.
+            // Not switched off here: its auto-off, set a little later, ends it at the next check.
             _logger.TryNotEnded(ex, relayId);
         }
     }

@@ -163,7 +163,7 @@
                     <span class="dot" aria-hidden="true"></span>
                     <span class="status-text">
                         <strong>Board online</strong>
-                        <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Connection.Endpoint@(_checkedAt is { } at ? $" · checked {at:HH:mm:ss}" : "")</span>
+                        <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Connection.Endpoint@(_checkedAt is { } at ? $" · checked {at.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}" : "")</span>
                     </span>
                     <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
                 </div>
