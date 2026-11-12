@@ -288,7 +288,7 @@ public sealed class Vm204ClientTests
     }
 
     [Fact]
-    public async Task Should_LoseABoardThatNeverAnswers_WhileCommandsKeepComing()
+    public async Task Should_LoseABoardThatNeverAnswers_AfterThreeRequestsInARow()
     {
         var time = new ManualTimeProvider();
         await using var board = ScriptedBoard.Start();
@@ -296,15 +296,22 @@ public sealed class Vm204ClientTests
         await WaitUntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
         board.HangAll = true;
 
-        for (var command = 1; command <= 3; command++)
-        {
-            Assert.True(run.Client.State.IsConnected);
-            var sent = run.Client.TurnOnAsync(0b0001, Cancel);
-            var expected = command;
-            await WaitUntilAsync(() => board.Hanging == expected && time.PendingTimers == 2);
-            time.Advance(Vm204Client.RequestTimeout);
-            await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
-        }
+        // A command without an answer (1), and the status read it brings at once, without an answer too (2).
+        var first = run.Client.TurnOnAsync(0b0001, Cancel);
+        await WaitUntilAsync(() => board.Hanging == 1 && time.PendingTimers == 2);
+        time.Advance(Vm204Client.RequestTimeout);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => first);
+        await WaitUntilAsync(() => board.Hanging == 2 && time.PendingTimers == 1);
+        Assert.StartsWith(Vm204Api.StatusPath, board.Targets[^1], StringComparison.Ordinal);
+        time.Advance(Vm204Client.RequestTimeout);
+        await WaitUntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && time.PendingTimers == 1);
+        Assert.True(run.Client.State.IsConnected);
+
+        // The next command is the third in a row.
+        var third = run.Client.TurnOnAsync(0b0001, Cancel);
+        await WaitUntilAsync(() => board.Hanging == 3 && time.PendingTimers == 2);
+        time.Advance(Vm204Client.RequestTimeout);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => third);
 
         Assert.False(run.Client.State.IsConnected);
         Assert.Contains(run.Traces, t => t.Text == "Connection lost: The VM204 did not answer within 5 s." && t.IsError);

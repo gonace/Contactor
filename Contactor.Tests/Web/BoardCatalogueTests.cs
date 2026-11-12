@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
+using Contactor.Boards.Vm208;
 using Contactor.Web.Features.Boards;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,12 +42,34 @@ public sealed class BoardCatalogueTests
 
     [Theory]
     [InlineData("vm208")]
+    [InlineData("VM208 ")]
+    public void Should_RegisterTheVm208_WhenChosen(string type)
+    {
+        using var services = Build(type);
+
+        Assert.Same(Vm208Model.Model, services.GetRequiredService<BoardModel>());
+        Assert.IsType<Vm208Board>(services.GetRequiredService<IRelayBoard>());
+        Assert.IsType<Vm208Connection>(services.GetRequiredService<IBoardConnection>());
+        Assert.IsType<Vm208Traffic>(services.GetRequiredService<IBoardTraffic>());
+    }
+
+    [Fact]
+    public void Should_BuildTheVm208_WithoutAnAddress()
+    {
+        using var services = Build("vm208", vm208Host: "");
+
+        Assert.False(services.GetRequiredService<IBoardConnection>().Endpoint.HasHost);
+        Assert.Equal("", services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Vm208Options>>().Value.Host);
+    }
+
+    [Theory]
+    [InlineData("vm209")]
     [InlineData("")]
     public void Should_RefuseToStart_WithABoardItDoesNotKnow(string type)
     {
         var error = Assert.Throws<InvalidOperationException>(() => Build(type));
 
-        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201, vm204.", error.Message);
+        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201, vm204, vm208.", error.Message);
     }
 
     [Fact]
@@ -59,10 +82,10 @@ public sealed class BoardCatalogueTests
         Assert.NotNull(BoardCatalogue.Find(BoardCatalogue.DefaultType));
     }
 
-    private static ServiceProvider Build(string? type)
+    private static ServiceProvider Build(string? type, string vm208Host = "127.0.0.1")
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1", ["Vm208:Host"] = vm208Host })
             .Build();
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
