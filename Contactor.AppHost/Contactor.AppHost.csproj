@@ -1,8 +1,10 @@
-<!-- 13.6.5 fixes GHSA-f7vh-h5g3-7jrh. 13.6.x timed out at startup on Windows before
-     (https://github.com/microsoft/aspire/issues/20773); if it still does, say so in that issue rather than going back to
-     a vulnerable version. The SDK brings Aspire.Hosting.AppHost in the same version: raise them together, with any
-     Aspire.Hosting.* package added later. -->
-<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+<!-- Pinned to 13.5.4 on purpose: later releases hang at startup on Windows. 13.5.4 has GHSA-f7vh-h5g3-7jrh (fixed in
+     13.6.5): the dashboard's login cookie can reach a container the developer opens from the dashboard. This AppHost runs
+     no containers, only our own projects, and it is for local development only, so the advisory is suppressed here
+     (NuGetAuditSuppress below). Raise it once a release starts on Windows, and drop the suppression with it. The SDK
+     brings Aspire.Hosting.AppHost in the same version: raise them together, with any Aspire.Hosting.* package added
+     later. -->
+<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -12,6 +14,11 @@
     <!-- ASPIRE010 warns that the CLI bundle is off; that is on purpose, see above. -->
     <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Only this advisory, only here; see the top of this file. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-f7vh-h5g3-7jrh" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Overrides Aspire's vulnerable MessagePack; see Directory.Packages.props. -->

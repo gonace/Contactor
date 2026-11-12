@@ -36,7 +36,7 @@ Phone ──HTTPS──▶ <your hostname>: Cloudflare Access (e-mail OTP) ─�
 - .NET 10 (LTS), C#, Blazor Server (interactive server rendering), EF Core + `Microsoft.EntityFrameworkCore.Sqlite`
 - No JavaScript framework. No external CSS framework; one small stylesheet of our own, following the design tokens below.
 - Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi.
-- Local development with Aspire 13.6.5 (13.6.5 fixes GHSA-f7vh-h5g3-7jrh; earlier 13.6 releases hung at startup on Windows, aspire#20773). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the web app against it.
+- Local development with Aspire 13.5.4, pinned on purpose: later releases hang at startup on Windows. Its advisory GHSA-f7vh-h5g3-7jrh (the dashboard's cookie reaching a container opened from it) is suppressed in the AppHost only, which runs no containers; raise the version once a release starts on Windows. The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the web app against it.
 
 No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Vm201/`, `Web/` …). Don't create more test projects.
 
