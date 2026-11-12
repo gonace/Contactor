@@ -73,6 +73,8 @@ scripts/
   images-publish.sh         # Publish and sign the image from your computer
   images-sign.sh            # cosign, by digest
 DEPLOY.md                   # Installation steps
+LICENSE                     # MIT
+THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence texts in licenses/ (in the image: /licenses)
 .github/workflows/build.yml # build + test (pull requests, merges to main, by hand)
 .github/workflows/images.yml # publish and sign the image (by hand)
 ```

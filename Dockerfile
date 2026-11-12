@@ -30,6 +30,9 @@ LABEL org.opencontainers.image.title="Contactor" \
       org.opencontainers.image.source="https://github.com/gonace/Contactor"
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 COPY --from=build /app /app
+# Our licence and the others' (cloudflared's Apache 2.0 asks for its text to go with it).
+COPY LICENSE THIRD-PARTY-NOTICES.md /licenses/
+COPY licenses/ /licenses/
 # Everything the app keeps: the database, its backups and ASP.NET Core's keys. Owned by the image's user (1654), so a
 # new named volume is too.
 COPY --from=build --chown=1654:1654 /data /data
