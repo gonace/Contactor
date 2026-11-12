@@ -32,20 +32,21 @@ public sealed class ExpectedChangesTests
         Assert.Null(_expected.TakeFailedOn(4, start + ExpectedChanges.Lifetime));
     }
 
-    // A note taken by a status whose recording then failed is put back as it was, expiry included.
+    // A note taken by a status whose recording then failed is put back until the next status can come: a VM201's
+    // keep-alive 15 s later still credits it, and it expires a while after that.
     [Fact]
-    public void Should_PutBackAFailedOn_AsItWas()
+    public void Should_PutBackAFailedOn_UntilTheNextStatusCanCome()
     {
         var start = _time.GetUtcNow().UtcDateTime;
         _expected.RememberFailedOn(3, "jane@example.com");
-        var note = _expected.TakeFailedOn(3, start)!;
+        var note = _expected.TakeFailedOn(3, start.AddSeconds(1))!;
 
-        _time.Now += TimeSpan.FromSeconds(4);
-        _expected.RememberFailedOn(note);
+        _time.Now += TimeSpan.FromSeconds(1);
+        _expected.PutBackFailedOn(note);
 
-        Assert.Equal(note, _expected.TakeFailedOn(3, start.AddSeconds(4)));
-        _expected.RememberFailedOn(note);
-        Assert.Null(_expected.TakeFailedOn(3, start + ExpectedChanges.Lifetime));
+        Assert.Equal("jane@example.com", _expected.TakeFailedOn(3, start.AddSeconds(16))?.Actor);
+        _expected.PutBackFailedOn(note);
+        Assert.Null(_expected.TakeFailedOn(3, start.AddSeconds(1) + ExpectedChanges.RetryLifetime));
     }
 
     // Pending until the board shows it or it expires, and only in its own direction.

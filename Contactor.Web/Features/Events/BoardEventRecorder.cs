@@ -176,7 +176,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
             foreach (var note in _consumedFailures)
             {
-                _expected.RememberFailedOn(note);
+                _expected.PutBackFailedOn(note);
             }
 
             throw;

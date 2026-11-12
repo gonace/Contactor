@@ -13,6 +13,12 @@ public sealed class ExpectedChanges
 {
     public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// How long a failed ON put back after a failed save waits for the next status: long enough for a board that only
+    /// reports at its next change or keep-alive (the VM201 every 15 s).
+    /// </summary>
+    public static readonly TimeSpan RetryLifetime = TimeSpan.FromMinutes(1);
+
     // Only a safety limit, e.g. for commands while no status is handled at all: far more than the app ever has waiting.
     private const int MaxExpected = 256;
 
@@ -74,13 +80,22 @@ public sealed class ExpectedChanges
     /// </summary>
     public void RememberFailedOn(int relayId, string actor)
     {
-        RememberFailedOn(new FailedOn(relayId, actor, _clock.UtcNow + Lifetime));
+        Add(new FailedOn(relayId, actor, _clock.UtcNow + Lifetime));
     }
 
-    /// <summary>Puts back a note <see cref="TakeFailedOn"/> took, as it was, when recording the change failed.</summary>
-    public void RememberFailedOn(FailedOn note)
+    /// <summary>
+    /// Puts back a note <see cref="TakeFailedOn"/> took, when recording the change failed. The change is recorded
+    /// again only with the next status, so the note lasts at least <see cref="RetryLifetime"/> from now.
+    /// </summary>
+    public void PutBackFailedOn(FailedOn note)
     {
         ArgumentNullException.ThrowIfNull(note);
+        var retryUntil = _clock.UtcNow + RetryLifetime;
+        Add(note.ExpiresUtc > retryUntil ? note : note with { ExpiresUtc = retryUntil });
+    }
+
+    private void Add(FailedOn note)
+    {
         lock (_lock)
         {
             _failedOn.Add(note);
