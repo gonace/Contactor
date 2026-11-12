@@ -83,7 +83,7 @@ simulator's page, linked from the dashboard, shows the board's relays and every 
 board's own buttons would. Stop and start the simulator in the dashboard to test a lost connection to the board. The
 tests use the same simulator, so no hardware is needed.
 
-`CLAUDE.md` describes the architecture, the board's protocol and the rules the app follows.
+`AGENTS.md` describes the architecture, the board's protocol and the rules the app follows.
 
 ### Screenshots
 

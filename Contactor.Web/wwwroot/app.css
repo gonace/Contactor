@@ -5,7 +5,7 @@
 @font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/ibm-plex-sans-latin-700-normal.woff2") format("woff2"); }
 @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
 
-/* Design tokens from CLAUDE.md. */
+/* Design tokens from AGENTS.md. */
 :root {
     --bg: #F5F2EC;
     --card: #FFFFFF;
@@ -184,7 +184,7 @@ a {
     border: 0;
 }
 
-/* Wider screens (CLAUDE.md, User interface): a tablet from 768 px, a desktop from 1024 px. On a desktop the tab bar
+/* Wider screens (AGENTS.md, User interface): a tablet from 768 px, a desktop from 1024 px. On a desktop the tab bar
    becomes a side menu (TabBar.razor.css), so the pages that have one make room for it and start right beside it,
    rather than centred in the space that is left. */
 @media (min-width: 1024px) {
