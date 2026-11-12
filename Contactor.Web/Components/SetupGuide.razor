@@ -16,6 +16,7 @@
 @inject BoardModel Model
 @inject CurrentUser CurrentUser
 @inject TimeProvider Time
+@inject LocalClock Clock
 @inject NavigationManager Navigation
 @inject ILogger<SetupGuide> Log
 
@@ -149,18 +150,21 @@
                     <span class="status-text"><strong>Looking for the board</strong><span>at @Connection.Endpoint</span></span>
                 </div>
             }
-            else if (Board.State.IsConnected && Connection.Endpoint.HasHost)
-            {
-                <div class="board-status" role="status">
-                    <span class="dot" aria-hidden="true"></span>
-                    <span class="status-text"><strong>Board online</strong><span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Connection.Endpoint</span></span>
-                    <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
-                </div>
-            }
             else if (_notFound)
             {
                 <div class="not-found" role="alert">
                     No answer from @Connection.Endpoint. Check that the board has power and a network cable, and that the address is right.
+                </div>
+            }
+            else if (Board.State.IsConnected && Connection.Endpoint.HasHost)
+            {
+                <div class="board-status" role="status">
+                    <span class="dot" aria-hidden="true"></span>
+                    <span class="status-text">
+                        <strong>Board online</strong>
+                        <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Connection.Endpoint@(_checkedAt is { } at ? $" · checked {at:HH:mm:ss}" : "")</span>
+                    </span>
+                    <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
                 </div>
             }
         }
@@ -282,6 +286,9 @@
 
     // Whether the last save changed the address or login, so a connection still open is to the old ones.
     private bool _moving;
+
+    // When the last check found the board, for "checked 14:02:05".
+    private DateTime? _checkedAt;
 
     /// <summary>
     /// The step to open on: the guide puts it in the address when the app restarts for another model of board, so it
@@ -464,7 +471,11 @@
 
             _checking = true;
             StateHasChanged();
-            var found = await contact.WaitAsync(_moving, BoardContact.Timeout, Time, CancellationToken.None);
+            // "Check again" with nothing changed asks the board itself, so the check is a real one.
+            var found = !goOn && !_moving && Board.State.IsConnected
+                ? await BoardContact.AskAsync(Board, BoardContact.Timeout, Time, CancellationToken.None)
+                : await contact.WaitAsync(_moving, BoardContact.Timeout, Time, CancellationToken.None);
+            _checkedAt = found ? Clock.Now : null;
             _checking = false;
             _notFound = !found;
             if (found && goOn)

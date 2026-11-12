@@ -38,6 +38,56 @@ public sealed class BoardContact : IDisposable
         return !connection.Endpoint.Equals(endpoint) || !connection.Login.Equals(login);
     }
 
+    /// <summary>
+    /// "Check again": asks the board for its status and returns true once it answers, false if it doesn't within
+    /// <paramref name="timeout"/> or the app has no contact with it. An answer is a status after the request, or a
+    /// later <see cref="BoardState.LastContactUtc"/> (a polled board reports only changes).
+    /// </summary>
+    public static async Task<bool> AskAsync(IRelayBoard board, TimeSpan timeout, TimeProvider time, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(board);
+        ArgumentNullException.ThrowIfNull(time);
+        var before = board.State.LastContactUtc;
+        var answered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnChanged(object? sender, BoardState state)
+        {
+            if (state.IsConnected)
+            {
+                answered.TrySetResult();
+            }
+        }
+
+        board.StateChanged += OnChanged;
+        try
+        {
+            await board.RefreshAsync(cancellationToken);
+            var deadline = time.GetUtcNow() + timeout;
+            while (true)
+            {
+                var state = board.State;
+                if (answered.Task.IsCompleted || (state.IsConnected && state.LastContactUtc > before))
+                {
+                    return true;
+                }
+
+                if (time.GetUtcNow() >= deadline)
+                {
+                    return false;
+                }
+
+                await Task.WhenAny(answered.Task, Task.Delay(TimeSpan.FromMilliseconds(100), time, cancellationToken));
+            }
+        }
+        catch (BoardNotConnectedException)
+        {
+            return false;
+        }
+        finally
+        {
+            board.StateChanged -= OnChanged;
+        }
+    }
+
     /// <summary>Starts watching the board's connection.</summary>
     public static BoardContact Watch(IRelayBoard board)
     {

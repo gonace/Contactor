@@ -418,6 +418,24 @@ public sealed class SetupTests
     }
 
     [Fact]
+    public async Task Should_AskTheBoard_OnCheckAgain()
+    {
+        var board = new FakeRelayBoard();
+
+        Assert.True(await BoardContact.AskAsync(board, WaitTimeout, TimeProvider.System, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_SayNotFound_WhenTheBoardDoesNotAnswerTheCheck()
+    {
+        var silent = new FakeRelayBoard { IgnoreRefresh = true };
+        var gone = new FakeRelayBoard(connected: false);
+
+        Assert.False(await BoardContact.AskAsync(silent, TimeSpan.FromMilliseconds(300), TimeProvider.System, Cancel));
+        Assert.False(await BoardContact.AskAsync(gone, WaitTimeout, TimeProvider.System, Cancel));
+    }
+
+    [Fact]
     public async Task Should_FindTheBoard_WhenAlreadyConnected()
     {
         var board = new FakeRelayBoard();
