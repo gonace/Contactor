@@ -425,6 +425,87 @@ public sealed class SetupTests
         Assert.Equal("Fan heater", (await rig.Setup.RelaysAsync(Cancel))[1].GroupName);
     }
 
+    // The board switched the relay on although "Try"'s ON was reported as failed: the ON is credited to the person, and
+    // the relay is turned off after the try, not left on for its full auto-off.
+    [Fact]
+    public async Task Should_TurnATriedRelayOff_WhenItsOnFailedButCameOn()
+    {
+        await using var rig = await Rig.StartAsync(startRecorder: true);
+        rig.Board.SwitchSilentlyThenFail = true;
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+        await rig.Board.RefreshAsync(Cancel);
+
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && OffLogged(rig, JohnEmail));
+    }
+
+    // The board's status showing the relay on comes after the try's 2 s, but while a failed ON can still be credited:
+    // it is turned off all the same.
+    [Fact]
+    public async Task Should_TurnATriedRelayOff_WhenItCameOnLate()
+    {
+        await using var rig = await Rig.StartAsync(startRecorder: true);
+        rig.Board.SetConnected(false);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+        rig.Board.SetConnected(true);
+
+        // Past the try's 2 s, within the 5 s a failed ON can be credited. Real time: the handler's waits run on it.
+        await Task.Delay(TimeSpan.FromSeconds(3), Cancel);
+        rig.Board.SetRelay(3, on: true);
+
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && OffLogged(rig, JohnEmail));
+    }
+
+    // A relay that came on for another reason during the try (here a schedule) isn't the try's: it is left on.
+    [Fact]
+    public async Task Should_LeaveARelayOn_ThatCameOnForAnotherReason()
+    {
+        var logs = new LogCollector();
+        await using var rig = await Rig.StartAsync(logs, startRecorder: true);
+        rig.Board.SetConnected(false);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+        rig.Board.SetConnected(true);
+
+        rig.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(3), on: true);
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
+            (runtime.OnSinceUtc, runtime.TurnedOnBy) = (Now, EventActors.Schedule);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        rig.Board.SetRelay(3, on: true);
+
+        await WaitUntilAsync(() => logs.Contains("\"Try\" of relay 3 failed and the relay didn't come on for it"));
+        Assert.True(rig.Board.State.IsOn(3));
+        Assert.False(OffLogged(rig, JohnEmail));
+    }
+
+    private const string JohnEmail = "john@example.com";
+
+    private static bool OffLogged(Rig rig, string actor)
+    {
+        using var db = rig.Database.Factory.CreateDbContext();
+        return db.EventLog.Any(e => e.RelayId == 3 && e.Action == EventActions.Off && e.Actor == actor);
+    }
+
+    // An ON that never reached the board leaves nothing to turn off: no OFF goes out and nothing is logged.
+    [Fact]
+    public async Task Should_SendNoOff_WhenATriedOnFailedAndNothingCameOn()
+    {
+        var logs = new LogCollector();
+        await using var rig = await Rig.StartAsync(logs, startRecorder: true);
+        rig.Board.SetConnected(false);
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+        rig.Board.SetConnected(true);
+
+        await WaitUntilAsync(() => logs.Contains("\"Try\" of relay 3 failed and the relay didn't come on for it"));
+        Assert.False(rig.Board.State.IsOn(3));
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.DoesNotContain(await db.EventLog.ToListAsync(Cancel), e => e.RelayId == 3);
+    }
+
     [Fact]
     public async Task Should_NotTry_WithoutTheBoard()
     {
@@ -594,11 +675,16 @@ public sealed class SetupTests
 
         public SetupHandler Setup => Database.Services.GetRequiredService<SetupHandler>();
 
-        public static async Task<Rig> StartAsync()
+        public static async Task<Rig> StartAsync(ILoggerProvider? logs = null, bool startRecorder = false)
         {
             var board = new FakeRelayBoard();
             var database = TestDatabase.Create((services, configuration) =>
             {
+                if (logs is not null)
+                {
+                    services.AddSingleton(logs);
+                }
+
                 services.AddLocalClock(configuration);
                 services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
                 services.AddSingleton(Vm201Model.Model);
@@ -609,12 +695,71 @@ public sealed class SetupTests
                 services.AddSetup(configuration);
             });
             await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
-            return new Rig(database, board);
+            var rig = new Rig(database, board);
+            if (startRecorder)
+            {
+                // Credits a failed ON to the person when the relay comes on all the same.
+                rig._recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+                await rig._recorder.StartAsync(Cancel);
+            }
+
+            return rig;
         }
 
-        public ValueTask DisposeAsync()
+        private BoardEventRecorder? _recorder;
+
+        public async ValueTask DisposeAsync()
         {
-            return Database.DisposeAsync();
+            if (_recorder is not null)
+            {
+                await _recorder.StopAsync(CancellationToken.None);
+            }
+
+            await Database.DisposeAsync();
+        }
+    }
+
+    /// <summary>Keeps every log message, so a test can wait for one.</summary>
+    private sealed class LogCollector : ILoggerProvider, ILogger
+    {
+        private readonly Lock _lock = new();
+        private readonly List<string> _messages = [];
+
+        public bool Contains(string text)
+        {
+            lock (_lock)
+            {
+                return _messages.Exists(m => m.Contains(text, StringComparison.Ordinal));
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return this;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+            lock (_lock)
+            {
+                _messages.Add(formatter(state, exception));
+            }
+        }
+
+        public void Dispose()
+        {
         }
     }
 }
