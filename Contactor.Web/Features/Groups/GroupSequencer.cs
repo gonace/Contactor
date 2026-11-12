@@ -349,7 +349,7 @@ public sealed partial class GroupSequencer : BackgroundService
                 }
                 catch
                 {
-                    // A failed command's change isn't the app's: whatever the board did shows as an external one.
+                    // A failed or cancelled command's change isn't the app's: whatever the board did shows as an external one.
                     _expected.Forget(all.Off, on: false);
                     throw;
                 }
@@ -364,7 +364,7 @@ public sealed partial class GroupSequencer : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    // A failed command's change isn't the app's: whatever the board did shows as an external one.
+                    // A failed or cancelled command's change isn't the app's: whatever the board did shows as an external one.
                     _expected.Forget(all.On, on: true);
                     if (ex is BoardNotConnectedException && !all.Off.IsEmpty)
                     {

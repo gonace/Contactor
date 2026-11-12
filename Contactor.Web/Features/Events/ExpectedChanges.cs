@@ -47,7 +47,11 @@ public sealed class ExpectedChanges
     /// Drops what <see cref="Expect"/> added for a command that then failed (refused, unreadable, no answer). The
     /// board may still have switched; the status that shows it is then an external change, logged as one, instead of
     /// using the expectation up as the app's own while the app recorded nothing. Drops the newest matching
-    /// expectation for each relay, the one the failed command added.
+    /// expectation for each relay, the one the failed command added. Call it first thing when the command throws: it
+    /// must run before the status from the read straight after a failed command (a polled board reads at once) reaches
+    /// <see cref="BoardEventRecorder"/>, or that status uses the expectation up silently and the change is lost
+    /// instead of logged as external. It does in practice: the read starts only once the command lets go of the board
+    /// and then goes to the board and back, while the exception reaches the caller at once.
     /// </summary>
     public void Forget(ChannelMask mask, bool on)
     {
