@@ -261,7 +261,7 @@ public sealed class BoardEventRecorderTests
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
         setup.Board.SetConnected(true);
-        await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.Count > 0);
         Assert.Empty(InputEvents(setup.Database));
         await setup.ExecuteAsync("DROP TRIGGER fail_once;");
         setup.Board.SetInput(2, on: true);
@@ -269,6 +269,25 @@ public sealed class BoardEventRecorderTests
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
         Assert.Contains(InputEvents(setup.Database), e => e is { InputId: 1, Details: """{"on":true,"noticed":true}""" });
         Assert.Null(setup.State().LongGapEndedUtc);
+    }
+
+    // The app's own change, matched by a status whose save fails, stays the app's on the next try: it isn't logged as
+    // external, and the relay keeps its runtime (e.g. its auto-off).
+    [Fact]
+    public async Task Should_ExpectTheAppsOwnChangeAgain_WhenTheSaveFails()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await setup.StartAsync();
+        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(Contactor.Boards.ChannelMask.Of(1), on: true);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+
+        setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.Count > 0);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+        setup.Board.SetInput(2, on: true);
+
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
+        Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
     }
 
     private static List<EventLogEntry> InputEvents(TestDatabase database)
@@ -280,8 +299,10 @@ public sealed class BoardEventRecorderTests
     {
         var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 2);
         var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));
+        var errors = new ErrorCounter();
         var database = TestDatabase.Create((services, configuration) =>
         {
+            services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(errors);
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(time);
             services.AddSingleton<Contactor.Boards.IRelayBoard>(board);
@@ -296,19 +317,59 @@ public sealed class BoardEventRecorderTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        return new InputRig(board, database, time);
+        return new InputRig(board, database, time, errors);
+    }
+
+    /// <summary>Counts the errors logged, so a test can wait for a failure the code under test caught.</summary>
+    private sealed class ErrorCounter : Microsoft.Extensions.Logging.ILoggerProvider, Microsoft.Extensions.Logging.ILogger
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName)
+        {
+            return this;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel)
+        {
+            return logLevel >= Microsoft.Extensions.Logging.LogLevel.Error;
+        }
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+            {
+                Interlocked.Increment(ref _count);
+            }
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class InputRig : IAsyncDisposable
     {
         private BoardEventRecorder? _recorder;
 
-        public InputRig(Contactor.Tests.Boards.FakeRelayBoard board, TestDatabase database, FixedTimeProvider time)
+        public InputRig(Contactor.Tests.Boards.FakeRelayBoard board, TestDatabase database, FixedTimeProvider time, ErrorCounter errors)
         {
             Board = board;
             Database = database;
             Time = time;
+            Errors = errors;
         }
+
+        /// <summary>How many errors were logged, e.g. a failed save the recorder caught.</summary>
+        public ErrorCounter Errors { get; }
 
         public FixedTimeProvider Time { get; }
 

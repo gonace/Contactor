@@ -75,6 +75,22 @@ internal sealed class FakeRelayBoard : IRelayBoard
         return Task.CompletedTask;
     }
 
+    /// <summary>A relay and an input change together, and the board reports both in one status.</summary>
+    public void SetRelayAndInput(int relay, int input, bool on)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with
+            {
+                Relays = on ? _state.Relays | ChannelMask.Of(relay) : _state.Relays.Except(ChannelMask.Of(relay)),
+                Inputs = on ? _state.Inputs | ChannelMask.Of(input) : _state.Inputs.Except(ChannelMask.Of(input)),
+            };
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
     /// <summary>An input changes at the board, and the board reports it.</summary>
     public void SetInput(int input, bool on)
     {

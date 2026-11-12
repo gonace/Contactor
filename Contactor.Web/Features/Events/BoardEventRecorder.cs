@@ -44,6 +44,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     // Whether the app has had contact since the last gap, and when it last saved that it had.
     private bool _watching;
+
+    // The app's own changes the status in hand matched, to expect again if recording it fails.
+    private readonly List<(int RelayId, bool On)> _consumed = [];
     private DateTime? _contactSavedUtc;
     private bool _lossLogged;
 
@@ -139,9 +142,31 @@ public sealed partial class BoardEventRecorder : BackgroundService
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var now = _clock.UtcNow;
 
-        // What this status changes, kept so a failed save can put it all back and the next status starts over.
+        // What this status changes, kept so a failure on the way (a read or the save) puts it all back and the next
+        // status starts over: the changes, a gap that just ended and a restored connection are recorded then.
         var before = (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc);
+        _consumed.Clear();
+        try
+        {
+            await RecordAsync(db, state, now, cancellationToken);
+        }
+        catch
+        {
+            (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc) = before;
 
+            // The app's own changes this status matched are expected again, or the next try would call them external
+            // and clear their runtime, e.g. a relay's auto-off.
+            foreach (var (relayId, on) in _consumed)
+            {
+                _expected.Expect(ChannelMask.Of(relayId), on);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task RecordAsync(ContactorDbContext db, BoardState state, DateTime now, CancellationToken cancellationToken)
+    {
         // Contact again, after the start or a lost contact: was the gap long enough that the inputs' times can't be trusted?
         var afterGap = !_watching;
         if (afterGap)
@@ -183,18 +208,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         _known = state;
         if (db.ChangeTracker.HasChanges())
         {
-            try
-            {
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            catch
-            {
-                // Nothing was saved: the next status starts over from the same point, so the changes, a gap that just
-                // ended and a restored connection are recorded then.
-                (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc) = before;
-                throw;
-            }
-
+            await db.SaveChangesAsync(cancellationToken);
             _changes.Notify();
         }
     }
@@ -309,8 +323,14 @@ public sealed partial class BoardEventRecorder : BackgroundService
         {
             var wasOn = before.Contains(relayId);
             var isOn = after.Contains(relayId);
-            if (wasOn == isOn || _expected.TryConsume(relayId, isOn, receivedUtc))
+            if (wasOn == isOn)
             {
+                continue;
+            }
+
+            if (_expected.TryConsume(relayId, isOn, receivedUtc))
+            {
+                _consumed.Add((relayId, isOn));
                 continue;
             }
 
