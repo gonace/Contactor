@@ -152,9 +152,9 @@ public static class InputStatusText
 
     /// <param name="input">The input, with its latest logged change.</param>
     /// <param name="on">What the board reads now: on is closed.</param>
+    /// <param name="connected">Whether the app has contact with the board now.</param>
     /// <param name="nowLocal">Now, in local time.</param>
     /// <param name="toLocal">Turns a UTC time into local time.</param>
-    /// <param name="connected">Whether the app has contact with the board now.</param>
     public static InputStatus For(InputView input, bool on, bool connected, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
     {
         ArgumentNullException.ThrowIfNull(input);
