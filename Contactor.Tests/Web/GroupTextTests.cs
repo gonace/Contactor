@@ -107,6 +107,19 @@ public sealed class GroupTextTests
     }
 
     [Fact]
+    public void Should_CountDownOnTheRelayThatIsNext_OnTheGroupScreen()
+    {
+        var starting = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
+        var stopping = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(299) } };
+
+        Assert.Equal("On", GroupStatusText.MemberNote(starting, State(1), 0, on: true, null, Now));
+        Assert.Equal("Starts in 3 s", GroupStatusText.MemberNote(starting, State(1), 1, on: false, null, Now));
+        Assert.Equal("Keeps running for 4:59", GroupStatusText.MemberNote(stopping, State(1), 0, on: true, null, Now));
+        Assert.Equal("Off", GroupStatusText.MemberNote(stopping, State(1), 1, on: false, null, Now));
+        Assert.Equal("Needs Fan to be on", GroupStatusText.MemberNote(FanHeater, State(), 1, on: false, "Fan", Now));
+    }
+
+    [Fact]
     public void Should_SayHowLongTheRunOnLasts()
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };

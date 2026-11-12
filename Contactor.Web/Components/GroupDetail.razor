@@ -415,24 +415,7 @@
 
     private string NoteFor(int index, bool on, EditMember? blockedBy)
     {
-        var runtime = _group!.Runtime;
-        var level = GroupPlanner.Level(_group.Infos, State);
-        if (on && runtime.Phase == GroupPhases.Stopping && index == level - 1 && runtime.NextStepAtUtc is { } next && next > Clock.UtcNow)
-        {
-            return $"Keeps running for {GroupStatusText.Remaining(next - Clock.UtcNow)}";
-        }
-
-        if (on)
-        {
-            return "On";
-        }
-
-        if (runtime.Phase == GroupPhases.Starting && index == level && runtime.NextStepAtUtc is { } start && start > Clock.UtcNow)
-        {
-            return $"Starts in {GroupStatusText.Remaining(start - Clock.UtcNow)}";
-        }
-
-        return blockedBy is not null ? $"Needs {blockedBy.RoleName} to be on" : "Off";
+        return GroupStatusText.MemberNote(_group!, State, index, on, blockedBy?.RoleName, Clock.UtcNow);
     }
 
     private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)

@@ -136,6 +136,34 @@ public static class GroupStatusText
     }
 
     /// <summary>
+    /// The state of the relay at <paramref name="index"/> (from 0, in start order) on the Group screen: "Keeps
+    /// running for 4:59", "On", "Starts in 3 s", "Needs Fan to be on" or "Off".
+    /// </summary>
+    public static string MemberNote(GroupView group, BoardState state, int index, bool on, string? blockedBy, DateTime nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        ArgumentNullException.ThrowIfNull(state);
+        var runtime = group.Runtime;
+        var level = GroupPlanner.Level(group.Infos, state);
+        if (on && runtime.Phase == GroupPhases.Stopping && index == level - 1 && runtime.NextStepAtUtc is { } next && next > nowUtc)
+        {
+            return $"Keeps running for {Remaining(next - nowUtc)}";
+        }
+
+        if (on)
+        {
+            return "On";
+        }
+
+        if (runtime.Phase == GroupPhases.Starting && index == level && runtime.NextStepAtUtc is { } start && start > nowUtc)
+        {
+            return $"Starts in {Remaining(start - nowUtc)}";
+        }
+
+        return blockedBy is not null ? $"Needs {blockedBy} to be on" : "Off";
+    }
+
+    /// <summary>
     /// A countdown, shown every second: "4:59", or "42 s" under a minute. Rounded up to a whole second, so it never
     /// reads 0.
     /// </summary>
