@@ -538,6 +538,7 @@ See `DEPLOY.md` for the steps.
 - **Scope is locked at the approved plan.** Anything outside it becomes its own issue, never more work in the same pull request. Only the user widens the scope.
 - On your own working branch, commit and push freely, and keep its pull request up to date. No permission is needed for that.
 - Never commit or push to `main`, and never merge a pull request, without explicit permission from the user. Permission to merge is explicit only when the user tells you to merge and names the pull requests. If it is unclear whether the user will merge themselves, ask.
+- Work in small, reviewable chunks: one branch and one pull request per chunk.
 - Every piece of work has a GitHub issue; create one first if it's missing. When work starts, open a **draft** pull request with "Fixes #N"; mark it ready for review when it's done. Always write "Issue #N" or "PR #N" (in chat, issues, pull requests and commits), never "#N" or a number alone, so issues and pull requests are never mixed up.
 - Pull requests get a clear title and a **short description** that follows `.github/pull_request_template.md`. Not an essay. Write pull request text, issues and comments by the rules in `.agents/writing.md`.
 
