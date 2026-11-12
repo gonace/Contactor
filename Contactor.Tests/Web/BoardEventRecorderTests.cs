@@ -121,6 +121,43 @@ public sealed class BoardEventRecorderTests
         Assert.Equal((EventActions.InputChanged, """{"on":true}""", (int?)null, (int?)1), (entry.Action, entry.Details, entry.RelayId, entry.InputId));
     }
 
+    // A new address: the old board's relays say nothing about the new one, so its first status is taken as at start and
+    // nothing is logged as switched outside the app for being different.
+    [Fact]
+    public async Task Should_CompareNoRelaysWithTheOldBoard_AfterANewAddress()
+    {
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: 1);
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddSingleton<IRelayBoard>(board);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            board.SetRelayAndInput(relay: 1, input: 1, on: true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.RelayId == 1) == 1);
+
+            // The address changes and the board there has relay 1 off.
+            board.Forget();
+            board.SetConnected(true);
+            board.SetInput(1, on: false);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.Action == EventActions.InputChanged) >= 2);
+
+            Assert.Single(Events(database), e => e.RelayId == 1);
+        }
+        finally
+        {
+            await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
     // A board with several inputs, e.g. the VM204: each change is logged with its input.
     [Fact]
     public async Task Should_LogEveryInput_WithItsNumber()

@@ -144,6 +144,14 @@ public sealed partial class BoardEventRecorder : BackgroundService
     {
         if (!state.IsConnected)
         {
+            // The board's state forgotten: its address changed, and another board may be there. Its first status is
+            // taken as at start, not compared with the old board's relays, so nothing is logged as switched outside
+            // the app for being different.
+            if (state.LastContactUtc is null)
+            {
+                _known = null;
+            }
+
             // Contact was lost after the last status, the same time the warning on the relay screen shows.
             _disconnectedSinceUtc ??= state.LastContactUtc?.UtcDateTime ?? _clock.UtcNow;
             _watching = false;

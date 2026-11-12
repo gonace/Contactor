@@ -432,6 +432,43 @@ public sealed class BoardPollerTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => run);
     }
 
+    // Another board may be at a new address: the state is forgotten and reported so, and an answer from before that
+    // is still on its way (here a command's) is dropped.
+    [Fact]
+    public async Task Should_ForgetTheState_AndDropAnAnswerFromBefore()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var answer = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var command = poller.RunCommandAsync(
+            _ =>
+            {
+                started.SetResult();
+                return answer.Task;
+            },
+            Cancel);
+        await started.Task;
+
+        poller.Forget();
+        var forgotten = new PolledState<int>(false, 0, null);
+        Assert.Equal(forgotten, poller.State);
+        Assert.Equal(forgotten, board.Changes[^1]);
+
+        answer.SetResult(7);
+        await command;
+        Assert.Equal(forgotten, poller.State);
+        Assert.DoesNotContain(board.Changes, c => c.Reading == 7);
+
+        await stop.CancelAsync();
+        await run;
+    }
+
     // Until the board answered this many polls and the poller waits for the next one.
     private static Task WaitForPollAsync(FakePolledBoard board, ManualTimeProvider time, int reads)
     {

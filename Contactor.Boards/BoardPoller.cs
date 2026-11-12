@@ -69,6 +69,11 @@ public sealed class BoardPoller<TReading> : IDisposable
     // under it, so a command can't slip in between a poll's last failure and the board counting as lost.
     private readonly SemaphoreSlim _gate = new(1, 1);
     private PolledState<TReading> _state = new(false, default, null);
+
+    // Which board the state is from: Forget moves on to the next, so an answer from the one before is dropped. The
+    // state is written, and its change reported, under _stateLock, so a dropped answer can't overtake the reset.
+    private readonly Lock _stateLock = new();
+    private int _generation;
     private TaskCompletionSource _wake = NewWake();
 
     // The current attempt (connect, polls and the wait after it); Restart cancels it.
@@ -141,6 +146,22 @@ public sealed class BoardPoller<TReading> : IDisposable
     }
 
     /// <summary>
+    /// Forgets the board's state, as when the app starts: another board is at a new address, and what the old one
+    /// read says nothing about it. An answer from before still on its way is dropped. Call it before
+    /// <see cref="Restart"/>.
+    /// </summary>
+    public void Forget()
+    {
+        lock (_stateLock)
+        {
+            _generation++;
+            var state = new PolledState<TReading>(false, default, null);
+            Volatile.Write(ref _state, state);
+            _board.OnStateChanged(state);
+        }
+    }
+
+    /// <summary>
     /// Runs a command on the board at once: a poll under way is given up (it doesn't count as failed) and the command
     /// waits only for it to stop, never for the next one. Throws <see cref="BoardNotConnectedException"/> when the
     /// board is not connected, decided under the same lock as the poller's. What the command returns is the board's
@@ -157,6 +178,7 @@ public sealed class BoardPoller<TReading> : IDisposable
             throw new BoardNotConnectedException();
         }
 
+        var generation = Volatile.Read(ref _generation);
         Cancel(ref _poll);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -186,7 +208,7 @@ public sealed class BoardPoller<TReading> : IDisposable
             }
 
             _failures = 0;
-            Apply(reading);
+            Apply(reading, generation);
         }
         finally
         {
@@ -269,6 +291,7 @@ public sealed class BoardPoller<TReading> : IDisposable
     {
         var answered = false;
         var lost = false;
+        var generation = Volatile.Read(ref _generation);
         try
         {
             _board.OnStep(BoardPollStep.Connecting, null);
@@ -304,7 +327,7 @@ public sealed class BoardPoller<TReading> : IDisposable
                     var reading = await _board.ReadAsync(poll.Token).ConfigureAwait(false);
                     _failures = 0;
                     answered = true;
-                    Apply(reading);
+                    Apply(reading, generation);
                 }
                 catch (OperationCanceledException) when (poll.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
@@ -384,15 +407,23 @@ public sealed class BoardPoller<TReading> : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
     }
 
-    // Callers hold _gate.
-    private void Apply(TReading reading)
+    // Callers hold _gate. A reading from a board Forget has moved on from is dropped.
+    private void Apply(TReading reading, int generation)
     {
-        var before = State;
-        var after = new PolledState<TReading>(true, reading, _timeProvider.GetUtcNow());
-        Volatile.Write(ref _state, after);
-        if (!before.IsConnected || before.Reading is null || !_comparer.Equals(before.Reading, reading))
+        lock (_stateLock)
         {
-            _board.OnStateChanged(after);
+            if (generation != _generation)
+            {
+                return;
+            }
+
+            var before = State;
+            var after = new PolledState<TReading>(true, reading, _timeProvider.GetUtcNow());
+            Volatile.Write(ref _state, after);
+            if (!before.IsConnected || before.Reading is null || !_comparer.Equals(before.Reading, reading))
+            {
+                _board.OnStateChanged(after);
+            }
         }
     }
 
@@ -430,12 +461,15 @@ public sealed class BoardPoller<TReading> : IDisposable
     // Callers hold _gate.
     private void SetDisconnected()
     {
-        var state = State;
-        if (state.IsConnected)
+        lock (_stateLock)
         {
-            var after = state with { IsConnected = false };
-            Volatile.Write(ref _state, after);
-            _board.OnStateChanged(after);
+            var state = State;
+            if (state.IsConnected)
+            {
+                var after = state with { IsConnected = false };
+                Volatile.Write(ref _state, after);
+                _board.OnStateChanged(after);
+            }
         }
     }
 
