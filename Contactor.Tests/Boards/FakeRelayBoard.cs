@@ -11,9 +11,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     private readonly Lock _lock = new();
     private BoardState _state;
 
-    public FakeRelayBoard(int relayCount = 8, bool connected = true)
+    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1)
     {
-        Capabilities = new BoardCapabilities(relayCount, InputCount: 1, ReportsChanges: true);
+        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true);
         _state = new BoardState(connected, ChannelMask.None, ChannelMask.None, connected ? DateTimeOffset.UnixEpoch : null);
     }
 
@@ -80,6 +80,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
         StateChanged?.Invoke(this, State);
         return Task.CompletedTask;
+    }
+
+    /// <summary>An input changes at the board, and the board reports it.</summary>
+    public void SetInput(int input, bool on)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with { Inputs = on ? _state.Inputs | ChannelMask.Of(input) : _state.Inputs.Except(ChannelMask.Of(input)) };
+        }
+
+        StateChanged?.Invoke(this, state);
     }
 
     /// <summary>The connection opens or ends, and the board reports it, as a real board's client does.</summary>

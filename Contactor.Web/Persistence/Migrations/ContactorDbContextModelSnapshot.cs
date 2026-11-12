@@ -70,6 +70,9 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Property<int?>("GroupId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("InputId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("RelayId")
                         .HasColumnType("INTEGER");
 
@@ -81,6 +84,8 @@ namespace Contactor.Web.Persistence.Migrations
                     b.HasIndex("TimestampUtc");
 
                     b.HasIndex("GroupId", "TimestampUtc");
+
+                    b.HasIndex("InputId", "TimestampUtc");
 
                     b.HasIndex("RelayId", "TimestampUtc");
 
@@ -137,6 +142,9 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -157,7 +165,7 @@ namespace Contactor.Web.Persistence.Migrations
 
                     b.ToTable("Input", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Input_Id", "\"Id\" = 1");
+                            t.HasCheckConstraint("CK_Input_Id", "\"Id\" BETWEEN 1 AND 64");
                         });
                 });
 

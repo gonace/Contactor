@@ -17,6 +17,9 @@ public sealed class EventLogEntry
     /// <summary>The group it concerns, if any. Not a foreign key: the event outlives a deleted group.</summary>
     public int? GroupId { get; set; }
 
+    /// <summary>The input it concerns, for an input's changes. Not a foreign key, like <see cref="RelayId"/>.</summary>
+    public int? InputId { get; set; }
+
     /// <summary>A user's e-mail, or one of <see cref="EventActors"/>.</summary>
     public string Actor { get; set; } = "";
 

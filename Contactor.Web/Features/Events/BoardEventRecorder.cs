@@ -146,16 +146,20 @@ public sealed partial class BoardEventRecorder : BackgroundService
         {
             await RecordRelayChangesAsync(db, known.Relays, state.Relays, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
 
-            // The app shows one input (the Input table's), the board's first.
-            if (known.Inputs.Contains(1) != state.Inputs.Contains(1))
+            // Every input on the board, each logged on its own.
+            for (var input = 1; input <= _board.Capabilities.InputCount; input++)
             {
-                db.EventLog.Add(new EventLogEntry
+                if (known.Inputs.Contains(input) != state.Inputs.Contains(input))
                 {
-                    TimestampUtc = now,
-                    Actor = EventActors.External,
-                    Action = EventActions.InputChanged,
-                    Details = JsonSerializer.Serialize(new { on = state.Inputs.Contains(1) }),
-                });
+                    db.EventLog.Add(new EventLogEntry
+                    {
+                        TimestampUtc = now,
+                        InputId = input,
+                        Actor = EventActors.External,
+                        Action = EventActions.InputChanged,
+                        Details = JsonSerializer.Serialize(new { on = state.Inputs.Contains(input) }),
+                    });
+                }
             }
         }
 

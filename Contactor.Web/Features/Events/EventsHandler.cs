@@ -50,7 +50,8 @@ public sealed class EventsHandler
         int count,
         CancellationToken cancellationToken,
         int? relayId = null,
-        int? groupId = null)
+        int? groupId = null,
+        int? inputId = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -76,6 +77,11 @@ public sealed class EventsHandler
             query = query.Where(e => e.GroupId == onlyGroup);
         }
 
+        if (inputId is { } onlyInput)
+        {
+            query = query.Where(e => e.InputId == onlyInput);
+        }
+
         // People are the actors with an e-mail address; everything else is automatic.
         query = filter switch
         {
@@ -88,6 +94,7 @@ public sealed class EventsHandler
         var relayNames = await db.Relays.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name, cancellationToken);
         var personNames = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName, cancellationToken);
         var groupNames = await db.RelayGroups.AsNoTracking().ToDictionaryAsync(g => g.Id, g => g.Name, cancellationToken);
+        var inputs = await db.Inputs.AsNoTracking().ToDictionaryAsync(i => i.Id, i => new InputWords(i.Name, i.ClosedText, i.OpenText), cancellationToken);
 
         return [.. entries.Select(e => new EventRow(
             e.Id,
@@ -96,7 +103,8 @@ public sealed class EventsHandler
                 e,
                 e.RelayId is { } relayId ? relayNames.GetValueOrDefault(relayId) : null,
                 personNames.GetValueOrDefault(e.Actor),
-                e.GroupId is { } eventGroupId ? groupNames.GetValueOrDefault(eventGroupId) : null)))];
+                e.GroupId is { } eventGroupId ? groupNames.GetValueOrDefault(eventGroupId) : null,
+                e.Action == EventActions.InputChanged ? inputs.GetValueOrDefault(e.InputId ?? 1) : null)))];
     }
 
     /// <summary>Groups rows (newest first) under one heading per local day.</summary>

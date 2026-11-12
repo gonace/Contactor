@@ -63,11 +63,33 @@ public sealed class EventTextTests
     }
 
     [Theory]
+    [InlineData(true, "Door:", "Closed")]
+    [InlineData(false, "Door:", "Open")]
+    public void Should_DescribeAnInputInItsOwnWords(bool on, string who, string what)
+    {
+        var entry = Entry(EventActors.External, EventActions.InputChanged, on ? """{"on":true}""" : """{"on":false}""", relayId: null);
+        entry.InputId = 2;
+
+        var view = EventText.For(entry, relayName: null, personName: null, input: new InputWords("Door", "Closed", "Open"));
+
+        Assert.Equal(new EventView(false, "I", who, what, null), view);
+    }
+
+    // An input event from before inputs had names, or of an input no longer on the board.
+    [Fact]
+    public void Should_NameAnInputByItsNumber_WithoutItsWords()
+    {
+        var entry = Entry(EventActors.External, EventActions.InputChanged, """{"on":true}""", relayId: null);
+
+        Assert.Equal(new EventView(false, "I", "Input 1:", "Closed", null), EventText.For(entry, relayName: null, personName: null));
+        entry.InputId = 3;
+        Assert.Equal("Input 3:", EventText.For(entry, relayName: null, personName: null).Who);
+    }
+
+    [Theory]
     [InlineData(EventActions.ConnectionLost, null, "The board", "lost contact with the app", "A")]
     [InlineData(EventActions.ConnectionRestored, """{"afterSeconds":40}""", "The board", "reconnected", "A")]
     [InlineData(EventActions.BoardTimersDisabled, """{"mask":255}""", "The board", "had its own timers turned off", "A")]
-    [InlineData(EventActions.InputChanged, """{"on":true}""", "The input", "turned on", "I")]
-    [InlineData(EventActions.InputChanged, """{"on":false}""", "The input", "turned off", "I")]
     public void Should_DescribeBoardEvents(string action, string? details, string who, string what, string badge)
     {
         var view = EventText.For(Entry(EventActors.System, action, details, relayId: null), relayName: null, personName: null);

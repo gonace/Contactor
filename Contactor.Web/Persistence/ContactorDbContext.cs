@@ -146,6 +146,7 @@ public sealed class ContactorDbContext : DbContext
         entry.HasIndex(e => e.TimestampUtc);
         entry.HasIndex(e => new { e.RelayId, e.TimestampUtc });
         entry.HasIndex(e => new { e.GroupId, e.TimestampUtc });
+        entry.HasIndex(e => new { e.InputId, e.TimestampUtc });
     }
 
     private static void ConfigureRelayRuntime(EntityTypeBuilder<RelayRuntime> runtime)
@@ -185,7 +186,7 @@ public sealed class ContactorDbContext : DbContext
 
     private static void ConfigureInput(EntityTypeBuilder<Input> input)
     {
-        input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Id", $"\"Id\" = {Input.SingletonId}"));
+        input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         input.Property(i => i.Id).ValueGeneratedNever();
         input.Property(i => i.Name).HasMaxLength(Input.TextMaxLength);
         input.Property(i => i.ClosedText).HasMaxLength(Input.TextMaxLength);
