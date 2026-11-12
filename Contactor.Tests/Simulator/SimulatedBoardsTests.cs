@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
+using Contactor.Boards.Vm208;
 using Contactor.Simulator;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -53,8 +54,22 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.Equal(9760, SimulatorCatalogue.Find("vm201")!.Port);
     }
 
+    [Fact]
+    public void Should_RunAVm208_WithoutALogin()
+    {
+        Assert.Null(_boards.Add("vm208", FreePort(), null));
+
+        var vm208 = _boards.Boards.Single(b => b.Board.Model == Vm208Model.Model);
+        Assert.False(vm208.Board.HasLogin);
+        Assert.Null(vm208.Username);
+
+        // Port 80 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8208, 80), (SimulatorCatalogue.Find("vm208")!.Port, Vm208Model.Model.DefaultPort));
+    }
+
     [Theory]
-    [InlineData("vm208", 9760, null, "Choose a model.")]
+    [InlineData("vm209", 9760, null, "Choose a model.")]
+    [InlineData("vm208", 9760, "admin:secret", "The VM208 takes no login.")]
     [InlineData("", 9760, null, "Choose a model.")]
     [InlineData("vm201", 0, null, "The port is a number from 1 to 65535.")]
     [InlineData("vm201", 65536, null, "The port is a number from 1 to 65535.")]
@@ -203,7 +218,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Fact]
     public async Task Should_RefuseToStart_WhenABoardInTheSettingsCannotRun()
     {
-        var options = new SimulatorOptions { Boards = [new SimulatorBoardOptions { Type = "vm208", Port = FreePort() }] };
+        var options = new SimulatorOptions { Boards = [new SimulatorBoardOptions { Type = "vm209", Port = FreePort() }] };
         var service = new SimulatorHostedService(_boards, Options.Create(options));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(TestContext.Current.CancellationToken));

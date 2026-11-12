@@ -72,7 +72,9 @@ public sealed partial class AutoOffService : BackgroundService
                 }
                 catch (BoardNotConnectedException)
                 {
-                    // Lost the board mid-way: the rest waits for the next check.
+                    // Lost the board mid-way: the rest waits for the next check. Nothing is logged, so whatever the
+                    // board did shows as an external change.
+                    _expected.Forget(mask, on: false);
                     break;
                 }
 

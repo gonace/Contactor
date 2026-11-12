@@ -343,7 +343,16 @@ public sealed partial class GroupSequencer : BackgroundService
             if (!all.Off.IsEmpty)
             {
                 _expected.Expect(all.Off, on: false);
-                await _board.TurnOffAsync(all.Off, cancellationToken);
+                try
+                {
+                    await _board.TurnOffAsync(all.Off, cancellationToken);
+                }
+                catch
+                {
+                    // A failed command's change isn't the app's: whatever the board did shows as an external one.
+                    _expected.Forget(all.Off, on: false);
+                    throw;
+                }
             }
 
             if (!all.On.IsEmpty)
@@ -353,10 +362,16 @@ public sealed partial class GroupSequencer : BackgroundService
                 {
                     await _board.TurnOnAsync(all.On, cancellationToken);
                 }
-                catch (BoardNotConnectedException) when (!all.Off.IsEmpty)
+                catch (Exception ex)
                 {
-                    await SaveAsync(db, events, now, CancellationToken.None);
-                    RememberShutOffs(shutOff);
+                    // A failed command's change isn't the app's: whatever the board did shows as an external one.
+                    _expected.Forget(all.On, on: true);
+                    if (ex is BoardNotConnectedException && !all.Off.IsEmpty)
+                    {
+                        await SaveAsync(db, events, now, CancellationToken.None);
+                        RememberShutOffs(shutOff);
+                    }
+
                     throw;
                 }
             }

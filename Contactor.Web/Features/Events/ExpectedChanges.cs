@@ -44,6 +44,27 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>
+    /// Drops what <see cref="Expect"/> added for a command that then failed (refused, unreadable, no answer). The
+    /// board may still have switched; the status that shows it is then an external change, logged as one, instead of
+    /// using the expectation up as the app's own while the app recorded nothing. Drops the newest matching
+    /// expectation for each relay, the one the failed command added.
+    /// </summary>
+    public void Forget(ChannelMask mask, bool on)
+    {
+        lock (_lock)
+        {
+            foreach (var relayId in mask.Channels)
+            {
+                var index = _expected.FindLastIndex(e => e.RelayId == relayId && e.On == on);
+                if (index >= 0)
+                {
+                    _expected.RemoveAt(index);
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Whether the app asked for this change; if so the expectation is used up, so a second identical change is
     /// external.
     /// </summary>
