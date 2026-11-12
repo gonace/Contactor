@@ -123,8 +123,10 @@ public sealed class Vm201Client
     }
 
     /// <summary>
-    /// Raised on the connection's read loop whenever <see cref="State"/> changes: on every status from the board
-    /// (including the keep-alive) and when the connection is lost. Handlers must be quick and must not block.
+    /// Raised whenever <see cref="State"/> changes: on the connection's read loop for every status from the board
+    /// (including the keep-alive) and when the connection is lost, and on the caller's thread when
+    /// <see cref="SetEndpoint"/> forgets the state. Raised while a lock is held: handlers must be quick and must not
+    /// block.
     /// </summary>
     public event EventHandler<Vm201State>? StateChanged;
 

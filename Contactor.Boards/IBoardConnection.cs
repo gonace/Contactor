@@ -18,7 +18,11 @@ public interface IBoardConnection
     /// <summary>The login in use.</summary>
     BoardLogin Login { get; }
 
-    /// <summary>Moves the connection to another address at once: the current connection, attempt or wait ends.</summary>
+    /// <summary>
+    /// Moves the connection to another address at once: the current connection, attempt or wait ends. Another board
+    /// may be there, so the board's state is forgotten at once, as at start (not connected, and no
+    /// <see cref="BoardState.LastContactUtc"/>), and an answer from the old address still on its way is dropped.
+    /// </summary>
     void SetEndpoint(BoardEndpoint endpoint);
 
     /// <summary>

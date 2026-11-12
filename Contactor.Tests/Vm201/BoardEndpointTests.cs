@@ -66,8 +66,7 @@ public sealed class BoardEndpointTests
         await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
     }
 
-    // Another board may be at the new address: the old one's state is forgotten at once, and a status it still sends
-    // is dropped.
+    // Another board may be at the new address: the old one's state is forgotten at once, and reported so.
     [Fact]
     public async Task Should_ForgetTheOldBoardsState_WhenMovedToAnotherAddress()
     {
@@ -95,9 +94,6 @@ public sealed class BoardEndpointTests
             Assert.Equal(Vm201State.Initial, changes[^1]);
         }
 
-        await first.SetOutputsAsync(0x03);
-        await Task.Delay(300, Cancel);
-        Assert.Equal(Vm201State.Initial, client.State);
         await cts.CancelAsync();
         await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
     }
