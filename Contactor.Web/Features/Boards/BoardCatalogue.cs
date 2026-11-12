@@ -1,6 +1,8 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Boards.Vm204;
 using Contactor.Web.Features.Vm201;
+using Contactor.Web.Features.Vm204;
 
 namespace Contactor.Web.Features.Boards;
 
@@ -18,6 +20,7 @@ public static class BoardCatalogue
     public static IReadOnlyList<BoardRegistration> All { get; } =
     [
         new(Vm201Model.Model, (services, configuration) => services.AddVm201(configuration)),
+        new(Vm204Model.Model, (services, configuration) => services.AddVm204(configuration)),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>

@@ -73,10 +73,6 @@ h1 {
     border: 1.5px solid var(--line);
 }
 
-.row.routine {
-    background: transparent;
-}
-
 .row.error {
     background: var(--danger-bg);
     border-color: var(--danger-border);

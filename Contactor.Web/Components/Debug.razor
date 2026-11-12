@@ -16,6 +16,10 @@
             Everything sent to and from the relay board since the app started, newest first. At most @BoardTrace.Capacity
             lines; nothing is stored. Board: <span class="mono">@Connection.Endpoint</span>
         </p>
+        @if (_routineLeftOut > 0)
+        {
+            <p class="hint">@_routineLeftOut.ToString("N0", CultureInfo.InvariantCulture) routine @(_routineLeftOut == 1 ? "step" : "steps") left out, such as status checks that changed nothing.</p>
+        }
         <button type="button" class="clear" disabled="@(_items.Count == 0)" @onclick="Clear">Clear</button>
     </header>
 
@@ -27,7 +31,7 @@
 
         @foreach (var item in _items)
         {
-            <div class="row @(item.IsError ? "error" : null) @(item.IsRoutine ? "routine" : null)" @key="item.Id">
+            <div class="row @(item.IsError ? "error" : null)" @key="item.Id">
                 <span class="time">@Clock.ToLocal(item.AtUtc.UtcDateTime).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</span>
                 <span class="arrow" aria-label="@Direction(item)">@Arrow(item)</span>
                 <div class="text">
@@ -46,17 +50,21 @@
 
 @code {
     private IReadOnlyList<BoardTraceItem> _items = [];
+    private long _routineLeftOut;
 
     protected override void OnInitialized()
     {
         _items = Trace.Items;
+        _routineLeftOut = Trace.RoutineLeftOut;
         Trace.Added += OnChanged;
+        Trace.RoutineCounted += OnChanged;
         Trace.Cleared += OnChanged;
     }
 
     public void Dispose()
     {
         Trace.Added -= OnChanged;
+        Trace.RoutineCounted -= OnChanged;
         Trace.Cleared -= OnChanged;
     }
 
@@ -98,6 +106,7 @@
             await InvokeAsync(() =>
             {
                 _items = Trace.Items;
+                _routineLeftOut = Trace.RoutineLeftOut;
                 StateHasChanged();
             });
         }

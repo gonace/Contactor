@@ -11,11 +11,12 @@ public sealed class BoardTraceTests : IDisposable
     private static readonly DateTimeOffset Now = new(2026, 11, 8, 10, 0, 0, TimeSpan.Zero);
 
     private readonly FakeTraffic _traffic = new();
+    private readonly ManualTimeProvider _time = new();
     private readonly BoardTrace _trace;
 
     public BoardTraceTests()
     {
-        _trace = new BoardTrace(_traffic);
+        _trace = new BoardTrace(_traffic, _time);
     }
 
     public void Dispose()
@@ -62,6 +63,49 @@ public sealed class BoardTraceTests : IDisposable
         var item = Assert.Single(added);
         Assert.Equal(("Turn on relay 3", "02 06 4F 04 A5 03", BoardTraceDirection.Sent), (item.Text, item.Hex, item.Direction));
         Assert.Same(item, Assert.Single(_trace.Items));
+    }
+
+    [Fact]
+    public void Should_CountRoutineSteps_WithoutListingThemOrTellingTheScreens()
+    {
+        var added = 0;
+        _trace.Added += (_, _) => added++;
+        _trace.Record(Step(Now, "Connecting"));
+
+        for (var i = 0; i < BoardTrace.Capacity * 3; i++)
+        {
+            _traffic.Raise(new BoardTraceEntry(Now.AddSeconds(i), BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true));
+        }
+
+        Assert.Equal("Connecting", Assert.Single(_trace.Items).Text);
+        Assert.Equal(BoardTrace.Capacity * 3, _trace.RoutineLeftOut);
+        Assert.Equal(1, added);
+
+        _trace.Clear();
+        Assert.Equal(0, _trace.RoutineLeftOut);
+    }
+
+    [Fact]
+    public void Should_TellTheScreensTheCountMoved_AtMostOnceASecond()
+    {
+        var notices = 0;
+        _trace.RoutineCounted += (_, _) => notices++;
+        var routine = new BoardTraceEntry(Now, BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true);
+
+        _trace.Record(routine);
+        _trace.Record(routine);
+        _time.Advance(TimeSpan.FromMilliseconds(999));
+        _trace.Record(routine);
+        Assert.Equal(1, notices);
+
+        _time.Advance(TimeSpan.FromMilliseconds(1));
+        _trace.Record(routine);
+        Assert.Equal(2, notices);
+        Assert.Equal(4, _trace.RoutineLeftOut);
+
+        _trace.Clear();
+        _trace.Record(routine);
+        Assert.Equal(3, notices);
     }
 
     [Fact]

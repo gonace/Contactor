@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Boards.Vm204;
 
 namespace Contactor.Simulator;
 
@@ -7,10 +8,18 @@ namespace Contactor.Simulator;
 /// <param name="Model">The model, as the app's board catalogue knows it.</param>
 /// <param name="CheckLogin">Why the board can't take this user name and password, or null when it can.</param>
 /// <param name="Create">A new board, not started; with a login, or none when <paramref name="Create"/> gets nulls.</param>
+/// <param name="SuggestedPort">
+/// The port the page offers for a new one: the model's own, unless that needs rights a developer doesn't have (below
+/// 1024, e.g. the VM204's 80).
+/// </param>
 public sealed record SimulatorModel(
     BoardModel Model,
     Func<string, string, string?> CheckLogin,
-    Func<string?, string?, ILogger, TimeProvider, ISimulatedBoard> Create);
+    Func<string?, string?, ILogger, TimeProvider, ISimulatedBoard> Create,
+    int? SuggestedPort = null)
+{
+    public int Port => SuggestedPort ?? Model.DefaultPort;
+}
 
 /// <summary>Every model the simulator knows. A new model's project brings its simulator; it gets one line here.</summary>
 public static class SimulatorCatalogue
@@ -25,6 +34,15 @@ public static class SimulatorCatalogue
                 return error;
             },
             (username, password, logger, time) => new Vm201Simulator(username, password, logger) { TimeProvider = time }),
+        new(
+            Vm204Model.Model,
+            (username, password) =>
+            {
+                Vm204Login.TryCreate(username, password, out var error);
+                return error;
+            },
+            (username, password, logger, time) => new Vm204Simulator(username, password, logger) { TimeProvider = time },
+            SuggestedPort: 8204),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>
