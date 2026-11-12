@@ -29,8 +29,10 @@ public sealed class InputChangeFeed
 /// <summary>
 /// Carries out an input's actions when it closes or opens, as if someone pressed the buttons at that moment: a relay
 /// through <see cref="RelayControl"/> (with its auto-off), a group through <see cref="GroupSequencer"/> (in its order,
-/// with its run-on and auto-off). Logged with the input as the actor. A relay or group already in that state is left
-/// alone. Without the board nothing is sent or queued for later; a relay that has joined a group is skipped.
+/// with its run-on and auto-off). Logged with the input as the actor. Every relay command is sent, as a press would be:
+/// the board's state may not show a command that is still on its way. A group decides itself whether there is
+/// anything to stop; one that is fully on and not mid-sequence isn't started again. Without the board nothing is sent
+/// or queued for later; a relay that has joined a group is skipped.
 /// </summary>
 public sealed partial class InputActionService : BackgroundService
 {
@@ -78,6 +80,7 @@ public sealed partial class InputActionService : BackgroundService
         ArgumentNullException.ThrowIfNull(change);
         List<InputAction> actions;
         Dictionary<int, List<int>> members;
+        Dictionary<int, GroupRuntime> runtimes;
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -88,6 +91,7 @@ public sealed partial class InputActionService : BackgroundService
             members = (await db.RelayGroupMembers.AsNoTracking().Select(m => new { m.GroupId, m.RelayId }).ToListAsync(cancellationToken))
                 .GroupBy(m => m.GroupId)
                 .ToDictionary(g => g.Key, g => g.Select(m => m.RelayId).ToList());
+            runtimes = await db.GroupRuntimes.AsNoTracking().ToDictionaryAsync(r => r.GroupId, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -105,7 +109,7 @@ public sealed partial class InputActionService : BackgroundService
 
             try
             {
-                await RunAsync(action, on, actor, members, cancellationToken);
+                await RunAsync(action, on, actor, members, runtimes, cancellationToken);
             }
             catch (BoardNotConnectedException)
             {
@@ -125,9 +129,14 @@ public sealed partial class InputActionService : BackgroundService
         }
     }
 
-    private async Task RunAsync(InputAction action, bool on, string actor, Dictionary<int, List<int>> members, CancellationToken cancellationToken)
+    private async Task RunAsync(
+        InputAction action,
+        bool on,
+        string actor,
+        Dictionary<int, List<int>> members,
+        Dictionary<int, GroupRuntime> runtimes,
+        CancellationToken cancellationToken)
     {
-        var relays = _board.State.Relays;
         if (action.GroupId is { } groupId)
         {
             var groupRelays = members.GetValueOrDefault(groupId) ?? [];
@@ -136,16 +145,17 @@ public sealed partial class InputActionService : BackgroundService
                 return;
             }
 
-            if (on && !groupRelays.All(relays.Contains))
+            if (!on)
+            {
+                // The sequencer knows best what is running or on its way (an ON not confirmed yet is overtaken).
+                await _groups.StopGroupAsync(groupId, actor, cancellationToken);
+            }
+            else if (!IsFullyOn(groupRelays, runtimes.GetValueOrDefault(groupId)))
             {
                 await _groups.StartGroupAsync(groupId, actor, cancellationToken);
             }
-            else if (!on && groupRelays.Any(relays.Contains))
-            {
-                await _groups.StopGroupAsync(groupId, actor, cancellationToken);
-            }
         }
-        else if (action.RelayId is { } relayId && relayId <= _board.Capabilities.RelayCount && relays.Contains(relayId) != on)
+        else if (action.RelayId is { } relayId && relayId <= _board.Capabilities.RelayCount)
         {
             if (on)
             {
@@ -156,6 +166,13 @@ public sealed partial class InputActionService : BackgroundService
                 await _relays.TurnOffAsync(relayId, actor, cancellationToken);
             }
         }
+    }
+
+    // Every relay on, nothing on its way and no sequence under way: starting it again would only log a second start.
+    private bool IsFullyOn(List<int> groupRelays, GroupRuntime? runtime)
+    {
+        return groupRelays.All(_board.State.Relays.Contains)
+            && (runtime is null || (runtime.Phase == GroupPhases.Idle && runtime.PendingPosition is null));
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Input {InputId} changed, but the board isn't connected: its actions were not carried out")]

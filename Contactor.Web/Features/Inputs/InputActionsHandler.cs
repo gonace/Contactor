@@ -11,6 +11,12 @@ public sealed record InputActionTarget(int? RelayId, int? GroupId, string Name)
     /// <summary>"Group: Fan heater" or "Relay 4: Lighting".</summary>
     public string Label => GroupId is not null ? $"Group: {Name}" : $"Relay {RelayId}: {Name}";
 
+    /// <summary>
+    /// Tells relays and groups apart on a page ("group:2", "relay:4"): names aren't unique, so two groups with one name
+    /// must still have different keys.
+    /// </summary>
+    public string Key => GroupId is { } groupId ? $"group:{groupId}" : $"relay:{RelayId}";
+
     /// <summary>Whether it is the same relay or group.</summary>
     public bool IsSame(InputActionTarget other)
     {

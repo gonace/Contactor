@@ -52,17 +52,73 @@ public sealed class InputActionsTests
     }
 
     [Fact]
-    public async Task Should_LeaveAlone_WhatIsAlreadySo_OrSetToNothing()
+    public async Task Should_DoNothing_WhereSetToNothing()
     {
         await using var rig = await RigAsync();
-        await rig.Board.TurnOnAsync(ChannelMask.Of(1), Cancel);
-        await rig.SaveAsync(new InputActionRow(Relay(1), true, null), new InputActionRow(Relay(2), null, null));
+        await rig.SaveAsync(new InputActionRow(Relay(1), null, null), new InputActionRow(Relay(2), true, null));
+
+        await rig.RunAsync(closed: false);
+        await rig.RunAsync(closed: true);
+
+        Assert.Equal(ChannelMask.Of(2), rig.Board.State.Relays);
+        Assert.Equal([2], (await rig.EventsAsync()).Select(e => e.RelayId ?? 0));
+    }
+
+    // A contact that closes and opens again before the board has reported the first command: the second one still goes.
+    [Fact]
+    public async Task Should_SendEachCommand_BeforeTheBoardHasReportedTheLast()
+    {
+        await using var rig = await RigAsync();
+        await rig.SaveAsync(new InputActionRow(Relay(1), true, false));
+        rig.Board.HoldStatus = true;
 
         await rig.RunAsync(closed: true);
         await rig.RunAsync(closed: false);
+        rig.Board.ReleaseStatus();
+
+        Assert.Equal(ChannelMask.None, rig.Board.State.Relays);
+        Assert.Equal([EventActions.On, EventActions.Off], (await rig.EventsAsync()).Select(e => e.Action));
+    }
+
+    // The group's first relay is on its way when the input opens again: the stop overtakes it, so the group never runs
+    // on with the input open.
+    [Fact]
+    public async Task Should_StopAGroup_WhoseStartIsStillOnItsWay()
+    {
+        await using var rig = await RigAsync();
+        var groupId = await rig.CreateGroupAsync(1, 2);
+        await rig.SaveAsync(new InputActionRow(Group(groupId), true, false));
+        rig.Board.HoldStatus = true;
+
+        await rig.RunAsync(closed: true);
+        await rig.RunAsync(closed: false);
+        rig.Board.ReleaseStatus();
+        await rig.Sequencer.StepAsync(Cancel);
+
+        Assert.Equal(ChannelMask.None, rig.Board.State.Relays);
+        Assert.Equal([EventActions.GroupOn, EventActions.GroupOff], (await rig.EventsAsync()).Select(e => e.Action));
+    }
+
+    [Fact]
+    public async Task Should_NotStartAGroup_ThatIsFullyOn()
+    {
+        await using var rig = await RigAsync();
+        var groupId = await rig.CreateGroupAsync(1, 2);
+        await rig.SaveAsync(new InputActionRow(Group(groupId), true, false));
+        await rig.Board.TurnOnAsync(ChannelMask.Of([1, 2]), Cancel);
+
+        await rig.RunAsync(closed: true);
 
         Assert.Empty(await rig.EventsAsync());
-        Assert.Equal(ChannelMask.Of(1), rig.Board.State.Relays);
+    }
+
+    // The Input screen keys its cards and choices by this: two groups with one name must not share a key.
+    [Fact]
+    public void Should_KeyATarget_ByWhatItIs_NotItsName()
+    {
+        Assert.Equal("group:1", Group(1, "Heater").Key);
+        Assert.NotEqual(Group(1, "Heater").Key, Group(2, "Heater").Key);
+        Assert.NotEqual(Group(4, "A").Key, Relay(4, "A").Key);
     }
 
     [Fact]
@@ -302,6 +358,8 @@ public sealed class InputActionsTests
         public InputActionsHandler Handler => Database.Services.GetRequiredService<InputActionsHandler>();
 
         public GroupsHandler Groups => Database.Services.GetRequiredService<GroupsHandler>();
+
+        public GroupSequencer Sequencer => Database.Services.GetRequiredService<GroupSequencer>();
 
         public InputChangeFeed Feed => Database.Services.GetRequiredService<InputChangeFeed>();
 

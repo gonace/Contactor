@@ -73,7 +73,7 @@
                     <h2>Groups and relays</h2>
                     @foreach (var row in _actions)
                     {
-                        <div class="control" @key="row.Target.Label">
+                        <div class="control" @key="row.Target.Key">
                             <div class="control-head">
                                 <strong>@row.Target.Label</strong>
                                 <button type="button" class="remove" @onclick="() => Remove(row)">Remove</button>
@@ -91,7 +91,7 @@
                             }
                             @foreach (var target in Available)
                             {
-                                <button type="button" @key="target.Label" @onclick="() => Add(target)">@target.Label</button>
+                                <button type="button" @key="target.Key" @onclick="() => Add(target)">@target.Label</button>
                             }
                         </div>
                     }

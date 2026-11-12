@@ -44,6 +44,28 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// </summary>
     public bool SwitchSilentlyThenFail { get; set; }
 
+    /// <summary>
+    /// When set, commands switch the relays but the board reports nothing until <see cref="ReleaseStatus"/>, like a
+    /// board whose status is still on its way: <see cref="State"/> keeps showing the relays as they were.
+    /// </summary>
+    public bool HoldStatus { get; set; }
+
+    private ChannelMask? _heldRelays;
+
+    /// <summary>Reports the relays the held commands switched, and stops holding.</summary>
+    public void ReleaseStatus()
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            HoldStatus = false;
+            state = _state = _state with { Relays = _heldRelays ?? _state.Relays };
+            _heldRelays = null;
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
     /// <summary>When set, OFF commands are accepted but change nothing, like a relay that won't drop.</summary>
     public bool IgnoreOff { get; set; }
 
@@ -133,6 +155,13 @@ internal sealed class FakeRelayBoard : IRelayBoard
         BoardState state;
         lock (_lock)
         {
+            if (HoldStatus)
+            {
+                var held = _heldRelays ?? _state.Relays;
+                _heldRelays = on ? held | relays : held.Except(relays);
+                return Task.CompletedTask;
+            }
+
             state = _state = _state with { Relays = on ? _state.Relays | relays : _state.Relays.Except(relays) };
         }
 

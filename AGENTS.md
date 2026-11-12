@@ -387,7 +387,7 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 
 ### Inputs that switch relays and groups
 - An input can control any number of relays and groups (`InputAction`, `InputActionsHandler`), each with its own action when it closes and when it opens: turn on, turn off or nothing. A relay in a group only through its group.
-- `InputActionService` acts like a press of the button at that moment, with the input as the actor (`input:n`): a relay through `RelayControl` (with its auto-off), a group through `GroupSequencer` (in its order, with its run-on and auto-off). What is already in that state is left alone.
+- `InputActionService` acts like a press of the button at that moment, with the input as the actor (`input:n`): a relay through `RelayControl` (with its auto-off), a group through `GroupSequencer` (in its order, with its run-on and auto-off). A relay's command is always sent, as a press would be (the board's state may not yet show a command on its way); a group decides itself what there is to stop, and one fully on and idle isn't started again.
 - Only a change the app saw as it happened acts: `BoardEventRecorder` hands it on (`InputChangeFeed`) once it is logged. A change noticed after a gap, or at start, does nothing. Without the board nothing is sent or queued.
 - Events name the input as who did it: "Door turned off the group Fan heater" (a dashed badge with "I").
 
@@ -465,7 +465,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - The button "Save schedule". When editing also "Delete schedule", with a confirmation.
 4. **Group** (`/group/{id}`)
    - The name, the icon, a status card with a wide TURN ON THE GROUP / TURN OFF THE GROUP button.
-   - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Starts in 3 s", "Keeps running for 4 min 59 s"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group and without schedules. Order and members only change while the group is off.
+   - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Starts in 3 s", "Keeps running for 4 min 59 s"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group, without schedules and controlled by no input. Order and members only change while the group is off.
    - "Turn off automatically after", "Schedules" (as on the Relay screen, "Add" goes to `/group/{id}/schedule/new`), the group's latest 4 events, the safety note about wiring the interlock in hardware, "Delete the group" with a confirmation, and "Save".
    - Icons are Font Awesome Free solid icons (CC BY 4.0), inlined as SVG in `GroupIcon.razor`; no icon font or script.
 5. **New group** (`/group/new`): a guide in 4 steps, "STEP n OF 4" with a progress bar, "Cancel" on the first step and "Back" after.
