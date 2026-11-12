@@ -65,6 +65,16 @@
                 }
                 else
                 {
+                @if (!Board.State.HasAnswered)
+                {
+                    @* Before the board's first answer: unknown, all grey. *@
+                    <section class="status unknown">
+                        <p>Waiting for the board</p>
+                        <button type="button" class="toggle unknown" aria-label="Waiting for the board" disabled>–</button>
+                    </section>
+                }
+                else
+                {
                 <section class="status @(IsOn ? "on" : "")">
                     <p>@StatusSentence</p>
                     <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!Board.State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "TURN OFF" : "TURN ON")</button>
@@ -73,6 +83,7 @@
                         <p class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</p>
                     }
                 </section>
+                }
 
                 <section class="limits">
                     <h2>Turn off automatically after</h2>

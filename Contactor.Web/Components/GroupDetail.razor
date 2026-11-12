@@ -56,6 +56,16 @@
                     <IconPicker @bind-Value="_icon" />
                 </fieldset>
 
+                @if (!State.HasAnswered)
+                {
+                    @* Before the board's first answer: unknown, all grey. *@
+                    <section class="status unknown">
+                        <p>@WaitingText</p>
+                        <button type="button" class="toggle unknown" aria-label="@WaitingText" disabled>–</button>
+                    </section>
+                }
+                else
+                {
                 <section class="status @(GroupOn ? "on" : "") @(_group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : "")">
                     <p>@(Missing is { } missing ? GroupView.MissingRelayText(missing) : GroupStatusText.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook))</p>
                     <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy || Missing is not null)" @onclick="ToggleGroupAsync">
@@ -66,6 +76,7 @@
                         <p class="error" role="alert">@_toggleError</p>
                     }
                 </section>
+                }
 
                 <section class="members">
                     <div class="section-text">
@@ -79,13 +90,13 @@
                             var member = _members[index];
                             var on = State.IsOn(member.RelayId);
                             var blockedBy = BlockedBy(index);
-                            <li class="step @(on ? "on" : "")" @key="member.RelayId">
+                            <li class="step @(on ? "on" : "") @(State.HasAnswered ? "" : "unknown")" @key="member.RelayId">
                                 <div class="step-row">
                                     <span class="number" aria-hidden="true">@(index + 1)</span>
                                     <div class="step-text">
                                         <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.RelayId</label>
                                         <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
-                                        <span class="note">@NoteFor(index, on, blockedBy)</span>
+                                        <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : WaitingText)</span>
                                     </div>
                                     <div class="order">
                                         <button type="button" aria-label="@($"Move {member.RoleName} up")" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
@@ -95,13 +106,20 @@
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
                                         </button>
                                     </div>
-                                    <button type="button"
-                                            class="member-toggle"
-                                            data-vibrate
-                                            aria-pressed="@(on ? "true" : "false")"
-                                            aria-label="@((on ? "Turn off " : "Turn on ") + member.RoleName)"
-                                            disabled="@(!State.IsConnected || _busy || OrderChanged || Missing is not null || (!on && blockedBy is not null))"
-                                            @onclick="() => ToggleMemberAsync(member.RelayId, on)">@(on ? "ON" : "OFF")</button>
+                                    @if (State.HasAnswered)
+                                    {
+                                        <button type="button"
+                                                class="member-toggle"
+                                                data-vibrate
+                                                aria-pressed="@(on ? "true" : "false")"
+                                                aria-label="@((on ? "Turn off " : "Turn on ") + member.RoleName)"
+                                                disabled="@(!State.IsConnected || _busy || OrderChanged || Missing is not null || (!on && blockedBy is not null))"
+                                                @onclick="() => ToggleMemberAsync(member.RelayId, on)">@(on ? "ON" : "OFF")</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="member-toggle unknown" aria-label="@($"{member.RoleName}: {WaitingText}")" disabled>–</button>
+                                    }
                                 </div>
                                 @if (CanChangeMembers && _members.Count > RelayGroup.MinMembers)
                                 {
@@ -270,6 +288,9 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
+    // Before the board's first answer, in place of every state.
+    private const string WaitingText = "Waiting for the board";
+
     private const int EventCount = 4;
 
     private GroupView? _group;

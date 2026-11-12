@@ -404,6 +404,7 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 - A new installation may have no address for its board (`Vm201:Host` empty): nothing connects, and no contact is lost, until one is saved (in the setup guide or on Settings). `BoardHostedService` waits for it.
 - When contact is lost for more than 30 s, `connection-lost` is logged, and `connection-restored` when it comes back.
 - The UI shows a red warning: "No contact with the relay board. Since HH:mm. The states below may be wrong."
+- **Before the board's first answer** since the app started (`BoardState.HasAnswered`) nothing is known: the warning reads "No contact with the relay board yet. Waiting for its first answer.", the heading leaves out "n of m on", and every relay, group and input card, and the status card on the Relay, Group and Input screens, is grey all over, with "Waiting for the board" and a dashed "–" in place of the ON/OFF button or the Open/Closed badge. Once it has answered, a lost contact keeps showing the last known states with the warning above.
 
 ---
 

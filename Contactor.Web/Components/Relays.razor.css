@@ -251,6 +251,31 @@ h1 {
     border: 1.5px dashed var(--inactive-border);
 }
 
+/* Before the board's first answer nothing is known: the whole card is grey, and nothing in it stands out. */
+.card.unknown {
+    background: var(--inactive-bg);
+    border: 1.5px solid var(--inactive-border);
+}
+
+.card.unknown .name,
+.card.unknown .icon,
+.card.unknown .chip {
+    color: var(--muted);
+}
+
+.card.unknown .icon,
+.card.unknown .chip {
+    background: transparent;
+}
+
+.toggle.unknown,
+.toggle.unknown:disabled {
+    opacity: 1;
+    background: transparent;
+    border: 1.5px dashed var(--inactive-border);
+    color: var(--muted);
+}
+
 /* An input: its label and name link to its screen; a badge with its state instead of a button. */
 .title {
     min-height: 44px;

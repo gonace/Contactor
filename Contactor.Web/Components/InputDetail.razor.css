@@ -356,6 +356,13 @@ button:disabled {
     padding: 12px 14px;
 }
 
+/* Before the board's first answer nothing is known: the whole card is grey, and nothing in it stands out. */
+.status.unknown {
+    background: var(--inactive-bg);
+    border-color: var(--inactive-border);
+    color: var(--muted);
+}
+
 /* An input's state: green when closed, as on Relays. */
 .status.closed {
     border-color: var(--ok);
