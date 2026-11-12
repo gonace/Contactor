@@ -64,6 +64,23 @@ public sealed class InputActionsTests
         Assert.Equal([2], (await rig.EventsAsync()).Select(e => e.RelayId ?? 0));
     }
 
+    // A relay its schedule turned on stays the schedule's: no auto-off of the input's, and nothing logged.
+    [Fact]
+    public async Task Should_LeaveARelayAlone_ThatIsAlreadySo()
+    {
+        await using var rig = await RigAsync();
+        await rig.Board.TurnOnAsync(ChannelMask.Of(1), Cancel);
+        await rig.SetTurnedOnByAsync(1, EventActors.Schedule);
+        await rig.SaveAsync(new InputActionRow(Relay(1), true, null), new InputActionRow(Relay(2), null, false));
+
+        await rig.RunAsync(closed: true);
+        await rig.RunAsync(closed: false);
+
+        Assert.Empty(await rig.EventsAsync());
+        var runtime = await rig.RuntimeAsync(1);
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+    }
+
     // A contact that closes and opens again before the board has reported the first command: the second one still goes.
     [Fact]
     public async Task Should_SendEachCommand_BeforeTheBoardHasReportedTheLast()
@@ -414,6 +431,14 @@ public sealed class InputActionsTests
         {
             await using var db = await Database.Factory.CreateDbContextAsync(Cancel);
             return await db.RelayRuntimes.AsNoTracking().SingleAsync(r => r.RelayId == relayId, Cancel);
+        }
+
+        public async Task SetTurnedOnByAsync(int relayId, string actor)
+        {
+            await using var db = await Database.Factory.CreateDbContextAsync(Cancel);
+            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == relayId, Cancel);
+            (runtime.OnSinceUtc, runtime.TurnedOnBy, runtime.AutoOffAtUtc) = (Now, actor, null);
+            await db.SaveChangesAsync(Cancel);
         }
 
         public async Task RenameInputAsync(string name)

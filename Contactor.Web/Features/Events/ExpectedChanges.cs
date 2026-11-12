@@ -65,6 +65,19 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>
+    /// Whether a command for this change went out in the last few seconds and the board hasn't shown it yet: the
+    /// board's state may still show the relay as it was.
+    /// </summary>
+    public bool IsPending(int relayId, bool on)
+    {
+        var now = _clock.UtcNow;
+        lock (_lock)
+        {
+            return _expected.Exists(e => e.RelayId == relayId && e.On == on && e.ExpiresUtc > now);
+        }
+    }
+
+    /// <summary>
     /// Whether the app asked for this change; if so the expectation is used up, so a second identical change is
     /// external.
     /// </summary>

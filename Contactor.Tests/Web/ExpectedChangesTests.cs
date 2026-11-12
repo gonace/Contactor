@@ -14,6 +14,24 @@ public sealed class ExpectedChangesTests
         _expected = new ExpectedChanges(new LocalClock(TimeZoneInfo.Utc, _time));
     }
 
+    // Pending until the board shows it or it expires, and only in its own direction.
+    [Fact]
+    public void Should_TellWhetherACommandIsStillOnItsWay()
+    {
+        _expected.Expect(ChannelMask.Of(1), on: true);
+
+        Assert.True(_expected.IsPending(1, on: true));
+        Assert.False(_expected.IsPending(1, on: false));
+        Assert.False(_expected.IsPending(2, on: true));
+
+        Assert.True(_expected.TryConsume(1, on: true, _time.GetUtcNow().UtcDateTime));
+        Assert.False(_expected.IsPending(1, on: true));
+
+        _expected.Expect(ChannelMask.Of(1), on: true);
+        _time.Now += ExpectedChanges.Lifetime;
+        Assert.False(_expected.IsPending(1, on: true));
+    }
+
     [Fact]
     public void Should_MatchEachRelayInTheMaskOnce()
     {

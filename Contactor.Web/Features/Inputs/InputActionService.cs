@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Contactor.Boards;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -29,9 +30,10 @@ public sealed class InputChangeFeed
 /// <summary>
 /// Carries out an input's actions when it closes or opens, as if someone pressed the buttons at that moment: a relay
 /// through <see cref="RelayControl"/> (with its auto-off), a group through <see cref="GroupSequencer"/> (in its order,
-/// with its run-on and auto-off). Logged with the input as the actor. Every relay command is sent, as a press would be:
-/// the board's state may not show a command that is still on its way. A group decides itself whether there is
-/// anything to stop; one that is fully on and not mid-sequence isn't started again. Without the board nothing is sent
+/// with its run-on and auto-off). Logged with the input as the actor. A relay already in that state is left alone, so
+/// a relay its schedule turned on stays the schedule's; one with the opposite command still on its way isn't, so a
+/// contact that closes and opens quickly still turns it back. A group decides itself whether there is anything to
+/// stop; one that is fully on and not mid-sequence isn't started again. Without the board nothing is sent
 /// or queued for later; a relay that has joined a group is skipped.
 /// </summary>
 public sealed partial class InputActionService : BackgroundService
@@ -41,6 +43,7 @@ public sealed partial class InputActionService : BackgroundService
     private readonly IRelayBoard _board;
     private readonly RelayControl _relays;
     private readonly GroupSequencer _groups;
+    private readonly ExpectedChanges _expected;
     private readonly ILogger<InputActionService> _logger;
 
     public InputActionService(
@@ -49,6 +52,7 @@ public sealed partial class InputActionService : BackgroundService
         IRelayBoard board,
         RelayControl relays,
         GroupSequencer groups,
+        ExpectedChanges expected,
         ILogger<InputActionService> logger)
     {
         _queue = queue;
@@ -56,6 +60,7 @@ public sealed partial class InputActionService : BackgroundService
         _board = board;
         _relays = relays;
         _groups = groups;
+        _expected = expected;
         _logger = logger;
     }
 
@@ -155,7 +160,7 @@ public sealed partial class InputActionService : BackgroundService
                 await _groups.StartGroupAsync(groupId, actor, cancellationToken);
             }
         }
-        else if (action.RelayId is { } relayId && relayId <= _board.Capabilities.RelayCount)
+        else if (action.RelayId is { } relayId && relayId <= _board.Capabilities.RelayCount && !IsAlready(relayId, on))
         {
             if (on)
             {
@@ -166,6 +171,12 @@ public sealed partial class InputActionService : BackgroundService
                 await _relays.TurnOffAsync(relayId, actor, cancellationToken);
             }
         }
+    }
+
+    // The board shows the relay in that state, and no command to change it is on its way.
+    private bool IsAlready(int relayId, bool on)
+    {
+        return _board.State.Relays.Contains(relayId) == on && !_expected.IsPending(relayId, !on);
     }
 
     // Every relay on, nothing on its way and no sequence under way: starting it again would only log a second start.

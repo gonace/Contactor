@@ -387,7 +387,7 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 
 ### Inputs that switch relays and groups
 - An input can control any number of relays and groups (`InputAction`, `InputActionsHandler`), each with its own action when it closes and when it opens: turn on, turn off or nothing. A relay in a group only through its group.
-- `InputActionService` acts like a press of the button at that moment, with the input as the actor (`input:n`): a relay through `RelayControl` (with its auto-off), a group through `GroupSequencer` (in its order, with its run-on and auto-off). A relay's command is always sent, as a press would be (the board's state may not yet show a command on its way); a group decides itself what there is to stop, and one fully on and idle isn't started again.
+- `InputActionService` acts like a press of the button at that moment, with the input as the actor (`input:n`): a relay through `RelayControl` (with its auto-off), a group through `GroupSequencer` (in its order, with its run-on and auto-off). A relay already in that state is left alone (so one its schedule turned on stays the schedule's), unless the opposite command is still on its way (`ExpectedChanges.IsPending`); a group decides itself what there is to stop, and one fully on and idle isn't started again.
 - Only a change the app saw as it happened acts: `BoardEventRecorder` hands it on (`InputChangeFeed`) once it is logged. A change noticed after a gap, or at start, does nothing. Without the board nothing is sent or queued.
 - Events name the input as who did it: "Door turned off the group Fan heater" (a dashed badge with "I").
 
