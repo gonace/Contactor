@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,17 +18,20 @@ public sealed class BoardAddressHandler
     private readonly IBoardConnection _connection;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
+    private readonly GroupSequencer? _groups;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
         IBoardConnection connection,
         LocalClock clock,
-        RelayChanges changes)
+        RelayChanges changes,
+        GroupSequencer? groups = null)
     {
         _dbFactory = dbFactory;
         _connection = connection;
         _clock = clock;
         _changes = changes;
+        _groups = groups;
     }
 
     /// <summary>The address in use: the saved one, or the settings' when none is saved.</summary>
@@ -112,8 +116,10 @@ public sealed class BoardAddressHandler
     }
 
     /// <summary>
-    /// Saves a new address, logs who changed it from what, and moves the client there at once.
-    /// Returns null when saved (or unchanged), otherwise the message to show.
+    /// Saves a new address, logs who changed it from what, and moves the client there at once. Another board may be
+    /// at the new address, so the old board's relay and group runs (who turned them on, when, their auto-off, a
+    /// start or stop under way) are cleared in the same save. Returns null when saved (or unchanged), otherwise the
+    /// message to show.
     /// </summary>
     public async Task<string?> SaveAsync(string? host, int port, string userEmail, CancellationToken cancellationToken)
     {
@@ -123,12 +129,28 @@ public sealed class BoardAddressHandler
             return error;
         }
 
+        // Under the groups' lock, so a group's step can't save the old board's run back over the cleared one.
+        var moved = _groups is null
+            ? await SaveAddressAsync(endpoint, userEmail, cancellationToken)
+            : await _groups.ExclusiveAsync(() => SaveAddressAsync(endpoint, userEmail, cancellationToken), cancellationToken);
+        if (moved)
+        {
+            _connection.SetEndpoint(endpoint);
+            _changes.Notify();
+        }
+
+        return null;
+    }
+
+    // Returns whether anything was saved, so the client moves.
+    private async Task<bool> SaveAddressAsync(BoardEndpoint endpoint, string userEmail, CancellationToken cancellationToken)
+    {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var saved = await db.BoardSettings.SingleOrDefaultAsync(cancellationToken);
         var current = saved is null ? _connection.DefaultEndpoint : new BoardEndpoint(saved.Host, saved.Port);
         if (saved is not null && current == endpoint)
         {
-            return null;
+            return false;
         }
 
         if (saved is null)
@@ -151,12 +173,35 @@ public sealed class BoardAddressHandler
                     ? JsonSerializer.Serialize(new { from = current.ToString(), to = endpoint.ToString() })
                     : JsonSerializer.Serialize(new { to = endpoint.ToString() }),
             });
+
+            // A new installation's first address replaces no board, so there is nothing of an old one to clear.
+            if (current.HasHost)
+            {
+                await ForgetRunsAsync(db, cancellationToken);
+            }
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        _connection.SetEndpoint(endpoint);
-        _changes.Notify();
-        return null;
+        return true;
+    }
+
+    // The old board's runs say nothing about the relays at the new address: who turned one on and its auto-off would
+    // otherwise apply to the new board's relay of the same number.
+    private static async Task ForgetRunsAsync(ContactorDbContext db, CancellationToken cancellationToken)
+    {
+        foreach (var runtime in await db.RelayRuntimes.ToListAsync(cancellationToken))
+        {
+            (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy) = (null, null, null);
+        }
+
+        foreach (var runtime in await db.GroupRuntimes.ToListAsync(cancellationToken))
+        {
+            runtime.Phase = GroupPhases.Idle;
+            runtime.TargetLevel = 0;
+            runtime.NextStepAtUtc = null;
+            (runtime.PendingPosition, runtime.PendingOn, runtime.PendingSinceUtc) = (null, false, null);
+            (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy) = (null, null, null);
+        }
     }
 }
 

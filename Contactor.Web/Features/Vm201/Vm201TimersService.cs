@@ -9,7 +9,8 @@ namespace Contactor.Web.Features.Vm201;
 
 /// <summary>
 /// On the first successful connection after start, disables the VM201's own timer programs
-/// (<c>Vm201:DisableBoardTimers</c>), so they can't fight the app's schedules, and logs that as Actor <c>system</c>.
+/// (<c>Vm201:DisableBoardTimers</c>), so they can't fight the app's schedules, and logs that as Actor <c>system</c>. A new
+/// address may be another VM201, so its timers are disabled again at its first answer.
 /// </summary>
 public sealed partial class Vm201TimersService : BackgroundService
 {
@@ -67,6 +68,13 @@ public sealed partial class Vm201TimersService : BackgroundService
     // Runs on the client's read loop, so the work goes to its own task.
     private void OnStateChanged(object? sender, Vm201State state)
     {
+        // Forgotten for a new address (the client's SetEndpoint): the board there gets its timers disabled too.
+        if (!state.IsConnected && state.LastContactUtc is null)
+        {
+            Volatile.Write(ref _boardTimersHandled, 0);
+            return;
+        }
+
         if (!state.IsConnected || !_options.DisableBoardTimers || Interlocked.Exchange(ref _boardTimersHandled, 1) == 1)
         {
             return;
