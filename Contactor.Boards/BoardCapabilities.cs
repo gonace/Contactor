@@ -7,7 +7,8 @@ namespace Contactor.Boards;
 /// Whether the board reports every change by itself, including ones made at the board. Without it the app has to
 /// ask, and changes made elsewhere show later.
 /// </param>
-public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges)
+/// <param name="AnalogInputCount">How many analog inputs it has. The app doesn't show them yet.</param>
+public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, int AnalogInputCount = 0)
 {
     /// <summary>All of the board's relays.</summary>
     public ChannelMask AllRelays => ChannelMask.FirstN(RelayCount);

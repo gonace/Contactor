@@ -46,8 +46,9 @@ Dockerfile                  # The image: the app and cloudflared, for linux/arm6
 global.json                 # SDK version and test runner (Microsoft.Testing.Platform)
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
-Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel. No dependencies.
+Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel, BoardPoller. No dependencies.
 Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF.
+Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF, no packages.
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
@@ -55,9 +56,10 @@ Contactor.Simulator/      # Development: simulated boards, each on its own port,
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
-  Boards/                   # ChannelMask, board adapters
+  Boards/                   # ChannelMask, BoardPoller, board adapters
   Simulator/                # The simulator's boards and page
   Vm201/                    # Codec + client against the simulator
+  Vm204/                    # JSON, login, trace words + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
   compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
@@ -154,13 +156,14 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 
 - `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
 - `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.
-- `BoardCapabilities`: how many relays and inputs, and whether the board reports changes by itself.
+- `BoardCapabilities`: how many relays and inputs (and analog inputs, which the app doesn't show yet), and whether the board reports changes by itself.
+- `BoardPoller<TReading>`: the loop for a board that doesn't report changes by itself (the VM204, later the VM208). The board's own code implements `IPolledBoard<TReading>` (connect, e.g. log in; read the state once); the poller asks every `PollInterval` (2 s) with `TimeProvider`, refreshes `State` (and so `LastContactUtc`) on every poll but reports a state only when it changed (a comparer decides what counts), counts the board as lost after `FailuresBeforeLost` (3) failed polls in a row, and connects again with backoff 1 s → 30 s. `PollNow` asks at once (after a command), `Restart` ends the connection or wait (new address or login).
 - `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
 - `IBoardConnection`: where the board is (`BoardEndpoint`) and its login (`BoardLogin`), with the defaults from the board's own settings, changeable while the app runs; `CheckLogin` says what the board can't take, and `RunAsync` keeps the connection open.
 - `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
 - **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, name, capabilities, default port, login length and an optional login hint in plain words) and how to register it. `Board:Type` chooses one (default `vm201`); the app refuses to start on a model the catalogue doesn't have. `AddBoards` registers the chosen model and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the connection open.
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, and one line in the catalogue. Nothing else in the app changes.
-- `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`).
+- `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`).
 - What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
 - The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
 
@@ -178,6 +181,20 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes); it translates `Vm201State` and refuses relays above 8.
 - `Vm201Connection` and `Vm201Traffic`: the client as an `IBoardConnection` and an `IBoardTraffic` (`Vm201TraceText` puts each packet in plain words). `Vm201Model` is its catalogue entry.
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
+
+## The VM204 (`Contactor.Boards.Vm204`)
+
+The VM204 is not the VM201's protocol. Source: Velleman's firmware, https://github.com/Velleman/VM204-Firmware, branch V1.1 (CycloneTCP); each route names its firmware file in `Vm204Api`. It is controlled only through its web server: plain HTTP, port 80 unless changed on the board, JSON answers, one request per connection (`Connection: close`), at most 3 connections. It never reports a change by itself, so the app polls.
+
+- `GET /api/auth?user=U&password=P` → `{"ApiKey":"…"}` (32 letters and digits, kept by the board until someone makes a new one on its web page); a wrong login → 400. Factory login `admin` / `VM204`.
+- `GET /api/status?key=K` → `{"relays": [b,b,b,b],"pulse": [b,b,b,b],"inputs": [b,b,b,b],"analog": n}`; a wrong key → 400.
+- `GET /api/relay/on?key=K&relay=1,3` and `/api/relay/off?…` → switch the listed relays (1–4) and answer the status; a wrong key → 400.
+- `/api/*` needs no HTTP basic auth; the board's own pages do. The firmware doesn't percent-decode the query and copies it into small buffers, so a user name or password is at most 31 characters, 48 together, of letters, digits and `- . _ ~ ! $ ' ( ) * + , ; : @` (`Vm204Login`).
+
+- `Vm204Client`: `HttpClient` (no proxy, answers capped at 4 KiB, 5 s per request on `TimeProvider`), one request at a time; logs in for the key and polls through `BoardPoller` (`Vm204:PollSeconds`, default 2). A refused key is dropped and the next poll logs in again. Commands throw `BoardNotConnectedException` while disconnected and poll at once afterwards; a change of the analog value alone isn't reported. Its `Traced` event gives each request and answer in plain words (`Vm204TraceText`): the key, the user name and the password never show, and the polls and unchanged answers are routine.
+- `Vm204Json` reads the answers strictly (anything else is a `Vm204ProtocolException` and counts as a failed poll). `Vm204Board` (4 relays, 4 inputs, 1 analog input, doesn't report changes), `Vm204Connection`, `Vm204Traffic` and `Vm204Model` (id `vm204`, port 80) are its adapters, `Features/Vm204` registers them.
+- `Vm204Simulator`: a small HTTP server on `TcpListener` with the same routes and 400s as the firmware, an optional login, relays and inputs set at the board, the analog value, a new key, and refused or dropped connections.
+- To check on a real board: the status JSON as above, whether an input reads `true` closed or open, that the status right after a command already shows it, logins with symbols and the 48-character total (the firmware's `authUser` also reads past the end of the query), and days of polling every 2 s.
 
 ## The simulator (`Contactor.Simulator`)
 
@@ -462,6 +479,13 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
     "DisableBoardTimers": true,
     "KeepAliveSeconds": 15,
     "LogPackets": false
+  },
+  "Vm204": {                        // only read with Board:Type vm204
+    "Host": "",
+    "Port": 80,
+    "Username": "",
+    "Password": "",
+    "PollSeconds": 2
   },
   "CloudflareAccess": {
     "TeamDomain": "",               // e.g. myteam.cloudflareaccess.com; install.sh asks for it

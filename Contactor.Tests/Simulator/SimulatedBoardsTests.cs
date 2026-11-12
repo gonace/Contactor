@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Boards.Vm204;
 using Contactor.Simulator;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -37,14 +38,26 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.False(withLogin.FromSettings);
     }
 
+    [Fact]
+    public void Should_RunAVm204_NextToAVm201()
+    {
+        Assert.Null(_boards.Add("vm201", FreePort(), null));
+        Assert.Null(_boards.Add("vm204", FreePort(), "admin:VM204"));
+
+        var vm204 = _boards.Boards.Single(b => b.Board.Model == Vm204Model.Model);
+        Assert.True(vm204.Board.HasLogin);
+        Assert.Equal("admin", vm204.Username);
+    }
+
     [Theory]
-    [InlineData("vm204", 9760, null, "Choose a model.")]
+    [InlineData("vm208", 9760, null, "Choose a model.")]
     [InlineData("", 9760, null, "Choose a model.")]
     [InlineData("vm201", 0, null, "The port is a number from 1 to 65535.")]
     [InlineData("vm201", 65536, null, "The port is a number from 1 to 65535.")]
     [InlineData("vm201", 9760, "john", "Write the login as user:password, e.g. john:secret.")]
     [InlineData("vm201", 9760, ":secret", "Write the login as user:password, e.g. john:secret.")]
     [InlineData("vm201", 9760, "johnathan:secret", "The user name can be at most 8 characters on the relay board.")]
+    [InlineData("vm204", 9760, "admin:a&b", "The password can only contain letters a–z, digits and - . _ ~ ! $ ' ( ) * + , ; : @ on the relay board.")]
     public void Should_SaySo_ForABoardThatCannotRun(string type, int port, string? login, string message)
     {
         Assert.Equal(message, _boards.Add(type, port, login));
@@ -186,7 +199,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Fact]
     public async Task Should_RefuseToStart_WhenABoardInTheSettingsCannotRun()
     {
-        var options = new SimulatorOptions { Boards = [new SimulatorBoardOptions { Type = "vm204", Port = FreePort() }] };
+        var options = new SimulatorOptions { Boards = [new SimulatorBoardOptions { Type = "vm208", Port = FreePort() }] };
         var service = new SimulatorHostedService(_boards, Options.Create(options));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(TestContext.Current.CancellationToken));

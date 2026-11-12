@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Boards.Vm204;
 using Contactor.Web.Features.Boards;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,12 +28,25 @@ public sealed class BoardCatalogueTests
 
     [Theory]
     [InlineData("vm204")]
+    [InlineData(" VM204")]
+    public void Should_RegisterTheVm204_WhenChosen(string type)
+    {
+        using var services = Build(type);
+
+        Assert.Same(Vm204Model.Model, services.GetRequiredService<BoardModel>());
+        Assert.IsType<Vm204Board>(services.GetRequiredService<IRelayBoard>());
+        Assert.IsType<Vm204Connection>(services.GetRequiredService<IBoardConnection>());
+        Assert.IsType<Vm204Traffic>(services.GetRequiredService<IBoardTraffic>());
+    }
+
+    [Theory]
+    [InlineData("vm208")]
     [InlineData("")]
     public void Should_RefuseToStart_WithABoardItDoesNotKnow(string type)
     {
         var error = Assert.Throws<InvalidOperationException>(() => Build(type));
 
-        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201.", error.Message);
+        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201, vm204.", error.Message);
     }
 
     [Fact]
@@ -48,7 +62,7 @@ public sealed class BoardCatalogueTests
     private static ServiceProvider Build(string? type)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1" })
             .Build();
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);

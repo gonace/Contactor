@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Contactor.ServiceDefaults\Contactor.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Contactor.Boards.Vm201\Contactor.Boards.Vm201.csproj" />
+    <ProjectReference Include="..\Contactor.Boards.Vm204\Contactor.Boards.Vm204.csproj" />
   </ItemGroup>
 
 </Project>

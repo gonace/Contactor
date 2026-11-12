@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Boards.Vm204;
 
 namespace Contactor.Simulator;
 
@@ -25,6 +26,14 @@ public static class SimulatorCatalogue
                 return error;
             },
             (username, password, logger, time) => new Vm201Simulator(username, password, logger) { TimeProvider = time }),
+        new(
+            Vm204Model.Model,
+            (username, password) =>
+            {
+                Vm204Login.TryCreate(username, password, out var error);
+                return error;
+            },
+            (username, password, logger, time) => new Vm204Simulator(username, password, logger) { TimeProvider = time }),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>
