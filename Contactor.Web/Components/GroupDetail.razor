@@ -427,6 +427,11 @@
             return "On";
         }
 
+        if (runtime.Phase == GroupPhases.Starting && index == level && runtime.NextStepAtUtc is { } start && start > Clock.UtcNow)
+        {
+            return $"Starts in {GroupStatusText.Remaining(start - Clock.UtcNow)}";
+        }
+
         return blockedBy is not null ? $"Needs {blockedBy.RoleName} to be on" : "Off";
     }
 

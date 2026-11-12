@@ -98,11 +98,20 @@ public sealed class GroupTextTests
     }
 
     [Fact]
+    public void Should_CountDownTheStartDelay()
+    {
+        var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(2.4) } };
+
+        Assert.Equal("Starting · Heat in 3 s", Status(group, State(1)));
+        Assert.Equal("Starting · step 2 of 2", Status(group with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now } }, State(1)));
+    }
+
+    [Fact]
     public void Should_SayHowLongTheRunOnLasts()
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };
 
-        Assert.Equal("Stopping · Fan keeps running for 5 min", Status(group, State(1)));
+        Assert.Equal("Stopping · Fan keeps running for 4:01", Status(group, State(1)));
         Assert.Equal("Stopping", Status(group, State()));
     }
 
@@ -161,11 +170,15 @@ public sealed class GroupTextTests
     }
 
     [Theory]
+    [InlineData(0, "1 s")]
     [InlineData(1, "1 s")]
     [InlineData(40.2, "41 s")]
-    [InlineData(60, "1 min")]
-    [InlineData(61, "2 min")]
-    public void Should_RoundTheTimeLeftUp(double seconds, string expected)
+    [InlineData(59.5, "1:00")]
+    [InlineData(60, "1:00")]
+    [InlineData(61, "1:01")]
+    [InlineData(299.1, "5:00")]
+    [InlineData(1800, "30:00")]
+    public void Should_CountDownTheTimeLeft(double seconds, string expected)
     {
         Assert.Equal(expected, GroupStatusText.Remaining(TimeSpan.FromSeconds(seconds)));
     }

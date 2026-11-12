@@ -1,3 +1,4 @@
+using System.Globalization;
 using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
@@ -83,6 +84,12 @@ public static class GroupStatusText
 
         if (runtime.Phase == GroupPhases.Starting)
         {
+            // Waiting out the start delay before the next relay: count it down.
+            if (level < n && runtime.NextStepAtUtc is { } nextStart && nextStart > nowUtc)
+            {
+                return $"Starting · {group.Members[level].RoleName} in {Remaining(nextStart - nowUtc)}";
+            }
+
             return $"Starting · step {Math.Clamp(level + 1, 1, n)} of {n}";
         }
 
@@ -128,11 +135,16 @@ public static class GroupStatusText
         return text;
     }
 
-    /// <summary>"4 min", or "40 s" under a minute; rounded up, so it never reads 0.</summary>
+    /// <summary>
+    /// A countdown, shown every second: "4:59", or "42 s" under a minute. Rounded up to a whole second, so it never
+    /// reads 0.
+    /// </summary>
     public static string Remaining(TimeSpan left)
     {
-        var seconds = (int)Math.Ceiling(left.TotalSeconds);
-        return seconds < 60 ? $"{Math.Max(seconds, 1)} s" : $"{(seconds + 59) / 60} min";
+        var seconds = Math.Max((int)Math.Ceiling(left.TotalSeconds), 1);
+        return seconds < 60
+            ? $"{seconds.ToString(CultureInfo.InvariantCulture)} s"
+            : $"{(seconds / 60).ToString(CultureInfo.InvariantCulture)}:{(seconds % 60).ToString("00", CultureInfo.InvariantCulture)}";
     }
 }
 
