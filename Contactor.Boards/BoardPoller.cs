@@ -170,8 +170,8 @@ public sealed class BoardPoller<TReading> : IDisposable
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                // The same rule as a poll's, counted once, here; the read that follows is an ordinary poll and counts on its
-                // own if it fails too.
+                // The same rule as a poll's, counted once, here; the read that follows is an ordinary poll and counts
+                // on its own if it fails too.
                 if (ex is not BoardNotConnectedException)
                 {
                     CountFailure(ex.Message);
