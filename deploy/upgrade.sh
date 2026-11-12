@@ -119,7 +119,7 @@ fi
 # Checked, so the name stays on the new image.
 trap - EXIT INT TERM
 
-# The release an image is, from the label the SDK sets from its version, e.g. 2026.11.4.
+# The release an image is, from the label the Dockerfile sets from its version, e.g. 2026.11.4.
 version_of() { docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2> /dev/null || true; }
 
 echo "Starting the app"

@@ -12,3 +12,5 @@ Contactor.Simulator/
 **/*.user
 **/.env
 **/contactor.db*
+**/keys/
+**/backups/

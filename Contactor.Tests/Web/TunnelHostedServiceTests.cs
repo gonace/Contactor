@@ -29,7 +29,7 @@ public sealed class TunnelHostedServiceTests
     [Fact]
     public async Task Should_RunCloudflared_WithTheTokenAndPath_AndLogItsLines()
     {
-        var process = new FakeCloudflared { Output = ["Registered tunnel connection"] };
+        var process = new FakeCloudflared { Output = ["Registered tunnel connection", "2026-11-12T10:00:00Z ERR Failed to dial a quic connection"] };
         var logger = new ListLogger();
         using var service = Create($" {Token} ", process, new ManualTimeProvider(), logger);
 
@@ -39,6 +39,7 @@ public sealed class TunnelHostedServiceTests
 
         Assert.Equal(("/opt/cloudflared", Token), (process.LastPath, process.LastToken));
         Assert.Contains("cloudflared: Registered tunnel connection", logger.Lines);
+        Assert.Contains((LogLevel.Warning, "cloudflared: 2026-11-12T10:00:00Z ERR Failed to dial a quic connection"), logger.Entries);
         Assert.DoesNotContain(logger.Lines, line => line.Contains(Token, StringComparison.Ordinal));
     }
 
@@ -71,7 +72,8 @@ public sealed class TunnelHostedServiceTests
     {
         var time = new ManualTimeProvider();
         var process = new FakeCloudflared { ExitCode = 1 };
-        using var service = Create(Token, process, time, new ListLogger());
+        var logger = new ListLogger();
+        using var service = Create(Token, process, time, logger);
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
         await AdvanceAsync(time, TimeSpan.FromSeconds(1));
@@ -84,11 +86,13 @@ public sealed class TunnelHostedServiceTests
         await AdvanceAsync(time, TimeSpan.FromSeconds(4));
         await WaitUntilAsync(() => process.Runs == 4);
         process.Duration = null;
-        await Task.Delay(20, Cancel);
         await AdvanceAsync(time, TimeSpan.FromSeconds(1));
 
         await WaitUntilAsync(() => process.Runs == 5);
         await service.StopAsync(Cancel);
+        Assert.Equal(
+            ["1", "2", "4", "1"],
+            logger.Lines.Where(l => l.StartsWith("cloudflared stopped", StringComparison.Ordinal)).Take(4).Select(l => l.Split(' ')[^2]));
     }
 
     [Fact]
@@ -210,9 +214,11 @@ public sealed class TunnelHostedServiceTests
 
     private sealed class ListLogger : ILogger<TunnelHostedService>
     {
-        private readonly ConcurrentQueue<string> _lines = new();
+        private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries = new();
 
-        public IReadOnlyList<string> Lines => [.. _lines];
+        public IReadOnlyList<(LogLevel Level, string Line)> Entries => [.. _entries];
+
+        public IReadOnlyList<string> Lines => [.. _entries.Select(e => e.Line)];
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull
@@ -228,7 +234,7 @@ public sealed class TunnelHostedServiceTests
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
             ArgumentNullException.ThrowIfNull(formatter);
-            _lines.Enqueue(formatter(state, exception));
+            _entries.Enqueue((logLevel, formatter(state, exception)));
         }
     }
 }
@@ -335,5 +341,41 @@ internal sealed class ManualTimeProvider : TimeProvider
             Dispose();
             return ValueTask.CompletedTask;
         }
+    }
+}
+
+/// <summary>The real process wrapper, with the dotnet command standing in for cloudflared.</summary>
+public sealed class CloudflaredProcessTests
+{
+    private static CancellationToken Cancel => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Should_ReturnTheExitCode_AndForwardWhatItWrites()
+    {
+        // "dotnet tunnel --no-autoupdate run" isn't a command dotnet has: it says so and exits with an error.
+        List<string> lines = [];
+
+        var exitCode = await new CloudflaredProcess().RunAsync("dotnet", "a-token", line => { lock (lines) { lines.Add(line); } }, Cancel);
+
+        Assert.NotEqual(0, exitCode);
+        Assert.NotEmpty(lines);
+        Assert.All(lines, line => Assert.False(string.IsNullOrWhiteSpace(line)));
+    }
+
+    [Fact]
+    public async Task Should_Throw_WhenThereIsNoSuchProgram()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "contactor-tests", "no-cloudflared-here");
+
+        await Assert.ThrowsAsync<System.ComponentModel.Win32Exception>(() => new CloudflaredProcess().RunAsync(missing, "a-token", _ => { }, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_StopTheProcess_WhenCancelled()
+    {
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new CloudflaredProcess().RunAsync("dotnet", "a-token", _ => { }, cancelled.Token));
     }
 }

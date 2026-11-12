@@ -23,8 +23,10 @@ RUN dotnet publish Contactor.Web -c Release -a "$TARGETARCH" -o /app \
 # Chiseled (no shell, no package manager); "extra" adds the time zone data the schedules need and ICU.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-resolute-chiseled-extra
 ARG VERSION=0.0.0-dev
+ARG COMMIT=
 LABEL org.opencontainers.image.title="Contactor" \
       org.opencontainers.image.version="$VERSION" \
+      org.opencontainers.image.revision="$COMMIT" \
       org.opencontainers.image.source="https://github.com/gonace/Contactor"
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 COPY --from=build /app /app

@@ -9,8 +9,7 @@ public static class TunnelServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
         services.AddOptions<TunnelOptions>()
-            .Bind(configuration.GetSection(TunnelOptions.SectionName))
-            .ValidateOnStart();
+            .Bind(configuration.GetSection(TunnelOptions.SectionName));
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ICloudflaredProcess, CloudflaredProcess>();
         services.AddHostedService<TunnelHostedService>();

@@ -41,11 +41,12 @@ public sealed partial class TunnelHostedService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             var started = _time.GetUtcNow();
+            int? exitCode = null;
+            Exception? failure = null;
             try
             {
                 LogStarting();
-                var exitCode = await _process.RunAsync(_options.Path, _options.Token.Trim(), LogOutput, stoppingToken);
-                LogStopped(exitCode, wait.TotalSeconds);
+                exitCode = await _process.RunAsync(_options.Path, _options.Token.Trim(), LogOutput, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -55,12 +56,22 @@ public sealed partial class TunnelHostedService : BackgroundService
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                LogFailed(ex, wait.TotalSeconds);
+                failure = ex;
             }
 
+            // A run that worked for a while starts the waits over.
             if (_time.GetUtcNow() - started >= RanLongEnough)
             {
                 wait = FirstWait;
+            }
+
+            if (failure is not null)
+            {
+                LogFailed(failure, wait.TotalSeconds);
+            }
+            else
+            {
+                LogStopped(exitCode ?? -1, wait.TotalSeconds);
             }
 
             try
@@ -76,10 +87,18 @@ public sealed partial class TunnelHostedService : BackgroundService
         }
     }
 
-    // cloudflared's own lines, at Information: they say whether the tunnel is up. It never writes the token.
+    // cloudflared's own lines: they say whether the tunnel is up. Its errors (" ERR ") as warnings. It never writes the
+    // token.
     private void LogOutput(string line)
     {
-        LogCloudflared(line);
+        if (line.Contains(" ERR ", StringComparison.Ordinal))
+        {
+            LogCloudflaredError(line);
+        }
+        else
+        {
+            LogCloudflared(line);
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No tunnel token (Tunnel__Token): cloudflared isn't started")]
@@ -90,6 +109,9 @@ public sealed partial class TunnelHostedService : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "cloudflared: {Line}")]
     private partial void LogCloudflared(string line);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "cloudflared: {Line}")]
+    private partial void LogCloudflaredError(string line);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "cloudflared stopped with exit code {ExitCode}; starting it again in {Seconds} s")]
     private partial void LogStopped(int exitCode, double seconds);

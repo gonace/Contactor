@@ -16,7 +16,8 @@ services:
     image: ${CONTACTOR_IMAGE:-ghcr.io/gonace/contactor:latest}
     restart: unless-stopped
     environment:
-      # Named here too, so this file also works with an image from before the /data folder.
+      # Named here too, so an image from before the /data folder keeps its data with this file. Such an image has no
+      # cloudflared inside, though: go back to one only with that release's deploy folder (see DEPLOY.md).
       ConnectionStrings__Default: Data Source=/data/contactor.db
       CloudflareAccess__TeamDomain: ${CF_ACCESS_TEAM_DOMAIN:?run install.sh}
       CloudflareAccess__Audience: ${CF_ACCESS_AUDIENCE:?run install.sh}
@@ -27,8 +28,17 @@ services:
       Vm201__LogPackets: ${VM201_LOG_PACKETS:-false}
       Tunnel__Token: ${CLOUDFLARE_TUNNEL_TOKEN:?run install.sh}
     # The database, its nightly backups and the app's keys, on the Raspberry Pi's SD card; owned by the image's user
-    # (1654). The image keeps everything in /data. Its health check (the app asking its own /healthz) is in the image.
+    # (1654). The image keeps everything in /data.
     volumes:
       - /var/lib/contactor:/data
+    healthcheck:
+      # The same as the image's own; here too for images from before it had one. No shell or curl in the image: the
+      # app asks its own /healthz.
+      test: ["CMD", "dotnet", "/app/Contactor.Web.dll", "healthcheck"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 1m
+      start_interval: 5s
     logging: *logging
 
