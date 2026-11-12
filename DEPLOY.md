@@ -1,12 +1,12 @@
 # Deploying Contactor
 
-Contactor runs on a Raspberry Pi next to the relay board, with Docker Compose: the app's container and `cloudflared`,
-which connects out to Cloudflare. No port is opened on the router or published on the Raspberry Pi. Everyone signs
+Contactor runs on a Raspberry Pi next to the relay board, with Docker Compose: one container, in which the app also
+runs `cloudflared`, which connects out to Cloudflare. No port is opened on the router or published on the Raspberry Pi. Everyone signs
 in through Cloudflare Access on a hostname of your own.
 
 ```
 Phone ─▶ Cloudflare Access ─▶ Cloudflare Tunnel ─▶ cloudflared ─▶ contactor:8080 ─▶ VM201 (TCP 9760)
-                                                   (Raspberry Pi, Docker Compose)
+                                                   └── the contactor container (Raspberry Pi) ──┘
 ```
 
 You need a domain on Cloudflare and a Cloudflare Zero Trust account (the free plan is enough). Set up Cloudflare
@@ -40,7 +40,12 @@ If the board has a login, you can give it on the first run:
 no single quote), or set it later in the app.
 
 The settings are kept in `/opt/contactor/.env` (readable by root only); the database, its backups and the app's
-keys in `/var/lib/contactor`.
+keys in `/var/lib/contactor`, which the container sees as `/data`.
+
+**Installed before November 2026?** Once the one-container image is published, run `install.sh` again (as above; it
+keeps your settings). It writes the new `compose.yml`: one container instead of two, with the data folder mapped to
+`/data`. Until then the app keeps working on the old `compose.yml` and says so in its log. Don't run it before that
+image is out: the new `compose.yml` has no separate `cloudflared`, so an older image would have no tunnel.
 
 **Check it:** open your hostname on your phone and sign in with the code. Relays shows
 "No contact with the relay board", which is right without a board. Turn on **Settings → Debugging**: the Debug tab
@@ -59,7 +64,8 @@ version is healthy, it removes all but the 3 newest versions, so the SD card doe
 
 To go back to an earlier version, e.g. after a bad release: add `CONTACTOR_IMAGE='ghcr.io/gonace/contactor:2026.11.12'`
 to `/opt/contactor/.env` and run `sudo contactor-upgrade`. It stays on that version until you remove the line
-again.
+again. Versions before the one-container image (November 2026) also need their own deploy folder: run that release's
+`install.sh`, since they have no `cloudflared` inside and need the old two-container `compose.yml`.
 
 When a release changes anything under `deploy/` (new settings, services or signing keys), copy the deploy folder
 over again and run `install.sh`; it keeps the settings.
@@ -163,8 +169,9 @@ it writes a few lines every 15 seconds, so turn it off again afterwards: remove 
 `/opt/contactor` holds the secrets, so only root can open it: run compose through `sudo` with `-f`, as below,
 rather than `cd` into it first.
 
-- `sudo docker compose -f /opt/contactor/compose.yml ps` shows both containers and whether the app is healthy.
-- `sudo docker compose -f /opt/contactor/compose.yml logs --tail 100 contactor` (or `cloudflared`) shows what they say.
+- `sudo docker compose -f /opt/contactor/compose.yml ps` shows the container and whether the app is healthy.
+- `sudo docker compose -f /opt/contactor/compose.yml logs --tail 100 contactor` shows what it says, `cloudflared`'s
+  lines included.
 - "No contact with the relay board" in the app: the app can't reach the VM201. Check the board's address under
   Settings (find it in the router's list of clients) and that the board answers: `nc -vz <address> 9760`.
 - "Access denied.": the request didn't come through Cloudflare Access, or the team domain or AUD tag in `.env` is

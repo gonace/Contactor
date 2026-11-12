@@ -54,34 +54,24 @@ jobs:
 
       - name: Publish the image
         id: publish
+        # From the Dockerfile, for linux/arm64 and linux/amd64 (scripts/images-build.sh); it prints the digest of the
+        # image index it pushed, so the sign step signs exactly that, never a tag.
         env:
-          SDK_CONTAINER_REGISTRY_UNAME: ${{ github.actor }}
-          SDK_CONTAINER_REGISTRY_PWORD: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          repository="${GITHUB_REPOSITORY_OWNER,,}/$(dotnet msbuild Contactor.Web -getProperty:ContainerRepository)"
-          # -getProperty prints the image index exactly as the publish pushed it; errors still show.
-          index=$(dotnet publish Contactor.Web -c Release -t:PublishContainer \
-            -p:Version="$VERSION" \
-            -p:ContainerRegistry=ghcr.io \
-            -p:ContainerRepository="$repository" \
-            -p:ContainerImageTags="\"$VERSION;latest;sha-${GITHUB_SHA::7}\"" \
-            -getProperty:GeneratedImageIndex)
-          if [[ "$index" != '{'*'"manifests"'*'}' ]]; then
-            echo "::error::Publishing gave no image index."
-            exit 1
-          fi
-          # Its digest is the hash of those bytes: the sign step signs exactly what was pushed, never a tag.
-          digest="sha256:$(printf '%s' "$index" | sha256sum | cut -d' ' -f1)"
-          echo "Published ghcr.io/$repository@$digest ($VERSION)"
-          echo "image=ghcr.io/$repository@$digest" >> "$GITHUB_OUTPUT"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/contactor"
+          digest=$(bash scripts/images-build.sh "$image" "$VERSION" "$GITHUB_SHA")
+          echo "Published $image@$digest ($VERSION)"
+          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
 
       - name: Sign the image
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-          SDK_CONTAINER_REGISTRY_UNAME: ${{ github.actor }}
-          SDK_CONTAINER_REGISTRY_PWORD: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ steps.publish.outputs.image }}
         run: bash scripts/images-sign.sh "$IMAGE"
 

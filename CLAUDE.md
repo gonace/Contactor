@@ -19,7 +19,7 @@ The screens are described under User interface below; the running app is the ref
 ```
 Phone ──HTTPS──▶ <your hostname>: Cloudflare Access (e-mail OTP) ──▶ Cloudflare Tunnel
                                                          │
-                                         cloudflared on the Raspberry Pi (workshop)
+                                cloudflared, started by the app in its container on the Raspberry Pi
                                                          │ http://contactor:8080 (compose network)
                                               Contactor.Web (Blazor Server, .NET 10)
                                                  │                    │
@@ -28,20 +28,21 @@ Phone ──HTTPS──▶ <your hostname>: Cloudflare Access (e-mail OTP) ─�
 
 - **No port is opened to the internet.** All access goes through Cloudflare Tunnel + Access on the installation's own hostname. Each installation has its own Access team domain (`<team>.cloudflareaccess.com`) and application; the AUD tag is in Zero Trust → Access controls → Applications → Edit → Additional settings.
 - **Sign-in is handled entirely by Cloudflare Access** (one-time PIN by e-mail, session length 1 month, an allow list of e-mail addresses). The app has no sign-in of its own.
-- The app runs in a container and listens on port 8080 on all of the container's addresses, so cloudflared reaches it on the compose network. The port is **never published** on the Raspberry Pi, so nobody on the LAN can get around Access.
+- The app runs in a container and listens on port 8080 on all of the container's addresses. It starts `cloudflared` itself when `Tunnel:Token` is set, and starts it again with a growing wait (1 s doubling to 1 min) whenever it stops (`Features/Tunnel`); the image has no shell or process manager. The token goes to `cloudflared` only through its environment and is never logged. The port is **never published** on the Raspberry Pi, so nobody on the LAN can get around Access.
 - Give the Pi and the VM201 DHCP reservations in the router, so their addresses don't change.
 
 ## Stack and structure
 
 - .NET 10 (LTS), C#, Blazor Server (interactive server rendering), EF Core + `Microsoft.EntityFrameworkCore.Sqlite`
 - No JavaScript framework. No external CSS framework; one small stylesheet of our own, following the design tokens below.
-- Target: a container image (`ghcr.io/gonace/contactor`, linux-arm64 and linux-x64) on Ubuntu chiseled-extra, which includes the time zone data the schedules need; run with Docker Compose on the Raspberry Pi.
+- Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi.
 - Local development with Aspire 13.6.5 (13.6.5 fixes GHSA-f7vh-h5g3-7jrh; earlier 13.6 releases hung at startup on Windows, aspire#20773). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the web app against it.
 
 No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Vm201/`, `Web/` …). Don't create more test projects.
 
 ```
 Contactor.slnx
+Dockerfile                  # The image: the app and cloudflared, for linux/arm64 and linux/amd64
 global.json                 # SDK version and test runner (Microsoft.Testing.Platform)
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
@@ -59,7 +60,7 @@ Contactor.Tests/          # The only test project
   Vm201/                    # Codec + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
-  compose.yml               # The app + cloudflared on the Raspberry Pi; no published ports
+  compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
   install.sh                # Run on the Pi: settings to /opt/contactor/.env, data folder, ghcr.io login, first start
   upgrade.sh                # Pulls, checks the cosign signature, restarts, waits until healthy
   autoupdate-install.sh     # systemd timer: upgrade every night 03:00–04:00
@@ -68,6 +69,7 @@ docs/screenshots/           # The README's screenshots, taken by scripts/screens
 scripts/
   screenshots/take.mjs      # Takes them: simulator, app and made-up data on a temporary database, Playwright
   release-version.sh        # YYYY.M.D[.N]
+  images-build.sh           # Build and push the image with docker buildx; prints the digest to sign
   images-publish.sh         # Publish and sign the image from your computer
   images-sign.sh            # cosign, by digest
 DEPLOY.md                   # Installation steps
@@ -282,7 +284,7 @@ Input                   (future; create the table now but show nothing in the UI
 - **SQLite stays the database.** Keep SQLite-specific code to `Persistence` (the start-up settings above) and `Features/Backup` (`VACUUM INTO`); everything else goes through EF Core, so a later switch to PostgreSQL stays a small change.
 - **Relay state is not stored.** The VM201 is the source of truth; the app always shows the board's latest `CMD_STATUS`.
 - Every timestamp is stored in UTC and shown in Europe/Stockholm. Schedules are stored as local time, see below.
-- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/var/lib/contactor/contactor.db`, on the Raspberry Pi's SD card. The app writes little (a row a minute from the scheduler, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
+- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
 
 ---
 
@@ -442,7 +444,7 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
 
 ```json
 {
-  "ConnectionStrings": { "Default": "Data Source=/var/lib/contactor/contactor.db" },
+  "ConnectionStrings": { "Default": "Data Source=/data/contactor.db" },
   "Board": { "Type": "vm201" },     // which model, from the board catalogue; vm201 when not set
   "Vm201": {
     "Host": "",                     // the board's address, e.g. 192.168.1.50; install.sh asks for it
@@ -458,13 +460,14 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
     "Audience": "<AUD tag of the Access application>",
     "DevUserEmail": null
   },
+  "Tunnel": { "Token": "" },        // the Cloudflare tunnel's token; empty: no cloudflared
   "TimeZone": "Europe/Stockholm"
 }
 ```
 
 No `Urls` in the settings: the .NET image listens on 8080 (`ASPNETCORE_HTTP_PORTS`), and in development Aspire picks the port. ASP.NET Core's data protection keys are kept in `keys/` next to the database, so they survive upgrades.
 
-Anything specific to the installation or secret (the Access team domain and AUD tag, the board's address and password, the tunnel token) is never in the repository or the image. An install script asks for them once, saves them in `/opt/contactor/.env` (readable by root only), and compose passes them in as environment variables, e.g. `CloudflareAccess__Audience`.
+Anything specific to the installation or secret (the Access team domain and AUD tag, the board's address and password, the tunnel token) is never in the repository or the image. An install script asks for them once, saves them in `/opt/contactor/.env` (readable by root only), and compose passes them in as environment variables, e.g. `CloudflareAccess__Audience` and `Tunnel__Token`.
 
 ---
 
@@ -473,8 +476,8 @@ Anything specific to the installation or secret (the Access team domain and AUD 
 See `DEPLOY.md` for the steps.
 
 - **Versions:** `YYYY.M.D` in UTC without leading zeros, plus `.N` for a later release the same day (`scripts/release-version.sh`). A release is built with `-p:Version=<version>`; every other build is `0.0.0-dev` (`Directory.Build.props`). `AppBuild` reads the version and commit; they show in `/healthz`, the start log, the image label `org.opencontainers.image.version`, the upgrade's output and at the bottom of Settings.
-- **Publish:** the Images workflow (started by hand) or `scripts/images-publish.sh` builds the solution and runs every test (a failure publishes nothing), builds the image with `dotnet publish -t:PublishContainer`, tags it `YYYY.M.D[.N]`, `latest` and `sha-<commit>`, signs it with cosign by digest (`scripts/images-sign.sh`, keys in `deploy/cosign/`) and tags the commit `v<version>`.
-- **Run:** Docker Compose on the Raspberry Pi (Raspberry Pi OS Lite 64-bit on an SD card, an endurance card recommended), from `/opt/contactor` with `compose.yml` and `.env`. The app's container runs as the image's user 1654; `/var/lib/contactor` (database, `backups/`, `keys/`) is a bind mount owned by it. `cloudflared` is pinned by digest and runs a remotely managed tunnel: `<your hostname> → http://contactor:8080`.
+- **Publish:** the Images workflow (started by hand) or `scripts/images-publish.sh` builds the solution and runs every test (a failure publishes nothing), builds and pushes the image from the `Dockerfile` with `docker buildx` (`scripts/images-build.sh`), tags it `YYYY.M.D[.N]`, `latest` and `sha-<commit>`, signs it with cosign by digest (`scripts/images-sign.sh`, keys in `deploy/cosign/`) and tags the commit `v<version>`.
+- **Run:** Docker Compose on the Raspberry Pi (Raspberry Pi OS Lite 64-bit on an SD card, an endurance card recommended), from `/opt/contactor` with `compose.yml` and `.env`. One container, run as the image's user 1654; the Pi's `/var/lib/contactor` is mounted as `/data` (database, `backups/`, `keys/`) and owned by it. `cloudflared` is pinned by digest in the `Dockerfile` and runs a remotely managed tunnel: `<your hostname> → http://contactor:8080`. An installation whose `compose.yml` predates `/data` still finds its database in `/var/lib/contactor` and logs that `install.sh` should be run again (`PersistenceServiceCollectionExtensions.Resolve`).
 - **Upgrade:** `contactor-upgrade` (`deploy/upgrade.sh`) only runs an image signed with one of the keys in its `COSIGN_KEYS`; a systemd timer runs it nightly between 03:00 and 04:00 (`deploy/autoupdate-install.sh`). After a healthy start it keeps the 3 newest versions of the app's image (`KEEP_VERSIONS`, never the running one) and removes older ones, so a 16 GB SD card doesn't fill up.
 - **Migration:** run `Database.Migrate()` at start.
 - **Backup:** every night at 02:30 the app copies the database with SQLite's `VACUUM INTO` into `backups/contactor-YYYY-MM-DD.db` and keeps the latest 14 (`Backup:Folder`, `Backup:Keep`, `Backup:At`).

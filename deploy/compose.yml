@@ -1,7 +1,7 @@
-# The relay app and its Cloudflare uplink. install.sh copies this file to /opt/contactor, next to the settings in
-# /opt/contactor/.env (readable by root only), and upgrade.sh brings it up. No port is published on the Raspberry
-# Pi: cloudflared connects out to Cloudflare and forwards the app's hostname to http://contactor:8080 on the
-# network Compose makes for these two.
+# The relay app, with its Cloudflare uplink inside it. install.sh copies this file to /opt/contactor, next to the
+# settings in /opt/contactor/.env (readable by root only), and upgrade.sh brings it up. No port is published on the
+# Raspberry Pi: the app starts cloudflared itself (Tunnel__Token), which connects out to Cloudflare and forwards the
+# app's hostname to http://contactor:8080, the container's own name on the network Compose makes for it.
 name: contactor
 
 x-logging: &logging
@@ -16,6 +16,9 @@ services:
     image: ${CONTACTOR_IMAGE:-ghcr.io/gonace/contactor:latest}
     restart: unless-stopped
     environment:
+      # Named here too, so an image from before the /data folder keeps its data with this file. Such an image has no
+      # cloudflared inside, though: go back to one only with that release's deploy folder (see DEPLOY.md).
+      ConnectionStrings__Default: Data Source=/data/contactor.db
       CloudflareAccess__TeamDomain: ${CF_ACCESS_TEAM_DOMAIN:?run install.sh}
       CloudflareAccess__Audience: ${CF_ACCESS_AUDIENCE:?run install.sh}
       Vm201__Host: ${VM201_HOST:?run install.sh}
@@ -23,11 +26,14 @@ services:
       Vm201__Password: ${VM201_PASSWORD:-}
       # true logs every packet to and from the board (see DEPLOY.md); off by default.
       Vm201__LogPackets: ${VM201_LOG_PACKETS:-false}
-    # The database and its nightly backups, on the Raspberry Pi's SD card; owned by the image's user (1654).
+      Tunnel__Token: ${CLOUDFLARE_TUNNEL_TOKEN:?run install.sh}
+    # The database, its nightly backups and the app's keys, on the Raspberry Pi's SD card; owned by the image's user
+    # (1654). The image keeps everything in /data.
     volumes:
-      - /var/lib/contactor:/var/lib/contactor
+      - /var/lib/contactor:/data
     healthcheck:
-      # The image has no shell or curl: the app asks its own /healthz.
+      # The same as the image's own; here too for images from before it had one. No shell or curl in the image: the
+      # app asks its own /healthz.
       test: ["CMD", "dotnet", "/app/Contactor.Web.dll", "healthcheck"]
       interval: 1m
       timeout: 10s
@@ -36,13 +42,3 @@ services:
       start_interval: 5s
     logging: *logging
 
-  cloudflared:
-    # Pinned by digest: only our own image is checked with cosign, so this one must not change under its tag.
-    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?run install.sh}
-    depends_on:
-      - contactor
-    logging: *logging

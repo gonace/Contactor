@@ -3,13 +3,13 @@
 # and images-publish.sh both sign with it right after publishing, and pass it the digest of the image index the
 # publish itself pushed, so what gets signed is exactly what was built: a tag could be moved to another image
 # between publishing and signing. It takes the private key itself (not a path) in COSIGN_PRIVATE_KEY and its
-# password in COSIGN_PASSWORD, and the registry login dotnet publish used in SDK_CONTAINER_REGISTRY_UNAME and
-# SDK_CONTAINER_REGISTRY_PWORD. To sign a release again by hand, e.g. after a failed signing, name the image by its
+# password in COSIGN_PASSWORD, and the registry login in REGISTRY_USER and
+# REGISTRY_TOKEN. To sign a release again by hand, e.g. after a failed signing, name the image by its
 # digest (the publish prints it; GitHub shows it on the package's version):
 #
-#   export COSIGN_PRIVATE_KEY="$(cat ~/contactor-keys/contactor-main.key)" SDK_CONTAINER_REGISTRY_UNAME=gonace
+#   export COSIGN_PRIVATE_KEY="$(cat ~/contactor-keys/contactor-main.key)" REGISTRY_USER=gonace
 #   read -rsp "Key password: " COSIGN_PASSWORD && echo && export COSIGN_PASSWORD
-#   read -rsp "GitHub token (write:packages): " SDK_CONTAINER_REGISTRY_PWORD && echo && export SDK_CONTAINER_REGISTRY_PWORD
+#   read -rsp "GitHub token (write:packages): " REGISTRY_TOKEN && echo && export REGISTRY_TOKEN
 #   bash scripts/images-sign.sh ghcr.io/gonace/contactor@sha256:<digest>
 #
 # With --check instead of images it only checks the key and the password, before anything is published.
@@ -67,8 +67,8 @@ echo "Signing with $key"
 login=$(mktemp -d)
 trap 'rm -rf "$login"' EXIT
 host=${1%%/*}
-if [[ -n "${SDK_CONTAINER_REGISTRY_PWORD:-}" ]]; then
-    auth=$(printf '%s:%s' "${SDK_CONTAINER_REGISTRY_UNAME:-token}" "$SDK_CONTAINER_REGISTRY_PWORD" | base64 | tr -d '\n')
+if [[ -n "${REGISTRY_TOKEN:-}" ]]; then
+    auth=$(printf '%s:%s' "${REGISTRY_USER:-token}" "$REGISTRY_TOKEN" | base64 | tr -d '\n')
     (umask 077 && printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$host" "$auth" > "$login/config.json")
 fi
 # Git Bash: cosign.exe needs the folder as a Windows path.
