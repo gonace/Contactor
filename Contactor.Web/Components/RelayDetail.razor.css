@@ -390,6 +390,8 @@ button:disabled {
 
 @media (min-width: 1024px) {
     .screen {
+        /* Beside the side menu, lined up with Relays: 16 px here and the content's own 16 px. */
+        --beside-menu: 16px;
         max-width: 1100px;
     }
 

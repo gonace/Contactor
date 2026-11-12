@@ -3,6 +3,10 @@
     bottom: 0;
 }
 
+.bottom.side-only {
+    display: none;
+}
+
 .tabs {
     display: flex;
     border-top: 1px solid var(--line);
@@ -75,7 +79,9 @@
    the page can make room for it (app.css uses :has); elsewhere it stays at the bottom. */
 @supports selector(:has(a)) {
     @media (min-width: 1024px) {
-        .bottom {
+        .bottom,
+        .bottom.side-only {
+            display: block;
             position: fixed;
             top: 0;
             bottom: 0;

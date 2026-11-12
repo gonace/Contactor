@@ -193,7 +193,7 @@ a {
     }
 
     body:has(nav.tabs) .screen {
-        margin-left: 0;
+        margin-left: var(--beside-menu, 0);
     }
 }
 
