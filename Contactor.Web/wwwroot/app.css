@@ -197,17 +197,21 @@ a {
 }
 
 /* A mouse gets hover states; touch keeps its pressed state only. Keyboard focus always shows. */
+/* Buttons get a ring, which leaves their colours and contrast alone; links get darker text (lighter in dark mode),
+   which only raises their contrast. */
 @media (hover: hover) {
-    button:not(:disabled):hover,
+    button:not(:disabled):hover {
+        box-shadow: 0 0 0 2px var(--line-strong);
+    }
+
     a:hover {
-        filter: brightness(0.92);
+        filter: brightness(0.85);
     }
 }
 
 @media (hover: hover) and (prefers-color-scheme: dark) {
-    button:not(:disabled):hover,
     a:hover {
-        filter: brightness(1.18);
+        filter: brightness(1.2);
     }
 }
 
