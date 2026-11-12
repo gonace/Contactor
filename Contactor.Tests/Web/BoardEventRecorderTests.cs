@@ -250,6 +250,27 @@ public sealed class BoardEventRecorderTests
         await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == due);
     }
 
+    // A save that fails when contact comes back loses nothing: the next status records the change and the short gap.
+    [Fact]
+    public async Task Should_StartOver_WhenTheSaveAfterALostContactFails()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await setup.StartAsync();
+        setup.Board.SetConnected(false);
+        setup.Board.SetInput(1, on: true);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+
+        setup.Board.SetConnected(true);
+        await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
+        Assert.Empty(InputEvents(setup.Database));
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+        setup.Board.SetInput(2, on: true);
+
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
+        Assert.Contains(InputEvents(setup.Database), e => e is { InputId: 1, Details: """{"on":true,"noticed":true}""" });
+        Assert.Null(setup.State().LongGapEndedUtc);
+    }
+
     private static List<EventLogEntry> InputEvents(TestDatabase database)
     {
         return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];
@@ -314,6 +335,12 @@ public sealed class BoardEventRecorderTests
                 Details = on ? """{"on":true}""" : """{"on":false}""",
             });
             db.SaveChanges();
+        }
+
+        public async Task ExecuteAsync(string sql)
+        {
+            await using var db = await Database.Factory.CreateDbContextAsync(Cancel);
+            await db.Database.ExecuteSqlRawAsync(sql, Cancel);
         }
 
         public BoardWatchState State()

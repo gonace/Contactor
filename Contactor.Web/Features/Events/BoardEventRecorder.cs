@@ -139,6 +139,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var now = _clock.UtcNow;
 
+        // What this status changes, kept so a failed save can put it all back and the next status starts over.
+        var before = (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc);
+
         // Contact again, after the start or a lost contact: was the gap long enough that the inputs' times can't be trusted?
         var afterGap = !_watching;
         if (afterGap)
@@ -177,7 +180,6 @@ public sealed partial class BoardEventRecorder : BackgroundService
             RecordInputChanges(db, await LastLoggedInputsAsync(db, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
         }
 
-        var previous = _known;
         _known = state;
         if (db.ChangeTracker.HasChanges())
         {
@@ -187,15 +189,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
             }
             catch
             {
-                // Nothing was saved: the next status starts over from the same point, so the changes, and a gap that
-                // just ended, are recorded then.
-                _known = previous;
-                if (afterGap)
-                {
-                    _watching = false;
-                    _contactSavedUtc = null;
-                }
-
+                // Nothing was saved: the next status starts over from the same point, so the changes, a gap that just
+                // ended and a restored connection are recorded then.
+                (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc) = before;
                 throw;
             }
 
