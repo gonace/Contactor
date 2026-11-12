@@ -158,11 +158,22 @@ public sealed class SetupHandler
     /// on; it is turned off again even if the page is closed. Its auto-off is set a little later, so
     /// <see cref="AutoOffService"/> turns it off should the app stop or the board drop before that. Throws
     /// <see cref="BoardNotConnectedException"/> without a board, and <see cref="RelayInGroupException"/> for a relay in
-    /// a group.
+    /// a group. An ON that fails may still have switched the relay on: it is turned off too, if the board shows it on
+    /// by the end of the try.
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
-        await _control.TurnOnAsync(relayId, userEmail, cancellationToken);
+        try
+        {
+            await _control.TurnOnAsync(relayId, userEmail, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not RelayInGroupException and not OperationCanceledException and not ArgumentException)
+        {
+            // Refused, unreadable or no answer: the board may have switched it on all the same, and its credited ON
+            // gets the relay's full auto-off, not the try's few seconds.
+            _ = TurnOffLaterAsync(relayId, userEmail, onlyIfOn: true);
+            throw;
+        }
 
         // ON has gone out: the turn-off starts now, whatever happens to the save below.
         _ = TurnOffLaterAsync(relayId, userEmail);
@@ -172,11 +183,19 @@ public sealed class SetupHandler
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task TurnOffLaterAsync(int relayId, string userEmail)
+    // With onlyIfOn, after an ON that failed: only a relay the board shows on is turned off, so a command that never
+    // reached the board leaves no OFF and no event.
+    private async Task TurnOffLaterAsync(int relayId, string userEmail, bool onlyIfOn = false)
     {
         try
         {
             await Task.Delay(TryLength, _time);
+            if (onlyIfOn && !_board.State.IsOn(relayId))
+            {
+                _logger.TryNotOn(relayId);
+                return;
+            }
+
             await _control.TurnOffAsync(relayId, userEmail, CancellationToken.None);
         }
         catch (Exception ex)
@@ -203,6 +222,9 @@ internal static partial class SetupLog
 {
     [LoggerMessage(Level = LogLevel.Information, Message = "The setup guide chose the {Chosen}; the app runs with the {Running} and restarts to use it")]
     public static partial void BoardChosen(this ILogger logger, string chosen, string running);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "\"Try\" of relay {RelayId} failed and the relay didn't come on: nothing to turn off")]
+    public static partial void TryNotOn(this ILogger logger, int relayId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "\"Try\" couldn't turn relay {RelayId} off again")]
     public static partial void TryNotEnded(this ILogger logger, Exception exception, int relayId);

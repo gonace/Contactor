@@ -425,6 +425,44 @@ public sealed class SetupTests
         Assert.Equal("Fan heater", (await rig.Setup.RelaysAsync(Cancel))[1].GroupName);
     }
 
+    // The board switched the relay on although "Try"'s ON was reported as failed: it is turned off after the try,
+    // not left on for the relay's full auto-off.
+    [Fact]
+    public async Task Should_TurnATriedRelayOff_WhenItsOnFailedButCameOn()
+    {
+        await using var rig = await Rig.StartAsync();
+        rig.Board.SwitchSilentlyThenFail = true;
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, "john@example.com", Cancel));
+
+        // The board switched it on and then off: its OFF is logged. Not asserted on the board's state right after the
+        // ON, which a slow run could already have turned off.
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && OffLogged(rig));
+    }
+
+    private static bool OffLogged(Rig rig)
+    {
+        using var db = rig.Database.Factory.CreateDbContext();
+        return db.EventLog.Any(e => e.RelayId == 3 && e.Action == EventActions.Off);
+    }
+
+    // An ON that never reached the board leaves nothing to turn off: no OFF goes out and nothing is logged.
+    [Fact]
+    public async Task Should_SendNoOff_WhenATriedOnFailedAndNothingCameOn()
+    {
+        var logs = new LogCollector();
+        await using var rig = await Rig.StartAsync(logs);
+        rig.Board.SetConnected(false);
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, "john@example.com", Cancel));
+        rig.Board.SetConnected(true);
+
+        await WaitUntilAsync(() => logs.Contains("\"Try\" of relay 3 failed and the relay didn't come on"));
+        Assert.False(rig.Board.State.IsOn(3));
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.DoesNotContain(await db.EventLog.ToListAsync(Cancel), e => e.RelayId == 3);
+    }
+
     [Fact]
     public async Task Should_NotTry_WithoutTheBoard()
     {
@@ -594,11 +632,16 @@ public sealed class SetupTests
 
         public SetupHandler Setup => Database.Services.GetRequiredService<SetupHandler>();
 
-        public static async Task<Rig> StartAsync()
+        public static async Task<Rig> StartAsync(ILoggerProvider? logs = null)
         {
             var board = new FakeRelayBoard();
             var database = TestDatabase.Create((services, configuration) =>
             {
+                if (logs is not null)
+                {
+                    services.AddSingleton(logs);
+                }
+
                 services.AddLocalClock(configuration);
                 services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
                 services.AddSingleton(Vm201Model.Model);
@@ -615,6 +658,50 @@ public sealed class SetupTests
         public ValueTask DisposeAsync()
         {
             return Database.DisposeAsync();
+        }
+    }
+
+    /// <summary>Keeps every log message, so a test can wait for one.</summary>
+    private sealed class LogCollector : ILoggerProvider, ILogger
+    {
+        private readonly Lock _lock = new();
+        private readonly List<string> _messages = [];
+
+        public bool Contains(string text)
+        {
+            lock (_lock)
+            {
+                return _messages.Exists(m => m.Contains(text, StringComparison.Ordinal));
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return this;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+            lock (_lock)
+            {
+                _messages.Add(formatter(state, exception));
+            }
+        }
+
+        public void Dispose()
+        {
         }
     }
 }
