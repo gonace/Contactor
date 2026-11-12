@@ -100,7 +100,7 @@
                             <a class="text" href="group/@group.Id">
                                 <span class="label">GROUP · @group.Chain</span>
                                 <span class="name">@group.Name</span>
-                                <span class="status @(group.Runtime.Phase != GroupPhases.Idle && State.HasAnswered ? "busy" : null)">@(!State.HasAnswered ? WaitingText : missing is { } m ? GroupView.MissingRelayText(m) : GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
+                                <span class="status @(group.Runtime.Phase != GroupPhases.Idle && State.HasAnswered ? "busy" : null)">@(!State.HasAnswered ? RelayStatusText.Waiting : missing is { } m ? GroupView.MissingRelayText(m) : GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
                                 @if (_failedGroupId == group.Id)
                                 {
                                     <span class="error" role="alert">@_groupError</span>
@@ -118,7 +118,7 @@
                             }
                             else
                             {
-                                <button type="button" class="toggle unknown" aria-label="@($"{group.Name}: {WaitingText}")" disabled>–</button>
+                                <button type="button" class="toggle unknown" aria-label="@($"{group.Name}: {RelayStatusText.Waiting}")" disabled>–</button>
                             }
                         </div>
                         <ol class="chips" aria-label="Relays in start order">
@@ -156,7 +156,7 @@
                             <a class="text" href="relay/@relay.Id">
                                 <span class="label">RELAY @relay.Id</span>
                                 <span class="name">@relay.Name</span>
-                                <span class="status">@(State.HasAnswered ? StatusFor(relay, on) : WaitingText)</span>
+                                <span class="status">@(State.HasAnswered ? StatusFor(relay, on) : RelayStatusText.Waiting)</span>
                                 @if (_failedRelayId == relay.Id)
                                 {
                                     <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</span>
@@ -174,7 +174,7 @@
                             }
                             else
                             {
-                                <button type="button" class="toggle unknown" aria-label="@($"{relay.Name}: {WaitingText}")" disabled>–</button>
+                                <button type="button" class="toggle unknown" aria-label="@($"{relay.Name}: {RelayStatusText.Waiting}")" disabled>–</button>
                             }
                         </div>
                     }
@@ -200,7 +200,7 @@
                                     <span class="name">@input.Name</span>
                                 </a>
                                 <span class="status">
-                                    @(State.HasAnswered ? status.Text : WaitingText)
+                                    @(State.HasAnswered ? status.Text : RelayStatusText.Waiting)
                                     @if (State.HasAnswered && status.SinceUnknown)
                                     {
                                         <WhyUnknown Label="@($"Why is the time unknown for {input.Name}?")" For="input.Id" />
@@ -252,8 +252,6 @@
 
     private BoardState State => Board.State;
 
-    // Before the board's first answer, in place of every state.
-    private const string WaitingText = "Waiting for the board";
 
     // A group counts as one, and its relays aren't listed on their own.
     private int ActiveCount => _relays.Count(r => r.IsActive) + _groups.Count;

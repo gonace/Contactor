@@ -1,6 +1,6 @@
-using Contactor.Tests.Boards;
-using Contactor.Boards;
 using System.Net;
+using Contactor.Boards;
+using Contactor.Tests.Boards;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;

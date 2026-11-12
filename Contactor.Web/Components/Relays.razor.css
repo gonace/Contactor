@@ -257,6 +257,11 @@ h1 {
     border: 1.5px solid var(--inactive-border);
 }
 
+/* An inactive card keeps its dashed border, so it still looks inactive. */
+.card.inactive.unknown {
+    border-style: dashed;
+}
+
 .card.unknown .name,
 .card.unknown .icon,
 .card.unknown .chip {

@@ -53,7 +53,7 @@
                         <div>
                             <p class="label">NOW</p>
                             <p class="now">
-                                @(Board.State.HasAnswered ? Status.Text : "Waiting for the board")
+                                @(Board.State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
                                 @if (Board.State.HasAnswered && Status.SinceUnknown)
                                 {
                                     <WhyUnknown Label="Why is the time unknown?" For="Id" />

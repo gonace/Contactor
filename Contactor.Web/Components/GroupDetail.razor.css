@@ -411,6 +411,11 @@ button:disabled {
     color: var(--muted);
 }
 
+.step.unknown .number {
+    background: transparent;
+    color: var(--muted);
+}
+
 .step-row {
     display: flex;
     align-items: center;
