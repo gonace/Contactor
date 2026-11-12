@@ -242,9 +242,24 @@ button:disabled {
     text-align: center;
 }
 
-/* A tablet or a desktop: the same screen, wider. */
+/* A tablet: the same screen, wider. A desktop: as wide as Relays and lined up with it, the cards in two columns. */
 @media (min-width: 768px) {
     .screen {
         max-width: 720px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .screen {
+        max-width: 1200px;
+        padding: 12px 12px 0;
+    }
+
+    .content {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        align-items: start;
+        gap: 16px;
     }
 }

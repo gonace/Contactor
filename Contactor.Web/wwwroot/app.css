@@ -185,10 +185,15 @@ a {
 }
 
 /* Wider screens (CLAUDE.md, User interface): a tablet from 768 px, a desktop from 1024 px. On a desktop the tab bar
-   becomes a side menu (TabBar.razor.css), so the pages that have one make room for it. */
+   becomes a side menu (TabBar.razor.css), so the pages that have one make room for it and start right beside it,
+   rather than centred in the space that is left. */
 @media (min-width: 1024px) {
     body:has(nav.tabs) {
         padding-left: var(--side-menu);
+    }
+
+    body:has(nav.tabs) .screen {
+        margin-left: 0;
     }
 }
 

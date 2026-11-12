@@ -169,9 +169,16 @@ h2 {
     opacity: 0.45;
 }
 
-/* A tablet or a desktop: the same screen, wider. */
+/* A tablet: the same screen, wider. A desktop: as wide as Relays and lined up with it, beside the side menu. */
 @media (min-width: 768px) {
     .screen {
         max-width: 960px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .screen {
+        max-width: 1200px;
+        padding: 12px 12px 0;
     }
 }

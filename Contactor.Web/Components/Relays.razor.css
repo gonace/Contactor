@@ -39,6 +39,17 @@ h1 {
     font-weight: 600;
 }
 
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.new-group.in-header {
+    display: none;
+}
+
 .all-off {
     min-height: 44px;
     padding: 0 14px;
@@ -360,10 +371,21 @@ button:disabled {
         gap: 16px;
     }
 
-    .new-group,
     .show-inactive {
         justify-self: start;
         padding: 0 24px;
+    }
+
+    .new-group {
+        display: none;
+    }
+
+    .new-group.in-header {
+        display: flex;
+        min-height: 44px;
+        margin: 0;
+        padding: 0 16px;
+        border-radius: 10px;
     }
 }
 
