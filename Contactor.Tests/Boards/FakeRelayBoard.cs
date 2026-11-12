@@ -131,6 +131,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
+    /// <summary>A relay switches at the board, e.g. by its own button or a command that arrived late, and the board reports it.</summary>
+    public void SetRelay(int relay, bool on)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with { Relays = on ? _state.Relays | ChannelMask.Of(relay) : _state.Relays.Except(ChannelMask.Of(relay)) };
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
     /// <summary>An input changes at the board, and the board reports it.</summary>
     public void SetInput(int input, bool on)
     {

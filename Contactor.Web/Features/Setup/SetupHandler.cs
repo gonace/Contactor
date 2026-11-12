@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,10 @@ public sealed class SetupHandler
     /// backstop and never sends OFF at the same time as the turn-off.
     /// </summary>
     public static readonly TimeSpan TryAutoOffAfter = TryLength + TimeSpan.FromSeconds(5);
+
+    // After a failed ON: how often the relay is looked at, and how long past the credit's lifetime.
+    private static readonly TimeSpan CreditCheckEvery = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan CreditGrace = TimeSpan.FromSeconds(1);
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardModel _model;
@@ -158,8 +163,8 @@ public sealed class SetupHandler
     /// on; it is turned off again even if the page is closed. Its auto-off is set a little later, so
     /// <see cref="AutoOffService"/> turns it off should the app stop or the board drop before that. Throws
     /// <see cref="BoardNotConnectedException"/> without a board, and <see cref="RelayInGroupException"/> for a relay in
-    /// a group. An ON that fails may still have switched the relay on: it is turned off too, if the board shows it on
-    /// by the end of the try.
+    /// a group. An ON that fails may still have switched the relay on: if the board shows it on while a failed ON can
+    /// still be credited to the person (<see cref="ExpectedChanges.Lifetime"/>), it is turned off too.
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
@@ -169,9 +174,9 @@ public sealed class SetupHandler
         }
         catch (Exception ex) when (ex is not RelayInGroupException and not OperationCanceledException and not ArgumentException)
         {
-            // Refused, unreadable or no answer: the board may have switched it on all the same, and its credited ON
-            // gets the relay's full auto-off, not the try's few seconds.
-            _ = TurnOffLaterAsync(relayId, userEmail, onlyIfOn: true);
+            // Refused, unreadable, no answer, or a failure after ON went out: the board may have switched it on all the
+            // same, and its credited ON gets the relay's full auto-off, not the try's few seconds.
+            _ = TurnOffIfCreditedAsync(relayId, userEmail, _clock.UtcNow);
             throw;
         }
 
@@ -183,19 +188,50 @@ public sealed class SetupHandler
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    // With onlyIfOn, after an ON that failed: only a relay the board shows on is turned off, so a command that never
-    // reached the board leaves no OFF and no event.
-    private async Task TurnOffLaterAsync(int relayId, string userEmail, bool onlyIfOn = false)
+    // After an ON that failed: the relay is turned off only once the board shows it on and the ON was credited to this
+    // person (BoardEventRecorder), so a command that never reached the board leaves no OFF and no event, and a relay that
+    // came on for another reason (a schedule, an input, someone else) is left alone. Watched for as long as a failed ON
+    // can be credited, plus a little for the recorder to save it.
+    private async Task TurnOffIfCreditedAsync(int relayId, string userEmail, DateTime failedUtc)
     {
         try
         {
             await Task.Delay(TryLength, _time);
-            if (onlyIfOn && !_board.State.IsOn(relayId))
+            for (var waited = TryLength; ; waited += CreditCheckEvery)
             {
-                _logger.TryNotOn(relayId);
-                return;
-            }
+                if (_board.State.IsOn(relayId) && await IsCreditedAsync(relayId, userEmail, failedUtc))
+                {
+                    await _control.TurnOffAsync(relayId, userEmail, CancellationToken.None);
+                    return;
+                }
 
+                if (waited >= ExpectedChanges.Lifetime + CreditGrace)
+                {
+                    _logger.TryNotOn(relayId);
+                    return;
+                }
+
+                await Task.Delay(CreditCheckEvery, _time);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Not switched off here: its credited auto-off ends it.
+            _logger.TryNotEnded(ex, relayId);
+        }
+    }
+
+    private async Task<bool> IsCreditedAsync(int relayId, string userEmail, DateTime failedUtc)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.RelayRuntimes.AnyAsync(r => r.RelayId == relayId && r.TurnedOnBy == userEmail && r.OnSinceUtc >= failedUtc);
+    }
+
+    private async Task TurnOffLaterAsync(int relayId, string userEmail)
+    {
+        try
+        {
+            await Task.Delay(TryLength, _time);
             await _control.TurnOffAsync(relayId, userEmail, CancellationToken.None);
         }
         catch (Exception ex)
@@ -223,7 +259,7 @@ internal static partial class SetupLog
     [LoggerMessage(Level = LogLevel.Information, Message = "The setup guide chose the {Chosen}; the app runs with the {Running} and restarts to use it")]
     public static partial void BoardChosen(this ILogger logger, string chosen, string running);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "\"Try\" of relay {RelayId} failed and the relay didn't come on: nothing to turn off")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "\"Try\" of relay {RelayId} failed and the relay didn't come on for it: nothing to turn off")]
     public static partial void TryNotOn(this ILogger logger, int relayId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "\"Try\" couldn't turn relay {RelayId} off again")]
