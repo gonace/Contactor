@@ -137,7 +137,7 @@ public static class GroupStatusText
 
     /// <summary>
     /// The state of the relay at <paramref name="index"/> (from 0, in start order) on the Group screen: "Keeps
-    /// running for 4:59", "On", "Starts in 3 s", "Needs Fan to be on" or "Off".
+    /// running for 4 min 59 s", "On", "Starts in 3 s", "Needs Fan to be on" or "Off".
     /// </summary>
     public static string MemberNote(GroupView group, BoardState state, int index, bool on, string? blockedBy, DateTime nowUtc)
     {
@@ -164,15 +164,15 @@ public static class GroupStatusText
     }
 
     /// <summary>
-    /// A countdown, shown every second: "4:59", or "42 s" under a minute. Rounded up to a whole second, so it never
-    /// reads 0.
+    /// A countdown, shown every second, in the app's one format for a length: "4 min 59 s", "5 min", or "42 s" under a
+    /// minute. Rounded up to a whole second, so it never reads 0.
     /// </summary>
     public static string Remaining(TimeSpan left)
     {
         var seconds = Math.Max((int)Math.Ceiling(left.TotalSeconds), 1);
-        return seconds < 60
-            ? $"{seconds.ToString(CultureInfo.InvariantCulture)} s"
-            : $"{(seconds / 60).ToString(CultureInfo.InvariantCulture)}:{(seconds % 60).ToString("00", CultureInfo.InvariantCulture)}";
+        var minutes = (seconds / 60).ToString(CultureInfo.InvariantCulture);
+        var rest = (seconds % 60).ToString(CultureInfo.InvariantCulture);
+        return seconds < 60 ? $"{rest} s" : seconds % 60 == 0 ? $"{minutes} min" : $"{minutes} min {rest} s";
     }
 }
 

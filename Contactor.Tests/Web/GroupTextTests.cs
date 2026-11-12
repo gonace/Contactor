@@ -114,7 +114,7 @@ public sealed class GroupTextTests
 
         Assert.Equal("On", GroupStatusText.MemberNote(starting, State(1), 0, on: true, null, Now));
         Assert.Equal("Starts in 3 s", GroupStatusText.MemberNote(starting, State(1), 1, on: false, null, Now));
-        Assert.Equal("Keeps running for 4:59", GroupStatusText.MemberNote(stopping, State(1), 0, on: true, null, Now));
+        Assert.Equal("Keeps running for 4 min 59 s", GroupStatusText.MemberNote(stopping, State(1), 0, on: true, null, Now));
         Assert.Equal("Off", GroupStatusText.MemberNote(stopping, State(1), 1, on: false, null, Now));
         Assert.Equal("Needs Fan to be on", GroupStatusText.MemberNote(FanHeater, State(), 1, on: false, "Fan", Now));
     }
@@ -124,7 +124,7 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };
 
-        Assert.Equal("Stopping · Fan keeps running for 4:01", Status(group, State(1)));
+        Assert.Equal("Stopping · Fan keeps running for 4 min 1 s", Status(group, State(1)));
         Assert.Equal("Stopping", Status(group, State()));
     }
 
@@ -157,8 +157,9 @@ public sealed class GroupTextTests
     [InlineData(300, "5 min")]
     [InlineData(5400, "90 min")]
     [InlineData(7200, "2 h")]
-    [InlineData(7201, "121 min")]
-    [InlineData(int.MaxValue, "35791395 min")]
+    [InlineData(90, "1 min 30 s")]
+    [InlineData(7201, "120 min 1 s")]
+    [InlineData(int.MaxValue, "35791394 min 7 s")]
     [InlineData(-1, "a while")]
     public void Should_WriteSecondsForPeople(int seconds, string expected)
     {
@@ -186,11 +187,12 @@ public sealed class GroupTextTests
     [InlineData(0, "1 s")]
     [InlineData(1, "1 s")]
     [InlineData(40.2, "41 s")]
-    [InlineData(59.5, "1:00")]
-    [InlineData(60, "1:00")]
-    [InlineData(61, "1:01")]
-    [InlineData(299.1, "5:00")]
-    [InlineData(1800, "30:00")]
+    [InlineData(59.5, "1 min")]
+    [InlineData(60, "1 min")]
+    [InlineData(61, "1 min 1 s")]
+    [InlineData(299, "4 min 59 s")]
+    [InlineData(299.1, "5 min")]
+    [InlineData(1800, "30 min")]
     public void Should_CountDownTheTimeLeft(double seconds, string expected)
     {
         Assert.Equal(expected, GroupStatusText.Remaining(TimeSpan.FromSeconds(seconds)));

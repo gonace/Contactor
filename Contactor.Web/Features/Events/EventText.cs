@@ -102,7 +102,7 @@ public static class EventText
         return text.Length == 0 ? null : text.ToString();
     }
 
-    /// <summary>"30 s", "5 min", "2 h" or "90 min".</summary>
+    /// <summary>"30 s", "1 min 30 s", "5 min", "2 h" or "90 min": the same format as a countdown.</summary>
     public static string Seconds(int? seconds)
     {
         return seconds switch
@@ -110,7 +110,7 @@ public static class EventText
             null or < 0 => "a while",
             < 60 => $"{seconds} s",
             _ when seconds % 60 == 0 => Duration(seconds / 60),
-            _ => $"{((long)seconds + 59) / 60} min",
+            _ => $"{seconds / 60} min {seconds % 60} s",
         };
     }
 
