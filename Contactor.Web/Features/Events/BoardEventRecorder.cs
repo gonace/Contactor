@@ -32,6 +32,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
     private BoardState? _known;
     private DateTime? _disconnectedSinceUtc;
     private readonly IBoardConnection? _connection;
+    private readonly BoardWatch _watch;
     private bool _lossLogged;
 
     public BoardEventRecorder(
@@ -41,8 +42,10 @@ public sealed partial class BoardEventRecorder : BackgroundService
         LocalClock clock,
         RelayChanges changes,
         ILogger<BoardEventRecorder> logger,
+        BoardWatch watch,
         IBoardConnection? connection = null)
     {
+        _watch = watch;
         _board = board;
         _connection = connection;
         _expected = expected;
@@ -118,11 +121,15 @@ public sealed partial class BoardEventRecorder : BackgroundService
         {
             // Contact was lost after the last status, the same time the warning on the relay screen shows.
             _disconnectedSinceUtc ??= state.LastContactUtc?.UtcDateTime ?? _clock.UtcNow;
+            _watch.Stopped();
             return;
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var now = _clock.UtcNow;
+
+        // Watching from this status on, after the start or a lost contact; what changed before it, the app didn't see.
+        _watch.Started(now);
         if (_disconnectedSinceUtc is { } since)
         {
             if (_lossLogged)

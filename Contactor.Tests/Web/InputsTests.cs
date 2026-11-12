@@ -90,15 +90,42 @@ public sealed class InputsTests
     }
 
     [Theory]
-    [InlineData(false, "Open since 14:20")]
-    [InlineData(true, "Closed")]
-    public void Should_SaySinceWhen_OnlyForTheStateTheBoardReports(bool closedNow, string expected)
+    [InlineData(false, true, "Open since 14:20", false)]
+    [InlineData(true, true, "Closed since unknown", true)]
+    [InlineData(false, false, "Open since unknown", true)]
+    public void Should_SaySinceWhen_OnlyForAChangeTheAppSaw(bool closedNow, bool sawIt, string expected, bool unknown)
     {
-        // The latest event says it opened at 13:20 UTC (14:20 in Stockholm); a close since then went unlogged.
+        // The latest event says it opened at 13:20 UTC (14:20 in Stockholm).
         var input = new InputView(1, "Door", "Closed", "Open", true, new InputChange(Now.AddMinutes(-10), false));
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
 
-        Assert.Equal(expected, InputStatusText.For(input, closedNow, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone)));
+        var status = InputStatusText.For(input, closedNow, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone), _ => sawIt);
+
+        Assert.Equal(new InputStatus(expected, unknown), status);
+    }
+
+    [Fact]
+    public void Should_SaySinceUnknown_ForAnInputThatNeverChanged()
+    {
+        var input = new InputView(1, "Door", "Closed", "Open", true, null);
+
+        Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, Now, utc => utc, _ => true));
+    }
+
+    // A change logged when the app noticed it, at a start or a reconnect, wasn't seen happening.
+    [Fact]
+    public void Should_SeeOnlyChangesAfterItStartedWatching()
+    {
+        var watch = new BoardWatch();
+        Assert.False(watch.SawChangeAt(Now));
+
+        watch.Started(Now);
+        watch.Started(Now.AddMinutes(5));
+        Assert.False(watch.SawChangeAt(Now));
+        Assert.True(watch.SawChangeAt(Now.AddSeconds(1)));
+
+        watch.Stopped();
+        Assert.False(watch.SawChangeAt(Now.AddMinutes(1)));
     }
 
     [Fact]

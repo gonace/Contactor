@@ -138,19 +138,31 @@ public static class InactiveText
     }
 }
 
-/// <summary>An input's status line: "Open since 14:02", or just "Open" when it isn't known since when.</summary>
+/// <summary>An input's status line, and whether its "since" is unknown.</summary>
+public sealed record InputStatus(string Text, bool SinceUnknown);
+
+/// <summary>An input's status line: "Open since 14:02", or "Open since unknown" when the app didn't see the change.</summary>
 public static class InputStatusText
 {
-    public static string For(InputView input, bool on, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
+    /// <summary>Why "since" can be unknown, for the ⓘ next to it.</summary>
+    public const string WhyUnknown =
+        "The board only tells the app what an input reads now, not since when. The app knows the time only of changes it saw itself, and it wasn't watching when this one happened, e.g. while it was restarting or had no contact with the board.";
+
+    /// <param name="input">The input, with its latest logged change.</param>
+    /// <param name="on">What the board reads now: on is closed.</param>
+    /// <param name="nowLocal">Now, in local time.</param>
+    /// <param name="toLocal">Turns a UTC time into local time.</param>
+    /// <param name="sawChangeAt">Whether the app saw a change logged at a given UTC time happen (<see cref="Events.BoardWatch.SawChangeAt"/>).</param>
+    public static InputStatus For(InputView input, bool on, DateTime nowLocal, Func<DateTime, DateTime> toLocal, Func<DateTime, bool> sawChangeAt)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(toLocal);
+        ArgumentNullException.ThrowIfNull(sawChangeAt);
         var state = input.StateText(on);
 
-        // The latest change only tells since when if it went to the state the board reports now; a change made while the
-        // app wasn't watching leaves it unknown.
-        return input.LastChange is { } change && change.On == on
-            ? $"{state} since {RelayStatusText.When(toLocal(change.TimestampUtc), nowLocal)}"
-            : state;
+        // Known only for a change the app saw happen, to the state the board reports now.
+        return input.LastChange is { } change && change.On == on && sawChangeAt(change.TimestampUtc)
+            ? new InputStatus($"{state} since {RelayStatusText.When(toLocal(change.TimestampUtc), nowLocal)}", false)
+            : new InputStatus($"{state} since unknown", true);
     }
 }
