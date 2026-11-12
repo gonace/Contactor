@@ -1,5 +1,5 @@
 <!-- Pinned to 13.5.4 on purpose: later releases hang at startup on Windows. 13.5.4 has GHSA-f7vh-h5g3-7jrh (fixed in
-     13.6.5): the dashboard's login cookie can reach a container the developer opens from the dashboard. This AppHost runs
+     13.6.5; see issue #18): the dashboard's login cookie can reach a container the developer opens from the dashboard. This AppHost runs
      no containers, only our own projects, and it is for local development only, so the advisory is suppressed here
      (NuGetAuditSuppress below). Raise it once a release starts on Windows, and drop the suppression with it. The SDK
      brings Aspire.Hosting.AppHost in the same version: raise them together, with any Aspire.Hosting.* package added
