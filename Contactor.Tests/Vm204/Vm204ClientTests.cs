@@ -288,6 +288,57 @@ public sealed class Vm204ClientTests
     }
 
     [Fact]
+    public async Task Should_LoseABoardThatNeverAnswers_WhileCommandsKeepComing()
+    {
+        var time = new ManualTimeProvider();
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60, time: time);
+        await WaitUntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
+        board.HangAll = true;
+
+        for (var command = 1; command <= 3; command++)
+        {
+            Assert.True(run.Client.State.IsConnected);
+            var sent = run.Client.TurnOnAsync(0b0001, Cancel);
+            var expected = command;
+            await WaitUntilAsync(() => board.Hanging == expected && time.PendingTimers == 2);
+            time.Advance(Vm204Client.RequestTimeout);
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
+        }
+
+        Assert.False(run.Client.State.IsConnected);
+        Assert.Contains(run.Traces, t => t.Text == "Connection lost: The VM204 did not answer within 5 s." && t.IsError);
+        Assert.Contains(run.Changes, s => !s.IsConnected);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_LogInAtOnce_WhenACommandFindsNoKey()
+    {
+        await using var simulator = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port, "admin", "VM204", pollSeconds: 60);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+        var oldKey = simulator.Key;
+
+        // A poll the board refuses drops the key; one refused poll doesn't lose the board.
+        simulator.RegenerateKey();
+        run.Client.Refresh();
+        await WaitUntilAsync(() => run.Traces.Any(t => t.Text == "The board refused the key"));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Contains($"{Vm204Api.StatusPath}?key={oldKey}", simulator.ReceivedTargets);
+
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+        Assert.Equal("The VM204 is logging in again; the command was not sent.", error.Message);
+
+        // No wait for the poll a minute away: the login comes straight after.
+        await WaitUntilAsync(() => simulator.ReceivedTargets.Count(t => t.StartsWith(Vm204Api.AuthPath, StringComparison.Ordinal)) == 2);
+        await WaitUntilAsync(() => simulator.ReceivedTargets.Contains($"{Vm204Api.StatusPath}?key={simulator.Key}"));
+        await run.Client.TurnOnAsync(0b0001, Cancel);
+        Assert.Equal(0b0001, simulator.Relays);
+    }
+
+    [Fact]
     public async Task Should_DropTheKey_WhenACommandIsRefused_AndLogInAgain()
     {
         await using var simulator = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
@@ -500,6 +551,9 @@ public sealed class Vm204ClientTests
 
         public bool HangStatus { get; set; }
 
+        /// <summary>Never answers anything but a login: the board is gone.</summary>
+        public bool HangAll { get; set; }
+
         /// <summary>Status requests left without an answer.</summary>
         public int Hanging => Volatile.Read(ref _hanging);
 
@@ -569,7 +623,7 @@ public sealed class Vm204ClientTests
                     {
                         body = Vm204Json.WriteKey("abc123");
                     }
-                    else if (target.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal) && HangStatus)
+                    else if ((target.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal) && HangStatus) || HangAll)
                     {
                         Interlocked.Increment(ref _hanging);
                         await Task.Delay(Timeout.Infinite, _stop.Token);

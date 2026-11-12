@@ -322,6 +322,92 @@ public sealed class BoardPollerTests
         await run;
     }
 
+    [Fact]
+    public async Task Should_LoseADeadBoard_WhileCommandsKeepComing()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, IsNoAnswer = ex => ex is TimeoutException };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        static Task<int> NoAnswer(CancellationToken token) => Task.FromException<int>(new TimeoutException("no answer"));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        Assert.True(poller.State.IsConnected);
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+
+        Assert.False(poller.State.IsConnected);
+        Assert.Contains((BoardPollStep.Lost, "no answer"), board.Steps);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+
+        // The poller notices at once and connects again, without polling the dead board first.
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")));
+        Assert.Equal(1, board.Reads);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_CountPollsAndCommandsWithoutAnAnswer_TogetherAndOnlyInARow()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1, new IOException("poll"), 1, new IOException("poll"));
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, IsNoAnswer = ex => ex is TimeoutException };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        static Task<int> NoAnswer(CancellationToken token) => Task.FromException<int>(new TimeoutException("command"));
+
+        // A command that got an answer, or a refusal that isn't for want of one, starts the count over.
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        await poller.RunCommandAsync(_ => Task.FromResult(1), Cancel);
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => poller.RunCommandAsync(_ => throw new InvalidOperationException("refused"), Cancel));
+        Assert.True(poller.State.IsConnected);
+
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 2);
+        Assert.True(poller.State.IsConnected);
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+
+        Assert.False(poller.State.IsConnected);
+        Assert.Contains((BoardPollStep.Lost, "command"), board.Steps);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_FinishACommand_WhenThePollerIsDisposedMeanwhile()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        var answer = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var command = poller.RunCommandAsync(
+            _ =>
+            {
+                started.SetResult();
+                return answer.Task;
+            },
+            Cancel);
+        await started.Task;
+
+        poller.Dispose();
+        answer.SetResult(2);
+
+        await command;
+        Assert.Equal(2, poller.State.Reading);
+        await stop.CancelAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => run);
+    }
+
     // Until the board answered this many polls and the poller waits for the next one.
     private static Task WaitForPollAsync(FakePolledBoard board, ManualTimeProvider time, int reads)
     {

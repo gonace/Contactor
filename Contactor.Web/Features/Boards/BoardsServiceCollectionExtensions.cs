@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Contactor.Web.Features.Boards;
 
@@ -20,6 +21,7 @@ public static class BoardsServiceCollectionExtensions
         services.AddSingleton(registration.Model);
         registration.Register(services, configuration);
         services.AddSingleton<BoardAddressHandler>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<BoardTrace>();
         services.AddSingleton<BoardTrafficSetting>();
         services.AddHostedService<BoardHostedService>();

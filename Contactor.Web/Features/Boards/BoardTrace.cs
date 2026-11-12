@@ -31,15 +31,21 @@ public sealed class BoardTrace : IDisposable
 {
     public const int Capacity = 100;
 
+    /// <summary>How often, at most, <see cref="RoutineCounted"/> tells the screens the count moved.</summary>
+    public static readonly TimeSpan RoutineNoticeInterval = TimeSpan.FromSeconds(1);
+
     private readonly IBoardTraffic _traffic;
+    private readonly TimeProvider _timeProvider;
     private readonly Lock _lock = new();
     private readonly Queue<BoardTraceItem> _items = new(Capacity);
     private long _nextId = 1;
     private long _routineLeftOut;
+    private DateTimeOffset? _routineNoticedAt;
 
-    public BoardTrace(IBoardTraffic traffic)
+    public BoardTrace(IBoardTraffic traffic, TimeProvider timeProvider)
     {
         _traffic = traffic;
+        _timeProvider = timeProvider;
         _traffic.Traced += OnTraced;
     }
 
@@ -48,6 +54,12 @@ public sealed class BoardTrace : IDisposable
     /// which is only counted.
     /// </summary>
     public event EventHandler<BoardTraceItem>? Added;
+
+    /// <summary>
+    /// Raised when <see cref="RoutineLeftOut"/> grew, at most once every <see cref="RoutineNoticeInterval"/>, so an open
+    /// Debug screen keeps its count current without re-rendering for every poll. On the board connection's loop.
+    /// </summary>
+    public event EventHandler? RoutineCounted;
 
     /// <summary>Raised when <see cref="Clear"/> empties the list.</summary>
     public event EventHandler? Cleared;
@@ -82,6 +94,7 @@ public sealed class BoardTrace : IDisposable
         {
             _items.Clear();
             _routineLeftOut = 0;
+            _routineNoticedAt = null;
         }
 
         Cleared?.Invoke(this, EventArgs.Empty);
@@ -101,15 +114,15 @@ public sealed class BoardTrace : IDisposable
     public void Record(BoardTraceEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        if (entry.IsRoutine)
+        {
+            CountRoutine();
+            return;
+        }
+
         BoardTraceItem item;
         lock (_lock)
         {
-            if (entry.IsRoutine)
-            {
-                _routineLeftOut++;
-                return;
-            }
-
             item = new BoardTraceItem(_nextId++, entry);
             if (_items.Count == Capacity)
             {
@@ -120,5 +133,22 @@ public sealed class BoardTrace : IDisposable
         }
 
         Added?.Invoke(this, item);
+    }
+
+    private void CountRoutine()
+    {
+        var now = _timeProvider.GetUtcNow();
+        lock (_lock)
+        {
+            _routineLeftOut++;
+            if (_routineNoticedAt is { } last && now - last < RoutineNoticeInterval)
+            {
+                return;
+            }
+
+            _routineNoticedAt = now;
+        }
+
+        RoutineCounted?.Invoke(this, EventArgs.Empty);
     }
 }

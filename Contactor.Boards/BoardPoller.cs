@@ -76,6 +76,10 @@ public sealed class BoardPoller<TReading> : IDisposable
 
     // The poll under way; a command cancels it to go at once.
     private CancellationTokenSource? _poll;
+
+    // Polls and commands that got no answer, in a row, on this connection; and whether that lost the board. Under _gate.
+    private int _failures;
+    private bool _lost;
     private int _running;
 
     /// <param name="board">The board to poll.</param>
@@ -112,6 +116,12 @@ public sealed class BoardPoller<TReading> : IDisposable
         }
     } = DefaultFailuresBeforeLost;
 
+    /// <summary>
+    /// Which exceptions from a command mean the board didn't answer (a timeout, a broken connection): those count as
+    /// failed polls, so a board that is gone is lost even while commands keep coming. Default: none.
+    /// </summary>
+    public Func<Exception, bool> IsNoAnswer { get; init; } = _ => false;
+
     /// <summary>The latest state.</summary>
     public PolledState<TReading> State => Volatile.Read(ref _state);
 
@@ -135,7 +145,8 @@ public sealed class BoardPoller<TReading> : IDisposable
     /// waits only for it to stop, never for the next one. Throws <see cref="BoardNotConnectedException"/> when the
     /// board is not connected, decided under the same lock as the poller's. What the command returns is the board's
     /// state right after it, taken as a poll's answer, so the change shows without asking again. A command that
-    /// throws changes nothing here.
+    /// throws for want of an answer (<see cref="IsNoAnswer"/>) counts as a failed poll; any other exception changes
+    /// nothing here.
     /// </summary>
     public async Task RunCommandAsync(Func<CancellationToken, Task<TReading>> command, CancellationToken cancellationToken = default)
     {
@@ -154,11 +165,23 @@ public sealed class BoardPoller<TReading> : IDisposable
                 throw new BoardNotConnectedException();
             }
 
-            Apply(await command(cancellationToken).ConfigureAwait(false));
+            TReading reading;
+            try
+            {
+                reading = await command(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsNoAnswer(ex) && !cancellationToken.IsCancellationRequested)
+            {
+                CountFailure(ex.Message);
+                throw;
+            }
+
+            _failures = 0;
+            Apply(reading);
         }
         finally
         {
-            _gate.Release();
+            ReleaseGate();
         }
     }
 
@@ -244,15 +267,16 @@ public sealed class BoardPoller<TReading> : IDisposable
             try
             {
                 await _board.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                _failures = 0;
+                _lost = false;
             }
             finally
             {
-                _gate.Release();
+                ReleaseGate();
             }
 
             // A PollNow from before the connection is no reason to poll twice.
             Interlocked.Exchange(ref _wake, NewWake());
-            var failures = 0;
             while (true)
             {
                 // Set before taking the gate, so a command that comes now always finds the poll to give up.
@@ -261,8 +285,15 @@ public sealed class BoardPoller<TReading> : IDisposable
                 await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
+                    if (_lost)
+                    {
+                        // Commands that got no answer lost the board; that was reported then.
+                        lost = true;
+                        return answered;
+                    }
+
                     var reading = await _board.ReadAsync(poll.Token).ConfigureAwait(false);
-                    failures = 0;
+                    _failures = 0;
                     answered = true;
                     Apply(reading);
                 }
@@ -274,20 +305,16 @@ public sealed class BoardPoller<TReading> : IDisposable
                 catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
 #pragma warning restore CA1031
                 {
-                    failures++;
-                    if (failures >= FailuresBeforeLost)
+                    if (CountFailure(ex.Message))
                     {
-                        // Still under the gate: no command gets through from here on.
                         lost = true;
-                        SetDisconnected();
-                        _board.OnStep(BoardPollStep.Lost, ex.Message);
                         return answered;
                     }
                 }
                 finally
                 {
                     Volatile.Write(ref _poll, null);
-                    _gate.Release();
+                    ReleaseGate();
                 }
 
                 await WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -319,7 +346,7 @@ public sealed class BoardPoller<TReading> : IDisposable
                 }
                 finally
                 {
-                    _gate.Release();
+                    ReleaseGate();
                 }
             }
         }
@@ -357,6 +384,37 @@ public sealed class BoardPoller<TReading> : IDisposable
         if (!before.IsConnected || before.Reading is null || !_comparer.Equals(before.Reading, reading))
         {
             _board.OnStateChanged(after);
+        }
+    }
+
+    // Callers hold _gate. Counts a poll or command that got no answer; returns whether that lost the board, which is
+    // then disconnected before the gate opens again, so no command gets through after it.
+    private bool CountFailure(string reason)
+    {
+        _failures++;
+        if (_lost || _failures < FailuresBeforeLost)
+        {
+            return _lost;
+        }
+
+        _lost = true;
+        SetDisconnected();
+        _board.OnStep(BoardPollStep.Lost, reason);
+
+        // Ends the wait at once, so the poller connects again without polling a board that is gone.
+        Volatile.Read(ref _wake).TrySetResult();
+        return true;
+    }
+
+    // A command still running when the poller is disposed finds the lock gone; nothing waits on it any more.
+    private void ReleaseGate()
+    {
+        try
+        {
+            _gate.Release();
+        }
+        catch (ObjectDisposedException)
+        {
         }
     }
 
