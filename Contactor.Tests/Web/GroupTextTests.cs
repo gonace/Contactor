@@ -98,11 +98,33 @@ public sealed class GroupTextTests
     }
 
     [Fact]
+    public void Should_CountDownTheStartDelay()
+    {
+        var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(2.4) } };
+
+        Assert.Equal("Starting · Heat in 3 s", Status(group, State(1)));
+        Assert.Equal("Starting · step 2 of 2", Status(group with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now } }, State(1)));
+    }
+
+    [Fact]
+    public void Should_CountDownOnTheRelayThatIsNext_OnTheGroupScreen()
+    {
+        var starting = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
+        var stopping = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(299) } };
+
+        Assert.Equal("On", GroupStatusText.MemberNote(starting, State(1), 0, on: true, null, Now));
+        Assert.Equal("Starts in 3 s", GroupStatusText.MemberNote(starting, State(1), 1, on: false, null, Now));
+        Assert.Equal("Keeps running for 4 min 59 s", GroupStatusText.MemberNote(stopping, State(1), 0, on: true, null, Now));
+        Assert.Equal("Off", GroupStatusText.MemberNote(stopping, State(1), 1, on: false, null, Now));
+        Assert.Equal("Needs Fan to be on", GroupStatusText.MemberNote(FanHeater, State(), 1, on: false, "Fan", Now));
+    }
+
+    [Fact]
     public void Should_SayHowLongTheRunOnLasts()
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };
 
-        Assert.Equal("Stopping · Fan keeps running for 5 min", Status(group, State(1)));
+        Assert.Equal("Stopping · Fan keeps running for 4 min 1 s", Status(group, State(1)));
         Assert.Equal("Stopping", Status(group, State()));
     }
 
@@ -135,8 +157,9 @@ public sealed class GroupTextTests
     [InlineData(300, "5 min")]
     [InlineData(5400, "90 min")]
     [InlineData(7200, "2 h")]
-    [InlineData(7201, "121 min")]
-    [InlineData(int.MaxValue, "35791395 min")]
+    [InlineData(90, "1 min 30 s")]
+    [InlineData(7201, "120 min 1 s")]
+    [InlineData(int.MaxValue, "35791394 min 7 s")]
     [InlineData(-1, "a while")]
     public void Should_WriteSecondsForPeople(int seconds, string expected)
     {
@@ -161,11 +184,16 @@ public sealed class GroupTextTests
     }
 
     [Theory]
+    [InlineData(0, "1 s")]
     [InlineData(1, "1 s")]
     [InlineData(40.2, "41 s")]
+    [InlineData(59.5, "1 min")]
     [InlineData(60, "1 min")]
-    [InlineData(61, "2 min")]
-    public void Should_RoundTheTimeLeftUp(double seconds, string expected)
+    [InlineData(61, "1 min 1 s")]
+    [InlineData(299, "4 min 59 s")]
+    [InlineData(299.1, "5 min")]
+    [InlineData(1800, "30 min")]
+    public void Should_CountDownTheTimeLeft(double seconds, string expected)
     {
         Assert.Equal(expected, GroupStatusText.Remaining(TimeSpan.FromSeconds(seconds)));
     }

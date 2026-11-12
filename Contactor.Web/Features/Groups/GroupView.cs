@@ -1,3 +1,4 @@
+using System.Globalization;
 using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
@@ -83,6 +84,12 @@ public static class GroupStatusText
 
         if (runtime.Phase == GroupPhases.Starting)
         {
+            // Waiting out the start delay before the next relay: count it down.
+            if (level < n && runtime.NextStepAtUtc is { } nextStart && nextStart > nowUtc)
+            {
+                return $"Starting · {group.Members[level].RoleName} in {Remaining(nextStart - nowUtc)}";
+            }
+
             return $"Starting · step {Math.Clamp(level + 1, 1, n)} of {n}";
         }
 
@@ -128,11 +135,44 @@ public static class GroupStatusText
         return text;
     }
 
-    /// <summary>"4 min", or "40 s" under a minute; rounded up, so it never reads 0.</summary>
+    /// <summary>
+    /// The state of the relay at <paramref name="index"/> (from 0, in start order) on the Group screen: "Keeps
+    /// running for 4 min 59 s", "On", "Starts in 3 s", "Needs Fan to be on" or "Off".
+    /// </summary>
+    public static string MemberNote(GroupView group, BoardState state, int index, bool on, string? blockedBy, DateTime nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        ArgumentNullException.ThrowIfNull(state);
+        var runtime = group.Runtime;
+        var level = GroupPlanner.Level(group.Infos, state);
+        if (on && runtime.Phase == GroupPhases.Stopping && index == level - 1 && runtime.NextStepAtUtc is { } next && next > nowUtc)
+        {
+            return $"Keeps running for {Remaining(next - nowUtc)}";
+        }
+
+        if (on)
+        {
+            return "On";
+        }
+
+        if (runtime.Phase == GroupPhases.Starting && index == level && runtime.NextStepAtUtc is { } start && start > nowUtc)
+        {
+            return $"Starts in {Remaining(start - nowUtc)}";
+        }
+
+        return blockedBy is not null ? $"Needs {blockedBy} to be on" : "Off";
+    }
+
+    /// <summary>
+    /// A countdown, shown every second, in the app's one format for a length: "4 min 59 s", "5 min", or "42 s" under a
+    /// minute. Rounded up to a whole second, so it never reads 0.
+    /// </summary>
     public static string Remaining(TimeSpan left)
     {
-        var seconds = (int)Math.Ceiling(left.TotalSeconds);
-        return seconds < 60 ? $"{Math.Max(seconds, 1)} s" : $"{(seconds + 59) / 60} min";
+        var seconds = Math.Max((int)Math.Ceiling(left.TotalSeconds), 1);
+        var minutes = (seconds / 60).ToString(CultureInfo.InvariantCulture);
+        var rest = (seconds % 60).ToString(CultureInfo.InvariantCulture);
+        return seconds < 60 ? $"{rest} s" : seconds % 60 == 0 ? $"{minutes} min" : $"{minutes} min {rest} s";
     }
 }
 

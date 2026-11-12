@@ -407,7 +407,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - Status line when on: "On since 14:02 · Jane · off 16:02".
      - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
    - The link "New group" under the cards, then the button "Show N inactive relays" / "Hide inactive relays". Inactive relays have a dashed border.
-   - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · step 2 of 2", "Stopping · Fan keeps running for 5 min", "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
+   - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.
 2. **Relay** (`/relay/{id}`)
    - A name field and the checkbox "Active: shown in the list".
@@ -424,7 +424,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - The button "Save schedule". When editing also "Delete schedule", with a confirmation.
 4. **Group** (`/group/{id}`)
    - The name, the icon, a status card with a wide TURN ON THE GROUP / TURN OFF THE GROUP button.
-   - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Keeps running for 5 min"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group and without schedules. Order and members only change while the group is off.
+   - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Starts in 3 s", "Keeps running for 4 min 59 s"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group and without schedules. Order and members only change while the group is off.
    - "Turn off automatically after", "Schedules" (as on the Relay screen, "Add" goes to `/group/{id}/schedule/new`), the group's latest 4 events, the safety note about wiring the interlock in hardware, "Delete the group" with a confirmation, and "Save".
    - Icons are Font Awesome Free solid icons (CC BY 4.0), inlined as SVG in `GroupIcon.razor`; no icon font or script.
 5. **New group** (`/group/new`): a guide in 4 steps, "STEP n OF 4" with a progress bar, "Cancel" on the first step and "Back" after.
