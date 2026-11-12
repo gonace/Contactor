@@ -341,7 +341,7 @@ button:disabled {
     }
 }
 
-/* A desktop: three columns; a group spans two. */
+/* A desktop: two columns beside the side menu, three from 1280 px with a group spanning two. */
 @media (min-width: 1024px) {
     .screen {
         max-width: 1200px;
@@ -357,17 +357,22 @@ button:disabled {
 
     .relays {
         padding: 4px 32px 32px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 16px;
-    }
-
-    .card.group {
-        grid-column: span 2;
     }
 
     .new-group,
     .show-inactive {
         justify-self: start;
         padding: 0 24px;
+    }
+}
+
+@media (min-width: 1280px) {
+    .relays {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card.group {
+        grid-column: span 2;
     }
 }

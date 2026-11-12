@@ -398,7 +398,12 @@ button:disabled {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-content: start;
         align-items: start;
-        column-gap: 24px;
+        gap: 0 24px;
+    }
+
+    /* Spacing by margins: a row gap would count between the empty rows the events span. */
+    .content > * {
+        margin-bottom: 22px;
     }
 
     .content > section {

@@ -200,11 +200,20 @@ a {
 @media (hover: hover) {
     button:not(:disabled):hover,
     a:hover {
-        filter: brightness(0.96);
+        filter: brightness(0.92);
     }
 }
 
-:focus-visible {
+@media (hover: hover) and (prefers-color-scheme: dark) {
+    button:not(:disabled):hover,
+    a:hover {
+        filter: brightness(1.18);
+    }
+}
+
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
     outline: 3px solid var(--accent);
     outline-offset: 2px;
 }
