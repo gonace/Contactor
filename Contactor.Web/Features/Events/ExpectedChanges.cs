@@ -13,12 +13,21 @@ public sealed class ExpectedChanges
 {
     public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// How long a failed ON put back after a failed save waits for the next status: long enough for a board that only
+    /// reports at its next change or keep-alive (the VM201 every 15 s).
+    /// </summary>
+    public static readonly TimeSpan RetryLifetime = TimeSpan.FromMinutes(1);
+
     // Only a safety limit, e.g. for commands while no status is handled at all: far more than the app ever has waiting.
     private const int MaxExpected = 256;
 
     private readonly LocalClock _clock;
     private readonly Lock _lock = new();
     private readonly List<(int RelayId, bool On, DateTime ExpiresUtc)> _expected = [];
+
+    // ONs from a person or an input whose command failed, for a relay the board may have switched on all the same.
+    private readonly List<FailedOn> _failedOn = [];
 
     public ExpectedChanges(LocalClock clock)
     {
@@ -65,6 +74,59 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>
+    /// Remembers, for <see cref="Lifetime"/>, that <paramref name="actor"/> (a person or an input) asked for the relay
+    /// to come on and the command was reported as failed. If the board switched it on anyway, the status that shows
+    /// it is credited to them (<see cref="TakeFailedOn"/>), so the relay gets their auto-off.
+    /// </summary>
+    public void RememberFailedOn(int relayId, string actor)
+    {
+        Add(new FailedOn(relayId, actor, _clock.UtcNow + Lifetime));
+    }
+
+    /// <summary>
+    /// Puts back a note <see cref="TakeFailedOn"/> took, when recording the change failed. The change is recorded
+    /// again only with the next status, so the note lasts at least <see cref="RetryLifetime"/> from now.
+    /// </summary>
+    public void PutBackFailedOn(FailedOn note)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+        var retryUntil = _clock.UtcNow + RetryLifetime;
+        Add(note.ExpiresUtc > retryUntil ? note : note with { ExpiresUtc = retryUntil });
+    }
+
+    private void Add(FailedOn note)
+    {
+        lock (_lock)
+        {
+            _failedOn.Add(note);
+            if (_failedOn.Count > MaxExpected)
+            {
+                _failedOn.RemoveRange(0, _failedOn.Count - MaxExpected);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The newest failed ON for this relay that hadn't expired when the status showing it on arrived, if any; it is used
+    /// up. Notes that had expired by then are dropped.
+    /// </summary>
+    public FailedOn? TakeFailedOn(int relayId, DateTime receivedUtc)
+    {
+        lock (_lock)
+        {
+            var index = _failedOn.FindLastIndex(f => f.RelayId == relayId && f.ExpiresUtc > receivedUtc);
+            var note = index >= 0 ? _failedOn[index] : null;
+            if (index >= 0)
+            {
+                _failedOn.RemoveAt(index);
+            }
+
+            _failedOn.RemoveAll(f => f.ExpiresUtc <= receivedUtc);
+            return note;
+        }
+    }
+
+    /// <summary>
     /// Whether a command for this change went out in the last few seconds and the board hasn't shown it yet: the
     /// board's state may still show the relay as it was.
     /// </summary>
@@ -104,3 +166,6 @@ public sealed class ExpectedChanges
         }
     }
 }
+
+/// <summary>An ON from a person or an input whose command was reported as failed, until <paramref name="ExpiresUtc"/>.</summary>
+public sealed record FailedOn(int RelayId, string Actor, DateTime ExpiresUtc);
