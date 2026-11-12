@@ -5,6 +5,7 @@
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Inputs
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Features.Setup
@@ -17,6 +18,7 @@
 @inject ScheduleOutlook Outlook
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject GroupsHandler Groups
+@inject InputsHandler Inputs
 @inject GroupSequencer Sequencer
 @inject SetupHandler Setup
 @inject NavigationManager Navigation
@@ -154,6 +156,28 @@
             </section>
         }
 
+        @* The board's inputs: what it reads, e.g. a door contact. No button: the app can't switch them. *@
+        @if (VisibleInputs.Any())
+        {
+            <section class="section" aria-labelledby="inputs-heading">
+                <h2 class="section-title" id="inputs-heading">Inputs</h2>
+                <div class="cards input-cards">
+                    @foreach (var input in VisibleInputs)
+                    {
+                        var closed = State.Inputs.Contains(input.Id);
+                        <a class="card input @(input.IsActive ? "" : "inactive")" href="input/@input.Id" @key="@($"i{input.Id}")">
+                            <span class="text">
+                                <span class="label">INPUT @input.Id</span>
+                                <span class="name">@input.Name</span>
+                                <span class="status">@InputStatusText.For(input, closed, Clock.Now, Clock.ToLocal)</span>
+                            </span>
+                            <span class="state @(closed ? "closed" : null)"><span class="dot" aria-hidden="true"></span>@input.StateText(closed)</span>
+                        </a>
+                    }
+                </div>
+            </section>
+        }
+
         <a href="group/new" class="new-group">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
             New group
@@ -163,7 +187,7 @@
         {
             <button type="button" class="show-inactive" aria-expanded="@(_showInactive ? "true" : "false")" @onclick="() => _showInactive = !_showInactive">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                @(_showInactive ? "Hide inactive relays" : $"Show {InactiveCount} inactive relays")
+                @InactiveButtonText
             </button>
         }
     </main>
@@ -174,6 +198,7 @@
 @code {
     private List<Relay> _relays = [];
     private IReadOnlyList<GroupView> _groups = [];
+    private IReadOnlyList<InputView> _inputs = [];
     private int? _failedGroupId;
     private string? _groupError;
     private Timer? _tick;
@@ -196,13 +221,32 @@
 
     private int OnCount => _relays.Count(r => r.IsActive && State.IsOn(r.Id)) + _groups.Count(g => State.Relays.Overlaps(g.Mask));
 
-    private int InactiveCount => _relays.Count(r => !r.IsActive);
+    private int InactiveCount => _relays.Count(r => !r.IsActive) + _inputs.Count(i => !i.IsActive);
 
     private IEnumerable<Relay> VisibleRelays => _relays.Where(r => r.IsActive || _showInactive);
 
-    // "Relays" only sets the relays apart from the groups, and only over cards: not when every relay is in a group
-    // or the rest are hidden as inactive.
-    private bool ShowRelaysHeading => _groups.Count > 0 && VisibleRelays.Any();
+    private IEnumerable<InputView> VisibleInputs => _inputs.Where(i => i.IsActive || _showInactive);
+
+    // "Relays" only sets the relays apart from the groups or the inputs, and only over cards: not when every relay is
+    // in a group or the rest are hidden as inactive.
+    private bool ShowRelaysHeading => (_groups.Count > 0 || VisibleInputs.Any()) && VisibleRelays.Any();
+
+    // One button for both: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" when it's both.
+    private string InactiveButtonText
+    {
+        get
+        {
+            var relays = _relays.Count(r => !r.IsActive);
+            var inputs = _inputs.Count(i => !i.IsActive);
+            var kind = relays > 0 && inputs > 0 ? "" : relays > 0 ? " relays" : " inputs";
+            if (_showInactive)
+            {
+                return $"Hide inactive{kind}";
+            }
+
+            return InactiveCount == 1 ? $"Show 1 inactive{kind.TrimEnd('s')}" : $"Show {InactiveCount} inactive{kind}";
+        }
+    }
 
     private string UpdatedText
     {
@@ -249,6 +293,7 @@
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         _groups = await Groups.ListAsync(CancellationToken.None);
+        _inputs = await Inputs.ListAsync(CancellationToken.None);
         var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
         _relays = (await db.Relays.AsNoTracking().Where(r => r.Id <= Board.Capabilities.RelayCount).OrderBy(r => r.SortOrder).ThenBy(r => r.Id).ToListAsync()).Where(r => !members.Contains(r.Id)).ToList();
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);

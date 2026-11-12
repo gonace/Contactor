@@ -1,0 +1,217 @@
+@page "/input/{Id:int}"
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Inputs
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Persistence
+@inject IRelayBoard Board
+@inject InputsHandler Inputs
+@inject EventsHandler Events
+@inject RelayChanges Changes
+@inject LocalClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>@(_input?.Name ?? "Input") · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <a href="" class="back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+            Relays
+        </a>
+        @if (_input is not null)
+        {
+            @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
+            <button type="submit" form="input-form" class="save-top" disabled="@_busy">Save</button>
+        }
+    </header>
+
+    @if (_loaded && _input is null)
+    {
+        <main class="content">
+            <p class="missing">The input doesn't exist.</p>
+        </main>
+    }
+    else if (_input is not null)
+    {
+        <form id="input-form" class="form" @onsubmit="SaveAsync">
+            <main class="content">
+                <div class="field">
+                    <label for="name" class="label">INPUT @Id · NAME</label>
+                    <input id="name" type="text" maxlength="@Input.TextMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
+                    <label for="active" class="check">
+                        <input id="active" type="checkbox" @bind="_isActive" />
+                        <span><strong>Active</strong>: shown in the list. Untick it for inputs that aren't wired to anything.</span>
+                    </label>
+                </div>
+
+                @* What the board reads now; the app can't switch an input. *@
+                <section class="status @(IsClosed ? "closed" : null)">
+                    <div class="now-row">
+                        <div>
+                            <p class="label">NOW</p>
+                            <p class="now">@InputStatusText.For(_input, IsClosed, Clock.Now, Clock.ToLocal)</p>
+                        </div>
+                        <span class="state @(IsClosed ? "closed" : null)"><span class="dot" aria-hidden="true"></span>@_input.StateText(IsClosed)</span>
+                    </div>
+                    @if (!Board.State.IsConnected)
+                    {
+                        <p class="hint">No contact with the relay board: this may be out of date.</p>
+                    }
+                </section>
+
+                <section class="words">
+                    <h2>Words for its states</h2>
+                    <div class="pair">
+                        <div class="field">
+                            <label for="closed">When closed</label>
+                            <input id="closed" type="text" maxlength="@Input.TextMaxLength" placeholder="Closed" @bind="_closedText" @bind:event="oninput" autocomplete="off" />
+                        </div>
+                        <div class="field">
+                            <label for="open">When open</label>
+                            <input id="open" type="text" maxlength="@Input.TextMaxLength" placeholder="Open" @bind="_openText" @bind:event="oninput" autocomplete="off" />
+                        </div>
+                    </div>
+                    <p class="hint">E.g. "Warm" and "Cold" for a thermostat. They show on Relays and under Events.</p>
+                </section>
+
+                <section class="events">
+                    <div class="section-head">
+                        <h2>Events</h2>
+                        <a href="events">All events</a>
+                    </div>
+                    @if (_events.Count == 0)
+                    {
+                        <p class="hint">This input hasn't changed yet.</p>
+                    }
+                    else
+                    {
+                        <div class="list">
+                            @foreach (var row in _events)
+                            {
+                                <div class="row" @key="row.Id">
+                                    <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
+                                    <span class="badge automatic" aria-hidden="true">@row.View.Badge</span>
+                                    <div class="text">
+                                        <span><strong>@row.View.Who</strong> @row.View.What</span>
+                                        <span class="day">@Events.DayLabel(row.TimestampLocal)</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            </main>
+
+            <div class="save">
+                @if (_saveError is not null)
+                {
+                    <p class="error" role="alert">@_saveError</p>
+                }
+                <button type="submit" disabled="@_busy">Save</button>
+            </div>
+        </form>
+    }
+</div>
+
+<TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
+
+@code {
+    private const int EventCount = 4;
+
+    private InputView? _input;
+    private List<EventRow> _events = [];
+    private bool _loaded;
+    private bool _busy;
+    private string? _saveError;
+    private string _name = "";
+    private string _closedText = "";
+    private string _openText = "";
+    private bool _isActive;
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private bool IsClosed => Board.State.Inputs.Contains(Id);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _input = await Inputs.GetAsync(Id, CancellationToken.None);
+        if (_input is not null)
+        {
+            (_name, _closedText, _openText, _isActive) = (_input.Name, _input.ClosedText, _input.OpenText, _input.IsActive);
+            _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
+        }
+
+        _loaded = true;
+    }
+
+    protected override void OnInitialized()
+    {
+        Board.StateChanged += OnBoardChanged;
+        Changes.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Board.StateChanged -= OnBoardChanged;
+        Changes.Changed -= OnChanged;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_input is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _saveError = await Inputs.SaveAsync(new InputSettings(Id, _name, _closedText, _openText, _isActive), CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (_saveError is null)
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    // The board's state: a redraw is enough.
+    private void OnBoardChanged(object? sender, BoardState state)
+    {
+        _ = RefreshAsync(reload: false);
+    }
+
+    // A new event, or a change saved elsewhere: reload the events and the last change, but keep what is being typed.
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync(reload: true);
+    }
+
+    private async Task RefreshAsync(bool reload)
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (reload && _input is not null && await Inputs.GetAsync(Id, CancellationToken.None) is { } fresh)
+                {
+                    _input = fresh;
+                    _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

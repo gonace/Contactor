@@ -236,6 +236,12 @@ public static class EventText
         return Read(json, property) is { ValueKind: JsonValueKind.Number } value && value.TryGetInt32(out var number) ? number : null;
     }
 
+    /// <summary>Whether an "input-changed" event says the input turned on (closed); null when it can't be read.</summary>
+    public static bool? InputOn(string? details)
+    {
+        return Bool(details, "on");
+    }
+
     private static bool? Bool(string? json, string property)
     {
         return Read(json, property) switch

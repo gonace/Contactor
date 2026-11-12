@@ -408,7 +408,8 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - One card per active relay: a small mono label "RELAY n", the name and a status line, plus a big ON/OFF button (84×52).
      - Status line when on: "On since 14:02 · Jane · off 16:02".
      - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
-   - The link "New group" under the cards, then the button "Show N inactive relays" / "Hide inactive relays". Inactive relays have a dashed border.
+   - The link "New group" under the cards, then one button for inactive relays and inputs: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" for both, and "Hide inactive …". Inactive relays and inputs have a dashed border.
+   - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`), a link to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`, when that matches the state the board reports now) and a badge with its state word (green when closed). No button: the app can't switch an input.
    - With groups, the list has two sections, each with a small heading: "Groups" first, then "Relays", each in a grid of its own, so the cards line up and Tab goes row by row. Without groups there are no headings, and without a relay card to show (every relay in a group, or the rest hidden as inactive) there is no "Relays" heading.
    - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.
@@ -460,6 +461,9 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    3. "Where is the board?": address, port (empty: the model's default) and login, saved through `BoardAddressHandler`; "Next" waits up to 10 s for the board (`BoardContact`, which ignores a connection to the old address) and shows "Board online" or "No answer from …". "Go on without a connection" saves what was typed and goes on.
    4. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes.
    5. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
+
+10. **Input** (`/input/{id}`, `InputDetail.razor`, `Features/Inputs`)
+   - "INPUT n · NAME", the checkbox "Active: shown in the list", the state now ("NOW", "Open since 14:02" and its badge), "Words for its states": "When closed" and "When open" (e.g. "Warm" and "Cold"), its latest 4 events with "All events", and "Save". Saving isn't logged. Like the Relay screen: the side menu on a desktop, two columns and Save at the top right.
 
 Blazor Server gives live updates for free. When the board reports a new state (`IRelayBoard.StateChanged`), every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
 

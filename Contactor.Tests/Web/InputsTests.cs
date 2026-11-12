@@ -1,0 +1,177 @@
+using System.Net;
+using Contactor.Boards;
+using Contactor.Tests.Boards;
+using Contactor.Web;
+using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Inputs;
+using Contactor.Web.Features.Relays;
+using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Contactor.Tests.Web;
+
+/// <summary>The board's inputs on the Relays screen and their own screen.</summary>
+public sealed class InputsTests
+{
+    private static readonly DateTime Now = new(2026, 11, 12, 13, 30, 0, DateTimeKind.Utc);
+
+    private static CancellationToken Cancel => TestContext.Current.CancellationToken;
+
+    private static readonly Dictionary<string, string?> John = new() { ["CloudflareAccess:DevUserEmail"] = "john@example.com" };
+
+    [Fact]
+    public async Task Should_ListTheBoardsInputs_WithWhenTheyLastChanged()
+    {
+        await using var database = await DatabaseAsync(inputCount: 2, seededInputs: 4);
+        await AddChangeAsync(database, inputId: 2, on: true, Now.AddMinutes(-28));
+        await AddChangeAsync(database, inputId: 2, on: false, Now.AddMinutes(-10));
+
+        var inputs = await Handler(database).ListAsync(Cancel);
+
+        Assert.Equal([1, 2], inputs.Select(i => i.Id));
+        Assert.Null(inputs[0].LastChange);
+        Assert.Equal(new InputChange(Now.AddMinutes(-10), false), inputs[1].LastChange);
+        Assert.Null(await Handler(database).GetAsync(3, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_SaveNameWordsAndActive()
+    {
+        await using var database = await DatabaseAsync(inputCount: 2);
+
+        Assert.Null(await Handler(database).SaveAsync(new InputSettings(2, " Thermostat ", "Warm", "Cold", false), Cancel));
+
+        var input = await Handler(database).GetAsync(2, Cancel);
+        Assert.Equal(("Thermostat", "Warm", "Cold", false), (input!.Name, input.ClosedText, input.OpenText, input.IsActive));
+    }
+
+    [Theory]
+    [InlineData(1, " ", "Closed", "Open", "Enter a name.")]
+    [InlineData(1, "Door", "", "Open", "Enter a word for each state.")]
+    [InlineData(1, "Door", "Closed", " ", "Enter a word for each state.")]
+    [InlineData(1, "Door that is far too long for the name field", "Closed", "Open", "A name or word can be at most 40 characters.")]
+    [InlineData(3, "Door", "Closed", "Open", "The input doesn't exist.")]
+    public async Task Should_RefuseWhatItCannotSave(int id, string name, string closed, string open, string message)
+    {
+        await using var database = await DatabaseAsync(inputCount: 2, seededInputs: 4);
+
+        Assert.Equal(message, await Handler(database).SaveAsync(new InputSettings(id, name, closed, open, true), Cancel));
+    }
+
+    [Theory]
+    [InlineData(false, "Open since 14:20")]
+    [InlineData(true, "Closed")]
+    public void Should_SaySinceWhen_OnlyForTheStateTheBoardReports(bool closedNow, string expected)
+    {
+        // The latest event says it opened at 13:20 UTC (14:20 in Stockholm); a close since then went unlogged.
+        var input = new InputView(1, "Door", "Closed", "Open", true, new InputChange(Now.AddMinutes(-10), false));
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
+
+        Assert.Equal(expected, InputStatusText.For(input, closedNow, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone)));
+    }
+
+    [Fact]
+    public async Task Should_ShowTheInputs_InASectionAfterTheRelays()
+    {
+        await using var app = new TestWebApp("Development", John);
+        await RenameInputAsync(app, "Door");
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+
+        var relays = html.IndexOf("id=\"relays-heading\"", StringComparison.Ordinal);
+        var inputs = html.IndexOf("id=\"inputs-heading\"", StringComparison.Ordinal);
+        Assert.True(relays >= 0 && relays < inputs, $"{relays} {inputs}");
+        Assert.Contains("href=\"input/1\"", html, StringComparison.Ordinal);
+        Assert.Contains("INPUT 1", html, StringComparison.Ordinal);
+        Assert.Contains("Door", html, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false, true, "Show 1 inactive input")]
+    [InlineData(true, false, "Show 1 inactive relay")]
+    [InlineData(true, true, "Show 2 inactive")]
+    public async Task Should_CountInactiveRelaysAndInputs_OnOneButton(bool relayInactive, bool inputInactive, string text)
+    {
+        await using var app = new TestWebApp("Development", John);
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            (await db.Relays.SingleAsync(r => r.Id == 8, Cancel)).IsActive = !relayInactive;
+            (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).IsActive = !inputInactive;
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        using var http = app.CreateClient();
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+
+        Assert.Contains(text, html, StringComparison.Ordinal);
+        Assert.Equal(!inputInactive, html.Contains("id=\"inputs-heading\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_ShowTheInputScreen()
+    {
+        await using var app = new TestWebApp("Development", John);
+        await RenameInputAsync(app, "Door");
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/input/1", Cancel));
+        var missing = WebUtility.HtmlDecode(await http.GetStringAsync("/input/9", Cancel));
+
+        Assert.Contains("INPUT 1 · NAME", html, StringComparison.Ordinal);
+        Assert.Contains("value=\"Door\"", html, StringComparison.Ordinal);
+        Assert.Contains("When closed", html, StringComparison.Ordinal);
+        Assert.Contains("When open", html, StringComparison.Ordinal);
+        Assert.Contains("This input hasn't changed yet.", html, StringComparison.Ordinal);
+        Assert.Contains("The input doesn't exist.", missing, StringComparison.Ordinal);
+    }
+
+    private static InputsHandler Handler(TestDatabase database)
+    {
+        return database.Services.GetRequiredService<InputsHandler>();
+    }
+
+    private static IDbContextFactory<ContactorDbContext> Factory(TestWebApp app)
+    {
+        return app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+    }
+
+    private static async Task RenameInputAsync(TestWebApp app, string name)
+    {
+        await using var db = await Factory(app).CreateDbContextAsync(Cancel);
+        (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).Name = name;
+        await db.SaveChangesAsync(Cancel);
+    }
+
+    private static async Task<TestDatabase> DatabaseAsync(int inputCount, int? seededInputs = null)
+    {
+        var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
+            services.AddSingleton<IRelayBoard>(new FakeRelayBoard(relayCount: 4, inputCount: inputCount));
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+            services.AddInputs(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel, inputCount: seededInputs ?? inputCount);
+        return database;
+    }
+
+    private static async Task AddChangeAsync(TestDatabase database, int inputId, bool on, DateTime timestampUtc)
+    {
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        db.EventLog.Add(new EventLogEntry
+        {
+            TimestampUtc = timestampUtc,
+            InputId = inputId,
+            Actor = EventActors.External,
+            Action = EventActions.InputChanged,
+            Details = on ? """{"on":true}""" : """{"on":false}""",
+        });
+        await db.SaveChangesAsync(Cancel);
+    }
+}
