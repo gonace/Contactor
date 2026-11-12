@@ -292,7 +292,7 @@
         var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
         _relays = (await db.Relays.AsNoTracking().Where(r => r.Id <= Board.Capabilities.RelayCount).OrderBy(r => r.SortOrder).ThenBy(r => r.Id).ToListAsync()).Where(r => !members.Contains(r.Id)).ToList();
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
-        _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
+        _names = await ActorNames.LoadAsync(db, CancellationToken.None);
 
         // The newest "off" event per relay, for "Off since yesterday · Alex".
         var lastOffIds = await db.EventLog.AsNoTracking()
@@ -321,7 +321,7 @@
         var offSince = lastOff is null ? (DateTime?)null : Clock.ToLocal(lastOff.TimestampUtc);
         var offBy = lastOff is null ? null
             : EventText.IsPersonActor(lastOff.Actor) ? NameOf(lastOff.Actor)
-            : EventText.ShortWho(lastOff.Actor, null);
+            : EventText.ShortWho(lastOff.Actor, _names.GetValueOrDefault(lastOff.Actor));
         return RelayStatusText.For(on, onSince, NameOf(runtime?.TurnedOnBy), autoOff, Clock.Now, offSince, offBy, nextOn);
     }
 

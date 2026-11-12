@@ -37,10 +37,14 @@ public sealed class RelayControl
         _groups = groups;
     }
 
-    public async Task TurnOnAsync(int relayId, string userEmail, CancellationToken cancellationToken)
+    /// <summary>
+    /// Turns a relay on for a person (their e-mail) or an input (<see cref="EventActors.ForInput"/>), as a press of its
+    /// button: with the relay's auto-off.
+    /// </summary>
+    public async Task TurnOnAsync(int relayId, string actor, CancellationToken cancellationToken)
     {
         var mask = _board.Capabilities.Relay(relayId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         await SendAsync(mask, on: true, cancellationToken);
 
@@ -49,24 +53,25 @@ public sealed class RelayControl
         var relay = await db.Relays.SingleAsync(r => r.Id == relayId, cancellationToken);
         var runtime = await GetRuntimeAsync(db, relayId, cancellationToken);
         runtime.OnSinceUtc = now;
-        runtime.TurnedOnBy = userEmail;
+        runtime.TurnedOnBy = actor;
         runtime.AutoOffAtUtc = relay.MaxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
-        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = userEmail, Action = EventActions.On });
+        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.On });
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
     }
 
-    public async Task TurnOffAsync(int relayId, string userEmail, CancellationToken cancellationToken)
+    /// <summary>Turns a relay off for a person or an input, as a press of its button.</summary>
+    public async Task TurnOffAsync(int relayId, string actor, CancellationToken cancellationToken)
     {
         var mask = _board.Capabilities.Relay(relayId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         await SendAsync(mask, on: false, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         Clear(await GetRuntimeAsync(db, relayId, cancellationToken));
-        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = userEmail, Action = EventActions.Off });
+        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.Off });
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
     }

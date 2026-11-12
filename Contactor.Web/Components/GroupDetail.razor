@@ -397,7 +397,7 @@
 
         _free = [.. (await Groups.FreeRelaysAsync(CancellationToken.None))];
         await using var db = await DbFactory.CreateDbContextAsync();
-        _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
+        _names = await ActorNames.LoadAsync(db, CancellationToken.None);
         _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, groupId: Id)];
         _schedules = [.. await Schedules.ListForGroupAsync(Id, CancellationToken.None)];
         _outlook = (await Outlook.GetGroupsAsync(CancellationToken.None)).GetValueOrDefault(Id);

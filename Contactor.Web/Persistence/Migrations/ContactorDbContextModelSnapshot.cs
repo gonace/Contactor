@@ -178,6 +178,45 @@ namespace Contactor.Web.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Contactor.Web.Persistence.InputAction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("InputId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RelayId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool?>("WhenClosed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool?>("WhenOpened")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("RelayId");
+
+                    b.HasIndex("InputId", "GroupId")
+                        .IsUnique();
+
+                    b.HasIndex("InputId", "RelayId")
+                        .IsUnique();
+
+                    b.ToTable("InputAction", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InputAction_Target", "(\"RelayId\" IS NULL) <> (\"GroupId\" IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.Installation", b =>
                 {
                     b.Property<int>("Id")
@@ -404,6 +443,29 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasForeignKey("Contactor.Web.Persistence.GroupRuntime", "GroupId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.InputAction", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.RelayGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Contactor.Web.Persistence.Input", null)
+                        .WithMany()
+                        .HasForeignKey("InputId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Contactor.Web.Persistence.Relay", "Relay")
+                        .WithMany()
+                        .HasForeignKey("RelayId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Group");
+
+                    b.Navigation("Relay");
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.RelayGroupMember", b =>

@@ -7,6 +7,7 @@
 @using Contactor.Web.Persistence
 @inject IRelayBoard Board
 @inject InputsHandler Inputs
+@inject InputActionsHandler Actions
 @inject EventsHandler Events
 @inject RelayChanges Changes
 @inject LocalClock Clock
@@ -67,6 +68,40 @@
                     }
                 </section>
 
+                @* The relays and groups this input switches when it closes or opens. *@
+                <section class="controls">
+                    <h2>Groups and relays</h2>
+                    @foreach (var row in _actions)
+                    {
+                        <div class="control" @key="row.Target.Key">
+                            <div class="control-head">
+                                <strong>@row.Target.Label</strong>
+                                <button type="button" class="remove" @onclick="() => Remove(row)">Remove</button>
+                            </div>
+                            @ChoiceRow(row, closes: true)
+                            @ChoiceRow(row, closes: false)
+                        </div>
+                    }
+                    @if (_adding)
+                    {
+                        <div class="pick" role="group" aria-label="Add a group or relay">
+                            @if (Available.Count == 0)
+                            {
+                                <p class="hint">There is nothing more to add: this input controls every group and relay.</p>
+                            }
+                            @foreach (var target in Available)
+                            {
+                                <button type="button" @key="target.Key" @onclick="() => Add(target)">@target.Label</button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <button type="button" class="add" @onclick="() => _adding = true">+ Add a group or relay</button>
+                    }
+                    <p class="hint">Like pressing the button at that moment: a group starts and stops in its order, with its run-on, and auto-off still applies. Only changes the app sees as they happen do anything.</p>
+                </section>
+
                 <section class="events">
                     <div class="section-head">
                         <h2>Events</h2>
@@ -122,7 +157,50 @@
     [Parameter]
     public int Id { get; set; }
 
+    private List<InputActionRow> _actions = [];
+    private IReadOnlyList<InputActionTarget> _targets = [];
+    private bool _adding;
+
     private bool IsClosed => Board.State.Inputs.Contains(Id);
+
+    // What can still be added: what the input doesn't control yet.
+    private List<InputActionTarget> Available => [.. _targets.Where(t => !_actions.Any(a => a.Target.IsSame(t)))];
+
+    // "CLOSES" or "OPENS", and Turn on / Turn off / Nothing.
+    private RenderFragment ChoiceRow(InputActionRow row, bool closes) => __builder =>
+    {
+        var current = closes ? row.WhenClosed : row.WhenOpened;
+        var when = closes ? "CLOSES" : "OPENS";
+        <div class="choice" role="group" aria-label="@($"{row.Target.Label}: when the input {when.ToLowerInvariant()}")">
+            <span class="label">@when</span>
+            <div class="seg">
+                <button type="button" aria-pressed="@(current == true ? "true" : "false")" @onclick="() => Set(row, closes, true)">Turn on</button>
+                <button type="button" aria-pressed="@(current == false ? "true" : "false")" @onclick="() => Set(row, closes, false)">Turn off</button>
+                <button type="button" aria-pressed="@(current is null ? "true" : "false")" @onclick="() => Set(row, closes, null)">Nothing</button>
+            </div>
+        </div>
+    };
+
+    private void Set(InputActionRow row, bool closes, bool? action)
+    {
+        var index = _actions.IndexOf(row);
+        if (index >= 0)
+        {
+            _actions[index] = closes ? row with { WhenClosed = action } : row with { WhenOpened = action };
+        }
+    }
+
+    // A new row turns it on when the input closes and off when it opens; either can be changed before saving.
+    private void Add(InputActionTarget target)
+    {
+        _actions.Add(new InputActionRow(target, WhenClosed: true, WhenOpened: false));
+        _adding = false;
+    }
+
+    private void Remove(InputActionRow row)
+    {
+        _actions.Remove(row);
+    }
 
     private InputStatus Status => InputStatusText.For(_input!, IsClosed, Board.State.IsConnected, Clock.Now, Clock.ToLocal);
 
@@ -133,6 +211,8 @@
         {
             (_name, _isActive) = (_input.Name, _input.IsActive);
             _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
+            _actions = [.. await Actions.ListAsync(Id, CancellationToken.None)];
+            _targets = await Actions.TargetsAsync(CancellationToken.None);
         }
 
         _loaded = true;
@@ -160,7 +240,8 @@
         _busy = true;
         try
         {
-            _saveError = await Inputs.SaveAsync(new InputSettings(Id, _name, _isActive), CancellationToken.None);
+            _saveError = await Inputs.SaveAsync(new InputSettings(Id, _name, _isActive), CancellationToken.None)
+                ?? await Actions.SaveAsync(Id, _actions, CancellationToken.None);
         }
         finally
         {
@@ -195,6 +276,7 @@
                 {
                     _input = fresh;
                     _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
+                    _targets = await Actions.TargetsAsync(CancellationToken.None);
                 }
 
                 StateHasChanged();
