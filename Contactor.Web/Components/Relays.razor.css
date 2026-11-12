@@ -390,8 +390,11 @@ button:disabled {
 }
 
 @media (min-width: 1280px) {
+    /* A group spans two columns: a relay card fills the column beside it, so several groups leave no holes. The
+       groups still come first, and the relays keep their order. */
     .relays {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-auto-flow: dense;
     }
 
     .card.group {
