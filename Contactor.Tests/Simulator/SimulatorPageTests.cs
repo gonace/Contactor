@@ -34,8 +34,8 @@ public sealed class SimulatorPageTests
         Assert.DoesNotContain("secret", html, StringComparison.Ordinal);
 
         // A new board's login in two fields, so either may hold ':'.
-        Assert.Contains("<label for=\"username\">User name</label>", html, StringComparison.Ordinal);
-        Assert.Contains("<label for=\"password\">Password</label>", html, StringComparison.Ordinal);
+        Assert.Matches("<label for=\"username\"[^>]*>User name</label>", html);
+        Assert.Matches("<label for=\"password\"[^>]*>Password</label>", html);
         Assert.DoesNotContain("user:password", html, StringComparison.Ordinal);
     }
 }
