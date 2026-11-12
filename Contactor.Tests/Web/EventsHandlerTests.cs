@@ -26,7 +26,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
             services.AddEvents(configuration);
         });
-        await _database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 4);
+        await _database.Services.InitializeDatabaseAsync(relayCount: 8, inputCount: 4, Cancel);
     }
 
     public async ValueTask DisposeAsync()

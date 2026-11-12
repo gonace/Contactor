@@ -181,8 +181,7 @@
                                     }
                                 </span>
                             </div>
-                            @* The status line already says the state, so a screen reader doesn't hear it twice. *@
-                            <span class="state @(closed ? "closed" : null)" aria-hidden="true"><span class="dot"></span>@InputView.StateText(closed)</span>
+                            <InputStateBadge Closed="closed" />
                         </div>
                     }
                 </div>

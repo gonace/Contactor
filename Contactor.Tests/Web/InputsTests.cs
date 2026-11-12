@@ -89,11 +89,11 @@ public sealed class InputsTests
 
     [Theory]
     [InlineData(false, true, "Open since 14:20", false)]
-    [InlineData(true, true, "Closed since unknown", true)]
+    [InlineData(true, true, "Closed", false)]
     [InlineData(false, false, "Open since unknown", true)]
     public void Should_SaySinceWhen_OnlyWhenTheTimeIsKnown(bool closedNow, bool known, string expected, bool unknown)
     {
-        // The latest event says it opened at 13:20 UTC (14:20 in Stockholm).
+        // The latest event says it opened at 13:20 UTC (14:20 in Stockholm). Closed now: a change not logged yet.
         var input = new InputView(1, "Door", true, new InputChange(Now.AddMinutes(-10), false, known));
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
 
@@ -218,7 +218,7 @@ public sealed class InputsTests
             services.AddGroups(configuration);
             services.AddInputs(configuration);
         });
-        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel, inputCount: seededInputs ?? inputCount);
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: seededInputs ?? inputCount, Cancel);
         return database;
     }
 

@@ -39,7 +39,7 @@
             <main class="content">
                 <div class="field">
                     <label for="name" class="label">INPUT @Id · NAME</label>
-                    <input id="name" type="text" maxlength="@Input.TextMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
+                    <input id="name" type="text" maxlength="@Input.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                     <label for="active" class="check">
                         <input id="active" type="checkbox" @bind="_isActive" />
                         <span><strong>Active</strong>: shown in the list. Untick it for inputs that aren't wired to anything.</span>
@@ -59,7 +59,7 @@
                                 }
                             </p>
                         </div>
-                        <span class="state @(IsClosed ? "closed" : null)"><span class="dot" aria-hidden="true"></span>@InputView.StateText(IsClosed)</span>
+                        <InputStateBadge Closed="IsClosed" />
                     </div>
                     @if (!Board.State.IsConnected)
                     {

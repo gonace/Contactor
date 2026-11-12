@@ -1,0 +1,11 @@
+@using Contactor.Web.Features.Inputs
+
+@* An input's state as a badge: "Open", or "Closed" in green. Hidden from screen readers: the text beside it always
+   says the state already. *@
+<span class="state @(Closed ? "closed" : null)" aria-hidden="true"><span class="dot"></span>@InputView.StateText(Closed)</span>
+
+@code {
+    /// <summary>Whether the board reads the input as closed (on).</summary>
+    [Parameter]
+    public bool Closed { get; set; }
+}

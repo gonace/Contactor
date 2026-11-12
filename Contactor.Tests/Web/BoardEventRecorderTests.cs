@@ -1,12 +1,15 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Contactor.Web.Features.Relays;
-using Contactor.Web.Features.Groups;
-using Contactor.Web;
+using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Tests.Boards;
+using Contactor.Web;
 using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Web;
 
@@ -122,17 +125,17 @@ public sealed class BoardEventRecorderTests
     [Fact]
     public async Task Should_LogEveryInput_WithItsNumber()
     {
-        var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 4);
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: 4);
         await using var database = TestDatabase.Create((services, configuration) =>
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<Contactor.Boards.IRelayBoard>(board);
+            services.AddSingleton<IRelayBoard>(board);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
-        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel, inputCount: 4);
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 4, Cancel);
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -195,7 +198,6 @@ public sealed class BoardEventRecorderTests
         setup.Board.SetInput(1, on: true);
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
         setup.Board.SetConnected(false);
-        await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
         setup.Board.SetInput(1, on: false);
         setup.Board.SetConnected(true);
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
@@ -278,7 +280,7 @@ public sealed class BoardEventRecorderTests
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(Contactor.Boards.ChannelMask.Of(1), on: true);
+        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
@@ -297,20 +299,20 @@ public sealed class BoardEventRecorderTests
 
     private static async Task<InputRig> InputRigAsync(DateTime lastContact)
     {
-        var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 2);
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: 2);
         var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));
         var errors = new ErrorCounter();
         var database = TestDatabase.Create((services, configuration) =>
         {
-            services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(errors);
+            services.AddSingleton<ILoggerProvider>(errors);
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(time);
-            services.AddSingleton<Contactor.Boards.IRelayBoard>(board);
+            services.AddSingleton<IRelayBoard>(board);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
-        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel, inputCount: 2);
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = lastContact });
@@ -321,13 +323,13 @@ public sealed class BoardEventRecorderTests
     }
 
     /// <summary>Counts the errors logged, so a test can wait for a failure the code under test caught.</summary>
-    private sealed class ErrorCounter : Microsoft.Extensions.Logging.ILoggerProvider, Microsoft.Extensions.Logging.ILogger
+    private sealed class ErrorCounter : ILoggerProvider, ILogger
     {
         private int _count;
 
         public int Count => Volatile.Read(ref _count);
 
-        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName)
+        public ILogger CreateLogger(string categoryName)
         {
             return this;
         }
@@ -338,12 +340,12 @@ public sealed class BoardEventRecorderTests
             return null;
         }
 
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel)
+        public bool IsEnabled(LogLevel logLevel)
         {
-            return logLevel >= Microsoft.Extensions.Logging.LogLevel.Error;
+            return logLevel >= LogLevel.Error;
         }
 
-        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
             if (IsEnabled(logLevel))
             {
@@ -360,7 +362,7 @@ public sealed class BoardEventRecorderTests
     {
         private BoardEventRecorder? _recorder;
 
-        public InputRig(Contactor.Tests.Boards.FakeRelayBoard board, TestDatabase database, FixedTimeProvider time, ErrorCounter errors)
+        public InputRig(FakeRelayBoard board, TestDatabase database, FixedTimeProvider time, ErrorCounter errors)
         {
             Board = board;
             Database = database;
@@ -373,7 +375,7 @@ public sealed class BoardEventRecorderTests
 
         public FixedTimeProvider Time { get; }
 
-        public Contactor.Tests.Boards.FakeRelayBoard Board { get; }
+        public FakeRelayBoard Board { get; }
 
         public TestDatabase Database { get; }
 

@@ -245,9 +245,9 @@ EventLog
                                  "connection-lost" | "connection-restored" | "input-changed" |
                                  "board-timers-disabled" | "board-address-changed" | "board-login-changed"
   GroupId         int?           the group it concerns; not a foreign key, events outlive a deleted group
-  InputId         int?           the input an "input-changed" concerns; not a foreign key
                                  Group actions: "group-on" | "group-off" | "group-start-failed" | "run-on-start" |
                                  "run-on-end" | "interlock-trip" | "group-create" | "group-edit" | "group-delete"
+  InputId         int?           the input an "input-changed" concerns; not a foreign key
   Details         text?          JSON, e.g. {"from":"Relay 4","to":"Ventilation – Paint shop"}
 
 RelayRuntime            (internal, for auto-off; one row per relay, seeded at start)

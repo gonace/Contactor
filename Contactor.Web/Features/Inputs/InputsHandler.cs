@@ -75,9 +75,9 @@ public sealed class InputsHandler
             return "Enter a name.";
         }
 
-        if (name.Length > Input.TextMaxLength)
+        if (name.Length > Input.NameMaxLength)
         {
-            return $"The name can be at most {Input.TextMaxLength} characters.";
+            return $"The name can be at most {Input.NameMaxLength} characters.";
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -160,8 +160,15 @@ public static class InputStatusText
         ArgumentNullException.ThrowIfNull(toLocal);
         var state = InputView.StateText(on);
 
+        // The board reports a change the log doesn't have yet: the page redraws on the board's status a moment before
+        // the change is logged. Just the state, until it is.
+        if (input.LastChange is { } latest && latest.On != on)
+        {
+            return new InputStatus(state, false);
+        }
+
         // Known for a change to the state the board reports now, which the app saw, with no long gap after it.
-        return input.LastChange is { } change && change.On == on && change.Known
+        return input.LastChange is { } change && change.Known
             ? new InputStatus($"{state} since {RelayStatusText.When(toLocal(change.TimestampUtc), nowLocal)}", false)
             : new InputStatus($"{state} since unknown", true);
     }

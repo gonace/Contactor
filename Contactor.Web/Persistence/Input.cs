@@ -6,7 +6,7 @@ namespace Contactor.Web.Persistence;
 /// </summary>
 public sealed class Input
 {
-    public const int TextMaxLength = 40;
+    public const int NameMaxLength = 40;
 
     /// <summary>The board's input, 1 to the board's input count.</summary>
     public int Id { get; set; }
