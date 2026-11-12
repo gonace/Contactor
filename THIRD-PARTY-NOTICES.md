@@ -31,7 +31,7 @@ following works of others, each under its own licence. The licence texts are in 
 
 - **OpenTelemetry .NET** (`OpenTelemetry.*`): Copyright The OpenTelemetry Authors. Apache License 2.0:
   `Apache-2.0.txt`. Its own notices for code it includes: `OpenTelemetry-THIRD-PARTY-NOTICES.txt`.
-- **Polly** (`Polly.Core`, `Polly.Extensions`, `Polly.RateLimiting`): Copyright (c) 2024, App vNext. BSD 3-Clause
+- **Polly** (`Polly.Core`, `Polly.Extensions`, `Polly.RateLimiting`): Copyright (c) 2015-2023, App vNext. BSD 3-Clause
   License: `Polly-BSD-3-Clause.txt`.
 - **SQLitePCLRaw** (`SQLitePCLRaw.*`): Copyright 2014-2024 SourceGear, LLC. Apache License 2.0: `Apache-2.0.txt`.
   It bundles SQLite (`libe_sqlite3`), which is in the public domain.
