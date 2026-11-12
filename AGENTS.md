@@ -550,6 +550,8 @@ See `DEPLOY.md` for the steps.
   - GitHub shows every check done and green; while the Build workflow is disabled, the full local run (see Testing) on that commit passed instead, with the result in the pull request's description.
   Check all four yourself before saying a pull request is ready; never on an agent's word or an older review.
 - A pull request with a finding or decision waiting on the user (a review finding the author disagrees with, or an open design question) gets the `needs attention` label. Remove the label once it's resolved.
+- Help the user keep the work fast and cheap: say so as soon as work is queuing up (jobs waiting on each other, overlapping files that will need merging), and propose a better order when one uses fewer tokens or queues less. Run one heavy job at a time (builds, the full test run) unless the jobs are small and independent.
+- Keep reports to the user short: only what they must decide or know.
 - Every piece of work has a GitHub issue; create one first if it's missing. When work starts, open a **draft** pull request with "Fixes #N"; mark it ready for review when it's done. Always write "Issue #N" or "PR #N" (in chat, issues, pull requests and commits), never "#N" or a number alone, so issues and pull requests are never mixed up.
 - Pull requests get a clear title and a **short description** that follows `.github/pull_request_template.md`. Not an essay. Write pull request text, issues and comments by the rules in `.agents/writing.md`.
 
