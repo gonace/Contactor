@@ -14,7 +14,6 @@ namespace Contactor.Web.Features.Events;
 /// <param name="IsAlert">Shown in red: a safety shut-off, or a group that couldn't start.</param>
 public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false);
 
-
 /// <summary>
 /// Turns stored events into the text of the Events screen.
 /// </summary>

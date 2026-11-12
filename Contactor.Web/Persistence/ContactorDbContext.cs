@@ -197,7 +197,7 @@ public sealed class ContactorDbContext : DbContext
     {
         input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         input.Property(i => i.Id).ValueGeneratedNever();
-        input.Property(i => i.Name).HasMaxLength(Input.TextMaxLength);
+        input.Property(i => i.Name).HasMaxLength(Input.NameMaxLength);
     }
 
     private sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>

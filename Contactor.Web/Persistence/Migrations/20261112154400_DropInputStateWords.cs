@@ -28,7 +28,7 @@ namespace Contactor.Web.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 40,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Closed");
 
             migrationBuilder.AddColumn<string>(
                 name: "OpenText",
@@ -36,7 +36,7 @@ namespace Contactor.Web.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 40,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Open");
         }
     }
 }

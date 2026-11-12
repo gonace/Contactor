@@ -197,8 +197,8 @@ public sealed class PersistenceTests
     public async Task Should_SeedOneInputPerBoardInput_AndKeepTheRest()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 4);
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 1);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, inputCount: 4, Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, inputCount: 1, Cancel);
 
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         var inputs = await db.Inputs.OrderBy(i => i.Id).ToListAsync(Cancel);
@@ -220,7 +220,7 @@ public sealed class PersistenceTests
         await ExecuteAsync(database.ConnectionString, "INSERT INTO \"Input\" (\"Id\", \"Name\", \"ClosedText\", \"OpenText\", \"NotifyOnOpen\", \"NotifyOnClose\") VALUES (1, 'Input', 'Closed', 'Open', 0, 0);");
         await ExecuteAsync(database.ConnectionString, "INSERT INTO \"EventLog\" (\"TimestampUtc\", \"Actor\", \"Action\", \"Details\") VALUES ('2026-11-01 10:00:00', 'external', 'input-changed', '{\"on\":true}'), ('2026-11-01 10:01:00', 'system', 'connection-lost', NULL);");
 
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 1);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, inputCount: 1, Cancel);
 
         Assert.Equal("Input 1", await ScalarAsync(database.ConnectionString, "SELECT \"Name\" FROM \"Input\" WHERE \"Id\" = 1;"));
         Assert.Equal(1L, await ScalarAsync(database.ConnectionString, "SELECT \"IsActive\" FROM \"Input\" WHERE \"Id\" = 1;"));

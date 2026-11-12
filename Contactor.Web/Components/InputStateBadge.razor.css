@@ -1,0 +1,29 @@
+.state {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    background: var(--line-strong);
+}
+
+.state.closed {
+    border-color: var(--ok);
+}
+
+.state.closed .dot {
+    background: var(--ok);
+}

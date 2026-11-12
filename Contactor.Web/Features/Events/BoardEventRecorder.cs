@@ -9,7 +9,7 @@ namespace Contactor.Web.Features.Events;
 
 /// <summary>
 /// Logs what happens at the board without the app asking: relays turned on or off through the board's web page,
-/// its button or its timers (Actor <c>external</c>), changes to the input, and the connection being lost for more
+/// its button or its timers (Actor <c>external</c>), changes to the inputs, and the connection being lost for more
 /// than 30 s and coming back. The board's status arrives on its read loop; it is queued and handled here one at a
 /// time, so the database work never holds up the connection.
 /// </summary>

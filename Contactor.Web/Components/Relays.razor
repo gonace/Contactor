@@ -165,7 +165,7 @@
                     @foreach (var input in VisibleInputs)
                     {
                         var closed = State.Inputs.Contains(input.Id);
-                        var status = InputStatusText.For(input, closed, Clock.Now, Clock.ToLocal);
+                        var status = InputStatusText.For(input, closed, State.IsConnected, Clock.Now, Clock.ToLocal);
                         <div class="card input @(input.IsActive ? "" : "inactive")" @key="@($"i{input.Id}")">
                             @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
                             <div class="text">
@@ -181,8 +181,7 @@
                                     }
                                 </span>
                             </div>
-                            @* The status line already says the state, so a screen reader doesn't hear it twice. *@
-                            <span class="state @(closed ? "closed" : null)" aria-hidden="true"><span class="dot"></span>@InputView.StateText(closed)</span>
+                            <InputStateBadge Closed="closed" />
                         </div>
                     }
                 </div>

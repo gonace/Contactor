@@ -75,9 +75,9 @@ public sealed class InputsHandler
             return "Enter a name.";
         }
 
-        if (name.Length > Input.TextMaxLength)
+        if (name.Length > Input.NameMaxLength)
         {
-            return $"The name can be at most {Input.TextMaxLength} characters.";
+            return $"The name can be at most {Input.NameMaxLength} characters.";
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -152,13 +152,21 @@ public static class InputStatusText
 
     /// <param name="input">The input, with its latest logged change.</param>
     /// <param name="on">What the board reads now: on is closed.</param>
+    /// <param name="connected">Whether the app has contact with the board now.</param>
     /// <param name="nowLocal">Now, in local time.</param>
     /// <param name="toLocal">Turns a UTC time into local time.</param>
-    public static InputStatus For(InputView input, bool on, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
+    public static InputStatus For(InputView input, bool on, bool connected, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(toLocal);
         var state = InputView.StateText(on);
+
+        // The board reports a change the log doesn't have yet: the page redraws on the board's status a moment before
+        // the change is logged. Just the state, until it is. Without contact the state shown may be stale, so not then.
+        if (connected && input.LastChange is { } latest && latest.On != on)
+        {
+            return new InputStatus(state, false);
+        }
 
         // Known for a change to the state the board reports now, which the app saw, with no long gap after it.
         return input.LastChange is { } change && change.On == on && change.Known
