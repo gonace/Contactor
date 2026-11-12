@@ -29,6 +29,11 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
             Relays
         </a>
+        @if (_group is not null)
+        {
+            @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
+            <button type="submit" form="group-form" class="save-top" disabled="@_busy">Save</button>
+        }
     </header>
 
     @if (_loaded && _group is null)
@@ -39,7 +44,7 @@
     }
     else if (_group is not null)
     {
-        <form class="form" @onsubmit="SaveAsync">
+        <form id="group-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
                     <label for="name" class="label">GROUP · NAME</label>
