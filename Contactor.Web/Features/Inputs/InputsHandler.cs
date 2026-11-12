@@ -13,20 +13,20 @@ namespace Contactor.Web.Features.Inputs;
 public sealed record InputChange(DateTime TimestampUtc, bool On, bool Known = true);
 
 /// <summary>An input as the screens show it.</summary>
-public sealed record InputView(int Id, string Name, string ClosedText, string OpenText, bool IsActive, InputChange? LastChange)
+public sealed record InputView(int Id, string Name, bool IsActive, InputChange? LastChange)
 {
-    /// <summary>The word for a state: the closed text when the board reads the input as on.</summary>
-    public string StateText(bool on)
+    /// <summary>"Closed" when the board reads the input as on, otherwise "Open".</summary>
+    public static string StateText(bool on)
     {
-        return on ? ClosedText : OpenText;
+        return Input.StateText(on);
     }
 }
 
 /// <summary>What the Input screen saves.</summary>
-public sealed record InputSettings(int Id, string Name, string ClosedText, string OpenText, bool IsActive);
+public sealed record InputSettings(int Id, string Name, bool IsActive);
 
 /// <summary>
-/// The board's digital inputs: their names and the words for their states, and when each last changed. Their state
+/// The board's digital inputs: their names, and when each last changed. Their state
 /// itself comes from the board. Inputs above the board's count, left from a board that had more, are left out.
 /// </summary>
 public sealed class InputsHandler
@@ -65,26 +65,19 @@ public sealed class InputsHandler
         return input is null ? null : View(input, (await LastChangesAsync(db, cancellationToken)).GetValueOrDefault(inputId));
     }
 
-    /// <summary>Saves an input's name, state words and "Active". Not logged. Returns null when saved, otherwise the message to show.</summary>
+    /// <summary>Saves an input's name and "Active". Not logged. Returns null when saved, otherwise the message to show.</summary>
     public async Task<string?> SaveAsync(InputSettings settings, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(settings);
         var name = settings.Name?.Trim() ?? "";
-        var closed = settings.ClosedText?.Trim() ?? "";
-        var open = settings.OpenText?.Trim() ?? "";
         if (name.Length == 0)
         {
             return "Enter a name.";
         }
 
-        if (closed.Length == 0 || open.Length == 0)
+        if (name.Length > Input.TextMaxLength)
         {
-            return "Enter a word for each state.";
-        }
-
-        if (name.Length > Input.TextMaxLength || closed.Length > Input.TextMaxLength || open.Length > Input.TextMaxLength)
-        {
-            return $"A name or word can be at most {Input.TextMaxLength} characters.";
+            return $"The name can be at most {Input.TextMaxLength} characters.";
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -96,7 +89,7 @@ public sealed class InputsHandler
             return "The input doesn't exist.";
         }
 
-        (input.Name, input.ClosedText, input.OpenText, input.IsActive) = (name, closed, open, settings.IsActive);
+        (input.Name, input.IsActive) = (name, settings.IsActive);
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
         return null;
@@ -104,7 +97,7 @@ public sealed class InputsHandler
 
     private static InputView View(Input input, InputChange? lastChange)
     {
-        return new InputView(input.Id, input.Name, input.ClosedText, input.OpenText, input.IsActive, lastChange);
+        return new InputView(input.Id, input.Name, input.IsActive, lastChange);
     }
 
     // The latest change of each input, from its newest "input-changed" event.
@@ -165,7 +158,7 @@ public static class InputStatusText
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(toLocal);
-        var state = input.StateText(on);
+        var state = InputView.StateText(on);
 
         // Known for a change to the state the board reports now, which the app saw, with no long gap after it.
         return input.LastChange is { } change && change.On == on && change.Known

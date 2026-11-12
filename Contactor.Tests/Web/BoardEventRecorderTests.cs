@@ -189,7 +189,7 @@ public sealed class BoardEventRecorderTests
     [Fact]
     public async Task Should_MarkOnlyChangesMadeDuringALostContact_AsNoticed()
     {
-        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start);
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
 
         setup.Board.SetInput(1, on: true);
@@ -209,7 +209,7 @@ public sealed class BoardEventRecorderTests
     [InlineData(11, true)]
     public async Task Should_MarkALongLostContact(int minutesLost, bool longGap)
     {
-        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start);
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
         Assert.Null(setup.State().LongGapEndedUtc);
 
@@ -238,7 +238,7 @@ public sealed class BoardEventRecorderTests
     [Fact]
     public async Task Should_SaveTheTimeOfContact_EveryFewMinutes()
     {
-        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start);
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
 
         setup.Time.Now += BoardEventRecorder.ContactSaveInterval - TimeSpan.FromSeconds(1);

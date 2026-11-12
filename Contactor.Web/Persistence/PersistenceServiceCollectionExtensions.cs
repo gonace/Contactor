@@ -171,7 +171,7 @@ public static class PersistenceServiceCollectionExtensions
         {
             if (!inputs.Contains(id))
             {
-                db.Inputs.Add(new Input { Id = id, Name = Input.DefaultName(id), ClosedText = "Closed", OpenText = "Open" });
+                db.Inputs.Add(new Input { Id = id, Name = Input.DefaultName(id) });
             }
         }
 

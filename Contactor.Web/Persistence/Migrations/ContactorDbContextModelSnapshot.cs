@@ -156,11 +156,6 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("ClosedText")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -174,11 +169,6 @@ namespace Contactor.Web.Persistence.Migrations
 
                     b.Property<bool>("NotifyOnOpen")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("OpenText")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 

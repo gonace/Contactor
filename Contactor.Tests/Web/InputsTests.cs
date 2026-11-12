@@ -66,27 +66,25 @@ public sealed class InputsTests
     }
 
     [Fact]
-    public async Task Should_SaveNameWordsAndActive()
+    public async Task Should_SaveNameAndActive()
     {
         await using var database = await DatabaseAsync(inputCount: 2);
 
-        Assert.Null(await Handler(database).SaveAsync(new InputSettings(2, " Thermostat ", "Warm", "Cold", false), Cancel));
+        Assert.Null(await Handler(database).SaveAsync(new InputSettings(2, " Thermostat ", false), Cancel));
 
         var input = await Handler(database).GetAsync(2, Cancel);
-        Assert.Equal(("Thermostat", "Warm", "Cold", false), (input!.Name, input.ClosedText, input.OpenText, input.IsActive));
+        Assert.Equal(("Thermostat", false), (input!.Name, input.IsActive));
     }
 
     [Theory]
-    [InlineData(1, " ", "Closed", "Open", "Enter a name.")]
-    [InlineData(1, "Door", "", "Open", "Enter a word for each state.")]
-    [InlineData(1, "Door", "Closed", " ", "Enter a word for each state.")]
-    [InlineData(1, "Door that is far too long for the name field", "Closed", "Open", "A name or word can be at most 40 characters.")]
-    [InlineData(3, "Door", "Closed", "Open", "The input doesn't exist.")]
-    public async Task Should_RefuseWhatItCannotSave(int id, string name, string closed, string open, string message)
+    [InlineData(1, " ", "Enter a name.")]
+    [InlineData(1, "Door that is far too long for the name field", "The name can be at most 40 characters.")]
+    [InlineData(3, "Door", "The input doesn't exist.")]
+    public async Task Should_RefuseWhatItCannotSave(int id, string name, string message)
     {
         await using var database = await DatabaseAsync(inputCount: 2, seededInputs: 4);
 
-        Assert.Equal(message, await Handler(database).SaveAsync(new InputSettings(id, name, closed, open, true), Cancel));
+        Assert.Equal(message, await Handler(database).SaveAsync(new InputSettings(id, name, true), Cancel));
     }
 
     [Theory]
@@ -96,7 +94,7 @@ public sealed class InputsTests
     public void Should_SaySinceWhen_OnlyWhenTheTimeIsKnown(bool closedNow, bool known, string expected, bool unknown)
     {
         // The latest event says it opened at 13:20 UTC (14:20 in Stockholm).
-        var input = new InputView(1, "Door", "Closed", "Open", true, new InputChange(Now.AddMinutes(-10), false, known));
+        var input = new InputView(1, "Door", true, new InputChange(Now.AddMinutes(-10), false, known));
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
 
         var status = InputStatusText.For(input, closedNow, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone));
@@ -107,7 +105,7 @@ public sealed class InputsTests
     [Fact]
     public void Should_SaySinceUnknown_ForAnInputThatNeverChanged()
     {
-        var input = new InputView(1, "Door", "Closed", "Open", true, null);
+        var input = new InputView(1, "Door", true, null);
 
         Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, Now, utc => utc));
     }
@@ -185,8 +183,7 @@ public sealed class InputsTests
 
         Assert.Contains("INPUT 1 · NAME", html, StringComparison.Ordinal);
         Assert.Contains("value=\"Door\"", html, StringComparison.Ordinal);
-        Assert.Contains("When closed", html, StringComparison.Ordinal);
-        Assert.Contains("When open", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("When closed", html, StringComparison.Ordinal);
         Assert.Contains("This input hasn't changed yet.", html, StringComparison.Ordinal);
         Assert.Contains(InputStatusText.WhyUnknown, html, StringComparison.Ordinal);
         Assert.Contains("The input doesn't exist.", missing, StringComparison.Ordinal);

@@ -59,27 +59,12 @@
                                 }
                             </p>
                         </div>
-                        <span class="state @(IsClosed ? "closed" : null)"><span class="dot" aria-hidden="true"></span>@_input.StateText(IsClosed)</span>
+                        <span class="state @(IsClosed ? "closed" : null)"><span class="dot" aria-hidden="true"></span>@InputView.StateText(IsClosed)</span>
                     </div>
                     @if (!Board.State.IsConnected)
                     {
                         <p class="hint">No contact with the relay board: this may be out of date.</p>
                     }
-                </section>
-
-                <section class="words">
-                    <h2>Words for its states</h2>
-                    <div class="pair">
-                        <div class="field">
-                            <label for="closed">When closed</label>
-                            <input id="closed" type="text" maxlength="@Input.TextMaxLength" placeholder="Closed" @bind="_closedText" @bind:event="oninput" autocomplete="off" />
-                        </div>
-                        <div class="field">
-                            <label for="open">When open</label>
-                            <input id="open" type="text" maxlength="@Input.TextMaxLength" placeholder="Open" @bind="_openText" @bind:event="oninput" autocomplete="off" />
-                        </div>
-                    </div>
-                    <p class="hint">E.g. "Warm" and "Cold" for a thermostat. They show on Relays and under Events.</p>
                 </section>
 
                 <section class="events">
@@ -132,8 +117,6 @@
     private bool _busy;
     private string? _saveError;
     private string _name = "";
-    private string _closedText = "";
-    private string _openText = "";
     private bool _isActive;
 
     [Parameter]
@@ -148,7 +131,7 @@
         _input = await Inputs.GetAsync(Id, CancellationToken.None);
         if (_input is not null)
         {
-            (_name, _closedText, _openText, _isActive) = (_input.Name, _input.ClosedText, _input.OpenText, _input.IsActive);
+            (_name, _isActive) = (_input.Name, _input.IsActive);
             _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
         }
 
@@ -177,7 +160,7 @@
         _busy = true;
         try
         {
-            _saveError = await Inputs.SaveAsync(new InputSettings(Id, _name, _closedText, _openText, _isActive), CancellationToken.None);
+            _saveError = await Inputs.SaveAsync(new InputSettings(Id, _name, _isActive), CancellationToken.None);
         }
         finally
         {

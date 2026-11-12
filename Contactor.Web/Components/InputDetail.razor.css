@@ -287,27 +287,6 @@ button:disabled {
     background: var(--ok);
 }
 
-.words {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.pair {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-}
-
-.pair label {
-    font-size: 15px;
-    font-weight: 600;
-}
-
-.pair input[type="text"] {
-    min-width: 0;
-}
-
 /* A tablet: one wider column. A desktop: two columns, the events beside the rest, and Save to the right. */
 @media (min-width: 768px) {
     .screen {
