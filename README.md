@@ -87,3 +87,8 @@ Chromium.
 ```sh
 node scripts/screenshots/take.mjs
 ```
+
+## Licence
+
+Contactor is released under the MIT License, see `LICENSE`. The fonts, the group icons and `cloudflared` in the image
+are others' work under their own licences, listed in `THIRD-PARTY-NOTICES.md`.
