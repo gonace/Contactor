@@ -10,7 +10,6 @@
 @inject EventsHandler Events
 @inject RelayChanges Changes
 @inject LocalClock Clock
-@inject BoardWatch Watch
 @inject NavigationManager Navigation
 
 <PageTitle>@(_input?.Name ?? "Input") · Contactor</PageTitle>
@@ -142,7 +141,7 @@
 
     private bool IsClosed => Board.State.Inputs.Contains(Id);
 
-    private InputStatus Status => InputStatusText.For(_input!, IsClosed, Clock.Now, Clock.ToLocal, Watch.SawChangeAt);
+    private InputStatus Status => InputStatusText.For(_input!, IsClosed, Clock.Now, Clock.ToLocal);
 
     protected override async Task OnParametersSetAsync()
     {

@@ -7,7 +7,6 @@ public static class EventsServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
         services.AddSingleton<ExpectedChanges>();
-        services.AddSingleton<BoardWatch>();
         services.AddHostedService<BoardEventRecorder>();
         services.AddSingleton<EventsHandler>();
         return services;

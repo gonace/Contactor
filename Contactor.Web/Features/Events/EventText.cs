@@ -242,6 +242,12 @@ public static class EventText
         return Bool(details, "on");
     }
 
+    /// <summary>Whether an "input-changed" event was only noticed after a gap, so its time is when it was noticed.</summary>
+    public static bool InputNoticed(string? details)
+    {
+        return Bool(details, "noticed") == true;
+    }
+
     private static bool? Bool(string? json, string property)
     {
         return Read(json, property) switch

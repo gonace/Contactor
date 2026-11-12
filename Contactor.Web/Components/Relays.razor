@@ -19,7 +19,6 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject GroupsHandler Groups
 @inject InputsHandler Inputs
-@inject BoardWatch Watch
 @inject GroupSequencer Sequencer
 @inject SetupHandler Setup
 @inject NavigationManager Navigation
@@ -166,7 +165,7 @@
                     @foreach (var input in VisibleInputs)
                     {
                         var closed = State.Inputs.Contains(input.Id);
-                        var status = InputStatusText.For(input, closed, Clock.Now, Clock.ToLocal, Watch.SawChangeAt);
+                        var status = InputStatusText.For(input, closed, Clock.Now, Clock.ToLocal);
                         <div class="card input @(input.IsActive ? "" : "inactive")" @key="@($"i{input.Id}")">
                             @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
                             <div class="text">

@@ -6,8 +6,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Inputs;
 
-/// <summary>When an input last changed, and to what, from the event log.</summary>
-public sealed record InputChange(DateTime TimestampUtc, bool On);
+/// <summary>
+/// When an input last changed, and to what, from the event log. <paramref name="Known"/> is false when the time can't
+/// be trusted: the change was only noticed after a gap, or a long gap came after it.
+/// </summary>
+public sealed record InputChange(DateTime TimestampUtc, bool On, bool Known = true);
 
 /// <summary>An input as the screens show it.</summary>
 public sealed record InputView(int Id, string Name, string ClosedText, string OpenText, bool IsActive, InputChange? LastChange)
@@ -115,9 +118,15 @@ public sealed class InputsHandler
             .Where(e => lastIds.Contains(e.Id))
             .Select(e => new { InputId = e.InputId!.Value, e.TimestampUtc, e.Details })
             .ToListAsync(cancellationToken);
+        var longGapEnded = await db.BoardWatchStates.AsNoTracking().Select(s => s.LongGapEndedUtc).SingleOrDefaultAsync(cancellationToken);
         return last
             .Where(e => EventText.InputOn(e.Details) is not null)
-            .ToDictionary(e => e.InputId, e => new InputChange(e.TimestampUtc, EventText.InputOn(e.Details)!.Value));
+            .ToDictionary(
+                e => e.InputId,
+                e => new InputChange(
+                    e.TimestampUtc,
+                    EventText.InputOn(e.Details)!.Value,
+                    !EventText.InputNoticed(e.Details) && (longGapEnded is not { } gap || e.TimestampUtc > gap)));
     }
 }
 
@@ -146,22 +155,20 @@ public static class InputStatusText
 {
     /// <summary>Why "since" can be unknown, for the ⓘ next to it.</summary>
     public const string WhyUnknown =
-        "The board only tells the app what an input reads now, not since when. The app knows the time only of changes it saw itself, and it wasn't watching when this one happened, e.g. while it was restarting or had no contact with the board.";
+        "The board only tells the app what an input reads now, not since when. The app hasn't seen this input change since it was installed or last had no contact with the board for a while, e.g. after a crash or a power cut.";
 
     /// <param name="input">The input, with its latest logged change.</param>
     /// <param name="on">What the board reads now: on is closed.</param>
     /// <param name="nowLocal">Now, in local time.</param>
     /// <param name="toLocal">Turns a UTC time into local time.</param>
-    /// <param name="sawChangeAt">Whether the app saw a change logged at a given UTC time happen (<see cref="Events.BoardWatch.SawChangeAt"/>).</param>
-    public static InputStatus For(InputView input, bool on, DateTime nowLocal, Func<DateTime, DateTime> toLocal, Func<DateTime, bool> sawChangeAt)
+    public static InputStatus For(InputView input, bool on, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(toLocal);
-        ArgumentNullException.ThrowIfNull(sawChangeAt);
         var state = input.StateText(on);
 
-        // Known only for a change the app saw happen, to the state the board reports now.
-        return input.LastChange is { } change && change.On == on && sawChangeAt(change.TimestampUtc)
+        // Known for a change to the state the board reports now, which the app saw, with no long gap after it.
+        return input.LastChange is { } change && change.On == on && change.Known
             ? new InputStatus($"{state} since {RelayStatusText.When(toLocal(change.TimestampUtc), nowLocal)}", false)
             : new InputStatus($"{state} since unknown", true);
     }

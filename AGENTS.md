@@ -301,6 +301,15 @@ Installation            (one row; none on a new installation)
   SetupDoneUtc    datetime?      when the setup guide was finished or skipped; null: "/" opens on the guide
                                  The migration that added it marked installations already in use as done.
 
+BoardWatchState         (one row; the app's contact with the board over time, kept by BoardEventRecorder)
+  Id              int PK = 1
+  LastContactUtc  datetime?      saved about once a minute while there is contact
+  LongGapEndedUtc datetime?      when the app last came back after more than 10 min without contact (a crash,
+                                 a board that was off). A reboot or an upgrade is a short gap: the inputs' times
+                                 stay. At start the inputs are compared with their last logged state; one that
+                                 changed meanwhile, or changed during a lost contact, is logged with
+                                 {"noticed":true} and its time is unknown.
+
 Input                   (one per digital input on the board, seeded at start like relays, never deleted)
   Id              int PK         1 to the board's input count (at most 64)
   Name            text           e.g. "Door" (max 40); "Input n" to begin with
@@ -409,7 +418,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - Status line when on: "On since 14:02 · Jane · off 16:02".
      - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
    - The link "New group" under the cards, then one button for inactive relays and inputs: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" for both, and "Hide inactive …". Inactive relays and inputs have a dashed border.
-   - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`); its text links to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`, when the app saw that change happen: `BoardWatch` knows since when it has watched the board without a break), or else "Open since unknown" with an ⓘ right after it (`WhyUnknown.razor`), whose reason (the board only reports what an input reads now) shows as a tooltip on hover, on keyboard focus, or when pressed. Beside it, a badge with its state word (green when closed). No button: the app can't switch an input.
+   - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`); its text links to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`), or else "Open since unknown" with an ⓘ right after it (`WhyUnknown.razor`), whose reason shows as a tooltip on hover, on keyboard focus, or when pressed (a second press or a tap elsewhere closes it). The board only reports what an input reads now, so the time is unknown for a change the app only noticed after a gap in contact, or when a long gap came after it (see `BoardWatchState`). Beside it, a badge with its state word (green when closed). No button: the app can't switch an input.
    - The list has a section each for "Groups", "Relays" and "Inputs", in that order, each with a small heading and a grid of its own, so the cards line up and Tab goes row by row. With only relays (no groups and no input shown) there are no headings. "Relays" has no heading and no section when there is no relay card to show (every relay in a group, or the rest hidden as inactive).
    - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.

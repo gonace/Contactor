@@ -48,6 +48,25 @@ namespace Contactor.Web.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Contactor.Web.Persistence.BoardWatchState", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastContactUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LongGapEndedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("BoardWatchState", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_BoardWatchState_Id", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.EventLogEntry", b =>
                 {
                     b.Property<int>("Id")

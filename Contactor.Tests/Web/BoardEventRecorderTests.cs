@@ -152,49 +152,133 @@ public sealed class BoardEventRecorderTests
         }
     }
 
-    // The recorder keeps BoardWatch: a change it sees live is seen; one made while contact was lost, logged when it
-    // comes back, isn't, and neither is anything from before the loss.
+    // A reboot or an upgrade is a short gap: the inputs' times stay. A long one (a crash, a board that was off) doesn't.
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(60, true)]
+    public async Task Should_MarkALongGap_AtStart(int minutesAway, bool longGap)
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-minutesAway));
+
+        await setup.StartAsync();
+
+        var state = setup.State();
+        Assert.Equal(longGap ? BoardTestRig.Start : null, state.LongGapEndedUtc);
+        Assert.Equal(BoardTestRig.Start, state.LastContactUtc);
+    }
+
+    // At start the inputs are compared with what the log last says: a change made while the app was down is logged, as
+    // noticed; an input that reads the same logs nothing.
     [Fact]
-    public async Task Should_KeepTheWatch_AcrossALostContact()
+    public async Task Should_LogAnInputThatChangedWhileDown_AsNoticed()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-2));
+        setup.Log(1, on: false);
+        setup.Log(2, on: true);
+        setup.Board.SetInput(1, on: true);
+        setup.Board.SetInput(2, on: true);
+
+        await setup.StartAsync();
+
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 3);
+        var noticed = InputEvents(setup.Database)[2];
+        Assert.Equal((1, """{"on":true,"noticed":true}"""), (noticed.InputId ?? 0, noticed.Details ?? ""));
+    }
+
+    // A change seen live is logged as it is; one made while contact was lost is logged at the reconnect, as noticed.
+    [Fact]
+    public async Task Should_MarkOnlyChangesMadeDuringALostContact_AsNoticed()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start);
+        await setup.StartAsync();
+
+        setup.Board.SetInput(1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
+        setup.Board.SetConnected(false);
+        await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
+        setup.Board.SetInput(1, on: false);
+        setup.Board.SetConnected(true);
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
+
+        Assert.Equal(["""{"on":true}""", """{"on":false,"noticed":true}"""], InputEvents(setup.Database).Select(e => e.Details));
+    }
+
+    private static List<EventLogEntry> InputEvents(TestDatabase database)
+    {
+        return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];
+    }
+
+    private static async Task<InputRig> InputRigAsync(DateTime lastContact)
     {
         var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 2);
-        var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));
-        await using var database = TestDatabase.Create((services, configuration) =>
+        var database = TestDatabase.Create((services, configuration) =>
         {
             services.AddLocalClock(configuration);
-            services.AddSingleton<TimeProvider>(time);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
             services.AddSingleton<Contactor.Boards.IRelayBoard>(board);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel, inputCount: 2);
-        var watch = database.Services.GetRequiredService<BoardWatch>();
-        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
-        await recorder.StartAsync(Cancel);
-        try
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            await BoardTestRig.WaitUntilAsync(() => watch.WatchingSinceUtc is not null);
-
-            time.Now += TimeSpan.FromMinutes(1);
-            board.SetInput(1, on: true);
-            await BoardTestRig.WaitUntilAsync(() => Events(database).Count == 1);
-            var live = Events(database)[0].TimestampUtc;
-            Assert.True(watch.SawChangeAt(live));
-
-            board.SetConnected(false);
-            await BoardTestRig.WaitUntilAsync(() => watch.WatchingSinceUtc is null);
-            time.Now += TimeSpan.FromMinutes(1);
-            board.SetInput(1, on: false);
-            board.SetConnected(true);
-            await BoardTestRig.WaitUntilAsync(() => Events(database).Count == 2);
-
-            Assert.False(watch.SawChangeAt(Events(database)[1].TimestampUtc));
-            Assert.False(watch.SawChangeAt(live));
+            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = lastContact });
+            await db.SaveChangesAsync(Cancel);
         }
-        finally
+
+        return new InputRig(board, database);
+    }
+
+    private sealed class InputRig : IAsyncDisposable
+    {
+        private BoardEventRecorder? _recorder;
+
+        public InputRig(Contactor.Tests.Boards.FakeRelayBoard board, TestDatabase database)
         {
-            await recorder.StopAsync(Cancel);
+            Board = board;
+            Database = database;
+        }
+
+        public Contactor.Tests.Boards.FakeRelayBoard Board { get; }
+
+        public TestDatabase Database { get; }
+
+        public async Task StartAsync()
+        {
+            _recorder = Database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+            await _recorder.StartAsync(Cancel);
+            await BoardTestRig.WaitUntilAsync(() => State().LastContactUtc == BoardTestRig.Start);
+        }
+
+        public void Log(int input, bool on)
+        {
+            using var db = Database.Factory.CreateDbContext();
+            db.EventLog.Add(new EventLogEntry
+            {
+                TimestampUtc = BoardTestRig.Start.AddHours(-1),
+                InputId = input,
+                Actor = EventActors.External,
+                Action = EventActions.InputChanged,
+                Details = on ? """{"on":true}""" : """{"on":false}""",
+            });
+            db.SaveChanges();
+        }
+
+        public BoardWatchState State()
+        {
+            using var db = Database.Factory.CreateDbContext();
+            return db.BoardWatchStates.AsNoTracking().Single();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_recorder is not null)
+            {
+                await _recorder.StopAsync(CancellationToken.None);
+            }
+
+            await Database.DisposeAsync();
         }
     }
 

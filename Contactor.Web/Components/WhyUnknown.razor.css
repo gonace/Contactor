@@ -1,5 +1,4 @@
 .why-wrap {
-    position: relative;
     display: inline-flex;
     vertical-align: middle;
 }
@@ -28,10 +27,10 @@
     display: none;
     position: absolute;
     z-index: 60;
-    top: calc(100% + 10px);
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(260px, 70vw);
+    top: calc(100% + 8px);
+    left: 0;
+    width: 280px;
+    max-width: calc(100vw - 64px);
     padding: 10px 12px;
     border-radius: 10px;
     background: var(--ink);
@@ -40,6 +39,16 @@
     font-weight: 400;
     line-height: 1.45;
     text-align: left;
+}
+
+.tip-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    border: none;
+    padding: 0;
+    background: transparent;
+    cursor: default;
 }
 
 .tip.open,

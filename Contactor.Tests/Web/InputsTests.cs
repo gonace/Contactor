@@ -93,13 +93,13 @@ public sealed class InputsTests
     [InlineData(false, true, "Open since 14:20", false)]
     [InlineData(true, true, "Closed since unknown", true)]
     [InlineData(false, false, "Open since unknown", true)]
-    public void Should_SaySinceWhen_OnlyForAChangeTheAppSaw(bool closedNow, bool sawIt, string expected, bool unknown)
+    public void Should_SaySinceWhen_OnlyWhenTheTimeIsKnown(bool closedNow, bool known, string expected, bool unknown)
     {
         // The latest event says it opened at 13:20 UTC (14:20 in Stockholm).
-        var input = new InputView(1, "Door", "Closed", "Open", true, new InputChange(Now.AddMinutes(-10), false));
+        var input = new InputView(1, "Door", "Closed", "Open", true, new InputChange(Now.AddMinutes(-10), false, known));
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
 
-        var status = InputStatusText.For(input, closedNow, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone), _ => sawIt);
+        var status = InputStatusText.For(input, closedNow, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone));
 
         Assert.Equal(new InputStatus(expected, unknown), status);
     }
@@ -109,23 +109,26 @@ public sealed class InputsTests
     {
         var input = new InputView(1, "Door", "Closed", "Open", true, null);
 
-        Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, Now, utc => utc, _ => true));
+        Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, Now, utc => utc));
     }
 
-    // A change logged when the app noticed it, at a start or a reconnect, wasn't seen happening.
+    // A change seen live is known; one noticed after a gap isn't, nor is one with a long gap after it.
     [Fact]
-    public void Should_SeeOnlyChangesAfterItStartedWatching()
+    public async Task Should_KnowAChangesTime_UnlessNoticedOrFollowedByALongGap()
     {
-        var watch = new BoardWatch();
-        Assert.False(watch.SawChangeAt(Now));
+        await using var database = await DatabaseAsync(inputCount: 3);
+        await AddChangeAsync(database, inputId: 1, on: true, Now.AddMinutes(-30));
+        await AddChangeAsync(database, inputId: 2, on: true, Now.AddMinutes(-30), noticed: true);
+        await AddChangeAsync(database, inputId: 3, on: true, Now.AddMinutes(-90));
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = Now, LongGapEndedUtc = Now.AddMinutes(-60) });
+            await db.SaveChangesAsync(Cancel);
+        }
 
-        watch.Started(Now);
-        watch.Started(Now.AddMinutes(5));
-        Assert.False(watch.SawChangeAt(Now));
-        Assert.True(watch.SawChangeAt(Now.AddSeconds(1)));
+        var inputs = await Handler(database).ListAsync(Cancel);
 
-        watch.Stopped();
-        Assert.False(watch.SawChangeAt(Now.AddMinutes(1)));
+        Assert.Equal([true, false, false], inputs.Select(i => i.LastChange!.Known));
     }
 
     [Fact]
@@ -222,7 +225,7 @@ public sealed class InputsTests
         return database;
     }
 
-    private static async Task AddChangeAsync(TestDatabase database, int inputId, bool on, DateTime timestampUtc)
+    private static async Task AddChangeAsync(TestDatabase database, int inputId, bool on, DateTime timestampUtc, bool noticed = false)
     {
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         db.EventLog.Add(new EventLogEntry
@@ -231,7 +234,7 @@ public sealed class InputsTests
             InputId = inputId,
             Actor = EventActors.External,
             Action = EventActions.InputChanged,
-            Details = on ? """{"on":true}""" : """{"on":false}""",
+            Details = noticed ? $$"""{"on":{{(on ? "true" : "false")}},"noticed":true}""" : on ? """{"on":true}""" : """{"on":false}""",
         });
         await db.SaveChangesAsync(Cancel);
     }
