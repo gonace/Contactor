@@ -592,9 +592,10 @@ public sealed class Vm204ClientTests
                     }
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException)
+            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException
+                || (ex is InvalidOperationException && _stop.IsCancellationRequested))
             {
-                // Stopped.
+                // Stopped. A loop that was still answering when the listener stopped finds it "not listening".
             }
         }
     }
@@ -669,9 +670,10 @@ public sealed class Vm204ClientTests
                     requests.Add(AnswerAsync(tcp));
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException)
+            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException
+                || (ex is InvalidOperationException && _stop.IsCancellationRequested))
             {
-                // Stopped.
+                // Stopped. A loop that was still answering when the listener stopped finds it "not listening".
             }
 
             await Task.WhenAll(requests);
