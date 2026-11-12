@@ -303,7 +303,7 @@ Installation            (one row; none on a new installation)
 
 BoardWatchState         (one row; the app's contact with the board over time, kept by BoardEventRecorder)
   Id              int PK = 1
-  LastContactUtc  datetime?      saved about once a minute while there is contact
+  LastContactUtc  datetime?      saved every 5 minutes while there is contact (spares the SD card)
   LongGapEndedUtc datetime?      when the app last came back after more than 10 min without contact (a crash,
                                  a board that was off). A reboot or an upgrade is a short gap: the inputs' times
                                  stay. At start the inputs are compared with their last logged state; one that
@@ -324,7 +324,7 @@ Input                   (one per digital input on the board, seeded at start lik
 - **SQLite stays the database.** Keep SQLite-specific code to `Persistence` (the start-up settings above) and `Features/Backup` (`VACUUM INTO`); everything else goes through EF Core, so a later switch to PostgreSQL stays a small change.
 - **Relay state is not stored.** The VM201 is the source of truth; the app always shows the board's latest `CMD_STATUS`.
 - Every timestamp is stored in UTC and shown in Europe/Stockholm. Schedules are stored as local time, see below.
-- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
+- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the time of contact every 5 minutes, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
 
 ---
 

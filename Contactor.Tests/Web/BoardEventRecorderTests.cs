@@ -203,6 +203,53 @@ public sealed class BoardEventRecorderTests
         Assert.Equal(["""{"on":true}""", """{"on":false,"noticed":true}"""], InputEvents(setup.Database).Select(e => e.Details));
     }
 
+    // A lost contact longer than the limit, while the app runs, ends as a long gap; a short one doesn't.
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(11, true)]
+    public async Task Should_MarkALongLostContact(int minutesLost, bool longGap)
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start);
+        await setup.StartAsync();
+        Assert.Null(setup.State().LongGapEndedUtc);
+
+        setup.Board.SetConnected(false);
+        await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
+        setup.Time.Now += TimeSpan.FromMinutes(minutesLost);
+        var back = setup.Time.Now.UtcDateTime;
+        setup.Board.SetConnected(true);
+
+        await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == back);
+        Assert.Equal(longGap ? back : null, setup.State().LongGapEndedUtc);
+    }
+
+    // A clock that went back (a Raspberry Pi after a power cut, before it reaches a time server) can't measure the gap.
+    [Fact]
+    public async Task Should_CountAClockThatWentBack_AsALongGap()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddHours(1));
+
+        await setup.StartAsync();
+
+        Assert.Equal(BoardTestRig.Start, setup.State().LongGapEndedUtc);
+    }
+
+    // The time of contact is saved every few minutes while there is contact, and not more often.
+    [Fact]
+    public async Task Should_SaveTheTimeOfContact_EveryFewMinutes()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start);
+        await setup.StartAsync();
+
+        setup.Time.Now += BoardEventRecorder.ContactSaveInterval - TimeSpan.FromSeconds(1);
+        await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
+        Assert.Equal(BoardTestRig.Start, setup.State().LastContactUtc);
+
+        setup.Time.Now += TimeSpan.FromSeconds(1);
+        var due = setup.Time.Now.UtcDateTime;
+        await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == due);
+    }
+
     private static List<EventLogEntry> InputEvents(TestDatabase database)
     {
         return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];
@@ -211,10 +258,11 @@ public sealed class BoardEventRecorderTests
     private static async Task<InputRig> InputRigAsync(DateTime lastContact)
     {
         var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 2);
+        var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));
         var database = TestDatabase.Create((services, configuration) =>
         {
             services.AddLocalClock(configuration);
-            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddSingleton<TimeProvider>(time);
             services.AddSingleton<Contactor.Boards.IRelayBoard>(board);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
@@ -227,18 +275,21 @@ public sealed class BoardEventRecorderTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        return new InputRig(board, database);
+        return new InputRig(board, database, time);
     }
 
     private sealed class InputRig : IAsyncDisposable
     {
         private BoardEventRecorder? _recorder;
 
-        public InputRig(Contactor.Tests.Boards.FakeRelayBoard board, TestDatabase database)
+        public InputRig(Contactor.Tests.Boards.FakeRelayBoard board, TestDatabase database, FixedTimeProvider time)
         {
             Board = board;
             Database = database;
+            Time = time;
         }
+
+        public FixedTimeProvider Time { get; }
 
         public Contactor.Tests.Boards.FakeRelayBoard Board { get; }
 

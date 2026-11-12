@@ -23,8 +23,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
     /// <summary>A gap in contact longer than this, e.g. a crash or a board that was off, makes the inputs' times unknown.</summary>
     public static readonly TimeSpan LongGap = TimeSpan.FromMinutes(10);
 
-    /// <summary>How often the time of contact is saved while there is contact.</summary>
-    public static readonly TimeSpan ContactSaveInterval = TimeSpan.FromMinutes(1);
+    /// <summary>
+    /// How often the time of contact is saved while there is contact: rarely, to spare the SD card. A gap is measured
+    /// from it, so it can read up to this much longer than it was.
+    /// </summary>
+    public static readonly TimeSpan ContactSaveInterval = TimeSpan.FromMinutes(5);
 
     private readonly IRelayBoard _board;
     private readonly ExpectedChanges _expected;
@@ -174,10 +177,28 @@ public sealed partial class BoardEventRecorder : BackgroundService
             RecordInputChanges(db, await LastLoggedInputsAsync(db, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
         }
 
+        var previous = _known;
         _known = state;
         if (db.ChangeTracker.HasChanges())
         {
-            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                // Nothing was saved: the next status starts over from the same point, so the changes, and a gap that
+                // just ended, are recorded then.
+                _known = previous;
+                if (afterGap)
+                {
+                    _watching = false;
+                    _contactSavedUtc = null;
+                }
+
+                throw;
+            }
+
             _changes.Notify();
         }
     }
@@ -240,8 +261,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
             db.BoardWatchStates.Add(saved);
         }
 
-        var lastContact = _known is null ? saved.LastContactUtc : _disconnectedSinceUtc;
-        if (lastContact is not { } last || now - last > LongGap)
+        // After a lost contact, the later of the board's last answer and the app's own last save of the time of contact.
+        var lastContact = _known is null ? saved.LastContactUtc : Later(_disconnectedSinceUtc, _contactSavedUtc);
+        // A clock that went back (a Raspberry Pi has no clock of its own: after a power cut it starts from its last
+        // saved time until it reaches a time server) can't measure the gap, so it counts as long.
+        if (lastContact is not { } last || now < last || now - last > LongGap)
         {
             saved.LongGapEndedUtc = now;
         }
@@ -251,7 +275,12 @@ public sealed partial class BoardEventRecorder : BackgroundService
         _watching = true;
     }
 
-    // About once a minute while there is contact, so the next start can tell how long the app was away.
+    private static DateTime? Later(DateTime? a, DateTime? b)
+    {
+        return a is null ? b : b is null ? a : a > b ? a : b;
+    }
+
+    // Every few minutes while there is contact, so the next start can tell how long the app was away.
     private async Task SaveContactAsync(CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
