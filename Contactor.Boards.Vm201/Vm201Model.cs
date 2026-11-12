@@ -11,5 +11,6 @@ public static class Vm201Model
         "Velleman VM201",
         Vm201Board.Vm201Capabilities,
         DefaultPort,
-        Vm201Command.CredentialMaxLength);
+        Vm201Command.CredentialMaxLength,
+        $"At most {Vm201Command.CredentialMaxLength} characters: letters a–z, digits and plain symbols.");
 }

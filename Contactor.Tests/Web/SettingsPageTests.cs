@@ -19,9 +19,30 @@ public sealed class SettingsPageTests
         Assert.Matches("<h1[^>]*>Settings</h1>", html);
         Assert.Matches("id=\"host\"[^>]*value=\"127.0.0.1\"", html);
         Assert.Matches("id=\"port\"[^>]*value=\"1\"", html);
+        Assert.Matches("id=\"port\"[^>]*placeholder=\"9760\"", html);
         Assert.Contains("No contact with the relay board at 127.0.0.1:1", html, StringComparison.Ordinal);
         Assert.Contains("Development version", html, StringComparison.Ordinal);
         Assert.Contains("href=\"settings\" aria-current=\"page\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_ShowTheBoardModelsLoginHint()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?>
+            {
+                ["CloudflareAccess:DevUserEmail"] = "john@example.com",
+                ["Vm201:Username"] = "admin",
+                ["Vm201:Password"] = "secret",
+            });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+
+        Assert.Matches("id=\"username\"[^>]*value=\"admin\"", html);
+        Assert.Contains("At most 8 characters: letters a–z, digits and plain symbols.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", html, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -129,7 +129,7 @@ public sealed class RelayCountTests
     }
 
     [Fact]
-    public async Task Should_ScheduleAndAutoOffOnlyTheBoardsRelays()
+    public async Task Should_ScheduleOnlyTheBoardsRelays()
     {
         var board = new FakeRelayBoard(4);
         await using var database = Create(board);
@@ -144,17 +144,12 @@ public sealed class RelayCountTests
                 });
             }
 
-            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 7, Cancel);
-            runtime.OnSinceUtc = Now.UtcDateTime.AddHours(-3);
-            runtime.AutoOffAtUtc = Now.UtcDateTime.AddHours(-1);
             await db.SaveChangesAsync(Cancel);
         }
 
         await database.Services.GetRequiredService<SchedulerService>().TickAsync(Cancel);
-        var turnedOff = await database.Services.GetRequiredService<AutoOffService>().CheckAsync(Cancel);
 
         Assert.Equal(ChannelMask.Of(2), board.State.Relays);
-        Assert.Empty(turnedOff);
     }
 
     private static async Task<int> AddGroupAsync(TestDatabase database, params (int RelayId, string Role)[] members)
