@@ -533,6 +533,7 @@ See `DEPLOY.md` for the steps.
 ### Branches
 - A short name for the work, in lower case with hyphens, e.g. `setup-guide`, `vm204`, `responsive-layout`, `nitpicks-10-14`. No prefix (no `feature/`, `claude/` or user name) and no random suffix.
 - One branch per pull request.
+- A branch starts from the latest `main`. When it changes the same files or area as another open branch, it is stacked on that branch instead, and its pull request is chained to the other's (based on its branch, not `main`), so they merge in order.
 
 ## Build order
 
