@@ -88,16 +88,19 @@ public sealed class InputsTests
     }
 
     [Theory]
-    [InlineData(false, true, "Open since 14:20", false)]
-    [InlineData(true, true, "Closed", false)]
-    [InlineData(false, false, "Open since unknown", true)]
-    public void Should_SaySinceWhen_OnlyWhenTheTimeIsKnown(bool closedNow, bool known, string expected, bool unknown)
+    [InlineData(false, true, true, "Open since 14:20", false)]
+    [InlineData(true, true, true, "Closed", false)]
+    [InlineData(true, false, true, "Closed", false)]
+    [InlineData(true, true, false, "Closed since unknown", true)]
+    [InlineData(false, false, true, "Open since unknown", true)]
+    public void Should_SaySinceWhen_OnlyWhenTheTimeIsKnown(bool closedNow, bool known, bool connected, string expected, bool unknown)
     {
-        // The latest event says it opened at 13:20 UTC (14:20 in Stockholm). Closed now: a change not logged yet.
+        // The latest event says it opened at 13:20 UTC (14:20 in Stockholm). Closed now with contact: a change not logged
+        // yet. Closed now without contact: the state shown may be stale, so "since unknown".
         var input = new InputView(1, "Door", true, new InputChange(Now.AddMinutes(-10), false, known));
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
 
-        var status = InputStatusText.For(input, closedNow, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone));
+        var status = InputStatusText.For(input, closedNow, connected, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone));
 
         Assert.Equal(new InputStatus(expected, unknown), status);
     }
@@ -107,7 +110,7 @@ public sealed class InputsTests
     {
         var input = new InputView(1, "Door", true, null);
 
-        Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, Now, utc => utc));
+        Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, true, Now, utc => utc));
     }
 
     // A change seen live is known; one noticed after a gap isn't, nor is one with a long gap after it.

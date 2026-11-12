@@ -124,7 +124,7 @@
 
     private bool IsClosed => Board.State.Inputs.Contains(Id);
 
-    private InputStatus Status => InputStatusText.For(_input!, IsClosed, Clock.Now, Clock.ToLocal);
+    private InputStatus Status => InputStatusText.For(_input!, IsClosed, Board.State.IsConnected, Clock.Now, Clock.ToLocal);
 
     protected override async Task OnParametersSetAsync()
     {

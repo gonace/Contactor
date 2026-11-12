@@ -154,21 +154,22 @@ public static class InputStatusText
     /// <param name="on">What the board reads now: on is closed.</param>
     /// <param name="nowLocal">Now, in local time.</param>
     /// <param name="toLocal">Turns a UTC time into local time.</param>
-    public static InputStatus For(InputView input, bool on, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
+    /// <param name="connected">Whether the app has contact with the board now.</param>
+    public static InputStatus For(InputView input, bool on, bool connected, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(toLocal);
         var state = InputView.StateText(on);
 
         // The board reports a change the log doesn't have yet: the page redraws on the board's status a moment before
-        // the change is logged. Just the state, until it is.
-        if (input.LastChange is { } latest && latest.On != on)
+        // the change is logged. Just the state, until it is. Without contact the state shown may be stale, so not then.
+        if (connected && input.LastChange is { } latest && latest.On != on)
         {
             return new InputStatus(state, false);
         }
 
         // Known for a change to the state the board reports now, which the app saw, with no long gap after it.
-        return input.LastChange is { } change && change.Known
+        return input.LastChange is { } change && change.On == on && change.Known
             ? new InputStatus($"{state} since {RelayStatusText.When(toLocal(change.TimestampUtc), nowLocal)}", false)
             : new InputStatus($"{state} since unknown", true);
     }

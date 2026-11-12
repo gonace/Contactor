@@ -165,7 +165,7 @@
                     @foreach (var input in VisibleInputs)
                     {
                         var closed = State.Inputs.Contains(input.Id);
-                        var status = InputStatusText.For(input, closed, Clock.Now, Clock.ToLocal);
+                        var status = InputStatusText.For(input, closed, State.IsConnected, Clock.Now, Clock.ToLocal);
                         <div class="card input @(input.IsActive ? "" : "inactive")" @key="@($"i{input.Id}")">
                             @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
                             <div class="text">
