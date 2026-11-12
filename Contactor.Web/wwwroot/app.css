@@ -183,3 +183,28 @@ a {
     white-space: nowrap;
     border: 0;
 }
+
+/* Wider screens (CLAUDE.md, User interface): a tablet from 768 px, a desktop from 1024 px. On a desktop the tab bar
+   becomes a side menu (TabBar.razor.css), so the pages that have one make room for it. */
+@media (min-width: 1024px) {
+    body:has(nav.tabs) {
+        padding-left: var(--side-menu);
+    }
+}
+
+:root {
+    --side-menu: 232px;
+}
+
+/* A mouse gets hover states; touch keeps its pressed state only. Keyboard focus always shows. */
+@media (hover: hover) {
+    button:not(:disabled):hover,
+    a:hover {
+        filter: brightness(0.96);
+    }
+}
+
+:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+}

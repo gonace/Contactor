@@ -157,6 +157,18 @@ try {
     ];
     await shoot(browser, 'light', shots);
     await shoot(browser, 'dark', shots.filter(([name]) => name === 'relays' || name === 'group'));
+    // The wider layouts (from 768 px a tablet, from 1024 px a desktop).
+    for (const [name, path, width, height] of [
+        ['relays-tablet', '', 834, 1194],
+        ['relays-desktop', '', 1440, 900],
+    ]) {
+        const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+        await page.goto(base + path);
+        await page.waitForFunction(() => window.Blazor !== undefined);
+        await page.waitForTimeout(1200);
+        await page.screenshot({ path: join(out, `${name}.png`) });
+        await page.close();
+    }
     await browser.close();
     console.log(`Screenshots in ${out}/`);
 } finally {

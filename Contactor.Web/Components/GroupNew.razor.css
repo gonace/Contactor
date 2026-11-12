@@ -415,3 +415,10 @@ button:disabled {
     cursor: not-allowed;
     opacity: 0.45;
 }
+
+/* A tablet or a desktop: a form stays narrow and centred; wide forms are harder to fill in. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 560px;
+    }
+}

@@ -311,3 +311,63 @@ button:disabled {
     justify-content: center;
     gap: 8px;
 }
+
+/* A tablet: the cards in two columns, a group across both. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 960px;
+    }
+
+    .header {
+        padding: 28px 24px 16px;
+    }
+
+    .connection {
+        padding: 0 24px 14px;
+    }
+
+    .relays {
+        padding: 4px 24px 24px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        gap: 14px;
+    }
+
+    .card.group,
+    .new-group,
+    .show-inactive {
+        grid-column: 1 / -1;
+    }
+}
+
+/* A desktop: three columns; a group spans two. */
+@media (min-width: 1024px) {
+    .screen {
+        max-width: 1200px;
+    }
+
+    .header {
+        padding: 32px 32px 20px;
+    }
+
+    .connection {
+        padding: 0 32px 16px;
+    }
+
+    .relays {
+        padding: 4px 32px 32px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+    }
+
+    .card.group {
+        grid-column: span 2;
+    }
+
+    .new-group,
+    .show-inactive {
+        justify-self: start;
+        padding: 0 24px;
+    }
+}

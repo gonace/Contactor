@@ -241,3 +241,10 @@ button:disabled {
     color: var(--muted);
     text-align: center;
 }
+
+/* A tablet or a desktop: the same screen, wider. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 720px;
+    }
+}

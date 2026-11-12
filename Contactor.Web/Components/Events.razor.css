@@ -168,3 +168,10 @@ h2 {
     cursor: not-allowed;
     opacity: 0.45;
 }
+
+/* A tablet or a desktop: the same screen, wider. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 960px;
+    }
+}

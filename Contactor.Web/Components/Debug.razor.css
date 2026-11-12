@@ -112,3 +112,10 @@ h1 {
 .row.error .hex {
     color: var(--danger-ink);
 }
+
+/* A tablet or a desktop: the same screen, wider. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 960px;
+    }
+}

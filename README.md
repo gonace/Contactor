@@ -5,7 +5,7 @@ order as one group, e.g. a fan heater: the fan first, then the heat, and the fan
 An interlock keeps the group in that order whatever happens, and every change is logged with who made it.
 
 It is built for a workshop and for people who aren't technical: big buttons, few menus, and a page that works like an
-app on the phone, in light and dark mode.
+app on the phone and uses the whole screen on a tablet or a computer, in light and dark mode.
 
 <p>
   <img src="docs/screenshots/relays.png" width="250" alt="The relays, with a fan heater group running">
@@ -15,7 +15,7 @@ app on the phone, in light and dark mode.
 
 ## What it does
 
-- **Relays:** one big on/off button per relay, with who turned it on and when it goes off. "Alla av" turns
+- **Relays:** one big on/off button per relay, with who turned it on and when it goes off. "All off" turns
   everything off.
 - **Auto-off:** a relay someone turns on goes off by itself after 1, 2 or 4 hours, unless set to never.
 - **Schedules:** on and off at set times on chosen days, also over midnight and across daylight saving changes.
@@ -30,6 +30,13 @@ app on the phone, in light and dark mode.
   <img src="docs/screenshots/new-group.png" width="250" alt="Picking the relays for a new group">
   <img src="docs/screenshots/schedule.png" width="250" alt="A schedule">
   <img src="docs/screenshots/events.png" width="250" alt="The event log">
+</p>
+
+On a tablet the cards sit in two columns; on a computer a side menu replaces the tab bar:
+
+<p>
+  <img src="docs/screenshots/relays-tablet.png" width="280" alt="The relays on a tablet">
+  <img src="docs/screenshots/relays-desktop.png" width="480" alt="The relays on a computer, with a side menu">
 </p>
 
 The interlock in the app is an extra layer, not a safety device: it only works while the app runs. Where safety

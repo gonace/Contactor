@@ -353,7 +353,13 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 
 ## User interface
 
-Mobile first (390 px), but it must work on a desktop. All UI text is in **English**. Add a PWA manifest so it can be put on the home screen with an icon and the name "Contactor".
+Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI text is in **English**.
+
+**Three layouts**, by width only (Tailwind's `md` and `lg`), in each screen's `.razor.css` and `app.css`:
+- **Phone, under 768 px:** one column, the tab bar at the bottom.
+- **Tablet, 768 px and up:** wider screens. On Relays the cards are in two columns, with a group across both. The tab bar stays at the bottom.
+- **Desktop, 1024 px and up** (a tablet in landscape too): the tab bar becomes a side menu on the left (`TabBar.razor.css`; pages with it get `padding-left: var(--side-menu)`). Relays has three columns, with a group spanning two. Relay and Group have two columns, the events on the right. Events and Debug go up to 960 px wide, Settings to 720 px. Forms (schedule, new group) stay narrow, at 560 px.
+- **Mouse and keyboard:** hover states and a visible `:focus-visible` ring. Touch targets stay at least 44 px. The no-zoom rules apply on every width. Add a PWA manifest so it can be put on the home screen with an icon and the name "Contactor".
 
 **No zoom.** The pages don't zoom, so nobody zooms in by mistake and loses the big buttons: `user-scalable=no` in the viewport (Android's Chrome follows it), `touch-action: manipulation` against double-tap zoom, and `wwwroot/phone.js`, which cancels the two-finger pinch on iOS, where every browser ignores `user-scalable=no`. Anyone who needs to enlarge can use the phone's own zoom (on iOS: Settings → Accessibility → Zoom).
 
