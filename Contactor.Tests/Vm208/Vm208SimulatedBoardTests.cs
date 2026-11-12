@@ -57,22 +57,37 @@ public sealed class Vm208SimulatedBoardTests
     }
 
     [Theory]
-    [InlineData("text/plain")]
-    [InlineData("application/json")]
-    [InlineData(null)]
-    public async Task Should_ReadTheForm_OnlyFromAFormBody(string? contentType)
+    [InlineData("application/x-www-form-urlencoded", "index=1&state=1&interface=-1&socket=0", true)]
+    [InlineData("application/x-www-form-urlencoded; charset=UTF-8", "index=1&state=1&interface=-1&socket=0", true)]
+    [InlineData("Application/X-WWW-Form-Urlencoded", "index=1&state=1&interface=-1&socket=0", false)]
+    [InlineData("text/plain", "index=1&state=1&interface=-1&socket=0", true)]
+    [InlineData("text/plain; charset=UTF-8", "index=1&state=1&interface=-1&socket=0", true)]
+    [InlineData("Text/Plain", "index=1&state=1&interface=-1&socket=0", false)]
+    [InlineData("text/plain", "&index=1&state=1&interface=-1&socket=0", false)]
+    [InlineData("text/plain", "{\"index\":1}", false)]
+    [InlineData("application/json", "index=1&state=1&interface=-1&socket=0", false)]
+    [InlineData(null, "index=1&state=1&interface=-1&socket=0", false)]
+    public async Task Should_ReadTheForm_AsTheFirmwaresWebServerDoes(string? contentType, string body, bool read)
     {
-        // ESPAsyncWebServer reads a body's parameters only for application/x-www-form-urlencoded: without them the
-        // firmware's /relay handler crashes, so the simulator leaves it unanswered.
+        // ESPAsyncWebServer reads a body's parameters for a Content-Type that starts with
+        // application/x-www-form-urlencoded, in that case, or for exactly text/plain with a body that starts like
+        // "name=". Without them the firmware's /relay handler crashes, so the simulator leaves it unanswered.
         await using var board = new Vm208Simulator();
         board.Start();
 
-        Assert.Equal("", await SendAsync(board.Port, "POST /relay", "index=1&state=1&interface=-1&socket=0", contentType));
+        var answer = await SendAsync(board.Port, "POST /relay", body, contentType);
 
-        Assert.Equal(1, board.UnansweredCount);
-        Assert.Equal(ChannelMask.None, board.State.Relays);
-        Assert.Equal("200", Code(await SendAsync(board.Port, "POST /relay", "index=1&state=1&interface=-1&socket=0", "Application/X-WWW-Form-Urlencoded; charset=UTF-8")));
-        Assert.Equal(ChannelMask.Of(1), board.State.Relays);
+        if (read)
+        {
+            Assert.Equal("200", Code(answer));
+            Assert.Equal(ChannelMask.Of(1), board.State.Relays);
+        }
+        else
+        {
+            Assert.Equal("", answer);
+            Assert.Equal(1, board.UnansweredCount);
+            Assert.Equal(ChannelMask.None, board.State.Relays);
+        }
     }
 
     [Fact]
