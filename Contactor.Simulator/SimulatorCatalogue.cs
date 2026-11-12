@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
+using Contactor.Boards.Vm208;
 
 namespace Contactor.Simulator;
 
@@ -10,7 +11,7 @@ namespace Contactor.Simulator;
 /// <param name="Create">A new board, not started; with a login, or none when <paramref name="Create"/> gets nulls.</param>
 /// <param name="SuggestedPort">
 /// The port the page offers for a new one: the model's own, unless that needs rights a developer doesn't have (below
-/// 1024, e.g. the VM204's 80).
+/// 1024, e.g. the VM204's and VM208's 80).
 /// </param>
 public sealed record SimulatorModel(
     BoardModel Model,
@@ -43,6 +44,11 @@ public static class SimulatorCatalogue
             },
             (username, password, logger, time) => new Vm204Simulator(username, password, logger) { TimeProvider = time },
             SuggestedPort: 8204),
+        new(
+            Vm208Model.Model,
+            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The VM208 takes no login.",
+            (_, _, logger, time) => new Vm208Simulator(logger) { TimeProvider = time },
+            SuggestedPort: 8208),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>

@@ -250,8 +250,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
                 {
                     if (Volatile.Read(ref _key) is not { } key)
                     {
-                        // Logged out (a refused key, a new login): the poll logs in again at once.
-                        _poller.PollNow();
+                        // Logged out (a refused key, a new login): the poll the poller asks for at once logs in again.
                         throw new BoardNotConnectedException("The VM204 is logging in again; the command was not sent.");
                     }
 
@@ -264,8 +263,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
                     }
                     catch (Exception ex) when (ex is Vm204AccessDeniedException or Vm204ProtocolException)
                     {
-                        // A refused key is dropped: the next poll, asked for at once, logs in again.
-                        _poller.PollNow();
+                        // A refused key is dropped: the poll the poller asks for at once logs in again.
                         throw new BoardNotConnectedException($"The VM204 didn't take the command: {ex.Message}", ex);
                     }
                 },
@@ -273,7 +271,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         }
         catch (Exception ex) when (IsNoAnswer(ex) || ex is Vm204ProtocolException or UriFormatException)
         {
-            // The poller counted a missing answer as a failed poll; the next poll comes when it is due.
+            // The poller counted a missing answer as a failed poll and reads the board at once.
             throw new BoardNotConnectedException("The VM204 didn't answer; the command may not have been carried out.", ex);
         }
     }

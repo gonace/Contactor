@@ -42,8 +42,7 @@ public sealed class RelayControl
         var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         await EnsureNotInGroupAsync(mask, cancellationToken);
-        _expected.Expect(mask, on: true);
-        await _board.TurnOnAsync(mask, cancellationToken);
+        await SendAsync(mask, on: true, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -62,8 +61,7 @@ public sealed class RelayControl
         var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         await EnsureNotInGroupAsync(mask, cancellationToken);
-        _expected.Expect(mask, on: false);
-        await _board.TurnOffAsync(mask, cancellationToken);
+        await SendAsync(mask, on: false, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -90,7 +88,16 @@ public sealed class RelayControl
         if (!single.IsEmpty)
         {
             _expected.Expect(wasOn, on: false);
-            await _board.TurnOffAsync(single, cancellationToken);
+            try
+            {
+                await _board.TurnOffAsync(single, cancellationToken);
+            }
+            catch
+            {
+                // A failed command logs nothing: whatever the board did shows as an external change.
+                _expected.Forget(wasOn, on: false);
+                throw;
+            }
         }
 
         var now = _clock.UtcNow;
@@ -115,6 +122,29 @@ public sealed class RelayControl
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
         await _groups.StopAllAsync(userEmail, cancellationToken);
+    }
+
+    // Expects the change, then sends it. A command that fails logs nothing, so its expectation goes too: whatever the
+    // board did then shows as an external change rather than vanishing.
+    private async Task SendAsync(ChannelMask mask, bool on, CancellationToken cancellationToken)
+    {
+        _expected.Expect(mask, on);
+        try
+        {
+            if (on)
+            {
+                await _board.TurnOnAsync(mask, cancellationToken);
+            }
+            else
+            {
+                await _board.TurnOffAsync(mask, cancellationToken);
+            }
+        }
+        catch
+        {
+            _expected.Forget(mask, on);
+            throw;
+        }
     }
 
     private async Task EnsureNotInGroupAsync(ChannelMask mask, CancellationToken cancellationToken)

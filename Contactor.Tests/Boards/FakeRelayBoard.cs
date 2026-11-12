@@ -37,6 +37,13 @@ internal sealed class FakeRelayBoard : IRelayBoard
         return SwitchAsync(relays, on: true);
     }
 
+    /// <summary>
+    /// When set, the next command switches the relays but reports nothing and throws
+    /// <see cref="BoardNotConnectedException"/>, as a board whose answer was lost or unreadable after it switched. The
+    /// change shows on the next <see cref="RefreshAsync"/>.
+    /// </summary>
+    public bool SwitchSilentlyThenFail { get; set; }
+
     /// <summary>When set, OFF commands are accepted but change nothing, like a relay that won't drop.</summary>
     public bool IgnoreOff { get; set; }
 
@@ -127,6 +134,12 @@ internal sealed class FakeRelayBoard : IRelayBoard
         lock (_lock)
         {
             state = _state = _state with { Relays = on ? _state.Relays | relays : _state.Relays.Except(relays) };
+        }
+
+        if (SwitchSilentlyThenFail)
+        {
+            SwitchSilentlyThenFail = false;
+            throw new BoardNotConnectedException("The board's answer couldn't be read.");
         }
 
         StateChanged?.Invoke(this, state);

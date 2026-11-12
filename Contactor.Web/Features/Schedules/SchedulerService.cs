@@ -399,7 +399,9 @@ public sealed partial class SchedulerService : BackgroundService
         }
         catch (BoardNotConnectedException)
         {
-            // Lost the board mid-way: the minute is handled again once it is back.
+            // Lost the board mid-way: the minute is handled again once it is back. Nothing is logged, so whatever the
+            // board did shows as an external change.
+            _expected.Forget(mask, on);
             Interlocked.Increment(ref _connectGeneration);
             return false;
         }
