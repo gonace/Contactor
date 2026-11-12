@@ -111,7 +111,13 @@ public static class PersistenceServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         var board = services.GetRequiredService<IRelayBoard>();
-        return services.InitializeDatabaseAsync(board.Capabilities.RelayCount, cancellationToken, board.Capabilities.InputCount);
+        return services.InitializeDatabaseAsync(board.Capabilities.RelayCount, board.Capabilities.InputCount, cancellationToken);
+    }
+
+    /// <summary>As the overload below, for a board with one input.</summary>
+    public static Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, CancellationToken cancellationToken)
+    {
+        return services.InitializeDatabaseAsync(relayCount, inputCount: 1, cancellationToken);
     }
 
     /// <summary>
@@ -119,7 +125,7 @@ public static class PersistenceServiceCollectionExtensions
     /// <paramref name="relayCount"/> and inputs 1 to <paramref name="inputCount"/>. Existing rows are left as they are,
     /// also relays and inputs above the count, which a board with more left behind: their events still point to them.
     /// </summary>
-    public static async Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, CancellationToken cancellationToken, int inputCount = 1)
+    public static async Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(relayCount, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(relayCount, ChannelMask.MaxChannels);
@@ -171,7 +177,7 @@ public static class PersistenceServiceCollectionExtensions
         {
             if (!inputs.Contains(id))
             {
-                db.Inputs.Add(new Input { Id = id, Name = Input.DefaultName(id), ClosedText = "Closed", OpenText = "Open" });
+                db.Inputs.Add(new Input { Id = id, Name = Input.DefaultName(id) });
             }
         }
 

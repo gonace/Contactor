@@ -66,6 +66,44 @@ public sealed class Vm201TimersServiceTests
         Assert.Equal("""{"mask":255}""", entry.Details);
     }
 
+    // A new address may be another VM201: its own timers are disabled at its first answer too.
+    [Fact]
+    public async Task Should_DisableTheBoardTimersAgain_AtANewAddress()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x0F);
+        await using var other = new Vm201Simulator();
+        other.Start();
+        await other.SetTimerMaskAsync(0x0F);
+        await using var database = CreateDatabase(simulator, disableBoardTimers: true);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var client = database.Services.GetRequiredService<Vm201Client>();
+        var services = StartOrder(database);
+
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
+        try
+        {
+            await WaitUntilAsync(() => simulator.TimerMask == 0);
+
+            client.SetEndpoint(new BoardEndpoint("127.0.0.1", other.Port));
+
+            await WaitUntilAsync(() => other.TimerMask == 0);
+            await WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 2);
+        }
+        finally
+        {
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
+        }
+    }
+
     [Fact]
     public async Task Should_LeaveBoardTimersAlone_WhenTurnedOffInSettings()
     {

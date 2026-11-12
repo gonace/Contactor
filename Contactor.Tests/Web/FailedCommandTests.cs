@@ -57,8 +57,10 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await _database.DisposeAsync();
     }
 
+    // Jane was told her ON failed, but the board switched the relay on: it is her ON, with her auto-off, so a fan
+    // heater doesn't run until someone notices.
     [Fact]
-    public async Task Should_LogExternal_WhenARelaySwitchedButItsCommandFailed()
+    public async Task Should_CreditThePerson_WhenARelayCameOnButItsCommandFailed()
     {
         _board.SwitchSilentlyThenFail = true;
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOnAsync(3, Jane, Cancel));
@@ -67,10 +69,25 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await _board.RefreshAsync(Cancel);
 
         var entry = await SingleEventAsync();
-        Assert.Equal((3, EventActors.External, EventActions.On), (entry.RelayId!.Value, entry.Actor, entry.Action));
+        Assert.Equal((3, Jane, EventActions.On, """{"afterFailedCommand":true}"""), (entry.RelayId!.Value, entry.Actor, entry.Action, entry.Details));
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
-        Assert.Equal((null, null, null), (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy));
+        Assert.Equal(((DateTime?)Now, (DateTime?)Now.AddMinutes(Relay.DefaultMaxOnMinutes), Jane), (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy));
+    }
+
+    // Only an ON is credited: a failed OFF the board carried out anyway is still an external change.
+    [Fact]
+    public async Task Should_LogExternal_WhenARelayWentOffButItsCommandFailed()
+    {
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        await WaitForEventsAsync(1);
+
+        _board.SwitchSilentlyThenFail = true;
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOffAsync(3, Jane, Cancel));
+        await _board.RefreshAsync(Cancel);
+
+        var events = await WaitForEventsAsync(2);
+        Assert.Equal((EventActors.External, EventActions.Off), (events[1].Actor, events[1].Action));
     }
 
     [Fact]

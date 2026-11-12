@@ -6,18 +6,12 @@ namespace Contactor.Web.Persistence;
 /// </summary>
 public sealed class Input
 {
-    public const int TextMaxLength = 40;
+    public const int NameMaxLength = 40;
 
     /// <summary>The board's input, 1 to the board's input count.</summary>
     public int Id { get; set; }
 
     public string Name { get; set; } = "";
-
-    /// <summary>What the closed state is called, e.g. "Closed" or "Warm".</summary>
-    public string ClosedText { get; set; } = "";
-
-    /// <summary>What the open state is called, e.g. "Open" or "Cold".</summary>
-    public string OpenText { get; set; } = "";
 
     /// <summary>False hides it from the list by default, e.g. for an input wired to nothing.</summary>
     public bool IsActive { get; set; } = true;
@@ -34,9 +28,12 @@ public sealed class Input
         return $"Input {id}";
     }
 
-    /// <summary>The text for a state: <see cref="ClosedText"/> when the board reads the input as on.</summary>
-    public string StateText(bool on)
+    /// <summary>
+    /// An input is an electrical contact, so it is "Closed" (the board reads it as on) or "Open": the same words for
+    /// every input, on every screen and in Events.
+    /// </summary>
+    public static string StateText(bool on)
     {
-        return on ? ClosedText : OpenText;
+        return on ? "Closed" : "Open";
     }
 }

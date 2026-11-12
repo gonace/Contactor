@@ -1,0 +1,290 @@
+@page "/input/{Id:int}"
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Inputs
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Persistence
+@inject IRelayBoard Board
+@inject InputsHandler Inputs
+@inject InputActionsHandler Actions
+@inject EventsHandler Events
+@inject RelayChanges Changes
+@inject LocalClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>@(_input?.Name ?? "Input") · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <a href="" class="back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+            Relays
+        </a>
+        @if (_input is not null)
+        {
+            @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
+            <button type="submit" form="input-form" class="save-top" disabled="@_busy">Save</button>
+        }
+    </header>
+
+    @if (_loaded && _input is null)
+    {
+        <main class="content">
+            <p class="missing">The input doesn't exist.</p>
+        </main>
+    }
+    else if (_input is not null)
+    {
+        <form id="input-form" class="form" @onsubmit="SaveAsync">
+            <main class="content">
+                <div class="field">
+                    <label for="name" class="label">INPUT @Id · NAME</label>
+                    <input id="name" type="text" maxlength="@Input.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
+                    <label for="active" class="check">
+                        <input id="active" type="checkbox" @bind="_isActive" />
+                        <span><strong>Active</strong>: shown in the list. Untick it for inputs that aren't wired to anything.</span>
+                    </label>
+                </div>
+
+                @* What the board reads now; the app can't switch an input. *@
+                <section class="status @(!Board.State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
+                    <div class="now-row">
+                        <div>
+                            <p class="label">NOW</p>
+                            <p class="now">
+                                @(Board.State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
+                                @if (Board.State.HasAnswered && Status.SinceUnknown)
+                                {
+                                    <WhyUnknown Label="Why is the time unknown?" For="Id" />
+                                }
+                            </p>
+                        </div>
+                        <InputStateBadge Closed="IsClosed" Unknown="!Board.State.HasAnswered" />
+                    </div>
+                    @if (Board.State.HasAnswered && !Board.State.IsConnected)
+                    {
+                        <p class="hint">No contact with the relay board: this may be out of date.</p>
+                    }
+                </section>
+
+                @* The relays and groups this input switches when it closes or opens. *@
+                <section class="controls">
+                    <h2>Groups and relays</h2>
+                    @foreach (var row in _actions)
+                    {
+                        <div class="control" @key="row.Target.Key">
+                            <div class="control-head">
+                                <strong>@row.Target.Label</strong>
+                                <button type="button" class="remove" @onclick="() => Remove(row)">Remove</button>
+                            </div>
+                            @ChoiceRow(row, closes: true)
+                            @ChoiceRow(row, closes: false)
+                        </div>
+                    }
+                    @if (_adding)
+                    {
+                        <div class="pick" role="group" aria-label="Add a group or relay">
+                            @if (Available.Count == 0)
+                            {
+                                <p class="hint">There is nothing more to add: this input controls every group and relay.</p>
+                            }
+                            @foreach (var target in Available)
+                            {
+                                <button type="button" @key="target.Key" @onclick="() => Add(target)">@target.Label</button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <button type="button" class="add" @onclick="() => _adding = true">+ Add a group or relay</button>
+                    }
+                    <p class="hint">Like pressing the button at that moment: a group starts and stops in its order, with its run-on, and auto-off still applies. Only changes the app sees as they happen do anything.</p>
+                </section>
+
+                <section class="events">
+                    <div class="section-head">
+                        <h2>Events</h2>
+                        <a href="events">All events</a>
+                    </div>
+                    @if (_events.Count == 0)
+                    {
+                        <p class="hint">This input hasn't changed yet.</p>
+                    }
+                    else
+                    {
+                        <div class="list">
+                            @foreach (var row in _events)
+                            {
+                                <div class="row" @key="row.Id">
+                                    <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
+                                    <span class="badge automatic" aria-hidden="true">@row.View.Badge</span>
+                                    <div class="text">
+                                        <span><strong>@row.View.Who</strong> @row.View.What</span>
+                                        <span class="day">@Events.DayLabel(row.TimestampLocal)</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            </main>
+
+            <div class="save">
+                @if (_saveError is not null)
+                {
+                    <p class="error" role="alert">@_saveError</p>
+                }
+                <button type="submit" disabled="@_busy">Save</button>
+            </div>
+        </form>
+    }
+</div>
+
+<TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
+
+@code {
+    private const int EventCount = 4;
+
+    private InputView? _input;
+    private List<EventRow> _events = [];
+    private bool _loaded;
+    private bool _busy;
+    private string? _saveError;
+    private string _name = "";
+    private bool _isActive;
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private List<InputActionRow> _actions = [];
+    private IReadOnlyList<InputActionTarget> _targets = [];
+    private bool _adding;
+
+    private bool IsClosed => Board.State.Inputs.Contains(Id);
+
+    // What can still be added: what the input doesn't control yet.
+    private List<InputActionTarget> Available => [.. _targets.Where(t => !_actions.Any(a => a.Target.IsSame(t)))];
+
+    // "CLOSES" or "OPENS", and Turn on / Turn off / Nothing.
+    private RenderFragment ChoiceRow(InputActionRow row, bool closes) => __builder =>
+    {
+        var current = closes ? row.WhenClosed : row.WhenOpened;
+        var when = closes ? "CLOSES" : "OPENS";
+        <div class="choice" role="group" aria-label="@($"{row.Target.Label}: when the input {when.ToLowerInvariant()}")">
+            <span class="label">@when</span>
+            <div class="seg">
+                <button type="button" aria-pressed="@(current == true ? "true" : "false")" @onclick="() => Set(row, closes, true)">Turn on</button>
+                <button type="button" aria-pressed="@(current == false ? "true" : "false")" @onclick="() => Set(row, closes, false)">Turn off</button>
+                <button type="button" aria-pressed="@(current is null ? "true" : "false")" @onclick="() => Set(row, closes, null)">Nothing</button>
+            </div>
+        </div>
+    };
+
+    private void Set(InputActionRow row, bool closes, bool? action)
+    {
+        var index = _actions.IndexOf(row);
+        if (index >= 0)
+        {
+            _actions[index] = closes ? row with { WhenClosed = action } : row with { WhenOpened = action };
+        }
+    }
+
+    // A new row turns it on when the input closes and off when it opens; either can be changed before saving.
+    private void Add(InputActionTarget target)
+    {
+        _actions.Add(new InputActionRow(target, WhenClosed: true, WhenOpened: false));
+        _adding = false;
+    }
+
+    private void Remove(InputActionRow row)
+    {
+        _actions.Remove(row);
+    }
+
+    private InputStatus Status => InputStatusText.For(_input!, IsClosed, Board.State.IsConnected, Clock.Now, Clock.ToLocal);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _input = await Inputs.GetAsync(Id, CancellationToken.None);
+        if (_input is not null)
+        {
+            (_name, _isActive) = (_input.Name, _input.IsActive);
+            _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
+            _actions = [.. await Actions.ListAsync(Id, CancellationToken.None)];
+            _targets = await Actions.TargetsAsync(CancellationToken.None);
+        }
+
+        _loaded = true;
+    }
+
+    protected override void OnInitialized()
+    {
+        Board.StateChanged += OnBoardChanged;
+        Changes.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Board.StateChanged -= OnBoardChanged;
+        Changes.Changed -= OnChanged;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_input is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _saveError = await Inputs.SaveAsync(new InputSettings(Id, _name, _isActive), CancellationToken.None)
+                ?? await Actions.SaveAsync(Id, _actions, CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (_saveError is null)
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    // The board's state: a redraw is enough.
+    private void OnBoardChanged(object? sender, BoardState state)
+    {
+        _ = RefreshAsync(reload: false);
+    }
+
+    // A new event, or a change saved elsewhere: reload the events and the last change, but keep what is being typed.
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync(reload: true);
+    }
+
+    private async Task RefreshAsync(bool reload)
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (reload && _input is not null && await Inputs.GetAsync(Id, CancellationToken.None) is { } fresh)
+                {
+                    _input = fresh;
+                    _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
+                    _targets = await Actions.TargetsAsync(CancellationToken.None);
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

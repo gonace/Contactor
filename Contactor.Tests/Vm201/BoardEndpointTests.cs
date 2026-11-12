@@ -66,6 +66,38 @@ public sealed class BoardEndpointTests
         await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
     }
 
+    // Another board may be at the new address: the old one's state is forgotten at once, and reported so.
+    [Fact]
+    public async Task Should_ForgetTheOldBoardsState_WhenMovedToAnotherAddress()
+    {
+        await using var first = new Vm201Simulator();
+        first.Start();
+        await first.SetOutputsAsync(0x01);
+        var client = Client(first.Port);
+        var changes = new List<Vm201State>();
+        client.StateChanged += (_, state) =>
+        {
+            lock (changes)
+            {
+                changes.Add(state);
+            }
+        };
+        using var cts = new CancellationTokenSource();
+        var run = client.RunAsync(cts.Token);
+        await WaitUntilAsync(() => client.State.IsConnected && client.State.Outputs == 0x01, TimeSpan.FromSeconds(10));
+
+        client.SetEndpoint(new BoardEndpoint("127.0.0.1", 1));
+
+        Assert.Equal(Vm201State.Initial, client.State);
+        lock (changes)
+        {
+            Assert.Equal(Vm201State.Initial, changes[^1]);
+        }
+
+        await cts.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
     [Fact]
     public async Task Should_StopWaitingForAWrongAddress_WhenGivenTheRightOne()
     {

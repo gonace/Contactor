@@ -35,7 +35,7 @@ public sealed class PersistenceTests
         Assert.All(relays, r => Assert.Equal(Relay.DefaultMaxOnMinutes, r.MaxOnMinutes));
         Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], await db.RelayRuntimes.OrderBy(r => r.RelayId).Select(r => r.RelayId).ToListAsync(Cancel));
         var input = Assert.Single(await db.Inputs.ToListAsync(Cancel));
-        Assert.Equal(("Closed", "Open"), (input.ClosedText, input.OpenText));
+        Assert.Equal(("Input 1", true), (input.Name, input.IsActive));
     }
 
     [Fact]
@@ -197,13 +197,13 @@ public sealed class PersistenceTests
     public async Task Should_SeedOneInputPerBoardInput_AndKeepTheRest()
     {
         await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 4);
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 1);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, inputCount: 4, Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, inputCount: 1, Cancel);
 
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         var inputs = await db.Inputs.OrderBy(i => i.Id).ToListAsync(Cancel);
         Assert.Equal(["Input 1", "Input 2", "Input 3", "Input 4"], inputs.Select(i => i.Name));
-        Assert.All(inputs, i => Assert.Equal(("Closed", "Open", true), (i.ClosedText, i.OpenText, i.IsActive)));
+        Assert.All(inputs, i => Assert.True(i.IsActive));
     }
 
     // Before, there was one input row named "Input", and only input 1 was logged, without its number.
@@ -220,7 +220,7 @@ public sealed class PersistenceTests
         await ExecuteAsync(database.ConnectionString, "INSERT INTO \"Input\" (\"Id\", \"Name\", \"ClosedText\", \"OpenText\", \"NotifyOnOpen\", \"NotifyOnClose\") VALUES (1, 'Input', 'Closed', 'Open', 0, 0);");
         await ExecuteAsync(database.ConnectionString, "INSERT INTO \"EventLog\" (\"TimestampUtc\", \"Actor\", \"Action\", \"Details\") VALUES ('2026-11-01 10:00:00', 'external', 'input-changed', '{\"on\":true}'), ('2026-11-01 10:01:00', 'system', 'connection-lost', NULL);");
 
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel, inputCount: 1);
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, inputCount: 1, Cancel);
 
         Assert.Equal("Input 1", await ScalarAsync(database.ConnectionString, "SELECT \"Name\" FROM \"Input\" WHERE \"Id\" = 1;"));
         Assert.Equal(1L, await ScalarAsync(database.ConnectionString, "SELECT \"IsActive\" FROM \"Input\" WHERE \"Id\" = 1;"));

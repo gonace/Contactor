@@ -30,6 +30,25 @@ public sealed class GroupPagesTests
         Assert.Contains("<svg class=\"group-icon\"", html, StringComparison.Ordinal);
     }
 
+    // Before the board's first answer the group's card and its screen are grey, with a "–" for every button.
+    [Fact]
+    public async Task Should_ShowTheGroupAsUnknown_BeforeTheBoardsFirstAnswer()
+    {
+        await using var app = CreateApp(answered: false);
+        using var http = app.CreateClient();
+        await http.GetStringAsync("/", Cancel);
+        var id = await AddFanHeaterAsync(app);
+
+        var list = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+        var screen = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
+
+        Assert.Contains("aria-label=\"Fan heater – Lathe: Waiting for the board\"", list, StringComparison.Ordinal);
+        Assert.Contains("<section class=\"status unknown\"", screen, StringComparison.Ordinal);
+        Assert.DoesNotContain("TURN ON THE GROUP", screen, StringComparison.Ordinal);
+        Assert.DoesNotContain("Needs Fan to be on", screen, StringComparison.Ordinal);
+        Assert.Equal(2, screen.Split("class=\"member-toggle unknown\"").Length - 1);
+    }
+
     [Fact]
     public async Task Should_ShowTheGroupsRelaysInOrder_WithTheInterlock()
     {
@@ -110,11 +129,13 @@ public sealed class GroupPagesTests
         Assert.Contains("The group doesn't exist.", html, StringComparison.Ordinal);
     }
 
-    private static TestWebApp CreateApp()
+    // A board that answered and then lost contact, unless asked for one that never answered.
+    private static TestWebApp CreateApp(bool answered = true)
     {
         return new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" },
+            answered ? TestWebApp.WithLostBoard : null);
     }
 
     // Straight into the database: setting up through GroupsHandler needs a board to see the relays are off.

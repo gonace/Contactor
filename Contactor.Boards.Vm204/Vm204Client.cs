@@ -107,6 +107,9 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
 
         _logger.EndpointChanged(endpoint.Host, endpoint.Port);
         Volatile.Write(ref _key, null);
+
+        // Another board may be at the new address: nothing is known about it until it answers.
+        _poller.Forget();
         _poller.Restart();
     }
 

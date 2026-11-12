@@ -37,36 +37,41 @@ public sealed class RelayControl
         _groups = groups;
     }
 
-    public async Task TurnOnAsync(int relayId, string userEmail, CancellationToken cancellationToken)
+    /// <summary>
+    /// Turns a relay on for a person (their e-mail) or an input (<see cref="EventActors.ForInput"/>), as a press of its
+    /// button: with the relay's auto-off.
+    /// </summary>
+    public async Task TurnOnAsync(int relayId, string actor, CancellationToken cancellationToken)
     {
         var mask = _board.Capabilities.Relay(relayId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
-        await SendAsync(mask, on: true, cancellationToken);
+        await SendAsync(mask, on: true, cancellationToken, failedOnBy: (relayId, actor));
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var relay = await db.Relays.SingleAsync(r => r.Id == relayId, cancellationToken);
         var runtime = await GetRuntimeAsync(db, relayId, cancellationToken);
         runtime.OnSinceUtc = now;
-        runtime.TurnedOnBy = userEmail;
+        runtime.TurnedOnBy = actor;
         runtime.AutoOffAtUtc = relay.MaxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
-        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = userEmail, Action = EventActions.On });
+        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.On });
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
     }
 
-    public async Task TurnOffAsync(int relayId, string userEmail, CancellationToken cancellationToken)
+    /// <summary>Turns a relay off for a person or an input, as a press of its button.</summary>
+    public async Task TurnOffAsync(int relayId, string actor, CancellationToken cancellationToken)
     {
         var mask = _board.Capabilities.Relay(relayId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         await SendAsync(mask, on: false, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         Clear(await GetRuntimeAsync(db, relayId, cancellationToken));
-        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = userEmail, Action = EventActions.Off });
+        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.Off });
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
     }
@@ -125,8 +130,9 @@ public sealed class RelayControl
     }
 
     // Expects the change, then sends it. A command that fails or is cancelled logs nothing, so its expectation goes
-    // too: whatever the board did then shows as an external change rather than vanishing.
-    private async Task SendAsync(ChannelMask mask, bool on, CancellationToken cancellationToken)
+    // too: whatever the board did then shows as an external change rather than vanishing. A failed ON is remembered
+    // with who asked, so a relay the board switched on all the same is credited to them and gets their auto-off.
+    private async Task SendAsync(ChannelMask mask, bool on, CancellationToken cancellationToken, (int RelayId, string Actor)? failedOnBy = null)
     {
         _expected.Expect(mask, on);
         try
@@ -143,6 +149,11 @@ public sealed class RelayControl
         catch
         {
             _expected.Forget(mask, on);
+            if (failedOnBy is { } by)
+            {
+                _expected.RememberFailedOn(by.RelayId, by.Actor);
+            }
+
             throw;
         }
     }

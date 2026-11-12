@@ -17,6 +17,17 @@ internal sealed class FakeRelayBoard : IRelayBoard
         _state = new BoardState(connected, ChannelMask.None, ChannelMask.None, connected ? DateTimeOffset.UnixEpoch : null);
     }
 
+    /// <summary>
+    /// A board that answered once and then lost contact: its last known state is shown with a warning, unlike a board
+    /// that never answered, whose states are unknown.
+    /// </summary>
+    public static FakeRelayBoard LostContact(int relayCount = 8, int inputCount = 1)
+    {
+        var board = new FakeRelayBoard(relayCount, connected: true, inputCount);
+        board.SetConnected(false);
+        return board;
+    }
+
     public event EventHandler<BoardState>? StateChanged;
 
     public BoardCapabilities Capabilities { get; }
@@ -43,6 +54,28 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// change shows on the next <see cref="RefreshAsync"/>.
     /// </summary>
     public bool SwitchSilentlyThenFail { get; set; }
+
+    /// <summary>
+    /// When set, commands switch the relays but the board reports nothing until <see cref="ReleaseStatus"/>, like a
+    /// board whose status is still on its way: <see cref="State"/> keeps showing the relays as they were.
+    /// </summary>
+    public bool HoldStatus { get; set; }
+
+    private ChannelMask? _heldRelays;
+
+    /// <summary>Reports the relays the held commands switched, and stops holding.</summary>
+    public void ReleaseStatus()
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            HoldStatus = false;
+            state = _state = _state with { Relays = _heldRelays ?? _state.Relays };
+            _heldRelays = null;
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
 
     /// <summary>When set, OFF commands are accepted but change nothing, like a relay that won't drop.</summary>
     public bool IgnoreOff { get; set; }
@@ -82,6 +115,34 @@ internal sealed class FakeRelayBoard : IRelayBoard
         return Task.CompletedTask;
     }
 
+    /// <summary>A relay and an input change together, and the board reports both in one status.</summary>
+    public void SetRelayAndInput(int relay, int input, bool on)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with
+            {
+                Relays = on ? _state.Relays | ChannelMask.Of(relay) : _state.Relays.Except(ChannelMask.Of(relay)),
+                Inputs = on ? _state.Inputs | ChannelMask.Of(input) : _state.Inputs.Except(ChannelMask.Of(input)),
+            };
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
+    /// <summary>A relay switches at the board, e.g. by its own button or a command that arrived late, and the board reports it.</summary>
+    public void SetRelay(int relay, bool on)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with { Relays = on ? _state.Relays | ChannelMask.Of(relay) : _state.Relays.Except(ChannelMask.Of(relay)) };
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
     /// <summary>An input changes at the board, and the board reports it.</summary>
     public void SetInput(int input, bool on)
     {
@@ -89,6 +150,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
         lock (_lock)
         {
             state = _state = _state with { Inputs = on ? _state.Inputs | ChannelMask.Of(input) : _state.Inputs.Except(ChannelMask.Of(input)) };
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
+    /// <summary>The board's state is forgotten, as a client does when its address changes: nothing is known.</summary>
+    public void Forget()
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = new BoardState(false, ChannelMask.None, ChannelMask.None, null);
         }
 
         StateChanged?.Invoke(this, state);
@@ -117,6 +190,13 @@ internal sealed class FakeRelayBoard : IRelayBoard
         BoardState state;
         lock (_lock)
         {
+            if (HoldStatus)
+            {
+                var held = _heldRelays ?? _state.Relays;
+                _heldRelays = on ? held | relays : held.Except(relays);
+                return Task.CompletedTask;
+            }
+
             state = _state = _state with { Relays = on ? _state.Relays | relays : _state.Relays.Except(relays) };
         }
 

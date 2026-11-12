@@ -1,4 +1,6 @@
 using System.Net;
+using Contactor.Boards;
+using Contactor.Tests.Boards;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -38,6 +40,15 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
     }
 
     public IPAddress? RemoteAddress { get; set; } = IPAddress.Loopback;
+
+    /// <summary>
+    /// The services for a board that answered once and has lost contact since, so the screens show its last known
+    /// state with a warning; without it the board never answers and every state is unknown.
+    /// </summary>
+    public static void WithLostBoard(IServiceCollection services)
+    {
+        services.AddSingleton<IRelayBoard>(FakeRelayBoard.LostContact());
+    }
 
     public string DatabasePath => Path.Combine(_folder, "contactor.db");
 

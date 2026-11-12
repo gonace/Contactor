@@ -65,6 +65,16 @@
                 }
                 else
                 {
+                @if (!Board.State.HasAnswered)
+                {
+                    @* Before the board's first answer: unknown, all grey. *@
+                    <section class="status unknown">
+                        <p>@RelayStatusText.Waiting</p>
+                        <button type="button" class="toggle unknown" aria-label="@RelayStatusText.Waiting" disabled>–</button>
+                    </section>
+                }
+                else
+                {
                 <section class="status @(IsOn ? "on" : "")">
                     <p>@StatusSentence</p>
                     <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!Board.State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "TURN OFF" : "TURN ON")</button>
@@ -73,6 +83,7 @@
                         <p class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</p>
                     }
                 </section>
+                }
 
                 <section class="limits">
                     <h2>Turn off automatically after</h2>
@@ -230,7 +241,7 @@
             .Select(m => new { m.GroupId, m.Group!.Name })
             .SingleOrDefaultAsync();
         _group = group is null ? null : (group.GroupId, group.Name);
-        _names = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Email, u => u.DisplayName);
+        _names = await ActorNames.LoadAsync(db, CancellationToken.None);
         _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, relayId: Id)];
         _schedules = [.. await Schedules.ListAsync(Id, CancellationToken.None)];
         _outlook = (await Outlook.GetAsync(CancellationToken.None)).GetValueOrDefault(Id);

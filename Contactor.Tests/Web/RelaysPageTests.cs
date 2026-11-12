@@ -17,7 +17,8 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" },
+            TestWebApp.WithLostBoard);
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
@@ -31,17 +32,26 @@ public sealed class RelaysPageTests
     }
 
     [Fact]
-    public async Task Should_ShowNoSectionHeadings_WithoutGroups()
+    public async Task Should_ShowNoSectionHeadings_WithOnlyRelays()
     {
         await using var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+
+        // The board's one input hidden: only relays are left, so they need no heading.
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).IsActive = false;
+            await db.SaveChangesAsync(Cancel);
+        }
+
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
         Assert.DoesNotContain("id=\"groups-heading\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"inputs-heading\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("aria-labelledby", html, StringComparison.Ordinal);
     }
 
@@ -137,7 +147,8 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" },
+            TestWebApp.WithLostBoard);
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
@@ -146,6 +157,36 @@ public sealed class RelaysPageTests
         Assert.Contains("The states below may be wrong.", html, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Turn on Relay 1\"", html, StringComparison.Ordinal);
         Assert.Equal(9, CountOccurrences(html, "disabled"));
+    }
+
+    // Before the board's first answer nothing is known: every card is grey with a "–", and nothing counts as on.
+    [Fact]
+    public async Task Should_ShowEveryStateAsUnknown_BeforeTheBoardsFirstAnswer()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+
+        Assert.Contains("No contact with the relay board yet", html, StringComparison.Ordinal);
+        Assert.Contains("Waiting for its first answer.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("The states below may be wrong.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(" on</strong>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(">OFF<", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Open<", html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Relay 1: Waiting for the board\"", html, StringComparison.Ordinal);
+        Assert.Equal(8, CountOccurrences(html, "class=\"toggle unknown\""));
+        Assert.Equal(1, CountOccurrences(html, "class=\"state unknown\""));
+
+        // The same on the screens of a relay and an input.
+        var relay = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/3", Cancel));
+        var input = WebUtility.HtmlDecode(await http.GetStringAsync("/input/1", Cancel));
+        Assert.Contains("<section class=\"status unknown\"", relay, StringComparison.Ordinal);
+        Assert.DoesNotContain("TURN ON", relay, StringComparison.Ordinal);
+        Assert.Contains("Waiting for the board", input, StringComparison.Ordinal);
+        Assert.Contains("class=\"state unknown\"", input, StringComparison.Ordinal);
     }
 
     [Fact]

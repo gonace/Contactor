@@ -19,13 +19,15 @@ public sealed record GroupMemberDraft(
 /// <summary>A relay as "New group" offers it.</summary>
 /// <param name="GroupName">The group it is already in, or null.</param>
 /// <param name="HasSchedules">It has schedules of its own, so it can't join a group.</param>
-public sealed record GroupCandidate(int RelayId, string Name, bool IsActive, string? GroupName, bool HasSchedules)
+/// <param name="InputName">An input that controls it, so it can't join a group; null when none does.</param>
+public sealed record GroupCandidate(int RelayId, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null)
 {
-    public bool IsFree => GroupName is null && !HasSchedules;
+    public bool IsFree => GroupName is null && !HasSchedules && InputName is null;
 
-    /// <summary>"Free", "Inactive · free", "Already in Painting" or "Has its own schedules".</summary>
+    /// <summary>"Free", "Inactive · free", "Already in Painting", "Has its own schedules" or "Controlled by Door".</summary>
     public string Note => GroupName is not null ? $"Already in {GroupName}"
         : HasSchedules ? "Has its own schedules"
+        : InputName is not null ? $"Controlled by {InputName}"
         : IsActive ? "Free"
         : "Inactive · free";
 }
@@ -87,14 +89,15 @@ public sealed class GroupsHandler
         return ToView(group, runtime);
     }
 
-    /// <summary>The relays that can join a group: in none, and without schedules of their own.</summary>
+    /// <summary>The relays that can join a group: in none, without schedules of their own, and controlled by no input.</summary>
     public async Task<IReadOnlyList<Relay>> FreeRelaysAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var taken = await db.RelayGroupMembers.Select(m => m.RelayId).ToListAsync(cancellationToken);
         var scheduled = await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken);
+        var controlled = await db.InputActions.Where(a => a.RelayId != null).Select(a => a.RelayId).Distinct().ToListAsync(cancellationToken);
         return await RelaysOnBoard(db)
-            .Where(r => !taken.Contains(r.Id) && !scheduled.Contains(r.Id))
+            .Where(r => !taken.Contains(r.Id) && !scheduled.Contains(r.Id) && !controlled.Contains(r.Id))
             .OrderBy(r => r.SortOrder).ThenBy(r => r.Id)
             .ToListAsync(cancellationToken);
     }
@@ -107,8 +110,20 @@ public sealed class GroupsHandler
             .Select(m => new { m.RelayId, m.Group!.Name })
             .ToDictionaryAsync(m => m.RelayId, m => m.Name, cancellationToken);
         var scheduled = (await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
+        var inputs = await ControllingInputsAsync(db, cancellationToken);
         var relays = await RelaysOnBoard(db).OrderBy(r => r.Id).ToListAsync(cancellationToken);
-        return [.. relays.Select(r => new GroupCandidate(r.Id, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id)))];
+        return [.. relays.Select(r => new GroupCandidate(
+            r.Id, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id)))];
+    }
+
+    // The name of an input that controls each relay; the first by number when several do.
+    private static async Task<Dictionary<int, string>> ControllingInputsAsync(ContactorDbContext db, CancellationToken cancellationToken)
+    {
+        var actions = await db.InputActions.AsNoTracking()
+            .Where(a => a.RelayId != null)
+            .Join(db.Inputs, a => a.InputId, i => i.Id, (a, i) => new { RelayId = a.RelayId!.Value, i.Id, i.Name })
+            .ToListAsync(cancellationToken);
+        return actions.GroupBy(a => a.RelayId).ToDictionary(g => g.Key, g => g.OrderBy(a => a.Id).First().Name);
     }
 
     // The board's relays: a database can hold more, kept from a board that had more, and those aren't offered.
@@ -331,6 +346,15 @@ public sealed class GroupsHandler
             if (await db.Schedules.AnyAsync(s => s.RelayId == member.RelayId, cancellationToken))
             {
                 return $"{relay.Name} has its own schedules. Delete them first.";
+            }
+
+            var input = await db.InputActions
+                .Where(a => a.RelayId == member.RelayId)
+                .Join(db.Inputs, a => a.InputId, i => i.Id, (a, i) => i.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (input is not null)
+            {
+                return $"{relay.Name} is controlled by the input {input}. Remove it there first.";
             }
         }
 

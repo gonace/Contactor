@@ -251,6 +251,52 @@ h1 {
     border: 1.5px dashed var(--inactive-border);
 }
 
+/* Before the board's first answer nothing is known: the whole card is grey, and nothing in it stands out. */
+.card.unknown {
+    background: var(--inactive-bg);
+    border: 1.5px solid var(--inactive-border);
+}
+
+/* An inactive card keeps its dashed border, so it still looks inactive. */
+.card.inactive.unknown {
+    border-style: dashed;
+}
+
+.card.unknown .name,
+.card.unknown .icon,
+.card.unknown .chip {
+    color: var(--muted);
+}
+
+.card.unknown .icon,
+.card.unknown .chip {
+    background: transparent;
+}
+
+.toggle.unknown,
+.toggle.unknown:disabled {
+    opacity: 1;
+    background: transparent;
+    border: 1.5px dashed var(--inactive-border);
+    color: var(--muted);
+}
+
+/* An input: its label and name link to its screen; a badge with its state instead of a button. */
+.title {
+    min-height: 44px;
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+}
+
+/* The ⓘ's tooltip lines up under the status line. */
+.card.input .status {
+    position: relative;
+}
+
 .text {
     color: inherit;
     text-decoration: none;
@@ -369,7 +415,8 @@ button:disabled {
         gap: 14px;
     }
 
-    .relay-cards {
+    .relay-cards,
+    .input-cards {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -417,7 +464,8 @@ button:disabled {
 }
 
 @media (min-width: 1280px) {
-    .relay-cards {
+    .relay-cards,
+    .input-cards {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 

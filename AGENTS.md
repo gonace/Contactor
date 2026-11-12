@@ -163,7 +163,7 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
 - `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.
 - `BoardCapabilities`: how many relays and inputs (and analog inputs, which the app doesn't show yet), and whether the board reports changes by itself.
-- `BoardPoller<TReading>`: the loop for a board that doesn't report changes by itself (the VM204 and the VM208). The board's own code implements `IPolledBoard<TReading>` (connect, e.g. log in; read the state once); the poller asks every `PollInterval` (2 s) with `TimeProvider`, refreshes `State` (and so `LastContactUtc`) on every poll but reports a state only when it changed (a comparer decides what counts), counts the board as lost after `FailuresBeforeLost` (3) failed polls in a row (a failed command counts as one, so a dead or broken board is lost even while commands keep coming), and connects again with backoff 1 s → 30 s. Commands go through `RunCommandAsync`: a poll under way is cancelled (that doesn't count as a failure) so the command goes at once, it throws `BoardNotConnectedException` once the board is lost (decided under the same lock as the polls), and what the command returns, the board's state right after it, is taken as a poll's answer. A command fails as a poll would: whatever it throws (refused, unreadable or no answer) counts once, except a cancellation by the caller and `BoardNotConnectedException`, with which the command says it sent nothing (the VM204 logging in again). A failed command is followed by a read at once, so the screens show what the board really did; that read is an ordinary poll that counts on its own, so a dead board is lost after 3 unanswered requests in a row. `PollNow` asks at once, `Restart` ends the connection or wait (new address or login).
+- `BoardPoller<TReading>`: the loop for a board that doesn't report changes by itself (the VM204 and the VM208). The board's own code implements `IPolledBoard<TReading>` (connect, e.g. log in; read the state once); the poller asks every `PollInterval` (2 s) with `TimeProvider`, refreshes `State` (and so `LastContactUtc`) on every poll but reports a state only when it changed (a comparer decides what counts), counts the board as lost after `FailuresBeforeLost` (3) failed polls in a row (a failed command counts as one, so a dead or broken board is lost even while commands keep coming), and connects again with backoff 1 s → 30 s. Commands go through `RunCommandAsync`: a poll under way is cancelled (that doesn't count as a failure) so the command goes at once, it throws `BoardNotConnectedException` once the board is lost (decided under the same lock as the polls), and what the command returns, the board's state right after it, is taken as a poll's answer. A command fails as a poll would: whatever it throws (refused, unreadable or no answer) counts once, except a cancellation by the caller and `BoardNotConnectedException`, with which the command says it sent nothing (the VM204 logging in again). A failed command is followed by a read at once, so the screens show what the board really did; that read is an ordinary poll that counts on its own, so a dead board is lost after 3 unanswered requests in a row. `PollNow` asks at once, `Restart` ends the connection or wait (new address or login), and `Forget` (a new address) resets the state to "never answered" and drops an answer from before still on its way.
 - `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
 - `IBoardConnection`: where the board is (`BoardEndpoint`) and its login (`BoardLogin`), with the defaults from the board's own settings, changeable while the app runs; `CheckLogin` says what the board can't take, and `RunAsync` keeps the connection open.
 - `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
@@ -253,22 +253,22 @@ EventLog
   Id              int PK
   TimestampUtc    datetime
   RelayId         int?           null for events that don't concern one relay
-  Actor           text           e-mail, or "schedule" | "auto-off" | "external" | "system"
+  Actor           text           e-mail, or "schedule" | "auto-off" | "external" | "system" | "input:n" (an input's actions)
   Action          text           "on" | "off" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
                                  "board-timers-disabled" | "board-address-changed" | "board-login-changed"
   GroupId         int?           the group it concerns; not a foreign key, events outlive a deleted group
-  InputId         int?           the input an "input-changed" concerns; not a foreign key
                                  Group actions: "group-on" | "group-off" | "group-start-failed" | "run-on-start" |
                                  "run-on-end" | "interlock-trip" | "group-create" | "group-edit" | "group-delete"
+  InputId         int?           the input an "input-changed" concerns; not a foreign key
   Details         text?          JSON, e.g. {"from":"Relay 4","to":"Ventilation – Paint shop"}
 
 RelayRuntime            (internal, for auto-off; one row per relay, seeded at start)
   RelayId         int PK
   OnSinceUtc      datetime?
   AutoOffAtUtc    datetime?
-  TurnedOnBy      text?          e-mail, or "schedule"
+  TurnedOnBy      text?          e-mail, "input:n" (counts as a person), or "schedule"
 
 SchedulerState          (internal, one row: the scheduler's progress)
   Id              int PK = 1
@@ -315,21 +315,37 @@ Installation            (one row; none on a new installation)
   SetupDoneUtc    datetime?      when the setup guide was finished or skipped; null: "/" opens on the guide
                                  The migration that added it marked installations already in use as done.
 
+BoardWatchState         (one row; the app's contact with the board over time, kept by BoardEventRecorder)
+  Id              int PK = 1
+  LastContactUtc  datetime?      saved every 5 minutes while there is contact (spares the SD card)
+  LongGapEndedUtc datetime?      when the app last came back after more than 10 min without contact (a crash,
+                                 a board that was off). A reboot or an upgrade is a short gap: the inputs' times
+                                 stay. At start the inputs are compared with their last logged state; one that
+                                 changed meanwhile, or changed during a lost contact, is logged with
+                                 {"noticed":true} and its time is unknown.
+
 Input                   (one per digital input on the board, seeded at start like relays, never deleted)
   Id              int PK         1 to the board's input count (at most 64)
-  Name            text           e.g. "Door" (max 40); "Input n" to begin with
-  ClosedText      text           "Closed": the board reads the input as on
-  OpenText        text           "Open"
+  Name            text           e.g. "Door" (max 40); "Input n" to begin with. Its state is always "Closed"
+                                 (the board reads it as on) or "Open": an input is an electrical contact
   IsActive        bool           false = hidden from the list by default
   NotifyOnOpen    bool           for later: notifications (not shown yet)
   NotifyOnClose   bool
+
+InputAction             (a relay or a group an input switches: exactly one of RelayId and GroupId is set)
+  Id              int PK
+  InputId         int FK
+  RelayId         int? FK        a relay in no group; UNIQUE with InputId
+  GroupId         int? FK        cascade delete with the group; UNIQUE with InputId
+  WhenClosed      bool?          true = turn on, false = turn off, null = nothing
+  WhenOpened      bool?
 ```
 
 - `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` at start.
 - **SQLite stays the database.** Keep SQLite-specific code to `Persistence` (the start-up settings above) and `Features/Backup` (`VACUUM INTO`); everything else goes through EF Core, so a later switch to PostgreSQL stays a small change.
 - **Relay state is not stored.** The VM201 is the source of truth; the app always shows the board's latest `CMD_STATUS`.
 - Every timestamp is stored in UTC and shown in Europe/Stockholm. Schedules are stored as local time, see below.
-- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
+- EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the time of contact every 5 minutes, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
 
 ---
 
@@ -363,24 +379,32 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 - **Stop:** from the bottom. The lowest relay goes off at once; each one above after its `RunOnSec`, counted from when the one below is confirmed off. ON during a run-on carries on from where the group is, restarting nothing.
 - **Interlock:** a relay may only be on while every relay above it is. Checked first on **every** status, whatever caused it (the app, the board's web page or buttons, its timers, a power cut), and at start and reconnect: everything below the gap goes off at once, the missing relay is started so it can run on, then the group stops as usual. Logged as `interlock-trip` with Actor `system`.
 - **One relay at a time** (on the Group screen): ON only when the relay above is on ("Needs Fan to be on"). OFF turns the relays below off at once, then this one runs on and stops. That gives "only the fan" without a special mode.
-- A relay in a group is only switched through its group (`RelayControl` refuses), has no auto-off or schedule of its own, and can't get a schedule while in it (its group can). A relay with its own schedules can't join a group. Which relays and their order, creating and deleting only change while the whole group is off.
+- A relay in a group is only switched through its group (`RelayControl` refuses), has no auto-off or schedule of its own, and can't get a schedule while in it (its group can). A relay with its own schedules, or one an input controls, can't join a group. Which relays and their order, creating and deleting only change while the whole group is off.
 - **Schedules:** a group has schedules of its own, run by the scheduler by the same rules as a relay's (catch-up, ON wins on overlap, a missed OFF only stops what the schedule started, a person's start and auto-off win). OnTime starts the group in its order through `GroupSequencer`, with Actor `schedule` and no auto-off; OffTime stops it with its run-on times. The sequencer logs both as `group-on`/`group-off`. A group that is already partly on at OnTime (e.g. only the fan, switched by hand) is left as the person set it, with their auto-off; the OffTime still stops it.
 - **Auto-off** (`RelayGroup.MaxOnMinutes`) stops the whole group with its run-on times. **"All off"** stops each group with its run-on times and turns the other relays off at once.
 - **No board:** nothing is sent or queued; run-on times keep counting, and on reconnect the interlock goes first, then what fell due. A command the board hadn't confirmed gets a fresh 5 s to show; the relay a stop needs for its run-on (e.g. the fan after a trip) is sent once more, then given up (`group-start-failed`) if it still doesn't come on.
 - **Safety:** the app's interlock only works while the Pi and the app run. Where safety depends on it (heat without the fan), it must also be wired in hardware, e.g. by feeding the heater relay through the fan relay's output. That is the electrician's decision; the app is an extra layer.
 
+### Inputs that switch relays and groups
+- An input can control any number of relays and groups (`InputAction`, `InputActionsHandler`), each with its own action when it closes and when it opens: turn on, turn off or nothing. A relay in a group only through its group.
+- `InputActionService` acts like a press of the button at that moment, with the input as the actor (`input:n`): a relay through `RelayControl` (with its auto-off), a group through `GroupSequencer` (in its order, with its run-on and auto-off). A relay already in that state is left alone (so one its schedule turned on stays the schedule's), unless the opposite command is still on its way (`ExpectedChanges.IsPending`); a group decides itself what there is to stop, and one fully on and idle isn't started again.
+- Only a change the app saw as it happened acts: `BoardEventRecorder` hands it on (`InputChangeFeed`) once it is logged. A change noticed after a gap, or at start, does nothing. Without the board nothing is sent or queued.
+- Events name the input as who did it: "Door turned off the group Fan heater" (a dashed badge with "I").
+
 ### The board's own timers
-- The board's built-in timer programs compete with the app's schedules. On the first successful connection: send `CMD_TMR_DIS 0xFF` and log it with Actor `system`. Configurable through `Vm201:DisableBoardTimers=true`.
+- The board's built-in timer programs compete with the app's schedules. On the first successful connection, and at the first answer after a new address (it may be another VM201): send `CMD_TMR_DIS 0xFF` and log it with Actor `system`. Configurable through `Vm201:DisableBoardTimers=true`.
 
 ### External changes
 - If `CMD_STATUS` shows a change the app didn't ask for (through the board's web GUI, the physical button or timers): log it with Actor `external`.
   - Implementation: keep a short list of "expected changes" that is cleared after 5 s.
   - A command that fails (refused, unreadable or no answer) logs nothing, and drops the expectation it added (`ExpectedChanges.Forget`), so a relay the board switched anyway shows on the next status as an external change instead of being taken for the app's own and lost. That holds for single relays, "All off", groups, auto-off and schedules alike.
+  - One exception: a single relay's ON from a person or an input that failed is remembered with who asked, for 5 s (`ExpectedChanges.RememberFailedOn`). If the board shows the relay on within that time, it is their ON after all: logged with their name and `{"afterFailedCommand":true}`, with their auto-off, so a fan heater doesn't run until someone notices. For the setup guide's "Try" it is turned off again once credited, as after any try, not left for its full auto-off.
 
 ### Connection
 - A new installation may have no address for its board (`Vm201:Host` empty): nothing connects, and no contact is lost, until one is saved (in the setup guide or on Settings). `BoardHostedService` waits for it.
 - When contact is lost for more than 30 s, `connection-lost` is logged, and `connection-restored` when it comes back.
 - The UI shows a red warning: "No contact with the relay board. Since HH:mm. The states below may be wrong."
+- **Before the board's first answer** since the app started (`BoardState.HasAnswered`) nothing is known: the warning reads "No contact with the relay board yet. Waiting for its first answer.", the heading leaves out "n of m on", and every relay, group and input card, and the status card on the Relay, Group and Input screens, is grey all over, with "Waiting for the board" and a dashed "–" in place of the ON/OFF button or the Open/Closed badge. Once it has answered, a lost contact keeps showing the last known states with the warning above. A new address (Settings or the setup guide) forgets the old board's state (`Vm201Client.SetEndpoint`, `BoardPoller.Forget`): it is unknown again until the board there answers, an answer from the old address still on its way is dropped, and `BoardEventRecorder` takes the new board's first status as at start, comparing no relays with the old board's. A new login keeps the states: it is the same board. The relays' and groups' runs (who turned them on, their auto-off, a schedule's catch-up) are kept: the app can't tell a new board from the same board at a new IP, and for the same board clearing them would leave a fan heater without its auto-off. For a new board this errs towards switching off.
 
 ---
 
@@ -423,8 +447,9 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - One card per active relay: a small mono label "RELAY n", the name and a status line, plus a big ON/OFF button (84×52).
      - Status line when on: "On since 14:02 · Jane · off 16:02".
      - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
-   - The link "New group" under the cards, then the button "Show N inactive relays" / "Hide inactive relays". Inactive relays have a dashed border.
-   - With groups, the list has two sections, each with a small heading: "Groups" first, then "Relays", each in a grid of its own, so the cards line up and Tab goes row by row. Without groups there are no headings, and without a relay card to show (every relay in a group, or the rest hidden as inactive) there is no "Relays" heading.
+   - The link "New group" under the cards, then one button for inactive relays and inputs: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" for both, and "Hide inactive …". Inactive relays and inputs have a dashed border.
+   - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`); its text links to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`), or else "Open since unknown" with an ⓘ right after it (`WhyUnknown.razor`), whose reason shows as a tooltip on hover, on keyboard focus, or when pressed (a second press or a tap elsewhere closes it). The board only reports what an input reads now, so the time is unknown for a change the app only noticed after a gap in contact, or when a long gap came after it (see `BoardWatchState`). Beside it, a badge with its state, "Open" or "Closed" (green when closed). No button: the app can't switch an input.
+   - The list has a section each for "Groups", "Relays" and "Inputs", in that order, each with a small heading and a grid of its own, so the cards line up and Tab goes row by row. With only relays (no groups and no input shown) there are no headings. "Relays" has no heading and no section when there is no relay card to show (every relay in a group, or the rest hidden as inactive).
    - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.
 2. **Relay** (`/relay/{id}`)
@@ -442,12 +467,12 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - The button "Save schedule". When editing also "Delete schedule", with a confirmation.
 4. **Group** (`/group/{id}`)
    - The name, the icon, a status card with a wide TURN ON THE GROUP / TURN OFF THE GROUP button.
-   - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Starts in 3 s", "Keeps running for 4 min 59 s"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group and without schedules. Order and members only change while the group is off.
+   - "Relays in start order": each relay with its number, role name, state ("Needs Fan to be on", "Starts in 3 s", "Keeps running for 4 min 59 s"), its own ON/OFF within the interlock, up/down and "Remove from the group"; between two relays "On start, wait" (seconds) and "On stop, run on". Adding a relay offers only relays in no group, without schedules and controlled by no input. Order and members only change while the group is off.
    - "Turn off automatically after", "Schedules" (as on the Relay screen, "Add" goes to `/group/{id}/schedule/new`), the group's latest 4 events, the safety note about wiring the interlock in hardware, "Delete the group" with a confirmation, and "Save".
    - Icons are Font Awesome Free solid icons (CC BY 4.0), inlined as SVG in `GroupIcon.razor`; no icon font or script.
 5. **New group** (`/group/new`): a guide in 4 steps, "STEP n OF 4" with a progress bar, "Cancel" on the first step and "Back" after.
    1. "Name and icon": the name and the 8 icons (Fan, Heat, Light, Air, Paint, Pump, Tools, Power).
-   2. "Which relays?": all the board's relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X") or with schedules of its own ("Has its own schedules") can't be chosen. At least 2.
+   2. "Which relays?": all the board's relays; the order they are chosen in (#1, #2 …) is the start order. A relay in another group ("Already in X"), with schedules of its own ("Has its own schedules") or controlled by an input ("Controlled by Door") can't be chosen. At least 2.
    3. "Order and rules": up/down, "Name in the group" for each relay (its name to begin with) and the waits between the steps.
    4. "Review and create": the card as it will look, and in plain words when it starts, when it stops, the interlock and the auto-off (2 h, changed on the group's page). "Create group" only works while every chosen relay is off.
 6. **Events** (`/events`)
@@ -456,7 +481,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - Row: time in mono, a round badge with an initial, and text.
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
-     - An input's change is in its own words: "Door: Open" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
+     - An input's change names it: "Door: Open" or "Door: Closed" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
      - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
@@ -475,6 +500,9 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    3. "Where is the board?": address, port (empty: the model's default) and login, saved through `BoardAddressHandler`; "Next" waits up to 10 s for the board (`BoardContact`, which ignores a connection to the old address) and shows "Board online" or "No answer from …". "Go on without a connection" saves what was typed and goes on.
    4. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes.
    5. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
+
+10. **Input** (`/input/{id}`, `InputDetail.razor`, `Features/Inputs`)
+   - "INPUT n · NAME", the checkbox "Active: shown in the list", the state now ("NOW", "Open since 14:02" or "Open since unknown" with the same ⓘ, and its badge), "Groups and relays" (a card per relay or group it controls: "Group: Fan heater" or "Relay 4: Lighting", "CLOSES" and "OPENS" each with Turn on / Turn off / Nothing, and "Remove"; "+ Add a group or relay" offers what it doesn't control yet, groups first), its latest 4 events with "All events", and "Save". Saving isn't logged. Like the Relay screen: the side menu on a desktop, two columns and Save at the top right.
 
 Blazor Server gives live updates for free. When the board reports a new state (`IRelayBoard.StateChanged`), every open page must update at once, through a singleton service with an event that components subscribe to and unsubscribe from in `Dispose`.
 

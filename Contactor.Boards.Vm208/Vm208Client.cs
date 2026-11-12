@@ -97,6 +97,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         }
 
         _logger.EndpointChanged(endpoint.Host, endpoint.Port);
+
+        // Another board may be at the new address: nothing is known about it until it answers.
+        _poller.Forget();
         _poller.Restart();
     }
 

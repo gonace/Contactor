@@ -41,6 +41,29 @@ public sealed class BoardAddressHandlerTests
         Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
     }
 
+    // The app can't tell a new board from the same board at a new IP, so a relay's run is kept: for the same board
+    // clearing it would leave a fan heater without its auto-off.
+    [Fact]
+    public async Task Should_KeepTheRelaysRuns_AtANewAddress()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await using var other = new Vm201Simulator();
+        other.Start();
+        var autoOff = BoardTestRig.Start.AddHours(2);
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var relay = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
+            (relay.OnSinceUtc, relay.AutoOffAtUtc, relay.TurnedOnBy) = (BoardTestRig.Start, autoOff, John);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        Assert.Null(await Handler(rig).SaveAsync("127.0.0.1", other.Port, John, Cancel));
+
+        await using var check = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        var after = await check.RelayRuntimes.AsNoTracking().SingleAsync(r => r.RelayId == 3, Cancel);
+        Assert.Equal(((DateTime?)autoOff, John), (after.AutoOffAtUtc, after.TurnedOnBy));
+    }
+
     [Fact]
     public async Task Should_LogNothing_WhenTheAddressIsTheSame()
     {

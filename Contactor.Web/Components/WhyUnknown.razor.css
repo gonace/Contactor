@@ -1,0 +1,69 @@
+.why-wrap {
+    display: inline-flex;
+    vertical-align: middle;
+}
+
+/* 44 px to touch, without making the line taller. */
+.why {
+    width: 44px;
+    height: 44px;
+    margin: -13px -12px -13px -6px;
+    padding: 0;
+    border: none;
+    border-radius: 22px;
+    background: transparent;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.why[aria-expanded="true"] {
+    color: var(--accent);
+}
+
+.tip {
+    display: none;
+    position: absolute;
+    z-index: 60;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 280px;
+    max-width: calc(100vw - 64px);
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.45;
+    text-align: left;
+}
+
+.tip-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    border: none;
+    padding: 0;
+    background: transparent;
+    cursor: default;
+}
+
+.tip.open,
+.why:focus-visible + .tip {
+    display: block;
+}
+
+@media (hover: hover) {
+    .why-wrap:hover .tip {
+        display: block;
+    }
+
+    /* The page's ring on a hovered button would run into the text beside it; a colour shows it instead. */
+    .why:not(:disabled):hover {
+        box-shadow: none;
+        color: var(--accent);
+    }
+}

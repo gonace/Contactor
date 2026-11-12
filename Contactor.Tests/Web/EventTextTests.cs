@@ -65,19 +65,19 @@ public sealed class EventTextTests
     [Theory]
     [InlineData(true, "Door:", "Closed")]
     [InlineData(false, "Door:", "Open")]
-    public void Should_DescribeAnInputInItsOwnWords(bool on, string who, string what)
+    public void Should_DescribeAnInputByItsName(bool on, string who, string what)
     {
         var entry = Entry(EventActors.External, EventActions.InputChanged, on ? """{"on":true}""" : """{"on":false}""", relayId: null);
         entry.InputId = 2;
 
-        var view = EventText.For(entry, relayName: null, personName: null, input: new InputWords("Door", "Closed", "Open"));
+        var view = EventText.For(entry, relayName: null, personName: null, inputName: "Door");
 
         Assert.Equal(new EventView(false, "I", who, what, null), view);
     }
 
-    // An input event from before inputs had names, or of an input no longer on the board.
+    // An input no longer on the board has no name to show.
     [Fact]
-    public void Should_NameAnInputByItsNumber_WithoutItsWords()
+    public void Should_NameAnInputByItsNumber_WithoutItsName()
     {
         var entry = Entry(EventActors.External, EventActions.InputChanged, """{"on":true}""", relayId: null);
 
