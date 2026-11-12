@@ -177,7 +177,7 @@
                                 @if (status.SinceUnknown)
                                 {
                                     var shown = _whyShown.Contains(input.Id);
-                                    <button type="button" class="why" aria-expanded="@(shown ? "true" : "false")" aria-label="Why is the time unknown?" @onclick="() => ToggleWhy(input.Id)">
+                                    <button type="button" class="why" aria-expanded="@(shown ? "true" : "false")" aria-label="@($"Why is the time unknown for {input.Name}?")" @onclick="() => ToggleWhy(input.Id)">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>
                                     </button>
                                 }

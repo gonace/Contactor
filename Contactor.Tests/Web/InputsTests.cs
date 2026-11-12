@@ -143,6 +143,10 @@ public sealed class InputsTests
         Assert.Contains("href=\"input/1\"", html, StringComparison.Ordinal);
         Assert.Contains("INPUT 1", html, StringComparison.Ordinal);
         Assert.Contains("Door", html, StringComparison.Ordinal);
+
+        // No board and no logged change: the app can't know since when, and says why behind the ⓘ.
+        Assert.Contains("Open since unknown", html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Why is the time unknown for Door?\"", html, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -181,6 +185,7 @@ public sealed class InputsTests
         Assert.Contains("When closed", html, StringComparison.Ordinal);
         Assert.Contains("When open", html, StringComparison.Ordinal);
         Assert.Contains("This input hasn't changed yet.", html, StringComparison.Ordinal);
+        Assert.Contains(InputStatusText.WhyUnknown, html, StringComparison.Ordinal);
         Assert.Contains("The input doesn't exist.", missing, StringComparison.Ordinal);
     }
 

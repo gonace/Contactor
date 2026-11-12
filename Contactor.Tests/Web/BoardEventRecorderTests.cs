@@ -152,6 +152,52 @@ public sealed class BoardEventRecorderTests
         }
     }
 
+    // The recorder keeps BoardWatch: a change it sees live is seen; one made while contact was lost, logged when it
+    // comes back, isn't, and neither is anything from before the loss.
+    [Fact]
+    public async Task Should_KeepTheWatch_AcrossALostContact()
+    {
+        var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 2);
+        var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(time);
+            services.AddSingleton<Contactor.Boards.IRelayBoard>(board);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel, inputCount: 2);
+        var watch = database.Services.GetRequiredService<BoardWatch>();
+        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            await BoardTestRig.WaitUntilAsync(() => watch.WatchingSinceUtc is not null);
+
+            time.Now += TimeSpan.FromMinutes(1);
+            board.SetInput(1, on: true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count == 1);
+            var live = Events(database)[0].TimestampUtc;
+            Assert.True(watch.SawChangeAt(live));
+
+            board.SetConnected(false);
+            await BoardTestRig.WaitUntilAsync(() => watch.WatchingSinceUtc is null);
+            time.Now += TimeSpan.FromMinutes(1);
+            board.SetInput(1, on: false);
+            board.SetConnected(true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count == 2);
+
+            Assert.False(watch.SawChangeAt(Events(database)[1].TimestampUtc));
+            Assert.False(watch.SawChangeAt(live));
+        }
+        finally
+        {
+            await recorder.StopAsync(Cancel);
+        }
+    }
+
     private static List<EventLogEntry> Events(TestDatabase database)
     {
         using var db = database.Factory.CreateDbContext();
