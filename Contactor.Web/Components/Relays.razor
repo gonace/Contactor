@@ -171,7 +171,8 @@
                                 <span class="name">@input.Name</span>
                                 <span class="status">@InputStatusText.For(input, closed, Clock.Now, Clock.ToLocal)</span>
                             </span>
-                            <span class="state @(closed ? "closed" : null)"><span class="dot" aria-hidden="true"></span>@input.StateText(closed)</span>
+                            @* The status line already says the state, so a screen reader doesn't hear it twice. *@
+                            <span class="state @(closed ? "closed" : null)" aria-hidden="true"><span class="dot"></span>@input.StateText(closed)</span>
                         </a>
                     }
                 </div>
@@ -231,22 +232,7 @@
     // in a group or the rest are hidden as inactive.
     private bool ShowRelaysHeading => (_groups.Count > 0 || VisibleInputs.Any()) && VisibleRelays.Any();
 
-    // One button for both: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" when it's both.
-    private string InactiveButtonText
-    {
-        get
-        {
-            var relays = _relays.Count(r => !r.IsActive);
-            var inputs = _inputs.Count(i => !i.IsActive);
-            var kind = relays > 0 && inputs > 0 ? "" : relays > 0 ? " relays" : " inputs";
-            if (_showInactive)
-            {
-                return $"Hide inactive{kind}";
-            }
-
-            return InactiveCount == 1 ? $"Show 1 inactive{kind.TrimEnd('s')}" : $"Show {InactiveCount} inactive{kind}";
-        }
-    }
+    private string InactiveButtonText => InactiveText.For(_relays.Count(r => !r.IsActive), _inputs.Count(i => !i.IsActive), _showInactive);
 
     private string UpdatedText
     {

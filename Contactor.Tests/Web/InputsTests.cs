@@ -36,6 +36,35 @@ public sealed class InputsTests
         Assert.Null(await Handler(database).GetAsync(3, Cancel));
     }
 
+    // An event whose details can't be read says nothing about since when.
+    [Fact]
+    public async Task Should_SkipALastChange_ItCannotRead()
+    {
+        await using var database = await DatabaseAsync(inputCount: 1);
+        await AddChangeAsync(database, inputId: 1, on: true, Now.AddMinutes(-20));
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = Now, InputId = 1, Actor = EventActors.External, Action = EventActions.InputChanged, Details = "not json" });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        Assert.Null((await Handler(database).GetAsync(1, Cancel))!.LastChange);
+    }
+
+    [Theory]
+    [InlineData(1, 0, false, "Show 1 inactive relay")]
+    [InlineData(2, 0, false, "Show 2 inactive relays")]
+    [InlineData(0, 1, false, "Show 1 inactive input")]
+    [InlineData(0, 3, false, "Show 3 inactive inputs")]
+    [InlineData(2, 1, false, "Show 3 inactive")]
+    [InlineData(2, 0, true, "Hide inactive relays")]
+    [InlineData(0, 1, true, "Hide inactive inputs")]
+    [InlineData(1, 1, true, "Hide inactive")]
+    public void Should_NameTheInactiveButton(int relays, int inputs, bool shown, string text)
+    {
+        Assert.Equal(text, InactiveText.For(relays, inputs, shown));
+    }
+
     [Fact]
     public async Task Should_SaveNameWordsAndActive()
     {

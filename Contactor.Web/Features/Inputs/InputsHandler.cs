@@ -121,6 +121,23 @@ public sealed class InputsHandler
     }
 }
 
+/// <summary>The one button on Relays for inactive relays and inputs.</summary>
+public static class InactiveText
+{
+    /// <summary>"Show 2 inactive relays", "Show 1 inactive input", "Show 3 inactive" for both kinds, or "Hide inactive …".</summary>
+    public static string For(int relays, int inputs, bool shown)
+    {
+        var kind = relays > 0 && inputs > 0 ? "" : relays > 0 ? " relays" : " inputs";
+        if (shown)
+        {
+            return $"Hide inactive{kind}";
+        }
+
+        var count = relays + inputs;
+        return count == 1 ? $"Show 1 inactive{kind.TrimEnd('s')}" : $"Show {count} inactive{kind}";
+    }
+}
+
 /// <summary>An input's status line: "Open since 14:02", or just "Open" when it isn't known since when.</summary>
 public static class InputStatusText
 {

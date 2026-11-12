@@ -103,11 +103,6 @@ input[type="text"] {
     border: 1.5px solid var(--line);
 }
 
-.status.on {
-    background: var(--accent-tint);
-    border-color: var(--accent-border);
-}
-
 .status p {
     margin: 0;
 }
@@ -171,12 +166,6 @@ h2 {
     border-top: 1px solid var(--row-line);
 }
 
-/* A safety shut-off, or a group that couldn't start. */
-.row.alert {
-    background: var(--danger-bg);
-    color: var(--danger-ink);
-}
-
 .time {
     width: 46px;
     flex-shrink: 0;
@@ -197,11 +186,6 @@ h2 {
     justify-content: center;
     font-size: 15px;
     font-weight: 700;
-}
-
-.badge.person {
-    background: var(--chip);
-    color: var(--ink);
 }
 
 .badge.automatic {
