@@ -77,7 +77,7 @@ public sealed class BoardPoller<TReading> : IDisposable
     // The poll under way; a command cancels it to go at once.
     private CancellationTokenSource? _poll;
 
-    // Polls and commands that got no answer, in a row, on this connection; and whether that lost the board. Under _gate.
+    // Polls and commands that failed, in a row, on this connection; and whether that lost the board. Under _gate.
     private int _failures;
     private bool _lost;
     private int _running;
@@ -116,12 +116,6 @@ public sealed class BoardPoller<TReading> : IDisposable
         }
     } = DefaultFailuresBeforeLost;
 
-    /// <summary>
-    /// Which exceptions from a command mean the board didn't answer (a timeout, a broken connection): those count as
-    /// failed polls, so a board that is gone is lost even while commands keep coming. Default: none.
-    /// </summary>
-    public Func<Exception, bool> IsNoAnswer { get; init; } = _ => false;
-
     /// <summary>The latest state.</summary>
     public PolledState<TReading> State => Volatile.Read(ref _state);
 
@@ -144,10 +138,13 @@ public sealed class BoardPoller<TReading> : IDisposable
     /// Runs a command on the board at once: a poll under way is given up (it doesn't count as failed) and the command
     /// waits only for it to stop, never for the next one. Throws <see cref="BoardNotConnectedException"/> when the
     /// board is not connected, decided under the same lock as the poller's. What the command returns is the board's
-    /// state right after it, taken as a poll's answer, so the change shows without asking again. A command that
-    /// throws for want of an answer (<see cref="IsNoAnswer"/>) counts as one failed poll. Whatever else a command
-    /// throws (refused, unreadable, a bug), unless <paramref name="cancellationToken"/> was cancelled, the board's state
-    /// is read at once afterwards, as by <see cref="PollNow"/>, and the exception is passed on.
+    /// state right after it, taken as a poll's answer, so the change shows without asking again. A command fails as a
+    /// poll would: whatever it throws (no answer, a refusal, an answer it can't read) counts as one failed poll, so a
+    /// board that is gone or broken is lost even while commands keep coming. Two things don't count: a cancelled
+    /// <paramref name="cancellationToken"/>, and <see cref="BoardNotConnectedException"/>, with which the command says
+    /// it sent nothing (e.g. the board is logging in again). After a failed command, unless
+    /// <paramref name="cancellationToken"/> was cancelled, the board's state is read at once, as by
+    /// <see cref="PollNow"/>, and the exception is passed on.
     /// </summary>
     public async Task RunCommandAsync(Func<CancellationToken, Task<TReading>> command, CancellationToken cancellationToken = default)
     {
@@ -173,8 +170,9 @@ public sealed class BoardPoller<TReading> : IDisposable
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                // Counted once, here; the read that follows is an ordinary poll and counts on its own if it fails too.
-                if (IsNoAnswer(ex))
+                // The same rule as a poll's, counted once, here; the read that follows is an ordinary poll and counts on its
+                // own if it fails too.
+                if (ex is not BoardNotConnectedException)
                 {
                     CountFailure(ex.Message);
                 }
@@ -296,7 +294,7 @@ public sealed class BoardPoller<TReading> : IDisposable
                 {
                     if (_lost)
                     {
-                        // Commands that got no answer lost the board; that was reported then.
+                        // Commands that failed lost the board; that was reported then.
                         lost = true;
                         return answered;
                     }
@@ -396,7 +394,7 @@ public sealed class BoardPoller<TReading> : IDisposable
         }
     }
 
-    // Callers hold _gate. Counts a poll or command that got no answer; returns whether that lost the board, which is
+    // Callers hold _gate. Counts a poll or command that failed; returns whether that lost the board, which is
     // then disconnected before the gate opens again, so no command gets through after it.
     private bool CountFailure(string reason)
     {

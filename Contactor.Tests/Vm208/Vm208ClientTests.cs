@@ -303,6 +303,29 @@ public sealed class Vm208ClientTests
     }
 
     [Fact]
+    public async Task Should_LoseABoardThatAnswersBrokenJson_CountingCommandsAsPolls()
+    {
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        board.BadAnswerFor = 0b0001;
+        board.BadAnswer = (200, "not json");
+        board.BadStatus = true;
+
+        // A command no answer of which can be read (1), and the read it brings at once, as broken (2).
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+        await Wait.UntilAsync(() => board.Requests.Count(r => r.StartsWith(StatusRequest, StringComparison.Ordinal)) == 2
+            && run.Time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        Assert.True(run.Client.State.IsConnected);
+
+        // The next command is the third failure in a row: the board is lost without waiting for a poll.
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+
+        Assert.False(run.Client.State.IsConnected);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal) && t.IsError);
+    }
+
+    [Fact]
     public async Task Should_StopTheMask_AndReadTheBoardAtOnce_WhenARelayGetsNoAnswer()
     {
         await using var board = ScriptedBoard.Start();
@@ -582,6 +605,9 @@ public sealed class Vm208ClientTests
 
         public (int Code, string Body)? BadAnswer { get; set; }
 
+        /// <summary>Answers every status request with <see cref="BadAnswer"/> too.</summary>
+        public bool BadStatus { get; set; }
+
         /// <summary>The relays a command came for, whatever the answer; bit 0 = relay 1.</summary>
         public int Switched => Volatile.Read(ref _switched);
 
@@ -673,10 +699,14 @@ public sealed class Vm208ClientTests
                         return;
                     }
 
-                    if (command is { } refused && (BadAnswerFor & (1 << (refused.Relay - 1))) != 0 && BadAnswer is { } bad)
+                    var badForCommand = command is { } refused && (BadAnswerFor & (1 << (refused.Relay - 1))) != 0;
+                    if ((badForCommand || (isStatus && BadStatus)) && BadAnswer is { } bad)
                     {
-                        var mask = 1 << (refused.Relay - 1);
-                        Interlocked.Or(ref _relays, mask);
+                        if (command is { } taken)
+                        {
+                            Interlocked.Or(ref _relays, 1 << (taken.Relay - 1));
+                        }
+
                         var badContent = Encoding.ASCII.GetBytes(bad.Body);
                         await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {bad.Code} X\r\nContent-Length: {badContent.Length}\r\nConnection: close\r\n\r\n"), _stop.Token);
                         await stream.WriteAsync(badContent, _stop.Token);
