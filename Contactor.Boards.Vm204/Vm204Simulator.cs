@@ -17,6 +17,9 @@ namespace Contactor.Boards.Vm204;
 /// </summary>
 public sealed class Vm204Simulator : ISimulatedBoard
 {
+    /// <summary>How long a client may take to send its whole request head before the connection is closed.</summary>
+    public static readonly TimeSpan RequestHeadTimeout = TimeSpan.FromSeconds(5);
+
     // A request head longer than this isn't one the app sends.
     private const int MaxRequestHeadBytes = 8192;
 
@@ -246,7 +249,15 @@ public sealed class Vm204Simulator : ISimulatedBoard
             }
 
             var stream = tcp.GetStream();
-            var head = await ReadHeadAsync(stream, cancellationToken).ConfigureAwait(false);
+            string? head;
+
+            // A client that connects and says nothing must not hold a handler until the simulator stops.
+            using (var headTimeout = new CancellationTokenSource(RequestHeadTimeout, TimeProvider))
+            using (var reading = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, headTimeout.Token))
+            {
+                head = await ReadHeadAsync(stream, reading.Token).ConfigureAwait(false);
+            }
+
             if (head is null)
             {
                 return;
