@@ -33,7 +33,14 @@
                 <strong>@OnCount of @ActiveCount on</strong>
             </p>
         </div>
-        <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="TurnAllOffAsync">All off</button>
+        <div class="actions">
+            @* On a desktop "New group" sits here, beside "All off"; on a phone or tablet it is under the cards. *@
+            <a href="group/new" class="new-group in-header">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                New group
+            </a>
+            <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="TurnAllOffAsync">All off</button>
+        </div>
     </header>
 
     <div class="connection">

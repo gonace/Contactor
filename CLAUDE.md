@@ -353,7 +353,13 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 
 ## User interface
 
-Mobile first (390 px), but it must work on a desktop. All UI text is in **English**. Add a PWA manifest so it can be put on the home screen with an icon and the name "Contactor".
+Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI text is in **English**. Add a PWA manifest so it can be put on the home screen with an icon and the name "Contactor".
+
+**Three layouts**, by width only (Tailwind's `md` and `lg`), in each screen's `.razor.css` and `app.css`:
+- **Phone, under 768 px:** one column, the tab bar at the bottom.
+- **Tablet, 768 px and up:** wider screens. On Relays the cards are in two columns, with a group across both. The tab bar stays at the bottom.
+- **Desktop, 1024 px and up** (a tablet in landscape too): the tab bar becomes a side menu on the left (`TabBar.razor.css`; pages with it get `padding-left: var(--side-menu)` through `body:has(nav.tabs)`, so the side menu is only used where the browser supports `:has`; older browsers keep the bottom tab bar). Relays has two columns, and three from 1280 px, with a group spanning two. Relay and Group have two columns, the events on the right, and Save at the top right, pinned while the page scrolls (a second submit button in the header, `form="…"`; the bottom bar keeps only its warnings). On a tablet Events and Debug go up to 960 px wide and Settings to 720 px; on a desktop every page with the side menu starts right beside it, is up to 1200 px wide, lined up with Relays, and Settings has its cards in two columns. On a desktop "New group" sits in the Relays header beside "All off". The pages under a tab (Relay, Group, a schedule, New group) show the side menu too (`TabBar` with `SideMenuOnly`, no bottom tab bar on a phone). Forms (schedule, new group) stay narrow: 560 px on a tablet, and on a desktop a 640 px card beside the side menu, with their buttons at the bottom of the card.
+- **Mouse and keyboard:** hover states and a visible `:focus-visible` ring on buttons and links (inputs keep the browser's own). Touch targets stay at least 44 px. The no-zoom rules apply on every width.
 
 **No zoom.** The pages don't zoom, so nobody zooms in by mistake and loses the big buttons: `user-scalable=no` in the viewport (Android's Chrome follows it), `touch-action: manipulation` against double-tap zoom, and `wwwroot/phone.js`, which cancels the two-finger pinch on iOS, where every browser ignores `user-scalable=no`. Anyone who needs to enlarge can use the phone's own zoom (on iOS: Settings → Accessibility → Zoom).
 
@@ -411,7 +417,7 @@ Mobile first (390 px), but it must work on a desktop. All UI text is in **Englis
    - "People": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Save".
    - "Backups": the newest nightly copy ("Latest: 02:30 · 68 kB"), "Make a copy now" and "Download" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
    - "Debugging": the checkbox "Show the traffic to the relay board", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
-   - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Development version" for local builds); the only place it shows.
+   - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Development version" for local builds; `AppBuild.Text`); the only place it shows, except on a desktop, where it sits at the bottom of the side menu instead.
 8. **Debug** (`/debug`; the tab only shows while the person has Debugging on)
    - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in plain words ("Turn on relay 3", "Status: relay 1 and 3 on · input off", "Connection lost: …") and the packet's bytes. The button "Clear".
 

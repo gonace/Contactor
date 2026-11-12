@@ -7,7 +7,7 @@
 @inject BoardTrace Trace
 @inject TimeProvider TimeProvider
 
-<div class="bottom">
+<div class="bottom @(SideMenuOnly ? "side-only" : null)">
     @if (_debugging)
     {
         @* Toasts with the board's traffic for whoever turned Debugging on; the keep-alive is left out. *@
@@ -45,6 +45,9 @@
                 Debug
             </a>
         }
+        @* Only in the desktop's side menu; on a phone and a tablet the version is at the bottom of Settings. *@
+        @* The commit on a line of its own, so the narrow menu never cuts it off. *@
+        <span class="version">@AppBuild.Current.Text.Replace(" · ", "\n", StringComparison.Ordinal)</span>
     </nav>
 </div>
 
@@ -71,6 +74,13 @@
 
     [Parameter]
     public Tab Current { get; set; }
+
+    /// <summary>
+    /// Only the desktop's side menu, no bottom tab bar: for the pages under a tab (a relay, a group, a schedule, a new
+    /// group), which on a phone have a back link instead.
+    /// </summary>
+    [Parameter]
+    public bool SideMenuOnly { get; set; }
 
     // A copy: the timers change the list off the render thread.
     private Toast[] ToastsNow

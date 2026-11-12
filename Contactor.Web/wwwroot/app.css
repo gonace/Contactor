@@ -183,3 +183,46 @@ a {
     white-space: nowrap;
     border: 0;
 }
+
+/* Wider screens (CLAUDE.md, User interface): a tablet from 768 px, a desktop from 1024 px. On a desktop the tab bar
+   becomes a side menu (TabBar.razor.css), so the pages that have one make room for it and start right beside it,
+   rather than centred in the space that is left. */
+@media (min-width: 1024px) {
+    body:has(nav.tabs) {
+        padding-left: var(--side-menu);
+    }
+
+    body:has(nav.tabs) .screen {
+        margin-left: var(--beside-menu, 0);
+    }
+}
+
+:root {
+    --side-menu: 232px;
+}
+
+/* A mouse gets hover states; touch keeps its pressed state only. Keyboard focus always shows. */
+/* Buttons get a ring, which leaves their colours and contrast alone; links get darker text (lighter in dark mode),
+   which only raises their contrast. */
+@media (hover: hover) {
+    button:not(:disabled):hover {
+        box-shadow: 0 0 0 2px var(--line-strong);
+    }
+
+    a:hover {
+        filter: brightness(0.85);
+    }
+}
+
+@media (hover: hover) and (prefers-color-scheme: dark) {
+    a:hover {
+        filter: brightness(1.2);
+    }
+}
+
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+}

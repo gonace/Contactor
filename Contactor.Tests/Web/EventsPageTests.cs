@@ -63,7 +63,10 @@ public sealed class EventsPageTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/events", Cancel));
 
         Assert.Contains("No events yet.", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Development version", html, StringComparison.Ordinal);
+        // The version shows only in the desktop's side menu here, never in the page itself.
+        var version = html.IndexOf("Development version", StringComparison.Ordinal);
+        Assert.InRange(version, html.IndexOf("<nav class=\"tabs\"", StringComparison.Ordinal), html.IndexOf("</nav>", StringComparison.Ordinal));
+        Assert.Equal(version, html.LastIndexOf("Development version", StringComparison.Ordinal));
     }
 
     [Fact]

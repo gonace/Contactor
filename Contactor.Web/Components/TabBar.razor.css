@@ -3,6 +3,14 @@
     bottom: 0;
 }
 
+.bottom.side-only {
+    display: none;
+}
+
+.tabs .version {
+    display: none;
+}
+
 .tabs {
     display: flex;
     border-top: 1px solid var(--line);
@@ -69,4 +77,65 @@
 
 .toast.error .hex {
     color: var(--danger-ink);
+}
+
+/* A desktop: the tab bar is a side menu along the left edge; the toasts sit at the bottom, next to it. Only where
+   the page can make room for it (app.css uses :has); elsewhere it stays at the bottom. */
+@supports selector(:has(a)) {
+    @media (min-width: 1024px) {
+        .bottom,
+        .bottom.side-only {
+            display: block;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: var(--side-menu);
+            z-index: 10;
+        }
+
+        .tabs {
+            height: 100%;
+            flex-direction: column;
+            gap: 4px;
+            padding: 24px 12px;
+            border-top: none;
+            border-right: 1px solid var(--line);
+        }
+
+        .tabs a {
+            flex: none;
+            min-height: 48px;
+            padding: 0 12px;
+            flex-direction: row;
+            justify-content: flex-start;
+            gap: 12px;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+
+        .tabs a[aria-current="page"] {
+            background: var(--accent-tint);
+        }
+
+        .tabs .version {
+            display: block;
+            margin-top: auto;
+            padding: 0 12px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            line-height: 1.5;
+            white-space: pre-line;
+            overflow-wrap: anywhere;
+            font-weight: 500;
+            color: var(--muted);
+        }
+
+        .toasts {
+            left: calc(100% + 16px);
+            right: auto;
+            bottom: 16px;
+            width: 380px;
+        }
+    }
 }
