@@ -80,7 +80,19 @@
                     <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!Board.State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "TURN OFF" : "TURN ON")</button>
                     @if (_toggleFailed)
                     {
-                        <p class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</p>
+                        @if (_inGroup)
+                        {
+                            <p class="error" role="alert">@RelayInGroupException.Text</p>
+                        }
+                        else
+                        {
+                            @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
+                            <p class="unconfirmed-text" role="alert">@RelayStatusText.Unconfirmed</p>
+                            <div class="unconfirmed-actions">
+                                <button type="button" class="try-again" disabled="@(!Board.State.IsConnected || _busy)" @onclick="() => SwitchAsync(_wanted)">Try again</button>
+                                <button type="button" class="leave-it" @onclick="() => _toggleFailed = false">Leave it</button>
+                            </div>
+                        }
                     }
                 </section>
                 }
@@ -264,6 +276,11 @@
             return "schedule";
         }
 
+        if (email == EventActors.External)
+        {
+            return "outside the app";
+        }
+
         return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
     }
 
@@ -272,7 +289,15 @@
         return minutes is { } m ? $"{m / 60} h" : "Never";
     }
 
-    private async Task ToggleAsync()
+    // What the last press asked for, so "Try again" repeats it.
+    private bool _wanted;
+
+    private Task ToggleAsync()
+    {
+        return SwitchAsync(!IsOn);
+    }
+
+    private async Task SwitchAsync(bool on)
     {
         if (_user is null || _busy)
         {
@@ -281,15 +306,16 @@
 
         _busy = true;
         _toggleFailed = false;
+        _wanted = on;
         try
         {
-            if (IsOn)
+            if (on)
             {
-                await Control.TurnOffAsync(Id, _user.Email, CancellationToken.None);
+                await Control.TurnOnAsync(Id, _user.Email, CancellationToken.None);
             }
             else
             {
-                await Control.TurnOnAsync(Id, _user.Email, CancellationToken.None);
+                await Control.TurnOffAsync(Id, _user.Email, CancellationToken.None);
             }
         }
         catch (BoardNotConnectedException)
@@ -369,6 +395,12 @@
                 if (reload && _relay is not null)
                 {
                     await LoadLiveAsync();
+                }
+
+                // The board shows the relay as the person wanted it: nothing left to decide.
+                if (_toggleFailed && !_inGroup && Board.State.IsConnected && IsOn == _wanted)
+                {
+                    _toggleFailed = false;
                 }
 
                 StateHasChanged();

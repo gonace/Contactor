@@ -157,9 +157,9 @@
                                 <span class="label">RELAY @relay.Id</span>
                                 <span class="name">@relay.Name</span>
                                 <span class="status">@(State.HasAnswered ? StatusFor(relay, on) : RelayStatusText.Waiting)</span>
-                                @if (_failedRelayId == relay.Id)
+                                @if (_failedRelayId == relay.Id && _inGroup)
                                 {
-                                    <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</span>
+                                    <span class="error" role="alert">@RelayInGroupException.Text</span>
                                 }
                             </a>
                             @if (State.HasAnswered)
@@ -175,6 +175,17 @@
                             else
                             {
                                 <button type="button" class="toggle unknown" aria-label="@($"{relay.Name}: {RelayStatusText.Waiting}")" disabled>–</button>
+                            }
+                            @if (_unconfirmed is { } unconfirmed && unconfirmed.RelayId == relay.Id)
+                            {
+                                @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
+                                <div class="unconfirmed">
+                                    <p class="unconfirmed-text" role="alert">@RelayStatusText.Unconfirmed</p>
+                                    <div class="unconfirmed-actions">
+                                        <button type="button" class="try-again" disabled="@(!State.IsConnected || _busy)" @onclick="() => TryAgainAsync(unconfirmed)">Try again</button>
+                                        <button type="button" class="leave-it" @onclick="() => _unconfirmed = null">Leave it</button>
+                                    </div>
+                                </div>
                             }
                         </div>
                     }
@@ -374,17 +385,43 @@
             return "auto-off";
         }
 
+        if (email == EventActors.External)
+        {
+            return "outside the app";
+        }
+
         return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
     }
 
     private async Task ToggleAsync(int relayId, bool isOn)
     {
-        await RunAsync(
-            () => isOn
-                ? Control.TurnOffAsync(relayId, _user!.Email, CancellationToken.None)
-                : Control.TurnOnAsync(relayId, _user!.Email, CancellationToken.None),
-            failedRelayId: relayId);
+        await SwitchAsync(new Unconfirmed(relayId, !isOn));
     }
+
+    private Task TryAgainAsync(Unconfirmed press)
+    {
+        return SwitchAsync(press);
+    }
+
+    // A press the board didn't confirm (no answer, an unreadable one, or no connection) is shown until the person
+    // chooses, or until the board shows the relay as they wanted it.
+    private async Task SwitchAsync(Unconfirmed press)
+    {
+        await RunAsync(
+            () => press.On
+                ? Control.TurnOnAsync(press.RelayId, _user!.Email, CancellationToken.None)
+                : Control.TurnOffAsync(press.RelayId, _user!.Email, CancellationToken.None),
+            failedRelayId: press.RelayId);
+        _unconfirmed = _failedRelayId == press.RelayId && !_inGroup ? press : null;
+        if (_unconfirmed is not null)
+        {
+            _failedRelayId = null;
+        }
+    }
+
+    private sealed record Unconfirmed(int RelayId, bool On);
+
+    private Unconfirmed? _unconfirmed;
 
     private async Task ToggleGroupAsync(int groupId, bool isOn)
     {
@@ -480,6 +517,12 @@
                 if (reload)
                 {
                     await LoadAsync();
+                }
+
+                // The board shows the relay as the person wanted it: nothing left to decide.
+                if (_unconfirmed is { } press && State.IsConnected && State.IsOn(press.RelayId) == press.On)
+                {
+                    _unconfirmed = null;
                 }
 
                 StateHasChanged();

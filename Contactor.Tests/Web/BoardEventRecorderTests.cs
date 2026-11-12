@@ -329,23 +329,50 @@ public sealed class BoardEventRecorderTests
         Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
     }
 
-    // A failed ON credited by a status whose save fails is still credited on the next try.
+    // A relay that comes on outside the app gets its own auto-off, so nothing runs for ever by accident; one that goes
+    // off loses its run.
     [Fact]
-    public async Task Should_CreditAFailedOnAgain_WhenTheSaveFails()
+    public async Task Should_GiveARelayOnOutsideTheApp_ItsOwnAutoOff()
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().RememberFailedOn(1, "jane@example.com");
-        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
-        setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
-        await BoardTestRig.WaitUntilAsync(() => setup.Errors.Count > 0);
-        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
-        setup.Board.SetInput(2, on: true);
+        setup.Board.SetRelayAndInput(relay: 3, input: 1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => Runtime(setup.Database, 3).TurnedOnBy == EventActors.External);
 
-        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
-        var entry = Assert.Single(Events(setup.Database), e => e.RelayId == 1);
-        Assert.Equal(("jane@example.com", EventActions.On), (entry.Actor, entry.Action));
+        var runtime = Runtime(setup.Database, 3);
+        Assert.Equal((BoardTestRig.Start, BoardTestRig.Start.AddMinutes(Relay.DefaultMaxOnMinutes)), (runtime.OnSinceUtc, runtime.AutoOffAtUtc));
+        var entry = Assert.Single(Events(setup.Database), e => e.RelayId == 3);
+        Assert.Equal((EventActors.External, EventActions.On), (entry.Actor, entry.Action));
+
+        setup.Board.SetRelayAndInput(relay: 3, input: 1, on: false);
+        await BoardTestRig.WaitUntilAsync(() => Runtime(setup.Database, 3).TurnedOnBy is null);
+        Assert.Null(Runtime(setup.Database, 3).AutoOffAtUtc);
+    }
+
+    // At start, a relay that is on with nobody's run gets its own auto-off from then; one a person turned on keeps theirs.
+    [Fact]
+    public async Task Should_GiveAnOwnerlessRelay_ItsOwnAutoOff_AtStart()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1), relaysOn: [2, 3]);
+        await using (var db = await setup.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var person = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+            (person.OnSinceUtc, person.AutoOffAtUtc, person.TurnedOnBy) = (BoardTestRig.Start.AddMinutes(-30), BoardTestRig.Start.AddMinutes(90), "jane@example.com");
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await setup.StartAsync();
+        await BoardTestRig.WaitUntilAsync(() => Runtime(setup.Database, 3).TurnedOnBy == EventActors.External);
+
+        Assert.Equal(BoardTestRig.Start.AddMinutes(Relay.DefaultMaxOnMinutes), Runtime(setup.Database, 3).AutoOffAtUtc);
+        Assert.Equal(("jane@example.com", (DateTime?)BoardTestRig.Start.AddMinutes(90)), (Runtime(setup.Database, 2).TurnedOnBy, Runtime(setup.Database, 2).AutoOffAtUtc));
+    }
+
+    private static RelayRuntime Runtime(TestDatabase database, int relayId)
+    {
+        using var db = database.Factory.CreateDbContext();
+        return db.RelayRuntimes.AsNoTracking().Single(r => r.RelayId == relayId);
     }
 
     private static List<EventLogEntry> InputEvents(TestDatabase database)
@@ -353,9 +380,14 @@ public sealed class BoardEventRecorderTests
         return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];
     }
 
-    private static async Task<InputRig> InputRigAsync(DateTime lastContact)
+    private static async Task<InputRig> InputRigAsync(DateTime lastContact, int[]? relaysOn = null)
     {
         var board = new FakeRelayBoard(relayCount: 4, inputCount: 2);
+        foreach (var relay in relaysOn ?? [])
+        {
+            await board.TurnOnAsync(ChannelMask.Of(relay), Cancel);
+        }
+
         var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));
         var errors = new ErrorCounter();
         var database = TestDatabase.Create((services, configuration) =>

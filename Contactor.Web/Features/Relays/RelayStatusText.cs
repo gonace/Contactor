@@ -10,6 +10,9 @@ public static class RelayStatusText
     /// <summary>In place of every state before the board's first answer since the app started.</summary>
     public const string Waiting = "Waiting for the board";
 
+    /// <summary>Under a relay whose press the board didn't confirm, with "Try again" and "Leave it".</summary>
+    public const string Unconfirmed = "The board didn't answer. The relay may or may not have switched.";
+
     private static readonly string[] Months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     /// <param name="isOn">What the board last reported.</param>
@@ -89,6 +92,7 @@ public static class RelayStatusText
             null or "" => "",
             "you" => ", by you",
             "schedule" => ", by a schedule",
+            "outside the app" => ", outside the app",
             _ => $", by {turnedOnBy}",
         };
 

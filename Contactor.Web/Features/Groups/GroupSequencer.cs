@@ -332,6 +332,8 @@ public sealed partial class GroupSequencer : BackgroundService
                     GroupPlanner.Plan(members, state, runtime, now, commands);
                 }
 
+                GroupPlanner.GiveOwnerlessAutoOff(members, state, runtime, group.MaxOnMinutes, now);
+
                 all.Off |= commands.Off;
                 all.On |= commands.On;
                 events.AddRange(commands.Events.Select(e => (group.Id, e)));

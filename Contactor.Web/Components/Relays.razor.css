@@ -474,3 +474,53 @@ button:disabled {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+/* A press the board didn't confirm: a box under the card's row, with the two choices. */
+.card {
+    flex-wrap: wrap;
+}
+
+.unconfirmed {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.unconfirmed-text {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--danger-bg);
+    border: 1.5px solid var(--danger-border);
+    color: var(--danger-ink);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.unconfirmed-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.unconfirmed-actions button {
+    flex: 1;
+    min-height: 48px;
+    border-radius: 12px;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.try-again {
+    border: none;
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.leave-it {
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+}
