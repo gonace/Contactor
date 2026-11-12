@@ -35,7 +35,7 @@
                 </div>
                 <div class="field">
                     <label for="port">Port</label>
-                    <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" @bind="_port" @bind:event="oninput" />
+                    <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="@Model.DefaultPort" @bind="_port" @bind:event="oninput" />
                 </div>
             </div>
             <p class="hint">The relay board's IP address on the local network. Your router lists it among its connected devices.</p>
@@ -61,7 +61,7 @@
                                @bind="_newPassword" @bind:event="oninput" />
                     </div>
                 </div>
-                <p class="hint">The same as on the board's own web page. At most @Model.LoginMaxLength characters.</p>
+                <p class="hint">The same as on the board's own web page. @(Model.LoginHint ?? $"At most {Model.LoginMaxLength} characters.")</p>
             }
             }
 
