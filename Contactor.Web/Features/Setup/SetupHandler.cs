@@ -168,6 +168,8 @@ public sealed class SetupHandler
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
+        // Before the command: a failed ON is remembered, and can be credited, before its exception gets back here.
+        var triedUtc = _clock.UtcNow;
         try
         {
             await _control.TurnOnAsync(relayId, userEmail, cancellationToken);
@@ -176,7 +178,7 @@ public sealed class SetupHandler
         {
             // Refused, unreadable, no answer, or a failure after ON went out: the board may have switched it on all the
             // same, and its credited ON gets the relay's full auto-off, not the try's few seconds.
-            _ = TurnOffIfCreditedAsync(relayId, userEmail, _clock.UtcNow);
+            _ = TurnOffIfCreditedAsync(relayId, userEmail, triedUtc);
             throw;
         }
 
