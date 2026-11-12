@@ -153,7 +153,8 @@
             else if (_notFound)
             {
                 <div class="not-found" role="alert">
-                    No answer from @Connection.Endpoint. Check that the board has power and a network cable, and that the address is right.
+                    <span>No answer from @Connection.Endpoint. Check that the board has power and a network cable, and that the address is right.</span>
+                    <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
                 </div>
             }
             else if (Board.State.IsConnected && Connection.Endpoint.HasHost)
@@ -613,14 +614,23 @@
     // From the board's read loop.
     private void OnBoardChanged(object? sender, BoardState state)
     {
-        _ = RefreshAsync();
+        _ = RefreshAsync(state);
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(BoardState state)
     {
         try
         {
-            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(() =>
+            {
+                // The board answered after all: "No answer" would be wrong now.
+                if (state.IsConnected && !_checking)
+                {
+                    _notFound = false;
+                }
+
+                StateHasChanged();
+            });
         }
         catch (ObjectDisposedException)
         {

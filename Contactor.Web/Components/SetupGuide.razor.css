@@ -263,6 +263,9 @@ input[type="password"] {
 
 .not-found {
     padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
     border-radius: 12px;
     background: var(--danger-bg);
     border: 1.5px solid var(--danger-border);
