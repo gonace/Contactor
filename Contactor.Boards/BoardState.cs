@@ -13,6 +13,12 @@ public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMas
 {
     public static BoardState Initial { get; } = new(false, ChannelMask.None, ChannelMask.None, null);
 
+    /// <summary>
+    /// Whether the board has answered at all since the app started. Until it has, <see cref="Relays"/> and
+    /// <see cref="Inputs"/> are only "none", not what the board reads, and the screens show them as unknown.
+    /// </summary>
+    public bool HasAnswered => IsConnected || LastContactUtc is not null;
+
     /// <summary>Whether a relay is on, 1 being the first.</summary>
     public bool IsOn(int relay)
     {

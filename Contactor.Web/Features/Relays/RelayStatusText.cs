@@ -7,6 +7,9 @@ namespace Contactor.Web.Features.Relays;
 /// </summary>
 public static class RelayStatusText
 {
+    /// <summary>In place of every state before the board's first answer since the app started.</summary>
+    public const string Waiting = "Waiting for the board";
+
     private static readonly string[] Months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     /// <param name="isOn">What the board last reported.</param>

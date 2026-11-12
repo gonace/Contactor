@@ -137,7 +137,7 @@ public sealed class InputsTests
     [Fact]
     public async Task Should_ShowTheInputs_InASectionAfterTheRelays()
     {
-        await using var app = new TestWebApp("Development", John);
+        await using var app = new TestWebApp("Development", John, TestWebApp.WithLostBoard);
         await RenameInputAsync(app, "Door");
         using var http = app.CreateClient();
 
@@ -150,7 +150,7 @@ public sealed class InputsTests
         Assert.Contains("INPUT 1", html, StringComparison.Ordinal);
         Assert.Contains("Door", html, StringComparison.Ordinal);
 
-        // No board and no logged change: the app can't know since when, and says why behind the ⓘ.
+        // No logged change: the app can't know since when, and says why behind the ⓘ.
         Assert.Contains("Open since unknown", html, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"Why is the time unknown for Door?\"", html, StringComparison.Ordinal);
     }
@@ -179,7 +179,7 @@ public sealed class InputsTests
     [Fact]
     public async Task Should_ShowTheInputScreen()
     {
-        await using var app = new TestWebApp("Development", John);
+        await using var app = new TestWebApp("Development", John, TestWebApp.WithLostBoard);
         await RenameInputAsync(app, "Door");
         using var http = app.CreateClient();
 

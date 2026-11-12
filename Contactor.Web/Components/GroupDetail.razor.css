@@ -405,6 +405,17 @@ button:disabled {
     border-color: var(--accent-border);
 }
 
+.step.unknown {
+    background: var(--inactive-bg);
+    border-color: var(--inactive-border);
+    color: var(--muted);
+}
+
+.step.unknown .number {
+    background: transparent;
+    color: var(--muted);
+}
+
 .step-row {
     display: flex;
     align-items: center;
@@ -644,6 +655,21 @@ button:disabled {
     font-weight: 600;
 }
 
+/* Before the board's first answer nothing is known: the whole card is grey, and nothing in it stands out. */
+.status.unknown {
+    background: var(--inactive-bg);
+    border: 1.5px solid var(--inactive-border);
+    color: var(--muted);
+}
+
+.toggle.unknown,
+.toggle.unknown:disabled {
+    opacity: 1;
+    background: transparent;
+    border: 1.5px dashed var(--inactive-border);
+    color: var(--muted);
+}
+
 /* A tablet: one wider column. A desktop: two columns, the events beside the rest, and Save to the right. */
 @media (min-width: 768px) {
     .screen {
@@ -723,4 +749,12 @@ button:disabled {
     .save button {
         display: none;
     }
+}
+
+.member-toggle.unknown,
+.member-toggle.unknown:disabled {
+    opacity: 1;
+    background: transparent;
+    border: 1.5px dashed var(--inactive-border);
+    color: var(--muted);
 }

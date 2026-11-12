@@ -17,6 +17,17 @@ internal sealed class FakeRelayBoard : IRelayBoard
         _state = new BoardState(connected, ChannelMask.None, ChannelMask.None, connected ? DateTimeOffset.UnixEpoch : null);
     }
 
+    /// <summary>
+    /// A board that answered once and then lost contact: its last known state is shown with a warning, unlike a board
+    /// that never answered, whose states are unknown.
+    /// </summary>
+    public static FakeRelayBoard LostContact(int relayCount = 8, int inputCount = 1)
+    {
+        var board = new FakeRelayBoard(relayCount, connected: true, inputCount);
+        board.SetConnected(false);
+        return board;
+    }
+
     public event EventHandler<BoardState>? StateChanged;
 
     public BoardCapabilities Capabilities { get; }

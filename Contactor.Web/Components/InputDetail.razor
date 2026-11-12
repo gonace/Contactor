@@ -48,21 +48,21 @@
                 </div>
 
                 @* What the board reads now; the app can't switch an input. *@
-                <section class="status @(IsClosed ? "closed" : null)">
+                <section class="status @(!Board.State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
                     <div class="now-row">
                         <div>
                             <p class="label">NOW</p>
                             <p class="now">
-                                @Status.Text
-                                @if (Status.SinceUnknown)
+                                @(Board.State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
+                                @if (Board.State.HasAnswered && Status.SinceUnknown)
                                 {
                                     <WhyUnknown Label="Why is the time unknown?" For="Id" />
                                 }
                             </p>
                         </div>
-                        <InputStateBadge Closed="IsClosed" />
+                        <InputStateBadge Closed="IsClosed" Unknown="!Board.State.HasAnswered" />
                     </div>
-                    @if (!Board.State.IsConnected)
+                    @if (Board.State.HasAnswered && !Board.State.IsConnected)
                     {
                         <p class="hint">No contact with the relay board: this may be out of date.</p>
                     }

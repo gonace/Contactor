@@ -27,3 +27,10 @@
 .state.closed .dot {
     background: var(--ok);
 }
+
+/* Before the board's first answer: as grey as the rest of its card. */
+.state.unknown {
+    border-style: dashed;
+    border-color: var(--inactive-border);
+    color: var(--muted);
+}
