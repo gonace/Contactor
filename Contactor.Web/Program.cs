@@ -8,6 +8,7 @@ using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
+using Contactor.Web.Features.Setup;
 using Contactor.Web.Features.Tunnel;
 using Contactor.Web.Persistence;
 
@@ -34,6 +35,7 @@ public sealed partial class Program
         builder.Services.AddEvents(builder.Configuration);
         builder.Services.AddSchedules(builder.Configuration);
         builder.Services.AddBackup(builder.Configuration);
+        builder.Services.AddSetup(builder.Configuration);
         builder.Services.AddTunnel(builder.Configuration);
         builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 

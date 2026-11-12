@@ -37,6 +37,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<GroupRuntime> GroupRuntimes => Set<GroupRuntime>();
 
+    public DbSet<Installation> Installations => Set<Installation>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         ArgumentNullException.ThrowIfNull(configurationBuilder);
@@ -61,6 +63,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<RelayGroup>(ConfigureRelayGroup);
         modelBuilder.Entity<RelayGroupMember>(ConfigureRelayGroupMember);
         modelBuilder.Entity<GroupRuntime>(ConfigureGroupRuntime);
+        modelBuilder.Entity<Installation>(ConfigureInstallation);
     }
 
     private static void ConfigureRelayGroup(EntityTypeBuilder<RelayGroup> group)
@@ -171,6 +174,13 @@ public sealed class ContactorDbContext : DbContext
         setting.Property(s => s.Host).HasMaxLength(BoardSetting.HostMaxLength);
         setting.Property(s => s.Username).HasMaxLength(BoardLogin.MaxLength);
         setting.Property(s => s.Password).HasMaxLength(BoardLogin.MaxLength);
+    }
+
+    private static void ConfigureInstallation(EntityTypeBuilder<Installation> installation)
+    {
+        installation.ToTable("Installation", t => t.HasCheckConstraint("CK_Installation_Id", $"\"Id\" = {Installation.SingletonId}"));
+        installation.Property(i => i.Id).ValueGeneratedNever();
+        installation.Property(i => i.BoardType).HasMaxLength(Installation.BoardTypeMaxLength);
     }
 
     private static void ConfigureInput(EntityTypeBuilder<Input> input)

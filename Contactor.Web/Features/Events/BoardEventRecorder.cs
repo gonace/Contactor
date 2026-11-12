@@ -31,6 +31,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // The last status the board reported while connected; null until the first one after start.
     private BoardState? _known;
     private DateTime? _disconnectedSinceUtc;
+    private readonly IBoardConnection? _connection;
     private bool _lossLogged;
 
     public BoardEventRecorder(
@@ -39,9 +40,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         RelayChanges changes,
-        ILogger<BoardEventRecorder> logger)
+        ILogger<BoardEventRecorder> logger,
+        IBoardConnection? connection = null)
     {
         _board = board;
+        _connection = connection;
         _expected = expected;
         _dbFactory = dbFactory;
         _clock = clock;
@@ -203,6 +206,14 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     private async Task CheckConnectionLostAsync(CancellationToken cancellationToken)
     {
+        // A new installation has no address for its board until someone enters one: nothing is lost before that, so
+        // the count starts once there is an address.
+        if (_disconnectedSinceUtc is not null && _connection is { Endpoint.HasHost: false })
+        {
+            _disconnectedSinceUtc = _clock.UtcNow;
+            return;
+        }
+
         if (_disconnectedSinceUtc is not { } since || _lossLogged || _clock.UtcNow - since < ConnectionLostAfter)
         {
             return;

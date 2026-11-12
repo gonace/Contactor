@@ -372,10 +372,18 @@ public sealed class Vm204ClientTests
         Assert.Contains($"{Vm204Api.AuthPath}?user=admin&password=VM204", simulator.ReceivedTargets);
     }
 
+    // A new installation gets the board's address in the setup guide: the app starts without one.
+    [Fact]
+    public void Should_StartWithoutAnAddress()
+    {
+        using var client = CreateClient(80, host: "");
+
+        Assert.False(client.Endpoint.HasHost);
+    }
+
     [Fact]
     public void Should_RefuseSettingsItCantUse()
     {
-        Assert.Throws<ArgumentException>(() => CreateClient(80, host: " "));
         Assert.Throws<ArgumentException>(() => CreateClient(80, username: "a&b"));
         Assert.Throws<ArgumentException>(() => CreateClient(80, pollSeconds: 0));
     }

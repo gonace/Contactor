@@ -15,6 +15,8 @@ app on the phone and uses the whole screen on a tablet or a computer, in light a
 
 ## What it does
 
+- **Setup guide:** a new installation starts with a few short questions: your name, which relay board, where it is
+  on the network, and what each relay switches, with "Try" to hear which one it is.
 - **Relays:** one big on/off button per relay, with who turned it on and when it goes off. "All off" turns
   everything off.
 - **Auto-off:** a relay someone turns on goes off by itself after 1, 2 or 4 hours, unless set to never.
@@ -84,7 +86,7 @@ simulator's page, linked from the dashboard, shows the board's relays and every 
 board's own buttons would. Stop and start the simulator in the dashboard to test a lost connection to the board. The
 tests use the same simulator, so no hardware is needed.
 
-`CLAUDE.md` describes the architecture, the board's protocol and the rules the app follows.
+`AGENTS.md` describes the architecture, the board's protocol and the rules the app follows.
 
 ### Screenshots
 

@@ -7,6 +7,7 @@
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
+@using Contactor.Web.Features.Setup
 @using Contactor.Web.Persistence
 @inject IRelayBoard Board
 @inject RelayControl Control
@@ -17,6 +18,8 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject GroupsHandler Groups
 @inject GroupSequencer Sequencer
+@inject SetupHandler Setup
+@inject NavigationManager Navigation
 @inject ILogger<Relays> Log
 
 <PageTitle>Relays · Contactor</PageTitle>
@@ -65,69 +68,90 @@
     </div>
 
     <main class="relays">
-        @foreach (var group in _groups)
+        @* Groups first, then the relays, each in a grid of its own, so cards line up and Tab goes row by row. *@
+        @if (_groups.Count > 0)
         {
-            var groupOn = group.IsOn(State);
-            var missing = group.MissingRelay(Board.Capabilities.RelayCount);
-            var level = GroupPlanner.Level(group.Infos, State);
-            var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && level > 0);
-            <div class="card group @(lit ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : null)" @key="@($"g{group.Id}")">
-                <div class="top">
-                    <span class="icon" aria-hidden="true"><GroupIcon Icon="@group.Icon" /></span>
-                    <a class="text" href="group/@group.Id">
-                        <span class="label">GROUP · @group.Chain</span>
-                        <span class="name">@group.Name</span>
-                        <span class="status @(group.Runtime.Phase != GroupPhases.Idle ? "busy" : null)">@(missing is { } m ? GroupView.MissingRelayText(m) : GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
-                        @if (_failedGroupId == group.Id)
-                        {
-                            <span class="error" role="alert">@_groupError</span>
-                        }
-                    </a>
-                    <button type="button"
-                            data-vibrate
-                            class="toggle"
-                            aria-pressed="@(groupOn ? "true" : "false")"
-                            aria-label="@((groupOn ? "Turn off " : "Turn on ") + group.Name)"
-                            disabled="@(!State.IsConnected || _busy || missing is not null)"
-                            @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "ON" : "OFF")</button>
-                </div>
-                <ol class="chips" aria-label="Relays in start order">
-                    @foreach (var member in group.Members)
-                    {
-                        var memberOn = State.IsOn(member.RelayId);
-                        <li>
-                            @if (member.Position > 1)
+            <section class="section" aria-labelledby="groups-heading">
+                <h2 class="section-title" id="groups-heading">Groups</h2>
+                <div class="cards group-cards">
+                @foreach (var group in _groups)
+                {
+                    var groupOn = group.IsOn(State);
+                    var missing = group.MissingRelay(Board.Capabilities.RelayCount);
+                    var level = GroupPlanner.Level(group.Infos, State);
+                    var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && level > 0);
+                    <div class="card group @(lit ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : null)" @key="@($"g{group.Id}")">
+                        <div class="top">
+                            <span class="icon" aria-hidden="true"><GroupIcon Icon="@group.Icon" /></span>
+                            <a class="text" href="group/@group.Id">
+                                <span class="label">GROUP · @group.Chain</span>
+                                <span class="name">@group.Name</span>
+                                <span class="status @(group.Runtime.Phase != GroupPhases.Idle ? "busy" : null)">@(missing is { } m ? GroupView.MissingRelayText(m) : GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
+                                @if (_failedGroupId == group.Id)
+                                {
+                                    <span class="error" role="alert">@_groupError</span>
+                                }
+                            </a>
+                            <button type="button"
+                                    data-vibrate
+                                    class="toggle"
+                                    aria-pressed="@(groupOn ? "true" : "false")"
+                                    aria-label="@((groupOn ? "Turn off " : "Turn on ") + group.Name)"
+                                    disabled="@(!State.IsConnected || _busy || missing is not null)"
+                                    @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "ON" : "OFF")</button>
+                        </div>
+                        <ol class="chips" aria-label="Relays in start order">
+                            @foreach (var member in group.Members)
                             {
-                                <span class="arrow" aria-hidden="true">→</span>
+                                var memberOn = State.IsOn(member.RelayId);
+                                <li>
+                                    @if (member.Position > 1)
+                                    {
+                                        <span class="arrow" aria-hidden="true">→</span>
+                                    }
+                                    <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@(memberOn ? " (on)" : " (off)")</span></span>
+                                </li>
                             }
-                            <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@(memberOn ? " (on)" : " (off)")</span></span>
-                        </li>
-                    }
-                </ol>
-            </div>
+                        </ol>
+                    </div>
+                }
+                </div>
+            </section>
         }
 
-        @foreach (var relay in VisibleRelays)
+        @* No relay card to show (all in groups, or the rest hidden as inactive): no empty section and no extra gap. *@
+        @if (VisibleRelays.Any())
         {
-            var on = State.IsOn(relay.Id);
-            <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive")" @key="relay.Id">
-                <a class="text" href="relay/@relay.Id">
-                    <span class="label">RELAY @relay.Id</span>
-                    <span class="name">@relay.Name</span>
-                    <span class="status">@StatusFor(relay, on)</span>
-                    @if (_failedRelayId == relay.Id)
+            <section class="section" aria-labelledby="@(ShowRelaysHeading ? "relays-heading" : null)">
+                @if (ShowRelaysHeading)
+                {
+                    <h2 class="section-title" id="relays-heading">Relays</h2>
+                }
+                <div class="cards relay-cards">
+                    @foreach (var relay in VisibleRelays)
                     {
-                        <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</span>
+                        var on = State.IsOn(relay.Id);
+                        <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive")" @key="relay.Id">
+                            <a class="text" href="relay/@relay.Id">
+                                <span class="label">RELAY @relay.Id</span>
+                                <span class="name">@relay.Name</span>
+                                <span class="status">@StatusFor(relay, on)</span>
+                                @if (_failedRelayId == relay.Id)
+                                {
+                                    <span class="error" role="alert">@(_inGroup ? RelayInGroupException.Text : "The board isn't responding. Try again.")</span>
+                                }
+                            </a>
+                            <button type="button"
+                                    data-vibrate
+                                    class="toggle"
+                                    aria-pressed="@(on ? "true" : "false")"
+                                    aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
+                                    disabled="@(!State.IsConnected || _busy)"
+                                    @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "ON" : "OFF")</button>
+                        </div>
                     }
-                </a>
-                <button type="button"
-                        data-vibrate
-                        class="toggle"
-                        aria-pressed="@(on ? "true" : "false")"
-                        aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
-                        disabled="@(!State.IsConnected || _busy)"
-                        @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "ON" : "OFF")</button>
-            </div>
+                </div>
+            </section>
         }
 
         <a href="group/new" class="new-group">
@@ -176,6 +200,10 @@
 
     private IEnumerable<Relay> VisibleRelays => _relays.Where(r => r.IsActive || _showInactive);
 
+    // "Relays" only sets the relays apart from the groups, and only over cards: not when every relay is in a group
+    // or the rest are hidden as inactive.
+    private bool ShowRelaysHeading => _groups.Count > 0 && VisibleRelays.Any();
+
     private string UpdatedText
     {
         get
@@ -196,6 +224,14 @@
                 _ = RefreshAsync(reload: false);
             }
         }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+        // A new installation opens on the setup guide until someone finishes or skips it.
+        if (!await Setup.IsDoneAsync(CancellationToken.None))
+        {
+            Navigation.NavigateTo("setup", replace: true);
+            return;
+        }
+
         _user = await CurrentUser.GetAsync();
         await LoadAsync();
         Board.StateChanged += OnBoardChanged;

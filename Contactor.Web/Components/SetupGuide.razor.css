@@ -1,0 +1,470 @@
+.screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    min-height: 56px;
+    padding: 12px 12px 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.back {
+    min-height: 44px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.step-count {
+    padding-right: 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.progress {
+    padding: 4px 20px 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.progress span {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--line);
+}
+
+.progress span.done {
+    background: var(--accent);
+}
+
+.content {
+    flex: 1;
+    padding: 20px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.intro {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.intro p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+h2 {
+    margin: 8px 0 0;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px;
+    gap: 10px;
+}
+
+.field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.field > label {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+input[type="text"],
+input[type="password"] {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+}
+
+#host,
+#port {
+    font-family: var(--font-mono);
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    cursor: pointer;
+}
+
+.check input {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.info {
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.info p {
+    margin: 0;
+    line-height: 1.45;
+}
+
+.options {
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.option {
+    min-height: 64px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+}
+
+.option.chosen {
+    border: 2px solid var(--accent);
+    background: var(--accent-tint);
+}
+
+.option input {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.option-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.name {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.note {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.board-status {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-wrap: anywhere;
+}
+
+.status-text span {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+    border-radius: 5px;
+    background: var(--ok);
+}
+
+.dot.waiting {
+    background: var(--line-strong);
+}
+
+.not-found {
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-radius: 12px;
+    background: var(--danger-bg);
+    border: 1.5px solid var(--danger-border);
+    color: var(--danger-ink);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.small {
+    min-height: 44px;
+    padding: 0 14px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.relays {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.relay {
+    padding: 12px 14px 6px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.row {
+    display: flex;
+    gap: 8px;
+}
+
+.row input {
+    flex: 1;
+    min-width: 0;
+}
+
+.try {
+    min-width: 64px;
+    min-height: 52px;
+}
+
+.try[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--on-accent);
+    opacity: 1;
+}
+
+.done-mark {
+    width: 52px;
+    height: 52px;
+    margin-bottom: 10px;
+    border-radius: 26px;
+    background: var(--ok);
+    color: var(--on-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.summary {
+    margin: 0;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    overflow: hidden;
+}
+
+.summary div {
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.summary div + div {
+    border-top: 1px solid var(--row-line);
+}
+
+.summary dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.links a {
+    min-height: 48px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1.5px dashed var(--line-dashed);
+    color: var(--ink);
+    font-weight: 600;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.links a span {
+    color: var(--accent);
+}
+
+.next {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 16px max(22px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.next > button,
+.next > .finish {
+    height: 56px;
+    border-radius: 12px;
+    border: none;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+.next > .finish {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.next > button.link {
+    height: 44px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+/* A tablet or a desktop: the guide stays narrow and centred, as a card; it has no side menu. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 560px;
+        min-height: 0;
+        margin-top: 32px;
+        margin-bottom: 32px;
+        padding: 8px 8px 0;
+        border: 1.5px solid var(--line);
+        border-radius: 14px;
+        background: var(--card);
+    }
+
+    .next {
+        position: static;
+        background: transparent;
+        border-top: none;
+    }
+}
+
+@media (min-width: 1024px) {
+    .screen {
+        max-width: 640px;
+    }
+}

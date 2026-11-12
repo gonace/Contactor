@@ -9,6 +9,12 @@ public sealed class Relay
     public const int NameMaxLength = 40;
     public const int DefaultMaxOnMinutes = 120;
 
+    /// <summary>The name a relay is seeded with, until someone gives it one: "Relay 3".</summary>
+    public static string DefaultName(int id)
+    {
+        return $"Relay {id}";
+    }
+
     /// <summary>The board's channel, 1 to the board's relay count.</summary>
     public int Id { get; set; }
 

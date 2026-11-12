@@ -69,6 +69,10 @@
             {
                 <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Connection.Endpoint</p>
             }
+            else if (!Connection.Endpoint.HasHost)
+            {
+                <p class="status offline" role="status">The relay board has no address yet</p>
+            }
             else
             {
                 <p class="status offline" role="status">No contact with the relay board at @Connection.Endpoint</p>

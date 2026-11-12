@@ -250,8 +250,6 @@ public sealed class Vm201ClientTests
     }
 
     [Theory]
-    [InlineData("", "", "")]
-    [InlineData(" ", "", "")]
     [InlineData("127.0.0.1", "toolongname", "")]
     [InlineData("127.0.0.1", "", "lösenord")]
     public void Should_RejectOptions_WhenTheyCannotWork(string host, string username, string password)
@@ -260,6 +258,15 @@ public sealed class Vm201ClientTests
 
         Assert.Throws<ArgumentException>(
             () => new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance));
+    }
+
+    // A new installation gets the board's address in the setup guide: the app starts without one.
+    [Fact]
+    public void Should_StartWithoutAnAddress()
+    {
+        var client = new Vm201Client(Options.Create(new Vm201Options()), TimeProvider.System, NullLogger<Vm201Client>.Instance);
+
+        Assert.False(client.Endpoint.HasHost);
     }
 
     [Fact]

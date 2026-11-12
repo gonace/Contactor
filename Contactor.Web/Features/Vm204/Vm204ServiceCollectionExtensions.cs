@@ -16,7 +16,6 @@ public static class Vm204ServiceCollectionExtensions
         services.AddOptions<Vm204Options>()
             .Bind(configuration.GetSection(Vm204Options.SectionName))
             .ValidateDataAnnotations()
-            .Validate(o => !string.IsNullOrWhiteSpace(o.Host), "Vm204:Host is required.")
             .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<Vm204Client>();
