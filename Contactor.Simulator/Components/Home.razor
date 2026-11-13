@@ -46,7 +46,7 @@
             <form class="add" @onsubmit="Add">
                 <span class="label">ADD A BOARD</span>
                 <label for="model" class="visually-hidden">Model</label>
-                <select id="model" @bind="_newType">
+                <select id="model" @bind="_newType" @bind:after="OnModelChanged">
                     @foreach (var model in SimulatorCatalogue.All)
                     {
                         <option value="@model.Model.Id">@model.Model.Name</option>
@@ -222,17 +222,17 @@
         _newPort = NextFreePort();
     }
 
+    // Another model offers its own port.
+    private void OnModelChanged()
+    {
+        _newPort = NextFreePort();
+    }
+
     // The model's suggested port, or the first free one after it.
     private string NextFreePort()
     {
-        var model = SimulatorCatalogue.Find(_newType) ?? SimulatorCatalogue.All[0];
-        var port = model.Port;
-        while (_boards.Any(b => b.Board.Port == port) && port < 65535)
-        {
-            port++;
-        }
-
-        return port.ToString(CultureInfo.InvariantCulture);
+        var taken = _boards.Select(b => b.Board.Port).ToHashSet();
+        return SimulatorCatalogue.FreePort(_newType, taken).ToString(CultureInfo.InvariantCulture);
     }
 
     private static string Short(RunningBoard board)
