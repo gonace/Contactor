@@ -25,4 +25,9 @@
     <ProjectReference Include="..\Contactor.Web\Contactor.Web.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Only this file of the AppHost: a reference to the AppHost would bring in Aspire and its suppressed advisories. -->
+    <Compile Include="..\Contactor.AppHost\Cloudflared.cs" Link="AppHost\Cloudflared.cs" />
+  </ItemGroup>
+
 </Project>

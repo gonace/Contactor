@@ -495,3 +495,6 @@ Contactor.Web/backups/
 
 # Test results (TRX) from dotnet test --results-directory
 TestResults/
+
+# cloudflared, downloaded by the AppHost (Contactor.AppHost/Cloudflared.cs)
+.tools/
