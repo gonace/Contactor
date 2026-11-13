@@ -20,8 +20,13 @@ public sealed partial class Vm201TimersService : BackgroundService
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<Vm201TimersService> _logger;
+    // Its own, cancelled when the service stops: known from before it listens, unlike ExecuteAsync's token, which .NET
+    // hands over on a background thread, so a first status can't start work that stopping the service doesn't end.
+    private readonly CancellationTokenSource _stopping = new();
+    private readonly CancellationToken _stoppingToken;
     private int _boardTimersHandled;
-    private CancellationToken _stoppingToken;
+
+    // Written on the client's read loop, awaited when the service stops.
     private Task _boardTimersTask = Task.CompletedTask;
 
     public Vm201TimersService(
@@ -37,6 +42,7 @@ public sealed partial class Vm201TimersService : BackgroundService
         _dbFactory = dbFactory;
         _timeProvider = timeProvider;
         _logger = logger;
+        _stoppingToken = _stopping.Token;
     }
 
     // Subscribes here rather than in ExecuteAsync, which .NET runs on a background thread: the board's connection could
@@ -47,9 +53,20 @@ public sealed partial class Vm201TimersService : BackgroundService
         return base.StartAsync(cancellationToken);
     }
 
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _stopping.CancelAsync();
+        await base.StopAsync(cancellationToken);
+    }
+
+    public override void Dispose()
+    {
+        _stopping.Dispose();
+        base.Dispose();
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _stoppingToken = stoppingToken;
         try
         {
             // Listens until the board stops being the chosen one, or the app stops; the switch runs the connection.
@@ -62,7 +79,7 @@ public sealed partial class Vm201TimersService : BackgroundService
         finally
         {
             _client.StateChanged -= OnStateChanged;
-            await _boardTimersTask;
+            await Volatile.Read(ref _boardTimersTask);
         }
     }
 
@@ -76,18 +93,21 @@ public sealed partial class Vm201TimersService : BackgroundService
             return;
         }
 
-        if (!state.IsConnected || !_options.DisableBoardTimers || Interlocked.Exchange(ref _boardTimersHandled, 1) == 1)
+        if (!state.IsConnected || !_options.DisableBoardTimers || _stoppingToken.IsCancellationRequested
+            || Interlocked.Exchange(ref _boardTimersHandled, 1) == 1)
         {
             return;
         }
 
-        _boardTimersTask = DisableBoardTimersAsync(_stoppingToken);
+        Volatile.Write(ref _boardTimersTask, DisableBoardTimersAsync(_stoppingToken));
     }
 
     private async Task DisableBoardTimersAsync(CancellationToken cancellationToken)
     {
         try
         {
+            // A status that came just as the service stopped sends nothing: the client queues a packet without checking.
+            cancellationToken.ThrowIfCancellationRequested();
             await _client.DisableBoardTimersAsync(Vm201Channel.All, cancellationToken);
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
             db.EventLog.Add(new EventLogEntry

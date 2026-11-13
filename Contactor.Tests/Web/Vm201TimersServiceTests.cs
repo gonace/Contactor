@@ -10,6 +10,8 @@ using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Web;
 
@@ -150,6 +152,38 @@ public sealed class Vm201TimersServiceTests
         Assert.Equal(2, simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.TimerDisable));
     }
 
+    // Stopping the service, e.g. at a switch to another board, ends the work of disabling the timers under way: it
+    // waits for nothing and logs nothing afterwards.
+    [Fact]
+    public async Task Should_EndTheWorkUnderWay_WhenStopped()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var database = CreateDatabase(simulator, disableBoardTimers: true);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var saving = new HeldDbContextFactory(database.Factory);
+        var options = Options.Create(new Vm201Options { Host = "127.0.0.1", Port = simulator.Port, DisableBoardTimers = true });
+        var client = new Vm201Client(options, TimeProvider.System, NullLogger<Vm201Client>.Instance);
+        using var service = new Vm201TimersService(client, options, saving, TimeProvider.System, NullLogger<Vm201TimersService>.Instance);
+        using var running = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        await service.StartAsync(Cancel);
+        var connection = client.RunAsync(running.Token);
+        try
+        {
+            // The command went out; the event waits to be saved.
+            await saving.Waiting.Task.WaitAsync(WaitTimeout, Cancel);
+
+            await service.StopAsync(Cancel).WaitAsync(WaitTimeout, Cancel);
+        }
+        finally
+        {
+            await running.CancelAsync();
+            await connection;
+        }
+
+        Assert.Equal(0, await CountEventsAsync(database));
+    }
+
     [Fact]
     public async Task Should_LeaveBoardTimersAlone_WhenTurnedOffInSettings()
     {
@@ -200,6 +234,31 @@ public sealed class Vm201TimersServiceTests
         Assert.Same(database.Services.GetRequiredService<BoardSwitch>(), database.Services.GetRequiredService<IRelayBoard>());
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(Enumerable.Range(1, 8), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
+    }
+
+    /// <summary>Holds every save until it is cancelled, so a test can stop a service while it is saving.</summary>
+    private sealed class HeldDbContextFactory : IDbContextFactory<ContactorDbContext>
+    {
+        private readonly IDbContextFactory<ContactorDbContext> _inner;
+
+        public HeldDbContextFactory(IDbContextFactory<ContactorDbContext> inner)
+        {
+            _inner = inner;
+        }
+
+        public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ContactorDbContext CreateDbContext()
+        {
+            return _inner.CreateDbContext();
+        }
+
+        public async Task<ContactorDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        {
+            Waiting.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return _inner.CreateDbContext();
+        }
     }
 
     private static TestDatabase CreateDatabase(Vm201Simulator simulator, bool disableBoardTimers)
