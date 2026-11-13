@@ -446,6 +446,7 @@ public sealed class BoardEventRecorderTests
     public async Task Should_NotSaveATimeOfContact_ForAStatusRecordedDuringALoss()
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        setup.Board.Time = setup.Time;
         await setup.StartAsync();
         await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == BoardTestRig.Start);
 
@@ -465,6 +466,66 @@ public sealed class BoardEventRecorderTests
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
 
         Assert.Equal(BoardTestRig.Start, setup.State().LastContactUtc);
+
+        // The gap it ended was short: it is measured to when the status came, not to the retry 20 minutes later.
+        Assert.Null(setup.State().LongGapEndedUtc);
+    }
+
+    // A status from before a lost connection that ended a long gap, recorded while there is still no contact: the gap
+    // ended when that status came, not when it is recorded, so the inputs' times are trusted from then.
+    [Fact]
+    public async Task Should_EndALongGap_WhenTheStatusCame_ForAStatusRecordedDuringALoss()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        setup.Board.Time = setup.Time;
+        await setup.StartAsync();
+        await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == BoardTestRig.Start);
+
+        // A long gap; the status that ends it fails, then contact is lost again before it is recorded.
+        setup.Board.SetConnected(false);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+        setup.Time.Now += TimeSpan.FromMinutes(20);
+        var came = setup.Time.Now.UtcDateTime;
+        setup.Board.SetInput(1, on: true);
+        setup.Board.SetConnected(true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+        setup.Board.SetConnected(false);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 2);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+
+        // The retry, five minutes later, while there is still no contact.
+        setup.Time.Now += TimeSpan.FromMinutes(5);
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
+
+        Assert.Equal(came, setup.State().LongGapEndedUtc);
+        Assert.Equal(BoardTestRig.Start, setup.State().LastContactUtc);
+    }
+
+    // A clock that went back (a Raspberry Pi after a power cut): the saved long gap's end is ahead of it. A status from
+    // before a lost connection, recorded during the loss, ends the gap when it came, and doesn't keep that future end,
+    // which would read every input change until then as "since unknown".
+    [Fact]
+    public async Task Should_NotKeepAFutureGapEnd_ForAStatusRecordedDuringALoss()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddHours(1), longGapEnded: BoardTestRig.Start.AddHours(1));
+        setup.Board.Time = setup.Time;
+        setup.Board.SetConnected(true);
+        setup.Log(1, on: false);
+        setup.Board.SetInput(1, on: true);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+
+        // The first status fails, then contact is lost before it is recorded.
+        await setup.StartAsync(waitForContact: false);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+        setup.Board.SetConnected(false);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 2);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+
+        // The retry, a minute later, while there is still no contact.
+        setup.Time.Now += TimeSpan.FromMinutes(1);
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
+
+        Assert.Equal(BoardTestRig.Start, setup.State().LongGapEndedUtc);
     }
 
     // While the database stays broken, a newer status that replaces a waiting one keeps the grown wait between tries.
@@ -562,7 +623,7 @@ public sealed class BoardEventRecorderTests
         return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];
     }
 
-    private static async Task<InputRig> InputRigAsync(DateTime lastContact, int[]? relaysOn = null)
+    private static async Task<InputRig> InputRigAsync(DateTime lastContact, int[]? relaysOn = null, DateTime? longGapEnded = null)
     {
         var board = new FakeRelayBoard(relayCount: 4, inputCount: 2);
         foreach (var relay in relaysOn ?? [])
@@ -586,7 +647,7 @@ public sealed class BoardEventRecorderTests
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = lastContact });
+            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = lastContact, LongGapEndedUtc = longGapEnded });
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -658,11 +719,15 @@ public sealed class BoardEventRecorderTests
 
         public TestDatabase Database { get; }
 
-        public async Task StartAsync()
+        // Starts the recorder, and waits for its first status to save the time of contact, unless that is to fail.
+        public async Task StartAsync(bool waitForContact = true)
         {
             _recorder = Database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
             await _recorder.StartAsync(Cancel);
-            await BoardTestRig.WaitUntilAsync(() => State().LastContactUtc == BoardTestRig.Start);
+            if (waitForContact)
+            {
+                await BoardTestRig.WaitUntilAsync(() => State().LastContactUtc == BoardTestRig.Start);
+            }
         }
 
         public void Log(int input, bool on)
