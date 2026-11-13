@@ -35,8 +35,9 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
   changes, and `TimeProvider` instead of the machine's clock.
 - **Simplicity and the UI:** plain English words, big touch targets, every colour from a design token (dark mode),
   the phone, tablet and desktop layouts, real `<button>` and `<label>` elements.
-- **Conventions:** `AGENTS.md`'s conventions and structure: SQLite-specific code only in `Persistence` and
-  `Features/Backup`, one test project, the board only through `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`.
+- **Conventions:** `AGENTS.md`'s conventions and structure, with one test project. From `docs/ARCHITECTURE.md`:
+  SQLite-specific code only in `Persistence` and `Features/Backup` (Data model), and the board only through
+  `IRelayBoard`, `IBoardConnection` and `IBoardTraffic` (Boards).
 - **Tests:** risky paths without a test, tests that can't fail, timing-dependent tests that will be flaky on a busy
   machine, and tests that depend on the host (its time zone, locale, clock or files).
 - **Platform independence:** code and tests must behave the same on Windows, Linux and macOS. Developers run the

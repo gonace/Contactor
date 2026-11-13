@@ -4,9 +4,7 @@ Contactor is an open-source mobile web app for controlling the 8 relays on a **V
 
 The users are not technical. **Simplicity comes before features**: big buttons, plain words, no menus that aren't needed.
 
-The screens are described in `docs/ARCHITECTURE.md`; the running app is the reference for layout, texts, colours and sizes.
-
-**How the app is built and what it does** is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the architecture, the boards, the simulator, the data model, the domain rules, identity, the screens, configuration and operations. Read the sections a change touches before you change it.
+**How the app is built and what it does** is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the architecture, the boards, the simulator, the data model, the domain rules, identity, the screens, configuration and operations. Read the sections a change touches before you change it. The screens are described there; the running app is the reference for layout, texts, colours and sizes.
 
 ## Safety rules every change must keep
 
@@ -14,9 +12,9 @@ The relays drive real machines. Each rule is told in full in its section of `doc
 
 - **The board is the source of truth.** The app never stores relay state. ([Boards](docs/ARCHITECTURE.md#boards-contactorboards), [Data model](docs/ARCHITECTURE.md#data-model-sqlite))
 - **Nothing is queued.** While the board is disconnected, nothing is sent or queued for later. ([Manual control](docs/ARCHITECTURE.md#manual-control), [Relay groups](docs/ARCHITECTURE.md#relay-groups))
-- **A group's interlock is never bypassed.** A relay may only be on while every relay above it is, and a relay in a group is only switched through its group. ([Relay groups](docs/ARCHITECTURE.md#relay-groups))
-- **Nothing is turned off at start,** except auto-off times that have already passed and a schedule's missed OffTime for a relay that schedule turned on. ([Scheduling](docs/ARCHITECTURE.md#scheduling))
-- **Secrets are never logged or shown:** the board's password, the tunnel token and the Access settings. They are never in the repository or the image. ([Architecture](docs/ARCHITECTURE.md#architecture), [Configuration](docs/ARCHITECTURE.md#configuration-appsettingsjson))
+- **A group's interlock is never bypassed.** A relay may only be on while every relay above it is. This is checked first on every status, and at start and reconnect. A relay in a group is only switched through its group. ([Relay groups](docs/ARCHITECTURE.md#relay-groups))
+- **The scheduler turns nothing off at start or reconnect,** except auto-off times that have already passed and a schedule's missed OffTime for a relay that schedule turned on. ([Scheduling](docs/ARCHITECTURE.md#scheduling))
+- **Secrets stay secret.** The board's password is never logged or shown, and the tunnel token is never logged. The Access team domain and AUD tag, the board's address and password and the tunnel token are never in the repository or the image. ([Architecture](docs/ARCHITECTURE.md#architecture), [Data model](docs/ARCHITECTURE.md#data-model-sqlite), [Configuration](docs/ARCHITECTURE.md#configuration-appsettingsjson))
 - **Every request goes through Cloudflare Access.** `/healthz` needs no JWT and answers localhost only. ([Identity](docs/ARCHITECTURE.md#identity-cloudflare-access))
 - **Every colour comes from a design token,** never a hex value of its own, so dark mode works on every page. ([Design tokens](docs/ARCHITECTURE.md#design-tokens))
 
