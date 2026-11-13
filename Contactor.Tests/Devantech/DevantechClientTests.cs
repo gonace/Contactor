@@ -27,7 +27,8 @@ public sealed class DevantechClientTests
         await simulator.SetInputAsync(3, true);
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth484);
 
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        // Connected, and the first answer reported: the client waits for the next poll.
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         Assert.Equal(new DevantechStatus(0b0010, 0b0100), run.Client.State.Status);
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
@@ -133,7 +134,7 @@ public sealed class DevantechClientTests
         await using var simulator = Started(DevantechModels.Eth008);
         simulator.FailRelays = 0b0011;
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
 
@@ -160,7 +161,7 @@ public sealed class DevantechClientTests
             _ => null,
         });
         await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         for (var command = 0; command < 3; command++)
         {
@@ -168,7 +169,8 @@ public sealed class DevantechClientTests
         }
 
         // Refused: each refusal starts the count over, so the failed reads between them never reach 3.
-        await Wait.UntilAsync(() => (refused ? Volatile.Read(ref reads) >= 2 : !run.Client.State.IsConnected) && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => (refused ? Volatile.Read(ref reads) >= 2 : !run.Client.State.IsConnected)
+            && run.Time.WaitsOnly(refused ? run.PollInterval : TimeSpan.FromSeconds(1)));
         Assert.Equal(refused, run.Client.State.IsConnected);
         Assert.Equal(!refused, run.Traces.Any(t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal)));
     }
@@ -189,14 +191,14 @@ public sealed class DevantechClientTests
             _ => null,
         });
         await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         for (var command = 0; command < 3; command++)
         {
             await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0111, Cancel));
         }
 
-        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal));
     }
 
@@ -219,12 +221,12 @@ public sealed class DevantechClientTests
             _ => [0],
         });
         await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         await run.Client.TurnOnAsync(0b0011, Cancel);
 
         // Relay 1 was taken, but only a read shows it on. The read comes at once, not in a minute, on a third connection.
-        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 2 && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 2 && run.Time.WaitsOnly(run.PollInterval));
         Assert.Equal(3, board.Connections);
         Assert.DoesNotContain(run.Changes, s => s.Relays != 0);
         Assert.Equal(0UL, run.Client.State.Relays);
@@ -260,7 +262,9 @@ public sealed class DevantechClientTests
     {
         await using var simulator = Started(DevantechModels.Eth484);
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth484);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // Counted once the first answer was reported, when the client waits for the next poll.
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         var reported = run.Changes.Count;
 
         await run.PollAsync();
@@ -303,7 +307,7 @@ public sealed class DevantechClientTests
         var time = new ManualTimeProvider();
         await using var simulator = Started(DevantechModels.Eth008, "apple", time);
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008, pollSeconds: 60, password: "apple", time: time);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(run.PollInterval));
 
         // 31 s without a command: the board is locked again.
         time.Advance(TimeSpan.FromSeconds(31));
@@ -347,7 +351,7 @@ public sealed class DevantechClientTests
         await using var simulator = Started(DevantechModels.Eth484);
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == "The board at this address is an ETH484, not an ETH008.") == 2);
 
@@ -371,9 +375,9 @@ public sealed class DevantechClientTests
             var failures = poll;
 
             // After the first, each poll opens a new connection: its module check is what goes unanswered.
-            await Wait.UntilAsync(() => run.Time.PendingTimers == 1 && simulator.UnansweredCount == failures - 1);
-            run.Time.Advance(TimeSpan.FromSeconds(2));
-            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.PendingTimers == 1);
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval) && simulator.UnansweredCount == failures - 1);
+            run.Time.Advance(run.PollInterval);
+            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
             run.Time.Advance(DevantechClient.RequestTimeout);
             await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == "No answer: The Devantech board did not answer within 5 s.") == failures);
         }
@@ -383,7 +387,7 @@ public sealed class DevantechClientTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
 
         simulator.NoAnswer = false;
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
         await run.Client.TurnOnAsync(0b0001, Cancel);
@@ -401,7 +405,7 @@ public sealed class DevantechClientTests
             _ => [0],
         });
         await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         var sent = run.Client.TurnOnAsync(0b0011, Cancel);
         await Wait.UntilAsync(() => board.Received.Contains("20 01 00") && run.Time.PendingTimers == 2);
@@ -420,7 +424,7 @@ public sealed class DevantechClientTests
         // Two bytes to the module check, which has three: the client waits for the third, and gives up.
         await using var board = ScriptedBoard.Start(_ => [19, 2]);
         await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008);
-        await Wait.UntilAsync(() => board.Received.Count == 1 && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => board.Received.Count == 1 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
 
         run.Time.Advance(DevantechClient.RequestTimeout);
 
@@ -474,13 +478,13 @@ public sealed class DevantechClientTests
             _ => [0x01, 0xAA, 0xBB],
         });
         await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         await Wait.UntilAsync(() => board.Sent == 3);
 
-        run.Time.Advance(TimeSpan.FromSeconds(2));
+        run.Time.Advance(run.PollInterval);
 
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Skipped 2 bytes nobody asked for" && t.Bytes == "AA BB"));
-        await Wait.UntilAsync(() => board.Received.Count == 4 && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => board.Received.Count == 4 && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsOn(1));
     }
 
@@ -489,13 +493,13 @@ public sealed class DevantechClientTests
     {
         await using var simulator = Started(DevantechModels.Eth008);
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         await Wait.UntilAsync(() => simulator.ConnectionCount == 1);
 
         simulator.DropConnections();
         await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
-        run.Time.Advance(TimeSpan.FromSeconds(2));
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.PendingTimers == 1);
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsConnected);
 
         await simulator.SwitchRelayAsync(1, true);
@@ -588,10 +592,11 @@ public sealed class DevantechClientTests
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<DevantechState> _changes = [];
 
-        private ClientRun(DevantechClient client, ManualTimeProvider time, CancellationTokenSource cts)
+        private ClientRun(DevantechClient client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
             Client = client;
             Time = time;
+            PollInterval = pollInterval;
             _cts = cts;
             client.Traced += (_, entry) => Add(_traces, entry);
             client.StateChanged += (_, state) => Add(_changes, state);
@@ -602,6 +607,9 @@ public sealed class DevantechClientTests
 
         public ManualTimeProvider Time { get; }
 
+        /// <summary>How long the client waits between polls: the one timer a test waits for while the client is idle.</summary>
+        public TimeSpan PollInterval { get; }
+
         public List<BoardTraceEntry> Traces => Copy(_traces);
 
         public List<DevantechState> Changes => Copy(_changes);
@@ -609,7 +617,7 @@ public sealed class DevantechClientTests
         public static ClientRun Start(int port, BoardModel model, int pollSeconds = 2, string password = "", ManualTimeProvider? time = null)
         {
             time ??= new ManualTimeProvider();
-            return new ClientRun(CreateClient(port, time, model, pollSeconds, password: password), time, new CancellationTokenSource());
+            return new ClientRun(CreateClient(port, time, model, pollSeconds, password: password), time, TimeSpan.FromSeconds(pollSeconds), new CancellationTokenSource());
         }
 
         /// <summary>Moves the clock to the next poll, once the client waits for it, and waits until it was answered.</summary>
@@ -617,10 +625,10 @@ public sealed class DevantechClientTests
         {
             var last = Client.Model.Capabilities.InputCount > 0 ? "Inputs: " : "Relays: ";
             int Answers() => Traces.Count(t => t.Direction == BoardTraceDirection.Received && t.Text.StartsWith(last, StringComparison.Ordinal));
-            await Wait.UntilAsync(() => Time.PendingTimers == 1);
+            await Wait.UntilAsync(() => Time.WaitsOnly(PollInterval));
             var answered = Answers();
-            Time.Advance(TimeSpan.FromSeconds(2));
-            await Wait.UntilAsync(() => Answers() == answered + 1 && Time.PendingTimers == 1);
+            Time.Advance(PollInterval);
+            await Wait.UntilAsync(() => Answers() == answered + 1 && Time.WaitsOnly(PollInterval));
         }
 
         public async ValueTask DisposeAsync()
@@ -716,9 +724,10 @@ public sealed class DevantechClientTests
                     connections.Add(ServeConnectionAsync(tcp));
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException)
+            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException
+                || (ex is InvalidOperationException && _stop.IsCancellationRequested))
             {
-                // Stopped.
+                // Stopped. A loop that was still answering when the listener stopped finds it "not listening".
             }
 
             await Task.WhenAll(connections);

@@ -29,7 +29,8 @@ public sealed class WaveshareClientTests
         await simulator.SetInputAsync(3, true);
         await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B);
 
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        // Connected, and the first answer reported: the client waits for the next poll.
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         Assert.Equal(new WaveshareStatus(0b0010, 0b0100), run.Client.State.Status);
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
@@ -168,12 +169,12 @@ public sealed class WaveshareClientTests
                 : WaveshareModbusTests.Bytes("01 01 01 00 51 88");
         });
         await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         await run.Client.TurnOnAsync(0b0001, Cancel);
 
         // The read at once, not in a minute, shows the truth: still off.
-        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.WaitsOnly(run.PollInterval));
         Assert.DoesNotContain(run.Changes, s => s.IsOn(1));
         Assert.False(run.Client.State.IsOn(1));
         Assert.True(run.Client.State.IsConnected);
@@ -186,7 +187,7 @@ public sealed class WaveshareClientTests
         await using var simulator = Started(WaveshareModels.Relay8);
         simulator.FailRelays = 0b0011;
         await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
 
@@ -212,7 +213,7 @@ public sealed class WaveshareClientTests
             _ => [1, 1, 1, 0, 0, 0],
         });
         await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         for (var command = 0; command < 3; command++)
         {
@@ -220,7 +221,8 @@ public sealed class WaveshareClientTests
         }
 
         // Refused: each refusal starts the count over, so the failed reads between them never reach 3.
-        await Wait.UntilAsync(() => (refused ? Volatile.Read(ref reads) >= 2 : !run.Client.State.IsConnected) && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => (refused ? Volatile.Read(ref reads) >= 2 : !run.Client.State.IsConnected)
+            && run.Time.WaitsOnly(refused ? run.PollInterval : TimeSpan.FromSeconds(1)));
         Assert.Equal(refused, run.Client.State.IsConnected);
         Assert.Equal(!refused, run.Traces.Any(t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal)));
     }
@@ -239,14 +241,14 @@ public sealed class WaveshareClientTests
             _ => [1, 1, 1, 0, 0, 0],
         });
         await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         for (var command = 0; command < 3; command++)
         {
             await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0111, Cancel));
         }
 
-        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal));
     }
 
@@ -255,7 +257,9 @@ public sealed class WaveshareClientTests
     {
         await using var simulator = Started(WaveshareModels.Relay8C);
         await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8C);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // Counted once the first answer was reported, when the client waits for the next poll.
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         var reported = run.Changes.Count;
 
         await run.PollAsync();
@@ -280,13 +284,13 @@ public sealed class WaveshareClientTests
     {
         await using var simulator = Started(WaveshareModels.Relay8);
         await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         await Wait.UntilAsync(() => simulator.ConnectionCount == 1);
 
         simulator.DropConnections();
         await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
-        run.Time.Advance(TimeSpan.FromSeconds(2));
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.PendingTimers == 1);
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsConnected);
 
         await simulator.SwitchRelayAsync(1, true);
@@ -309,9 +313,9 @@ public sealed class WaveshareClientTests
         {
             Assert.True(run.Client.State.IsConnected);
             var failures = poll;
-            await Wait.UntilAsync(() => run.Time.PendingTimers == 1 && simulator.UnansweredCount == failures - 1);
-            run.Time.Advance(TimeSpan.FromSeconds(2));
-            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.PendingTimers == 1);
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval) && simulator.UnansweredCount == failures - 1);
+            run.Time.Advance(run.PollInterval);
+            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.WaitsOnly(WaveshareClient.RequestTimeout));
             run.Time.Advance(WaveshareClient.RequestTimeout);
             await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == "No answer: The Waveshare board did not answer within 5 s.") == failures);
         }
@@ -321,7 +325,7 @@ public sealed class WaveshareClientTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
 
         simulator.NoAnswer = false;
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
         await run.Client.TurnOnAsync(0b0001, Cancel);
@@ -333,7 +337,7 @@ public sealed class WaveshareClientTests
     {
         await using var simulator = Started(WaveshareModels.Relay8);
         await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         simulator.NoAnswer = true;
 
         var sent = run.Client.TurnOnAsync(0b0011, Cancel);
@@ -377,12 +381,12 @@ public sealed class WaveshareClientTests
     {
         await using var board = ScriptedBoard.Start(_ => WaveshareModbusTests.Bytes("01 01 01 01 90 48 AA BB"));
         await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        run.Time.Advance(TimeSpan.FromSeconds(2));
+        run.Time.Advance(run.PollInterval);
 
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Skipped 2 bytes nobody asked for" && t.Bytes == "AA BB"));
-        await Wait.UntilAsync(() => board.Requests == 2 && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => board.Requests == 2 && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsOn(1));
     }
 
@@ -455,13 +459,13 @@ public sealed class WaveshareClientTests
         for (var poll = 1; poll <= BoardPoller<WaveshareStatus>.DefaultFailuresBeforeLost; poll++)
         {
             var failures = poll;
-            await Wait.UntilAsync(() => run.Time.PendingTimers == 1 && simulator.UnansweredCount == failures - 1);
-            run.Time.Advance(TimeSpan.FromSeconds(2));
-            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.PendingTimers == 1);
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval) && simulator.UnansweredCount == failures - 1);
+            run.Time.Advance(run.PollInterval);
+            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.WaitsOnly(WaveshareClient.RequestTimeout));
             run.Time.Advance(WaveshareClient.RequestTimeout);
         }
 
-        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         simulator.NoAnswer = false;
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
@@ -627,10 +631,11 @@ public sealed class WaveshareClientTests
         private readonly List<WaveshareRelayModesReset> _resets = [];
         private readonly List<WaveshareRelayModesNotReset> _notResets = [];
 
-        private ClientRun(WaveshareClient client, ManualTimeProvider time, CancellationTokenSource cts)
+        private ClientRun(WaveshareClient client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
             Client = client;
             Time = time;
+            PollInterval = pollInterval;
             _cts = cts;
             client.Traced += (_, entry) => Add(_traces, entry);
             client.StateChanged += (_, state) => Add(_changes, state);
@@ -643,6 +648,9 @@ public sealed class WaveshareClientTests
 
         public ManualTimeProvider Time { get; }
 
+        /// <summary>How long the client waits between polls: the one timer a test waits for while the client is idle.</summary>
+        public TimeSpan PollInterval { get; }
+
         public List<BoardTraceEntry> Traces => Copy(_traces);
 
         public List<WaveshareState> Changes => Copy(_changes);
@@ -654,7 +662,7 @@ public sealed class WaveshareClientTests
         public static ClientRun Start(int port, BoardModel model, int pollSeconds = 2, bool resetRelayModes = true)
         {
             var time = new ManualTimeProvider();
-            return new ClientRun(CreateClient(port, time, model, pollSeconds, resetRelayModes: resetRelayModes), time, new CancellationTokenSource());
+            return new ClientRun(CreateClient(port, time, model, pollSeconds, resetRelayModes: resetRelayModes), time, TimeSpan.FromSeconds(pollSeconds), new CancellationTokenSource());
         }
 
         /// <summary>Moves the clock to the next poll, once the client waits for it, and waits until it was answered.</summary>
@@ -662,10 +670,10 @@ public sealed class WaveshareClientTests
         {
             var last = Client.Model.Capabilities.InputCount > 0 ? "Inputs: " : "Relays: ";
             int Answers() => Traces.Count(t => t.Direction == BoardTraceDirection.Received && t.Text.StartsWith(last, StringComparison.Ordinal));
-            await Wait.UntilAsync(() => Time.PendingTimers == 1);
+            await Wait.UntilAsync(() => Time.WaitsOnly(PollInterval));
             var answered = Answers();
-            Time.Advance(TimeSpan.FromSeconds(2));
-            await Wait.UntilAsync(() => Answers() == answered + 1 && Time.PendingTimers == 1);
+            Time.Advance(PollInterval);
+            await Wait.UntilAsync(() => Answers() == answered + 1 && Time.WaitsOnly(PollInterval));
         }
 
         public async ValueTask DisposeAsync()
@@ -744,9 +752,10 @@ public sealed class WaveshareClientTests
                     connections.Add(ServeConnectionAsync(tcp));
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException)
+            catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException
+                || (ex is InvalidOperationException && _stop.IsCancellationRequested))
             {
-                // Stopped.
+                // Stopped. A loop that was still answering when the listener stopped finds it "not listening".
             }
 
             await Task.WhenAll(connections);

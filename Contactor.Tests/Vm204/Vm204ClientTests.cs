@@ -110,7 +110,9 @@ public sealed class Vm204ClientTests
         await using var simulator = new Vm204Simulator();
         simulator.Start();
         await using var run = ClientRun.Start(simulator.Port);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // Counted once the first answer was reported, when the client waits for the next poll.
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(PollInterval));
         var reported = run.Changes.Count;
 
         // Polls that change nothing, not even with the analog value moving, report nothing.
@@ -286,11 +288,11 @@ public sealed class Vm204ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port);
         var time = run.Time;
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(PollInterval));
 
         board.HangStatus = true;
-        time.Advance(TimeSpan.FromSeconds(2));
-        await Wait.UntilAsync(() => board.Hanging == 1 && time.PendingTimers == 1);
+        time.Advance(PollInterval);
+        await Wait.UntilAsync(() => board.Hanging == 1 && time.WaitsOnly(Vm204Client.RequestTimeout));
         time.Advance(Vm204Client.RequestTimeout);
 
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "No answer: The VM204 did not answer within 5 s." && t.IsError));
@@ -304,9 +306,9 @@ public sealed class Vm204ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port);
         var time = run.Time;
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(PollInterval));
         board.HangStatus = true;
-        time.Advance(TimeSpan.FromSeconds(2));
+        time.Advance(PollInterval);
         await Wait.UntilAsync(() => board.Hanging == 1);
         var statusRequests = board.Targets.Count(t => t.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal));
 
@@ -326,7 +328,7 @@ public sealed class Vm204ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         var time = run.Time;
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(TimeSpan.FromSeconds(60)));
         board.HangAll = true;
 
         // A command without an answer (1), and the status read it brings at once, without an answer too (2).
@@ -334,10 +336,10 @@ public sealed class Vm204ClientTests
         await Wait.UntilAsync(() => board.Hanging == 1 && time.PendingTimers == 2);
         time.Advance(Vm204Client.RequestTimeout);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => first);
-        await Wait.UntilAsync(() => board.Hanging == 2 && time.PendingTimers == 1);
+        await Wait.UntilAsync(() => board.Hanging == 2 && time.WaitsOnly(Vm204Client.RequestTimeout));
         Assert.StartsWith(Vm204Api.StatusPath, board.Targets[^1], StringComparison.Ordinal);
         time.Advance(Vm204Client.RequestTimeout);
-        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && time.PendingTimers == 1);
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && time.WaitsOnly(TimeSpan.FromSeconds(60)));
         Assert.True(run.Client.State.IsConnected);
 
         // The next command is the third in a row.
