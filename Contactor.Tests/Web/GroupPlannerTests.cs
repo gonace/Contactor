@@ -55,6 +55,32 @@ public sealed class GroupPlannerTests
         Assert.Equal((T0, John, T0.AddMinutes(120)), (_runtime.OnSinceUtc!.Value, _runtime.TurnedOnBy, _runtime.AutoOffAtUtc!.Value));
     }
 
+    // A group on with nobody's run (its fan switched at the board, say) gets the group's own auto-off from then; one
+    // under way, or already someone's, is left alone.
+    [Fact]
+    public void Should_GiveAnOwnerlessGroup_ItsOwnAutoOff()
+    {
+        GroupPlanner.GiveOwnerlessAutoOff(FanHeater, State(), _runtime, 120, T0);
+        Assert.Null(_runtime.OnSinceUtc);
+
+        GroupPlanner.GiveOwnerlessAutoOff(FanHeater, State(1), _runtime, 120, T0);
+        Assert.Equal((T0, EventActors.External, T0.AddMinutes(120)), (_runtime.OnSinceUtc!.Value, _runtime.TurnedOnBy, _runtime.AutoOffAtUtc!.Value));
+
+        // Someone's run stays theirs.
+        GroupPlanner.GiveOwnerlessAutoOff(FanHeater, State(1), _runtime, 120, T0.AddMinutes(5));
+        Assert.Equal(T0, _runtime.OnSinceUtc);
+
+        // A sequence under way is left to it.
+        var starting = new GroupRuntime { GroupId = 2, Phase = GroupPhases.Starting };
+        GroupPlanner.GiveOwnerlessAutoOff(FanHeater, State(1), starting, 120, T0);
+        Assert.Null(starting.OnSinceUtc);
+
+        // "Never" gives no auto-off, but it is still on outside the app.
+        var never = new GroupRuntime { GroupId = 3 };
+        GroupPlanner.GiveOwnerlessAutoOff(FanHeater, State(1), never, null, T0);
+        Assert.Equal((EventActors.External, (DateTime?)null), (never.TurnedOnBy, never.AutoOffAtUtc));
+    }
+
     [Fact]
     public void Should_StopStarting_WhenTheBoardNeverConfirms()
     {

@@ -332,6 +332,8 @@ public sealed partial class GroupSequencer : BackgroundService
                     GroupPlanner.Plan(members, state, runtime, now, commands);
                 }
 
+                GroupPlanner.GiveOwnerlessAutoOff(members, state, runtime, group.MaxOnMinutes, now);
+
                 all.Off |= commands.Off;
                 all.On |= commands.On;
                 events.AddRange(commands.Events.Select(e => (group.Id, e)));
@@ -391,6 +393,33 @@ public sealed partial class GroupSequencer : BackgroundService
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Makes a group that is on outside the app (<see cref="EventActors.External"/>) the actor's, e.g. a schedule's
+    /// during its window: no auto-off of its own then. Returns whether it did; a run that is someone else's by now is
+    /// left alone.
+    /// </summary>
+    public async Task<bool> TakeOverOwnerlessAsync(int groupId, string actor, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        return await ExclusiveAsync(
+            async () =>
+            {
+                await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+                var runtime = await db.GroupRuntimes.SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
+                if (runtime?.TurnedOnBy != EventActors.External)
+                {
+                    return false;
+                }
+
+                runtime.TurnedOnBy = actor;
+                runtime.AutoOffAtUtc = null;
+                await db.SaveChangesAsync(cancellationToken);
+                _changes.Notify();
+                return true;
+            },
+            cancellationToken);
     }
 
     /// <summary>

@@ -507,6 +507,7 @@
         {
             EventActors.Schedule => "schedule",
             EventActors.AutoOff => "auto-off",
+            EventActors.External => "outside the app",
             _ => _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email),
         };
     }

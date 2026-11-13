@@ -63,6 +63,25 @@ public static class GroupPlanner
         return members.Any(m => state.IsOn(m.RelayId));
     }
 
+    /// <summary>
+    /// A group that is on with nobody's run (turned on at the board, during an outage, or by a command the app was told
+    /// failed) gets "outside the app" from now, with the group's own auto-off, so nothing runs for ever by accident.
+    /// A group under way (starting, stopping or a command not yet confirmed) is left to its sequence.
+    /// </summary>
+    public static void GiveOwnerlessAutoOff(IReadOnlyList<GroupMemberInfo> members, BoardState state, GroupRuntime runtime, int? maxOnMinutes, DateTime now)
+    {
+        ArgumentNullException.ThrowIfNull(members);
+        ArgumentNullException.ThrowIfNull(runtime);
+        if (runtime.OnSinceUtc is not null || runtime.Phase != GroupPhases.Idle || runtime.PendingPosition is not null || !AnyOn(members, state))
+        {
+            return;
+        }
+
+        runtime.OnSinceUtc = now;
+        runtime.TurnedOnBy = EventActors.External;
+        runtime.AutoOffAtUtc = maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
+    }
+
     /// <summary>The next step for one group. Updates <paramref name="runtime"/> and adds to <paramref name="commands"/>.</summary>
     public static void Plan(
         IReadOnlyList<GroupMemberInfo> members,

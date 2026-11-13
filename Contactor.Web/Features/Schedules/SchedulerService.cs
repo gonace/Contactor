@@ -133,6 +133,16 @@ public sealed partial class SchedulerService : BackgroundService
 
                 if (running is not null)
                 {
+                    // On outside the app during its schedule's window (e.g. the schedule's own ON reported as failed,
+                    // or the board's button just before): it is the schedule's, and goes off at the OffTime, not after
+                    // an auto-off of its own.
+                    if (isOn && runtime?.TurnedOnBy == EventActors.External)
+                    {
+                        runtime.TurnedOnBy = Actor;
+                        runtime.AutoOffAtUtc = null;
+                        changed = true;
+                    }
+
                     var startedNow = running.OnUtc > from && running.OnUtc <= now;
                     if (!isOn && (startedNow || reconcile))
                     {
@@ -247,7 +257,16 @@ public sealed partial class SchedulerService : BackgroundService
             var phase = runtime?.Phase ?? GroupPhases.Idle;
             var isOn = phase == GroupPhases.Starting
                 || (phase != GroupPhases.Stopping && group.Members.Any(m => state.IsOn(m.RelayId)));
-            var start = Decide(groupWindows, isOn, runtime?.TurnedOnBy == Actor, retry, from, now, reconcile);
+
+            // On outside the app during its schedule's window: the schedule's, as for a relay.
+            var turnedOnBySchedule = runtime?.TurnedOnBy == Actor;
+            if (isOn && runtime?.TurnedOnBy == EventActors.External && groupWindows.Any(w => w.Contains(now)))
+            {
+                turnedOnBySchedule = await _groups.TakeOverOwnerlessAsync(group.Id, Actor, cancellationToken);
+                changed |= turnedOnBySchedule;
+            }
+
+            var start = Decide(groupWindows, isOn, turnedOnBySchedule, retry, from, now, reconcile);
             if (start is not { } on)
             {
                 continue;

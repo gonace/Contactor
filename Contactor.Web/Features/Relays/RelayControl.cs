@@ -46,7 +46,7 @@ public sealed class RelayControl
         var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
-        await SendAsync(mask, on: true, cancellationToken, failedOnBy: (relayId, actor));
+        await SendAsync(mask, on: true, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -130,9 +130,8 @@ public sealed class RelayControl
     }
 
     // Expects the change, then sends it. A command that fails or is cancelled logs nothing, so its expectation goes
-    // too: whatever the board did then shows as an external change rather than vanishing. A failed ON is remembered
-    // with who asked, so a relay the board switched on all the same is credited to them and gets their auto-off.
-    private async Task SendAsync(ChannelMask mask, bool on, CancellationToken cancellationToken, (int RelayId, string Actor)? failedOnBy = null)
+    // too: whatever the board did then shows as an external change rather than vanishing, with an auto-off of its own.
+    private async Task SendAsync(ChannelMask mask, bool on, CancellationToken cancellationToken)
     {
         _expected.Expect(mask, on);
         try
@@ -149,11 +148,6 @@ public sealed class RelayControl
         catch
         {
             _expected.Forget(mask, on);
-            if (failedOnBy is { } by)
-            {
-                _expected.RememberFailedOn(by.RelayId, by.Actor);
-            }
-
             throw;
         }
     }

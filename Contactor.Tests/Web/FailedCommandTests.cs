@@ -57,10 +57,10 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await _database.DisposeAsync();
     }
 
-    // Jane was told her ON failed, but the board switched the relay on: it is her ON, with her auto-off, so a fan
-    // heater doesn't run until someone notices.
+    // Jane was told her ON failed, but the board switched the relay on. Nobody guesses it was hers: it is on outside the
+    // app, with the relay's own auto-off, so a fan heater doesn't run until someone notices.
     [Fact]
-    public async Task Should_CreditThePerson_WhenARelayCameOnButItsCommandFailed()
+    public async Task Should_GiveARelayItsOwnAutoOff_WhenItCameOnButItsCommandFailed()
     {
         _board.SwitchSilentlyThenFail = true;
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOnAsync(3, Jane, Cancel));
@@ -69,13 +69,13 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await _board.RefreshAsync(Cancel);
 
         var entry = await SingleEventAsync();
-        Assert.Equal((3, Jane, EventActions.On, """{"afterFailedCommand":true}"""), (entry.RelayId!.Value, entry.Actor, entry.Action, entry.Details));
+        Assert.Equal((3, EventActors.External, EventActions.On), (entry.RelayId!.Value, entry.Actor, entry.Action));
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
-        Assert.Equal(((DateTime?)Now, (DateTime?)Now.AddMinutes(Relay.DefaultMaxOnMinutes), Jane), (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy));
+        Assert.Equal(((DateTime?)Now, (DateTime?)Now.AddMinutes(Relay.DefaultMaxOnMinutes), EventActors.External), (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy));
     }
 
-    // Only an ON is credited: a failed OFF the board carried out anyway is still an external change.
+    // A failed OFF the board carried out anyway is an external change too.
     [Fact]
     public async Task Should_LogExternal_WhenARelayWentOffButItsCommandFailed()
     {
@@ -175,8 +175,18 @@ public sealed class FailedCommandTests : IAsyncLifetime
 
         var entry = await SingleEventAsync();
         Assert.Equal((2, EventActors.External, EventActions.On), (entry.RelayId!.Value, entry.Actor, entry.Action));
-        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Null((await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);
+        await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
+        {
+            // On outside the app, with its own auto-off for now.
+            Assert.Equal(EventActors.External, (await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);
+        }
+
+        // The next tick in its window takes it over: it is the schedule's, off at the OffTime.
+        _time.Now = OnTime.AddMinutes(1);
+        await Scheduler.TickAsync(Cancel);
+        await using var check = await _database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
     }
 
     [Fact]

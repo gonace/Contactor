@@ -1,3 +1,4 @@
+using Contactor.Boards;
 using Contactor.Web.Features.Relays;
 
 namespace Contactor.Tests.Web;
@@ -104,5 +105,20 @@ public sealed class RelayStatusTextTests
         Assert.Equal(
             "On since 06:30, by a schedule. Turns off 08:00.",
             RelayStatusText.Sentence(true, new DateTime(2026, 11, 4, 6, 30, 0), "schedule", new DateTime(2026, 11, 4, 8, 0, 0), Now));
+    }
+
+    // A press the board didn't confirm is settled once the board, online, shows the relay as the person wanted it.
+    [Fact]
+    public void Should_SettleAnUnconfirmedPress_OnlyWhenTheBoardShowsWhatWasWanted()
+    {
+        var on = new UnconfirmedPress(3, On: true);
+        var off = new UnconfirmedPress(3, On: false);
+        var relay3On = new BoardState(true, ChannelMask.Of(3), ChannelMask.None, DateTimeOffset.UnixEpoch);
+        var relay3Off = new BoardState(true, ChannelMask.None, ChannelMask.None, DateTimeOffset.UnixEpoch);
+
+        Assert.True(on.IsSettledBy(relay3On));
+        Assert.False(on.IsSettledBy(relay3Off));
+        Assert.True(off.IsSettledBy(relay3Off));
+        Assert.False(on.IsSettledBy(relay3On with { IsConnected = false }));
     }
 }

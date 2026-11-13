@@ -53,6 +53,29 @@ public sealed class GroupScheduleTests
         Assert.NotEqual(0, scheduleId);
     }
 
+    // The fan switched on at the board: the group is on outside the app and gets the group's own auto-off; once its
+    // schedule's window runs, it is the schedule's, with no auto-off of its own.
+    [Fact]
+    public async Task Should_GiveAnOwnerlessGroupAnAutoOff_AndLetItsScheduleTakeItOver()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var groupId = await CreateAsync(rig);
+        await AddScheduleAsync(rig, groupId, 14, 5, 18, 0);
+        await rig.Scheduler.TickAsync(Cancel);
+        await TickAtAsync(rig, 14, 4);
+
+        await rig.Simulator.SetOutputsAsync(0x01);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
+        await rig.Groups.StepAsync(Cancel);
+        var runtime = await RuntimeAsync(rig, groupId);
+        Assert.Equal((EventActors.External, (DateTime?)Local(14, 4).UtcDateTime.AddMinutes(120)), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+
+        await TickAtAsync(rig, 14, 5);
+
+        runtime = await RuntimeAsync(rig, groupId);
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+    }
+
     [Fact]
     public async Task Should_StartAGroupWhoseRunIsGoing_AtStart()
     {
