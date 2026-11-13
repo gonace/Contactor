@@ -61,7 +61,6 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         _poller = new BoardPoller<WaveshareStatus>(this, timeProvider)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
-            IsNoAnswer = IsNoAnswer,
         };
     }
 
@@ -246,9 +245,13 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
         catch (Exception ex) when (IsNoAnswer(ex))
         {
-            // The poller counted a missing answer as a failed poll and reads the board at once, which shows what it
-            // did.
+            // The poller counted it as a failed poll and reads the board at once, which shows what it did.
             throw new BoardNotConnectedException("The Waveshare board didn't answer; the command may not have been carried out.", ex);
+        }
+        catch (WaveshareProtocolException ex)
+        {
+            // No relay was taken: counted and read in the same way.
+            throw new BoardNotConnectedException($"The Waveshare board didn't take the command: {ex.Message}", ex);
         }
     }
 
@@ -259,7 +262,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         string? refusal = null;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
-            // No answer (IsNoAnswer) is thrown as it is, so the poller counts it as a failed poll.
+            // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
             try
             {
                 var request = WaveshareModbus.WriteSingleCoil(WaveshareApi.UnitId, (ushort)(relay - 1), turnOn);
@@ -280,10 +283,11 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
 
         // Not one relay was taken: the command failed, as on a board that takes the mask at once, and nothing is
-        // counted as switched. The poller reads the board at once, which shows what really happened.
+        // counted as switched. The poller counts it as a failed poll, as it would a poll whose answer it can't read,
+        // and reads the board at once, which shows what really happened.
         if (taken == 0)
         {
-            throw new BoardNotConnectedException($"The Waveshare board didn't take the command: {refusal}");
+            throw new WaveshareProtocolException(refusal!);
         }
 
         try
@@ -294,9 +298,15 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         {
             // Never a state the board didn't read: an echo of FC 05 doesn't show that the relay switched (a relay in
             // linkage mode echoes and stays as it is), and a group would take a made-up "on" as confirmation. The last
-            // state read stays, and a read at once shows the truth.
+            // state read stays, and a read at once shows the truth. The command doesn't fail (what was taken was sent),
+            // so the poller's read after a failed command doesn't come: ask for it here.
+            if (_poller.State.Reading is not { } last)
+            {
+                throw;
+            }
+
             _poller.PollNow();
-            return _poller.State.Reading ?? throw new BoardNotConnectedException("The Waveshare board's state after the command couldn't be read.");
+            return last;
         }
     }
 

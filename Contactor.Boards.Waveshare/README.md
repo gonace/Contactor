@@ -1,4 +1,7 @@
-# Waveshare Modbus PoE ETH relays
+# The Waveshare Modbus PoE ETH relays (`Contactor.Boards.Waveshare`)
+
+How the app talks to these boards. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is
+in `AGENTS.md` at the repository root.
 
 This project connects Contactor to the Waveshare Modbus PoE ETH relay boards. It has the Modbus codec, the client, the
 adapters for the app and a simulator. It has no web or database code.
@@ -84,6 +87,7 @@ A command switches the relays in the mask one at a time with function 05:
 - When the board takes no relay, the command throws "The Waveshare board didn't take the command: …".
 - When a request gets no answer, the command throws "The Waveshare board didn't answer; the command may not have been
   carried out."
+- The poller counts each of these two failures as a failed poll and reads the board at once.
 - After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
   new state.
 - When that read gets an unreadable answer, the client keeps the last state it read and reads again at once. The echo
