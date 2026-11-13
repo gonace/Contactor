@@ -1,4 +1,4 @@
-// What makes the app feel like an app on a phone. See AGENTS.md, User interface.
+// What makes the app feel like an app on a phone. See docs/ARCHITECTURE.md, User interface.
 
 // No pinch zoom on iPhone and iPad. Every browser there uses Safari's engine, which ignores user-scalable=no in the
 // viewport (Android's Chrome follows it), so the two-finger gesture itself is cancelled. One-finger scrolling is

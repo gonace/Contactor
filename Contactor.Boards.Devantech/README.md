@@ -1,7 +1,7 @@
 # The Devantech ETH relay boards (`Contactor.Boards.Devantech`)
 
 How the app talks to these boards. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is
-in `AGENTS.md` at the repository root.
+in `docs/ARCHITECTURE.md`.
 
 This project connects Contactor to four Devantech ETH relay boards. It has the command bytes, the client, the adapters
 for the app and a simulator. It has no web or database code.

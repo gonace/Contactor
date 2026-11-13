@@ -8,7 +8,9 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
 
 ## What to read first
 
-- `AGENTS.md`: the project's architecture, domain rules and conventions. Review against them.
+- `AGENTS.md`: how to work in this repository, the safety rules and the conventions. Review against them.
+- `docs/ARCHITECTURE.md`: the architecture and the domain rules. Read the sections the change touches, and review
+  against them.
 - For a change to a board, its `Contactor.Boards.<Model>/README.md`: the board's protocol or routes, and what to check on a real board.
 - `.agents/writing.md`, for how to write the report.
 - The whole diff you're given (`git diff origin/<base>...origin/<branch>`, after fetching both with
@@ -21,10 +23,11 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
   live connection), off-by-one, null handling, races and thread safety (board events arrive on the board's own
   thread), leaked resources (event subscriptions not removed in `Dispose`, timers, connections), and edge cases:
   empty, huge, negative and malformed input, from a person or from the board.
-- **Safety:** the domain rules in `AGENTS.md` that keep machines safe. A group's interlock and start order; nothing
-  sent or queued while the board is disconnected; nothing turned off at start except the stated exceptions; auto-off,
-  schedules and run-on times as described; a relay in a group switched only through its group. A change that can
-  turn on heat without the fan, or leave something on that should go off, is a blocker.
+- **Safety:** the domain rules in `docs/ARCHITECTURE.md` that keep machines safe (listed short in `AGENTS.md`). A
+  group's interlock and start order; nothing sent or queued while the board is disconnected; nothing turned off at
+  start except the stated exceptions; auto-off, schedules and run-on times as described; a relay in a group switched
+  only through its group. A change that can turn on heat without the fan, or leave something on that should go off, is
+  a blocker.
 - **Security and privacy:** every request still goes through Cloudflare Access (no new route around it, and
   `/healthz` stays local only); the e-mail comes from the signed JWT; secrets (the board's password, the tunnel
   token) are never logged, shown or put in an event; data from the board is treated as untrusted.
@@ -39,7 +42,7 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
 - **Platform independence:** code and tests must behave the same on Windows, Linux and macOS. Developers run the
   tests on Windows; the app runs in a Linux container on a Raspberry Pi (arm64). Flag path separators, case
   sensitivity, line endings, file locking, time zone ids and culture.
-- **Stale text:** comments, `AGENTS.md`, `README.md`, the boards' `README.md` files and `DEPLOY.md` that the change made wrong.
+- **Stale text:** comments, `AGENTS.md`, `docs/ARCHITECTURE.md`, `README.md`, the boards' `README.md` files and `DEPLOY.md` that the change made wrong.
 
 ## How you work
 

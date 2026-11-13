@@ -1,7 +1,7 @@
 # The Waveshare Modbus PoE ETH relays (`Contactor.Boards.Waveshare`)
 
 How the app talks to these boards. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is
-in `AGENTS.md` at the repository root.
+in `docs/ARCHITECTURE.md`.
 
 This project connects Contactor to the Waveshare Modbus PoE ETH relay boards. It has the Modbus codec, the client, the
 adapters for the app and a simulator. It has no web or database code.
