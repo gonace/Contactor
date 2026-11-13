@@ -333,7 +333,7 @@ public sealed class InputActionsTests
     [Fact]
     public async Task Should_ShowWhatTheInputControls_OnItsScreen()
     {
-        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = John });
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
         var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using (var db = await factory.CreateDbContextAsync(Cancel))
         {

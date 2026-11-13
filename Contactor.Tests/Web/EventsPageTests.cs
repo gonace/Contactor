@@ -118,7 +118,7 @@ public sealed class EventsPageTests
     {
         return new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" },
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
             TestWebApp.WithLostBoard);
     }
 

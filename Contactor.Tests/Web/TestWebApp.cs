@@ -44,6 +44,12 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         _configureServices = configureServices;
     }
 
+    /// <summary>
+    /// The setting, for this test app only, of who a Development app's requests are signed in as (John when not set).
+    /// It stands in for Cloudflare Access: the app itself has no such setting.
+    /// </summary>
+    public const string SignedInAs = "Test:SignedInAs";
+
     public IPAddress? RemoteAddress { get; set; } = IPAddress.Loopback;
 
     /// <summary>
@@ -85,6 +91,15 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<IStartupFilter>(new RemoteAddressStartupFilter(this));
+
+            // In Development, Cloudflare Access's place says who everyone is, as the test asks. Production tests sign
+            // in with real tokens.
+            if (_environment == "Development")
+            {
+                var email = _settings.TryGetValue(SignedInAs, out var name) && name is not null ? name : "john@example.com";
+                services.AddKeyedSingleton<ISignInMethod>(CloudflareMethods.AccessId, new FixedSignIn(email));
+            }
+
             _configureServices?.Invoke(services);
         });
     }
@@ -122,6 +137,19 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         {
             Directory.Delete(_folder, recursive: true);
         }
+    }
+
+    // Signs every request in as one person, in Cloudflare Access's place.
+    private sealed class FixedSignIn : ISignInMethod
+    {
+        private readonly string _email;
+
+        public FixedSignIn(string email)
+        {
+            _email = email;
+        }
+
+        public Task<string?> AuthenticateAsync(HttpContext context) => Task.FromResult<string?>(_email);
     }
 
     private sealed class RemoteAddressStartupFilter : IStartupFilter

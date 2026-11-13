@@ -29,17 +29,30 @@ public sealed class SetupTests
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private static readonly Dictionary<string, string?> John = new() { ["CloudflareAccess:DevUserEmail"] = "john@example.com" };
+    private static readonly Dictionary<string, string?> John = new() { [TestWebApp.SignedInAs] = "john@example.com" };
 
+    // A new installation, even locally, starts with the setup code: nothing is chosen, nobody is signed in.
     [Fact]
-    public async Task Should_OpenOnTheGuide_OnANewInstallation()
+    public async Task Should_OpenOnTheSetupCode_OnANewInstallation()
     {
         await using var app = new TestWebApp("Development", John, setUp: false);
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
-        // The development user is signed in already: the guide opens on "About you", the last step of Part 1.
+        Assert.Contains("Setup code", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 1 OF 4", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_OpenOnTheGuide_OnceTheSignInIsChosen()
+    {
+        await using var app = SignedInNotSetUp();
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+
+        // John signed in through the sign-in chosen in Part 1: the guide goes on at "About you".
         Assert.Contains("About you", html, StringComparison.Ordinal);
         Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
         Assert.Contains("PART 1 OF 2", html, StringComparison.Ordinal);
@@ -70,7 +83,7 @@ public sealed class SetupTests
     [InlineData("/group/new")]
     public async Task Should_OpenEveryPageOnTheGuide_UntilItIsDone(string page)
     {
-        await using var app = new TestWebApp("Development", John, setUp: false);
+        await using var app = SignedInNotSetUp();
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync(page, Cancel));
@@ -83,7 +96,7 @@ public sealed class SetupTests
     [Fact]
     public async Task Should_OpenWhereTheGuideStands_WhateverTheAddress()
     {
-        await using var app = new TestWebApp("Development", John, setUp: false);
+        await using var app = SignedInNotSetUp();
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup?step=3", Cancel));
@@ -691,6 +704,20 @@ public sealed class SetupTests
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         db.Installations.Add(installation);
         await db.SaveChangesAsync(Cancel);
+    }
+
+    // Part 1 done (Cloudflare and Cloudflare Access, which the test app answers for as John), the guide not yet.
+    private static TestWebApp SignedInNotSetUp()
+    {
+        var settings = new Dictionary<string, string?>(AccessTokens.Settings);
+        foreach (var (key, value) in John)
+        {
+            settings[key] = value;
+        }
+
+        var app = new TestWebApp("Development", settings, setUp: false);
+        app.SaveBeforeStart(new Installation { AccessType = "cloudflare", SignInType = "cloudflare-access" });
+        return app;
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

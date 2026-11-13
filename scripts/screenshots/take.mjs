@@ -108,10 +108,12 @@ function seed() {
     db.close();
 }
 
-// Past the setup guide with a VM201, so the app runs that board from its next start and opens on the relays.
+// Past the setup guide with a VM201, only on this network and with no sign-in, so the app runs that board from its
+// next start and opens on the relays. The shared person is called John, so the screens greet someone by name.
 function setUp() {
     const db = new DatabaseSync(database);
-    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "BoardType", "SetupDoneUtc") VALUES (1, \'vm201\', ?)').run('2026-11-01 08:00:00');
+    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "BoardType", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, \'vm201\', ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
+    db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (\'someone@contactor.invalid\', \'John\', 0)').run();
     db.close();
 }
 
