@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
+using Contactor.Boards.Devantech;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
@@ -84,6 +85,26 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.False(board.HasLogin);
         Assert.Equal(4196, SimulatorCatalogue.Find(type)!.Port);
         Assert.Equal("The Waveshare board takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
+    }
+
+    [Theory]
+    [InlineData("devantech-eth002")]
+    [InlineData("devantech-eth008")]
+    [InlineData("devantech-eth484")]
+    [InlineData("DEVANTECH-ETH8020 ")]
+    public void Should_RunEachDevantechModel_WithOrWithoutAPassword(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        Assert.Null(_boards.Add(type, FreePort(), "", "apple"));
+
+        var boards = _boards.Boards;
+        Assert.All(boards, b => Assert.IsType<DevantechSimulator>(b.Board));
+        Assert.All(boards, b => Assert.Equal(type.Trim().ToLowerInvariant(), b.Board.Model.Id));
+        Assert.Null(Assert.Single(boards, b => !b.Board.HasLogin).Username);
+        Assert.Equal("", Assert.Single(boards, b => b.Board.HasLogin).Username);
+        Assert.Equal(17494, SimulatorCatalogue.Find(type)!.Port);
+        Assert.Equal("The Devantech board takes a password only, no user name.", _boards.Add(type, FreePort(), "admin", "apple"));
+        Assert.Equal("The password can be at most 32 characters.", _boards.Add(type, FreePort(), "", new string('a', 33)));
     }
 
     [Theory]

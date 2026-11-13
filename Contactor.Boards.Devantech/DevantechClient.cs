@@ -425,16 +425,27 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     /// </summary>
     private async Task<byte[]> ExchangeAsync(DevantechRequest request, bool routine, CancellationToken cancellationToken)
     {
-        try
+        if (_stream is null)
         {
-            if (_stream is null)
+            try
             {
-                await OpenAsync(cancellationToken).ConfigureAwait(false);
+                await ConnectTcpAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsNoAnswer(ex))
+            {
+                Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+                throw;
             }
 
+            // Its own commands trace what goes wrong.
+            await CheckAndUnlockAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
             SkipUnasked();
         }
-        catch (Exception ex) when (IsNoAnswer(ex))
+        catch (IOException ex)
         {
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
@@ -479,6 +490,13 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     // another model and DevantechAccessDeniedException for a password it doesn't take.
     private async Task OpenAsync(CancellationToken cancellationToken)
     {
+        await ConnectTcpAsync(cancellationToken).ConfigureAwait(false);
+        await CheckAndUnlockAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // Opens a new TCP connection, closing any before. Throws TimeoutException, SocketException or IOException.
+    private async Task ConnectTcpAsync(CancellationToken cancellationToken)
+    {
         Close();
         var endpoint = Endpoint;
         var tcp = new TcpClient { NoDelay = true };
@@ -503,7 +521,11 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
         _tcp = tcp;
         _stream = tcp.GetStream();
+    }
 
+    // On a new connection: the module id, then the lock.
+    private async Task CheckAndUnlockAsync(CancellationToken cancellationToken)
+    {
         // Another model's relays are numbered and laid out otherwise: nothing is switched or read on it.
         var info = await ExchangeAsync(DevantechProtocol.GetModuleInfo(), routine: false, cancellationToken).ConfigureAwait(false);
         Trace(BoardTraceDirection.Received, DevantechTraceText.Module(info), DevantechProtocol.Hex(info));

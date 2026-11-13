@@ -46,6 +46,31 @@ public sealed class SettingsPageTests
     }
 
     [Fact]
+    public async Task Should_AskOnlyForThePassword_OnABoardWithoutAUserName()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?>
+            {
+                ["CloudflareAccess:DevUserEmail"] = "john@example.com",
+                ["Board:Type"] = "devantech-eth484",
+                ["Devantech:Host"] = "127.0.0.1",
+                ["Devantech:Port"] = "1",
+                ["Devantech:Password"] = "quince7",
+            });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+
+        Assert.Contains("The board has no password", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"username\"", html, StringComparison.Ordinal);
+        Assert.Matches("id=\"password\"[^>]*placeholder=\"unchanged\"", html);
+        Assert.Contains("The TCP password from the board's configuration page, not the login of its web page.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("The same as on the board's own web page.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("quince7", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Should_OfferTheTabOnEveryMainScreen()
     {
         await using var app = new TestWebApp(
