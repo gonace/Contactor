@@ -45,7 +45,7 @@ public sealed class Vm208ClientTests
         await using var run = ClientRun.Start(simulator.Port);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        await run.Client.TurnOnAsync(0b0101, Cancel);
+        Assert.Equal(0b0101, await run.Client.TurnOnAsync(0b0101, Cancel));
 
         // Confirmed by the command's own answers: no time had to pass for a poll.
         Assert.Equal(0b0101, simulator.Relays);
@@ -290,7 +290,8 @@ public sealed class Vm208ClientTests
         board.BadAnswerFor = 0b0010;
         board.BadAnswer = (code, body);
 
-        await run.Client.TurnOnAsync(0b1111, Cancel);
+        // Relay 2's answer couldn't be read: it may or may not have switched, so it isn't among those taken.
+        Assert.Equal(0b1101, await run.Client.TurnOnAsync(0b1111, Cancel));
 
         // Relays 3 and 4 still went, the last good answer is the state, and a poll comes at once, not in a minute.
         Assert.Equal(0b1111, board.Switched);

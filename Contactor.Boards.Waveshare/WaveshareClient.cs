@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -126,13 +127,13 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     }
 
     /// <summary>Turns on the relays in <paramref name="mask"/> (bit 0 = relay 1), one request each.</summary>
-    public Task TurnOnAsync(ulong mask, CancellationToken cancellationToken = default)
+    public Task<ulong> TurnOnAsync(ulong mask, CancellationToken cancellationToken = default)
     {
         return CommandAsync(mask, turnOn: true, cancellationToken);
     }
 
     /// <summary>Turns off the relays in <paramref name="mask"/> (bit 0 = relay 1), one request each.</summary>
-    public Task TurnOffAsync(ulong mask, CancellationToken cancellationToken = default)
+    public Task<ulong> TurnOffAsync(ulong mask, CancellationToken cancellationToken = default)
     {
         return CommandAsync(mask, turnOn: false, cancellationToken);
     }
@@ -226,7 +227,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
     }
 
-    private async Task CommandAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
+    private async Task<ulong> CommandAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
     {
         if (!_model.Capabilities.AllRelays.ContainsAll(new ChannelMask(mask)))
         {
@@ -240,7 +241,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
         if (mask == 0)
         {
-            return;
+            return 0;
         }
 
         // A poll under way gives way. The board switches one relay per request, and the whole mask goes out, as one
@@ -248,7 +249,9 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         // Only a request that gets no answer at all (the board is gone) stops it.
         try
         {
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, token), cancellationToken).ConfigureAwait(false);
+            var taken = new StrongBox<ulong>();
+            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, taken, token), cancellationToken).ConfigureAwait(false);
+            return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
         {
@@ -263,10 +266,10 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
     }
 
-    // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's.
-    private async Task<WaveshareStatus> SwitchEachAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
+    // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's, and
+    // puts the relays the board took in <paramref name="taken"/>.
+    private async Task<WaveshareStatus> SwitchEachAsync(ulong mask, bool turnOn, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
-        ulong taken = 0;
         string? refusal = null;
         var unreadable = false;
         foreach (var relay in new ChannelMask(mask).Channels)
@@ -277,7 +280,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
                 var request = WaveshareModbus.WriteSingleCoil(WaveshareApi.UnitId, (ushort)(relay - 1), turnOn);
                 var echo = await ExchangeAsync(request, routine: false, cancellationToken).ConfigureAwait(false);
                 Trace(BoardTraceDirection.Received, WaveshareTraceText.Confirmed(echo), WaveshareModbus.Hex(echo));
-                taken |= 1UL << (relay - 1);
+                taken.Value |= 1UL << (relay - 1);
             }
             catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException)
             {
@@ -296,7 +299,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         // counted as switched. The poller reads the board at once, which shows what really happened. When the board
         // refused every relay with an exception answer, it answered: that doesn't count toward losing it. When an
         // answer couldn't be read, it counts as a failed poll, as a poll whose answer it can't read would.
-        if (taken == 0)
+        if (taken.Value == 0)
         {
             throw unreadable ? new WaveshareProtocolException(refusal!) : new BoardRefusedException(refusal!);
         }

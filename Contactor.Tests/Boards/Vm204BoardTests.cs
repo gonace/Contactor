@@ -55,7 +55,7 @@ public sealed class Vm204BoardTests
         var run = client.RunAsync(stop.Token);
         await Wait.UntilAsync(() => board.State.IsConnected);
 
-        await board.TurnOnAsync(ChannelMask.Of([2, 3]), Cancel);
+        Assert.Equal(ChannelMask.Of([2, 3]), await board.TurnOnAsync(ChannelMask.Of([2, 3]), Cancel));
         await Wait.UntilAsync(() => Volatile.Read(ref reported)?.Relays == ChannelMask.Of([2, 3]));
         await simulator.SetInputAsync(3, true);
         await board.RefreshAsync(Cancel);

@@ -116,7 +116,8 @@ public sealed class WaveshareClientTests
         await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        await run.Client.TurnOnAsync(0b0111, Cancel);
+        // Only the relays it took.
+        Assert.Equal(0b0101UL, await run.Client.TurnOnAsync(0b0111, Cancel));
 
         Assert.Equal(0b0101UL, simulator.Relays);
         Assert.Equal(0b0101UL, run.Client.State.Relays);

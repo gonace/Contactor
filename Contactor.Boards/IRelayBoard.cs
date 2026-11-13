@@ -20,11 +20,15 @@ public interface IRelayBoard
     /// </summary>
     event EventHandler<BoardState>? StateChanged;
 
-    /// <summary>Turns on the relays in <paramref name="relays"/>; the others are left as they are.</summary>
-    Task TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Turns on the relays in <paramref name="relays"/>; the others are left as they are. Returns the relays the board
+    /// took: all of them on a board that takes a mask at once, and on one that switches a relay per request, those
+    /// it didn't refuse. When it took none, it throws instead.
+    /// </summary>
+    Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default);
 
-    /// <summary>Turns off the relays in <paramref name="relays"/>; the others are left as they are.</summary>
-    Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default);
+    /// <summary>Turns off the relays in <paramref name="relays"/>, as <see cref="TurnOnAsync"/> turns them on.</summary>
+    Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default);
 
     /// <summary>Asks the board for its state; the answer comes as <see cref="StateChanged"/>.</summary>
     Task RefreshAsync(CancellationToken cancellationToken = default);

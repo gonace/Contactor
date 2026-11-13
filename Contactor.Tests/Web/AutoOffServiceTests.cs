@@ -255,12 +255,12 @@ public sealed class AutoOffServiceTests
 
         public BoardState State => Interlocked.Exchange(ref _stale, null) ?? _inner.State;
 
-        public Task TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+        public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
         {
             return _inner.TurnOnAsync(relays, cancellationToken);
         }
 
-        public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+        public Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
         {
             return _inner.TurnOffAsync(relays, cancellationToken);
         }

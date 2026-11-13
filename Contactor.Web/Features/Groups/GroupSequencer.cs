@@ -347,7 +347,9 @@ public sealed partial class GroupSequencer : BackgroundService
                 _expected.Expect(all.Off, on: false);
                 try
                 {
-                    await _board.TurnOffAsync(all.Off, cancellationToken);
+                    // A relay the board refused (one that switches a relay per request can refuse some) isn't the
+                    // app's change: its step isn't confirmed, and times out as one the board didn't carry out.
+                    _expected.Forget(all.Off.Except(await _board.TurnOffAsync(all.Off, cancellationToken)), on: false);
                 }
                 catch
                 {
@@ -363,7 +365,7 @@ public sealed partial class GroupSequencer : BackgroundService
                 _expected.Expect(all.On, on: true);
                 try
                 {
-                    await _board.TurnOnAsync(all.On, cancellationToken);
+                    _expected.Forget(all.On.Except(await _board.TurnOnAsync(all.On, cancellationToken)), on: true);
                 }
                 catch (Exception ex)
                 {

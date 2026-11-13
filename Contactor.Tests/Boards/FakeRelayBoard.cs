@@ -49,10 +49,16 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
     }
 
-    public Task TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
         return SwitchAsync(relays, on: true);
     }
+
+    /// <summary>
+    /// Relays the board refuses, as one that switches a relay per request can: they stay as they are and aren't among
+    /// the relays a command returns. A command that has only these fails, as on a real board.
+    /// </summary>
+    public ChannelMask Refuse { get; set; }
 
     /// <summary>
     /// When set, the next command switches the relays but reports nothing and throws
@@ -95,7 +101,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// <summary>When set, the next OFF throws <see cref="BoardNotConnectedException"/>, as if the connection had just dropped.</summary>
     public bool FailNextOff { get; set; }
 
-    public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    public Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
         if (FailNextOff)
         {
@@ -106,7 +112,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
         if (IgnoreOff)
         {
             EnsureConnected();
-            return Task.CompletedTask;
+            return Task.FromResult(relays);
         }
 
         return SwitchAsync(relays, on: false);
@@ -191,12 +197,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
-    private Task SwitchAsync(ChannelMask relays, bool on)
+    private async Task<ChannelMask> SwitchAsync(ChannelMask relays, bool on)
     {
         EnsureConnected();
         if (!Capabilities.AllRelays.ContainsAll(relays))
         {
             throw new ArgumentOutOfRangeException(nameof(relays), relays, $"The board has relays 1–{Capabilities.RelayCount}.");
+        }
+
+        var taken = relays.Except(Refuse);
+        if (!relays.IsEmpty && taken.IsEmpty)
+        {
+            throw new BoardNotConnectedException("The board refused the command.");
         }
 
         BoardState state;
@@ -205,11 +217,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
             if (HoldStatus)
             {
                 var held = _heldRelays ?? _state.Relays;
-                _heldRelays = on ? held | relays : held.Except(relays);
-                return Task.CompletedTask;
+                _heldRelays = on ? held | taken : held.Except(taken);
+                return taken;
             }
 
-            state = _state = Stamp(_state with { Relays = on ? _state.Relays | relays : _state.Relays.Except(relays) });
+            state = _state = Stamp(_state with { Relays = on ? _state.Relays | taken : _state.Relays.Except(taken) });
         }
 
         if (SwitchSilentlyThenFail)
@@ -219,7 +231,12 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
 
         StateChanged?.Invoke(this, state);
-        return AfterSwitch?.Invoke() ?? Task.CompletedTask;
+        if (AfterSwitch is { } after)
+        {
+            await after();
+        }
+
+        return taken;
     }
 
     private void EnsureConnected()

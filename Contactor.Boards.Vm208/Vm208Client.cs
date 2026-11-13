@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -110,13 +111,13 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
     }
 
     /// <summary>Turns on the relays in <paramref name="mask"/> (bit 0 = relay 1, relays 1–4), one request each.</summary>
-    public Task TurnOnAsync(byte mask, CancellationToken cancellationToken = default)
+    public Task<byte> TurnOnAsync(byte mask, CancellationToken cancellationToken = default)
     {
         return CommandAsync(mask, turnOn: true, cancellationToken);
     }
 
     /// <summary>Turns off the relays in <paramref name="mask"/> (bit 0 = relay 1, relays 1–4), one request each.</summary>
-    public Task TurnOffAsync(byte mask, CancellationToken cancellationToken = default)
+    public Task<byte> TurnOffAsync(byte mask, CancellationToken cancellationToken = default)
     {
         return CommandAsync(mask, turnOn: false, cancellationToken);
     }
@@ -210,7 +211,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         }
     }
 
-    private async Task CommandAsync(byte mask, bool turnOn, CancellationToken cancellationToken)
+    private async Task<byte> CommandAsync(byte mask, bool turnOn, CancellationToken cancellationToken)
     {
         if (mask > (1 << Vm208Api.RelayCount) - 1)
         {
@@ -224,7 +225,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
 
         if (mask == 0)
         {
-            return;
+            return 0;
         }
 
         // A poll under way gives way. The firmware switches one relay per request, and the whole mask goes out, as one
@@ -232,7 +233,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         // Only a request that gets no answer at all (the board is gone) stops it.
         try
         {
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, token), cancellationToken).ConfigureAwait(false);
+            var taken = new StrongBox<byte>();
+            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, taken, token), cancellationToken).ConfigureAwait(false);
+            return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
         {
@@ -246,8 +249,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         }
     }
 
-    // Under the poller's lock. Returns the last status the board answered with, which the poller takes as a poll's.
-    private async Task<Vm208Status> SwitchEachAsync(byte mask, bool turnOn, CancellationToken cancellationToken)
+    // Under the poller's lock. Returns the last status the board answered with, which the poller takes as a poll's, and
+    // puts the relays whose answer it could read in <paramref name="taken"/>.
+    private async Task<Vm208Status> SwitchEachAsync(byte mask, bool turnOn, StrongBox<byte> taken, CancellationToken cancellationToken)
     {
         Vm208Status? status = null;
         string? refusal = null;
@@ -264,6 +268,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
                 var answer = await SendAsync(HttpMethod.Post, Vm208Api.RelayPath, Vm208Api.RelayForm(relay, turnOn), routine: false, cancellationToken)
                     .ConfigureAwait(false);
                 status = ReadStatusAnswer(answer);
+                taken.Value |= (byte)(1 << (relay - 1));
             }
             catch (Vm208ProtocolException ex)
             {

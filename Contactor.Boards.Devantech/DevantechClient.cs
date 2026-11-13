@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -147,13 +148,13 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     }
 
     /// <summary>Turns on the relays in <paramref name="mask"/> (bit 0 = relay 1), one command each.</summary>
-    public Task TurnOnAsync(ulong mask, CancellationToken cancellationToken = default)
+    public Task<ulong> TurnOnAsync(ulong mask, CancellationToken cancellationToken = default)
     {
         return CommandAsync(mask, turnOn: true, cancellationToken);
     }
 
     /// <summary>Turns off the relays in <paramref name="mask"/> (bit 0 = relay 1), one command each.</summary>
-    public Task TurnOffAsync(ulong mask, CancellationToken cancellationToken = default)
+    public Task<ulong> TurnOffAsync(ulong mask, CancellationToken cancellationToken = default)
     {
         return CommandAsync(mask, turnOn: false, cancellationToken);
     }
@@ -243,7 +244,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         }
     }
 
-    private async Task CommandAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
+    private async Task<ulong> CommandAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
     {
         if (!_model.Capabilities.AllRelays.ContainsAll(new ChannelMask(mask)))
         {
@@ -257,7 +258,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
         if (mask == 0)
         {
-            return;
+            return 0;
         }
 
         // A poll under way gives way. The board switches one relay per command, and the whole mask goes out, as one
@@ -265,7 +266,9 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         // Only a command that gets no answer at all (the board is gone) stops it.
         try
         {
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, token), cancellationToken).ConfigureAwait(false);
+            var taken = new StrongBox<ulong>();
+            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, taken, token), cancellationToken).ConfigureAwait(false);
+            return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
         {
@@ -280,14 +283,14 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         }
     }
 
-    // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's.
-    private async Task<DevantechStatus> SwitchEachAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
+    // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's, and
+    // puts the relays the board took in <paramref name="taken"/>.
+    private async Task<DevantechStatus> SwitchEachAsync(ulong mask, bool turnOn, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         // The board locks again after 30 s without a command, so a command checks first. A board it can't unlock
         // switches nothing: that throws before any relay is sent.
         await UnlockAsync(cancellationToken).ConfigureAwait(false);
 
-        ulong taken = 0;
         string? refusal = null;
         var unreadable = false;
         foreach (var relay in new ChannelMask(mask).Channels)
@@ -308,7 +311,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
                     throw new DevantechRefusedException(string.Create(CultureInfo.InvariantCulture, $"The board refused relay {relay}."));
                 }
 
-                taken |= 1UL << (relay - 1);
+                taken.Value |= 1UL << (relay - 1);
             }
             catch (Exception ex) when (IsNotTaken(ex))
             {
@@ -328,7 +331,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         // counted as switched. The poller reads the board at once. When the board answered 01 to every relay, it
         // answered: that doesn't count toward losing it. Anything else (an unreadable answer, a new connection it
         // couldn't check or unlock) counts as a failed poll.
-        if (taken == 0)
+        if (taken.Value == 0)
         {
             throw unreadable ? new DevantechRefusedException(refusal!) : new BoardRefusedException(refusal!);
         }
