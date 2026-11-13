@@ -48,6 +48,56 @@ public sealed class AutoOffServiceTests
         Assert.DoesNotContain(await rig.EventsAsync(), e => e.Actor == EventActors.External);
     }
 
+    // A relay on with nobody's run (here after an OFF the board was sent but didn't carry out, which clears the run
+    // while the relay stays on) gets its own auto-off at the next check. One in a group is left to its group, a
+    // person's run is kept, and "Never" gives none.
+    [Fact]
+    public async Task Should_GiveARelayOnWithNobodysRun_ItsOwnAutoOff()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan };
+            group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
+            group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
+            db.RelayGroups.Add(group);
+            (await db.Relays.SingleAsync(r => r.Id == 5, Cancel)).MaxOnMinutes = null;
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await rig.Control.TurnOnAsync(4, Jane, Cancel);
+        await rig.Simulator.SetOutputsAsync(0b0001_1101);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0001_1101);
+        await rig.WaitForEventsAsync(events => events.Count(e => e.Actor == EventActors.External) == 3);
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            // The runs as an OFF that wasn't carried out leaves them.
+            foreach (var runtime in await db.RelayRuntimes.Where(r => r.RelayId == 3 || r.RelayId == 5).ToListAsync(Cancel))
+            {
+                (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy) = (null, null, null);
+            }
+
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        rig.Time.Now += TimeSpan.FromMinutes(1);
+        Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
+
+        var now = rig.Time.Now.UtcDateTime;
+        var relay3 = await RuntimeAsync(rig, 3);
+        Assert.Equal(((DateTime?)now, EventActors.External, (DateTime?)now.AddMinutes(Relay.DefaultMaxOnMinutes)), (relay3.OnSinceUtc, relay3.TurnedOnBy, relay3.AutoOffAtUtc));
+        var relay5 = await RuntimeAsync(rig, 5);
+        Assert.Equal((EventActors.External, (DateTime?)null), (relay5.TurnedOnBy, relay5.AutoOffAtUtc));
+        Assert.Equal(Jane, (await RuntimeAsync(rig, 4)).TurnedOnBy);
+        Assert.Null((await RuntimeAsync(rig, 1)).TurnedOnBy);
+    }
+
+    private static async Task<RelayRuntime> RuntimeAsync(BoardTestRig rig, int relayId)
+    {
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        return await db.RelayRuntimes.AsNoTracking().SingleAsync(r => r.RelayId == relayId, Cancel);
+    }
+
     [Fact]
     public async Task Should_WaitUntilTheTime()
     {

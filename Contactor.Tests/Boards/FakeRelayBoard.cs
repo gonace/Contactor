@@ -77,6 +77,12 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
+    /// <summary>
+    /// Runs after a command switched the relays and the board reported it, before the command returns: something else
+    /// the app does while the caller hasn't saved what it did yet.
+    /// </summary>
+    public Func<Task>? AfterSwitch { get; set; }
+
     /// <summary>When set, OFF commands are accepted but change nothing, like a relay that won't drop.</summary>
     public bool IgnoreOff { get; set; }
 
@@ -207,7 +213,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
 
         StateChanged?.Invoke(this, state);
-        return Task.CompletedTask;
+        return AfterSwitch?.Invoke() ?? Task.CompletedTask;
     }
 
     private void EnsureConnected()
