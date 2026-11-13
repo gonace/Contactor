@@ -138,6 +138,7 @@ public sealed class SetupSignInHandler : IDisposable
         return OneAtATimeAsync(() => SignInCatalogue.Find(id)?.Id switch
         {
             CloudflareMethods.AccessId => ChooseCloudflareAccessCoreAsync(teamDomain, audience, cancellationToken),
+            TailscaleMethods.IdentityId => ChooseTailscaleIdentityCoreAsync(cancellationToken),
             SignInCatalogue.NoneId => ChooseNoSignInCoreAsync(cancellationToken),
             _ => Task.FromResult<string?>("Choose how people sign in."),
         }, cancellationToken);
@@ -278,6 +279,36 @@ public sealed class SetupSignInHandler : IDisposable
         await _access.ChooseAsync(AccessCatalogue.Find(TailscaleMethods.NetworkId)!, cancellationToken);
         return null;
     }
+
+    /// <summary>
+    /// Tailscale identity as the sign-in, from the next request on, which ends setup mode. Only once the app is on the
+    /// Tailscale network, since the guide sends people to its address there. Returns what is wrong in plain words, and
+    /// changes nothing then.
+    /// </summary>
+    private async Task<string?> ChooseTailscaleIdentityCoreAsync(CancellationToken cancellationToken)
+    {
+        if (_signIn.Current is not null)
+        {
+            return "This installation is set up already.";
+        }
+
+        if (_access.Current is not { } wayIn || !wayIn.SignIns.Contains(TailscaleMethods.IdentityId))
+        {
+            return "Tailscale identity only works when people reach the app through Tailscale.";
+        }
+
+        if (_tailscaleNetwork.Status is not { Online: true, Address: not null })
+        {
+            return "Wait until Contactor is on your Tailscale network: people open it there.";
+        }
+
+        await _signIn.ChooseAsync(SignInCatalogue.Find(TailscaleMethods.IdentityId)!, cancellationToken);
+        return null;
+    }
+
+    /// <summary>Tailscale identity as the sign-in, once the app is on the Tailscale network.</summary>
+    public Task<string?> ChooseTailscaleIdentityAsync(CancellationToken cancellationToken) =>
+        OneAtATimeAsync(() => ChooseTailscaleIdentityCoreAsync(cancellationToken), cancellationToken);
 
     /// <summary>
     /// Cloudflare Access as the sign-in: saves its team domain and AUD tag, and uses it from the next request on, which

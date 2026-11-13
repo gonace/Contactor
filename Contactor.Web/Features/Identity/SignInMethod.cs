@@ -1,4 +1,5 @@
 using Contactor.Web.Features.Cloudflare;
+using Contactor.Web.Features.Tailscale;
 
 namespace Contactor.Web.Features.Identity;
 
@@ -29,6 +30,7 @@ public static class SignInCatalogue
     public static IReadOnlyList<SignInMethod> All { get; } =
     [
         new(CloudflareMethods.AccessId, "Cloudflare Access", "A code by e-mail, through Cloudflare. Who may sign in is set in Cloudflare."),
+        new(TailscaleMethods.IdentityId, "Tailscale identity", "Your Tailscale account: Tailscale says who each person is. Who may come in is set in Tailscale."),
         new(NoneId, "No sign-in", "Anyone who can open the app can switch the relays, and the events can't say who did it.", NotRecommended: true),
     ];
 

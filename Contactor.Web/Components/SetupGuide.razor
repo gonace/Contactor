@@ -433,7 +433,7 @@
         <div class="intro">
             <h1 tabindex="-1" @ref="_heading">@(_elsewhere is null ? "How do people sign in?" : "Go on at your new address")</h1>
             <p>@(_elsewhere is not null
-                ? $"Contactor now only answers through Cloudflare. Open it there and sign in with your e-mail{(_setupDone ? "." : ": the guide goes on.")}"
+                ? $"Contactor now only answers through {SignIns.WayIn?.Name}. Open it there{(SignIns.SignIn?.Id == TailscaleMethods.IdentityId ? ", on a phone or computer on your Tailscale network" : " and sign in with your e-mail")}{(_setupDone ? "." : ": the guide goes on.")}"
                 : recommended is not null ? $"Recommended with {SignIns.WayIn?.Name}: {recommended.Method.Name}." : "With a sign-in, the events show who did what.")</p>
         </div>
         @if (_elsewhere is null)
@@ -651,11 +651,13 @@
     /// </summary>
     public static bool ShouldLeave(bool signedIn, bool part1Done, bool setupDone) => signedIn && part1Done && setupDone;
 
-    // Where the guide goes on once the sign-in is chosen: the tunnel's address (the guide, or the relays once it is
-    // done). Without an address, which the guide never leaves this way, the app's own.
+    // Where the guide goes on once the sign-in is chosen: the tunnel's address, or the app's on the Tailscale network
+    // (the guide, or the relays once it is done). Without an address, which the guide never leaves this way, the app's
+    // own.
     private string NewAddress()
     {
-        return SignIns.Tunnel.Address is { Length: > 0 } address
+        var address = SignIns.SignIn?.Id == TailscaleMethods.IdentityId ? SignIns.Tailscale.Address : SignIns.Tunnel.Address;
+        return address is { Length: > 0 }
             ? $"https://{address}/{(_setupDone ? "" : "setup")}"
             : Navigation.BaseUri;
     }

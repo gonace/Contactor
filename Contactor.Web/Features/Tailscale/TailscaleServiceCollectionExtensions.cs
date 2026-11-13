@@ -1,10 +1,14 @@
+using Contactor.Web.Features.Identity;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Contactor.Web.Features.Tailscale;
 
 public static class TailscaleServiceCollectionExtensions
 {
-    /// <summary>What Tailscale has as a way in: its settings, saved in the setup guide, and tailscaled, which the app runs itself.</summary>
+    /// <summary>
+    /// What Tailscale has as a way in and a sign-in: its settings, saved in the setup guide, tailscaled, which the app
+    /// runs itself, and Tailscale identity.
+    /// </summary>
     public static IServiceCollection AddTailscale(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -14,6 +18,8 @@ public static class TailscaleServiceCollectionExtensions
         services.AddSingleton<ITailscaleProcess, TailscaleProcess>();
         services.AddSingleton<TailscaleSettings>();
         services.AddSingleton<TailscaleNetwork>();
+        services.AddSingleton<TailscaleIdentity>();
+        services.AddKeyedSingleton<ISignInMethod>(TailscaleMethods.IdentityId, (s, _) => s.GetRequiredService<TailscaleIdentity>());
         return services;
     }
 

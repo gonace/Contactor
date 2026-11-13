@@ -1,5 +1,6 @@
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
+using Contactor.Web.Features.Tailscale;
 
 namespace Contactor.Web.Features.Access;
 
@@ -48,6 +49,12 @@ public static class AccessCatalogue
             "Cloudflare Tunnel: a public link on your own domain. Needs a Cloudflare account and a domain.",
             [CloudflareMethods.AccessId],
             s => s.GetRequiredService<CloudflareTunnel>()),
+        new(
+            TailscaleMethods.NetworkId,
+            "Tailscale",
+            "Tailscale Serve: only phones and computers on your Tailscale network can open it. Each needs the Tailscale app.",
+            [TailscaleMethods.IdentityId],
+            s => s.GetRequiredService<TailscaleNetwork>()),
     ];
 
     /// <summary>The way in with this id, ignoring case and spaces around it, or null.</summary>
