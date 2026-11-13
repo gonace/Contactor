@@ -87,11 +87,7 @@
                         else
                         {
                             @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
-                            <p class="unconfirmed-text" role="alert">@RelayStatusText.Unconfirmed</p>
-                            <div class="unconfirmed-actions">
-                                <button type="button" class="try-again" disabled="@(!Board.State.IsConnected || _busy)" @onclick="() => SwitchAsync(_wanted)">Try again</button>
-                                <button type="button" class="leave-it" @onclick="() => _toggleFailed = false">Leave it</button>
-                            </div>
+                            <UnconfirmedBox CanTryAgain="@(Board.State.IsConnected && !_busy)" OnTryAgain="() => SwitchAsync(_wanted)" OnLeave="() => _toggleFailed = false" />
                         }
                     }
                 </section>

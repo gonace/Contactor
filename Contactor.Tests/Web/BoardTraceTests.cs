@@ -155,6 +155,23 @@ public sealed class BoardTraceTests : IDisposable
         Assert.Equal(0, _time.PendingTimers);
     }
 
+    // The held-back notice comes on a timer's thread: a listener that throws must neither end the app nor keep the
+    // others from hearing it.
+    [Fact]
+    public void Should_TellEveryListener_WhenOneFails()
+    {
+        var notices = 0;
+        _trace.RoutineCounted += (_, _) => throw new InvalidOperationException("A page that broke.");
+        _trace.RoutineCounted += (_, _) => notices++;
+        var routine = new BoardTraceEntry(Now, BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true);
+        _trace.Record(routine);
+        _trace.Record(routine);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(2, notices);
+    }
+
     [Fact]
     public void Should_StopListening_WhenDisposed()
     {

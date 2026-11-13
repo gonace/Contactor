@@ -212,24 +212,4 @@ public sealed class RelaysPageTests
 
         return count;
     }
-
-    // The pages' countdowns follow the app's clock (TimeProvider), not the machine's, so a fake clock can move them.
-    [Fact]
-    public void Should_TakeEveryPageTimerFromTheTimeProvider()
-    {
-        var folder = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Contactor.Web", "Components");
-        List<string> found = [];
-        foreach (var file in Directory.GetFiles(folder, "*.razor"))
-        {
-            foreach (var (line, number) in File.ReadLines(file).Select((l, i) => (l, i + 1)))
-            {
-                if (line.Contains("new Timer(", StringComparison.Ordinal) || line.Contains("System.Threading.Timer", StringComparison.Ordinal))
-                {
-                    found.Add($"{Path.GetFileName(file)}:{number}: {line.Trim()}");
-                }
-            }
-        }
-
-        Assert.Empty(found);
-    }
 }

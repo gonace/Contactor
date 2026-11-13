@@ -27,7 +27,7 @@ public sealed record BoardTraceItem(long Id, BoardTraceEntry Entry)
 /// the first connection. Routine steps (a keep-alive, a poll that changes nothing) are only counted, so they never
 /// push the steps worth reading out of the list, however often a board sends them.
 /// </summary>
-public sealed class BoardTrace : IDisposable
+public sealed partial class BoardTrace : IDisposable
 {
     public const int Capacity = 100;
 
@@ -36,6 +36,7 @@ public sealed class BoardTrace : IDisposable
 
     private readonly IBoardTraffic _traffic;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<BoardTrace>? _logger;
     private readonly Lock _lock = new();
     private readonly Queue<BoardTraceItem> _items = new(Capacity);
     private readonly ITimer _heldNoticeTimer;
@@ -44,8 +45,9 @@ public sealed class BoardTrace : IDisposable
     private DateTimeOffset? _routineNoticedAt;
     private bool _noticeHeld;
 
-    public BoardTrace(IBoardTraffic traffic, TimeProvider timeProvider)
+    public BoardTrace(IBoardTraffic traffic, TimeProvider timeProvider, ILogger<BoardTrace>? logger = null)
     {
+        _logger = logger;
         _traffic = traffic;
         _timeProvider = timeProvider;
         _heldNoticeTimer = _timeProvider.CreateTimer(_ => RaiseHeldNotice(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
@@ -163,7 +165,7 @@ public sealed class BoardTrace : IDisposable
             StopHeldNotice();
         }
 
-        RoutineCounted?.Invoke(this, EventArgs.Empty);
+        RaiseRoutineCounted();
     }
 
     private void RaiseHeldNotice()
@@ -179,7 +181,34 @@ public sealed class BoardTrace : IDisposable
             _routineNoticedAt = _timeProvider.GetUtcNow();
         }
 
-        RoutineCounted?.Invoke(this, EventArgs.Empty);
+        RaiseRoutineCounted();
+    }
+
+    // Each subscriber on its own, as the boards do: this may run on a timer's thread, where an exception would end the
+    // app, and one subscriber that fails must not keep the count from the others.
+    private void RaiseRoutineCounted()
+    {
+        if (RoutineCounted is not { } handlers)
+        {
+            return;
+        }
+
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler>())
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+#pragma warning disable CA1031 // A subscriber's failure is logged; the others are still told.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                if (_logger is not null)
+                {
+                    LogListenerFailed(_logger, ex);
+                }
+            }
+        }
     }
 
     private void StopHeldNotice()
@@ -190,4 +219,7 @@ public sealed class BoardTrace : IDisposable
             _heldNoticeTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "A listener to the board traffic's routine count failed")]
+    private static partial void LogListenerFailed(ILogger logger, Exception exception);
 }

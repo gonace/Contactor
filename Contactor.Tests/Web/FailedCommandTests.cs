@@ -214,6 +214,22 @@ public sealed class FailedCommandTests : IAsyncLifetime
         Assert.True(_board.State.IsOn(2));
     }
 
+    // A schedule's run starts when its ON went out, not at the minute it belongs to: a person's OFF sent in between
+    // is told apart from it by time (RelayRuns.End), so a late ON keeps its run.
+    [Fact]
+    public async Task Should_StartAScheduleRun_WhenItsOnWentOut()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime.AddSeconds(20);
+
+        await Scheduler.TickAsync(Cancel);
+
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+        Assert.Equal((EventActors.Schedule, (DateTime?)OnTime.AddSeconds(20).UtcDateTime), (runtime.TurnedOnBy, runtime.OnSinceUtc));
+    }
+
     // Auto-off turns a relay off, and someone turns it on again before auto-off saves: their new run stays.
     [Fact]
     public async Task Should_KeepANewRun_WhenAutoOffEndsTheOldOneMeanwhile()

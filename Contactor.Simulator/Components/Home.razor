@@ -222,17 +222,18 @@
         _newPort = NextFreePort();
     }
 
-    // Another model offers its own port.
+    // Another model offers its own port, and an error about the one before no longer applies.
     private void OnModelChanged()
     {
         _newPort = NextFreePort();
+        _addError = null;
     }
 
-    // The model's suggested port, or the first free one after it.
+    // The model's suggested port, or the first free one after it; empty when none is free.
     private string NextFreePort()
     {
         var taken = _boards.Select(b => b.Board.Port).ToHashSet();
-        return SimulatorCatalogue.FreePort(_newType, taken).ToString(CultureInfo.InvariantCulture);
+        return SimulatorCatalogue.FreePort(_newType, taken)?.ToString(CultureInfo.InvariantCulture) ?? "";
     }
 
     private static string Short(RunningBoard board)
@@ -312,7 +313,14 @@
         {
             await InvokeAsync(() =>
             {
+                // A port the page offered, not one typed in, is offered afresh: a board added another way may use it now.
+                var offered = _newPort == NextFreePort();
                 _boards = Simulator.Boards;
+                if (offered)
+                {
+                    _newPort = NextFreePort();
+                }
+
                 StateHasChanged();
             });
         }

@@ -49,6 +49,7 @@ public sealed class SimulatorCatalogueTests
     [Fact]
     public void Should_StopAtTheLastPort()
     {
-        Assert.Equal(65535, SimulatorCatalogue.FreePort("vm201", [.. Enumerable.Range(9760, 65535 - 9760 + 1)]));
+        Assert.Equal(65535, SimulatorCatalogue.FreePort("vm201", [.. Enumerable.Range(9760, 65535 - 9760)]));
+        Assert.Null(SimulatorCatalogue.FreePort("vm201", [.. Enumerable.Range(9760, 65535 - 9760 + 1)]));
     }
 }

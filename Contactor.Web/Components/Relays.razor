@@ -178,11 +178,7 @@
                             {
                                 @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
                                 <div class="unconfirmed">
-                                    <p class="unconfirmed-text" role="alert">@RelayStatusText.Unconfirmed</p>
-                                    <div class="unconfirmed-actions">
-                                        <button type="button" class="try-again" disabled="@(!State.IsConnected || _busy)" @onclick="() => TryAgainAsync(unconfirmed)">Try again</button>
-                                        <button type="button" class="leave-it" @onclick="() => _unconfirmed = null">Leave it</button>
-                                    </div>
+                                    <UnconfirmedBox CanTryAgain="@(State.IsConnected && !_busy)" OnTryAgain="() => TryAgainAsync(unconfirmed)" OnLeave="() => _unconfirmed = null" />
                                 </div>
                             }
                         </div>
@@ -264,7 +260,6 @@
 
     private BoardState State => Board.State;
 
-
     // A group counts as one, and its relays aren't listed on their own.
     private int ActiveCount => _relays.Count(r => r.IsActive) + _groups.Count;
 
@@ -276,9 +271,8 @@
 
     private IEnumerable<InputView> VisibleInputs => _inputs.Where(i => i.IsActive || _showInactive);
 
-    // "Relays" only sets the relays apart from the groups or the inputs, and only over cards: not when every relay is
-    // in a group or the rest are hidden as inactive.
-    private bool ShowRelaysHeading => (_groups.Count > 0 || VisibleInputs.Any()) && VisibleRelays.Any();
+    // "Relays" only sets the relays apart from the groups or the inputs (its section is only there over cards).
+    private bool ShowRelaysHeading => _groups.Count > 0 || VisibleInputs.Any();
 
     private string InactiveButtonText => InactiveText.For(_relays.Count(r => !r.IsActive), _inputs.Count(i => !i.IsActive), _showInactive);
 
@@ -417,8 +411,6 @@
             _unconfirmed = null;
         }
     }
-
-
 
     private async Task ToggleGroupAsync(int groupId, bool isOn)
     {

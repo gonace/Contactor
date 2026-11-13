@@ -96,6 +96,47 @@ public sealed class InputActionsHandler
     {
         ArgumentNullException.ThrowIfNull(rows);
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // Checked inside the transaction, so a group saved at the same moment (GroupsHandler) can't take a relay
+        // between the check and the save.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (await CheckAsync(db, inputId, rows, cancellationToken) is { } error)
+        {
+            return error;
+        }
+
+        // What isn't shown, a relay above the board's count, stays.
+        var count = _board.Capabilities.RelayCount;
+        db.InputActions.RemoveRange(await db.InputActions
+            .Where(a => a.InputId == inputId && (a.RelayId == null || a.RelayId <= count))
+            .ToListAsync(cancellationToken));
+        db.InputActions.AddRange(rows.Select(r => new InputAction
+        {
+            InputId = inputId,
+            RelayId = r.Target.RelayId,
+            GroupId = r.Target.GroupId,
+            WhenClosed = r.WhenClosed,
+            WhenOpened = r.WhenOpened,
+        }));
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        _changes.Notify();
+        return null;
+    }
+
+    /// <summary>
+    /// What <see cref="SaveAsync"/> would refuse, without saving anything, so the Input screen can check the relays and
+    /// groups before it saves the name. Null when they can be saved.
+    /// </summary>
+    public async Task<string?> CheckAsync(int inputId, IReadOnlyList<InputActionRow> rows, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        return await CheckAsync(db, inputId, rows, cancellationToken);
+    }
+
+    private async Task<string?> CheckAsync(ContactorDbContext db, int inputId, IReadOnlyList<InputActionRow> rows, CancellationToken cancellationToken)
+    {
         if (inputId < 1 || inputId > _board.Capabilities.InputCount || !await db.Inputs.AnyAsync(i => i.Id == inputId, cancellationToken))
         {
             return "The input doesn't exist.";
@@ -123,21 +164,6 @@ public sealed class InputActionsHandler
             seen.Add(row.Target);
         }
 
-        // What isn't shown, a relay above the board's count, stays.
-        var count = _board.Capabilities.RelayCount;
-        db.InputActions.RemoveRange(await db.InputActions
-            .Where(a => a.InputId == inputId && (a.RelayId == null || a.RelayId <= count))
-            .ToListAsync(cancellationToken));
-        db.InputActions.AddRange(rows.Select(r => new InputAction
-        {
-            InputId = inputId,
-            RelayId = r.Target.RelayId,
-            GroupId = r.Target.GroupId,
-            WhenClosed = r.WhenClosed,
-            WhenOpened = r.WhenOpened,
-        }));
-        await db.SaveChangesAsync(cancellationToken);
-        _changes.Notify();
         return null;
     }
 
