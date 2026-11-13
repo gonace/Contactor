@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Contactor.Web.Features.Access;
+using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Tailscale;
 
@@ -35,9 +36,12 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     private readonly ILogger<TailscaleNetwork> _logger;
     private TailscaleStatus _status = TailscaleStatus.Offline;
 
+    // The auth key the last run started with; null before the first.
+    private string? _lastAuthKey;
+
     public TailscaleNetwork(
         TailscaleSettings settings,
-        Microsoft.Extensions.Options.IOptions<TailscaleOptions> options,
+        IOptions<TailscaleOptions> options,
         ITailscaleProcess process,
         TimeProvider time,
         ILogger<TailscaleNetwork> logger)
@@ -77,7 +81,11 @@ public sealed partial class TailscaleNetwork : IAccessMethod
             _settings.Changed += OnChanged;
             try
             {
-                await RunWithSettingsAsync(_settings.Current, changed.Token);
+                // An auth key other than the one this run started with joins again, even on a network already.
+                var settings = _settings.Current;
+                var newKey = _lastAuthKey is not null && settings.AuthKey.Length > 0 && settings.AuthKey != _lastAuthKey;
+                _lastAuthKey = settings.AuthKey;
+                await RunWithSettingsAsync(settings, newKey, changed.Token);
             }
             finally
             {
@@ -93,14 +101,14 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     }
 
     // Keeps tailscaled running, and beside it joins the network, serves the app and watches how it stands.
-    private Task RunWithSettingsAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
+    private Task RunWithSettingsAsync(TailscaleNetworkSettings settings, bool newKey, CancellationToken cancellationToken)
     {
         return KeepRunning.RunAsync(
             async run =>
             {
                 using var daemon = CancellationTokenSource.CreateLinkedTokenSource(run);
                 LogStarting();
-                var watching = WatchAsync(settings, daemon.Token);
+                var watching = WatchAsync(settings, newKey, daemon.Token);
                 try
                 {
                     return await _process.RunDaemonAsync(LogDaemon, daemon.Token);
@@ -127,74 +135,146 @@ public sealed partial class TailscaleNetwork : IAccessMethod
             cancellationToken);
     }
 
-    // While tailscaled runs: joins the network once, then serves the app, and keeps the status up to date. Never
-    // throws: tailscaled stopping ends it.
-    private async Task WatchAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
+    // While tailscaled runs: joins the network once, then serves the app, and keeps the status up to date. A failed
+    // check is logged and tried again at the next; only tailscaled stopping ends it. A new auth key joins again even
+    // when tailscaled is on a network already (another one, perhaps).
+    private async Task WatchAsync(TailscaleNetworkSettings settings, bool newKey, CancellationToken cancellationToken)
     {
-        var loggedIn = false;
-        var named = false;
-        var served = false;
-        string? problem = null;
-        try
+        var watch = new Watch(newKey);
+        while (!cancellationToken.IsCancellationRequested)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            TailscaleState? state = null;
+            try
             {
-                var state = await ReadStateAsync(cancellationToken);
-                if (state is { BackendState: "NeedsLogin" } && !loggedIn && settings.AuthKey.Length == 0)
+                state = await ReadStateAsync(cancellationToken);
+                if (await CheckAsync(watch, state, settings, cancellationToken))
                 {
-                    loggedIn = true;
-                    problem = "Tailscale needs an auth key: save one in the setup guide.";
-                    LogProblem(problem);
+                    continue;
                 }
-                else if (state is { BackendState: "NeedsLogin" } && !loggedIn)
-                {
-                    var result = await _process.LogInAsync(settings.AuthKey, settings.HostName, LogInTimeout, cancellationToken);
-                    if (result.Succeeded)
-                    {
-                        (loggedIn, named, problem) = (true, true, null);
-                        continue;
-                    }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // The watch must never take tailscaled down with it; it's logged, and tried again.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                LogCheckFailed(ex);
+                watch.Problem = "Contactor couldn't ask Tailscale how it stands. It tries again.";
+            }
 
-                    // A key Tailscale refused stays refused until a new one is saved; one that timed out is tried again
-                    // at the next check.
-                    loggedIn = !result.TimedOut;
-                    problem = $"Tailscale didn't take the auth key: {FirstLine(result, settings)}";
-                    LogProblem(problem);
-                }
-
-                if (state is { BackendState: "Running" })
-                {
-                    if (!named)
-                    {
-                        named = (await _process.RunAsync(["set", $"--hostname={settings.HostName}"], CommandTimeout, cancellationToken)).Succeeded;
-                    }
-
-                    if (!served)
-                    {
-                        var result = await _process.RunAsync(["serve", "--bg", "--https=443", _options.Target], CommandTimeout, cancellationToken);
-                        served = result.Succeeded;
-                        problem = served ? null : ServeProblem(result, settings);
-                        if (!served)
-                        {
-                            LogProblem(problem!);
-                        }
-                    }
-                }
-
-                SetStatus(new TailscaleStatus(served && state is { BackendState: "Running" }, state?.Address, problem));
+            SetStatus(new TailscaleStatus(watch.Served && state is { BackendState: "Running" }, state?.Address, watch.Problem));
+            try
+            {
                 await Task.Delay(CheckEvery, _time, cancellationToken);
             }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    }
+
+    // One check: joins, names and serves as far as the state allows. True: check again at once (just joined).
+    private async Task<bool> CheckAsync(Watch watch, TailscaleState? state, TailscaleNetworkSettings settings, CancellationToken cancellationToken)
+    {
+        var mustLogIn = !watch.LoggedIn && (state is { BackendState: "NeedsLogin" } || (watch.NewKey && state is not null));
+        if (mustLogIn && settings.AuthKey.Length == 0)
         {
-            // tailscaled stopped, or the app.
+            watch.LoggedIn = true;
+            watch.Problem = "Tailscale needs an auth key: save one in the setup guide.";
+            LogProblem(watch.Problem);
+            return false;
         }
-#pragma warning disable CA1031 // The watch must never take tailscaled down with it; it's logged, and runs again with tailscaled.
-        catch (Exception ex)
-#pragma warning restore CA1031
+
+        if (mustLogIn)
         {
-            LogWatchFailed(ex);
+            var result = await _process.LogInAsync(settings.AuthKey, settings.HostName, force: watch.NewKey, LogInTimeout, cancellationToken);
+            if (result.Succeeded)
+            {
+                (watch.LoggedIn, watch.Named, watch.Problem) = (true, true, null);
+                return true;
+            }
+
+            // A key Tailscale refused stays refused until a new one is saved; one that timed out is tried again at
+            // the next check.
+            watch.LoggedIn = !result.TimedOut;
+            watch.Problem = $"Tailscale didn't take the auth key: {FirstLine(result, settings)}";
+            LogProblem(watch.Problem);
+            return false;
         }
+
+        switch (state?.BackendState)
+        {
+            case "NeedsMachineAuth":
+                watch.Problem = $"Approve {settings.HostName} in Tailscale's admin console, under Machines. Contactor goes on by itself.";
+                return false;
+            case "Stopped":
+                watch.Problem = "Tailscale is stopped on this machine.";
+                return false;
+            case "Running":
+                break;
+            default:
+                return false;
+        }
+
+        if (!watch.Named)
+        {
+            watch.Named = (await _process.RunAsync(["set", $"--hostname={settings.HostName}"], CommandTimeout, cancellationToken)).Succeeded;
+        }
+
+        if (!watch.Served)
+        {
+            watch.Problem = await ServeAsync(settings, cancellationToken);
+            watch.Served = watch.Problem is null;
+            if (!watch.Served)
+            {
+                LogProblem(watch.Problem!);
+            }
+        }
+
+        return false;
+    }
+
+    // Has Tailscale Serve pass HTTPS requests to the app's socket. Null when it does, else what stops it. tailscale
+    // can exit 0 without serving (HTTPS not turned on), so Serve's own status is the proof.
+    private async Task<string?> ServeAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.AppSocket))
+        {
+            return "Contactor has no socket for Tailscale Serve (Tailscale:AppSocket).";
+        }
+
+        var result = await _process.RunAsync(["serve", "--bg", "--https=443", _options.Target], CommandTimeout, cancellationToken);
+        if (!result.Succeeded || EnableLink().IsMatch(result.Output))
+        {
+            return ServeProblem(result, settings);
+        }
+
+        var status = await _process.RunAsync(["serve", "status", "--json"], CommandTimeout, cancellationToken);
+        return status.Succeeded && status.Output.Contains(_options.AppSocket, StringComparison.Ordinal)
+            ? null
+            : "Tailscale Serve didn't take the app. Contactor tries again.";
+    }
+
+    // How far the watch got while this tailscaled runs.
+    private sealed class Watch
+    {
+        public Watch(bool newKey)
+        {
+            NewKey = newKey;
+        }
+
+        public bool NewKey { get; }
+
+        public bool LoggedIn { get; set; }
+
+        public bool Named { get; set; }
+
+        public bool Served { get; set; }
+
+        public string? Problem { get; set; }
     }
 
     // tailscaled's state and the app's address, or null while it doesn't answer (e.g. still starting).
@@ -311,8 +391,8 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not run tailscaled; trying again in {Seconds} s")]
     private partial void LogFailed(Exception exception, double seconds);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Watching Tailscale failed")]
-    private partial void LogWatchFailed(Exception exception);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Asking Tailscale how it stands failed; trying again")]
+    private partial void LogCheckFailed(Exception exception);
 }
 
 /// <summary>tailscaled's state as <c>tailscale status --json</c> gives it.</summary>

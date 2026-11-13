@@ -1,6 +1,7 @@
 using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -116,8 +117,30 @@ public sealed class TailscaleSettingsTests
     {
         var options = new TailscaleOptions();
 
-        Assert.Equal(("/usr/local/bin/tailscaled", "/usr/local/bin/tailscale", "/data/tailscale", "http://127.0.0.1:8080"),
-            (options.DaemonPath, options.CliPath, options.StateDirectory, options.Target));
+        Assert.Equal(("/usr/local/bin/tailscaled", "/usr/local/bin/tailscale", "/data/tailscale", ""),
+            (options.DaemonPath, options.CliPath, options.StateDirectory, options.AppSocket));
+        Assert.Equal("unix:/data/tailscale/contactor.sock", new TailscaleOptions { AppSocket = "/data/tailscale/contactor.sock" }.Target);
+    }
+
+    [Fact]
+    public void Should_GiveTailscaleTheKeyAsAFile_NeverOnItsCommandLine()
+    {
+        Assert.Equal(["up", "--reset", "--auth-key=file:/data/tailscale/authkey-1", "--hostname=relays"], TailscaleProcess.UpArguments("/data/tailscale/authkey-1", "relays", force: false));
+        Assert.Equal(["up", "--reset", "--force-reauth", "--auth-key=file:/data/tailscale/authkey-1", "--hostname=relays"], TailscaleProcess.UpArguments("/data/tailscale/authkey-1", "relays", force: true));
+    }
+
+    [Theory]
+    [InlineData(null, null, null, "http://localhost:5000")]
+    [InlineData(null, "8080", null, "http://*:8080")]
+    [InlineData(null, "8080;8081", "8443", "http://*:8080|http://*:8081|https://*:8443")]
+    [InlineData("http://localhost:5123;https://localhost:7123", "8080", null, "http://localhost:5123|https://localhost:7123")]
+    public void Should_KeepTheAppsOwnAddresses_NextToTheSocket(string? urls, string? httpPorts, string? httpsPorts, string expected)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["urls"] = urls, ["http_ports"] = httpPorts, ["https_ports"] = httpsPorts })
+            .Build();
+
+        Assert.Equal(expected.Split('|'), TailscaleServiceCollectionExtensions.Addresses(configuration));
     }
 
     private static async Task<TestDatabase> CreateAsync()

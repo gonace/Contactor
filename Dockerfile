@@ -42,7 +42,9 @@ COPY licenses/ /licenses/
 COPY --from=build --chown=1654:1654 /data /data
 VOLUME /data
 WORKDIR /app
-# The .NET image listens on 8080 (ASPNETCORE_HTTP_PORTS) as its user "app" (1654).
+# The .NET image listens on 8080 (ASPNETCORE_HTTP_PORTS) as its user "app" (1654). Also on a socket file for Tailscale
+# Serve only, which no other device can reach: Tailscale identity believes only requests that come in there.
+ENV Tailscale__AppSocket=/data/tailscale/contactor.sock
 EXPOSE 8080
 # No shell or curl in the image: the app asks its own /healthz.
 HEALTHCHECK --interval=1m --timeout=10s --start-period=1m --start-interval=5s --retries=3 \

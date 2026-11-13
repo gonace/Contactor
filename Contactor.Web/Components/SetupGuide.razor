@@ -411,7 +411,7 @@
                 <label for="auth-key">Auth key</label>
                 <input id="auth-key" type="password" autocomplete="new-password" spellcheck="false" maxlength="@TailscaleSetting.AuthKeyMaxLength"
                        placeholder="@(SignIns.WayIn?.Id == TailscaleMethods.NetworkId ? "unchanged" : "tskey-auth-…")" @bind="_authKey" @bind:event="oninput" />
-                <p class="hint">Tailscale's admin console → Settings → Keys → Generate auth key. Under DNS, also turn on MagicDNS and HTTPS Certificates.</p>
+                <p class="hint">Tailscale's admin console → Settings → Keys → Generate auth key, not ephemeral. Under DNS, also turn on MagicDNS and HTTPS Certificates.</p>
             </div>
             <div class="field">
                 <label for="tailscale-name">Name on your Tailscale network</label>
@@ -497,6 +497,7 @@
                     <span>@(tailscale.Problem ?? (tailscale.Online && tailscale.Address is not null ? $"Contactor answers at https://{tailscale.Address}." : "It can take a minute."))</span>
                 </span>
             </div>
+            <p class="hint">In Tailscale's admin console, under Machines, turn off key expiry for @(SignIns.TailscaleHostName), or it leaves the network after a few months. Under Access controls, let devices reach it only on port 443.</p>
         }
     };
 

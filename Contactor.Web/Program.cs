@@ -33,6 +33,7 @@ public sealed partial class Program
         }
 
         var builder = WebApplication.CreateBuilder(args);
+        builder.WebHost.ListenOnTailscaleSocket(builder.Configuration);
         builder.AddServiceDefaults();
         builder.Services.AddLocalClock(builder.Configuration);
         builder.Services.AddPersistence(builder.Configuration);

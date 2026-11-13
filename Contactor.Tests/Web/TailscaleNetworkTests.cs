@@ -11,6 +11,7 @@ public sealed class TailscaleNetworkTests
 {
     private const string AuthKey = "tskey-auth-kExample-SECRET1234";
     private const string Address = "relays.tail1234.ts.net";
+    private const string Socket = "/data/tailscale/contactor.sock";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -24,7 +25,7 @@ public sealed class TailscaleNetworkTests
 
         Assert.Equal(new TailscaleStatus(true, Address, null), network.Network.Status);
         Assert.Equal([(AuthKey, "relays")], tailscale.LogIns);
-        Assert.Contains("serve --bg --https=443 http://127.0.0.1:8080", tailscale.Commands);
+        Assert.Contains($"serve --bg --https=443 unix:{Socket}", tailscale.Commands);
         Assert.DoesNotContain(tailscale.Commands, c => c.Contains(AuthKey, StringComparison.Ordinal));
         Assert.DoesNotContain(network.Logger.Lines, l => l.Contains(AuthKey, StringComparison.Ordinal));
     }
@@ -101,12 +102,96 @@ public sealed class TailscaleNetworkTests
         await using var network = await StartAsync(tailscale, AuthKey, "relays");
         await WaitUntilAsync(() => network.Network.Status.Online);
 
-        tailscale.State = "NeedsLogin";
+        // tailscaled still knows the network it joined: the new key joins again all the same.
         Assert.Null(await network.Settings.SaveAsync("tskey-auth-kOther-SECRET5678", "workshop", Cancel));
 
         await WaitUntilAsync(() => tailscale.DaemonRuns == 2 && tailscale.LogIns.Count == 2);
         Assert.Equal(("tskey-auth-kOther-SECRET5678", "workshop"), tailscale.LogIns[1]);
+        Assert.Equal([false, true], tailscale.Forced);
         Assert.Contains("Tailscale's settings changed: starting tailscaled again with them", network.Logger.Lines);
+    }
+
+    [Fact]
+    public async Task Should_NotJoinAgain_WhenOnlyTheNameChanges()
+    {
+        var tailscale = new FakeTailscale();
+        await using var network = await StartAsync(tailscale, AuthKey, "relays");
+        await WaitUntilAsync(() => network.Network.Status.Online);
+
+        Assert.Null(await network.Settings.SaveAsync(AuthKey, "workshop", Cancel));
+
+        await WaitUntilAsync(() => tailscale.Commands.Contains("set --hostname=workshop"));
+        Assert.Single(tailscale.LogIns);
+    }
+
+    [Fact]
+    public async Task Should_NotCountServeAsWorking_WhenTailscaleExitsWithTheLinkToTurnOnHttps()
+    {
+        var tailscale = new FakeTailscale
+        {
+            State = "Running",
+            Serve = new TailscaleCommandResult(0, "To enable, visit:\n\n         https://login.tailscale.com/f/serve?node=nExample\n"),
+        };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays");
+
+        await WaitUntilAsync(() => network.Network.Status.Problem is not null);
+
+        Assert.False(network.Network.Status.Online);
+        Assert.Contains("https://login.tailscale.com/f/serve?node=nExample", network.Network.Status.Problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_NotCountServeAsWorking_UntilServeShowsTheApp()
+    {
+        var time = new ManualTimeProvider();
+        var tailscale = new FakeTailscale { State = "Running", ServeStatus = new TailscaleCommandResult(0, "{}") };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
+
+        await WaitUntilAsync(() => network.Network.Status.Problem is not null);
+        Assert.False(network.Network.Status.Online);
+
+        tailscale.ServeStatus = FakeTailscale.WorkingServeStatus;
+        await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
+        await WaitUntilAsync(() => network.Network.Status.Online);
+    }
+
+    [Fact]
+    public async Task Should_NotServe_WithoutTheAppsSocket()
+    {
+        var tailscale = new FakeTailscale { State = "Running" };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", appSocket: "");
+
+        await WaitUntilAsync(() => network.Network.Status.Problem is not null);
+
+        Assert.Contains("Tailscale:AppSocket", network.Network.Status.Problem, StringComparison.Ordinal);
+        Assert.DoesNotContain(tailscale.Commands, c => c.StartsWith("serve --bg", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_GoOnWatching_AfterACheckFails()
+    {
+        var time = new ManualTimeProvider();
+        var tailscale = new FakeTailscale { FailingChecks = 1 };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
+
+        await WaitUntilAsync(() => network.Network.Status.Problem is not null);
+        Assert.Equal("Contactor couldn't ask Tailscale how it stands. It tries again.", network.Network.Status.Problem);
+        await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
+
+        await WaitUntilAsync(() => network.Network.Status.Online);
+        Assert.Equal(1, tailscale.DaemonRuns);
+    }
+
+    [Fact]
+    public async Task Should_SayToApproveTheDevice_WhenTailscaleWaitsForThat()
+    {
+        var tailscale = new FakeTailscale { State = "NeedsMachineAuth" };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays");
+
+        await WaitUntilAsync(() => network.Network.Status.Problem is not null);
+
+        Assert.Equal("Approve relays in Tailscale's admin console, under Machines. Contactor goes on by itself.", network.Network.Status.Problem);
+        Assert.Empty(tailscale.LogIns);
     }
 
     [Fact]
@@ -167,7 +252,7 @@ public sealed class TailscaleNetworkTests
         time.Advance(by);
     }
 
-    private static async Task<RunningNetwork> StartAsync(FakeTailscale tailscale, string authKey, string hostName, ManualTimeProvider? time = null)
+    private static async Task<RunningNetwork> StartAsync(FakeTailscale tailscale, string authKey, string hostName, ManualTimeProvider? time = null, string appSocket = Socket)
     {
         var logger = new ListLogger();
         var database = TestDatabase.Create((services, configuration) =>
@@ -176,6 +261,7 @@ public sealed class TailscaleNetworkTests
             services.AddSingleton<TimeProvider>(time ?? new ManualTimeProvider());
             services.AddSingleton<ITailscaleProcess>(tailscale);
             services.AddSingleton<ILogger<TailscaleNetwork>>(logger);
+            services.Configure<TailscaleOptions>(o => o.AppSocket = appSocket);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         var settings = database.Services.GetRequiredService<TailscaleSettings>();
@@ -237,6 +323,7 @@ public sealed class TailscaleNetworkTests
     {
         private readonly ConcurrentQueue<string> _commands = new();
         private readonly ConcurrentQueue<(string AuthKey, string HostName)> _logIns = new();
+        private readonly ConcurrentQueue<bool> _forced = new();
         private int _daemonRuns;
 
         public volatile string State = "NeedsLogin";
@@ -244,6 +331,16 @@ public sealed class TailscaleNetworkTests
         public TailscaleCommandResult LogIn { get; set; } = new(0, "");
 
         public TailscaleCommandResult Serve { get; set; } = new(0, "");
+
+        public TailscaleCommandResult ServeStatus { get; set; } = WorkingServeStatus;
+
+        // Fails this many checks before answering, as a tailscale that can't be run would.
+        public int FailingChecks { get; set; }
+
+        public IReadOnlyList<bool> Forced => [.. _forced];
+
+        public static TailscaleCommandResult WorkingServeStatus =>
+            new(0, "{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"unix:" + Socket + "\"}}}}}");
 
         public int? DaemonExitCode { get; init; }
 
@@ -281,9 +378,16 @@ public sealed class TailscaleNetworkTests
         {
             var command = string.Join(' ', arguments);
             _commands.Enqueue(command);
+            if (command == "status --json" && FailingChecks > 0)
+            {
+                FailingChecks--;
+                throw new IOException("tailscale could not be run");
+            }
+
             return Task.FromResult(command switch
             {
                 "status --json" => new TailscaleCommandResult(0, StatusJson()),
+                "serve status --json" => ServeStatus,
                 _ when command.StartsWith("serve ", StringComparison.Ordinal) => Serve,
                 _ => new TailscaleCommandResult(0, ""),
             });
@@ -295,9 +399,10 @@ public sealed class TailscaleNetworkTests
             return "{\"BackendState\":\"" + State + "\",\"Self\":{\"DNSName\":\"" + name + "\"}}";
         }
 
-        public Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, TimeSpan timeout, CancellationToken cancellationToken)
+        public Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, bool force, TimeSpan timeout, CancellationToken cancellationToken)
         {
             _logIns.Enqueue((authKey, hostName));
+            _forced.Enqueue(force);
             if (LogIn.Succeeded)
             {
                 State = "Running";

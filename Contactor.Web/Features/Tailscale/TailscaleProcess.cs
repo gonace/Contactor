@@ -24,10 +24,11 @@ public interface ITailscaleProcess
     Task<TailscaleCommandResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Joins the Tailscale network with <paramref name="authKey"/> as <paramref name="hostName"/>. The key goes to
-    /// tailscale in a file of its own, never on its command line, where any process could read it.
+    /// Joins the Tailscale network with <paramref name="authKey"/> as <paramref name="hostName"/>; with
+    /// <paramref name="force"/>, even when it is on one already. The key goes to tailscale in a file of its own, never
+    /// on its command line, where any process could read it.
     /// </summary>
-    Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, TimeSpan timeout, CancellationToken cancellationToken);
+    Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, bool force, TimeSpan timeout, CancellationToken cancellationToken);
 }
 
 /// <summary>Tailscale's programs as child processes of the app, as the image has them.</summary>
@@ -98,12 +99,19 @@ public sealed class TailscaleProcess : ITailscaleProcess
         }
     }
 
-    public Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, TimeSpan timeout, CancellationToken cancellationToken)
+    public Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, bool force, TimeSpan timeout, CancellationToken cancellationToken)
     {
         // --reset: settings not given here go back to their defaults, rather than tailscale refusing to change any.
+        // --force-reauth: joins with the key even on a network already.
         return WithKeyFileAsync(_options.StateDirectory, authKey, path =>
-            RunAsync(["up", "--reset", $"--auth-key=file:{path}", $"--hostname={hostName}"], timeout, cancellationToken));
+            RunAsync(UpArguments(path, hostName, force), timeout, cancellationToken));
     }
+
+    /// <summary>The arguments of <c>tailscale up</c> with the auth key in the file at <paramref name="keyFile"/>.</summary>
+    public static IReadOnlyList<string> UpArguments(string keyFile, string hostName, bool force) =>
+        force
+            ? ["up", "--reset", "--force-reauth", $"--auth-key=file:{keyFile}", $"--hostname={hostName}"]
+            : ["up", "--reset", $"--auth-key=file:{keyFile}", $"--hostname={hostName}"];
 
     /// <summary>
     /// Writes <paramref name="secret"/> to a new file in <paramref name="directory"/> that only the app's user can

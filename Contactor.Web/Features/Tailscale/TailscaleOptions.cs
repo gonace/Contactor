@@ -14,6 +14,14 @@ public sealed class TailscaleOptions
     /// <summary>Where tailscaled keeps its state, so the app stays on the Tailscale network after a restart.</summary>
     public string StateDirectory { get; set; } = "/data/tailscale";
 
-    /// <summary>The app as Tailscale Serve reaches it, on the machine itself.</summary>
-    public string Target { get; set; } = "http://127.0.0.1:8080";
+    /// <summary>
+    /// The socket file the app also listens on, for Tailscale Serve only: the image sets
+    /// <c>/data/tailscale/contactor.sock</c>. Tailscale identity believes only requests that come in there. Not a TCP
+    /// port: tailscaled passes connections from the Tailscale network to any port on 127.0.0.1, past Serve. Empty: no
+    /// socket, and Tailscale can't serve the app.
+    /// </summary>
+    public string AppSocket { get; set; } = "";
+
+    /// <summary>Where Tailscale Serve passes requests to: the app's socket.</summary>
+    public string Target => $"unix:{AppSocket}";
 }
