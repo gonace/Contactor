@@ -230,6 +230,25 @@ public sealed class CloudflaredTests : IDisposable
     }
 
     [Fact]
+    public void Should_RemoveLeftoversOfAStoppedDownload_ButNotOneInProgress()
+    {
+        Directory.CreateDirectory(_folder);
+        var now = new DateTimeOffset(2026, 11, 13, 12, 0, 0, TimeSpan.Zero);
+        foreach (var name in new[] { "cloudflared", "cloudflared.a.download", "cloudflared.a.new", "cloudflared.b.download" })
+        {
+            File.WriteAllText(Path.Combine(_folder, name), "x");
+            File.SetLastWriteTimeUtc(Path.Combine(_folder, name), (now - TimeSpan.FromHours(2)).UtcDateTime);
+        }
+
+        File.SetLastWriteTimeUtc(Path.Combine(_folder, "cloudflared.b.download"), (now - TimeSpan.FromMinutes(5)).UtcDateTime);
+
+        Cloudflared.RemoveLeftovers(_folder, now);
+        Cloudflared.RemoveLeftovers(Path.Combine(_folder, "missing"), now);
+
+        Assert.Equal(["cloudflared", "cloudflared.b.download"], Directory.GetFiles(_folder).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void Should_BeTheVersionTheImageHas()
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);

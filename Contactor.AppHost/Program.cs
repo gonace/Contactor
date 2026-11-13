@@ -43,13 +43,16 @@ public static class Program
     private static async Task<string?> GetCloudflaredAsync(string appHostDirectory)
     {
         var versions = Path.Combine(appHostDirectory, ".tools", "cloudflared");
-        // HttpClient's own timeout ends once the headers are in; this one also covers a download that stalls after.
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        // HttpClient's own timeout ends once the headers are in; this one also covers a download that stalls after. Long
+        // enough for 55 MB on a slow connection.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(30));
         using var http = new HttpClient();
         try
         {
+            var folder = Path.Combine(versions, Cloudflared.Version);
             Cloudflared.RemoveOtherVersions(versions);
-            return await Cloudflared.GetAsync(Cloudflared.HostSystem(), Path.Combine(versions, Cloudflared.Version), http,
+            Cloudflared.RemoveLeftovers(folder, DateTimeOffset.UtcNow);
+            return await Cloudflared.GetAsync(Cloudflared.HostSystem(), folder, http,
                 () => Console.WriteLine($"Downloading cloudflared {Cloudflared.Version} from GitHub (once; about 40–55 MB)…"),
                 timeout.Token);
         }

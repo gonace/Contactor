@@ -65,7 +65,8 @@ public static class Cloudflared
 
     /// <summary>
     /// Deletes the folders of other versions in <paramref name="versionsFolder"/>, each one left by a version raised
-    /// since, so only <see cref="Version"/>'s is kept.
+    /// since, so only <see cref="Version"/>'s is kept. A folder that can't be deleted yet (a program in it still runs)
+    /// is left for a later start.
     /// </summary>
     public static void RemoveOtherVersions(string versionsFolder)
     {
@@ -78,8 +79,41 @@ public static class Cloudflared
         {
             if (Path.GetFileName(folder) != Version)
             {
-                Directory.Delete(folder, recursive: true);
+                TryDelete(() => Directory.Delete(folder, recursive: true));
             }
+        }
+    }
+
+    /// <summary>
+    /// Deletes the temporary files in <paramref name="folder"/> that a download stopped half-way (Ctrl+C) left behind.
+    /// Only those older than an hour, so another AppHost's download in progress is left alone.
+    /// </summary>
+    public static void RemoveLeftovers(string folder, DateTimeOffset now)
+    {
+        if (!Directory.Exists(folder))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(folder, "cloudflared*.*"))
+        {
+            if ((file.EndsWith(".download", StringComparison.Ordinal) || file.EndsWith(".new", StringComparison.Ordinal))
+                && now - File.GetLastWriteTimeUtc(file) > TimeSpan.FromHours(1))
+            {
+                TryDelete(() => File.Delete(file));
+            }
+        }
+    }
+
+    private static void TryDelete(Action delete)
+    {
+        try
+        {
+            delete();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Still in use; the next start tries again.
         }
     }
 
