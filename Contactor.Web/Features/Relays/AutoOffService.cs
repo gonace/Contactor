@@ -43,7 +43,10 @@ public sealed partial class AutoOffService : BackgroundService
         _logger = logger;
     }
 
-    /// <summary>Handles every auto-off that is due now. Returns the relays it turned off.</summary>
+    /// <summary>
+    /// Gives every relay that is on with nobody's run its own auto-off, then handles every auto-off that is due now.
+    /// Returns the relays it turned off.
+    /// </summary>
     public async Task<IReadOnlyList<int>> CheckAsync(CancellationToken cancellationToken)
     {
         var state = _board.State;
@@ -54,6 +57,11 @@ public sealed partial class AutoOffService : BackgroundService
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        if (await GiveOwnerlessRelaysAutoOffAsync(db, state, now, cancellationToken))
+        {
+            _changes.Notify();
+        }
+
         var due = await db.RelayRuntimes
             .Where(r => r.AutoOffAtUtc != null && r.AutoOffAtUtc <= now)
             .OrderBy(r => r.RelayId)
@@ -105,6 +113,46 @@ public sealed partial class AutoOffService : BackgroundService
         return turnedOff;
     }
 
+    // A relay can be on with nobody's run without the app seeing it come on, e.g. after an OFF the board was sent but
+    // didn't carry out. It gets the relay's own auto-off from now, as one that came on outside the app, so nothing runs
+    // for ever by accident. A relay in a group is left to its group (GroupPlanner.GiveOwnerlessAutoOff). Each update
+    // only applies while the relay still has no run, so a person's or a schedule's ON saved meanwhile keeps theirs.
+    private async Task<bool> GiveOwnerlessRelaysAutoOffAsync(ContactorDbContext db, BoardState state, DateTime now, CancellationToken cancellationToken)
+    {
+        var on = state.Relays.Channels.Where(r => r <= _board.Capabilities.RelayCount).ToList();
+        if (on.Count == 0)
+        {
+            return false;
+        }
+
+        var members = db.RelayGroupMembers.Select(m => m.RelayId);
+        var ownerless = await db.Relays.AsNoTracking()
+            .Where(r => on.Contains(r.Id) && !members.Contains(r.Id))
+            .Where(r => !db.RelayRuntimes.Any(x => x.RelayId == r.Id && x.OnSinceUtc != null))
+            .Select(r => new { r.Id, r.MaxOnMinutes })
+            .ToListAsync(cancellationToken);
+        var changed = false;
+        foreach (var relay in ownerless)
+        {
+            var autoOffAt = relay.MaxOnMinutes is { } minutes ? now.AddMinutes(minutes) : (DateTime?)null;
+            var updated = await db.RelayRuntimes
+                .Where(r => r.RelayId == relay.Id && r.OnSinceUtc == null)
+                .ExecuteUpdateAsync(
+                    set => set
+                        .SetProperty(r => r.OnSinceUtc, now)
+                        .SetProperty(r => r.TurnedOnBy, EventActors.External)
+                        .SetProperty(r => r.AutoOffAtUtc, autoOffAt),
+                    cancellationToken);
+            if (updated > 0)
+            {
+                LogOwnerless(relay.Id);
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -130,4 +178,7 @@ public sealed partial class AutoOffService : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off check failed")]
     private partial void LogCheckFailed(Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is on with nobody's run: it gets its own auto-off")]
+    private partial void LogOwnerless(int relayId);
 }
