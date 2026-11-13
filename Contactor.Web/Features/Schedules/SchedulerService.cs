@@ -140,6 +140,7 @@ public sealed partial class SchedulerService : BackgroundService
                     {
                         runtime.TurnedOnBy = Actor;
                         runtime.AutoOffAtUtc = null;
+                        WriteRun(db, runtime);
                         changed = true;
                     }
 
@@ -156,6 +157,7 @@ public sealed partial class SchedulerService : BackgroundService
                         runtime.OnSinceUtc = now;
                         runtime.TurnedOnBy = Actor;
                         runtime.AutoOffAtUtc = null;
+                        WriteRun(db, runtime);
                         Log(db, now, relayId, EventActions.On, running.ScheduleId);
                         changed = true;
                     }
@@ -196,6 +198,7 @@ public sealed partial class SchedulerService : BackgroundService
                     runtime.OnSinceUtc = null;
                     runtime.AutoOffAtUtc = null;
                     runtime.TurnedOnBy = null;
+                    WriteRun(db, runtime);
                 }
 
                 Log(db, now, relayId, EventActions.Off, ended?.ScheduleId);
@@ -424,6 +427,22 @@ public sealed partial class SchedulerService : BackgroundService
             Interlocked.Increment(ref _connectGeneration);
             return false;
         }
+    }
+
+    // The runtimes were read before the commands went out, and another writer may have changed a row since (e.g.
+    // AutoOffService giving a relay that just came on an auto-off of its own). Every value of the run is written, not
+    // only those that differ from what was read, so a schedule's run never keeps someone else's auto-off.
+    private static void WriteRun(ContactorDbContext db, RelayRuntime runtime)
+    {
+        var entry = db.Entry(runtime);
+        if (entry.State == EntityState.Added)
+        {
+            return;
+        }
+
+        entry.Property(r => r.OnSinceUtc).IsModified = true;
+        entry.Property(r => r.TurnedOnBy).IsModified = true;
+        entry.Property(r => r.AutoOffAtUtc).IsModified = true;
     }
 
     private static RelayRuntime GetRuntime(ContactorDbContext db, Dictionary<int, RelayRuntime> runtimes, int relayId)

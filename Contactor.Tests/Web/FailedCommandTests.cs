@@ -189,6 +189,28 @@ public sealed class FailedCommandTests : IAsyncLifetime
         Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
     }
 
+    // The board confirms a schedule's ON before the scheduler has saved its run, and auto-off's check sees the relay on
+    // with nobody's run in between: the schedule's run wins, with no auto-off, so it isn't turned off mid-window.
+    [Fact]
+    public async Task Should_KeepAScheduleRunFree_OfAnAutoOffGivenMeanwhile()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        var autoOff = _database.Services.GetRequiredService<AutoOffService>();
+        _board.AfterSwitch = async () =>
+        {
+            _board.AfterSwitch = null;
+            await autoOff.CheckAsync(Cancel);
+        };
+
+        await Scheduler.TickAsync(Cancel);
+
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+    }
+
     [Fact]
     public async Task Should_LogAScheduleAsItsOwn_WhenItsRetrySucceeds()
     {

@@ -9,8 +9,8 @@ namespace Contactor.Web.Features.Relays;
 /// <summary>
 /// Turns relays off when their auto-off time has passed: every 15 s it looks for a <see cref="RelayRuntime"/> whose
 /// <see cref="RelayRuntime.AutoOffAtUtc"/> is due, sends OFF if the board says the relay is still on, logs it as
-/// Actor <c>auto-off</c>, and clears the runtime. Only a person's ON sets an auto-off time (and a new limit only
-/// moves it for such a relay), so relays a schedule turned on are never touched. While the board is disconnected nothing happens; a time that passed meanwhile (also before
+/// Actor <c>auto-off</c>, and clears the runtime. A person's or an input's ON sets an auto-off time, and so does a relay
+/// on with nobody's run (given one here, at every check); a relay a schedule turned on is never touched. While the board is disconnected nothing happens; a time that passed meanwhile (also before
 /// a restart) is handled at the first check after the connection is back.
 /// </summary>
 public sealed partial class AutoOffService : BackgroundService
@@ -134,6 +134,12 @@ public sealed partial class AutoOffService : BackgroundService
         var changed = false;
         foreach (var relay in ownerless)
         {
+            // Turned off meanwhile, e.g. by a person: nothing to give a run to.
+            if (!_board.State.IsOn(relay.Id))
+            {
+                continue;
+            }
+
             var autoOffAt = relay.MaxOnMinutes is { } minutes ? now.AddMinutes(minutes) : (DateTime?)null;
             var updated = await db.RelayRuntimes
                 .Where(r => r.RelayId == relay.Id && r.OnSinceUtc == null)
