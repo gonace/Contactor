@@ -8,6 +8,7 @@
 @using Contactor.Web.Features.Setup
 @using Contactor.Web.Persistence
 @inject SetupHandler Setup
+@inject SetupSignInHandler SignIns
 @inject BoardAddressHandler Address
 @inject UsersHandler Users
 @inject IRelayBoard Board
@@ -22,9 +23,9 @@
 <PageTitle>Setup · Contactor</PageTitle>
 
 <div class="screen">
-    @* While a list of step 2 is open, everything but the list and its field takes no focus or clicks. *@
+    @* While a list of "Which relay board?" is open, everything but the list and its field takes no focus or clicks. *@
     <header class="header" inert="@(_sheet != Sheet.None)">
-        @if (_step > 1)
+        @if (CanGoBack)
         {
             var shown = _step;
             <button type="button" class="back" disabled="@_busy" @onclick="() => Back(shown)">
@@ -36,22 +37,31 @@
         {
             <span></span>
         }
-        <span class="step-count">STEP @_step OF @StepCount</span>
+        <span class="step-count">STEP @StepInPart OF @StepsInPart</span>
     </header>
 
+    <div class="part" inert="@(_sheet != Sheet.None)">@(InPart1 ? "PART 1 OF 2 · THE APP" : "PART 2 OF 2 · THE BOARD")</div>
     <div class="progress" aria-hidden="true" inert="@(_sheet != Sheet.None)">
-        @for (var i = 1; i <= StepCount; i++)
+        @for (var i = 1; i <= StepsInPart; i++)
         {
-            <span class="@(i <= _step ? "done" : null)"></span>
+            <span class="@(i <= StepInPart ? "done" : null)"></span>
         }
     </div>
 
     <main class="content">
-        @if (_step == 1)
+        @if (_step == StepWayIn)
+        {
+            @WayInStep
+        }
+        else if (_step == StepSignIn)
+        {
+            @SignInStep
+        }
+        else if (_step == StepAbout)
         {
             <div class="intro">
-                <h1 tabindex="-1" @ref="_heading">Welcome to Contactor</h1>
-                <p>Four short questions, and your relay board is ready to use. You can change all of it later under Settings.</p>
+                <h1 tabindex="-1" @ref="_heading">About you</h1>
+                <p>Your name in Contactor. Then four short questions about your relay board. You can change all of it later under Settings.</p>
             </div>
             <div class="field">
                 <label for="name">Your name</label>
@@ -63,7 +73,7 @@
                 <p>The relay board switched on and plugged into the same network as this app. Your router lists its address among its connected devices.</p>
             </div>
         }
-        else if (_step == 2)
+        else if (_step == StepBoard)
         {
             var chosen = BoardCatalogue.Find(_type)?.Model;
             <div class="intro" inert="@(_sheet != Sheet.None)">
@@ -115,7 +125,7 @@
             </div>
             <p class="hint" inert="@(_sheet != Sheet.None)">Not on the list? Contactor only lists the boards it can switch.</p>
         }
-        else if (_step == 3)
+        else if (_step == StepWhere)
         {
             <div class="intro">
                 <h1 tabindex="-1" @ref="_heading">Where is the board?</h1>
@@ -188,7 +198,7 @@
                 </div>
             }
         }
-        else if (_step == 4)
+        else if (_step == StepRelays)
         {
             <div class="intro">
                 <h1 tabindex="-1" @ref="_heading">Name your relays</h1>
@@ -265,11 +275,15 @@
         {
             <p class="error" role="alert">@_error</p>
         }
-        @if (_step < StepCount)
+        @if (_elsewhere is not null)
+        {
+            <a href="@_elsewhere" class="finish">Open @(new Uri(_elsewhere).Host)</a>
+        }
+        else if (_step < StepDone)
         {
             var shown = _step;
-            <button type="button" disabled="@(_busy || (_step == 2 && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">Next</button>
-            @if (_step == 3)
+            <button type="button" disabled="@(_busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">Next</button>
+            @if (_step == StepWhere)
             {
                 <button type="button" class="link" disabled="@_busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
             }
@@ -283,7 +297,24 @@
 </div>
 
 @code {
-    private const int StepCount = 5;
+    // The steps in order. Part 1 sets up the app; its first step, the setup code, is a page of its own
+    // (SetupCodePage), so the guide's Part 1 starts at its step 2. Part 2 is the board.
+    private const int StepWayIn = 1;
+    private const int StepSignIn = 2;
+    private const int StepAbout = 3;
+    private const int StepBoard = 4;
+    private const int StepWhere = 5;
+    private const int StepRelays = 6;
+    private const int StepDone = 7;
+    private const int StepsInPart = 4;
+
+    private bool InPart1 => _step <= StepAbout;
+
+    private int StepInPart => InPart1 ? _step + 1 : _step - StepAbout;
+
+    // Not back past the way in (the code is typed), nor from "About you" to the sign-in: that is saved, and this page
+    // may be at the new address.
+    private bool CanGoBack => _elsewhere is null && (_step == StepSignIn || _step > StepAbout);
 
     // Step 2's open list: under its field on a tablet or desktop, from the bottom of the screen on a phone.
     private RenderFragment List => __builder =>
@@ -331,10 +362,96 @@
         </div>
     };
 
+    // "How do people reach the app?": Cloudflare, with its tunnel's token and address.
+    private RenderFragment WayInStep => __builder =>
+    {
+        <div class="intro">
+            <h1 tabindex="-1" @ref="_heading">How do people reach the app?</h1>
+            <p>Where should people be able to open Contactor?</p>
+        </div>
+        <div class="choices" role="radiogroup" aria-label="Ways in">
+            <label class="choice chosen">
+                <input type="radio" name="way-in" checked />
+                <span class="choice-text">
+                    <span class="name">Cloudflare</span>
+                    <span class="note">Cloudflare Tunnel: a public link on your own domain. Needs a Cloudflare account and a domain.</span>
+                </span>
+            </label>
+        </div>
+        <div class="field">
+            <label for="tunnel-token">Tunnel token</label>
+            <input id="tunnel-token" type="password" autocomplete="off" spellcheck="false" maxlength="@CloudflareSetting.TunnelTokenMaxLength"
+                   placeholder="@(SignIns.WayIn is null ? "" : "unchanged")" @bind="_tunnelToken" @bind:event="oninput" />
+            <p class="hint">Zero Trust → Networks → Tunnels → your tunnel. It is the long code after <code>--token</code> in the install command.</p>
+        </div>
+        <div class="field">
+            <label for="tunnel-address">Address</label>
+            <input id="tunnel-address" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+                   maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="relays.example.com" @bind="_tunnelAddress" @bind:event="oninput" />
+            <p class="hint">The tunnel's public hostname: where people will open Contactor. Point it at <code>http://localhost:8080</code>.</p>
+        </div>
+    };
+
+    // "How do people sign in?": what fits the way in, recommended first.
+    private RenderFragment SignInStep => __builder =>
+    {
+        var (address, connected) = SignIns.Tunnel;
+        <div class="intro">
+            <h1 tabindex="-1" @ref="_heading">@(_elsewhere is null ? "How do people sign in?" : "Go on at your new address")</h1>
+            <p>@(_elsewhere is null ? "Recommended with Cloudflare: Cloudflare Access." : "Contactor now only answers through Cloudflare. Open it there and sign in with your e-mail: the guide goes on.")</p>
+        </div>
+        @if (_elsewhere is null)
+        {
+            <div class="choices" role="radiogroup" aria-label="Sign-ins">
+                @foreach (var option in SignIns.SignIns())
+                {
+                    <label class="choice chosen">
+                        <input type="radio" name="sign-in" checked />
+                        <span class="choice-text">
+                            <span class="name">@option.Method.Name @if (option.Recommended)
+                                {
+                                    <span class="tag">RECOMMENDED</span>
+                                }</span>
+                            <span class="note">A code by e-mail, through Cloudflare. Who may sign in is set in Cloudflare.</span>
+                        </span>
+                    </label>
+                }
+            </div>
+            <div class="field">
+                <label for="team-domain">Team domain</label>
+                <input id="team-domain" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+                       maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="myteam.cloudflareaccess.com" @bind="_teamDomain" @bind:event="oninput" />
+                <p class="hint">Zero Trust → Settings → Team name and domain.</p>
+            </div>
+            <div class="field">
+                <label for="audience">AUD tag</label>
+                <input id="audience" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                       maxlength="@CloudflareSetting.AudienceMaxLength" @bind="_audience" @bind:event="oninput" />
+                <p class="hint">Zero Trust → Access controls → Applications → the application for @(address ?? "your address") → Edit → Additional settings.</p>
+            </div>
+        }
+        <div class="board-status" role="status">
+            <span class="dot @(connected ? null : "waiting")"></span>
+            <span class="status-text">
+                <b>@(connected ? "Tunnel connected" : "Waiting for the tunnel to connect")</b>
+                <span>@(connected ? $"Cloudflare answers at {address}." : "It can take a minute. Check the token if it doesn't.")</span>
+            </span>
+        </div>
+    };
+
     private readonly List<RelayRow> _relays = [];
     private ElementReference _heading;
     private SignedInUser? _user;
-    private int _step = 1;
+    private int _step = StepAbout;
+
+    // Part 1's fields.
+    private string _tunnelToken = "";
+    private string _tunnelAddress = "";
+    private string _teamDomain = "";
+    private string _audience = "";
+
+    // Once the sign-in is chosen, this page no longer answers here: the address to go on at.
+    private string? _elsewhere;
     private string _name = "";
     private string _type = "";
     private string? _brand;
@@ -364,16 +481,29 @@
     // When the last check found the board, for "checked 14:02:05".
     private DateTime? _checkedAt;
 
-    // Steps 3 to 5 only come after the board was chosen on step 2.
+    // The steps after "Which relay board?" only come once a board is chosen there.
     private BoardModel Model => Boards.Model!;
 
     protected override async Task OnInitializedAsync()
     {
-        if (await Setup.IsDoneAsync(CancellationToken.None))
+        // An installation whose sign-in was reset is done, and still opens on the sign-in.
+        var part1 = SignIns.Step;
+        if (part1 == SetupPart1Step.Done && await Setup.IsDoneAsync(CancellationToken.None))
         {
             Navigation.NavigateTo("", replace: true);
             return;
         }
+
+        _step = part1 switch
+        {
+            SetupPart1Step.WayIn => StepWayIn,
+            SetupPart1Step.SignIn => StepSignIn,
+            _ => StepAbout,
+        };
+        _tunnelAddress = SignIns.Tunnel.Address ?? "";
+        _teamDomain = SignIns.Access.TeamDomain;
+        _audience = SignIns.Access.Audience;
+        SignIns.TunnelChanged += OnTunnelChanged;
 
         _user = await CurrentUser.GetAsync();
         _name = _user?.DisplayName ?? "";
@@ -406,6 +536,13 @@
     public void Dispose()
     {
         Board.StateChanged -= OnBoardChanged;
+        SignIns.TunnelChanged -= OnTunnelChanged;
+    }
+
+    // From the tunnel's own thread: "Tunnel connected" on the sign-in step.
+    private void OnTunnelChanged(object? sender, EventArgs e)
+    {
+        _ = InvokeAsync(StateHasChanged);
     }
 
     // A new step's heading takes the focus, so a screen reader reads where it is.
@@ -430,7 +567,7 @@
 
     private void Back(int fromStep)
     {
-        if (!_busy && _step == fromStep && _step > 1)
+        if (!_busy && _step == fromStep && CanGoBack)
         {
             _step--;
             _sheet = Sheet.None;
@@ -453,17 +590,23 @@
         {
             switch (_step)
             {
-                case 1:
+                case StepWayIn:
+                    await ChooseWayInAsync();
+                    break;
+                case StepSignIn:
+                    await ChooseSignInAsync();
+                    break;
+                case StepAbout:
                     await SaveNameAsync();
                     break;
-                case 2:
+                case StepBoard:
                     await ChooseBoardAsync();
                     break;
-                case 3:
+                case StepWhere:
                     _busy = false;
                     await CheckAsync(goOn: true);
                     break;
-                case 4:
+                case StepRelays:
                     await SaveRelaysAsync();
                     break;
             }
@@ -476,6 +619,44 @@
         {
             _busy = false;
         }
+    }
+
+    private async Task ChooseWayInAsync()
+    {
+        _error = await SignIns.ChooseCloudflareAsync(_tunnelToken, _tunnelAddress, CancellationToken.None);
+        if (_error is null)
+        {
+            _tunnelToken = "";
+            Move(StepSignIn);
+        }
+    }
+
+    private async Task ChooseSignInAsync()
+    {
+        _error = await SignIns.ChooseCloudflareAccessAsync(_teamDomain, _audience, CancellationToken.None);
+        if (_error is not null)
+        {
+            return;
+        }
+
+        // Signed in here already (the development user): the guide goes on in this page.
+        if (_user is not null)
+        {
+            if (await Setup.IsDoneAsync(CancellationToken.None))
+            {
+                Navigation.NavigateTo("");
+            }
+            else
+            {
+                Move(StepAbout);
+            }
+
+            return;
+        }
+
+        // Nobody is signed in in this page: from now on only the new address answers.
+        _elsewhere = $"https://{SignIns.Tunnel.Address}/setup";
+        _moved = true;
     }
 
     private async Task SaveNameAsync()
@@ -491,7 +672,7 @@
             _name = _name.Trim();
         }
 
-        Move(2);
+        Move(StepBoard);
     }
 
     private async Task ChooseBoardAsync()
@@ -523,7 +704,7 @@
             }
         }
 
-        Move(3);
+        Move(StepWhere);
     }
 
     // Saves the address and login, then waits for the board. Going on only once it answers; "Go on without a
@@ -558,7 +739,7 @@
             _notFound = !found;
             if (found && goOn)
             {
-                Move(4);
+                Move(StepRelays);
             }
         }
         catch (Exception ex)
@@ -602,7 +783,7 @@
 
     private async Task GoOnWithoutConnectionAsync()
     {
-        if (_busy || _step != 3)
+        if (_busy || _step != StepWhere)
         {
             return;
         }
@@ -614,7 +795,7 @@
             // An address typed in is still saved, so the app keeps looking for the board there.
             if (_host.Trim().Length == 0 || await SaveAddressAsync())
             {
-                Move(4);
+                Move(StepRelays);
             }
         }
         catch (Exception ex)
@@ -670,14 +851,14 @@
         if (_error is null)
         {
             await Setup.MarkDoneAsync(CancellationToken.None);
-            Move(5);
+            Move(StepDone);
         }
     }
 
     // Step 2's lists: a brand, then that brand's models.
     private void Open(Sheet sheet)
     {
-        if (_busy || _step != 2 || (sheet == Sheet.Model && _brand is null))
+        if (_busy || _step != StepBoard || (sheet == Sheet.Model && _brand is null))
         {
             return;
         }

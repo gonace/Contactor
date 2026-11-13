@@ -73,14 +73,20 @@ public sealed class SetupSignInHandler
     }
 
     /// <summary>
-    /// Cloudflare as the way in: saves the tunnel's token and address, and starts the tunnel. Returns what is wrong in
-    /// plain words, and changes nothing then.
+    /// Cloudflare as the way in: saves the tunnel's token and address, and starts the tunnel. An empty token keeps the
+    /// one saved before, once Cloudflare is the way in (the guide never shows it again). Returns what is wrong in plain
+    /// words, and changes nothing then.
     /// </summary>
     public async Task<string?> ChooseCloudflareAsync(string? token, string? address, CancellationToken cancellationToken)
     {
         if (_signIn.Current is not null)
         {
             return "This installation is set up already.";
+        }
+
+        if (string.IsNullOrWhiteSpace(token) && _access.Current?.Id == CloudflareMethods.TunnelId)
+        {
+            token = _cloudflare.Tunnel.Token;
         }
 
         var problem = await _cloudflare.SaveTunnelAsync(token, address, cancellationToken);
