@@ -735,8 +735,8 @@
             return;
         }
 
-        // Nobody is signed in in this page: from now on only the new address
-        // answers. The handler took the sign-in only with an address saved.
+        // Nobody is signed in in this page: from now on only the new address answers. The handler took the sign-in
+        // only with an address saved.
         _setupDone = await Setup.IsDoneAsync(CancellationToken.None);
         _elsewhere = NewAddress();
         _moved = true;
