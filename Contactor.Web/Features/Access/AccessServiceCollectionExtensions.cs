@@ -7,6 +7,7 @@ public static class AccessServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
         services.AddSingleton<AccessChoice>();
+        services.AddSingleton<LocalNetwork>();
         services.AddHostedService<AccessHostedService>();
         return services;
     }

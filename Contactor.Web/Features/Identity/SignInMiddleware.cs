@@ -1,7 +1,5 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Setup;
 using Contactor.Web.Persistence;
@@ -23,7 +21,6 @@ public sealed partial class SignInMiddleware
     private readonly SignInChoice _choice;
     private readonly IServiceProvider _services;
     private readonly SetupMode _setup;
-    private readonly string? _developmentUser;
     private readonly IHostEnvironment _environment;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly ILogger<SignInMiddleware> _logger;
@@ -33,12 +30,10 @@ public sealed partial class SignInMiddleware
         SignInChoice choice,
         IServiceProvider services,
         SetupMode setup,
-        IOptions<CloudflareAccessOptions> access,
         IHostEnvironment environment,
         IDbContextFactory<ContactorDbContext> dbFactory,
         ILogger<SignInMiddleware> logger)
     {
-        ArgumentNullException.ThrowIfNull(access);
         _next = next;
         _choice = choice;
         _services = services;
@@ -46,9 +41,6 @@ public sealed partial class SignInMiddleware
         _environment = environment;
         _dbFactory = dbFactory;
         _logger = logger;
-
-        // Development only (the app refuses to start with it anywhere else): everyone is this person, during setup too.
-        _developmentUser = access.Value.UsesDevUser ? IdentityRules.NormalizeEmail(access.Value.DevUserEmail!) : null;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -64,10 +56,6 @@ public sealed partial class SignInMiddleware
         if (_choice.Current is { } method)
         {
             email = await method.Create(_services).AuthenticateAsync(context);
-        }
-        else if (_developmentUser is not null)
-        {
-            email = _developmentUser;
         }
         else
         {

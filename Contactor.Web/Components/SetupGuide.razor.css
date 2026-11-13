@@ -379,6 +379,30 @@ input[type="password"] {
     vertical-align: 2px;
 }
 
+.choice.off {
+    border-style: dashed;
+    background: transparent;
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.tag.warn {
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+    border: 1px solid var(--danger-border);
+}
+
+.warning {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--danger-border);
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+    font-size: 14px;
+    line-height: 1.45;
+}
+
 .hint code {
     font-family: var(--font-mono);
     font-size: 13px;

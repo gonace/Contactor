@@ -2,6 +2,7 @@
 @implements IDisposable
 @using System.Globalization
 @using Contactor.Boards
+@using Contactor.Web.Features.Access
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Cloudflare
 @using Contactor.Web.Features.Identity
@@ -315,7 +316,8 @@
 
     // Not back past the way in (the code is typed), nor from "About you" to the sign-in: that is saved, and this page
     // may be at the new address.
-    private bool CanGoBack => _elsewhere is null && (_step == StepSignIn || _step > StepAbout);
+    private bool CanGoBack => _elsewhere is null
+        && (_step == StepSignIn || _step > StepBoard || (_step == StepBoard && SignIns.SignIn?.Id != SignInCatalogue.NoneId));
 
     // Step 2's open list: under its field on a tablet or desktop, from the bottom of the screen on a phone.
     private RenderFragment List => __builder =>
@@ -363,7 +365,7 @@
         </div>
     };
 
-    // "How do people reach the app?": Cloudflare, with its tunnel's token and address.
+    // "How do people reach the app?": every way in; Cloudflare also asks for its tunnel's token and address.
     private RenderFragment WayInStep => __builder =>
     {
         <div class="intro">
@@ -371,73 +373,103 @@
             <p>Where should people be able to open Contactor?</p>
         </div>
         <div class="choices" role="radiogroup" aria-label="Ways in">
-            <label class="choice chosen">
-                <input type="radio" name="way-in" checked />
-                <span class="choice-text">
-                    <span class="name">Cloudflare</span>
-                    <span class="note">Cloudflare Tunnel: a public link on your own domain. Needs a Cloudflare account and a domain.</span>
-                </span>
-            </label>
+            @foreach (var way in AccessCatalogue.All)
+            {
+                var id = way.Id;
+                <label class="choice @(id == _wayIn ? "chosen" : null)">
+                    <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
+                    <span class="choice-text">
+                        <span class="name">@way.Name@if (way.Simplest)
+                            {
+                                <span class="tag">SIMPLEST</span>
+                            }</span>
+                        <span class="note">@way.Description</span>
+                    </span>
+                </label>
+            }
         </div>
-        <div class="field">
-            <label for="tunnel-token">Tunnel token</label>
-            <input id="tunnel-token" type="password" autocomplete="new-password" spellcheck="false" maxlength="@CloudflareSetting.TunnelTokenMaxLength"
-                   placeholder="@(SignIns.WayIn is null ? "" : "unchanged")" @bind="_tunnelToken" @bind:event="oninput" />
-            <p class="hint">Zero Trust → Networks → Tunnels → your tunnel. It is the long code after <code>--token</code> in the install command.</p>
-        </div>
-        <div class="field">
-            <label for="tunnel-address">Address</label>
-            <input id="tunnel-address" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
-                   maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="relays.example.com" @bind="_tunnelAddress" @bind:event="oninput" />
-            <p class="hint">The tunnel's public hostname: where people will open Contactor. In Cloudflare, point it at <code>http://contactor:8080</code>.</p>
-        </div>
+        @if (_wayIn == CloudflareMethods.TunnelId)
+        {
+            <div class="field">
+                <label for="tunnel-token">Tunnel token</label>
+                <input id="tunnel-token" type="password" autocomplete="new-password" spellcheck="false" maxlength="@CloudflareSetting.TunnelTokenMaxLength"
+                       placeholder="@(SignIns.WayIn?.Id == CloudflareMethods.TunnelId ? "unchanged" : "")" @bind="_tunnelToken" @bind:event="oninput" />
+                <p class="hint">Zero Trust → Networks → Tunnels → your tunnel. It is the long code after <code>--token</code> in the install command.</p>
+            </div>
+            <div class="field">
+                <label for="tunnel-address">Address</label>
+                <input id="tunnel-address" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+                       maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="relays.example.com" @bind="_tunnelAddress" @bind:event="oninput" />
+                <p class="hint">The tunnel's public hostname: where people will open Contactor. In Cloudflare, point it at <code>http://contactor:8080</code>.</p>
+            </div>
+        }
     };
 
-    // "How do people sign in?": what fits the way in, recommended first.
+    // "How do people sign in?": every sign-in, what fits the way in can be chosen, the rest is greyed out.
     private RenderFragment SignInStep => __builder =>
     {
+        var cloudflare = SignIns.WayIn?.Id == CloudflareMethods.TunnelId;
         var (address, connected) = SignIns.Tunnel;
+        var options = SignIns.SignIns();
+        var recommended = options.FirstOrDefault(o => o.Recommended);
         <div class="intro">
             <h1 tabindex="-1" @ref="_heading">@(_elsewhere is null ? "How do people sign in?" : "Go on at your new address")</h1>
-            <p>@(_elsewhere is null ? "Recommended with Cloudflare: Cloudflare Access." : $"Contactor now only answers through Cloudflare. Open it there and sign in with your e-mail{(_setupDone ? "." : ": the guide goes on.")}")</p>
+            <p>@(_elsewhere is not null
+                ? $"Contactor now only answers through Cloudflare. Open it there and sign in with your e-mail{(_setupDone ? "." : ": the guide goes on.")}"
+                : recommended is not null ? $"Recommended with {SignIns.WayIn?.Name}: {recommended.Method.Name}." : "With a sign-in, the events show who did what.")</p>
         </div>
         @if (_elsewhere is null)
         {
             <div class="choices" role="radiogroup" aria-label="Sign-ins">
-                @foreach (var option in SignIns.SignIns())
+                @foreach (var option in options)
                 {
-                    <label class="choice @(option.Recommended ? "chosen" : null)">
-                        <input type="radio" name="sign-in" checked="@option.Recommended" />
+                    var id = option.Method.Id;
+                    <label class="choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
+                        <input type="radio" name="sign-in" checked="@(id == _signInId)" disabled="@(!option.Allowed)" @onchange="() => _signInId = id" />
                         <span class="choice-text">
-                            <span class="name">@option.Method.Name @if (option.Recommended)
+                            <span class="name">@option.Method.Name@if (option.Recommended)
                                 {
                                     <span class="tag">RECOMMENDED</span>
+                                }
+                                else if (option.Method.NotRecommended && option.Allowed)
+                                {
+                                    <span class="tag warn">NOT RECOMMENDED</span>
                                 }</span>
-                            <span class="note">@SignInNote(option.Method.Id)</span>
+                            <span class="note">@(option.Reason ?? option.Method.Description)</span>
                         </span>
                     </label>
                 }
             </div>
-            <div class="field">
-                <label for="team-domain">Team domain</label>
-                <input id="team-domain" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
-                       maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="myteam.cloudflareaccess.com" @bind="_teamDomain" @bind:event="oninput" />
-                <p class="hint">Zero Trust → Settings → Team name and domain.</p>
-            </div>
-            <div class="field">
-                <label for="audience">AUD tag</label>
-                <input id="audience" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-                       maxlength="@CloudflareSetting.AudienceMaxLength" @bind="_audience" @bind:event="oninput" />
-                <p class="hint">Zero Trust → Access controls → Applications → the application for @(address ?? "your address") → Edit → Additional settings.</p>
+            @if (_signInId == CloudflareMethods.AccessId)
+            {
+                <div class="field">
+                    <label for="team-domain">Team domain</label>
+                    <input id="team-domain" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+                           maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="myteam.cloudflareaccess.com" @bind="_teamDomain" @bind:event="oninput" />
+                    <p class="hint">Zero Trust → Settings → Team name and domain.</p>
+                </div>
+                <div class="field">
+                    <label for="audience">AUD tag</label>
+                    <input id="audience" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                           maxlength="@CloudflareSetting.AudienceMaxLength" @bind="_audience" @bind:event="oninput" />
+                    <p class="hint">Zero Trust → Access controls → Applications → the application for @(address ?? "your address") → Edit → Additional settings.</p>
+                </div>
+            }
+            else if (_signInId == SignInCatalogue.NoneId)
+            {
+                <p class="warning" role="note">Anyone on your network can switch the relays, and the events can't say who did it. Choose a sign-in to reach the app from outside.</p>
+            }
+        }
+        @if (cloudflare)
+        {
+            <div class="board-status" role="status">
+                <span class="dot @(connected ? null : "waiting")"></span>
+                <span class="status-text">
+                    <b>@(connected ? "Tunnel connected" : "Waiting for the tunnel to connect")</b>
+                    <span>@(connected && address is not null ? $"Cloudflare answers at {address}." : "It can take a minute. Check the token if it doesn't.")</span>
+                </span>
             </div>
         }
-        <div class="board-status" role="status">
-            <span class="dot @(connected ? null : "waiting")"></span>
-            <span class="status-text">
-                <b>@(connected ? "Tunnel connected" : "Waiting for the tunnel to connect")</b>
-                <span>@(connected && address is not null ? $"Cloudflare answers at {address}." : "It can take a minute. Check the token if it doesn't.")</span>
-            </span>
-        </div>
     };
 
     private readonly List<RelayRow> _relays = [];
@@ -445,7 +477,9 @@
     private SignedInUser? _user;
     private int _step = StepAbout;
 
-    // Part 1's fields.
+    // Part 1's choices and fields.
+    private string _wayIn = "";
+    private string _signInId = "";
     private string _tunnelToken = "";
     private string _tunnelAddress = "";
     private string _teamDomain = "";
@@ -514,8 +548,13 @@
         {
             SetupPart1Step.WayIn => StepWayIn,
             SetupPart1Step.SignIn => StepSignIn,
+
+            // With No sign-in everyone is the same person: nothing to say about you.
+            _ when SignIns.SignIn?.Id == SignInCatalogue.NoneId => StepBoard,
             _ => StepAbout,
         };
+        _wayIn = SignIns.WayIn?.Id ?? AccessCatalogue.All.First(w => w.Simplest).Id;
+        _signInId = DefaultSignIn();
         _tunnelAddress = SignIns.Tunnel.Address ?? "";
         _teamDomain = SignIns.Access.TeamDomain;
         _audience = SignIns.Access.Audience;
@@ -587,12 +626,12 @@
             : Navigation.BaseUri;
     }
 
-    // What each sign-in is, in plain words.
-    private static string SignInNote(string id) => id switch
+    // The sign-in chosen to begin with: the one recommended for the way in, else the first that fits it.
+    private string DefaultSignIn()
     {
-        CloudflareMethods.AccessId => "A code by e-mail, through Cloudflare. Who may sign in is set in Cloudflare.",
-        _ => "",
-    };
+        var options = SignIns.SignIns();
+        return (options.FirstOrDefault(o => o.Recommended) ?? options.FirstOrDefault(o => o.Allowed))?.Method.Id ?? "";
+    }
 
     // A new step's heading takes the focus, so a screen reader reads where it is.
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -672,19 +711,27 @@
 
     private async Task ChooseWayInAsync()
     {
-        _error = await SignIns.ChooseCloudflareAsync(_tunnelToken, _tunnelAddress, CancellationToken.None);
+        _error = await SignIns.ChooseWayInAsync(_wayIn, _tunnelToken, _tunnelAddress, CancellationToken.None);
         if (_error is null)
         {
             _tunnelToken = "";
+            _signInId = DefaultSignIn();
             Move(StepSignIn);
         }
     }
 
     private async Task ChooseSignInAsync()
     {
-        _error = await SignIns.ChooseCloudflareAccessAsync(_teamDomain, _audience, CancellationToken.None);
+        _error = await SignIns.ChooseSignInAsync(_signInId, _teamDomain, _audience, CancellationToken.None);
         if (_error is not null)
         {
+            return;
+        }
+
+        // No sign-in: this page is let in from now on, as everyone; loaded again, it goes on with the board.
+        if (_signInId == SignInCatalogue.NoneId)
+        {
+            Navigation.NavigateTo("setup", forceLoad: true);
             return;
         }
 
