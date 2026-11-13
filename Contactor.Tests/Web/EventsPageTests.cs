@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Tests.Web;
@@ -37,6 +38,36 @@ public sealed class EventsPageTests
         }
 
         Assert.DoesNotContain("Show more", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_SayTheTimeIsUnknown_ForAnInputChangeNoticedAfterAGap()
+    {
+        await using var app = CreateApp();
+        using var http = app.CreateClient();
+        await AddEventAsync(app, new EventLogEntry
+        {
+            TimestampUtc = DateTime.UtcNow,
+            InputId = 1,
+            Actor = EventActors.External,
+            Action = EventActions.InputChanged,
+            Details = """{"on":false,"noticed":true}""",
+        });
+        await AddEventAsync(app, new EventLogEntry
+        {
+            TimestampUtc = DateTime.UtcNow,
+            InputId = 1,
+            Actor = EventActors.External,
+            Action = EventActions.InputChanged,
+            Details = """{"on":true}""",
+        });
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/events", Cancel));
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, "· time unknown"));
+        Assert.Matches(@"Open<span[^>]*> · time unknown</span>", html);
+        Assert.Contains(EventText.WhyTimeUnknown, html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Why is the time unknown?\"", html, StringComparison.Ordinal);
     }
 
     [Fact]

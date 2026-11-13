@@ -74,14 +74,26 @@ h2 {
     background: var(--card);
     border: 1.5px solid var(--line);
     border-radius: 14px;
-    overflow: hidden;
 }
 
+/* Positioned, so an event's "time unknown" tooltip lines up with the row and isn't cut off by the list: the rows round
+   their own corners, which the list used to clip. */
 .row {
+    position: relative;
     display: flex;
     align-items: flex-start;
     gap: 10px;
     padding: 12px 14px;
+}
+
+.row:first-child {
+    border-top-left-radius: 12.5px;
+    border-top-right-radius: 12.5px;
+}
+
+.row:last-child {
+    border-bottom-left-radius: 12.5px;
+    border-bottom-right-radius: 12.5px;
 }
 
 .row + .row {
@@ -134,11 +146,6 @@ h2 {
     flex-direction: column;
     gap: 2px;
     padding-top: 2px;
-}
-
-.what {
-    line-height: 1.35;
-    overflow-wrap: anywhere;
 }
 
 .target {

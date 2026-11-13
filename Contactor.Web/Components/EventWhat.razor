@@ -1,0 +1,15 @@
+@using Contactor.Web.Features.Events
+
+@* An event's text: who, what, and for an input's change only noticed after a gap, "time unknown" with its reason. *@
+<span class="event-what @(Wrap ? "wrap" : null)"><strong>@Row.View.Who</strong> @Row.View.What@if (Row.View.TimeUnknown)
+    {<span class="unknown"> · time unknown</span><WhyUnknown Label="Why is the time unknown?" For="Row.Id" Kind="event" Text="@EventText.WhyTimeUnknown" />}</span>
+
+@code {
+    [Parameter]
+    [EditorRequired]
+    public EventRow Row { get; set; } = default!;
+
+    /// <summary>Breaks long names anywhere and spaces the lines, as on the Events screen.</summary>
+    [Parameter]
+    public bool Wrap { get; set; }
+}

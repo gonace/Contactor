@@ -7,7 +7,7 @@
     <button type="button" class="why" aria-label="@Label" aria-expanded="@(_shown ? "true" : "false")" aria-describedby="@TipId" @onclick="() => _shown = !_shown">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>
     </button>
-    <span class="tip @(_shown ? "open" : null)" role="tooltip" id="@TipId">@InputStatusText.WhyUnknown</span>
+    <span class="tip @(_shown ? "open" : null)" role="tooltip" id="@TipId">@Text</span>
 </span>
 @if (_shown)
 {
@@ -28,5 +28,13 @@
     [EditorRequired]
     public int For { get; set; }
 
-    private string TipId => $"why-{For}";
+    /// <summary>What <see cref="For"/> numbers, so an input and an event with the same number get different ids.</summary>
+    [Parameter]
+    public string Kind { get; set; } = "input";
+
+    /// <summary>The reason shown: by default why an input's "since" is unknown.</summary>
+    [Parameter]
+    public string Text { get; set; } = InputStatusText.WhyUnknown;
+
+    private string TipId => $"why-{Kind}-{For}";
 }
