@@ -45,6 +45,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<CloudflareSetting> CloudflareSettings => Set<CloudflareSetting>();
 
+    public DbSet<TailscaleSetting> TailscaleSettings => Set<TailscaleSetting>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         ArgumentNullException.ThrowIfNull(configurationBuilder);
@@ -73,6 +75,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<BoardWatchState>(ConfigureBoardWatchState);
         modelBuilder.Entity<InputAction>(ConfigureInputAction);
         modelBuilder.Entity<CloudflareSetting>(ConfigureCloudflareSetting);
+        modelBuilder.Entity<TailscaleSetting>(ConfigureTailscaleSetting);
     }
 
     private static void ConfigureRelayGroup(EntityTypeBuilder<RelayGroup> group)
@@ -204,6 +207,14 @@ public sealed class ContactorDbContext : DbContext
         setting.Property(s => s.Address).HasMaxLength(CloudflareSetting.HostNameMaxLength);
         setting.Property(s => s.TeamDomain).HasMaxLength(CloudflareSetting.HostNameMaxLength);
         setting.Property(s => s.Audience).HasMaxLength(CloudflareSetting.AudienceMaxLength);
+    }
+
+    private static void ConfigureTailscaleSetting(EntityTypeBuilder<TailscaleSetting> setting)
+    {
+        setting.ToTable("TailscaleSetting", t => t.HasCheckConstraint("CK_TailscaleSetting_Id", $"\"Id\" = {TailscaleSetting.SingletonId}"));
+        setting.Property(s => s.Id).ValueGeneratedNever();
+        setting.Property(s => s.AuthKey).HasMaxLength(TailscaleSetting.AuthKeyMaxLength);
+        setting.Property(s => s.HostName).HasMaxLength(TailscaleSetting.HostNameMaxLength);
     }
 
     private static void ConfigureBoardWatchState(EntityTypeBuilder<BoardWatchState> state)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Contactor.Web.Features.Access;
 
 namespace Contactor.Web.Features.Cloudflare;
 
@@ -15,15 +16,10 @@ public interface ICloudflaredProcess
 /// <summary>cloudflared as a child process of the app.</summary>
 public sealed class CloudflaredProcess : ICloudflaredProcess
 {
-    public async Task<int> RunAsync(string path, string token, Action<string> output, CancellationToken cancellationToken)
+    public Task<int> RunAsync(string path, string token, Action<string> output, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(output);
-        var start = new ProcessStartInfo(path)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
+        var start = new ProcessStartInfo(path);
+
         // The app updates cloudflared with its own image; it never updates itself.
         start.ArgumentList.Add("tunnel");
         start.ArgumentList.Add("--no-autoupdate");
@@ -31,32 +27,6 @@ public sealed class CloudflaredProcess : ICloudflaredProcess
 
         // Through the environment, so the token never shows in a process list.
         start.Environment["TUNNEL_TOKEN"] = token;
-
-        using var process = new Process { StartInfo = start };
-        process.OutputDataReceived += (_, e) => Forward(e.Data, output);
-        process.ErrorDataReceived += (_, e) => Forward(e.Data, output);
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        try
-        {
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
-
-        return process.ExitCode;
-    }
-
-    private static void Forward(string? line, Action<string> output)
-    {
-        if (!string.IsNullOrWhiteSpace(line))
-        {
-            output(line);
-        }
+        return ChildProcess.RunAsync(start, output, cancellationToken);
     }
 }

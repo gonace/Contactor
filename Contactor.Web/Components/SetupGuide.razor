@@ -5,6 +5,7 @@
 @using Contactor.Web.Features.Access
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Cloudflare
+@using Contactor.Web.Features.Tailscale
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Setup
@@ -365,7 +366,8 @@
         </div>
     };
 
-    // "How do people reach the app?": every way in; Cloudflare also asks for its tunnel's token and address.
+    // "How do people reach the app?": every way in; Cloudflare also asks for its tunnel's token and address, Tailscale
+    // for an auth key and the app's name.
     private RenderFragment WayInStep => __builder =>
     {
         <div class="intro">
@@ -403,12 +405,28 @@
                 <p class="hint">The tunnel's public hostname: where people will open Contactor. In Cloudflare, point it at <code>http://contactor:8080</code>.</p>
             </div>
         }
+        else if (_wayIn == TailscaleMethods.NetworkId)
+        {
+            <div class="field">
+                <label for="auth-key">Auth key</label>
+                <input id="auth-key" type="password" autocomplete="new-password" spellcheck="false" maxlength="@TailscaleSetting.AuthKeyMaxLength"
+                       placeholder="@(SignIns.WayIn?.Id == TailscaleMethods.NetworkId ? "unchanged" : "tskey-auth-…")" @bind="_authKey" @bind:event="oninput" />
+                <p class="hint">Tailscale's admin console → Settings → Keys → Generate auth key. Under DNS, also turn on MagicDNS and HTTPS Certificates.</p>
+            </div>
+            <div class="field">
+                <label for="tailscale-name">Name on your Tailscale network</label>
+                <input id="tailscale-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                       maxlength="@TailscaleSetting.HostNameMaxLength" placeholder="@TailscaleSetting.DefaultHostName" @bind="_tailscaleName" @bind:event="oninput" />
+                <p class="hint">People open Contactor at https://@(string.IsNullOrWhiteSpace(_tailscaleName) ? TailscaleSetting.DefaultHostName : _tailscaleName.Trim().ToLowerInvariant()).<i>your-network</i>.ts.net.</p>
+            </div>
+        }
     };
 
     // "How do people sign in?": every sign-in, what fits the way in can be chosen, the rest is greyed out.
     private RenderFragment SignInStep => __builder =>
     {
         var cloudflare = SignIns.WayIn?.Id == CloudflareMethods.TunnelId;
+        var tailscale = SignIns.WayIn?.Id == TailscaleMethods.NetworkId ? SignIns.Tailscale : null;
         var (address, connected) = SignIns.Tunnel;
         var options = SignIns.SignIns();
         var recommended = options.FirstOrDefault(o => o.Recommended);
@@ -470,6 +488,16 @@
                 </span>
             </div>
         }
+        else if (tailscale is not null)
+        {
+            <div class="board-status" role="status">
+                <span class="dot @(tailscale.Online ? null : "waiting")"></span>
+                <span class="status-text">
+                    <b>@(tailscale.Online ? "On your Tailscale network" : "Joining your Tailscale network")</b>
+                    <span>@(tailscale.Problem ?? (tailscale.Online && tailscale.Address is not null ? $"Contactor answers at https://{tailscale.Address}." : "It can take a minute."))</span>
+                </span>
+            </div>
+        }
     };
 
     private readonly List<RelayRow> _relays = [];
@@ -482,6 +510,8 @@
     private string _signInId = "";
     private string _tunnelToken = "";
     private string _tunnelAddress = "";
+    private string _authKey = "";
+    private string _tailscaleName = "";
     private string _teamDomain = "";
     private string _audience = "";
 
@@ -556,9 +586,11 @@
         _wayIn = SignIns.WayIn?.Id ?? AccessCatalogue.All.First(w => w.Simplest).Id;
         _signInId = DefaultSignIn();
         _tunnelAddress = SignIns.Tunnel.Address ?? "";
+        _tailscaleName = SignIns.TailscaleHostName;
         _teamDomain = SignIns.Access.TeamDomain;
         _audience = SignIns.Access.Audience;
         SignIns.TunnelChanged += OnTunnelChanged;
+        SignIns.TailscaleChanged += OnTunnelChanged;
 
         _name = _user?.DisplayName ?? "";
         _type = Boards.Model?.Id ?? "";
@@ -591,9 +623,10 @@
     {
         Board.StateChanged -= OnBoardChanged;
         SignIns.TunnelChanged -= OnTunnelChanged;
+        SignIns.TailscaleChanged -= OnTunnelChanged;
     }
 
-    // From the tunnel's own thread: "Tunnel connected" on the sign-in step.
+    // From the tunnel's or Tailscale's own thread: "Tunnel connected" or "On your Tailscale network" on the sign-in step.
     private void OnTunnelChanged(object? sender, EventArgs e)
     {
         _ = RefreshTunnelAsync();
@@ -711,10 +744,11 @@
 
     private async Task ChooseWayInAsync()
     {
-        _error = await SignIns.ChooseWayInAsync(_wayIn, _tunnelToken, _tunnelAddress, CancellationToken.None);
+        _error = await SignIns.ChooseWayInAsync(_wayIn, new WayInFields(_tunnelToken, _tunnelAddress, _authKey, _tailscaleName), CancellationToken.None);
         if (_error is null)
         {
             _tunnelToken = "";
+            _authKey = "";
             _signInId = DefaultSignIn();
             Move(StepSignIn);
         }

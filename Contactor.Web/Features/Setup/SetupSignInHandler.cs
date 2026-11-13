@@ -1,6 +1,7 @@
 using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
+using Contactor.Web.Features.Tailscale;
 
 namespace Contactor.Web.Features.Setup;
 
@@ -26,7 +27,7 @@ public sealed record SetupSignInOption(SignInMethod Method, bool Allowed, bool R
 
 /// <summary>
 /// Part 1 of the setup guide: how people reach the app and how they sign in. Between the guide and the choices
-/// (<see cref="AccessChoice"/>, <see cref="SignInChoice"/>) and Cloudflare's settings.
+/// (<see cref="AccessChoice"/>, <see cref="SignInChoice"/>) and Cloudflare's and Tailscale's settings.
 /// </summary>
 public sealed class SetupSignInHandler : IDisposable
 {
@@ -34,18 +35,24 @@ public sealed class SetupSignInHandler : IDisposable
     private readonly SignInChoice _signIn;
     private readonly CloudflareSettings _cloudflare;
     private readonly CloudflareTunnel _tunnel;
+    private readonly TailscaleSettings _tailscale;
+    private readonly TailscaleNetwork _tailscaleNetwork;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public SetupSignInHandler(
         AccessChoice access,
         SignInChoice signIn,
         CloudflareSettings cloudflare,
-        CloudflareTunnel tunnel)
+        CloudflareTunnel tunnel,
+        TailscaleSettings tailscale,
+        TailscaleNetwork tailscaleNetwork)
     {
         _access = access;
         _signIn = signIn;
         _cloudflare = cloudflare;
         _tunnel = tunnel;
+        _tailscale = tailscale;
+        _tailscaleNetwork = tailscaleNetwork;
     }
 
     /// <summary>Where Part 1 goes on: a new installation starts at the way in; one whose sign-in was reset at the sign-in.</summary>
@@ -75,6 +82,19 @@ public sealed class SetupSignInHandler : IDisposable
         remove => _tunnel.ConnectedChanged -= value;
     }
 
+    /// <summary>The app's name on the Tailscale network as saved, to fill its field.</summary>
+    public string TailscaleHostName => _tailscale.Current.HostName;
+
+    /// <summary>How the app stands on the Tailscale network, as Tailscale's step shows it.</summary>
+    public TailscaleStatus Tailscale => _tailscaleNetwork.Status;
+
+    /// <summary>The app joined or left the Tailscale network, or something stops it.</summary>
+    public event EventHandler? TailscaleChanged
+    {
+        add => _tailscaleNetwork.StatusChanged += value;
+        remove => _tailscaleNetwork.StatusChanged -= value;
+    }
+
     /// <summary>
     /// Every sign-in, for the chosen way in: those it works with first, the recommended one at the top, then the rest
     /// with why they can't be chosen. Nothing before a way in is chosen.
@@ -96,12 +116,17 @@ public sealed class SetupSignInHandler : IDisposable
             .OrderBy(o => o.Allowed ? (o.Recommended ? 0 : 1) : 2)];
     }
 
-    /// <summary>Chooses how people reach the app; Cloudflare also needs its tunnel's token and address.</summary>
-    public Task<string?> ChooseWayInAsync(string id, string? token, string? address, CancellationToken cancellationToken)
+    /// <summary>
+    /// Chooses how people reach the app; Cloudflare also needs its tunnel's token and address, and Tailscale an auth
+    /// key and the app's name on the Tailscale network.
+    /// </summary>
+    public Task<string?> ChooseWayInAsync(string id, WayInFields fields, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(fields);
         return OneAtATimeAsync(() => AccessCatalogue.Find(id)?.Id switch
         {
-            CloudflareMethods.TunnelId => ChooseCloudflareCoreAsync(token, address, cancellationToken),
+            CloudflareMethods.TunnelId => ChooseCloudflareCoreAsync(fields.TunnelToken, fields.TunnelAddress, cancellationToken),
+            TailscaleMethods.NetworkId => ChooseTailscaleCoreAsync(fields.AuthKey, fields.HostName, cancellationToken),
             AccessCatalogue.LocalId => ChooseLocalCoreAsync(cancellationToken),
             _ => Task.FromResult<string?>("Choose how people reach the app."),
         }, cancellationToken);
@@ -156,6 +181,10 @@ public sealed class SetupSignInHandler : IDisposable
     /// <summary>Cloudflare as the way in, with its tunnel's token and address.</summary>
     public Task<string?> ChooseCloudflareAsync(string? token, string? address, CancellationToken cancellationToken) =>
         OneAtATimeAsync(() => ChooseCloudflareCoreAsync(token, address, cancellationToken), cancellationToken);
+
+    /// <summary>Tailscale as the way in, with its auth key and the app's name on the Tailscale network.</summary>
+    public Task<string?> ChooseTailscaleAsync(string? authKey, string? hostName, CancellationToken cancellationToken) =>
+        OneAtATimeAsync(() => ChooseTailscaleCoreAsync(authKey, hostName, cancellationToken), cancellationToken);
 
     /// <summary>Cloudflare Access as the sign-in, with its team domain and AUD tag.</summary>
     public Task<string?> ChooseCloudflareAccessAsync(string? teamDomain, string? audience, CancellationToken cancellationToken) =>
@@ -224,6 +253,33 @@ public sealed class SetupSignInHandler : IDisposable
     }
 
     /// <summary>
+    /// Tailscale as the way in: saves the auth key and the app's name, and starts Tailscale. An empty key keeps the one
+    /// saved before, once Tailscale is the way in (the guide never shows it again). Returns what is wrong in plain
+    /// words, and changes nothing then.
+    /// </summary>
+    private async Task<string?> ChooseTailscaleCoreAsync(string? authKey, string? hostName, CancellationToken cancellationToken)
+    {
+        if (_signIn.Current is not null)
+        {
+            return "This installation is set up already.";
+        }
+
+        if (string.IsNullOrWhiteSpace(authKey) && _access.Current?.Id == TailscaleMethods.NetworkId)
+        {
+            authKey = _tailscale.Current.AuthKey;
+        }
+
+        var problem = await _tailscale.SaveAsync(authKey, hostName, cancellationToken);
+        if (problem is not null)
+        {
+            return problem;
+        }
+
+        await _access.ChooseAsync(AccessCatalogue.Find(TailscaleMethods.NetworkId)!, cancellationToken);
+        return null;
+    }
+
+    /// <summary>
     /// Cloudflare Access as the sign-in: saves its team domain and AUD tag, and uses it from the next request on, which
     /// ends setup mode. Returns what is wrong in plain words, and changes nothing then.
     /// </summary>
@@ -254,3 +310,10 @@ public sealed class SetupSignInHandler : IDisposable
         return null;
     }
 }
+
+/// <summary>What the way-in step asks for: each way in uses its own, and ignores the rest.</summary>
+/// <param name="TunnelToken">Cloudflare: the tunnel's token.</param>
+/// <param name="TunnelAddress">Cloudflare: the tunnel's public hostname.</param>
+/// <param name="AuthKey">Tailscale: the auth key.</param>
+/// <param name="HostName">Tailscale: the app's name on the Tailscale network.</param>
+public sealed record WayInFields(string? TunnelToken = null, string? TunnelAddress = null, string? AuthKey = null, string? HostName = null);

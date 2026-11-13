@@ -2,6 +2,7 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Setup;
+using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,7 +49,7 @@ public sealed class SetupSignInHandlerTests
         await using var database = await CreateAsync();
         var handler = database.Services.GetRequiredService<SetupSignInHandler>();
 
-        Assert.Null(await handler.ChooseWayInAsync(AccessCatalogue.LocalId, token: null, address: null, Cancel));
+        Assert.Null(await handler.ChooseWayInAsync(AccessCatalogue.LocalId, new WayInFields(), Cancel));
         Assert.Equal(SetupPart1Step.SignIn, handler.Step);
         var options = handler.SignIns();
         Assert.Equal((SignInCatalogue.NoneId, true, false), (options[0].Method.Id, options[0].Allowed, options[0].Recommended));
@@ -71,7 +72,7 @@ public sealed class SetupSignInHandlerTests
         var handler = database.Services.GetRequiredService<SetupSignInHandler>();
         Assert.NotNull(await handler.ChooseNoSignInAsync(Cancel));
 
-        Assert.Null(await handler.ChooseWayInAsync(CloudflareMethods.TunnelId, "tunnel-token", "relays.example.com", Cancel));
+        Assert.Null(await handler.ChooseWayInAsync(CloudflareMethods.TunnelId, new WayInFields("tunnel-token", "relays.example.com"), Cancel));
         Assert.Equal(CloudflareMethods.TunnelId, handler.WayIn?.Id);
 
         Assert.NotNull(await handler.ChooseSignInAsync(SignInCatalogue.NoneId, null, null, Cancel));
@@ -157,6 +158,7 @@ public sealed class SetupSignInHandlerTests
         {
             services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Production });
             services.AddCloudflare(configuration);
+            services.AddTailscale(configuration);
             services.AddAccess(configuration);
             services.AddSignIn(configuration);
             services.AddSingleton<SetupSignInHandler>();
