@@ -492,9 +492,21 @@
     {
         // An installation whose sign-in was reset is done, and still opens on the sign-in.
         var part1 = SignIns.Step;
-        if (part1 == SetupPart1Step.Done && await Setup.IsDoneAsync(CancellationToken.None))
+        _user = await CurrentUser.GetAsync();
+        var setupDone = await Setup.IsDoneAsync(CancellationToken.None);
+        if (ShouldLeave(_user is not null, part1 == SetupPart1Step.Done, setupDone))
         {
             Navigation.NavigateTo("", replace: true);
+            return;
+        }
+
+        // A setup connection that outlived setup mode (its sign-in is chosen, nobody is signed in here): only the way
+        // on. Sending it to the relays would bring it straight back here.
+        if (part1 == SetupPart1Step.Done && _user is null)
+        {
+            _setupDone = setupDone;
+            _elsewhere = NewAddress();
+            _step = StepSignIn;
             return;
         }
 
@@ -509,7 +521,6 @@
         _audience = SignIns.Access.Audience;
         SignIns.TunnelChanged += OnTunnelChanged;
 
-        _user = await CurrentUser.GetAsync();
         _name = _user?.DisplayName ?? "";
         _type = Boards.Model?.Id ?? "";
         _brand = Boards.Model?.Brand;
@@ -559,6 +570,21 @@
         {
             // The page closed meanwhile.
         }
+    }
+
+    /// <summary>
+    /// Whether the guide sends the person to the relays: only someone signed in, once Part 1 and the guide are done.
+    /// Anyone else stays, or the gate would send them straight back.
+    /// </summary>
+    public static bool ShouldLeave(bool signedIn, bool part1Done, bool setupDone) => signedIn && part1Done && setupDone;
+
+    // Where the guide goes on once the sign-in is chosen: the tunnel's address (the guide, or the relays once it is
+    // done). Without an address, which the guide never leaves this way, the app's own.
+    private string NewAddress()
+    {
+        return SignIns.Tunnel.Address is { Length: > 0 } address
+            ? $"https://{address}/{(_setupDone ? "" : "setup")}"
+            : Navigation.BaseUri;
     }
 
     // What each sign-in is, in plain words.
@@ -665,7 +691,7 @@
         // Nobody is signed in in this page (the development user never comes here): from now on only the new address
         // answers. The handler took the sign-in only with an address saved.
         _setupDone = await Setup.IsDoneAsync(CancellationToken.None);
-        _elsewhere = $"https://{SignIns.Tunnel.Address}/{(_setupDone ? "" : "setup")}";
+        _elsewhere = NewAddress();
         _moved = true;
     }
 

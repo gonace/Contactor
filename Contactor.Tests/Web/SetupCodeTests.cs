@@ -160,6 +160,21 @@ public sealed partial class SetupCodeTests
         Assert.Equal("/setup", backup.Headers.Location?.OriginalString);
     }
 
+    // Pages other than the guide open only for someone signed in once the guide is done; a setup connection stays on
+    // the guide, also after the sign-in is chosen, and the guide doesn't send it on (they would send it to and fro).
+    [Fact]
+    public void Should_KeepASetupConnection_OnTheGuide()
+    {
+        Assert.True(Contactor.Web.Components.SetupGate.Opens(isGuide: true, signedIn: false, setupDone: false));
+        Assert.True(Contactor.Web.Components.SetupGate.Opens(isGuide: false, signedIn: true, setupDone: true));
+        Assert.False(Contactor.Web.Components.SetupGate.Opens(isGuide: false, signedIn: false, setupDone: true));
+        Assert.False(Contactor.Web.Components.SetupGate.Opens(isGuide: false, signedIn: true, setupDone: false));
+
+        Assert.True(Contactor.Web.Components.SetupGuide.ShouldLeave(signedIn: true, part1Done: true, setupDone: true));
+        Assert.False(Contactor.Web.Components.SetupGuide.ShouldLeave(signedIn: false, part1Done: true, setupDone: true));
+        Assert.False(Contactor.Web.Components.SetupGuide.ShouldLeave(signedIn: true, part1Done: false, setupDone: true));
+    }
+
     // reset-sign-in forgets the sign-in of an installation in use, and tells the running app: a new code, and the
     // guide opens again, not sent back to the relays (that went round in circles).
     [Fact]
@@ -377,23 +392,21 @@ public sealed partial class SetupCodeTests
     [GeneratedRegex("<input type=\"hidden\" name=\"(?<name>[^\"]+)\" value=\"(?<value>[^\"]*)\"")]
     private static partial Regex HiddenField();
 
-    /// <summary>The running app as reset-sign-in sees it: answers every request with one status, and counts them.</summary>
+    /// <summary>
+    /// The running app as reset-sign-in sees it: answers every request with one status, and counts them. A plain socket,
+    /// which needs no rights on any system (HttpListener on an address needs them on Windows).
+    /// </summary>
     private sealed class FakeApp : IDisposable
     {
-        private readonly HttpListener _listener = new();
+        private readonly System.Net.Sockets.TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly HttpStatusCode _status;
         private int _requests;
 
         public FakeApp(HttpStatusCode status)
         {
             _status = status;
-            var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            Url = new Uri($"http://127.0.0.1:{port}/setup/reload");
-            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
             _listener.Start();
+            Url = new Uri($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/setup/reload");
             _ = AnswerAsync();
         }
 
@@ -403,26 +416,46 @@ public sealed partial class SetupCodeTests
 
         public void Dispose()
         {
-            _listener.Close();
+            _listener.Stop();
+            _listener.Dispose();
         }
 
         private async Task AnswerAsync()
         {
-            while (_listener.IsListening)
+            while (true)
             {
-                HttpListenerContext context;
+                System.Net.Sockets.TcpClient client;
                 try
                 {
-                    context = await _listener.GetContextAsync();
+                    client = await _listener.AcceptTcpClientAsync();
                 }
-                catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException or InvalidOperationException)
+                catch (Exception ex) when (ex is System.Net.Sockets.SocketException or ObjectDisposedException or InvalidOperationException)
                 {
                     return;
                 }
 
-                Interlocked.Increment(ref _requests);
-                context.Response.StatusCode = (int)_status;
-                context.Response.Close();
+                using (client)
+                {
+                    var stream = client.GetStream();
+
+                    // The request's head ends with an empty line; the command sends no body.
+                    var head = new System.Text.StringBuilder();
+                    var buffer = new byte[1024];
+                    while (!head.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                    {
+                        var read = await stream.ReadAsync(buffer);
+                        if (read == 0)
+                        {
+                            break;
+                        }
+
+                        head.Append(System.Text.Encoding.ASCII.GetString(buffer, 0, read));
+                    }
+
+                    Interlocked.Increment(ref _requests);
+                    var answer = System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 {(int)_status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(answer);
+                }
             }
         }
     }

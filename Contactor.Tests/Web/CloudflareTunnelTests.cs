@@ -146,7 +146,9 @@ public sealed class CloudflareTunnelTests
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => tunnel.Connected);
-        Assert.Equal(1, changes);
+
+        // The event comes just after the state, on cloudflared's own thread.
+        await WaitUntilAsync(() => Volatile.Read(ref changes) == 1);
 
         await service.StopAsync(Cancel);
         Assert.False(tunnel.Connected);
