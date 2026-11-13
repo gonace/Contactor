@@ -111,6 +111,41 @@ public sealed class TailscaleNetworkTests
         Assert.Contains("Tailscale's settings changed: starting tailscaled again with them", network.Logger.Lines);
     }
 
+    // Most auth keys are good for one join only: a restart of tailscaled after the new key joined doesn't use it again.
+    [Fact]
+    public async Task Should_JoinWithANewKeyOnce_ThoughTailscaledStartsAgain()
+    {
+        var time = new ManualTimeProvider();
+        var tailscale = new FakeTailscale();
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
+        await WaitUntilAsync(() => network.Network.Status.Online);
+        Assert.Null(await network.Settings.SaveAsync("tskey-auth-kOther-SECRET5678", "relays", Cancel));
+        await WaitUntilAsync(() => tailscale.LogIns.Count == 2 && network.Network.Status.Online);
+
+        tailscale.StopDaemon();
+        await WaitUntilAsync(() => network.Logger.Lines.Any(l => l.StartsWith("tailscaled stopped", StringComparison.Ordinal)) && time.PendingTimers == 1);
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        await WaitUntilAsync(() => tailscale.DaemonRuns == 3 && network.Network.Status.Online);
+        Assert.Equal([false, true], tailscale.Forced);
+    }
+
+    [Fact]
+    public async Task Should_ClearTheFailedCheck_OnceTailscaleAnswers()
+    {
+        var time = new ManualTimeProvider();
+        var tailscale = new FakeTailscale { State = "Running" };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
+        await WaitUntilAsync(() => network.Network.Status.Online);
+
+        tailscale.FailingChecks = 1;
+        await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
+        await WaitUntilAsync(() => network.Network.Status.Problem is not null);
+        await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
+
+        await WaitUntilAsync(() => network.Network.Status == new TailscaleStatus(true, Address, null));
+    }
+
     [Fact]
     public async Task Should_NotJoinAgain_WhenOnlyTheNameChanges()
     {
@@ -325,6 +360,7 @@ public sealed class TailscaleNetworkTests
         private readonly ConcurrentQueue<(string AuthKey, string HostName)> _logIns = new();
         private readonly ConcurrentQueue<bool> _forced = new();
         private int _daemonRuns;
+        private volatile TaskCompletionSource<int>? _stop;
 
         public volatile string State = "NeedsLogin";
 
@@ -346,6 +382,9 @@ public sealed class TailscaleNetworkTests
 
         public int DaemonRuns => Volatile.Read(ref _daemonRuns);
 
+        // Stops the tailscaled that runs, as a crash would.
+        public void StopDaemon() => _stop?.TrySetResult(1);
+
         public bool DaemonCancelled { get; private set; }
 
         public IReadOnlyList<string> Commands => [.. _commands];
@@ -361,17 +400,17 @@ public sealed class TailscaleNetworkTests
                 return exitCode;
             }
 
+            var stop = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _stop = stop;
             try
             {
-                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return await stop.Task.WaitAsync(cancellationToken);
             }
             catch (OperationCanceledException)
             {
                 DaemonCancelled = true;
                 throw;
             }
-
-            return 0;
         }
 
         public Task<TailscaleCommandResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)

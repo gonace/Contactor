@@ -39,6 +39,12 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     // The auth key the last run started with; null before the first.
     private string? _lastAuthKey;
 
+    // A new auth key that must join even though tailscaled is on a network already; null once it has. Kept across
+    // restarts of tailscaled, so a key that joined isn't used again (most keys are good for one join only).
+    private string? _keyToJoinWith;
+
+    private const string CheckFailed = "Contactor couldn't ask Tailscale how it stands. It tries again.";
+
     public TailscaleNetwork(
         TailscaleSettings settings,
         IOptions<TailscaleOptions> options,
@@ -83,9 +89,13 @@ public sealed partial class TailscaleNetwork : IAccessMethod
             {
                 // An auth key other than the one this run started with joins again, even on a network already.
                 var settings = _settings.Current;
-                var newKey = _lastAuthKey is not null && settings.AuthKey.Length > 0 && settings.AuthKey != _lastAuthKey;
+                if (_lastAuthKey is not null && settings.AuthKey.Length > 0 && settings.AuthKey != _lastAuthKey)
+                {
+                    Volatile.Write(ref _keyToJoinWith, settings.AuthKey);
+                }
+
                 _lastAuthKey = settings.AuthKey;
-                await RunWithSettingsAsync(settings, newKey, changed.Token);
+                await RunWithSettingsAsync(settings, changed.Token);
             }
             finally
             {
@@ -101,14 +111,14 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     }
 
     // Keeps tailscaled running, and beside it joins the network, serves the app and watches how it stands.
-    private Task RunWithSettingsAsync(TailscaleNetworkSettings settings, bool newKey, CancellationToken cancellationToken)
+    private Task RunWithSettingsAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
     {
         return KeepRunning.RunAsync(
             async run =>
             {
                 using var daemon = CancellationTokenSource.CreateLinkedTokenSource(run);
                 LogStarting();
-                var watching = WatchAsync(settings, newKey, daemon.Token);
+                var watching = WatchAsync(settings, daemon.Token);
                 try
                 {
                     return await _process.RunDaemonAsync(LogDaemon, daemon.Token);
@@ -138,15 +148,20 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     // While tailscaled runs: joins the network once, then serves the app, and keeps the status up to date. A failed
     // check is logged and tried again at the next; only tailscaled stopping ends it. A new auth key joins again even
     // when tailscaled is on a network already (another one, perhaps).
-    private async Task WatchAsync(TailscaleNetworkSettings settings, bool newKey, CancellationToken cancellationToken)
+    private async Task WatchAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
     {
-        var watch = new Watch(newKey);
+        var watch = new Watch(settings.AuthKey.Length > 0 && Volatile.Read(ref _keyToJoinWith) == settings.AuthKey);
         while (!cancellationToken.IsCancellationRequested)
         {
             TailscaleState? state = null;
             try
             {
                 state = await ReadStateAsync(cancellationToken);
+                if (watch.Problem == CheckFailed)
+                {
+                    watch.Problem = null;
+                }
+
                 if (await CheckAsync(watch, state, settings, cancellationToken))
                 {
                     continue;
@@ -161,7 +176,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
 #pragma warning restore CA1031
             {
                 LogCheckFailed(ex);
-                watch.Problem = "Contactor couldn't ask Tailscale how it stands. It tries again.";
+                watch.Problem = CheckFailed;
             }
 
             SetStatus(new TailscaleStatus(watch.Served && state is { BackendState: "Running" }, state?.Address, watch.Problem));
@@ -191,6 +206,12 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         if (mustLogIn)
         {
             var result = await _process.LogInAsync(settings.AuthKey, settings.HostName, force: watch.NewKey, LogInTimeout, cancellationToken);
+            // A forced join is done once the key joined, or Tailscale refused it: either way it isn't tried again.
+            if (watch.NewKey && !result.TimedOut)
+            {
+                Interlocked.CompareExchange(ref _keyToJoinWith, null, settings.AuthKey);
+            }
+
             if (result.Succeeded)
             {
                 (watch.LoggedIn, watch.Named, watch.Problem) = (true, true, null);
