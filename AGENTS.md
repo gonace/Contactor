@@ -57,6 +57,7 @@ Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resi
 Contactor.Tests/          # The only test project
   Boards/                   # ChannelMask, BoardPoller, board adapters
   Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
+  AppHost/                  # The cloudflared download for the Aspire run
   Simulator/                # The simulator's boards and page
   Vm201/                    # Codec + client against the simulator
   Vm204/                    # JSON, login, trace words + client against the simulator

@@ -42,14 +42,19 @@ public static class Program
     // touched.
     private static async Task<string?> GetCloudflaredAsync(string appHostDirectory)
     {
-        var folder = Path.Combine(appHostDirectory, ".tools", "cloudflared", Cloudflared.Version);
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        var versions = Path.Combine(appHostDirectory, ".tools", "cloudflared");
+        // HttpClient's own timeout ends once the headers are in; this one also covers a download that stalls after.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        using var http = new HttpClient();
         try
         {
-            return await Cloudflared.GetAsync(Cloudflared.HostSystem(), folder, http, CancellationToken.None);
+            Cloudflared.RemoveOtherVersions(versions);
+            return await Cloudflared.GetAsync(Cloudflared.HostSystem(), Path.Combine(versions, Cloudflared.Version), http,
+                () => Console.WriteLine($"Downloading cloudflared {Cloudflared.Version} from GitHub (once; about 40–55 MB)…"),
+                timeout.Token);
         }
         catch (Exception exception) when (exception is CloudflaredUnavailableException or HttpRequestException
-                                              or IOException or UnauthorizedAccessException or TaskCanceledException
+                                              or IOException or UnauthorizedAccessException or OperationCanceledException
                                               or InvalidDataException or FormatException)
         {
             await Console.Error.WriteLineAsync($"warn: No cloudflared {Cloudflared.Version}, so the Cloudflare way in won't work: {exception.Message}");

@@ -7,8 +7,8 @@ namespace Contactor.AppHost;
 
 /// <summary>
 /// Gives the web app the cloudflared the image has: the version the Dockerfile pins, downloaded once from Cloudflare's
-/// GitHub release into the AppHost's own folder, and checked against its SHA-256 before every run. Nothing already on
-/// the computer is looked for or used. No Aspire types here, so the tests compile this file on its own.
+/// GitHub release into the AppHost's own folder, and checked against its SHA-256 every time the AppHost starts. Nothing
+/// already on the computer is looked for or used. No Aspire types here, so the tests compile this file on its own.
 /// </summary>
 public static class Cloudflared
 {
@@ -59,28 +59,51 @@ public static class Cloudflared
         return $"{os}-{architecture}";
     }
 
+    /// <summary>The program's file name on <paramref name="system"/>: Windows only runs it as <c>cloudflared.exe</c>.</summary>
+    public static string ProgramName(string system) =>
+        system.StartsWith("win-", StringComparison.Ordinal) ? "cloudflared.exe" : "cloudflared";
+
+    /// <summary>
+    /// Deletes the folders of other versions in <paramref name="versionsFolder"/>, each one left by a version raised
+    /// since, so only <see cref="Version"/>'s is kept.
+    /// </summary>
+    public static void RemoveOtherVersions(string versionsFolder)
+    {
+        if (!Directory.Exists(versionsFolder))
+        {
+            return;
+        }
+
+        foreach (var folder in Directory.GetDirectories(versionsFolder))
+        {
+            if (Path.GetFileName(folder) != Version)
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
+
     /// <summary>
     /// The path of a checked cloudflared for <paramref name="system"/> in <paramref name="folder"/>, downloaded first
     /// when it isn't there or doesn't match its SHA-256.
     /// </summary>
     /// <exception cref="CloudflaredUnavailableException">There is no build for the system, or the download is wrong.</exception>
     /// <exception cref="HttpRequestException">The download failed.</exception>
-    public static Task<string> GetAsync(string system, string folder, HttpClient http, CancellationToken cancellationToken)
+    public static Task<string> GetAsync(string system, string folder, HttpClient http, Action? downloading, CancellationToken cancellationToken)
     {
         if (!Builds.TryGetValue(system, out var build))
         {
             throw new CloudflaredUnavailableException($"Cloudflare has no cloudflared {Version} for {system}.");
         }
 
-        var name = system.StartsWith("win-", StringComparison.Ordinal) ? "cloudflared.exe" : "cloudflared";
-        return GetAsync(build, Path.Combine(folder, name), http, cancellationToken);
+        return GetAsync(build, Path.Combine(folder, ProgramName(system)), http, downloading, cancellationToken);
     }
 
     /// <summary>
     /// <paramref name="path"/> once it holds <paramref name="build"/>'s program: kept when it matches its SHA-256,
-    /// downloaded again when it doesn't or isn't there.
+    /// downloaded again when it doesn't or isn't there. <paramref name="downloading"/> is called before a download.
     /// </summary>
-    public static async Task<string> GetAsync(Build build, string path, HttpClient http, CancellationToken cancellationToken)
+    public static async Task<string> GetAsync(Build build, string path, HttpClient http, Action? downloading, CancellationToken cancellationToken)
     {
         if (File.Exists(path))
         {
@@ -93,10 +116,13 @@ public static class Cloudflared
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        var download = path + ".download";
-        var program = path + ".new";
+        // Names of their own, so two AppHosts downloading at once never move or delete each other's files.
+        var unique = Guid.NewGuid().ToString("N");
+        var download = $"{path}.{unique}.download";
+        var program = $"{path}.{unique}.new";
         try
         {
+            downloading?.Invoke();
             await DownloadAsync(http, build.Url, download, cancellationToken);
             if (build.Packed)
             {
@@ -148,8 +174,16 @@ public static class Cloudflared
         await using var file = File.OpenRead(tgz);
         await using var gzip = new GZipStream(file, CompressionMode.Decompress);
         await using var tar = new TarReader(gzip);
+        long skipped = 0;
         while (await tar.GetNextEntryAsync(cancellationToken: cancellationToken) is { } entry)
         {
+            // The entries before the program are read through too; together they may not be larger than a download.
+            skipped += entry.Length;
+            if (skipped > MaxDownloadBytes)
+            {
+                throw new CloudflaredUnavailableException($"{Path.GetFileName(tgz)} is larger than {MaxDownloadBytes} bytes unpacked.");
+            }
+
             if (entry.EntryType is TarEntryType.RegularFile or TarEntryType.V7RegularFile
                 && Path.GetFileName(entry.Name) == "cloudflared" && entry.DataStream is { } data)
             {
