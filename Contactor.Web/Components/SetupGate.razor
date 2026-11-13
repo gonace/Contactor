@@ -1,5 +1,7 @@
+@using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Setup
 @inject SetupHandler Setup
+@inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 
 @*
@@ -23,7 +25,10 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _open = PageType == typeof(SetupGuide) || PageType == typeof(SetupCodePage) || await Setup.IsDoneAsync(CancellationToken.None);
+        // Nobody signed in: a setup connection, let in by the setup code. Only the guide, also once the installation
+        // is done (a reset sign-in), and also after its sign-in is chosen, as its connection outlives setup mode.
+        var guide = PageType == typeof(SetupGuide) || PageType == typeof(SetupCodePage);
+        _open = guide || (await CurrentUser.GetAsync() is not null && await Setup.IsDoneAsync(CancellationToken.None));
         if (!_open)
         {
             Navigation.NavigateTo("setup", replace: true);

@@ -133,6 +133,26 @@ public sealed class CloudflareTunnelTests
         Assert.True(service.ExecuteTask!.IsCompletedSuccessfully);
     }
 
+    // The setup guide shows "Tunnel connected" once cloudflared says so, and not after it stops.
+    [Fact]
+    public async Task Should_SayConnected_WhileCloudflaredIsConnected()
+    {
+        var process = new FakeCloudflared { Output = ["INF Registered tunnel connection connIndex=0"], RunUntilCancelled = true };
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), new ListLogger());
+        var tunnel = service.Services.GetRequiredService<CloudflareTunnel>();
+        var changes = 0;
+        tunnel.ConnectedChanged += (_, _) => Interlocked.Increment(ref changes);
+        Assert.False(tunnel.Connected);
+
+        await service.StartAsync(Cancel);
+        await WaitUntilAsync(() => tunnel.Connected);
+        Assert.Equal(1, changes);
+
+        await service.StopAsync(Cancel);
+        Assert.False(tunnel.Connected);
+        Assert.Equal(2, changes);
+    }
+
     // The setup guide saves a new token: cloudflared starts again with it at once, without the wait after a failure.
     [Fact]
     public async Task Should_StartAgainAtOnce_WithANewToken()

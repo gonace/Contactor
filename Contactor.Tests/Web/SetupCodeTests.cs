@@ -161,9 +161,9 @@ public sealed partial class SetupCodeTests
     }
 
     // reset-sign-in forgets the sign-in of an installation in use, and tells the running app: a new code, and the
-    // guide opens again at the sign-in, not sent back to the relays (that went round in circles).
+    // guide opens again, not sent back to the relays (that went round in circles).
     [Fact]
-    public async Task Should_OpenTheSignInStep_AfterTheSignInIsReset()
+    public async Task Should_OpenTheGuide_AfterTheSignInIsReset()
     {
         var logs = new LogCapture();
         await using var app = new TestWebApp("Production", AccessTokens.Settings, services => services.AddSingleton<ILoggerProvider>(logs));
@@ -199,7 +199,8 @@ public sealed partial class SetupCodeTests
 
         using var guide = await http.GetAsync("/setup", Cancel);
         Assert.Equal(HttpStatusCode.OK, guide.StatusCode);
-        Assert.Contains("How do people sign in?", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        // Set up with .env, it has no address saved: the guide asks for the way in first, since it sends people there.
+        Assert.Contains("How do people reach the app?", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -218,7 +219,8 @@ public sealed partial class SetupCodeTests
     {
         await using var database = TestDatabase.Create();
         var args = new[] { SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}" };
-        Assert.Equal(1, SignInReset.Run(args));
+        using var app = new FakeApp(HttpStatusCode.NoContent);
+        Assert.Equal(1, SignInReset.Run(args, app.Url));
 
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
@@ -227,15 +229,57 @@ public sealed partial class SetupCodeTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        // The app isn't running here: the code comes at its next start.
-        Assert.Equal(0, SignInReset.Run(args));
+        Assert.Equal(0, SignInReset.Run(args, app.Url));
+        Assert.Equal(1, app.Requests);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             var installation = await db.Installations.SingleAsync(Cancel);
             Assert.Equal(("cloudflare", null), (installation.AccessType, installation.SignInType));
         }
 
-        Assert.Equal(0, SignInReset.Run(args));
+        // Nothing to forget: the app isn't told again.
+        Assert.Equal(0, SignInReset.Run(args, app.Url));
+        Assert.Equal(1, app.Requests);
+    }
+
+    [Fact]
+    public async Task Should_SayWhatWentWrong_WhenTheAppAnswersAnError()
+    {
+        await using var database = await DatabaseInUseAsync();
+        using var app = new FakeApp(HttpStatusCode.InternalServerError);
+
+        Assert.Equal(1, SignInReset.Run([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], app.Url));
+    }
+
+    // The app not running: the sign-in is still forgotten, and the next start makes the code.
+    [Fact]
+    public async Task Should_ForgetTheSignIn_WhenTheAppIsNotRunning()
+    {
+        await using var database = await DatabaseInUseAsync();
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        Assert.Equal(0, SignInReset.Run([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], new Uri($"http://127.0.0.1:{port}/setup/reload")));
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Null((await db.Installations.SingleAsync(Cancel)).SignInType);
+    }
+
+    // A database the new version hasn't brought up to date yet, e.g. before its first start.
+    [Fact]
+    public async Task Should_ChangeNothing_InADatabaseNotUpToDate()
+    {
+        await using var database = TestDatabase.Create();
+        Directory.CreateDirectory(Path.GetDirectoryName(database.FilePath)!);
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(database.ConnectionString))
+        {
+            await connection.OpenAsync(Cancel);
+        }
+
+        using var app = new FakeApp(HttpStatusCode.NoContent);
+        Assert.Equal(1, SignInReset.Run([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], app.Url));
+        Assert.Equal(0, app.Requests);
     }
 
     // As an installation in use starts: its choice is in the database before the app starts, so the sign-in holds from
@@ -290,6 +334,16 @@ public sealed partial class SetupCodeTests
         return (new SetupCode(new EphemeralDataProtectionProvider(), time, factory.CreateLogger<SetupCode>()), logs);
     }
 
+    private static async Task<TestDatabase> DatabaseInUseAsync()
+    {
+        var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        db.Installations.Add(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
+        await db.SaveChangesAsync(Cancel);
+        return database;
+    }
+
     private static TestWebApp NewInstallation(LogCapture logs)
     {
         return new TestWebApp("Production", AccessTokens.Settings, services => services.AddSingleton<ILoggerProvider>(logs), setUp: false);
@@ -322,6 +376,56 @@ public sealed partial class SetupCodeTests
 
     [GeneratedRegex("<input type=\"hidden\" name=\"(?<name>[^\"]+)\" value=\"(?<value>[^\"]*)\"")]
     private static partial Regex HiddenField();
+
+    /// <summary>The running app as reset-sign-in sees it: answers every request with one status, and counts them.</summary>
+    private sealed class FakeApp : IDisposable
+    {
+        private readonly HttpListener _listener = new();
+        private readonly HttpStatusCode _status;
+        private int _requests;
+
+        public FakeApp(HttpStatusCode status)
+        {
+            _status = status;
+            var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            Url = new Uri($"http://127.0.0.1:{port}/setup/reload");
+            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            _listener.Start();
+            _ = AnswerAsync();
+        }
+
+        public Uri Url { get; }
+
+        public int Requests => Volatile.Read(ref _requests);
+
+        public void Dispose()
+        {
+            _listener.Close();
+        }
+
+        private async Task AnswerAsync()
+        {
+            while (_listener.IsListening)
+            {
+                HttpListenerContext context;
+                try
+                {
+                    context = await _listener.GetContextAsync();
+                }
+                catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException or InvalidOperationException)
+                {
+                    return;
+                }
+
+                Interlocked.Increment(ref _requests);
+                context.Response.StatusCode = (int)_status;
+                context.Response.Close();
+            }
+        }
+    }
 
     /// <summary>Keeps what is logged, to read the setup code from it as a person would.</summary>
     private sealed class LogCapture : ILoggerProvider

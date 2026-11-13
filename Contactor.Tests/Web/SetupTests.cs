@@ -81,7 +81,7 @@ public sealed class SetupTests
 
     // The guide always starts where it stands: the board is chosen before anything after it.
     [Fact]
-    public async Task Should_OpenOnTheFirstStep_WhateverTheAddress()
+    public async Task Should_OpenWhereTheGuideStands_WhateverTheAddress()
     {
         await using var app = new TestWebApp("Development", John, setUp: false);
         using var http = app.CreateClient();

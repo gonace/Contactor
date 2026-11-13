@@ -55,9 +55,15 @@ public sealed class SetupSignInHandler
     /// the development user (Development only) everyone is signed in already, so Part 1 is left out.
     /// </summary>
     public SetupPart1Step Step => _developmentUser ? SetupPart1Step.Done
-        : _access.Current is null ? SetupPart1Step.WayIn
+        : _access.Current is null || NeedsAddress ? SetupPart1Step.WayIn
         : _signIn.Current is null ? SetupPart1Step.SignIn
         : SetupPart1Step.Done;
+
+    // Cloudflare without an address: an installation set up with .env, whose sign-in was reset. The way-in step asks
+    // for it, since the guide sends people there.
+    private bool NeedsAddress => _signIn.Current is null
+        && _access.Current?.Id == CloudflareMethods.TunnelId
+        && string.IsNullOrEmpty(_cloudflare.Tunnel.Address);
 
     /// <summary>The way in chosen, or null.</summary>
     public AccessMethod? WayIn => _access.Current;
@@ -126,6 +132,11 @@ public sealed class SetupSignInHandler
         if (_access.Current is not { } wayIn || !wayIn.SignIns.Contains(CloudflareMethods.AccessId))
         {
             return "Cloudflare Access only works when people reach the app through Cloudflare.";
+        }
+
+        if (NeedsAddress)
+        {
+            return "Go back and save the tunnel's address first: people open Contactor there.";
         }
 
         var problem = await _cloudflare.SaveAccessAsync(teamDomain, audience, cancellationToken);

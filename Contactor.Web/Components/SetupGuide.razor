@@ -3,6 +3,7 @@
 @using System.Globalization
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Cloudflare
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Setup
@@ -380,7 +381,7 @@
         </div>
         <div class="field">
             <label for="tunnel-token">Tunnel token</label>
-            <input id="tunnel-token" type="password" autocomplete="off" spellcheck="false" maxlength="@CloudflareSetting.TunnelTokenMaxLength"
+            <input id="tunnel-token" type="password" autocomplete="new-password" spellcheck="false" maxlength="@CloudflareSetting.TunnelTokenMaxLength"
                    placeholder="@(SignIns.WayIn is null ? "" : "unchanged")" @bind="_tunnelToken" @bind:event="oninput" />
             <p class="hint">Zero Trust → Networks → Tunnels → your tunnel. It is the long code after <code>--token</code> in the install command.</p>
         </div>
@@ -388,7 +389,7 @@
             <label for="tunnel-address">Address</label>
             <input id="tunnel-address" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
                    maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="relays.example.com" @bind="_tunnelAddress" @bind:event="oninput" />
-            <p class="hint">The tunnel's public hostname: where people will open Contactor. Point it at <code>http://localhost:8080</code>.</p>
+            <p class="hint">The tunnel's public hostname: where people will open Contactor. In Cloudflare, point it at <code>http://contactor:8080</code>.</p>
         </div>
     };
 
@@ -398,21 +399,21 @@
         var (address, connected) = SignIns.Tunnel;
         <div class="intro">
             <h1 tabindex="-1" @ref="_heading">@(_elsewhere is null ? "How do people sign in?" : "Go on at your new address")</h1>
-            <p>@(_elsewhere is null ? "Recommended with Cloudflare: Cloudflare Access." : "Contactor now only answers through Cloudflare. Open it there and sign in with your e-mail: the guide goes on.")</p>
+            <p>@(_elsewhere is null ? "Recommended with Cloudflare: Cloudflare Access." : $"Contactor now only answers through Cloudflare. Open it there and sign in with your e-mail{(_setupDone ? "." : ": the guide goes on.")}")</p>
         </div>
         @if (_elsewhere is null)
         {
             <div class="choices" role="radiogroup" aria-label="Sign-ins">
                 @foreach (var option in SignIns.SignIns())
                 {
-                    <label class="choice chosen">
-                        <input type="radio" name="sign-in" checked />
+                    <label class="choice @(option.Recommended ? "chosen" : null)">
+                        <input type="radio" name="sign-in" checked="@option.Recommended" />
                         <span class="choice-text">
                             <span class="name">@option.Method.Name @if (option.Recommended)
                                 {
                                     <span class="tag">RECOMMENDED</span>
                                 }</span>
-                            <span class="note">A code by e-mail, through Cloudflare. Who may sign in is set in Cloudflare.</span>
+                            <span class="note">@SignInNote(option.Method.Id)</span>
                         </span>
                     </label>
                 }
@@ -434,7 +435,7 @@
             <span class="dot @(connected ? null : "waiting")"></span>
             <span class="status-text">
                 <b>@(connected ? "Tunnel connected" : "Waiting for the tunnel to connect")</b>
-                <span>@(connected ? $"Cloudflare answers at {address}." : "It can take a minute. Check the token if it doesn't.")</span>
+                <span>@(connected && address is not null ? $"Cloudflare answers at {address}." : "It can take a minute. Check the token if it doesn't.")</span>
             </span>
         </div>
     };
@@ -452,6 +453,9 @@
 
     // Once the sign-in is chosen, this page no longer answers here: the address to go on at.
     private string? _elsewhere;
+
+    // An installation in use whose sign-in was reset: the new address opens on the relays, not the guide.
+    private bool _setupDone;
     private string _name = "";
     private string _type = "";
     private string? _brand;
@@ -542,8 +546,27 @@
     // From the tunnel's own thread: "Tunnel connected" on the sign-in step.
     private void OnTunnelChanged(object? sender, EventArgs e)
     {
-        _ = InvokeAsync(StateHasChanged);
+        _ = RefreshTunnelAsync();
     }
+
+    private async Task RefreshTunnelAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed meanwhile.
+        }
+    }
+
+    // What each sign-in is, in plain words.
+    private static string SignInNote(string id) => id switch
+    {
+        CloudflareMethods.AccessId => "A code by e-mail, through Cloudflare. Who may sign in is set in Cloudflare.",
+        _ => "",
+    };
 
     // A new step's heading takes the focus, so a screen reader reads where it is.
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -639,23 +662,10 @@
             return;
         }
 
-        // Signed in here already (the development user): the guide goes on in this page.
-        if (_user is not null)
-        {
-            if (await Setup.IsDoneAsync(CancellationToken.None))
-            {
-                Navigation.NavigateTo("");
-            }
-            else
-            {
-                Move(StepAbout);
-            }
-
-            return;
-        }
-
-        // Nobody is signed in in this page: from now on only the new address answers.
-        _elsewhere = $"https://{SignIns.Tunnel.Address}/setup";
+        // Nobody is signed in in this page (the development user never comes here): from now on only the new address
+        // answers. The handler took the sign-in only with an address saved.
+        _setupDone = await Setup.IsDoneAsync(CancellationToken.None);
+        _elsewhere = $"https://{SignIns.Tunnel.Address}/{(_setupDone ? "" : "setup")}";
         _moved = true;
     }
 

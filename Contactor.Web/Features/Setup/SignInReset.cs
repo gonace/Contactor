@@ -19,7 +19,14 @@ public static class SignInReset
 
     public static int Run(string[] args)
     {
+        return Run(args, new Uri(DefaultUrl));
+    }
+
+    /// <summary>As <see cref="Run(string[])"/>, telling the app at <paramref name="reloadUrl"/>.</summary>
+    public static int Run(string[] args, Uri reloadUrl)
+    {
         ArgumentNullException.ThrowIfNull(args);
+        ArgumentNullException.ThrowIfNull(reloadUrl);
         var builder = WebApplication.CreateBuilder(args.Where(a => a != Command).ToArray());
         var services = new ServiceCollection();
         services.AddLogging();
@@ -56,7 +63,7 @@ public static class SignInReset
         try
         {
             using var http = new HttpClient { Timeout = Timeout };
-            using var response = http.PostAsync(new Uri(DefaultUrl), content: null).GetAwaiter().GetResult();
+            using var response = http.PostAsync(reloadUrl, content: null).GetAwaiter().GetResult();
             if (response.IsSuccessStatusCode)
             {
                 Console.WriteLine("The app wrote the new setup code to its log, e.g. docker logs contactor.");

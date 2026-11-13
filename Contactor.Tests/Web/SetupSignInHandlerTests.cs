@@ -72,6 +72,23 @@ public sealed class SetupSignInHandlerTests
         Assert.Equal(("tunnel-token", "contactor.example.com"), (settings.Tunnel.Token, settings.Tunnel.Address));
     }
 
+    // After reset-sign-in: with the address saved, the guide asks only for the sign-in. Set up with .env there is
+    // none, and the guide sends people to it, so it asks for the way in again.
+    [Fact]
+    public async Task Should_AskForTheAddress_WhenItIsMissing_AfterAReset()
+    {
+        await using var database = await CreateAsync();
+        var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+        await database.Services.GetRequiredService<AccessChoice>().ChooseAsync(AccessCatalogue.Find(CloudflareMethods.TunnelId)!, Cancel);
+
+        Assert.Equal(SetupPart1Step.WayIn, handler.Step);
+        Assert.NotNull(await handler.ChooseCloudflareAccessAsync("myteam.cloudflareaccess.com", "aud", Cancel));
+
+        await database.Services.GetRequiredService<CloudflareSettings>().SaveTunnelAsync("tunnel-token", "relays.example.com", Cancel);
+        Assert.Equal(SetupPart1Step.SignIn, handler.Step);
+        Assert.Null(await handler.ChooseCloudflareAccessAsync("myteam.cloudflareaccess.com", "aud", Cancel));
+    }
+
     private static async Task<TestDatabase> CreateAsync()
     {
         var database = TestDatabase.Create((services, configuration) =>
