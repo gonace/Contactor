@@ -61,6 +61,12 @@ internal sealed class FakeRelayBoard : IRelayBoard
     public ChannelMask Refuse { get; set; }
 
     /// <summary>
+    /// Relays the board switches and reports, but leaves out of the relays a command returns, as one whose answer for
+    /// them couldn't be read although they did switch.
+    /// </summary>
+    public ChannelMask Unconfirmed { get; set; }
+
+    /// <summary>
     /// When set, the next command switches the relays but reports nothing and throws
     /// <see cref="BoardNotConnectedException"/>, as a board whose answer was lost or unreadable after it switched. The
     /// change shows on the next <see cref="RefreshAsync"/>.
@@ -206,7 +212,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
 
         var taken = relays.Except(Refuse);
-        if (!relays.IsEmpty && taken.IsEmpty)
+        if (!relays.IsEmpty && taken.Except(Unconfirmed).IsEmpty)
         {
             throw new BoardNotConnectedException("The board refused the command.");
         }
@@ -218,7 +224,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             {
                 var held = _heldRelays ?? _state.Relays;
                 _heldRelays = on ? held | taken : held.Except(taken);
-                return taken;
+                return taken.Except(Unconfirmed);
             }
 
             state = _state = Stamp(_state with { Relays = on ? _state.Relays | taken : _state.Relays.Except(taken) });
@@ -236,7 +242,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             await after();
         }
 
-        return taken;
+        return taken.Except(Unconfirmed);
     }
 
     private void EnsureConnected()

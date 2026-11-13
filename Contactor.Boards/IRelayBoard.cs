@@ -23,7 +23,8 @@ public interface IRelayBoard
     /// <summary>
     /// Turns on the relays in <paramref name="relays"/>; the others are left as they are. Returns the relays the board
     /// took: all of them on a board that takes a mask at once, and on one that switches a relay per request, those
-    /// it didn't refuse. When it took none, it throws instead.
+    /// it confirmed (not refused, and with an answer the app could read; one it couldn't may have switched, which the
+    /// next state shows). When it took none, it throws instead.
     /// </summary>
     Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default);
 

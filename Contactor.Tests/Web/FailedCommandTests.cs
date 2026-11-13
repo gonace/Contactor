@@ -130,6 +130,55 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await AssertNoExternalEventAsync();
     }
 
+    // A relay whose answer the board couldn't confirm, but which the board's state after the command shows off, went off
+    // all the same: "All off" logs it and ends its run, whichever comes first, the command's return or the recorder's
+    // turn with that state.
+    [Fact]
+    public async Task Should_LogARelayThatWentOffUnconfirmed_InAllOff()
+    {
+        await Control.TurnOnAsync(2, Jane, Cancel);
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        await WaitForEventsAsync(2);
+
+        _board.Unconfirmed = ChannelMask.Of(3);
+        await Control.TurnAllOffAsync(Jane, Cancel);
+        await _board.RefreshAsync(Cancel);
+
+        var events = await WaitForEventsAsync(4);
+        Assert.Equal([(2, EventActions.On), (3, EventActions.On), (2, EventActions.Off), (3, EventActions.Off)], events.Select(e => (e.RelayId!.Value, e.Action)));
+        Assert.All(events, e => Assert.Equal(Jane, e.Actor));
+        await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.Null((await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel)).OnSinceUtc);
+        }
+
+        await AssertNoExternalEventAsync();
+    }
+
+    // A group's ON the board refused, sent together with another group's: when that relay comes on later, it is logged
+    // as changed outside the app, not taken for the step the board refused.
+    [Fact]
+    public async Task Should_LogARelayRefusedInAGroupsOn_AsExternal_WhenItComesOnLater()
+    {
+        var first = await AddGroupAsync((1, "Fan"), (2, "Heat"));
+        var second = await AddGroupAsync((3, "Fan"), (4, "Heat"));
+        var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
+        await sequencer.StartGroupAsync(first, Jane, Cancel);
+        Assert.True(_board.State.IsOn(1));
+        await sequencer.StepAsync(Cancel);
+
+        // The first group's heat is due when the second group starts: both ONs go in one command.
+        _time.Now += TimeSpan.FromSeconds(3);
+        _board.Refuse = ChannelMask.Of(2);
+        await sequencer.StartGroupAsync(second, Jane, Cancel);
+        Assert.Equal((false, true), (_board.State.IsOn(2), _board.State.IsOn(3)));
+        _board.Refuse = ChannelMask.None;
+        _board.SetRelay(2, on: true);
+
+        var events = await WaitForEventsAsync(e => e.Any(x => x is { RelayId: 2, Actor: EventActors.External, Action: EventActions.On }));
+        Assert.Contains(events, e => e is { RelayId: 2, Actor: EventActors.External, Action: EventActions.On });
+    }
+
     // A relay the board refused in a group's step isn't the app's change: when it does go off later, it is logged as
     // changed outside the app.
     [Fact]

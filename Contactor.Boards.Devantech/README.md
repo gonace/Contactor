@@ -120,6 +120,7 @@ A command switches the relays in the mask one at a time:
 - The client sends 0x20 or 0x21 for every relay in the mask, also when the board refuses one.
 - A command with no answer stops the rest of the mask.
 - When the board takes no relay, the command throws "The Devantech board didn't take the command: …".
+- Otherwise it returns the relays the board confirmed. A refused relay, or one whose answer couldn't be read, isn't among them.
 - When a command gets no answer, the command throws "The Devantech board didn't answer; the command may not have been
   carried out."
 - The poller reads the board at once after each of these two failures. It counts a command with no answer as a failed

@@ -121,6 +121,10 @@ public sealed class DevantechClientTests
         Assert.Contains(run.Traces, t => t.Text == "Refused: relay 2" && t.IsError);
         Assert.Contains(run.Traces, t => t.Text == "The board didn't take the command for relay 2: The board refused relay 2." && t.IsError);
         Assert.True(run.Client.State.IsConnected);
+
+        // OFF, as "All off" sends it: only the relays it took.
+        Assert.Equal(0b0101UL, await run.Client.TurnOffAsync(0b0111, Cancel));
+        Assert.Equal(0UL, simulator.Relays);
     }
 
     [Fact]
