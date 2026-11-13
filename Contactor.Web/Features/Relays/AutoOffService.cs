@@ -10,8 +10,10 @@ namespace Contactor.Web.Features.Relays;
 /// Turns relays off when their auto-off time has passed: every 15 s it looks for a <see cref="RelayRuntime"/> whose
 /// <see cref="RelayRuntime.AutoOffAtUtc"/> is due, sends OFF if the board says the relay is still on, logs it as
 /// Actor <c>auto-off</c>, and clears the runtime. A person's or an input's ON sets an auto-off time, and so does a relay
-/// on with nobody's run (given one here, at every check); a relay a schedule turned on is never touched. While the board is disconnected nothing happens; a time that passed meanwhile (also before
-/// a restart) is handled at the first check after the connection is back.
+/// on with nobody's run (given one here, at every check); a relay a schedule turned on is never touched. A relay the
+/// board shows off loses a run left on it (ended here, at every check). While the board is disconnected nothing
+/// happens; a time that passed meanwhile (also before a restart) is handled at the first check after the connection
+/// is back.
 /// </summary>
 public sealed partial class AutoOffService : BackgroundService
 {
@@ -108,6 +110,7 @@ public sealed partial class AutoOffService : BackgroundService
             await RelayRuns.EndOutsideAsync(db, runtime.RelayId, cancellationToken);
         }
 
+        await EndRunsOfOffRelaysAsync(db, state, [.. due.Select(r => r.RelayId)], cancellationToken);
         if (db.ChangeTracker.HasChanges())
         {
             await RelayRuns.SaveAsync(db, cancellationToken);
@@ -115,6 +118,33 @@ public sealed partial class AutoOffService : BackgroundService
         }
 
         return turnedOff;
+    }
+
+    // A relay the board shows off keeps no run: one can be left when the change seen outside the app gave way to another
+    // writer's save, or when the relay went off while the app was down (at start the recorder compares no relays).
+    // Its status line would keep saying "On since". Not while an ON is still on its way (a person's or a schedule's run
+    // is saved before the board shows the relay on), and only the run as read ends: one saved meanwhile stays. Nobody
+    // knows who turned it off or when, so nothing is logged.
+    private async Task EndRunsOfOffRelaysAsync(ContactorDbContext db, BoardState state, HashSet<int> handled, CancellationToken cancellationToken)
+    {
+        var off = Enumerable.Range(1, _board.Capabilities.RelayCount)
+            .Where(r => !state.IsOn(r) && !handled.Contains(r) && !_expected.IsPending(r, on: true))
+            .ToList();
+        if (off.Count == 0)
+        {
+            return;
+        }
+
+        // Tracked, so the end is checked against these rows' versions. An ON whose run was saved just before they were
+        // read is still pending now, and keeps its run.
+        var stale = await db.RelayRuntimes
+            .Where(r => off.Contains(r.RelayId) && r.OnSinceUtc != null)
+            .ToListAsync(cancellationToken);
+        foreach (var run in stale.Where(r => !_expected.IsPending(r.RelayId, on: true)))
+        {
+            await RelayRuns.EndOutsideAsync(db, run.RelayId, cancellationToken);
+            LogStaleRun(run.RelayId);
+        }
     }
 
     // A relay can be on with nobody's run without the app seeing it come on, e.g. after an OFF the board was sent but
@@ -183,4 +213,7 @@ public sealed partial class AutoOffService : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is on with nobody's run: it gets its own auto-off")]
     private partial void LogOwnerless(int relayId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is off but still had a run: it ends")]
+    private partial void LogStaleRun(int relayId);
 }
