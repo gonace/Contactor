@@ -427,7 +427,7 @@ Anything specific to the installation or secret (the Access team domain and AUD 
 
 ## Operations
 
-See `DEPLOY.md` for the steps.
+See [`DEPLOY.md`](DEPLOY.md) for the steps.
 
 - **Versions:** `YYYY.M.D` in UTC without leading zeros, plus `.N` for a later release the same day (`scripts/release-version.sh`). A release is built with `-p:Version=<version>`; every other build is `0.0.0-dev` (`Directory.Build.props`). `AppBuild` reads the version and commit; they show in `/healthz`, the start log, the image label `org.opencontainers.image.version`, the upgrade's output and at the bottom of Settings.
 - **Publish:** the Images workflow (started by hand) or `scripts/images-publish.sh` builds the solution and runs every test (a failure publishes nothing), builds and pushes the image from the `Dockerfile` with `docker buildx` (`scripts/images-build.sh`), tags it `YYYY.M.D[.N]`, `latest` and `sha-<commit>`, signs it with cosign by digest (`scripts/images-sign.sh`, keys in `deploy/cosign/`) and tags the commit `v<version>`.
