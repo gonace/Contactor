@@ -137,16 +137,6 @@ public sealed class CloudflareAccessTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    [Fact]
-    public async Task Should_RefuseToStart_WhenDevUserIsSetInProduction()
-    {
-        await using var app = CreateApp(new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
-
-        var error = Assert.Throws<OptionsValidationException>(() => app.CreateClient());
-
-        Assert.Contains("DevUserEmail", error.Message, StringComparison.Ordinal);
-    }
-
     [Theory]
     [InlineData("CloudflareAccess:Audience", "")]
     [InlineData("CloudflareAccess:TeamDomain", "")]
@@ -161,17 +151,34 @@ public sealed class CloudflareAccessTests : IDisposable
         Assert.Contains("Cloudflare Access is the sign-in", error.Message, StringComparison.Ordinal);
     }
 
-    // In Development the development user signs everyone in, so Access's settings aren't needed.
-    [Fact]
-    public async Task Should_Start_WithoutAccessSettings_WithTheDevelopmentUser()
+    // A sign-in that doesn't fit the way in, e.g. edited in the database by hand: the app doesn't start on it.
+    [Theory]
+    [InlineData("cloudflare", "none")]
+    [InlineData("local", "cloudflare-access")]
+    [InlineData(null, "none")]
+    public async Task Should_RefuseToStart_OnASignInThatDoesNotFitTheWayIn(string? accessType, string signInType)
     {
-        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" }, setUp: false);
-        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
+        await using var app = new TestWebApp("Production", AccessTokens.Settings, setUp: false);
+        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = accessType, SignInType = signInType });
 
+        var error = Assert.Throws<InvalidOperationException>(() => app.CreateClient());
+        Assert.Contains("doesn't go with its way in", error.Message, StringComparison.Ordinal);
+    }
+
+    // Only on this network, with No sign-in: everyone is let in, as one shared person.
+    [Fact]
+    public async Task Should_LetEveryoneIn_AsSomeone_WithNoSignIn()
+    {
+        await using var app = new TestWebApp("Production", setUp: false);
+        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "local", SignInType = "none" });
         using var http = app.CreateClient();
+
         using var response = await http.GetAsync("/", Cancel);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Hi Someone", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
+        Assert.Equal(NoSignIn.Email, (await db.Users.SingleAsync(Cancel)).Email);
     }
 
     // A new installation chooses its sign-in in the setup guide: it starts without Access's settings.
@@ -184,20 +191,6 @@ public sealed class CloudflareAccessTests : IDisposable
         using var response = await http.GetAsync("/", Cancel);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Should_SignInAsDevUser_InDevelopment()
-    {
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
-        using var http = app.CreateClient();
-
-        using var response = await GetAsync(http, "/", token: null);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("Hi John", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     public void Dispose()

@@ -19,7 +19,7 @@ public sealed class InputsTests
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private static readonly Dictionary<string, string?> John = new() { ["CloudflareAccess:DevUserEmail"] = "john@example.com" };
+    private static readonly Dictionary<string, string?> John = new() { [TestWebApp.SignedInAs] = "john@example.com" };
 
     [Fact]
     public async Task Should_ListTheBoardsInputs_WithWhenTheyLastChanged()

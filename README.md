@@ -83,7 +83,8 @@ Run everything locally with Aspire (the dashboard opens on http://localhost:1528
 dotnet run --project Contactor.AppHost
 ```
 
-The AppHost starts a VM201 simulator on port 9760 and the app against it, signed in as `john@example.com`. The
+The AppHost starts a VM201 simulator on port 9760 and the app against it. A new local database starts with the
+setup guide, behind the setup code in the app's log: choose "Only on this network" and "No sign-in" there. The
 simulator's page, linked from the dashboard, shows the board's relays and every packet, and switches relays as the
 board's own buttons would. Stop and start the simulator in the dashboard to test a lost connection to the board. The
 tests use the same simulator, so no hardware is needed.

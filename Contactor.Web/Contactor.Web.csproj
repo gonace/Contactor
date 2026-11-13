@@ -4,7 +4,7 @@
     <RootNamespace>Contactor.Web</RootNamespace>
   </PropertyGroup>
 
-  <!-- Development settings (DevUserEmail) stay out of the published app and the image. -->
+  <!-- Development settings stay out of the published app and the image. -->
   <ItemGroup>
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>

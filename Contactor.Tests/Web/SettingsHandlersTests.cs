@@ -193,6 +193,6 @@ public sealed class SettingsHandlersTests
 
     private static TestWebApp CreateApp()
     {
-        return new TestWebApp("Development", new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = John });
+        return new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
     }
 }

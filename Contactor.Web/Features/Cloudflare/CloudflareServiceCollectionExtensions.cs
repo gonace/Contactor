@@ -1,6 +1,5 @@
 using Contactor.Web.Features.Identity;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Cloudflare;
 
@@ -21,13 +20,12 @@ public static class CloudflareServiceCollectionExtensions
         services.AddSingleton<CloudflareTunnel>();
 
         services.AddOptions<CloudflareAccessOptions>()
-            .Bind(configuration.GetSection(CloudflareAccessOptions.SectionName))
-            .ValidateOnStart();
-        services.AddSingleton<IValidateOptions<CloudflareAccessOptions>, CloudflareAccessOptionsValidator>();
+            .Bind(configuration.GetSection(CloudflareAccessOptions.SectionName));
         services.AddHttpClient(CloudflareAccessKeys.HttpClientName);
         services.AddSingleton<CloudflareAccessKeys>();
         services.AddSingleton<CloudflareAccessTokenValidator>();
         services.AddSingleton<CloudflareAccess>();
+        services.AddKeyedSingleton<ISignInMethod>(CloudflareMethods.AccessId, (s, _) => s.GetRequiredService<CloudflareAccess>());
         return services;
     }
 
@@ -41,7 +39,6 @@ public static class CloudflareServiceCollectionExtensions
         var settings = services.GetRequiredService<CloudflareSettings>();
         await settings.LoadAsync(cancellationToken);
         if (services.GetRequiredService<SignInChoice>().Current?.Id == CloudflareMethods.AccessId
-            && !services.GetRequiredService<IOptions<CloudflareAccessOptions>>().Value.UsesDevUser
             && settings.Access.Problem is { } problem)
         {
             throw new InvalidOperationException(

@@ -49,7 +49,7 @@ public sealed class DebugPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = John });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
         using var http = app.CreateClient();
 
         var before = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
@@ -73,7 +73,7 @@ public sealed class DebugPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = John });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
         using var http = app.CreateClient();
         await http.GetStringAsync("/", Cancel);
         var trace = app.Services.GetRequiredService<BoardTrace>();

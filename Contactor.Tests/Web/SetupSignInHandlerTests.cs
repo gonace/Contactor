@@ -26,8 +26,10 @@ public sealed class SetupSignInHandlerTests
         Assert.Null(await handler.ChooseCloudflareAsync("tunnel-token", "https://Relays.Example.com/", Cancel));
         Assert.Equal(SetupPart1Step.SignIn, handler.Step);
         Assert.Equal("relays.example.com", handler.Tunnel.Address);
-        var option = Assert.Single(handler.SignIns());
-        Assert.Equal((CloudflareMethods.AccessId, true), (option.Method.Id, option.Recommended));
+        var options = handler.SignIns();
+        Assert.Equal((CloudflareMethods.AccessId, true, true), (options[0].Method.Id, options[0].Allowed, options[0].Recommended));
+        var none = Assert.Single(options, o => o.Method.Id == SignInCatalogue.NoneId);
+        Assert.Equal((false, "Only on this network."), (none.Allowed, none.Reason));
 
         Assert.Null(await handler.ChooseCloudflareAccessAsync("myteam.cloudflareaccess.com", "aud-123", Cancel));
         Assert.Equal(SetupPart1Step.Done, handler.Step);
@@ -38,6 +40,42 @@ public sealed class SetupSignInHandlerTests
         // Set up: neither can be chosen again here (reset-sign-in is the way back).
         Assert.NotNull(await handler.ChooseCloudflareAsync("other", "other.example.com", Cancel));
         Assert.NotNull(await handler.ChooseCloudflareAccessAsync("other.cloudflareaccess.com", "aud", Cancel));
+    }
+
+    [Fact]
+    public async Task Should_GoThroughPart1_OnlyOnThisNetwork_WithNoSignIn()
+    {
+        await using var database = await CreateAsync();
+        var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+
+        Assert.Null(await handler.ChooseWayInAsync(AccessCatalogue.LocalId, token: null, address: null, Cancel));
+        Assert.Equal(SetupPart1Step.SignIn, handler.Step);
+        var options = handler.SignIns();
+        Assert.Equal((SignInCatalogue.NoneId, true, false), (options[0].Method.Id, options[0].Allowed, options[0].Recommended));
+        Assert.Equal("Only with Cloudflare.", Assert.Single(options, o => o.Method.Id == CloudflareMethods.AccessId).Reason);
+
+        // Cloudflare Access can't go with it; No sign-in can.
+        Assert.NotNull(await handler.ChooseSignInAsync(CloudflareMethods.AccessId, "myteam.cloudflareaccess.com", "aud", Cancel));
+        Assert.Null(await handler.ChooseSignInAsync(SignInCatalogue.NoneId, null, null, Cancel));
+        Assert.Equal(SetupPart1Step.Done, handler.Step);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var installation = await db.Installations.SingleAsync(Cancel);
+        Assert.Equal((AccessCatalogue.LocalId, SignInCatalogue.NoneId), (installation.AccessType, installation.SignInType));
+    }
+
+    // Never a public link without a sign-in.
+    [Fact]
+    public async Task Should_RefuseNoSignIn_WithCloudflare()
+    {
+        await using var database = await CreateAsync();
+        var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+        Assert.NotNull(await handler.ChooseNoSignInAsync(Cancel));
+
+        Assert.Null(await handler.ChooseWayInAsync(CloudflareMethods.TunnelId, "tunnel-token", "relays.example.com", Cancel));
+        Assert.Equal(CloudflareMethods.TunnelId, handler.WayIn?.Id);
+
+        Assert.NotNull(await handler.ChooseSignInAsync(SignInCatalogue.NoneId, null, null, Cancel));
+        Assert.Equal(SetupPart1Step.SignIn, handler.Step);
     }
 
     [Fact]
@@ -56,6 +94,30 @@ public sealed class SetupSignInHandlerTests
         await handler.ChooseCloudflareAsync("tunnel-token", "relays.example.com", Cancel);
         Assert.NotNull(await handler.ChooseCloudflareAccessAsync("evil.example.com", "aud", Cancel));
         Assert.Equal(SetupPart1Step.SignIn, handler.Step);
+    }
+
+    // Two tabs of the guide at once: one chooses Cloudflare as the way in while the other chooses No sign-in. However
+    // they meet, the installation never ends up with a public link and No sign-in.
+    [Fact]
+    public async Task Should_NeverCombineCloudflare_WithNoSignIn_FromTwoTabs()
+    {
+        for (var round = 0; round < 20; round++)
+        {
+            await using var database = await CreateAsync();
+            var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+            await handler.ChooseLocalAsync(Cancel);
+
+            await Task.WhenAll(
+                Task.Run(() => handler.ChooseCloudflareAsync("tunnel-token", "relays.example.com", Cancel), Cancel),
+                Task.Run(() => handler.ChooseNoSignInAsync(Cancel), Cancel));
+
+            await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+            var installation = await db.Installations.SingleAsync(Cancel);
+            Assert.False(
+                installation.AccessType == CloudflareMethods.TunnelId && installation.SignInType == SignInCatalogue.NoneId,
+                "Cloudflare and No sign-in were both saved.");
+            Assert.Equal(installation.AccessType, handler.WayIn?.Id);
+        }
     }
 
     // Back on the way-in step, the token field is empty: the saved token stays, and a new address is taken.

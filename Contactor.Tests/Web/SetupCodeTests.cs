@@ -175,6 +175,26 @@ public sealed partial class SetupCodeTests
         Assert.False(Contactor.Web.Components.SetupGuide.ShouldLeave(signedIn: true, part1Done: false, setupDone: true));
     }
 
+    // With Cloudflare as the way in, No sign-in shows greyed out, with why.
+    [Fact]
+    public async Task Should_GreyOut_NoSignIn_WithCloudflare()
+    {
+        var logs = new LogCapture();
+        await using var app = NewInstallation(logs);
+        using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using (await SubmitAsync(http, LoggedCode(logs)))
+        {
+        }
+
+        Assert.Null(await app.Services.GetRequiredService<SetupSignInHandler>().ChooseCloudflareAsync("tunnel-token", "relays.example.com", Cancel));
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup", Cancel));
+
+        Assert.Contains("How do people sign in?", html, StringComparison.Ordinal);
+        var none = html[html.IndexOf("No sign-in", StringComparison.Ordinal)..];
+        Assert.Contains("Only on this network.", none[..300], StringComparison.Ordinal);
+        Assert.Matches("<input type=\"radio\" name=\"sign-in\"[^>]*disabled", html);
+    }
+
     // reset-sign-in forgets the sign-in of an installation in use, and tells the running app: a new code, and the
     // guide opens again, not sent back to the relays (that went round in circles).
     [Fact]

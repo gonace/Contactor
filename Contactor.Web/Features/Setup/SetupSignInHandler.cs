@@ -1,7 +1,6 @@
 using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
-using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Setup;
 
@@ -18,44 +17,39 @@ public enum SetupPart1Step
     Done,
 }
 
-/// <summary>A sign-in the setup guide offers for the chosen way in.</summary>
+/// <summary>A sign-in as the setup guide shows it for the chosen way in.</summary>
 /// <param name="Method">The sign-in.</param>
+/// <param name="Allowed">Whether it works with the way in; the guide shows the rest greyed out.</param>
 /// <param name="Recommended">Whether it is the one that fits the way in best.</param>
-public sealed record SetupSignInOption(SignInMethod Method, bool Recommended);
+/// <param name="Reason">Why it isn't allowed, e.g. "Only with Cloudflare", or null.</param>
+public sealed record SetupSignInOption(SignInMethod Method, bool Allowed, bool Recommended, string? Reason);
 
 /// <summary>
 /// Part 1 of the setup guide: how people reach the app and how they sign in. Between the guide and the choices
 /// (<see cref="AccessChoice"/>, <see cref="SignInChoice"/>) and Cloudflare's settings.
 /// </summary>
-public sealed class SetupSignInHandler
+public sealed class SetupSignInHandler : IDisposable
 {
     private readonly AccessChoice _access;
     private readonly SignInChoice _signIn;
     private readonly CloudflareSettings _cloudflare;
     private readonly CloudflareTunnel _tunnel;
-    private readonly bool _developmentUser;
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     public SetupSignInHandler(
         AccessChoice access,
         SignInChoice signIn,
         CloudflareSettings cloudflare,
-        CloudflareTunnel tunnel,
-        IOptions<CloudflareAccessOptions> accessOptions)
+        CloudflareTunnel tunnel)
     {
-        ArgumentNullException.ThrowIfNull(accessOptions);
-        _developmentUser = accessOptions.Value.UsesDevUser;
         _access = access;
         _signIn = signIn;
         _cloudflare = cloudflare;
         _tunnel = tunnel;
     }
 
-    /// <summary>
-    /// Where Part 1 goes on: a new installation starts at the way in; one whose sign-in was reset at the sign-in. With
-    /// the development user (Development only) everyone is signed in already, so Part 1 is left out.
-    /// </summary>
-    public SetupPart1Step Step => _developmentUser ? SetupPart1Step.Done
-        : _access.Current is null || NeedsAddress ? SetupPart1Step.WayIn
+    /// <summary>Where Part 1 goes on: a new installation starts at the way in; one whose sign-in was reset at the sign-in.</summary>
+    public SetupPart1Step Step => _access.Current is null || NeedsAddress ? SetupPart1Step.WayIn
         : _signIn.Current is null ? SetupPart1Step.SignIn
         : SetupPart1Step.Done;
 
@@ -81,22 +75,133 @@ public sealed class SetupSignInHandler
         remove => _tunnel.ConnectedChanged -= value;
     }
 
-    /// <summary>The sign-ins the chosen way in works with, the recommended one first.</summary>
+    /// <summary>
+    /// Every sign-in, for the chosen way in: those it works with first, the recommended one at the top, then the rest
+    /// with why they can't be chosen. Nothing before a way in is chosen.
+    /// </summary>
     public IReadOnlyList<SetupSignInOption> SignIns()
     {
-        return _access.Current is not { } wayIn
-            ? []
-            : [.. wayIn.SignIns.Select((id, i) => (Method: SignInCatalogue.Find(id), Recommended: i == 0))
-                .Where(o => o.Method is not null)
-                .Select(o => new SetupSignInOption(o.Method!, o.Recommended))];
+        if (_access.Current is not { } wayIn)
+        {
+            return [];
+        }
+
+        var recommended = wayIn.SignIns.Select(SignInCatalogue.Find).FirstOrDefault(m => m is { NotRecommended: false });
+        return [.. SignInCatalogue.All
+            .Select(m => new SetupSignInOption(
+                m,
+                wayIn.SignIns.Contains(m.Id),
+                m == recommended,
+                wayIn.SignIns.Contains(m.Id) ? null : OnlyWith(m)))
+            .OrderBy(o => o.Allowed ? (o.Recommended ? 0 : 1) : 2)];
     }
+
+    /// <summary>Chooses how people reach the app; Cloudflare also needs its tunnel's token and address.</summary>
+    public Task<string?> ChooseWayInAsync(string id, string? token, string? address, CancellationToken cancellationToken)
+    {
+        return OneAtATimeAsync(() => AccessCatalogue.Find(id)?.Id switch
+        {
+            CloudflareMethods.TunnelId => ChooseCloudflareCoreAsync(token, address, cancellationToken),
+            AccessCatalogue.LocalId => ChooseLocalCoreAsync(cancellationToken),
+            _ => Task.FromResult<string?>("Choose how people reach the app."),
+        }, cancellationToken);
+    }
+
+    /// <summary>Chooses how people sign in; Cloudflare Access also needs its team domain and AUD tag.</summary>
+    public Task<string?> ChooseSignInAsync(string id, string? teamDomain, string? audience, CancellationToken cancellationToken)
+    {
+        return OneAtATimeAsync(() => SignInCatalogue.Find(id)?.Id switch
+        {
+            CloudflareMethods.AccessId => ChooseCloudflareAccessCoreAsync(teamDomain, audience, cancellationToken),
+            SignInCatalogue.NoneId => ChooseNoSignInCoreAsync(cancellationToken),
+            _ => Task.FromResult<string?>("Choose how people sign in."),
+        }, cancellationToken);
+    }
+
+    /// <summary>"Only on this network": nothing to save but the choice.</summary>
+    private async Task<string?> ChooseLocalCoreAsync(CancellationToken cancellationToken)
+    {
+        if (_signIn.Current is not null)
+        {
+            return "This installation is set up already.";
+        }
+
+        await _access.ChooseAsync(AccessCatalogue.Find(AccessCatalogue.LocalId)!, cancellationToken);
+        return null;
+    }
+
+    /// <summary>No sign-in: only with "Only on this network", never with a public link.</summary>
+    private async Task<string?> ChooseNoSignInCoreAsync(CancellationToken cancellationToken)
+    {
+        if (_signIn.Current is not null)
+        {
+            return "This installation is set up already.";
+        }
+
+        if (_access.Current is not { } wayIn || !wayIn.SignIns.Contains(SignInCatalogue.NoneId))
+        {
+            return "No sign-in only works when the app is only on this network.";
+        }
+
+        await _signIn.ChooseAsync(SignInCatalogue.Find(SignInCatalogue.NoneId)!, cancellationToken);
+        return null;
+    }
+
+    /// <summary>"Only on this network": nothing to save but the choice.</summary>
+    public Task<string?> ChooseLocalAsync(CancellationToken cancellationToken) => OneAtATimeAsync(() => ChooseLocalCoreAsync(cancellationToken), cancellationToken);
+
+    /// <summary>No sign-in: only with "Only on this network", never with a public link.</summary>
+    public Task<string?> ChooseNoSignInAsync(CancellationToken cancellationToken) => OneAtATimeAsync(() => ChooseNoSignInCoreAsync(cancellationToken), cancellationToken);
+
+    /// <summary>Cloudflare as the way in, with its tunnel's token and address.</summary>
+    public Task<string?> ChooseCloudflareAsync(string? token, string? address, CancellationToken cancellationToken) =>
+        OneAtATimeAsync(() => ChooseCloudflareCoreAsync(token, address, cancellationToken), cancellationToken);
+
+    /// <summary>Cloudflare Access as the sign-in, with its team domain and AUD tag.</summary>
+    public Task<string?> ChooseCloudflareAccessAsync(string? teamDomain, string? audience, CancellationToken cancellationToken) =>
+        OneAtATimeAsync(() => ChooseCloudflareAccessCoreAsync(teamDomain, audience, cancellationToken), cancellationToken);
+
+    public void Dispose()
+    {
+        _gate.Dispose();
+    }
+
+    // Every choice checks the other one, then saves its own: one at a time (two tabs of the guide), so a check can't
+    // pass on a choice another tab is changing, e.g. Cloudflare saved while No sign-in is.
+    private async Task<string?> OneAtATimeAsync(Func<Task<string?>> choose, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await choose();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    // "Only with Cloudflare", or "Only on this network.": the ways in a sign-in works with.
+    private static string OnlyWith(SignInMethod method)
+    {
+        var ways = AccessCatalogue.All.Where(w => w.SignIns.Contains(method.Id)).Select(w => w.Name).ToList();
+        return ways switch
+        {
+            [] => "Not available yet.",
+            [var only] when only.StartsWith("Only ", StringComparison.Ordinal) => $"{only}.",
+            _ => $"Only with {string.Join(" or ", ways)}.",
+        };
+    }
+
+    /// <summary>The sign-in chosen, or null.</summary>
+    public SignInMethod? SignIn => _signIn.Current;
 
     /// <summary>
     /// Cloudflare as the way in: saves the tunnel's token and address, and starts the tunnel. An empty token keeps the
     /// one saved before, once Cloudflare is the way in (the guide never shows it again). Returns what is wrong in plain
     /// words, and changes nothing then.
     /// </summary>
-    public async Task<string?> ChooseCloudflareAsync(string? token, string? address, CancellationToken cancellationToken)
+    private async Task<string?> ChooseCloudflareCoreAsync(string? token, string? address, CancellationToken cancellationToken)
     {
         if (_signIn.Current is not null)
         {
@@ -122,7 +227,7 @@ public sealed class SetupSignInHandler
     /// Cloudflare Access as the sign-in: saves its team domain and AUD tag, and uses it from the next request on, which
     /// ends setup mode. Returns what is wrong in plain words, and changes nothing then.
     /// </summary>
-    public async Task<string?> ChooseCloudflareAccessAsync(string? teamDomain, string? audience, CancellationToken cancellationToken)
+    private async Task<string?> ChooseCloudflareAccessCoreAsync(string? teamDomain, string? audience, CancellationToken cancellationToken)
     {
         if (_signIn.Current is not null)
         {

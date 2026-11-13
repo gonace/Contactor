@@ -11,7 +11,7 @@ public sealed class SettingsPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
@@ -32,7 +32,7 @@ public sealed class SettingsPageTests
             "Development",
             new Dictionary<string, string?>
             {
-                ["CloudflareAccess:DevUserEmail"] = "john@example.com",
+                [TestWebApp.SignedInAs] = "john@example.com",
                 ["Vm201:Username"] = "admin",
                 ["Vm201:Password"] = "secret",
             });
@@ -52,7 +52,7 @@ public sealed class SettingsPageTests
             "Development",
             new Dictionary<string, string?>
             {
-                ["CloudflareAccess:DevUserEmail"] = "john@example.com",
+                [TestWebApp.SignedInAs] = "john@example.com",
                 ["Board:Type"] = "devantech-eth484",
                 ["Devantech:Host"] = "127.0.0.1",
                 ["Devantech:Port"] = "1",
@@ -75,7 +75,7 @@ public sealed class SettingsPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         using var http = app.CreateClient();
 
         foreach (var path in new[] { "/", "/events" })

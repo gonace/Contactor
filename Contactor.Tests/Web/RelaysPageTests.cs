@@ -17,7 +17,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" },
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
             TestWebApp.WithLostBoard);
         using var http = app.CreateClient();
 
@@ -36,7 +36,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
 
         // The board's one input hidden: only relays are left, so they need no heading.
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
@@ -61,7 +61,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
             for (var g = 0; g < 4; g++)
@@ -92,7 +92,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
             var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
@@ -120,7 +120,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
             var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
@@ -147,7 +147,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" },
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
             TestWebApp.WithLostBoard);
         using var http = app.CreateClient();
 
@@ -165,7 +165,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
@@ -194,7 +194,7 @@ public sealed class RelaysPageTests
     {
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" });
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         using var http = app.CreateClient();
 
         using var response = await http.GetAsync("/fonts/ibm-plex-sans-latin-400-normal.woff2", Cancel);
