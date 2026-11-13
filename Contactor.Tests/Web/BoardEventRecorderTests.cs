@@ -1,3 +1,4 @@
+using Contactor.Web.Features.Inputs;
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Tests.Boards;
@@ -359,12 +360,10 @@ public sealed class BoardEventRecorderTests
         Assert.Equal(2, setup.Errors.RecorderFailures);
     }
 
-    // A status the board then took back (another board at a new address, or a lost connection) isn't tried again: the
-    // next status is taken as it comes.
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Should_DropTheRetry_WhenTheStateIsForgottenOrLost(bool forgotten)
+    // A status from a board then forgotten (another board at a new address) isn't tried again: the next status is
+    // taken as at start. A lost connection keeps it (Should_KeepTheRetry_OverALostConnection).
+    [Fact]
+    public async Task Should_DropTheRetry_WhenTheStateIsForgotten()
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
@@ -372,14 +371,7 @@ public sealed class BoardEventRecorderTests
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
         await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
 
-        if (forgotten)
-        {
-            setup.Board.Forget();
-        }
-        else
-        {
-            setup.Board.SetConnected(false);
-        }
+        setup.Board.Forget();
 
         await setup.ExecuteAsync("DROP TRIGGER fail_once;");
         setup.Time.Now += BoardEventRecorder.CheckInterval;
@@ -388,6 +380,61 @@ public sealed class BoardEventRecorderTests
         // Nothing of the status that failed: its input and relay changes are compared afresh with the next one.
         Assert.DoesNotContain(Events(setup.Database), e => e.InputId is not null || e.RelayId is not null);
         Assert.Equal(1, setup.Errors.RecorderFailures);
+    }
+
+    // An input closes and opens again before the failed status is tried again: the waiting status is tried first, so
+    // both changes are logged and both reach the input's actions.
+    [Fact]
+    public async Task Should_RecordAQuickChange_WhenANewerStatusComesBeforeTheRetry()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await setup.StartAsync();
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+        setup.Board.SetInput(1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+
+        setup.Board.SetInput(1, on: false);
+
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
+        Assert.Equal(["""{"on":true}""", """{"on":false}"""], InputEvents(setup.Database).Select(e => e.Details));
+        var feed = setup.Database.Services.GetRequiredService<InputChangeFeed>().Reader;
+        List<InputChanged> handedOn = [];
+        while (feed.TryRead(out var change))
+        {
+            handedOn.Add(change);
+        }
+
+        Assert.Equal([new InputChanged(1, true), new InputChanged(1, false)], handedOn);
+    }
+
+    // A lost connection keeps the status waiting for its retry, and it isn't tried while there is no contact: when
+    // contact comes back it is tried first, so the app's own change, long expired by then, is still the app's.
+    [Fact]
+    public async Task Should_KeepTheRetry_OverALostConnection()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        setup.Board.Time = setup.Time;
+        await setup.StartAsync();
+        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+        setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+
+        // The lost connection tries the waiting status first, which fails again; then no try while there is no contact.
+        setup.Time.Now += TimeSpan.FromSeconds(10);
+        setup.Board.SetConnected(false);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 2);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+        setup.Time.Now += TimeSpan.FromSeconds(10);
+        await Task.Delay(BoardEventRecorder.CheckInterval * 2, TestContext.Current.CancellationToken);
+        Assert.Empty(InputEvents(setup.Database));
+
+        setup.Board.SetConnected(true);
+
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
+        Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
+        Assert.Equal(2, setup.Errors.RecorderFailures);
     }
 
     // A relay that comes on outside the app gets its own auto-off, so nothing runs for ever by accident; one that goes
@@ -485,6 +532,7 @@ public sealed class BoardEventRecorderTests
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddSingleton<InputChangeFeed>();
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))

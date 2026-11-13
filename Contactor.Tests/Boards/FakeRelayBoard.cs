@@ -30,6 +30,12 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     public event EventHandler<BoardState>? StateChanged;
 
+    /// <summary>
+    /// When set, every status the board reports while connected carries this clock's time as its contact time, as a
+    /// real board's does; otherwise it keeps the time it started with.
+    /// </summary>
+    public TimeProvider? Time { get; set; }
+
     public BoardCapabilities Capabilities { get; }
 
     public BoardState State
@@ -127,11 +133,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
         BoardState state;
         lock (_lock)
         {
-            state = _state = _state with
+            state = _state = Stamp(_state with
             {
                 Relays = on ? _state.Relays | ChannelMask.Of(relay) : _state.Relays.Except(ChannelMask.Of(relay)),
                 Inputs = on ? _state.Inputs | ChannelMask.Of(input) : _state.Inputs.Except(ChannelMask.Of(input)),
-            };
+            });
         }
 
         StateChanged?.Invoke(this, state);
@@ -143,7 +149,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
         BoardState state;
         lock (_lock)
         {
-            state = _state = _state with { Relays = on ? _state.Relays | ChannelMask.Of(relay) : _state.Relays.Except(ChannelMask.Of(relay)) };
+            state = _state = Stamp(_state with { Relays = on ? _state.Relays | ChannelMask.Of(relay) : _state.Relays.Except(ChannelMask.Of(relay)) });
         }
 
         StateChanged?.Invoke(this, state);
@@ -155,7 +161,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
         BoardState state;
         lock (_lock)
         {
-            state = _state = _state with { Inputs = on ? _state.Inputs | ChannelMask.Of(input) : _state.Inputs.Except(ChannelMask.Of(input)) };
+            state = _state = Stamp(_state with { Inputs = on ? _state.Inputs | ChannelMask.Of(input) : _state.Inputs.Except(ChannelMask.Of(input)) });
         }
 
         StateChanged?.Invoke(this, state);
@@ -179,7 +185,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
         BoardState state;
         lock (_lock)
         {
-            state = _state = _state with { IsConnected = connected };
+            state = _state = Stamp(_state with { IsConnected = connected });
         }
 
         StateChanged?.Invoke(this, state);
@@ -203,7 +209,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
                 return Task.CompletedTask;
             }
 
-            state = _state = _state with { Relays = on ? _state.Relays | relays : _state.Relays.Except(relays) };
+            state = _state = Stamp(_state with { Relays = on ? _state.Relays | relays : _state.Relays.Except(relays) });
         }
 
         if (SwitchSilentlyThenFail)
@@ -222,5 +228,10 @@ internal sealed class FakeRelayBoard : IRelayBoard
         {
             throw new BoardNotConnectedException();
         }
+    }
+
+    private BoardState Stamp(BoardState state)
+    {
+        return Time is { } time && state.IsConnected ? state with { LastContactUtc = time.GetUtcNow() } : state;
     }
 }
