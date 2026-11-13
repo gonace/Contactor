@@ -351,9 +351,10 @@ public sealed class BoardPollerTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Should_ReadTheBoardAtOnce_AfterACommandThatFailed(bool noAnswer)
+    [InlineData("no answer")]
+    [InlineData("failed")]
+    [InlineData("refused")]
+    public async Task Should_ReadTheBoardAtOnce_AfterACommandThatFailed(string how)
     {
         var time = new ManualTimeProvider();
         var board = new FakePolledBoard(1, 7);
@@ -361,7 +362,12 @@ public sealed class BoardPollerTests
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
         await WaitForPollAsync(board, time, reads: 1);
-        Exception failure = noAnswer ? new TimeoutException("no answer") : new InvalidOperationException("refused");
+        Exception failure = how switch
+        {
+            "no answer" => new TimeoutException(how),
+            "refused" => new BoardRefusedException(how),
+            _ => new InvalidOperationException(how),
+        };
 
         await Assert.ThrowsAsync(failure.GetType(), () => poller.RunCommandAsync(_ => Task.FromException<int>(failure), Cancel));
 
@@ -389,8 +395,8 @@ public sealed class BoardPollerTests
         await WaitForPollAsync(board, time, reads: 2);
         Assert.True(poller.State.IsConnected);
 
-        // A refused command (1), the read after it (2) and a command without an answer (3) lose the board.
-        await Assert.ThrowsAsync<InvalidOperationException>(() => poller.RunCommandAsync(_ => throw new InvalidOperationException("refused"), Cancel));
+        // A command that failed otherwise (1), the read after it (2) and a command without an answer (3) lose the board.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => poller.RunCommandAsync(_ => throw new InvalidOperationException("failed"), Cancel));
         await WaitForPollAsync(board, time, reads: 3);
         Assert.True(poller.State.IsConnected);
         await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(_ => throw new TimeoutException("command"), Cancel));
@@ -398,6 +404,113 @@ public sealed class BoardPollerTests
         Assert.False(poller.State.IsConnected);
         Assert.Contains((BoardPollStep.Lost, "command"), board.Steps);
         Assert.Equal(3, board.Reads);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_KeepABoardThatRefusesThreeQuickCommands_AndLoseOneThatDoesntAnswerThem(bool refused)
+    {
+        var time = new ManualTimeProvider();
+
+        // The read after each command is still under way when the next command comes and cancels it.
+        HangingRead[] reads = [new(), new(), new()];
+        var board = new FakePolledBoard(1, reads[0], reads[1], reads[2]);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        Exception failure = refused ? new BoardRefusedException("refused") : new TimeoutException("no answer");
+
+        for (var command = 0; command < 3; command++)
+        {
+            if (command > 0)
+            {
+                await WaitUntilAsync(() => reads[command - 1].Started);
+            }
+
+            await Assert.ThrowsAsync(failure.GetType(), () => poller.RunCommandAsync(_ => Task.FromException<int>(failure), Cancel));
+        }
+
+        Assert.True(reads[0].IsCancelled);
+        Assert.True(reads[1].IsCancelled);
+        Assert.Equal(refused, poller.State.IsConnected);
+        if (refused)
+        {
+            Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Lost);
+        }
+        else
+        {
+            Assert.Contains((BoardPollStep.Lost, "no answer"), board.Steps);
+        }
+
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_CountOnlyTheCommandsWithoutAReadableAnswer_AndStartOverAtARefusal()
+    {
+        var time = new ManualTimeProvider();
+        HangingRead[] reads = [new(), new(), new(), new(), new()];
+        var board = new FakePolledBoard(1, reads[0], reads[1], reads[2], reads[3], reads[4]);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        static Task<int> NoAnswer(CancellationToken token) => Task.FromException<int>(new TimeoutException("no answer"));
+        static Task<int> Unreadable(CancellationToken token) => Task.FromException<int>(new InvalidDataException("unreadable"));
+        static Task<int> Refused(CancellationToken token) => Task.FromException<int>(new BoardRefusedException("refused"));
+
+        // No answer (1), unreadable (2), then a refusal starts the count over (0), with no read in between.
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        await WaitUntilAsync(() => reads[0].Started);
+        await Assert.ThrowsAsync<InvalidDataException>(() => poller.RunCommandAsync(Unreadable, Cancel));
+        await WaitUntilAsync(() => reads[1].Started);
+        await Assert.ThrowsAsync<BoardRefusedException>(() => poller.RunCommandAsync(Refused, Cancel));
+        await WaitUntilAsync(() => reads[2].Started);
+
+        // So two more without an answer (1, 2) keep the board, and only the third in a row loses it.
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        await WaitUntilAsync(() => reads[3].Started);
+        await Assert.ThrowsAsync<InvalidDataException>(() => poller.RunCommandAsync(Unreadable, Cancel));
+        Assert.True(poller.State.IsConnected);
+        Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Lost);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => poller.RunCommandAsync(NoAnswer, Cancel));
+        Assert.False(poller.State.IsConnected);
+        Assert.Contains((BoardPollStep.Lost, "no answer"), board.Steps);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_StartTheCountOver_WhenACommandIsRefused_AfterFailedPolls()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1, new IOException("poll"));
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+
+        // Two failed polls (1, 2), then a refused command: the board answered (0).
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 2);
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 3);
+        await Assert.ThrowsAsync<BoardRefusedException>(() => poller.RunCommandAsync(_ => throw new BoardRefusedException("refused"), Cancel));
+
+        // The read at once after it fails (1), and the next poll (2): still connected. The third in a row loses it.
+        await WaitForPollAsync(board, time, reads: 4);
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 5);
+        Assert.True(poller.State.IsConnected);
+        time.Advance(Interval);
+        await WaitUntilAsync(() => !poller.State.IsConnected);
+        Assert.Equal(6, board.Reads);
         await stop.CancelAsync();
         await run;
     }

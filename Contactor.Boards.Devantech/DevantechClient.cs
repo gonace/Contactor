@@ -272,9 +272,10 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             // The poller counted it as a failed poll and reads the board at once, which shows what it did.
             throw new BoardNotConnectedException("The Devantech board didn't answer; the command may not have been carried out.", ex);
         }
-        catch (Exception ex) when (IsNotTaken(ex))
+        catch (Exception ex) when (IsNotTaken(ex) || ex is BoardRefusedException)
         {
-            // No relay was taken, or the board couldn't be unlocked: counted and read in the same way.
+            // No relay was taken, or the board couldn't be unlocked. The poller read the board at once, and counted it
+            // as a failed poll unless the board refused every relay (BoardRefusedException): that is an answer.
             throw new BoardNotConnectedException($"The Devantech board didn't take the command: {ex.Message}", ex);
         }
     }
@@ -288,6 +289,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
         ulong taken = 0;
         string? refusal = null;
+        var unreadable = false;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
             // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
@@ -314,6 +316,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
                 // go (an unreadable answer closed the connection; the next command opens and unlocks a new one); the
                 // read after them shows the truth.
                 refusal ??= ex.Message;
+                unreadable |= ex is not DevantechRefusedException;
                 Trace(
                     BoardTraceDirection.None,
                     string.Create(CultureInfo.InvariantCulture, $"The board didn't take the command for relay {relay}: {ex.Message}"),
@@ -322,10 +325,12 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         }
 
         // Not one relay was taken: the command failed, as on a board that takes the mask at once, and nothing is
-        // counted as switched. The poller counts it as a failed poll and reads the board at once.
+        // counted as switched. The poller reads the board at once. When the board answered 01 to every relay, it
+        // answered: that doesn't count toward losing it. Anything else (an unreadable answer, a new connection it
+        // couldn't check or unlock) counts as a failed poll.
         if (taken == 0)
         {
-            throw new DevantechRefusedException(refusal!);
+            throw unreadable ? new DevantechRefusedException(refusal!) : new BoardRefusedException(refusal!);
         }
 
         try

@@ -255,9 +255,10 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
             // The poller counted it as a failed poll and reads the board at once, which shows what it did.
             throw new BoardNotConnectedException("The Waveshare board didn't answer; the command may not have been carried out.", ex);
         }
-        catch (WaveshareProtocolException ex)
+        catch (Exception ex) when (ex is WaveshareProtocolException or BoardRefusedException)
         {
-            // No relay was taken: counted and read in the same way.
+            // No relay was taken. The poller read the board at once, and counted it as a failed poll unless the board
+            // refused every relay (BoardRefusedException): that is an answer.
             throw new BoardNotConnectedException($"The Waveshare board didn't take the command: {ex.Message}", ex);
         }
     }
@@ -267,6 +268,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     {
         ulong taken = 0;
         string? refusal = null;
+        var unreadable = false;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
             // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
@@ -282,6 +284,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
                 // Refused, or an answer that can't be read: the relay may or may not have switched. The others still
                 // go; the read after them shows the truth.
                 refusal ??= ex.Message;
+                unreadable |= ex is WaveshareProtocolException;
                 Trace(
                     BoardTraceDirection.None,
                     string.Create(CultureInfo.InvariantCulture, $"The board didn't take the command for relay {relay}: {ex.Message}"),
@@ -290,11 +293,12 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
 
         // Not one relay was taken: the command failed, as on a board that takes the mask at once, and nothing is
-        // counted as switched. The poller counts it as a failed poll, as it would a poll whose answer it can't read,
-        // and reads the board at once, which shows what really happened.
+        // counted as switched. The poller reads the board at once, which shows what really happened. When the board
+        // refused every relay with an exception answer, it answered: that doesn't count toward losing it. When an
+        // answer couldn't be read, it counts as a failed poll, as a poll whose answer it can't read would.
         if (taken == 0)
         {
-            throw new WaveshareProtocolException(refusal!);
+            throw unreadable ? new WaveshareProtocolException(refusal!) : new BoardRefusedException(refusal!);
         }
 
         try

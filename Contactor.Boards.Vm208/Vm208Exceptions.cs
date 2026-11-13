@@ -17,4 +17,10 @@ public sealed class Vm208ProtocolException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <summary>
+    /// The answer was the board's own, read in full: it was too busy and sent no relays (<c>{"Channels":[]}</c>). To a
+    /// command that is a refusal: the board answered, so it doesn't count toward losing it.
+    /// </summary>
+    public bool IsBusy { get; init; }
 }
