@@ -99,7 +99,7 @@
                     <div class="split">
                         <div class="relays-box">
                             <span class="hint">Relays: click one to switch it, like the board's own buttons</span>
-                            <div class="relays" style="grid-template-columns: repeat(@capabilities.RelayCount.ToString(CultureInfo.InvariantCulture), minmax(0, 1fr))">
+                            <div class="relays" style="grid-template-columns: repeat(@Math.Min(capabilities.RelayCount, 8).ToString(CultureInfo.InvariantCulture), minmax(0, 1fr))">
                                 @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                 {
                                     var number = relay;

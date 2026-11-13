@@ -90,11 +90,22 @@ public sealed class EventTextTests
     [InlineData(EventActions.ConnectionLost, null, "The board", "lost contact with the app", "A")]
     [InlineData(EventActions.ConnectionRestored, """{"afterSeconds":40}""", "The board", "reconnected", "A")]
     [InlineData(EventActions.BoardTimersDisabled, """{"mask":255}""", "The board", "had its own timers turned off", "A")]
+    [InlineData(EventActions.BoardRelayModesReset, """{"modes":[0,0,1,0,0,0,0,0]}""", "The board", "had its relays set to normal mode, so its inputs don't switch them", "A")]
     public void Should_DescribeBoardEvents(string action, string? details, string who, string what, string badge)
     {
         var view = EventText.For(Entry(EventActors.System, action, details, relayId: null), relayName: null, personName: null);
 
         Assert.Equal(new EventView(false, badge, who, what, null), view);
+    }
+
+    [Fact]
+    public void Should_ShowInRed_ABoardWhoseRelayModesCouldntBeReset()
+    {
+        var entry = Entry(EventActors.System, EventActions.BoardRelayModesNotReset, """{"reason":"The board refused it: it failed (code 4)."}""", relayId: null);
+
+        var view = EventText.For(entry, relayName: null, personName: null);
+
+        Assert.Equal(new EventView(false, "A", "The board", "couldn't have its relays set to normal mode, so its inputs may switch them", null, IsAlert: true), view);
     }
 
     [Theory]

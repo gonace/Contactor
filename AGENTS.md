@@ -50,6 +50,7 @@ Contactor.Boards/           # What any relay board is to the app: IRelayBoard, I
 Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF. README.md: its protocol
 Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF. README.md: its routes
 Contactor.Boards.Vm208/     # The VM208: HTTP client, simulator and its adapters (Vm208Board, Vm208Connection, Vm208Traffic). No web/EF. README.md: its routes
+Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and its adapters (WaveshareBoard, WaveshareConnection, WaveshareTraffic). No web/EF. README.md: its protocol
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
@@ -62,6 +63,7 @@ Contactor.Tests/          # The only test project
   Vm201/                    # Codec + client against the simulator
   Vm204/                    # JSON, login, trace words + client against the simulator
   Vm208/                    # JSON, trace words, connection + client against the simulator
+  Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
   compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
@@ -96,15 +98,15 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
 - `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.
 - `BoardCapabilities`: how many relays and inputs (and analog inputs, which the app doesn't show yet), and whether the board reports changes by itself.
-- `BoardPoller<TReading>`: the loop for a board that doesn't report changes by itself (the VM204 and the VM208). The board's own code implements `IPolledBoard<TReading>` (connect, e.g. log in; read the state once); the poller asks every `PollInterval` (2 s) with `TimeProvider`, refreshes `State` (and so `LastContactUtc`) on every poll but reports a state only when it changed (a comparer decides what counts), counts the board as lost after `FailuresBeforeLost` (3) failed polls in a row (a failed command counts as one, so a dead or broken board is lost even while commands keep coming), and connects again with backoff 1 s → 30 s. Commands go through `RunCommandAsync`: a poll under way is cancelled (that doesn't count as a failure) so the command goes at once, it throws `BoardNotConnectedException` once the board is lost (decided under the same lock as the polls), and what the command returns, the board's state right after it, is taken as a poll's answer. A command fails as a poll would: whatever it throws (refused, unreadable or no answer) counts once, except a cancellation by the caller and `BoardNotConnectedException`, with which the command says it sent nothing (the VM204 logging in again). A failed command is followed by a read at once, so the screens show what the board really did; that read is an ordinary poll that counts on its own, so a dead board is lost after 3 unanswered requests in a row. `PollNow` asks at once, `Restart` ends the connection or wait (new address or login), and `Forget` (a new address) resets the state to "never answered" and drops an answer from before still on its way.
+- `BoardPoller<TReading>`: the loop for a board that doesn't report changes by itself (the VM204, the VM208 and the Waveshare boards). The board's own code implements `IPolledBoard<TReading>` (connect, e.g. log in; read the state once); the poller asks every `PollInterval` (2 s) with `TimeProvider`, refreshes `State` (and so `LastContactUtc`) on every poll but reports a state only when it changed (a comparer decides what counts), counts the board as lost after `FailuresBeforeLost` (3) failed polls in a row (a failed command counts as one, so a dead or broken board is lost even while commands keep coming), and connects again with backoff 1 s → 30 s. Commands go through `RunCommandAsync`: a poll under way is cancelled (that doesn't count as a failure) so the command goes at once, it throws `BoardNotConnectedException` once the board is lost (decided under the same lock as the polls), and what the command returns, the board's state right after it, is taken as a poll's answer. A command fails as a poll would: whatever it throws (refused, unreadable or no answer) counts once, except a cancellation by the caller and `BoardNotConnectedException`, with which the command says it sent nothing (the VM204 logging in again). A failed command is followed by a read at once, so the screens show what the board really did; that read is an ordinary poll that counts on its own, so a dead board is lost after 3 unanswered requests in a row. `PollNow` asks at once, `Restart` ends the connection or wait (new address or login), and `Forget` (a new address) resets the state to "never answered" and drops an answer from before still on its way.
 - `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
 - `IBoardConnection`: where the board is (`BoardEndpoint`) and its login (`BoardLogin`), with the defaults from the board's own settings, changeable while the app runs; `CheckLogin` says what the board can't take, and `RunAsync` keeps the connection open.
 - `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
 - **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, name, capabilities, default port, login length and an optional login hint in plain words) and how to register it. The model chosen in the setup guide (`Installation.BoardType`, read before the services are built: `ReadSavedBoardType`) wins; until one is saved, `Board:Type` chooses (default `vm201`). The app refuses to start on a model the catalogue doesn't have. A model is never switched on its own afterwards: replacing the board is issue #32. `AddBoards` registers the chosen model and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the connection open.
 - **Each board is described in `Contactor.Boards.<Model>/README.md`:** its protocol or routes, its client and simulator, and what to check on a real board. Read it before you change that board.
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, one line in the catalogue, and a `README.md` that describes the board. Nothing else in the app changes.
-- `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`).
-- What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
+- `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`, `WaveshareSimulator`).
+- What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`) and the Waveshare (B) and (C) relay modes (`Features/Waveshare/WaveshareRelayModesService`).
 - The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
 
 ## The simulator (`Contactor.Simulator`)
@@ -150,7 +152,8 @@ EventLog
   Action          text           "on" | "off" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
-                                 "board-timers-disabled" | "board-address-changed" | "board-login-changed"
+                                 "board-timers-disabled" | "board-relay-modes-reset" | "board-relay-modes-not-reset" |
+                                 "board-address-changed" | "board-login-changed"
   GroupId         int?           the group it concerns; not a foreign key, events outlive a deleted group
                                  Group actions: "group-on" | "group-off" | "group-start-failed" | "run-on-start" |
                                  "run-on-end" | "interlock-trip" | "group-create" | "group-edit" | "group-delete"
@@ -378,7 +381,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
      - An input's change names it: "Door: Open" or "Door: Closed" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
-     - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
+     - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off"), a start that failed and a Waveshare board whose relays couldn't be set to normal mode show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
    - "Relay board": the model ("Velleman VM201 · 8 relays"), the board's address ("Address") and "Port" (the model's default port as its placeholder), its login, for a model that has one ("The board has no login", or "User name" and "Password", with the model's login hint, e.g. "At most 8 characters: letters a–z, digits and plain symbols.", or else "At most N characters."; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760", "No contact with the relay board at …" or "The relay board has no address yet"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
@@ -453,6 +456,12 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
     "Host": "",                     // the board's address; empty: the setup guide asks
     "Port": 80,
     "PollSeconds": 2
+  },
+  "Waveshare": {                    // only read with a Board:Type waveshare-…; Modbus has no login
+    "Host": "",                     // the board's address; empty: the setup guide asks
+    "Port": 4196,
+    "PollSeconds": 2,
+    "ResetRelayModes": true         // (B) and (C): set every relay to normal mode on connecting, so no input switches one
   },
   "CloudflareAccess": {
     "TeamDomain": "",               // e.g. myteam.cloudflareaccess.com; install.sh asks for it

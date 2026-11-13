@@ -19,6 +19,7 @@
     <ProjectReference Include="..\Contactor.Boards.Vm201\Contactor.Boards.Vm201.csproj" />
     <ProjectReference Include="..\Contactor.Boards.Vm204\Contactor.Boards.Vm204.csproj" />
     <ProjectReference Include="..\Contactor.Boards.Vm208\Contactor.Boards.Vm208.csproj" />
+    <ProjectReference Include="..\Contactor.Boards.Waveshare\Contactor.Boards.Waveshare.csproj" />
     <ProjectReference Include="..\Contactor.Simulator\Contactor.Simulator.csproj" />
     <ProjectReference Include="..\Contactor.Web\Contactor.Web.csproj" />
   </ItemGroup>

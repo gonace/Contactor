@@ -11,7 +11,9 @@ namespace Contactor.Web.Features.Events;
 /// <param name="Who">Shown in bold, e.g. "Jane" or "Schedule".</param>
 /// <param name="What">Follows it, e.g. "turned on".</param>
 /// <param name="Target">The line below, usually the relay's name; null when there is none.</param>
-/// <param name="IsAlert">Shown in red: a safety shut-off, or a group that couldn't start.</param>
+/// <param name="IsAlert">
+/// Shown in red: a safety shut-off, a group that couldn't start, or a board whose relays couldn't be set to normal mode.
+/// </param>
 public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false);
 
 /// <summary>
@@ -49,7 +51,9 @@ public static class EventText
 
         // A group's schedule names the group where a relay's names the relay.
         var (what, target) = WhatFor(entry, relayName ?? group);
-        return new EventView(isPerson, badge, who, what, target);
+
+        // In red, like a safety shut-off: a board whose inputs may switch relays past the app.
+        return new EventView(isPerson, badge, who, what, target, IsAlert: entry.Action == EventActions.BoardRelayModesNotReset);
     }
 
     // "Door: Open". An input that is on is closed. Without its name (an input no longer on the board): "Input 1: Closed".
@@ -157,7 +161,7 @@ public static class EventText
     {
         return entry.Action switch
         {
-            EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled => "The board",
+            EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled or EventActions.BoardRelayModesReset or EventActions.BoardRelayModesNotReset => "The board",
             EventActions.RunOnStart => "Run-on:",
             EventActions.RunOnEnd => "Run-on done:",
             EventActions.InterlockTrip => "Safety shut-off:",
@@ -190,6 +194,8 @@ public static class EventText
             EventActions.ConnectionLost => ("lost contact with the app", null),
             EventActions.ConnectionRestored => ("reconnected", null),
             EventActions.BoardTimersDisabled => ("had its own timers turned off", null),
+            EventActions.BoardRelayModesReset => ("had its relays set to normal mode, so its inputs don't switch them", null),
+            EventActions.BoardRelayModesNotReset => ("couldn't have its relays set to normal mode, so its inputs may switch them", null),
             EventActions.BoardLoginChanged => ("changed the relay board's login", null),
             EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from
                 ? ($"changed the relay board's address from {from} to {Text(entry.Details, "to") ?? "?"}", null)

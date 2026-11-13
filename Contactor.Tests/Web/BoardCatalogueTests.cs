@@ -2,6 +2,7 @@ using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
+using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Boards;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,6 +54,28 @@ public sealed class BoardCatalogueTests
         Assert.IsType<Vm208Traffic>(services.GetRequiredService<IBoardTraffic>());
     }
 
+    [Theory]
+    [InlineData("waveshare-8")]
+    [InlineData("waveshare-8b")]
+    [InlineData("Waveshare-8C")]
+    [InlineData("waveshare-16")]
+    [InlineData(" waveshare-30")]
+    public void Should_RegisterEachWaveshareModel_WhenChosen(string type)
+    {
+        using var services = Build(type);
+
+        var model = services.GetRequiredService<BoardModel>();
+        Assert.Contains(model, WaveshareModels.All);
+        Assert.Equal(type.Trim().ToLowerInvariant(), model.Id);
+        var board = Assert.IsType<WaveshareBoard>(services.GetRequiredService<IRelayBoard>());
+        Assert.Same(model.Capabilities, board.Capabilities);
+        Assert.Same(model, services.GetRequiredService<WaveshareClient>().Model);
+        Assert.IsType<WaveshareConnection>(services.GetRequiredService<IBoardConnection>());
+        Assert.IsType<WaveshareTraffic>(services.GetRequiredService<IBoardTraffic>());
+        Assert.False(services.GetRequiredService<IBoardConnection>().Endpoint.HasHost);
+        Assert.Equal(4196, services.GetRequiredService<IBoardConnection>().Endpoint.Port);
+    }
+
     [Fact]
     public void Should_BuildTheVm208_WithoutAnAddress()
     {
@@ -69,7 +92,7 @@ public sealed class BoardCatalogueTests
     {
         var error = Assert.Throws<InvalidOperationException>(() => Build(type));
 
-        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201, vm204, vm208.", error.Message);
+        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30.", error.Message);
     }
 
     [Fact]

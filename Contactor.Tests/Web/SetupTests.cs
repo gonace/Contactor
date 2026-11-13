@@ -124,6 +124,19 @@ public sealed class SetupTests
     }
 
     [Fact]
+    public async Task Should_Start_WithoutAWaveshareAddress()
+    {
+        var settings = new Dictionary<string, string?>(John) { ["Board:Type"] = "waveshare-8b", ["Waveshare:Host"] = "" };
+        await using var app = new TestWebApp("Development", settings);
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+
+        Assert.Contains("Waveshare Modbus PoE ETH Relay (B)", html, StringComparison.Ordinal);
+        Assert.Contains("The relay board has no address yet", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Should_NotConnect_UntilTheBoardHasAnAddress()
     {
         await using var simulator = new Vm201Simulator();

@@ -2,6 +2,7 @@ using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
+using Contactor.Boards.Waveshare;
 
 namespace Contactor.Simulator;
 
@@ -49,6 +50,10 @@ public static class SimulatorCatalogue
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The VM208 takes no login.",
             (_, _, logger, time) => new Vm208Simulator(logger) { TimeProvider = time },
             SuggestedPort: 8208),
+        .. WaveshareModels.All.Select(model => new SimulatorModel(
+            model,
+            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Waveshare board takes no login.",
+            (_, _, logger, time) => new WaveshareSimulator(model, logger) { TimeProvider = time })),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>

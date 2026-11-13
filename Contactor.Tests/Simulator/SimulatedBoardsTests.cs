@@ -4,6 +4,7 @@ using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
+using Contactor.Boards.Waveshare;
 using Contactor.Simulator;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -65,6 +66,24 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
 
         // Port 80 needs rights a developer doesn't have; the page offers a free high port instead.
         Assert.Equal((8208, 80), (SimulatorCatalogue.Find("vm208")!.Port, Vm208Model.Model.DefaultPort));
+    }
+
+    [Theory]
+    [InlineData("waveshare-8")]
+    [InlineData("waveshare-8b")]
+    [InlineData("waveshare-8c")]
+    [InlineData("waveshare-16")]
+    [InlineData("WAVESHARE-30 ")]
+    public void Should_RunEachWaveshareModel_WithoutALogin(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+
+        var board = Assert.Single(_boards.Boards).Board;
+        Assert.IsType<WaveshareSimulator>(board);
+        Assert.Equal(type.Trim().ToLowerInvariant(), board.Model.Id);
+        Assert.False(board.HasLogin);
+        Assert.Equal(4196, SimulatorCatalogue.Find(type)!.Port);
+        Assert.Equal("The Waveshare board takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
     }
 
     [Theory]
