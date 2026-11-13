@@ -28,9 +28,10 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
   start except the stated exceptions; auto-off, schedules and run-on times as described; a relay in a group switched
   only through its group. A change that can turn on heat without the fan, or leave something on that should go off, is
   a blocker.
-- **Security and privacy:** every request still goes through Cloudflare Access (no new route around it, and
-  `/healthz` stays local only); the e-mail comes from the signed JWT; secrets (the board's password, the tunnel
-  token) are never logged, shown or put in an event; data from the board is treated as untrusted.
+- **Security and privacy:** every request still goes through the chosen sign-in (no new route around it, and
+  `/healthz` and `/setup/reload` stay local only); with Cloudflare Access the e-mail comes from the signed JWT;
+  secrets (the board's password, the access services' tokens and keys) are never logged, shown or put in an event;
+  data from the board is treated as untrusted.
 - **Time:** times stored in UTC and shown in the app's time zone, schedules in local time, both daylight saving
   changes, and `TimeProvider` instead of the machine's clock.
 - **Simplicity and the UI:** plain English words, big touch targets, every colour from a design token (dark mode),

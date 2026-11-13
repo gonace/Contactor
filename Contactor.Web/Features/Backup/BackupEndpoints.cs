@@ -10,7 +10,7 @@ public static class BackupEndpoints
     /// <summary>
     /// <c>/settings/backup</c>: downloads the newest copy of the database as a zip, so it can be kept off the
     /// Raspberry Pi. A zip rather than the bare <c>.db</c>: browsers may warn about an unknown file type, and the copy
-    /// shrinks a lot. Behind Cloudflare Access like every page. Only ever a file the backup itself wrote, by its own
+    /// shrinks a lot. Behind the sign-in like every page. Only ever a file the backup itself wrote, by its own
     /// name.
     /// </summary>
     public static IEndpointRouteBuilder MapBackupGroup(this IEndpointRouteBuilder endpoints)

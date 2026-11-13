@@ -6,9 +6,11 @@ namespace Contactor.Web.Features.Setup;
 
 /// <summary>
 /// <c>Contactor.Web reset-sign-in</c>, run on the machine (<c>docker exec contactor dotnet Contactor.Web.dll
-/// reset-sign-in</c>): forgets how people sign in, so the setup guide opens again at "How do people sign in?", behind a
-/// new setup code. The way in (so the tunnel keeps running), the board, the relays, the events and the schedules stay. The way back in for someone locked out, e.g. by a sign-in
-/// that doesn't work yet.
+/// reset-sign-in</c>): forgets how people sign in, so the setup guide opens again behind a new setup code. It opens at
+/// "How do people sign in?". For a Cloudflare installation without a saved tunnel address (e.g. one set up with
+/// install.sh), it opens at "How do people reach the app?". The way in (so the tunnel keeps running), the board, the
+/// relays, the events and the schedules stay. The way back in for someone locked out, e.g. by a sign-in that doesn't
+/// work yet.
 /// </summary>
 public static class SignInReset
 {

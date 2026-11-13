@@ -62,7 +62,8 @@ nothing else. One board per installation for now; several at once is
 ## How it runs
 
 - On a Raspberry Pi (or any Linux machine with Docker) next to the board, with Docker Compose.
-- Sign-in is done by Cloudflare Access, with a one-time code by e-mail; no port is opened to the internet.
+- Every request goes through the sign-in chosen in the setup guide, e.g. Cloudflare Access with a one-time code by
+  e-mail; no port is opened to the internet.
 - .NET 10, Blazor Server and SQLite. No JavaScript framework.
 
 See [docs/DEPLOY.md](docs/DEPLOY.md) to set it up. A single Docker image that installs in a click is
