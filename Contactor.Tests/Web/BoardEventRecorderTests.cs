@@ -446,6 +446,7 @@ public sealed class BoardEventRecorderTests
     public async Task Should_NotSaveATimeOfContact_ForAStatusRecordedDuringALoss()
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        setup.Board.Time = setup.Time;
         await setup.StartAsync();
         await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == BoardTestRig.Start);
 
@@ -464,6 +465,39 @@ public sealed class BoardEventRecorderTests
         setup.Time.Now += TimeSpan.FromMinutes(20);
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
 
+        Assert.Equal(BoardTestRig.Start, setup.State().LastContactUtc);
+
+        // The gap it ended was short: it is measured to when the status came, not to the retry 20 minutes later.
+        Assert.Null(setup.State().LongGapEndedUtc);
+    }
+
+    // A status from before a lost connection that ended a long gap, recorded while there is still no contact: the gap
+    // ended when that status came, not when it is recorded, so the inputs' times are trusted from then.
+    [Fact]
+    public async Task Should_EndALongGap_WhenTheStatusCame_ForAStatusRecordedDuringALoss()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        setup.Board.Time = setup.Time;
+        await setup.StartAsync();
+        await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == BoardTestRig.Start);
+
+        // A long gap; the status that ends it fails, then contact is lost again before it is recorded.
+        setup.Board.SetConnected(false);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+        setup.Time.Now += TimeSpan.FromMinutes(20);
+        var came = setup.Time.Now.UtcDateTime;
+        setup.Board.SetInput(1, on: true);
+        setup.Board.SetConnected(true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+        setup.Board.SetConnected(false);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 2);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+
+        // The retry, five minutes later, while there is still no contact.
+        setup.Time.Now += TimeSpan.FromMinutes(5);
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
+
+        Assert.Equal(came, setup.State().LongGapEndedUtc);
         Assert.Equal(BoardTestRig.Start, setup.State().LastContactUtc);
     }
 

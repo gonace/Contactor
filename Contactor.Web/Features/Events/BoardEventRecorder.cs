@@ -265,7 +265,10 @@ public sealed partial class BoardEventRecorder : BackgroundService
         var afterGap = !_watching;
         if (afterGap)
         {
-            await StartWatchingAsync(db, now, saveContact: act, cancellationToken);
+            // A status recorded as of before a lost connection ended the gap when it came, not now: there is no
+            // contact now.
+            var contactCame = act ? now : state.LastContactUtc?.UtcDateTime ?? now;
+            await StartWatchingAsync(db, contactCame, saveContact: act, cancellationToken);
         }
 
         if (_disconnectedSinceUtc is { } since)
@@ -366,10 +369,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
         return inputs;
     }
 
-    // Measures the gap since the last contact (before a restart: the saved one) and saves when a long gap ended. A short
-    // gap, e.g. a reboot or an upgrade, keeps the inputs' times: it's taken that nothing changed and changed back.
-    // Not the time of contact for a status recorded as of before a lost connection (saveContact false): there is no
-    // contact now, and a restart during the loss would read the gap as shorter than it was.
+    // Measures the gap from the last contact (before a restart: the saved one) to when contact came back, and saves when
+    // a long gap ended. A short gap, e.g. a reboot or an upgrade, keeps the inputs' times: it's taken that nothing
+    // changed and changed back. For a status recorded as of before a lost connection (saveContact false), contact came
+    // back when that status came: the gap ends then, but a later end saved meanwhile stays, and no time of contact is
+    // saved, since there is no contact now and a restart during the loss would read the gap as shorter than it was.
     private async Task StartWatchingAsync(ContactorDbContext db, DateTime now, bool saveContact, CancellationToken cancellationToken)
     {
         var saved = await db.BoardWatchStates.SingleOrDefaultAsync(cancellationToken);
@@ -385,7 +389,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         // saved time until it reaches a time server) can't measure the gap, so it counts as long.
         if (lastContact is not { } last || now < last || now - last > LongGap)
         {
-            saved.LongGapEndedUtc = now;
+            saved.LongGapEndedUtc = saveContact || saved.LongGapEndedUtc is not { } ended || now > ended ? now : ended;
         }
 
         if (saveContact)
