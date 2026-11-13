@@ -27,7 +27,7 @@ public sealed record BoardTraceItem(long Id, BoardTraceEntry Entry)
 /// the first connection. Routine steps (a keep-alive, a poll that changes nothing) are only counted, so they never
 /// push the steps worth reading out of the list, however often a board sends them.
 /// </summary>
-public sealed class BoardTrace : IDisposable
+public sealed partial class BoardTrace : IDisposable
 {
     public const int Capacity = 100;
 
@@ -203,7 +203,10 @@ public sealed class BoardTrace : IDisposable
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger?.LogError(ex, "A listener to the board traffic's routine count failed");
+                if (_logger is not null)
+                {
+                    LogListenerFailed(_logger, ex);
+                }
             }
         }
     }
@@ -216,4 +219,7 @@ public sealed class BoardTrace : IDisposable
             _heldNoticeTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "A listener to the board traffic's routine count failed")]
+    private static partial void LogListenerFailed(ILogger logger, Exception exception);
 }
