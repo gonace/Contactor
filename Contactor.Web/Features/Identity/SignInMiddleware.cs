@@ -1,13 +1,17 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Health;
+using Contactor.Web.Features.Setup;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Web.Features.Identity;
 
 /// <summary>
 /// Lets a request through only when the chosen sign-in (<see cref="SignInChoice"/>) says who made it, and puts the
-/// user on <see cref="HttpContext.User"/>. Blazor Server copies that user into the circuit when it starts, which is
+/// user on <see cref="HttpContext.User"/>. While none is chosen, the installation is being set up: only what
+/// <see cref="SetupMode"/> lets through answers, with nobody signed in. Blazor Server copies that user into the circuit when it starts, which is
 /// where <see cref="CurrentUser"/> reads it. An unknown e-mail becomes a new <see cref="User"/>.
 /// </summary>
 public sealed partial class SignInMiddleware
@@ -17,6 +21,8 @@ public sealed partial class SignInMiddleware
     private readonly RequestDelegate _next;
     private readonly SignInChoice _choice;
     private readonly IServiceProvider _services;
+    private readonly SetupMode _setup;
+    private readonly string? _developmentUser;
     private readonly IHostEnvironment _environment;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly ILogger<SignInMiddleware> _logger;
@@ -25,14 +31,21 @@ public sealed partial class SignInMiddleware
         RequestDelegate next,
         SignInChoice choice,
         IServiceProvider services,
+        SetupMode setup,
+        IOptions<CloudflareAccessOptions> access,
         IHostEnvironment environment,
         IDbContextFactory<ContactorDbContext> dbFactory,
         ILogger<SignInMiddleware> logger)
     {
         _next = next;
         _choice = choice;
+        ArgumentNullException.ThrowIfNull(access);
         _services = services;
+        _setup = setup;
         _environment = environment;
+
+        // Development only (the app refuses to start with it anywhere else): everyone is this person, during setup too.
+        _developmentUser = access.Value.UsesDevUser ? IdentityRules.NormalizeEmail(access.Value.DevUserEmail!) : null;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -46,7 +59,25 @@ public sealed partial class SignInMiddleware
             return;
         }
 
-        var email = await _choice.Current.Create(_services).AuthenticateAsync(context);
+        string? email;
+        if (_choice.Current is { } method)
+        {
+            email = await method.Create(_services).AuthenticateAsync(context);
+        }
+        else if (_developmentUser is not null)
+        {
+            email = _developmentUser;
+        }
+        else
+        {
+            if (await _setup.LetThroughAsync(context))
+            {
+                await _next(context);
+            }
+
+            return;
+        }
+
         if (email is null)
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -62,10 +93,11 @@ public sealed partial class SignInMiddleware
         await _next(context);
     }
 
-    // The health checks answer only this machine (see their endpoints), which isn't signed in.
+    // The health checks and reset-sign-in's reload answer only this machine (see their endpoints), which isn't signed in.
     private bool IsOpenPath(PathString path)
     {
         return path.StartsWithSegments(HealthEndpoints.Path)
+            || path.Equals(SetupEndpoints.ReloadPath, StringComparison.OrdinalIgnoreCase)
             || (_environment.IsDevelopment() && (path.StartsWithSegments("/health") || path.StartsWithSegments("/alive")));
     }
 

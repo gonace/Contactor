@@ -7,6 +7,8 @@ public static class SetupServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
         services.AddSingleton<SetupHandler>();
+        services.AddSingleton<SetupCode>();
+        services.AddSingleton<SetupMode>();
         return services;
     }
 }

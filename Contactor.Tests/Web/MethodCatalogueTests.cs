@@ -21,7 +21,7 @@ public sealed class MethodCatalogueTests
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
-    public void Should_ListEachMethodOnce_InLowerCase_WithTheirDefaults()
+    public void Should_ListEachMethodOnce_InLowerCase()
     {
         var access = AccessCatalogue.All.Select(m => m.Id).ToList();
         var signIns = SignInCatalogue.All.Select(m => m.Id).ToList();
@@ -29,8 +29,6 @@ public sealed class MethodCatalogueTests
         Assert.Equal(access.Distinct().Count(), access.Count);
         Assert.Equal(signIns.Distinct().Count(), signIns.Count);
         Assert.All(access.Concat(signIns), id => Assert.Equal(id.ToLowerInvariant(), id));
-        Assert.NotNull(AccessCatalogue.Find(AccessCatalogue.DefaultId));
-        Assert.NotNull(SignInCatalogue.Find(SignInCatalogue.DefaultId));
     }
 
     // The guide offers what a way in works with: each must be a sign-in the app has, and the first is recommended.
@@ -42,7 +40,7 @@ public sealed class MethodCatalogueTests
             Assert.NotEmpty(m.SignIns);
             Assert.All(m.SignIns, id => Assert.NotNull(SignInCatalogue.Find(id)));
         });
-        Assert.Contains(SignInCatalogue.DefaultId, AccessCatalogue.Find(AccessCatalogue.DefaultId)!.SignIns);
+        Assert.Contains(CloudflareMethods.AccessId, AccessCatalogue.Find(CloudflareMethods.TunnelId)!.SignIns);
     }
 
     [Theory]

@@ -1,6 +1,9 @@
 namespace Contactor.Web.Features.Access;
 
-/// <summary>Keeps the chosen way in running for the app's lifetime, e.g. the Cloudflare tunnel.</summary>
+/// <summary>
+/// Keeps the chosen way in running for the app's lifetime, e.g. the Cloudflare tunnel. Nothing runs before one is
+/// chosen.
+/// </summary>
 public sealed class AccessHostedService : BackgroundService
 {
     private readonly AccessChoice _choice;
@@ -14,6 +17,6 @@ public sealed class AccessHostedService : BackgroundService
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        return _choice.Current.Create(_services).RunAsync(stoppingToken);
+        return _choice.Current?.Create(_services).RunAsync(stoppingToken) ?? Task.CompletedTask;
     }
 }

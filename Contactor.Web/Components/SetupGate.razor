@@ -23,7 +23,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _open = PageType == typeof(SetupGuide) || await Setup.IsDoneAsync(CancellationToken.None);
+        _open = PageType == typeof(SetupGuide) || PageType == typeof(SetupCodePage) || await Setup.IsDoneAsync(CancellationToken.None);
         if (!_open)
         {
             Navigation.NavigateTo("setup", replace: true);

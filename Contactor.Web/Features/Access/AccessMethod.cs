@@ -19,9 +19,6 @@ public sealed record AccessMethod(string Id, string Name, IReadOnlyList<string> 
 /// <summary>Every way in the app supports. A new way in is a class of its own and one line here.</summary>
 public static class AccessCatalogue
 {
-    /// <summary>What an installation has before it chose one: Cloudflare Tunnel, as every installation had.</summary>
-    public const string DefaultId = CloudflareMethods.TunnelId;
-
     public static IReadOnlyList<AccessMethod> All { get; } =
     [
         new(CloudflareMethods.TunnelId, "Cloudflare", [CloudflareMethods.AccessId], s => s.GetRequiredService<CloudflareTunnel>()),
