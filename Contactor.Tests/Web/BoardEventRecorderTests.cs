@@ -329,6 +329,26 @@ public sealed class BoardEventRecorderTests
         Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
     }
 
+    // A polled board reports a state only when it changes, so the recorder doesn't wait for the next one: the same
+    // status is tried again by itself, and the app's own change stays the app's.
+    [Fact]
+    public async Task Should_TryTheSameStatusAgain_WithoutWaitingForTheBoard()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await setup.StartAsync();
+        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+
+        setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.Count > 0);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+
+        // No new status from the board: the retry records it.
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
+        Assert.Contains(InputEvents(setup.Database), e => e is { InputId: 1, Details: """{"on":true}""" });
+        Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
+    }
+
     // A relay that comes on outside the app gets its own auto-off, so nothing runs for ever by accident; one that goes
     // off loses its run.
     [Fact]

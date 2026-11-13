@@ -41,6 +41,10 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     // The last status the board reported while connected; null until the first one after start.
     private BoardState? _known;
+
+    // A status whose recording failed, tried again at every check until it is recorded or a newer status comes: a
+    // polled board reports a state only when it changes, so its next status may be long in coming.
+    private BoardState? _retry;
     private DateTime? _disconnectedSinceUtc;
     private readonly IBoardConnection? _connection;
     private readonly InputChangeFeed? _inputChanges;
@@ -118,6 +122,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
                     // The check interval passed without a new status.
                 }
 
+                if (_retry is { } retry)
+                {
+                    await HandleSafelyAsync(() => HandleAsync(retry, stoppingToken));
+                }
+
                 await HandleSafelyAsync(() => CheckConnectionLostAsync(stoppingToken));
                 await HandleSafelyAsync(() => SaveContactAsync(stoppingToken));
             }
@@ -139,6 +148,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     private async Task HandleAsync(BoardState state, CancellationToken cancellationToken)
     {
+        // A newer status replaces one that failed: it is compared with the same last recorded status, so it records
+        // the failed one's changes too.
+        _retry = null;
         if (!state.IsConnected)
         {
             // The board's state forgotten: its address changed, and another board may be there. Its first status is
@@ -158,8 +170,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var now = _clock.UtcNow;
 
-        // What this status changes, kept so a failure on the way (a read or the save) puts it all back and the next
-        // status starts over: the changes, a gap that just ended and a restored connection are recorded then.
+        // What this status changes, kept so a failure on the way (a read or the save) puts it all back and the next try
+        // starts over: the same status again at the next check, or a newer one. The changes, a gap that just ended and a
+        // restored connection are recorded then.
         var before = (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc);
         _consumed.Clear();
         _seenInputChanges.Clear();
@@ -178,6 +191,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 _expected.Expect(ChannelMask.Of(relayId), on);
             }
 
+            _retry = state;
             throw;
         }
     }
