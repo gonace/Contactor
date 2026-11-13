@@ -112,7 +112,7 @@ public static class DevantechModels
             LoginMaxLength: DevantechApi.PasswordMaxLength,
             LoginHint: string.Create(
                 CultureInfo.InvariantCulture,
-                $"The TCP password from the board's configuration page, not the login of its web page. At most {DevantechApi.PasswordMaxLength} characters: letters, digits and plain symbols."),
+                $"The TCP password from the board's configuration page, not the login of its web page. At most {DevantechApi.PasswordMaxLength} characters: letters, digits and plain symbols, no spaces."),
             PasswordOnly: true);
     }
 }

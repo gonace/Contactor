@@ -53,6 +53,7 @@ qualified electrician.
 | Velleman VM204 (WMRC204), ethernet | 4, plus 4 inputs and 1 analog input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
 | Velleman VM208, ethernet or WLAN | 4, plus 1 input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
 | Waveshare Modbus PoE ETH Relay, (B), (C), 16CH and 30CH | 8, 8 plus 8 inputs, 8 plus 8 inputs, 16, 30 | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Waveshare/README.md) |
+| Devantech ETH002-B, ETH008-B, ETH484-B and ETH8020-B | 2, 8, 4 plus 8 inputs, 20 plus 8 inputs | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Devantech/README.md) |
 
 The app talks to a board through one interface, `IRelayBoard`, so another board needs its own small project and
 nothing else. One board per installation for now; several at once is
