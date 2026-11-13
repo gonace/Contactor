@@ -1,0 +1,93 @@
+@page "/setup/code"
+@attribute [ExcludeFromInteractiveRouting]
+@using Contactor.Web.Features.Identity
+@using Microsoft.AspNetCore.Components.Forms
+@using Contactor.Web.Features.Setup
+@inject SetupCode Code
+@inject SignInChoice SignIn
+@inject NavigationManager Navigation
+
+@*
+    Without the live connection: typing the code gives the browser a cookie, which only an ordinary page's answer can.
+*@
+<PageTitle>Setup · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <span></span>
+        <span class="step-count">STEP 1 OF 4</span>
+    </header>
+    <div class="part">PART 1 OF 2 · THE APP</div>
+    <div class="progress" aria-hidden="true">
+        <span class="done"></span><span></span><span></span><span></span>
+    </div>
+    <form method="post" class="form" @formname="setup-code" @onsubmit="Submit">
+        <AntiforgeryToken />
+        <main class="content">
+            <div class="intro">
+                <h1>Welcome to Contactor</h1>
+                <p>First, show that you installed it. The app wrote a setup code to its log when it started.</p>
+            </div>
+            <div class="field">
+                <label for="code">Setup code</label>
+                <input id="code" name="Typed" type="text" value="@Typed" maxlength="20" autocomplete="one-time-code"
+                       autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH" required autofocus />
+                @if (_error is not null)
+                {
+                    <p class="error" role="alert">@_error</p>
+                }
+            </div>
+            <div class="info">
+                <span class="label">WHERE IS IT?</span>
+                <p>In the app's log, e.g. <code>docker logs contactor</code>, or the log view of your container platform. A new code is made each time the app starts.</p>
+            </div>
+        </main>
+        <div class="next">
+            <button type="submit">Next</button>
+        </div>
+    </form>
+</div>
+
+@code {
+    private string? _error;
+
+    [SupplyParameterFromForm]
+    public string? Typed { get; set; }
+
+    [CascadingParameter]
+    public HttpContext? HttpContext { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // Set up already, or the code typed already: on to where the person belongs.
+        if (SignIn.Current is not null)
+        {
+            Navigation.NavigateTo("");
+        }
+        else if (HttpContext is not null && HttpMethods.IsGet(HttpContext.Request.Method) && Code.HasAccepted(HttpContext))
+        {
+            Navigation.NavigateTo("setup");
+        }
+    }
+
+    private void Submit()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        switch (Code.TryAccept(Typed, HttpContext))
+        {
+            case SetupCodeResult.Accepted:
+                Navigation.NavigateTo("setup");
+                break;
+            case SetupCodeResult.Waiting:
+                _error = "Too many wrong codes. Wait a minute, then try again.";
+                break;
+            default:
+                _error = "That isn't the setup code. Check the log and try again.";
+                break;
+        }
+    }
+}

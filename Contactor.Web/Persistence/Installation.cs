@@ -19,14 +19,15 @@ public sealed class Installation
     public string? BoardType { get; set; }
 
     /// <summary>
-    /// How people reach the app, by its id in the catalogue of ways in (e.g. <c>cloudflare</c>). Null: Cloudflare
-    /// Tunnel, as every installation had before it could choose.
+    /// How people reach the app, by its id in the catalogue of ways in (e.g. <c>cloudflare</c>). Null: not chosen yet.
+    /// The migration that made it so gave installations already in use Cloudflare Tunnel, which they all had.
     /// </summary>
     public string? AccessType { get; set; }
 
     /// <summary>
-    /// How people sign in, by its id in the catalogue of sign-in methods (e.g. <c>cloudflare-access</c>). Null:
-    /// Cloudflare Access, as every installation had before it could choose.
+    /// How people sign in, by its id in the catalogue of sign-in methods (e.g. <c>cloudflare-access</c>). Null: not
+    /// chosen yet; the app is then in setup mode. The migration that made it so gave
+    /// installations already in use Cloudflare Access, which they all had.
     /// </summary>
     public string? SignInType { get; set; }
 

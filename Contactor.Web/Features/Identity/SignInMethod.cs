@@ -18,9 +18,6 @@ public sealed record SignInMethod(string Id, string Name, Func<IServiceProvider,
 /// <summary>Every sign-in method the app supports. A new method is a class of its own and one line here.</summary>
 public static class SignInCatalogue
 {
-    /// <summary>What an installation has before it chose one: Cloudflare Access, as every installation had.</summary>
-    public const string DefaultId = CloudflareMethods.AccessId;
-
     public static IReadOnlyList<SignInMethod> All { get; } =
     [
         new(CloudflareMethods.AccessId, "Cloudflare Access", s => s.GetRequiredService<CloudflareAccess>()),

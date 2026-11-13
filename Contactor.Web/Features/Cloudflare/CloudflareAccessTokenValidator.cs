@@ -1,5 +1,4 @@
 using Contactor.Web.Features.Identity;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
@@ -7,7 +6,7 @@ namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>
 /// Validates the <c>Cf-Access-Jwt-Assertion</c> token: signed by Access with RS256, issued by our team domain, for
-/// our application's AUD tag, and valid now. Returns the e-mail from the signed token, never from a plain header.
+/// our application's AUD tag (both as <see cref="CloudflareSettings"/> has them now), and valid now. Returns the e-mail from the signed token, never from a plain header.
 /// </summary>
 public sealed partial class CloudflareAccessTokenValidator
 {
@@ -19,20 +18,19 @@ public sealed partial class CloudflareAccessTokenValidator
     private static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(1);
 
     private readonly CloudflareAccessKeys _keys;
-    private readonly CloudflareAccessOptions _options;
+    private readonly CloudflareSettings _settings;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<CloudflareAccessTokenValidator> _logger;
     private readonly JsonWebTokenHandler _handler = new() { MaximumTokenSizeInBytes = MaxTokenLength };
 
     public CloudflareAccessTokenValidator(
         CloudflareAccessKeys keys,
-        IOptions<CloudflareAccessOptions> options,
+        CloudflareSettings settings,
         TimeProvider timeProvider,
         ILogger<CloudflareAccessTokenValidator> logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
         _keys = keys;
-        _options = options.Value;
+        _settings = settings;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -70,11 +68,13 @@ public sealed partial class CloudflareAccessTokenValidator
 
     private async Task<TokenValidationResult> ValidateWithKeysAsync(string token, bool refresh, CancellationToken cancellationToken)
     {
-        var keys = await _keys.GetAsync(refresh, cancellationToken);
+        // The settings as they are now: the setup guide may have just saved new ones.
+        var access = _settings.Access;
+        var keys = await _keys.GetAsync(access, refresh, cancellationToken);
         var parameters = new TokenValidationParameters
         {
-            ValidIssuer = _options.Issuer,
-            ValidAudience = _options.Audience,
+            ValidIssuer = access.Issuer,
+            ValidAudience = access.Audience,
             IssuerSigningKeys = keys,
             ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
             RequireSignedTokens = true,

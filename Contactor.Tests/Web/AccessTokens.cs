@@ -11,7 +11,7 @@ namespace Contactor.Tests.Web;
 /// </summary>
 internal sealed class AccessTokens : IDisposable
 {
-    public const string TeamDomain = "team.example.com";
+    public const string TeamDomain = "team.cloudflareaccess.com";
     public const string Audience = "aud-0123456789";
     public const string Issuer = "https://" + TeamDomain;
 

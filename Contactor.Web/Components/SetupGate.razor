@@ -1,5 +1,7 @@
+@using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Setup
 @inject SetupHandler Setup
+@inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 
 @*
@@ -21,9 +23,18 @@
     [Parameter]
     public RenderFragment? ChildContent { get; set; }
 
+    /// <summary>
+    /// Whether a page opens: the guide (and the setup code's page) always; any other only for someone signed in, once
+    /// the setup guide is done.
+    /// </summary>
+    public static bool Opens(bool isGuide, bool signedIn, bool setupDone) => isGuide || (signedIn && setupDone);
+
     protected override async Task OnParametersSetAsync()
     {
-        _open = PageType == typeof(SetupGuide) || await Setup.IsDoneAsync(CancellationToken.None);
+        // Nobody signed in: a setup connection, let in by the setup code. Only the guide, also once the installation
+        // is done (a reset sign-in), and also after its sign-in is chosen, as its connection outlives setup mode.
+        var guide = PageType == typeof(SetupGuide) || PageType == typeof(SetupCodePage);
+        _open = Opens(guide, await CurrentUser.GetAsync() is not null, guide || await Setup.IsDoneAsync(CancellationToken.None));
         if (!_open)
         {
             Navigation.NavigateTo("setup", replace: true);

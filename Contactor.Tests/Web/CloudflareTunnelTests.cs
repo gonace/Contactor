@@ -3,9 +3,9 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Web;
@@ -22,13 +22,15 @@ public sealed class CloudflareTunnelTests
     {
         var process = new FakeCloudflared();
         var logger = new ListLogger();
-        using var service = Create("  ", process, new ManualTimeProvider(), logger);
+        await using var service = await CreateAsync("  ", process, new ManualTimeProvider(), logger);
 
         await service.StartAsync(Cancel);
-        await service.ExecuteTask!;
 
+        // It waits for a token from the setup guide, and stops with the app.
+        await WaitUntilAsync(() => logger.Lines.Contains("No tunnel token yet: cloudflared waits for one"));
+        await service.StopAsync(Cancel);
         Assert.Equal(0, process.Runs);
-        Assert.Contains("No tunnel token (Tunnel__Token): cloudflared isn't started", logger.Lines);
+        Assert.True(service.ExecuteTask!.IsCompletedSuccessfully);
     }
 
     [Fact]
@@ -36,7 +38,7 @@ public sealed class CloudflareTunnelTests
     {
         var process = new FakeCloudflared { Output = ["Registered tunnel connection", "2026-11-12T10:00:00Z ERR Failed to dial a quic connection"] };
         var logger = new ListLogger();
-        using var service = Create($" {Token} ", process, new ManualTimeProvider(), logger);
+        await using var service = await CreateAsync($" {Token} ", process, new ManualTimeProvider(), logger);
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -54,7 +56,7 @@ public sealed class CloudflareTunnelTests
         var time = new ManualTimeProvider();
         var process = new FakeCloudflared { ExitCode = 1 };
         var logger = new ListLogger();
-        using var service = Create(Token, process, time, logger);
+        await using var service = await CreateAsync(Token, process, time, logger);
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -78,7 +80,7 @@ public sealed class CloudflareTunnelTests
         var time = new ManualTimeProvider();
         var process = new FakeCloudflared { ExitCode = 1 };
         var logger = new ListLogger();
-        using var service = Create(Token, process, time, logger);
+        await using var service = await CreateAsync(Token, process, time, logger);
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
         await AdvanceAsync(time, TimeSpan.FromSeconds(1));
@@ -106,7 +108,7 @@ public sealed class CloudflareTunnelTests
         var time = new ManualTimeProvider();
         var process = new FakeCloudflared { Failure = new System.ComponentModel.Win32Exception("No such file or directory") };
         var logger = new ListLogger();
-        using var service = Create(Token, process, time, logger);
+        await using var service = await CreateAsync(Token, process, time, logger);
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -121,7 +123,7 @@ public sealed class CloudflareTunnelTests
     public async Task Should_StopCloudflared_WhenTheAppStops()
     {
         var process = new FakeCloudflared { RunUntilCancelled = true };
-        using var service = Create(Token, process, new ManualTimeProvider(), new ListLogger());
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), new ListLogger());
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -131,6 +133,104 @@ public sealed class CloudflareTunnelTests
         Assert.True(service.ExecuteTask!.IsCompletedSuccessfully);
     }
 
+    // The setup guide shows "Tunnel connected" once cloudflared says so, and not after it stops.
+    [Fact]
+    public async Task Should_SayConnected_WhileCloudflaredIsConnected()
+    {
+        var process = new FakeCloudflared { Output = ["INF Registered tunnel connection connIndex=0"], RunUntilCancelled = true };
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), new ListLogger());
+        var tunnel = service.Services.GetRequiredService<CloudflareTunnel>();
+        var changes = 0;
+        tunnel.ConnectedChanged += (_, _) => Interlocked.Increment(ref changes);
+        Assert.False(tunnel.Connected);
+
+        await service.StartAsync(Cancel);
+        await WaitUntilAsync(() => tunnel.Connected);
+
+        // The event comes just after the state, on cloudflared's own thread.
+        await WaitUntilAsync(() => Volatile.Read(ref changes) == 1);
+
+        await service.StopAsync(Cancel);
+        Assert.False(tunnel.Connected);
+        Assert.Equal(2, changes);
+    }
+
+    // The setup guide saves a new token: cloudflared starts again with it at once, without the wait after a failure.
+    [Fact]
+    public async Task Should_StartAgainAtOnce_WithANewToken()
+    {
+        var process = new FakeCloudflared { RunUntilCancelled = true };
+        var logger = new ListLogger();
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), logger);
+        await service.StartAsync(Cancel);
+        await WaitUntilAsync(() => process.Runs == 1);
+
+        var problem = await service.Services.GetRequiredService<CloudflareSettings>().SaveTunnelAsync(" new-token ", "https://Relays.Example.com/", Cancel);
+
+        Assert.Null(problem);
+        await WaitUntilAsync(() => process.Runs == 2);
+        Assert.Equal("new-token", process.LastToken);
+        Assert.True(process.WasCancelled);
+        Assert.Equal("relays.example.com", service.Services.GetRequiredService<CloudflareSettings>().Tunnel.Address);
+        Assert.Contains("The tunnel's token changed: starting cloudflared again with it", logger.Lines);
+        Assert.DoesNotContain(logger.Lines, line => line.Contains("new-token", StringComparison.Ordinal));
+    }
+
+    // Saving the same token again (e.g. only the address changed) doesn't drop the connection through the tunnel.
+    [Fact]
+    public async Task Should_KeepTheTunnel_WhenTheSameTokenIsSaved()
+    {
+        var process = new FakeCloudflared { RunUntilCancelled = true };
+        var logger = new ListLogger();
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), logger);
+        await service.StartAsync(Cancel);
+        await WaitUntilAsync(() => process.Runs == 1);
+
+        var settings = service.Services.GetRequiredService<CloudflareSettings>();
+        var changes = 0;
+        settings.TunnelChanged += (_, _) => Interlocked.Increment(ref changes);
+
+        await settings.SaveTunnelAsync(Token, "other.example.com", Cancel);
+        Assert.Equal(0, changes);
+
+        // A new token does start it again, once.
+        await settings.SaveTunnelAsync("new-token", "other.example.com", Cancel);
+        await WaitUntilAsync(() => process.Runs == 2);
+        Assert.Equal(1, changes);
+        Assert.Single(logger.Lines, line => line == "The tunnel's token changed: starting cloudflared again with it");
+    }
+
+    [Fact]
+    public async Task Should_StartTheTunnel_WhenATokenIsSaved()
+    {
+        var process = new FakeCloudflared { RunUntilCancelled = true };
+        var logger = new ListLogger();
+        await using var service = await CreateAsync("", process, new ManualTimeProvider(), logger);
+        await service.StartAsync(Cancel);
+        await WaitUntilAsync(() => logger.Lines.Contains("No tunnel token yet: cloudflared waits for one"));
+
+        await service.Services.GetRequiredService<CloudflareSettings>().SaveTunnelAsync(Token, "relays.example.com", Cancel);
+
+        await WaitUntilAsync(() => process.Runs == 1);
+        Assert.Equal(Token, process.LastToken);
+    }
+
+    // A new installation has no way in until the setup guide chooses one: then it starts at once.
+    [Fact]
+    public async Task Should_StartTheWayIn_WhenOneIsChosen()
+    {
+        var process = new FakeCloudflared { RunUntilCancelled = true };
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), new ListLogger(), chosen: false);
+        await service.StartAsync(Cancel);
+        Assert.Equal(0, process.Runs);
+
+        await service.Services.GetRequiredService<AccessChoice>().ChooseAsync(AccessCatalogue.Find(CloudflareMethods.TunnelId)!, Cancel);
+
+        await WaitUntilAsync(() => process.Runs == 1);
+        await using var db = await service.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
+        Assert.Equal(CloudflareMethods.TunnelId, (await db.Installations.SingleAsync(Cancel)).AccessType);
+    }
+
     // Moves the clock once the service is waiting, so the move can't come before its wait starts.
     private static async Task AdvanceAsync(ManualTimeProvider time, TimeSpan by)
     {
@@ -138,38 +238,49 @@ public sealed class CloudflareTunnelTests
         time.Advance(by);
     }
 
-    // The tunnel as the app runs it: the chosen way in, kept running by AccessHostedService for the app's lifetime.
-    private static RunningTunnel Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
+    // The tunnel as the app runs it: Cloudflare saved as the way in, kept running by AccessHostedService for the
+    // app's lifetime.
+    private static async Task<RunningTunnel> CreateAsync(string token, FakeCloudflared process, TimeProvider time, ListLogger logger, bool chosen = true)
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-        services.AddSingleton<IDbContextFactory<ContactorDbContext>>(new NoDatabase());
-        services.AddCloudflare(new ConfigurationBuilder().Build());
-        services.AddAccess(new ConfigurationBuilder().Build());
-        services.Configure<TunnelOptions>(o =>
+        var database = TestDatabase.Create((services, configuration) =>
         {
-            o.Token = token;
-            o.Path = "/opt/cloudflared";
+            services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Production });
+            services.AddCloudflare(configuration);
+            services.AddAccess(configuration);
+            services.Configure<TunnelOptions>(o =>
+            {
+                o.Token = token;
+                o.Path = "/opt/cloudflared";
+            });
+            services.AddSingleton(time);
+            services.AddSingleton<ICloudflaredProcess>(process);
+            services.AddSingleton<ILogger<CloudflareTunnel>>(logger);
         });
-        services.AddSingleton(time);
-        services.AddSingleton<ICloudflaredProcess>(process);
-        services.AddSingleton<ILogger<CloudflareTunnel>>(logger);
-        var provider = services.BuildServiceProvider();
-        return new RunningTunnel(provider, provider.GetServices<IHostedService>().OfType<AccessHostedService>().Single());
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.Installations.Add(new Installation { AccessType = chosen ? CloudflareMethods.TunnelId : null });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await database.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(Cancel);
+        return new RunningTunnel(database, database.Services.GetServices<IHostedService>().OfType<AccessHostedService>().Single());
     }
 
-    private sealed class RunningTunnel : IDisposable
+    private sealed class RunningTunnel : IAsyncDisposable
     {
-        private readonly ServiceProvider _provider;
+        private readonly TestDatabase _database;
         private readonly AccessHostedService _service;
 
-        public RunningTunnel(ServiceProvider provider, AccessHostedService service)
+        public RunningTunnel(TestDatabase database, AccessHostedService service)
         {
-            _provider = provider;
+            _database = database;
             _service = service;
         }
 
         public Task? ExecuteTask => _service.ExecuteTask;
+
+        public IServiceProvider Services => _database.Services;
 
         public Task StartAsync(CancellationToken cancellationToken) => _service.StartAsync(cancellationToken);
 
@@ -182,17 +293,12 @@ public sealed class CloudflareTunnelTests
             await _service.StopAsync(stop.Token);
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
+            await StopAsync(CancellationToken.None);
             _service.Dispose();
-            _provider.Dispose();
+            await _database.DisposeAsync();
         }
-    }
-
-    // The way in is chosen from the database at start; these tests never read it, so the default stays.
-    private sealed class NoDatabase : IDbContextFactory<ContactorDbContext>
-    {
-        public ContactorDbContext CreateDbContext() => throw new InvalidOperationException("No database in these tests.");
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

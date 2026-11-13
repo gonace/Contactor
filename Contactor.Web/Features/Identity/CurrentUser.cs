@@ -20,7 +20,10 @@ public sealed class CurrentUser
         _authenticationStateProvider = authenticationStateProvider;
     }
 
-    /// <summary>The user, or null if the request had none (which the middleware does not let through).</summary>
+    /// <summary>
+    /// The user, or null if the request had none: only while a new installation is being set up, when the middleware
+    /// lets the setup guide through to whoever typed the setup code.
+    /// </summary>
     public async Task<SignedInUser?> GetAsync()
     {
         var state = await _authenticationStateProvider.GetAuthenticationStateAsync();

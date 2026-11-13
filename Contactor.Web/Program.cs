@@ -26,6 +26,11 @@ public sealed partial class Program
             return HealthProbe.Run(args.Length > 1 ? args[1] : HealthProbe.DefaultUrl);
         }
 
+        if (args is [SignInReset.Command, ..])
+        {
+            return SignInReset.Run(args);
+        }
+
         var builder = WebApplication.CreateBuilder(args);
         builder.AddServiceDefaults();
         builder.Services.AddLocalClock(builder.Configuration);
@@ -53,12 +58,18 @@ public sealed partial class Program
         app.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<SignInChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
+        app.Services.ApplyCloudflareSettingsAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (app.Services.GetRequiredService<SignInChoice>().Current is null)
+        {
+            app.Services.GetRequiredService<SetupCode>().Renew();
+        }
 
         app.UseSignIn();
         app.UseAntiforgery();
         app.MapStaticAssets();
         app.MapDefaultEndpoints();
         app.MapHealthGroup();
+        app.MapSetupGroup();
         app.MapBackupGroup();
         app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
         app.Run();

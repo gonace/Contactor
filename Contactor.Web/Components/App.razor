@@ -18,10 +18,10 @@
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Contactor.Web.styles.css"]" />
     <title>Contactor</title>
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="PageRenderMode" />
     @* Blazor shows this when the page's live connection breaks on an error it can't recover from. *@
     <div id="blazor-error-ui" role="alert">
         Something went wrong. <a href="" class="reload">Reload the page</a>
@@ -38,3 +38,12 @@
     <script src="@Assets["phone.js"]"></script>
 </body>
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    // Every page is live, except the few that must answer as an ordinary page ([ExcludeFromInteractiveRouting]), e.g.
+    // the setup code's, which sets a cookie.
+    private IComponentRenderMode? PageRenderMode => HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+}

@@ -43,6 +43,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<InputAction> InputActions => Set<InputAction>();
 
+    public DbSet<CloudflareSetting> CloudflareSettings => Set<CloudflareSetting>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         ArgumentNullException.ThrowIfNull(configurationBuilder);
@@ -70,6 +72,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<Installation>(ConfigureInstallation);
         modelBuilder.Entity<BoardWatchState>(ConfigureBoardWatchState);
         modelBuilder.Entity<InputAction>(ConfigureInputAction);
+        modelBuilder.Entity<CloudflareSetting>(ConfigureCloudflareSetting);
     }
 
     private static void ConfigureRelayGroup(EntityTypeBuilder<RelayGroup> group)
@@ -191,6 +194,16 @@ public sealed class ContactorDbContext : DbContext
         installation.Property(i => i.BoardType).HasMaxLength(Installation.BoardTypeMaxLength);
         installation.Property(i => i.AccessType).HasMaxLength(Installation.MethodTypeMaxLength);
         installation.Property(i => i.SignInType).HasMaxLength(Installation.MethodTypeMaxLength);
+    }
+
+    private static void ConfigureCloudflareSetting(EntityTypeBuilder<CloudflareSetting> setting)
+    {
+        setting.ToTable("CloudflareSetting", t => t.HasCheckConstraint("CK_CloudflareSetting_Id", $"\"Id\" = {CloudflareSetting.SingletonId}"));
+        setting.Property(s => s.Id).ValueGeneratedNever();
+        setting.Property(s => s.TunnelToken).HasMaxLength(CloudflareSetting.TunnelTokenMaxLength);
+        setting.Property(s => s.Address).HasMaxLength(CloudflareSetting.HostNameMaxLength);
+        setting.Property(s => s.TeamDomain).HasMaxLength(CloudflareSetting.HostNameMaxLength);
+        setting.Property(s => s.Audience).HasMaxLength(CloudflareSetting.AudienceMaxLength);
     }
 
     private static void ConfigureBoardWatchState(EntityTypeBuilder<BoardWatchState> state)
