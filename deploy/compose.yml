@@ -17,14 +17,14 @@ services:
     restart: unless-stopped
     environment:
       # Named here too, so an image from before the /data folder keeps its data with this file. Such an image has no
-      # cloudflared inside, though: go back to one only with that release's deploy folder (see DEPLOY.md).
+      # cloudflared inside, though: go back to one only with that release's deploy folder (see docs/DEPLOY.md).
       ConnectionStrings__Default: Data Source=/data/contactor.db
       CloudflareAccess__TeamDomain: ${CF_ACCESS_TEAM_DOMAIN:?run install.sh}
       CloudflareAccess__Audience: ${CF_ACCESS_AUDIENCE:?run install.sh}
       Vm201__Host: ${VM201_HOST:?run install.sh}
       Vm201__Username: ${VM201_USERNAME:-}
       Vm201__Password: ${VM201_PASSWORD:-}
-      # true logs every packet to and from the board (see DEPLOY.md); off by default.
+      # true logs every packet to and from the board (see docs/DEPLOY.md); off by default.
       Vm201__LogPackets: ${VM201_LOG_PACKETS:-false}
       Tunnel__Token: ${CLOUDFLARE_TUNNEL_TOKEN:?run install.sh}
     # The database, its nightly backups and the app's keys, on the Raspberry Pi's SD card; owned by the image's user

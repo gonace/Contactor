@@ -68,6 +68,7 @@ deploy/
   upgrade.sh                # Pulls, checks the cosign signature, restarts, waits until healthy
   autoupdate-install.sh     # systemd timer: upgrade every night 03:00–04:00
   cosign/                   # Public signing keys and how to make them
+docs/DEPLOY.md              # Installation steps
 docs/ARCHITECTURE.md        # How the app is built and what it does: architecture, boards, data model, rules, screens, operations
 docs/screenshots/           # The README's screenshots, taken by scripts/screenshots/take.mjs
 scripts/
@@ -76,7 +77,6 @@ scripts/
   images-build.sh           # Build and push the image with docker buildx; prints the digest to sign
   images-publish.sh         # Publish and sign the image from your computer
   images-sign.sh            # cosign, by digest
-DEPLOY.md                   # Installation steps
 LICENSE                     # MIT
 THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence texts in licenses/ (in the image: /licenses)
 .github/workflows/build.yml # build + test (pull requests, merges to main, by hand)
