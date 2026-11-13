@@ -47,7 +47,7 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
         var email = await _validator.ValidateAsync(_tokens.Create(" Jane@Example.COM "), Cancel);
 
         Assert.Equal("jane@example.com", email);
-        Assert.Equal(new Uri("https://team.example.com/cdn-cgi/access/certs"), _handler.LastRequestUri);
+        Assert.Equal(new Uri("https://team.cloudflareaccess.com/cdn-cgi/access/certs"), _handler.LastRequestUri);
     }
 
     [Theory]

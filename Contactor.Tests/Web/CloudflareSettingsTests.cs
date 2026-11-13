@@ -74,8 +74,13 @@ public sealed class CloudflareSettingsTests : IDisposable
     [Theory]
     [InlineData("", "aud", "team domain")]
     [InlineData("not a host", "aud", "team domain")]
-    [InlineData("team.example.com", "", "AUD tag")]
-    [InlineData("team.example.com", "two parts", "AUD tag")]
+    [InlineData("evil.example.com", "aud", "team domain")]
+    [InlineData("cloudflareaccess.com", "aud", "team domain")]
+    [InlineData(".cloudflareaccess.com", "aud", "team domain")]
+    [InlineData("a.b.cloudflareaccess.com", "aud", "team domain")]
+    [InlineData("myteam.cloudflareaccess.com.evil.com", "aud", "team domain")]
+    [InlineData("team.cloudflareaccess.com", "", "AUD tag")]
+    [InlineData("team.cloudflareaccess.com", "two parts", "AUD tag")]
     public async Task Should_SaveNoAccess_ThatCantBeUsed(string teamDomain, string audience, string named)
     {
         await using var database = await CreateAsync(AccessTokens.Settings);

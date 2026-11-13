@@ -30,6 +30,9 @@ public sealed record CloudflareTunnelSettings(string Token, string? Address);
 /// </summary>
 public sealed partial class CloudflareSettings : IDisposable
 {
+    /// <summary>What every Cloudflare Access team domain ends with.</summary>
+    public const string TeamDomainSuffix = ".cloudflareaccess.com";
+
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly TunnelOptions _tunnelOptions;
     private readonly CloudflareAccessOptions _accessOptions;
@@ -124,9 +127,16 @@ public sealed partial class CloudflareSettings : IDisposable
     /// <summary>What is wrong with Cloudflare Access's settings, in plain words, or null.</summary>
     public static string? CheckAccess(string? teamDomain, string? audience)
     {
-        if (string.IsNullOrEmpty(teamDomain) || Uri.CheckHostName(teamDomain) != UriHostNameType.Dns || teamDomain.Length > CloudflareSetting.HostNameMaxLength)
+        // The app fetches its signing keys from the team domain: whoever controls it decides who may sign in. Access's
+        // team domains are always <team>.cloudflareaccess.com, so nothing else is taken.
+        if (string.IsNullOrEmpty(teamDomain)
+            || teamDomain.Length > CloudflareSetting.HostNameMaxLength
+            || Uri.CheckHostName(teamDomain) != UriHostNameType.Dns
+            || !teamDomain.EndsWith(TeamDomainSuffix, StringComparison.OrdinalIgnoreCase)
+            || teamDomain.Length == TeamDomainSuffix.Length
+            || teamDomain[..^TeamDomainSuffix.Length].Contains('.', StringComparison.Ordinal))
         {
-            return "The team domain must be a host name, e.g. myteam.cloudflareaccess.com.";
+            return "The team domain must be your team's address at Cloudflare, e.g. myteam.cloudflareaccess.com.";
         }
 
         if (string.IsNullOrEmpty(audience) || audience.Length > CloudflareSetting.AudienceMaxLength || audience.Any(char.IsWhiteSpace))

@@ -14,7 +14,11 @@ public sealed class CloudflareSetting
 
     public int Id { get; set; } = SingletonId;
 
-    /// <summary>The tunnel's token. A secret: never logged or shown, and given to cloudflared only through its environment.</summary>
+    /// <summary>
+    /// The tunnel's token. A secret: never logged or shown, and given to cloudflared only through its environment. It
+    /// is in the database, so in the backups and the backup download too, as the board's password is: a restored
+    /// backup keeps working, and only people who are signed in can download one.
+    /// </summary>
     public string? TunnelToken { get; set; }
 
     /// <summary>The address people open, e.g. <c>relays.example.com</c>: the tunnel's public hostname.</summary>

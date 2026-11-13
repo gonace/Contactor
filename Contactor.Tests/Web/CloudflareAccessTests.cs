@@ -150,7 +150,7 @@ public sealed class CloudflareAccessTests : IDisposable
     [Theory]
     [InlineData("CloudflareAccess:Audience", "")]
     [InlineData("CloudflareAccess:TeamDomain", "")]
-    [InlineData("CloudflareAccess:TeamDomain", "https://team.example.com")]
+    [InlineData("CloudflareAccess:TeamDomain", "https://team.cloudflareaccess.com")]
     public async Task Should_RefuseToStart_WhenAccessIsNotConfigured(string key, string value)
     {
         var settings = new Dictionary<string, string?>(AccessTokens.Settings) { [key] = value };
