@@ -116,6 +116,9 @@ If the board refuses the read or the write, the client logs a warning and contin
 inputs can switch relays without the app. If the board does not answer, the connection fails and the poller tries
 again.
 
+The client checks the modes only when it connects. A mode set with the board's own tool while the app is connected
+stays until the next connection.
+
 Set `Waveshare:ResetRelayModes` to `false` to keep the modes.
 
 ## Settings

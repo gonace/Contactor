@@ -126,6 +126,27 @@ public sealed class WaveshareClientTests
     }
 
     [Fact]
+    public async Task Should_SendTheRestOfTheMask_OnANewConnection_AfterAnUnreadableAnswer()
+    {
+        // Relay 2's echo has a broken CRC: the connection may be out of step, so relay 3 goes on a new one.
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.WriteSingleCoil when request[3] == 1 => [.. request[..6], 0, 0],
+            WaveshareApi.WriteSingleCoil => request,
+            _ => WaveshareModbus.WithCrc([1, 1, 1, 0b0101]),
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        await run.Client.TurnOnAsync(0b0111, Cancel);
+
+        Assert.Equal(0b0101UL, run.Client.State.Relays);
+        Assert.Contains(run.Traces, t => t.Text == "Unreadable answer: The answer's CRC is wrong." && t.IsError);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 3 turned on");
+        Assert.Equal(2, board.Connections);
+    }
+
+    [Fact]
     public async Task Should_Throw_AndReadTheBoard_WhenNoRelayIsTaken()
     {
         await using var simulator = Started(WaveshareModels.Relay8);
@@ -515,6 +536,7 @@ public sealed class WaveshareClientTests
         private readonly Func<byte[], byte[]> _answer;
         private readonly Task _loop;
         private int _requests;
+        private int _connections;
 
         private ScriptedBoard(TcpListener listener, Func<byte[], byte[]> answer)
         {
@@ -526,6 +548,8 @@ public sealed class WaveshareClientTests
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
         public int Requests => Volatile.Read(ref _requests);
+
+        public int Connections => Volatile.Read(ref _connections);
 
         public static ScriptedBoard Start(Func<byte[], byte[]> answer)
         {
@@ -551,6 +575,7 @@ public sealed class WaveshareClientTests
                 while (true)
                 {
                     var tcp = await _listener.AcceptTcpClientAsync(_stop.Token);
+                    Interlocked.Increment(ref _connections);
                     connections.Add(ServeConnectionAsync(tcp));
                 }
             }
