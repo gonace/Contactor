@@ -50,6 +50,7 @@ Contactor.Boards/           # What any relay board is to the app: IRelayBoard, I
 Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF.
 Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF.
 Contactor.Boards.Vm208/     # The VM208: HTTP client, simulator and its adapters (Vm208Board, Vm208Connection, Vm208Traffic). No web/EF.
+Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and adapters; its README.md describes them. No web/EF.
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
@@ -171,6 +172,7 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, and one line in the catalogue. Nothing else in the app changes.
 - `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`).
 - What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
+- The Waveshare Modbus PoE ETH relays (five models, `Contactor.Boards.Waveshare`) are described in `Contactor.Boards.Waveshare/README.md`: the protocol, the models, the reset of the relay modes, the simulator and what to check on a real board.
 - The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
 
 ## The VM201 client (`Contactor.Boards.Vm201`)
@@ -557,6 +559,12 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
     "Host": "",                     // the board's address; empty: the setup guide asks
     "Port": 80,
     "PollSeconds": 2
+  },
+  "Waveshare": {                    // only read with a Board:Type waveshare-…; Modbus has no login
+    "Host": "",                     // the board's address; empty: the setup guide asks
+    "Port": 4196,
+    "PollSeconds": 2,
+    "ResetRelayModes": true         // (B) and (C): set every relay to normal mode on connecting, so no input switches one
   },
   "CloudflareAccess": {
     "TeamDomain": "",               // e.g. myteam.cloudflareaccess.com; install.sh asks for it
