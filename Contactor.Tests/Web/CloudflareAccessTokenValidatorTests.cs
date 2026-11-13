@@ -215,6 +215,90 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
         _settings.Dispose();
     }
 
+    // A request that has checked which team the keys are for, and is about to take them, while another team's keys
+    // come in: it still gets only its own team's keys. The request is held in the clock, which it reads between the two.
+    [Fact]
+    public async Task Should_GiveARequestOnlyItsOwnTeamsKeys_WhileAnotherTeamsAreFetched()
+    {
+        const string TeamA = "a.cloudflareaccess.com";
+        const string TeamB = "b.cloudflareaccess.com";
+        using var tokensA = new AccessTokens(keyId: TeamA);
+        using var tokensB = new AccessTokens(keyId: TeamB);
+        var handler = new TeamCertificates(new Dictionary<string, string> { [TeamA] = tokensA.Certificates(), [TeamB] = tokensB.Certificates() });
+        var services = new ServiceCollection();
+        services.AddHttpClient(CloudflareAccessKeys.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => handler);
+        await using var provider = services.BuildServiceProvider();
+        using var clock = new HoldingClock(AccessTokens.Now);
+        using var keys = new CloudflareAccessKeys(provider.GetRequiredService<IHttpClientFactory>(), _settings, clock, NullLogger<CloudflareAccessKeys>.Instance);
+        var a = new CloudflareAccessSettings(TeamA, AccessTokens.Audience);
+        await keys.GetAsync(a, refresh: false, Cancel);
+
+        var held = Task.Run(() =>
+        {
+            HoldingClock.HoldHere.Value = true;
+            return keys.GetAsync(a, refresh: false, Cancel);
+        }, Cancel);
+        Assert.True(clock.Held.Wait(TimeSpan.FromSeconds(10), Cancel), "The request never reached the clock.");
+        await keys.GetAsync(new CloudflareAccessSettings(TeamB, AccessTokens.Audience), refresh: false, Cancel);
+        clock.Release.Set();
+
+        Assert.All(await held, k => Assert.Equal(TeamA, k.KeyId));
+    }
+
+    // A clock that holds the one request marked to be held at its first reading, until the test releases it.
+    private sealed class HoldingClock : TimeProvider, IDisposable
+    {
+        public static readonly AsyncLocal<bool> HoldHere = new();
+
+        private readonly DateTimeOffset _now;
+
+        public HoldingClock(DateTimeOffset now)
+        {
+            _now = now;
+        }
+
+        public ManualResetEventSlim Held { get; } = new();
+
+        public ManualResetEventSlim Release { get; } = new();
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (HoldHere.Value)
+            {
+                HoldHere.Value = false;
+                Held.Set();
+                Release.Wait(TimeSpan.FromSeconds(10));
+            }
+
+            return _now;
+        }
+
+        public void Dispose()
+        {
+            Held.Dispose();
+            Release.Dispose();
+        }
+    }
+
+    // Each team's certs at its own address.
+    private sealed class TeamCertificates : HttpMessageHandler
+    {
+        private readonly IReadOnlyDictionary<string, string> _certificates;
+
+        public TeamCertificates(IReadOnlyDictionary<string, string> certificates)
+        {
+            _certificates = certificates;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_certificates[request.RequestUri!.Host], System.Text.Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
     // These tests never save settings: nothing reads the database.
     private sealed class NoDatabase : IDbContextFactory<ContactorDbContext>
     {
