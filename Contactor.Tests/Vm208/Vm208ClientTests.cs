@@ -134,6 +134,26 @@ public sealed class Vm208ClientTests
         Assert.Equal(0b0001, simulator.Relays);
     }
 
+    // The fake board itself: a client that gives up while writing its request, as one that loses the board does, is
+    // no answer and no error.
+    [Theory]
+    [InlineData("")]
+    [InlineData("POST /setrelay HTTP/1.1\r\nHost: board\r\n")]
+    [InlineData("POST /setrelay HTTP/1.1\r\nContent-Length: 20\r\n\r\nrelay=1")]
+    public async Task Should_TakeARequestTheClientGaveUpOn(string written)
+    {
+        var board = ScriptedBoard.Start();
+        using (var client = new TcpClient())
+        {
+            await client.ConnectAsync(IPAddress.Loopback, board.Port, TestContext.Current.CancellationToken);
+            await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(written), TestContext.Current.CancellationToken);
+        }
+
+        await Wait.UntilAsync(() => board.Handled == 1);
+        await board.DisposeAsync();
+        Assert.Empty(board.Requests);
+    }
+
     [Fact]
     public async Task Should_CarryOn_WhenTheBoardDropsConnections()
     {
@@ -605,6 +625,7 @@ public sealed class Vm208ClientTests
         private readonly List<string> _requests = [];
         private int _relays;
         private int _hanging;
+        private int _handled;
         private int _switched;
         private int _dropNext;
 
@@ -644,6 +665,9 @@ public sealed class Vm208ClientTests
             get => Volatile.Read(ref _dropNext);
             set => Volatile.Write(ref _dropNext, value);
         }
+
+        /// <summary>Connections done with, answered or not.</summary>
+        public int Handled => Volatile.Read(ref _handled);
 
         /// <summary>Requests left without an answer.</summary>
         public int Hanging => Volatile.Read(ref _hanging);
@@ -702,7 +726,12 @@ public sealed class Vm208ClientTests
                 try
                 {
                     var stream = tcp.GetStream();
-                    var request = await ReadRequestAsync(stream);
+                    // A connection the client closed before its request was all there: it gave up, nothing to answer.
+                    if (await ReadRequestAsync(stream) is not { } request)
+                    {
+                        return;
+                    }
+
                     lock (_requests)
                     {
                         _requests.Add(request);
@@ -762,6 +791,10 @@ public sealed class Vm208ClientTests
                 {
                     // The client gave up, or the test ended.
                 }
+                finally
+                {
+                    Interlocked.Increment(ref _handled);
+                }
             }
         }
 
@@ -778,8 +811,9 @@ public sealed class Vm208ClientTests
             return false;
         }
 
-        // The request line, the headers and the form, read until the form is all there.
-        private async Task<string> ReadRequestAsync(NetworkStream stream)
+        // The request line, the headers and the form, read until the form is all there; null when the client closes the
+        // connection before.
+        private async Task<string?> ReadRequestAsync(NetworkStream stream)
         {
             var text = new StringBuilder();
             var buffer = new byte[4096];
@@ -788,7 +822,7 @@ public sealed class Vm208ClientTests
                 var read = await stream.ReadAsync(buffer, _stop.Token);
                 if (read == 0)
                 {
-                    return text.ToString();
+                    return null;
                 }
 
                 text.Append(Encoding.ASCII.GetString(buffer, 0, read));
