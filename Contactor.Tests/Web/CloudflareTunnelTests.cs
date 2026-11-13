@@ -164,11 +164,18 @@ public sealed class CloudflareTunnelTests
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
 
-        await service.Services.GetRequiredService<CloudflareSettings>().SaveTunnelAsync(Token, "other.example.com", Cancel);
-        await service.StopAsync(Cancel);
+        var settings = service.Services.GetRequiredService<CloudflareSettings>();
+        var changes = 0;
+        settings.TunnelChanged += (_, _) => Interlocked.Increment(ref changes);
 
-        Assert.Equal(1, process.Runs);
-        Assert.DoesNotContain("The tunnel's token changed: starting cloudflared again with it", logger.Lines);
+        await settings.SaveTunnelAsync(Token, "other.example.com", Cancel);
+        Assert.Equal(0, changes);
+
+        // A new token does start it again, once.
+        await settings.SaveTunnelAsync("new-token", "other.example.com", Cancel);
+        await WaitUntilAsync(() => process.Runs == 2);
+        Assert.Equal(1, changes);
+        Assert.Single(logger.Lines, line => line == "The tunnel's token changed: starting cloudflared again with it");
     }
 
     [Fact]

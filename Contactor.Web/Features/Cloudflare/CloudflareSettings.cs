@@ -87,12 +87,11 @@ public sealed partial class CloudflareSettings : IDisposable
             return problem;
         }
 
-        var before = Tunnel.Token;
-        await SaveAsync(row => (row.TunnelToken, row.Address) = (token, address), cancellationToken);
+        var tokenChanged = await SaveAsync(row => (row.TunnelToken, row.Address) = (token, address), cancellationToken);
         LogTunnelSaved(address);
 
         // Only a new token starts the tunnel again: that drops the connection of whoever uses the app through it.
-        if (!string.Equals(before, token, StringComparison.Ordinal))
+        if (tokenChanged)
         {
             TunnelChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -175,7 +174,9 @@ public sealed partial class CloudflareSettings : IDisposable
         return host.TrimEnd('/').ToLowerInvariant();
     }
 
-    private async Task SaveAsync(Action<CloudflareSetting> change, CancellationToken cancellationToken)
+    // Saves the change and returns whether the tunnel's token is another now; compared under the lock, so two saves
+    // at once can't both miss a change.
+    private async Task<bool> SaveAsync(Action<CloudflareSetting> change, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -188,10 +189,12 @@ public sealed partial class CloudflareSettings : IDisposable
                 db.CloudflareSettings.Add(row);
             }
 
+            var before = Tunnel.Token;
             change(row);
             await db.SaveChangesAsync(cancellationToken);
             Volatile.Write(ref _tunnel, Combine(row));
             Volatile.Write(ref _access, CombineAccess(row));
+            return !string.Equals(before, Tunnel.Token, StringComparison.Ordinal);
         }
         finally
         {
