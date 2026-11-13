@@ -1,6 +1,6 @@
 # The VM204 (`Contactor.Boards.Vm204`)
 
-How the app talks to this board. What every board shares (`IRelayBoard`, `BoardPoller`, the board catalogue) is in `AGENTS.md` at the repository root.
+How the app talks to this board. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is in `AGENTS.md` at the repository root.
 
 
 The VM204 is not the VM201's protocol. Source: Velleman's firmware, https://github.com/Velleman/VM204-Firmware, branch V1.1 (CycloneTCP); each route names its firmware file in `Vm204Api`. It is controlled only through its web server: plain HTTP, port 80 unless changed on the board, JSON answers, one request per connection (`Connection: close`), at most 3 connections. It never reports a change by itself, so the app polls.
