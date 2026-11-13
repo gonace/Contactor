@@ -22,11 +22,10 @@ public sealed partial class CloudflareAccessKeys : IDisposable
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<CloudflareAccessKeys> _logger;
     private readonly SemaphoreSlim _fetchGate = new(1, 1);
-    private IReadOnlyList<SecurityKey> _keys = [];
-    private DateTimeOffset? _fetchedAt;
 
-    // The team the keys are for; only read and written under the fetch gate or by a reader that checks it.
-    private string? _fetchedFor;
+    // The team, when its keys were last fetched, and the keys: swapped whole, so a request without the fetch gate
+    // never sees one team's keys with another's time, or half of a time. Null before the first fetch.
+    private Fetched? _fetched;
 
     public CloudflareAccessKeys(
         IHttpClientFactory httpClientFactory,
@@ -47,9 +46,9 @@ public sealed partial class CloudflareAccessKeys : IDisposable
     public async Task<IReadOnlyList<SecurityKey>> GetAsync(CloudflareAccessSettings access, bool refresh, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(access);
-        if (!NeedsFetch(access, refresh))
+        if (!NeedsFetch(Volatile.Read(ref _fetched), access, refresh, out var keys))
         {
-            return Volatile.Read(ref _keys);
+            return keys;
         }
 
         await _fetchGate.WaitAsync(cancellationToken);
@@ -58,12 +57,12 @@ public sealed partial class CloudflareAccessKeys : IDisposable
             // Another request may have fetched them while this one waited.
             // Not on the visitor's request: if their phone drops it, the fetch must still finish, or everyone is
             // denied until the next one is allowed a minute later. The HTTP client's own timeout bounds it.
-            if (NeedsFetch(access, refresh))
+            if (!NeedsFetch(Volatile.Read(ref _fetched), access, refresh, out keys))
             {
-                await FetchAsync(access, CancellationToken.None);
+                return keys;
             }
 
-            return Volatile.Read(ref _keys);
+            return await FetchAsync(access, CancellationToken.None);
         }
         finally
         {
@@ -76,29 +75,30 @@ public sealed partial class CloudflareAccessKeys : IDisposable
         _fetchGate.Dispose();
     }
 
-    private bool NeedsFetch(CloudflareAccessSettings access, bool refresh)
+    // Whether the keys must be fetched for this team; when not, the keys it has for it.
+    private bool NeedsFetch(Fetched? fetched, CloudflareAccessSettings access, bool refresh, out IReadOnlyList<SecurityKey> keys)
     {
-        var fetchedAt = _fetchedAt;
-        if (fetchedAt is null || !string.Equals(Volatile.Read(ref _fetchedFor), access.TeamDomain, StringComparison.Ordinal))
+        keys = [];
+        if (fetched is null || !string.Equals(fetched.Team, access.TeamDomain, StringComparison.Ordinal))
         {
             return true;
         }
 
-        var age = _timeProvider.GetUtcNow() - fetchedAt.Value;
+        keys = fetched.Keys;
+        var age = _timeProvider.GetUtcNow() - fetched.At;
         return age >= CacheDuration || (refresh && age >= MinRefreshInterval);
     }
 
-    private async Task FetchAsync(CloudflareAccessSettings access, CancellationToken cancellationToken)
+    // Fetches the team's keys and returns them; on a failure, the keys it had for that team. Only under the fetch gate.
+    private async Task<IReadOnlyList<SecurityKey>> FetchAsync(CloudflareAccessSettings access, CancellationToken cancellationToken)
     {
         // Another team's keys are no use: they go, whether or not the new team's come.
-        if (!string.Equals(_fetchedFor, access.TeamDomain, StringComparison.Ordinal))
-        {
-            Volatile.Write(ref _keys, []);
-            Volatile.Write(ref _fetchedFor, access.TeamDomain);
-        }
+        var before = Volatile.Read(ref _fetched);
+        IReadOnlyList<SecurityKey> had = string.Equals(before?.Team, access.TeamDomain, StringComparison.Ordinal) ? before!.Keys : [];
 
         // Counts as a fetch even when it fails, so a Cloudflare outage doesn't get a request per page view.
-        _fetchedAt = _timeProvider.GetUtcNow();
+        var at = _timeProvider.GetUtcNow();
+        Volatile.Write(ref _fetched, new Fetched(access.TeamDomain, at, had));
         try
         {
             using var http = _httpClientFactory.CreateClient(HttpClientName);
@@ -118,9 +118,10 @@ public sealed partial class CloudflareAccessKeys : IDisposable
                 throw new InvalidDataException("The Access certs response is too large.");
             }
 
-            var keys = new JsonWebKeySet(new string(buffer, 0, read)).GetSigningKeys();
-            Volatile.Write(ref _keys, [.. keys]);
+            IReadOnlyList<SecurityKey> keys = [.. new JsonWebKeySet(new string(buffer, 0, read)).GetSigningKeys()];
+            Volatile.Write(ref _fetched, new Fetched(access.TeamDomain, at, keys));
             LogFetched(keys.Count);
+            return keys;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -133,8 +134,12 @@ public sealed partial class CloudflareAccessKeys : IDisposable
             // Keeps the keys it had: they are still Cloudflare's. Without any, every token is denied, and the
             // first unknown key retries after a minute.
             LogFetchFailed(ex.GetType().Name, ex.Message);
+            return had;
         }
     }
+
+    // The keys fetched for a team, and when.
+    private sealed record Fetched(string Team, DateTimeOffset At, IReadOnlyList<SecurityKey> Keys);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Fetched {KeyCount} Cloudflare Access signing keys")]
     private partial void LogFetched(int keyCount);

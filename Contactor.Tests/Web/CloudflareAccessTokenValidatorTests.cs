@@ -216,6 +216,58 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
     }
 
     // These tests never save settings: nothing reads the database.
+    // Requests for two teams at once, while each team's keys are fetched in turn: a request only ever gets its own
+    // team's keys, never the other's, however they meet.
+    [Fact]
+    public async Task Should_GiveEachTeamOnlyItsOwnKeys_WhileAnotherTeamsAreFetched()
+    {
+        string[] teams = ["a.cloudflareaccess.com", "b.cloudflareaccess.com"];
+        var certificates = teams.ToDictionary(t => t, t => new AccessTokens(keyId: t).Certificates());
+        var handler = new TeamCertificates(certificates);
+        var services = new ServiceCollection();
+        services.AddHttpClient(CloudflareAccessKeys.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => handler);
+        await using var provider = services.BuildServiceProvider();
+        using var keys = new CloudflareAccessKeys(provider.GetRequiredService<IHttpClientFactory>(), _settings, _time, NullLogger<CloudflareAccessKeys>.Instance);
+
+        for (var round = 0; round < 20; round++)
+        {
+            var got = await Task.WhenAll(Enumerable.Range(0, 64).Select(i => Task.Run(async () =>
+            {
+                var team = teams[i % 2];
+                return (Team: team, Keys: await keys.GetAsync(new CloudflareAccessSettings(team, AccessTokens.Audience), refresh: false, Cancel));
+            }, Cancel)));
+
+            Assert.All(got, g => Assert.All(g.Keys, k => Assert.Equal(g.Team, k.KeyId)));
+        }
+    }
+
+    // Each team's certs at its own address.
+    private sealed class TeamCertificates : HttpMessageHandler
+    {
+        private readonly IReadOnlyDictionary<string, string> _certificates;
+
+        public TeamCertificates(IReadOnlyDictionary<string, string> certificates)
+        {
+            _certificates = certificates;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            // Lets the other requests run meanwhile, as a real fetch does.
+            await Task.Yield();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_certificates[request.RequestUri!.Host], System.Text.Encoding.UTF8, "application/json"),
+            };
+        }
+
+        // The HTTP client factory disposes the handlers it uses; the base class holds nothing.
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+        }
+    }
+
     private sealed class NoDatabase : IDbContextFactory<ContactorDbContext>
     {
         public ContactorDbContext CreateDbContext() => throw new InvalidOperationException("No database in these tests.");
