@@ -4,7 +4,7 @@
        This AppHost runs no containers, only our own projects.
      - GHSA-4g86-54fm-h9h8: anyone who can reach the dashboard can delete its telemetry (a standalone dashboard can also
        leak its token; ours isn't standalone). Ours listens on localhost only (Properties/launchSettings.json), so only
-       someone already on the developer's machine can reach it.
+       the developer's own machine can reach it, and at worst it loses development telemetry.
      The dashboard is for local development only and is not in the app's image, so both are suppressed here
      (NuGetAuditSuppress below). Raise it once a release starts on Windows, and drop both suppressions with it. The SDK
      brings Aspire.Hosting.AppHost in the same version: raise them together, with any Aspire.Hosting.* package added
