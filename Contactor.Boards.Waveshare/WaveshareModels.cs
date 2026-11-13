@@ -8,15 +8,18 @@ namespace Contactor.Boards.Waveshare;
 /// </summary>
 public static class WaveshareModels
 {
-    public static BoardModel Relay8 { get; } = Create("waveshare-8", "Waveshare Modbus PoE ETH Relay", relays: 8, inputs: 0);
+    /// <summary>Who makes them: the setup guide lists the models by make.</summary>
+    public const string Make = "Waveshare";
 
-    public static BoardModel Relay8B { get; } = Create("waveshare-8b", "Waveshare Modbus PoE ETH Relay (B)", relays: 8, inputs: 8);
+    public static BoardModel Relay8 { get; } = Create("waveshare-8", "Modbus PoE ETH Relay", relays: 8, inputs: 0);
 
-    public static BoardModel Relay8C { get; } = Create("waveshare-8c", "Waveshare Modbus PoE ETH Relay (C)", relays: 8, inputs: 8);
+    public static BoardModel Relay8B { get; } = Create("waveshare-8b", "Modbus PoE ETH Relay (B)", relays: 8, inputs: 8);
 
-    public static BoardModel Relay16 { get; } = Create("waveshare-16", "Waveshare Modbus PoE ETH Relay 16CH", relays: 16, inputs: 0);
+    public static BoardModel Relay8C { get; } = Create("waveshare-8c", "Modbus PoE ETH Relay (C)", relays: 8, inputs: 8);
 
-    public static BoardModel Relay30 { get; } = Create("waveshare-30", "Waveshare Modbus PoE ETH Relay 30CH", relays: 30, inputs: 0);
+    public static BoardModel Relay16 { get; } = Create("waveshare-16", "Modbus PoE ETH Relay 16CH", relays: 16, inputs: 0);
+
+    public static BoardModel Relay30 { get; } = Create("waveshare-30", "Modbus PoE ETH Relay 30CH", relays: 30, inputs: 0);
 
     public static IReadOnlyList<BoardModel> All { get; } = [Relay8, Relay8B, Relay8C, Relay16, Relay30];
 
@@ -38,6 +41,6 @@ public static class WaveshareModels
 
     private static BoardModel Create(string id, string name, int relays, int inputs)
     {
-        return new BoardModel(id, name, new BoardCapabilities(relays, inputs, ReportsChanges: false), WaveshareApi.DefaultPort, LoginMaxLength: 0);
+        return new BoardModel(id, Make, name, new BoardCapabilities(relays, inputs, ReportsChanges: false), WaveshareApi.DefaultPort, LoginMaxLength: 0);
     }
 }

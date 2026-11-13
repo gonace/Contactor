@@ -172,39 +172,153 @@ input[type="password"] {
     line-height: 1.45;
 }
 
-.options {
-    margin: 0;
-    padding: 0;
-    border: none;
+/* Step 2: "Make" and "Model" look like fields and open a list from the bottom of the screen. */
+.field-label {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.select {
+    width: 100%;
+    min-height: 60px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.select.open {
+    border: 2px solid var(--accent);
+    padding: 7px 13.5px;
+}
+
+.select:disabled {
+    background: transparent;
+    border-style: dashed;
+}
+
+.select-text {
+    flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 2px;
+    overflow-wrap: anywhere;
 }
 
-.option {
-    min-height: 64px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1.5px solid var(--line);
+.placeholder {
+    color: var(--muted);
+}
+
+.chevron {
+    flex-shrink: 0;
+    color: var(--muted);
+}
+
+.select.open .chevron {
+    color: var(--accent);
+    transform: rotate(180deg);
+}
+
+.sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: var(--backdrop);
+}
+
+.sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 11;
+    max-width: 560px;
+    max-height: 85vh;
+    max-height: 85dvh;
+    margin: 0 auto;
+    padding: 10px 0 max(16px, env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
     background: var(--card);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+}
+
+/* The title takes the focus when a list opens, so a screen reader reads which list it is. */
+.sheet h2:focus {
+    outline: none;
+}
+
+.grab {
+    width: 40px;
+    height: 5px;
+    margin: 0 auto 10px;
+    border-radius: 3px;
+    background: var(--line-strong);
+    flex-shrink: 0;
+}
+
+.sheet h2 {
+    margin: 0;
+    padding: 4px 20px 10px;
+}
+
+.sheet-options {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+}
+
+.sheet-option {
+    min-height: 64px;
+    padding: 10px 20px;
+    border: none;
+    border-top: 1px solid var(--row-line);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
     display: flex;
     align-items: center;
     gap: 14px;
     cursor: pointer;
 }
 
-.option.chosen {
-    border: 2px solid var(--accent);
+.sheet-option.chosen {
     background: var(--accent-tint);
 }
 
-.option input {
-    width: 22px;
-    height: 22px;
-    margin: 0;
+.sheet-option.chosen .name {
+    color: var(--accent);
+}
+
+.tick {
     flex-shrink: 0;
-    accent-color: var(--accent);
+    color: var(--accent);
+}
+
+.sheet-option:focus-visible {
+    outline-offset: -3px;
+}
+
+@media (hover: hover) {
+    .select:not(:disabled):hover {
+        border-color: var(--muted);
+    }
+
+    .sheet-option:not(.chosen):hover {
+        background: var(--chip);
+    }
 }
 
 .option-text {
@@ -445,6 +559,23 @@ button:disabled {
 
 /* A tablet or a desktop: the guide stays narrow and centred, as a card; it has no side menu. */
 @media (min-width: 768px) {
+    .sheet {
+        top: 50%;
+        bottom: auto;
+        max-width: 480px;
+        max-height: 80vh;
+        border-radius: 14px;
+        transform: translateY(-50%);
+    }
+
+    .grab {
+        display: none;
+    }
+
+    .sheet h2 {
+        padding-top: 14px;
+    }
+
     .screen {
         max-width: 560px;
         min-height: 0;

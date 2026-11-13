@@ -16,13 +16,16 @@ public sealed record DevantechLayout(string Family, byte ModuleId, int OutputByt
 /// </summary>
 public static class DevantechModels
 {
-    public static BoardModel Eth002 { get; } = Create("devantech-eth002", "Devantech ETH002-B", relays: 2, inputs: 0, analog: 0);
+    /// <summary>Who makes them: the setup guide lists the models by make.</summary>
+    public const string Make = "Devantech";
 
-    public static BoardModel Eth008 { get; } = Create("devantech-eth008", "Devantech ETH008-B", relays: 8, inputs: 0, analog: 0);
+    public static BoardModel Eth002 { get; } = Create("devantech-eth002", "ETH002-B", relays: 2, inputs: 0, analog: 0);
 
-    public static BoardModel Eth484 { get; } = Create("devantech-eth484", "Devantech ETH484-B", relays: 4, inputs: 8, analog: 4);
+    public static BoardModel Eth008 { get; } = Create("devantech-eth008", "ETH008-B", relays: 8, inputs: 0, analog: 0);
 
-    public static BoardModel Eth8020 { get; } = Create("devantech-eth8020", "Devantech ETH8020-B", relays: 20, inputs: 8, analog: 8);
+    public static BoardModel Eth484 { get; } = Create("devantech-eth484", "ETH484-B", relays: 4, inputs: 8, analog: 4);
+
+    public static BoardModel Eth8020 { get; } = Create("devantech-eth8020", "ETH8020-B", relays: 20, inputs: 8, analog: 8);
 
     public static IReadOnlyList<BoardModel> All { get; } = [Eth002, Eth008, Eth484, Eth8020];
 
@@ -106,6 +109,7 @@ public static class DevantechModels
     {
         return new BoardModel(
             id,
+            Make,
             name,
             new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog),
             DevantechApi.DefaultPort,

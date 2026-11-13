@@ -124,6 +124,31 @@ public sealed class BoardCatalogueTests
         Assert.NotNull(BoardCatalogue.Find(BoardCatalogue.EarlierDefaultType));
     }
 
+    // The setup guide asks for the make, then the model: every model is under its make, once, in the catalogue's order.
+    [Fact]
+    public void Should_ListTheMakes_InAlphabeticalOrder_EachWithItsModels()
+    {
+        Assert.Equal(["Devantech", "Velleman", "Waveshare"], BoardCatalogue.Makes.Select(m => m.Name));
+        Assert.Equal(
+            ["VM201", "VM204", "VM208"],
+            BoardCatalogue.Makes.Single(m => m.Name == "Velleman").Models.Select(m => m.ModelName));
+        Assert.Equal(
+            BoardCatalogue.All.Select(r => r.Model).OrderBy(m => m.Make, StringComparer.OrdinalIgnoreCase),
+            BoardCatalogue.Makes.SelectMany(m => m.Models));
+    }
+
+    // The make isn't repeated in the model's name, and the full name still reads as people know it.
+    [Fact]
+    public void Should_NameEachModel_WithoutItsMake()
+    {
+        Assert.All(BoardCatalogue.All, r =>
+        {
+            Assert.False(r.Model.ModelName.StartsWith(r.Model.Make, StringComparison.OrdinalIgnoreCase), r.Model.Id);
+            Assert.Equal($"{r.Model.Make} {r.Model.ModelName}", r.Model.Name);
+        });
+        Assert.Equal("Waveshare Modbus PoE ETH Relay 30CH", BoardCatalogue.Find("waveshare-30")!.Model.Name);
+    }
+
     private static ActiveBoard Build(string type, string vm208Host = "127.0.0.1", Dictionary<string, string?>? settings = null)
     {
         var values = new Dictionary<string, string?> { ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1", ["Vm208:Host"] = vm208Host };
