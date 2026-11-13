@@ -75,6 +75,20 @@ public sealed class EventTextTests
         Assert.Equal(new EventView(false, "I", who, what, null), view);
     }
 
+    // A change the app only noticed after a gap: its time is when it was noticed, so it says the real time is unknown.
+    [Theory]
+    [InlineData("""{"on":false,"noticed":true}""", true)]
+    [InlineData("""{"on":false}""", false)]
+    public void Should_SayTheTimeIsUnknown_ForAnInputChangeNoticedAfterAGap(string details, bool unknown)
+    {
+        var entry = Entry(EventActors.External, EventActions.InputChanged, details, relayId: null);
+        entry.InputId = 2;
+
+        var view = EventText.For(entry, relayName: null, personName: null, inputName: "Door");
+
+        Assert.Equal(("Door:", "Open", unknown), (view.Who, view.What, view.TimeUnknown));
+    }
+
     // An input no longer on the board has no name to show.
     [Fact]
     public void Should_NameAnInputByItsNumber_WithoutItsName()

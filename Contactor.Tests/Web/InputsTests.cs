@@ -194,6 +194,35 @@ public sealed class InputsTests
         Assert.Contains("The input doesn't exist.", missing, StringComparison.Ordinal);
     }
 
+    // The Input screen shows both the input's own "since unknown" and an event's "time unknown": two tooltips, two ids.
+    [Fact]
+    public async Task Should_KeepTheTooltipsApart_OnTheInputScreen()
+    {
+        await using var app = new TestWebApp("Development", John, TestWebApp.WithLostBoard);
+        await RenameInputAsync(app, "Door");
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            db.EventLog.Add(new EventLogEntry
+            {
+                TimestampUtc = DateTime.UtcNow,
+                InputId = 1,
+                Actor = EventActors.External,
+                Action = EventActions.InputChanged,
+                Details = """{"on":false,"noticed":true}""",
+            });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        using var http = app.CreateClient();
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/input/1", Cancel));
+
+        var ids = System.Text.RegularExpressions.Regex.Matches(html, "id=\"(why-[a-z]+-\\d+)\"").Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal(2, ids.Count);
+        Assert.Equal(ids.Count, ids.Distinct().Count());
+        Assert.Contains("aria-label=\"Why is the time unknown for Door?\"", html, StringComparison.Ordinal);
+        Assert.Contains(EventText.WhyTimeUnknown, html, StringComparison.Ordinal);
+    }
+
     private static InputsHandler Handler(TestDatabase database)
     {
         return database.Services.GetRequiredService<InputsHandler>();

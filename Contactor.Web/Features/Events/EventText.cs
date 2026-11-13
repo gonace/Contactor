@@ -14,13 +14,21 @@ namespace Contactor.Web.Features.Events;
 /// <param name="IsAlert">
 /// Shown in red: a safety shut-off, a group that couldn't start, or a board whose relays couldn't be set to normal mode.
 /// </param>
-public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false);
+/// <param name="TimeUnknown">
+/// An input's change the app only noticed after a gap in contact: the event's time is when it was noticed, not when it
+/// happened, so the screens add "time unknown" with the reason (<see cref="EventText.WhyTimeUnknown"/>).
+/// </param>
+public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false, bool TimeUnknown = false);
 
 /// <summary>
 /// Turns stored events into the text of the Events screen.
 /// </summary>
 public static class EventText
 {
+    /// <summary>Why an input's change has "time unknown" on the Events screen.</summary>
+    public const string WhyTimeUnknown =
+        "The app had no contact with the board when this input changed, so it only noticed the change at this time. It may have happened any time before.";
+
     /// <param name="entry">The event.</param>
     /// <param name="relayName">The relay's current name, or null for events without a relay.</param>
     /// <param name="personName">The display name of the person behind it, when the actor is an e-mail, or the input's name when it is an input.</param>
@@ -57,10 +65,11 @@ public static class EventText
     }
 
     // "Door: Open". An input that is on is closed. Without its name (an input no longer on the board): "Input 1: Closed".
+    // One the app only noticed after a gap has its time marked unknown.
     private static EventView InputChange(EventLogEntry entry, string? inputName)
     {
         var name = inputName ?? Input.DefaultName(entry.InputId ?? 1);
-        return new EventView(false, "I", $"{name}:", Input.StateText(Bool(entry.Details, "on") == true), null);
+        return new EventView(false, "I", $"{name}:", Input.StateText(Bool(entry.Details, "on") == true), null, TimeUnknown: InputNoticed(entry.Details));
     }
 
     // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running

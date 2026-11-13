@@ -120,7 +120,7 @@
                                     <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
                                     <span class="badge automatic" aria-hidden="true">@row.View.Badge</span>
                                     <div class="text">
-                                        <span><strong>@row.View.Who</strong> @row.View.What</span>
+                                        <EventWhat Row="row" />
                                         <span class="day">@Events.DayLabel(row.TimestampLocal)</span>
                                     </div>
                                 </div>

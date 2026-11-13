@@ -390,6 +390,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
      - An input's change names it: "Door: Open" or "Door: Closed" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
+     - A change only noticed after a gap in contact reads "Door: Open · time unknown" with an ⓘ giving the reason (`EventWhat.razor`, `WhyUnknown.razor`), here and in the latest events on the Relay, Group and Input screens.
      - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off"), a start that failed and a Waveshare board whose relays couldn't be set to normal mode show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
