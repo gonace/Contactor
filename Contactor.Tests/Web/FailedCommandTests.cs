@@ -175,8 +175,18 @@ public sealed class FailedCommandTests : IAsyncLifetime
 
         var entry = await SingleEventAsync();
         Assert.Equal((2, EventActors.External, EventActions.On), (entry.RelayId!.Value, entry.Actor, entry.Action));
-        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Null((await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);
+        await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
+        {
+            // On outside the app, with its own auto-off for now.
+            Assert.Equal(EventActors.External, (await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);
+        }
+
+        // The next tick in its window takes it over: it is the schedule's, off at the OffTime.
+        _time.Now = OnTime.AddMinutes(1);
+        await Scheduler.TickAsync(Cancel);
+        await using var check = await _database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
     }
 
     [Fact]
