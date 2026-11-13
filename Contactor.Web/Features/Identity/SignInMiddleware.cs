@@ -10,9 +10,10 @@ namespace Contactor.Web.Features.Identity;
 
 /// <summary>
 /// Lets a request through only when the chosen sign-in (<see cref="SignInChoice"/>) says who made it, and puts the
-/// user on <see cref="HttpContext.User"/>. While none is chosen, the installation is being set up: only what
-/// <see cref="SetupMode"/> lets through answers, with nobody signed in. Blazor Server copies that user into the circuit when it starts, which is
-/// where <see cref="CurrentUser"/> reads it. An unknown e-mail becomes a new <see cref="User"/>.
+/// user on <see cref="HttpContext.User"/>. Blazor Server copies that user into the circuit when it starts, which is
+/// where <see cref="CurrentUser"/> reads it. An unknown e-mail becomes a new <see cref="User"/>. While no sign-in is
+/// chosen, the installation is being set up: only what <see cref="SetupMode"/> lets through answers, with nobody
+/// signed in.
 /// </summary>
 public sealed partial class SignInMiddleware
 {
@@ -37,17 +38,17 @@ public sealed partial class SignInMiddleware
         IDbContextFactory<ContactorDbContext> dbFactory,
         ILogger<SignInMiddleware> logger)
     {
+        ArgumentNullException.ThrowIfNull(access);
         _next = next;
         _choice = choice;
-        ArgumentNullException.ThrowIfNull(access);
         _services = services;
         _setup = setup;
         _environment = environment;
+        _dbFactory = dbFactory;
+        _logger = logger;
 
         // Development only (the app refuses to start with it anywhere else): everyone is this person, during setup too.
         _developmentUser = access.Value.UsesDevUser ? IdentityRules.NormalizeEmail(access.Value.DevUserEmail!) : null;
-        _dbFactory = dbFactory;
-        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context)

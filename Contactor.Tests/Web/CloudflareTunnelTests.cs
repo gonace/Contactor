@@ -2,8 +2,6 @@ using System.Collections.Concurrent;
 using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Persistence;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -22,7 +20,7 @@ public sealed class CloudflareTunnelTests
     {
         var process = new FakeCloudflared();
         var logger = new ListLogger();
-        using var service = Create("  ", process, new ManualTimeProvider(), logger);
+        await using var service = await CreateAsync("  ", process, new ManualTimeProvider(), logger);
 
         await service.StartAsync(Cancel);
         await service.ExecuteTask!;
@@ -36,7 +34,7 @@ public sealed class CloudflareTunnelTests
     {
         var process = new FakeCloudflared { Output = ["Registered tunnel connection", "2026-11-12T10:00:00Z ERR Failed to dial a quic connection"] };
         var logger = new ListLogger();
-        using var service = Create($" {Token} ", process, new ManualTimeProvider(), logger);
+        await using var service = await CreateAsync($" {Token} ", process, new ManualTimeProvider(), logger);
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -54,7 +52,7 @@ public sealed class CloudflareTunnelTests
         var time = new ManualTimeProvider();
         var process = new FakeCloudflared { ExitCode = 1 };
         var logger = new ListLogger();
-        using var service = Create(Token, process, time, logger);
+        await using var service = await CreateAsync(Token, process, time, logger);
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -78,7 +76,7 @@ public sealed class CloudflareTunnelTests
         var time = new ManualTimeProvider();
         var process = new FakeCloudflared { ExitCode = 1 };
         var logger = new ListLogger();
-        using var service = Create(Token, process, time, logger);
+        await using var service = await CreateAsync(Token, process, time, logger);
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
         await AdvanceAsync(time, TimeSpan.FromSeconds(1));
@@ -106,7 +104,7 @@ public sealed class CloudflareTunnelTests
         var time = new ManualTimeProvider();
         var process = new FakeCloudflared { Failure = new System.ComponentModel.Win32Exception("No such file or directory") };
         var logger = new ListLogger();
-        using var service = Create(Token, process, time, logger);
+        await using var service = await CreateAsync(Token, process, time, logger);
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -121,7 +119,7 @@ public sealed class CloudflareTunnelTests
     public async Task Should_StopCloudflared_WhenTheAppStops()
     {
         var process = new FakeCloudflared { RunUntilCancelled = true };
-        using var service = Create(Token, process, new ManualTimeProvider(), new ListLogger());
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), new ListLogger());
 
         await service.StartAsync(Cancel);
         await WaitUntilAsync(() => process.Runs == 1);
@@ -138,34 +136,42 @@ public sealed class CloudflareTunnelTests
         time.Advance(by);
     }
 
-    // The tunnel as the app runs it: the chosen way in, kept running by AccessHostedService for the app's lifetime.
-    private static RunningTunnel Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
+    // The tunnel as the app runs it: Cloudflare saved as the way in, kept running by AccessHostedService for the
+    // app's lifetime.
+    private static async Task<RunningTunnel> CreateAsync(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-        services.AddSingleton<IDbContextFactory<ContactorDbContext>>(new NoDatabase());
-        services.AddCloudflare(new ConfigurationBuilder().Build());
-        services.AddAccess(new ConfigurationBuilder().Build());
-        services.Configure<TunnelOptions>(o =>
+        var database = TestDatabase.Create((services, configuration) =>
         {
-            o.Token = token;
-            o.Path = "/opt/cloudflared";
+            services.AddCloudflare(configuration);
+            services.AddAccess(configuration);
+            services.Configure<TunnelOptions>(o =>
+            {
+                o.Token = token;
+                o.Path = "/opt/cloudflared";
+            });
+            services.AddSingleton(time);
+            services.AddSingleton<ICloudflaredProcess>(process);
+            services.AddSingleton<ILogger<CloudflareTunnel>>(logger);
         });
-        services.AddSingleton(time);
-        services.AddSingleton<ICloudflaredProcess>(process);
-        services.AddSingleton<ILogger<CloudflareTunnel>>(logger);
-        var provider = services.BuildServiceProvider();
-        return new RunningTunnel(provider, provider.GetServices<IHostedService>().OfType<AccessHostedService>().Single());
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.Installations.Add(new Installation { AccessType = CloudflareMethods.TunnelId });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await database.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(Cancel);
+        return new RunningTunnel(database, database.Services.GetServices<IHostedService>().OfType<AccessHostedService>().Single());
     }
 
-    private sealed class RunningTunnel : IDisposable
+    private sealed class RunningTunnel : IAsyncDisposable
     {
-        private readonly ServiceProvider _provider;
+        private readonly TestDatabase _database;
         private readonly AccessHostedService _service;
 
-        public RunningTunnel(ServiceProvider provider, AccessHostedService service)
+        public RunningTunnel(TestDatabase database, AccessHostedService service)
         {
-            _provider = provider;
+            _database = database;
             _service = service;
         }
 
@@ -182,17 +188,12 @@ public sealed class CloudflareTunnelTests
             await _service.StopAsync(stop.Token);
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
+            await StopAsync(CancellationToken.None);
             _service.Dispose();
-            _provider.Dispose();
+            await _database.DisposeAsync();
         }
-    }
-
-    // The way in is chosen from the database at start; these tests never read it, so the default stays.
-    private sealed class NoDatabase : IDbContextFactory<ContactorDbContext>
-    {
-        public ContactorDbContext CreateDbContext() => throw new InvalidOperationException("No database in these tests.");
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

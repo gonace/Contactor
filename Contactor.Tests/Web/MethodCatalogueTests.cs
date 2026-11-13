@@ -43,30 +43,29 @@ public sealed class MethodCatalogueTests
         Assert.Contains(CloudflareMethods.AccessId, AccessCatalogue.Find(CloudflareMethods.TunnelId)!.SignIns);
     }
 
+    // A new installation, or one whose sign-in was reset: nothing runs, and the app is in setup mode.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Should_UseCloudflare_WhenNothingIsSaved(bool hasInstallation)
+    public async Task Should_ChooseNothing_WhenNothingIsSaved(bool hasInstallation)
     {
         await using var database = await CreateAsync(hasInstallation ? new Installation { BoardType = "vm201" } : null);
         var (access, signIn) = await ApplyAsync(database);
 
-        Assert.Equal(CloudflareMethods.TunnelId, access.Current.Id);
-        Assert.Equal(CloudflareMethods.AccessId, signIn.Current.Id);
-        Assert.IsType<CloudflareTunnel>(access.Current.Create(database.Services));
-        Assert.IsType<CloudflareAccess>(signIn.Current.Create(database.Services));
+        Assert.Null(access.Current);
+        Assert.Null(signIn.Current);
     }
 
-    // With one method in each catalogue the saved one is also the default: this only shows a saved id is read. It
-    // tells them apart once a second method is added (Issue #3).
     [Fact]
     public async Task Should_UseTheSavedMethods_IgnoringCase()
     {
         await using var database = await CreateAsync(new Installation { AccessType = " Cloudflare ", SignInType = "CLOUDFLARE-ACCESS" });
         var (access, signIn) = await ApplyAsync(database);
 
-        Assert.Equal(CloudflareMethods.TunnelId, access.Current.Id);
-        Assert.Equal(CloudflareMethods.AccessId, signIn.Current.Id);
+        Assert.Equal(CloudflareMethods.TunnelId, access.Current?.Id);
+        Assert.Equal(CloudflareMethods.AccessId, signIn.Current?.Id);
+        Assert.IsType<CloudflareTunnel>(access.Current!.Create(database.Services));
+        Assert.IsType<CloudflareAccess>(signIn.Current!.Create(database.Services));
     }
 
     [Fact]
