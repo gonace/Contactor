@@ -1,7 +1,7 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// A person let in by Cloudflare Access.
+/// A person let in by the sign-in.
 /// </summary>
 public sealed class User
 {
