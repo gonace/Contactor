@@ -62,4 +62,19 @@ public static class SimulatorCatalogue
         var id = type?.Trim() ?? "";
         return All.FirstOrDefault(m => string.Equals(m.Model.Id, id, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// The port the page offers for a new board of this model: its suggested port, or the first one after it that no
+    /// board here uses. An unknown model counts as the first one.
+    /// </summary>
+    public static int FreePort(string? type, IReadOnlyCollection<int> taken)
+    {
+        var port = (Find(type) ?? All[0]).Port;
+        while (taken.Contains(port) && port < 65535)
+        {
+            port++;
+        }
+
+        return port;
+    }
 }
