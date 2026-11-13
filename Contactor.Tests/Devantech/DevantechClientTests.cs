@@ -138,6 +138,36 @@ public sealed class DevantechClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_KeepABoardThatRefusesEveryRelay_AndLoseOneWhoseAnswersCantBeRead(bool refused)
+    {
+        // The first read answers; every read after it ends in a closed connection and counts. Each relay is refused
+        // (01), or gets a value a relay command can't have (05).
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [19, 2, 28],
+            [0x7A] => [0xFF],
+            [0x20, _, 0] => refused ? [0x01] : [0x05],
+            _ when Interlocked.Increment(ref reads) == 1 => [0],
+            _ => null,
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+
+        for (var command = 0; command < 3; command++)
+        {
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
+        }
+
+        // Refused: each refusal starts the count over, so the failed reads between them never reach 3.
+        await Wait.UntilAsync(() => (refused ? Volatile.Read(ref reads) >= 2 : !run.Client.State.IsConnected) && run.Time.PendingTimers == 1);
+        Assert.Equal(refused, run.Client.State.IsConnected);
+        Assert.Equal(!refused, run.Traces.Any(t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public async Task Should_SendTheRestOfTheMask_OnANewConnection_AfterAnUnreadableAnswer()
     {
@@ -562,13 +592,13 @@ public sealed class DevantechClientTests
     {
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _stop = new();
-        private readonly Func<byte[], byte[]> _answer;
+        private readonly Func<byte[], byte[]?> _answer;
         private readonly Task _loop;
         private readonly List<string> _received = [];
         private int _sent;
         private int _connections;
 
-        private ScriptedBoard(TcpListener listener, Func<byte[], byte[]> answer)
+        private ScriptedBoard(TcpListener listener, Func<byte[], byte[]?> answer)
         {
             _listener = listener;
             _answer = answer;
@@ -594,7 +624,8 @@ public sealed class DevantechClientTests
 
         public int Connections => Volatile.Read(ref _connections);
 
-        public static ScriptedBoard Start(Func<byte[], byte[]> answer)
+        /// <param name="answer">The answer to a packet: empty for none, null to close the connection.</param>
+        public static ScriptedBoard Start(Func<byte[], byte[]?> answer)
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
@@ -651,6 +682,11 @@ public sealed class DevantechClientTests
                         lock (_received)
                         {
                             _received.Add(DevantechProtocol.Hex(request));
+                        }
+
+                        if (answer is null)
+                        {
+                            return;
                         }
 
                         if (answer.Length > 0)
