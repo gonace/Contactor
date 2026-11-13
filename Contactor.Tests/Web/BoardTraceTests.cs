@@ -109,6 +109,53 @@ public sealed class BoardTraceTests : IDisposable
     }
 
     [Fact]
+    public void Should_TellTheScreensAHeldBackCount_AtTheEndOfTheSecond()
+    {
+        var notices = 0;
+        long countAtLastNotice = 0;
+        _trace.RoutineCounted += (_, _) =>
+        {
+            notices++;
+            countAtLastNotice = _trace.RoutineLeftOut;
+        };
+        var routine = new BoardTraceEntry(Now, BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true);
+
+        // A poll and its answer a few milliseconds apart, then nothing: the second must still reach the screens.
+        _trace.Record(routine);
+        _time.Advance(TimeSpan.FromMilliseconds(5));
+        _trace.Record(routine);
+        _trace.Record(routine);
+        Assert.Equal((1, 1), (notices, countAtLastNotice));
+        Assert.Equal(1, _time.PendingTimers);
+
+        _time.Advance(TimeSpan.FromMilliseconds(994));
+        Assert.Equal(1, notices);
+        _time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal((2, 3), (notices, countAtLastNotice));
+        Assert.Equal(0, _time.PendingTimers);
+
+        // Nothing held back: no timer, and nothing more to tell.
+        _time.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, notices);
+    }
+
+    [Fact]
+    public void Should_DropAHeldBackNotice_WhenCleared()
+    {
+        var notices = 0;
+        _trace.RoutineCounted += (_, _) => notices++;
+        var routine = new BoardTraceEntry(Now, BoardTraceDirection.Sent, "Ask for status", null, false, IsRoutine: true);
+        _trace.Record(routine);
+        _trace.Record(routine);
+
+        _trace.Clear();
+        _time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(1, notices);
+        Assert.Equal(0, _time.PendingTimers);
+    }
+
+    [Fact]
     public void Should_StopListening_WhenDisposed()
     {
         _trace.Dispose();

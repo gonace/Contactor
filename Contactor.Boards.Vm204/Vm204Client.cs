@@ -65,7 +65,6 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         _poller = new BoardPoller<Vm204Status>(this, timeProvider, Vm204Status.SwitchesComparer)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
-            IsNoAnswer = IsNoAnswer,
         };
     }
 
@@ -257,29 +256,27 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
                         throw new BoardNotConnectedException("The VM204 is logging in again; the command was not sent.");
                     }
 
-                    // No answer (IsNoAnswer) is thrown as it is, so the poller counts it as a failed poll.
+                    // Every failure is thrown as it is, so the poller counts it as a failed poll, as it would a poll's.
+                    // A refused key is dropped: the poll the poller asks for at once logs in again.
                     var answer = await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token)
                         .ConfigureAwait(false);
-                    try
-                    {
-                        return ReadStatusAnswer(answer, key);
-                    }
-                    catch (Exception ex) when (ex is Vm204AccessDeniedException or Vm204ProtocolException)
-                    {
-                        // A refused key is dropped: the poll the poller asks for at once logs in again.
-                        throw new BoardNotConnectedException($"The VM204 didn't take the command: {ex.Message}", ex);
-                    }
+                    return ReadStatusAnswer(answer, key);
                 },
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (IsNoAnswer(ex) || ex is Vm204ProtocolException or UriFormatException)
+        catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
         {
-            // The poller counted a missing answer as a failed poll and reads the board at once.
+            // The poller counted it as a failed poll and reads the board at once.
             throw new BoardNotConnectedException("The VM204 didn't answer; the command may not have been carried out.", ex);
+        }
+        catch (Exception ex) when (ex is Vm204AccessDeniedException or Vm204ProtocolException)
+        {
+            // The board answered, but not with a status: counted and read in the same way.
+            throw new BoardNotConnectedException($"The VM204 didn't take the command: {ex.Message}", ex);
         }
     }
 
-    // A request that got no answer at all: it counts as a failed poll, whether a poll or a command sent it.
+    // A request that got no answer at all.
     private static bool IsNoAnswer(Exception exception)
     {
         return exception is TimeoutException or HttpRequestException or IOException;

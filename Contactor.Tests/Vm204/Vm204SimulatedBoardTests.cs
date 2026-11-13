@@ -2,6 +2,8 @@ using System.Net.Sockets;
 using System.Text;
 using Contactor.Boards;
 using Contactor.Boards.Vm204;
+using Contactor.Tests.Vm208;
+using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Contactor.Tests.Vm204;
@@ -76,6 +78,28 @@ public sealed class Vm204SimulatedBoardTests
 
         var buffer = new byte[16];
         var read = await ReadOrZeroAsync(stream, buffer);
+        Assert.Equal(0, read);
+        Assert.Equal(0, board.RequestCount);
+    }
+
+    [Fact]
+    public async Task Should_CloseAConnection_ThatSendsNoRequestWithinFiveSeconds()
+    {
+        var time = new ManualTimeProvider();
+        await using var board = new Vm204Simulator { TimeProvider = time };
+        board.Start();
+        using var tcp = new TcpClient();
+        await tcp.ConnectAsync("127.0.0.1", board.Port, Cancel);
+        var stream = tcp.GetStream();
+        await stream.WriteAsync(Encoding.ASCII.GetBytes("GET /api/status"), Cancel);
+
+        // The handler waits for the rest of the head, with its timeout on the clock.
+        await Wait.UntilAsync(() => time.PendingTimers == 1);
+        time.Advance(Vm204Simulator.RequestHeadTimeout - TimeSpan.FromMilliseconds(1));
+        Assert.Equal(1, time.PendingTimers);
+        time.Advance(TimeSpan.FromMilliseconds(1));
+
+        var read = await ReadOrZeroAsync(stream, new byte[16]);
         Assert.Equal(0, read);
         Assert.Equal(0, board.RequestCount);
     }

@@ -47,9 +47,9 @@ global.json                 # SDK version and test runner (Microsoft.Testing.Pla
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
 Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel, BoardPoller. No dependencies.
-Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF.
-Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF.
-Contactor.Boards.Vm208/     # The VM208: HTTP client, simulator and its adapters (Vm208Board, Vm208Connection, Vm208Traffic). No web/EF.
+Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF. README.md: its protocol
+Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF. README.md: its routes
+Contactor.Boards.Vm208/     # The VM208: HTTP client, simulator and its adapters (Vm208Board, Vm208Connection, Vm208Traffic). No web/EF. README.md: its routes
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
@@ -89,73 +89,6 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 
 ---
 
-## VM201 TCP protocol (port 9760)
-
-Source: Velleman's protocol description, via https://github.com/tlrh314/misc/tree/main/vm201 (a Python reference implementation). Confirmed with a packet dump from the Whadda forum.
-
-### Packet format
-
-```
-<STX><LEN><CMD><data_1>...<data_n><CHECKSUM><ETX>
-STX = 0x02
-ETX = 0x03
-LEN = total number of bytes in the packet, including STX and ETX
-CHECKSUM = two's complement of the sum of all preceding bytes: (byte)(-(sum(STX..last data) % 256) & 0xFF)
-```
-
-Note: the comment header of the original document wrongly says STX=0x0F/ETX=0x04. **0x02/0x03 is right.**
-
-Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0x58 → 0x100−0x58 = 0xA8).
-
-### Commands
-
-| Name | Byte | LEN | Direction | Data |
-|---|---|---|---|---|
-| CMD_AUTH | `'A'` | 5 | board → client | Login required |
-| CMD_USERNAME | `'U'` | 14 | client → board | 9 bytes user name, zero padded (max 8 characters) |
-| CMD_PASSWORD | `'W'` | 14 | client → board | 9 bytes password, zero padded (max 8 characters) |
-| CMD_LOGGED_IN | `'L'` | 5 | board → client | Logged in |
-| CMD_ACCESS_DENIED | `'X'` | 5 | board → client | Wrong login (followed by CMD_CLOSED) |
-| CMD_CLOSED | `'C'` | 5 | both | Close the session |
-| CMD_NAME | `'N'` | 22 | board → client | 1 byte channel (1–9, 9 = the input) + 16 bytes name |
-| CMD_STATUS_REQ | `'R'` | 5 | client → board | Request status |
-| CMD_STATUS | `'S'` | 8 | board → client | 3 bytes: outputs, timer, input |
-| CMD_ON | `'O'` | 6 | client → board | Channel mask: 1 = turn on |
-| CMD_OFF | `'F'` | 6 | client → board | Channel mask: 1 = turn off |
-| CMD_TOGGLE | `'T'` | 6 | client → board | Channel mask: 1 = toggle |
-| CMD_PULSE | `'P'` | 8 | client → board | Channel mask, time 1–99, unit `'s'`/`'m'`/`'h'` |
-| CMD_UPDATE | `'V'` | 6 | client → board | Set all: 1 = on, 0 = off |
-| CMD_TMR_ENA | `'E'` | 6 | client → board | Enable the board's timer programs (mask) |
-| CMD_TMR_DIS | `'D'` | 6 | client → board | Disable the board's timer programs (mask) |
-| CMD_TMR_TOGGLE | `'G'` | 6 | client → board | Toggle the board's timer programs (mask) |
-
-**Channel mask:** bit 0 = channel 1 … bit 7 = channel 8.
-
-**CMD_STATUS data:** byte 1 = outputs (one bit per channel, 1 = ON), byte 2 = the board's timers (1 = active), byte 3 = input (bit 0, 1 = ON).
-
-### Session flow
-
-1. Connect over TCP to `host:9760`.
-2. The board sends `CMD_LOGGED_IN` (no auth) **or** `CMD_AUTH`. On `CMD_AUTH`: send `CMD_USERNAME` and then `CMD_PASSWORD`. The answer is `CMD_LOGGED_IN`, or `CMD_ACCESS_DENIED` + `CMD_CLOSED`.
-3. After login the board sends **9 `CMD_NAME`** (8 outputs + the input) and then **`CMD_STATUS`**.
-4. From then on the board sends **`CMD_STATUS` on its own at every change**, including changes made through the board's web interface, its buttons or its own timers.
-5. End with `CMD_CLOSED`.
-
-### Known quirks
-
-- Channel names can contain garbage characters from the firmware. **The app ignores the board's names**; the names are stored in SQLite.
-- An ON/OFF that changes nothing gets **no** `CMD_STATUS` reply. Never wait for a reply after a command. Rely on the pushed status and on a periodic `CMD_STATUS_REQ`.
-- Read the stream with a real frame parser: read STX, LEN, then the remaining LEN−2 bytes. Never assume one `Read` returns exactly one packet: TCP can split and merge packets.
-- Validate the checksum and ETX. Log and drop invalid packets, but don't disconnect.
-
-### Unknown – verify against the real hardware
-
-- How many TCP clients the board allows at once. Assume **one**: the app holds exactly one connection.
-- Whether the board closes idle connections. That is why `CMD_STATUS_REQ` is sent every 15 seconds as a keep-alive.
-- Whether the physical relay state survives a power cut, and if so in which state.
-
----
-
 ## Boards (`Contactor.Boards`)
 
 The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, and knows its model from the board catalogue, so another make of board needs its own project with those adapters, a reference from `Contactor.Web` and a line in the catalogue, and nothing else changes. One board per installation for now; several at once is issue #4.
@@ -163,56 +96,16 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
 - `BoardState`: `IsConnected`, the relays and digital inputs that are on, and `LastContactUtc`. The board is the source of truth; the app never stores relay state.
 - `BoardCapabilities`: how many relays and inputs (and analog inputs, which the app doesn't show yet), and whether the board reports changes by itself.
-- `BoardPoller<TReading>`: the loop for a board that doesn't report changes by itself (the VM204 and the VM208). The board's own code implements `IPolledBoard<TReading>` (connect, e.g. log in; read the state once); the poller asks every `PollInterval` (2 s) with `TimeProvider`, refreshes `State` (and so `LastContactUtc`) on every poll but reports a state only when it changed (a comparer decides what counts), counts the board as lost after `FailuresBeforeLost` (3) failed polls in a row (a command that got no answer, `IsNoAnswer`, counts as one, so a dead board is lost even while commands keep coming), and connects again with backoff 1 s → 30 s. Commands go through `RunCommandAsync`: a poll under way is cancelled (that doesn't count as a failure) so the command goes at once, it throws `BoardNotConnectedException` once the board is lost (decided under the same lock as the polls), and what the command returns, the board's state right after it, is taken as a poll's answer. A command that fails (refused, unreadable or no answer) is followed by a read at once, so the screens show what the board really did; a command without an answer counts once, and the read after it is an ordinary poll that counts on its own, so a dead board is lost after 3 unanswered requests in a row. `PollNow` asks at once, `Restart` ends the connection or wait (new address or login), and `Forget` (a new address) resets the state to "never answered" and drops an answer from before still on its way.
+- `BoardPoller<TReading>`: the loop for a board that doesn't report changes by itself (the VM204 and the VM208). The board's own code implements `IPolledBoard<TReading>` (connect, e.g. log in; read the state once); the poller asks every `PollInterval` (2 s) with `TimeProvider`, refreshes `State` (and so `LastContactUtc`) on every poll but reports a state only when it changed (a comparer decides what counts), counts the board as lost after `FailuresBeforeLost` (3) failed polls in a row (a failed command counts as one, so a dead or broken board is lost even while commands keep coming), and connects again with backoff 1 s → 30 s. Commands go through `RunCommandAsync`: a poll under way is cancelled (that doesn't count as a failure) so the command goes at once, it throws `BoardNotConnectedException` once the board is lost (decided under the same lock as the polls), and what the command returns, the board's state right after it, is taken as a poll's answer. A command fails as a poll would: whatever it throws (refused, unreadable or no answer) counts once, except a cancellation by the caller and `BoardNotConnectedException`, with which the command says it sent nothing (the VM204 logging in again). A failed command is followed by a read at once, so the screens show what the board really did; that read is an ordinary poll that counts on its own, so a dead board is lost after 3 unanswered requests in a row. `PollNow` asks at once, `Restart` ends the connection or wait (new address or login), and `Forget` (a new address) resets the state to "never answered" and drops an answer from before still on its way.
 - `ChannelMask`: a set of channels (relays or inputs) numbered from 1, at most 64; bit 0 is channel 1.
 - `IBoardConnection`: where the board is (`BoardEndpoint`) and its login (`BoardLogin`), with the defaults from the board's own settings, changeable while the app runs; `CheckLogin` says what the board can't take, and `RunAsync` keeps the connection open.
 - `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
 - **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, name, capabilities, default port, login length and an optional login hint in plain words) and how to register it. The model chosen in the setup guide (`Installation.BoardType`, read before the services are built: `ReadSavedBoardType`) wins; until one is saved, `Board:Type` chooses (default `vm201`). The app refuses to start on a model the catalogue doesn't have. A model is never switched on its own afterwards: replacing the board is issue #32. `AddBoards` registers the chosen model and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the connection open.
-- **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, and one line in the catalogue. Nothing else in the app changes.
+- **Each board is described in `Contactor.Boards.<Model>/README.md`:** its protocol or routes, its client and simulator, and what to check on a real board. Read it before you change that board.
+- **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, one line in the catalogue, and a `README.md` that describes the board. Nothing else in the app changes.
 - `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`).
 - What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
 - The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
-
-## The VM201 client (`Contactor.Boards.Vm201`)
-
-- `Vm201PacketCodec`: `byte[] Encode(byte cmd, ReadOnlySpan<byte> data)` and an incremental decoder over a `PipeReader` or `Stream`.
-- `Vm201Client`:
-  - Holds one persistent connection. On failure: reconnect with exponential backoff (1 s → max 30 s).
-  - Exposes `Vm201State` (Outputs byte, TimerMask, Input, `IsConnected`, `LastContactUtc`) and an event or `IObservable` when the status changes.
-  - Commands (`TurnOnAsync(mask)`, `TurnOffAsync(mask)`, `RequestStatusAsync()`, `DisableBoardTimersAsync(mask)`) are serialized through a `Channel<T>`, so only one writer is used at a time.
-  - Timeouts: connect 5 s, login 5 s.
-  - `SetEndpoint` and `SetLogin` change the address and login while it runs: the current connection, attempt or wait ends at once. The web app applies the saved `BoardSetting` before the first connection. `Vm201Login` is a class, not a record, so its password can't leak through a generated `ToString`.
-  - `Vm201:LogPackets` (off by default) logs every packet in and out as hex with its command letter (`Vm201PacketTrace`); user name and password packets only as their command and length. The board keeps no log of its own, so this is how to see what a real board does.
-  - The `Traced` event reports every packet in and out and every connection step (connecting, lost and why, the wait before the next attempt, skipped bytes) as a `Vm201TraceEntry`. User name and password packets come cut to their first three bytes. The web app keeps the latest 100 in memory (`BoardTrace`) for the Debug screen; the keep-alive and the channel names are routine, so it only counts them.
-- `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes); it translates `Vm201State` and refuses relays above 8.
-- `Vm201Connection` and `Vm201Traffic`: the client as an `IBoardConnection` and an `IBoardTraffic` (`Vm201TraceText` puts each packet in plain words). `Vm201Model` is its catalogue entry.
-- `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
-
-## The VM204 (`Contactor.Boards.Vm204`)
-
-The VM204 is not the VM201's protocol. Source: Velleman's firmware, https://github.com/Velleman/VM204-Firmware, branch V1.1 (CycloneTCP); each route names its firmware file in `Vm204Api`. It is controlled only through its web server: plain HTTP, port 80 unless changed on the board, JSON answers, one request per connection (`Connection: close`), at most 3 connections. It never reports a change by itself, so the app polls.
-
-- `GET /api/auth?user=U&password=P` → `{"ApiKey":"…"}` (32 letters and digits, kept by the board until someone makes a new one on its web page); a wrong login → 400. Factory login `admin` / `VM204`.
-- `GET /api/status?key=K` → `{"relays": [b,b,b,b],"pulse": [b,b,b,b],"inputs": [b,b,b,b],"analog": n}`; a wrong key → 400.
-- `GET /api/relay/on?key=K&relay=1,3` and `/api/relay/off?…` → switch the listed relays (1–4) and answer the status; a wrong key → 400.
-- `/api/*` needs no HTTP basic auth; the board's own pages do. The firmware doesn't percent-decode the query and copies it into small buffers, so a user name or password is at most 31 characters, 48 together, of letters, digits and `- . _ ~ ! $ ' ( ) * + , ; : @` (`Vm204Login`).
-
-- `Vm204Client`: `HttpClient` (no proxy, answers capped at 4 KiB, 5 s per request on `TimeProvider`), one request at a time; logs in for the key and polls through `BoardPoller` (`Vm204:PollSeconds`, default 2). A refused key is dropped and the next poll, asked for at once, logs in again. Commands throw `BoardNotConnectedException` while disconnected, never wait behind a poll, and their answer (the status) is the confirmation; a change of the analog value alone isn't reported. Its `Traced` event gives each request and answer in plain words (`Vm204TraceText`): the key, the user name and the password never show, and the polls and unchanged answers are routine.
-- `Vm204Json` reads the answers strictly (anything else is a `Vm204ProtocolException` and counts as a failed poll). `Vm204Board` (4 relays, 4 inputs, 1 analog input, doesn't report changes), `Vm204Connection`, `Vm204Traffic` and `Vm204Model` (id `vm204`, port 80) are its adapters, `Features/Vm204` registers them.
-- `Vm204Simulator`: a small HTTP server on `TcpListener` with the same routes and 400s as the firmware, an optional login, relays and inputs set at the board, the analog value, a new key, and refused or dropped connections. The simulator's page offers port 8204 for a new one (`SimulatorModel.SuggestedPort`), as 80 needs rights a developer doesn't have.
-- To check on a real board: the status JSON as above, whether an input reads `true` closed or open, that the status right after a command already shows it, logins with symbols and the 48-character total (the firmware's `authUser` also reads past the end of the query), the key's length and characters (its buffer is 32 bytes and the terminator `gen_random` writes overruns it), that `relay/on` and `relay/off` answer properly (their handler in `httpServerUriNotFoundCallback` has a missing return), and days of polling every 2 s.
-
-## The VM208 (`Contactor.Boards.Vm208`)
-
-The VM208 (ESP32, WLAN or Ethernet) is neither the VM201's nor the VM204's protocol. Source: Velleman's firmware, https://github.com/Velleman/VM208 (`src/Network/server_VM208.cpp`, ESPAsyncWebServer, ArduinoJson 5), and its library https://github.com/velleman/VM208INT; each route names its firmware file in `Vm208Api`. Plain HTTP on port 80, JSON answers, one request per connection. It never reports a change by itself, so the app polls. Only the card itself is used (`interface=-1`); VM208EX extension modules are left out for now.
-
-- `GET /status?interface=-1&socket=0` → `{"Channels":[{"name":"…","state":b,"pulseActive":b,"timerActive":b} ×4],"m1":b,"m2":b,"input":b}`. The firmware answers only with exactly two parameters and reads them by position; `{"Channels":[]}` when it couldn't take its I/O lock within 1 s (a failed poll).
-- `POST /relay`, form `index=N&state=0|1&interface=-1&socket=0` → the same status. One relay per request: a mask is sent as one request per relay, all of them even when one answer can't be read (an error, `{"Channels":[]}`, broken JSON), and the last readable answer is the state, with a read at once to confirm the rest. When no relay's answer can be read (always so for a single relay), the command throws "The VM208 didn't take the command: …", as the VM204 does, so nothing counts as switched. A request that gets no answer at all stops the rest and counts as a failed poll. Either way the board is read at once. Read by position: a missing parameter or a relay outside 1–4 crashes the board, so the app only ever sends all four, with relays 1–4.
-- No login: HTTP basic auth protects only the board's own pages, never `/status` or `/relay`, so `Vm208Model` has login length 0 and `Vm208Connection` takes no login but none. `m1`/`m2` are the two transistor outputs, not relays: read and traced, never counted.
-- `Vm208Client`: `HttpClient` (no proxy, answers capped at 8 KiB since relay names have no length limit, 5 s per request on `TimeProvider`), polling through `BoardPoller` (`Vm208:PollSeconds`, default 2). `Vm208Json` reads the answer strictly where the app uses it (each `state`, `input`), after UTF-8 decoding with replacement, so a broken name can't make every status unreadable. `Vm208Board` (4 relays, 1 input, doesn't report changes), `Vm208Connection`, `Vm208Traffic` and `Vm208Model` (id `vm208`, port 80) are its adapters, `Features/Vm208` registers them.
-- `Vm208Simulator`: a small HTTP server on `TcpListener` with the same routes, relays and the input set at the board, refused or dropped connections, and no answer where the firmware gives none or would crash. The simulator's page offers port 8208.
-- The board's own schedules, pulses and timers compete with the app's and are left as they are (the firmware has `POST /setalarm` and `/shedule_set` that could turn the schedules off).
-- To check on a real board: the status JSON as above, whether the input reads `true` closed or open (it is the raw pin level), that the answer to `/relay` already shows the change (if the firmware can't take its lock within 100 ms the relay isn't switched), that switching a relay stops its pulse or timer, that the board's own schedules and buttons show on the next poll, how it copes with polling every 2 s for days, and `/status` with an extension module plugged in.
 
 ## The simulator (`Contactor.Simulator`)
 
@@ -593,7 +486,7 @@ See `DEPLOY.md` for the steps.
 
 ## Testing
 
-- **Codec:** encode/decode, checksum, the verified example (`02 06 4F 01 A8 03`), split and merged TCP packets, and an invalid checksum.
+- **Codec:** encode/decode, checksum, the verified example (`02 06 4F 01 A8 03`, in `Contactor.Boards.Vm201/README.md`), split and merged TCP packets, and an invalid checksum.
 - **Client against the simulator:** login with and without auth, wrong password, pushed status, reconnect after a disconnect.
 - **Scheduling:** with an injected `TimeProvider`. Test weekdays, over midnight, both daylight saving changes, overlaps and the reconciliation at start.
 - **Auto-off:** that it triggers, and not for relays turned on by a schedule.

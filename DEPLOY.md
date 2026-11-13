@@ -82,7 +82,7 @@ over again and run `install.sh`; it keeps the settings.
    board shows up as a Velleman device in the router's list of clients.
 2. In the app, **Settings → Relay board**: the board's address, its login if it has one, and **Save**. "Board
    online at …" shows when it answers.
-3. With the **Debug** tab open, test what the board does (the open questions in `AGENTS.md`):
+3. With the **Debug** tab open, test what the board does (the open questions under "Unknown – verify against the real hardware" in `Contactor.Boards.Vm201/README.md`):
    - Turn a relay on and off in the app: "→ Turn on relay n", then "← Status: relay n on".
    - Press a button on the board, or use its own web page: the change shows in Events as "Outside the app".
    - **How many clients at once?** Open the board's web page while the app is connected. Does either lose its

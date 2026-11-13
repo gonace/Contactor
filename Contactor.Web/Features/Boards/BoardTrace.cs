@@ -38,14 +38,17 @@ public sealed class BoardTrace : IDisposable
     private readonly TimeProvider _timeProvider;
     private readonly Lock _lock = new();
     private readonly Queue<BoardTraceItem> _items = new(Capacity);
+    private readonly ITimer _heldNoticeTimer;
     private long _nextId = 1;
     private long _routineLeftOut;
     private DateTimeOffset? _routineNoticedAt;
+    private bool _noticeHeld;
 
     public BoardTrace(IBoardTraffic traffic, TimeProvider timeProvider)
     {
         _traffic = traffic;
         _timeProvider = timeProvider;
+        _heldNoticeTimer = _timeProvider.CreateTimer(_ => RaiseHeldNotice(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _traffic.Traced += OnTraced;
     }
 
@@ -57,7 +60,8 @@ public sealed class BoardTrace : IDisposable
 
     /// <summary>
     /// Raised when <see cref="RoutineLeftOut"/> grew, at most once every <see cref="RoutineNoticeInterval"/>, so an open
-    /// Debug screen keeps its count current without re-rendering for every poll. On the board connection's loop.
+    /// Debug screen keeps its count current without re-rendering for every poll. A step that comes sooner is told at the
+    /// end of that interval, so the count shown never stays behind. On the board connection's loop, or on a timer.
     /// </summary>
     public event EventHandler? RoutineCounted;
 
@@ -95,6 +99,7 @@ public sealed class BoardTrace : IDisposable
             _items.Clear();
             _routineLeftOut = 0;
             _routineNoticedAt = null;
+            StopHeldNotice();
         }
 
         Cleared?.Invoke(this, EventArgs.Empty);
@@ -103,6 +108,7 @@ public sealed class BoardTrace : IDisposable
     public void Dispose()
     {
         _traffic.Traced -= OnTraced;
+        _heldNoticeTimer.Dispose();
     }
 
     private void OnTraced(object? sender, BoardTraceEntry entry)
@@ -143,12 +149,45 @@ public sealed class BoardTrace : IDisposable
             _routineLeftOut++;
             if (_routineNoticedAt is { } last && now - last < RoutineNoticeInterval)
             {
+                // Inside the interval: one timer tells the screens at its end, however many steps come before.
+                if (!_noticeHeld)
+                {
+                    _noticeHeld = true;
+                    _heldNoticeTimer.Change(last + RoutineNoticeInterval - now, Timeout.InfiniteTimeSpan);
+                }
+
                 return;
             }
 
             _routineNoticedAt = now;
+            StopHeldNotice();
         }
 
         RoutineCounted?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RaiseHeldNotice()
+    {
+        lock (_lock)
+        {
+            if (!_noticeHeld)
+            {
+                return;
+            }
+
+            _noticeHeld = false;
+            _routineNoticedAt = _timeProvider.GetUtcNow();
+        }
+
+        RoutineCounted?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void StopHeldNotice()
+    {
+        if (_noticeHeld)
+        {
+            _noticeHeld = false;
+            _heldNoticeTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
     }
 }
