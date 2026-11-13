@@ -109,7 +109,8 @@ public sealed class Vm208Simulator : ISimulatedBoard
 
     /// <summary>
     /// How many of the next statuses come busy (<c>{"Channels":[]}</c>), as from a board that couldn't take its I/O lock
-    /// within 1 s. A relay request still switches the relay, as the firmware does under its own, shorter lock.
+    /// within 1 s. A relay request still switches the relay, as the firmware does under its own, shorter lock. 0 or less:
+    /// none.
     /// </summary>
     public int BusyNext
     {
@@ -445,14 +446,31 @@ public sealed class Vm208Simulator : ISimulatedBoard
         return null;
     }
 
+    // Counts BusyNext down while it is above 0; 0 or less answers normally.
+    private bool TakeBusy()
+    {
+        while (true)
+        {
+            var left = Volatile.Read(ref _busyNext);
+            if (left <= 0)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref _busyNext, left - 1, left) == left)
+            {
+                return true;
+            }
+        }
+    }
+
     private byte[] RespondStatus()
     {
-        if (Interlocked.Decrement(ref _busyNext) >= 0)
+        if (TakeBusy())
         {
             return Respond(HttpStatusCode.OK, """{"Channels":[]}""", "Busy: no relays sent", isError: true, json: true);
         }
 
-        Interlocked.Exchange(ref _busyNext, 0);
         Vm208Status status;
         bool routine;
         lock (_lock)
