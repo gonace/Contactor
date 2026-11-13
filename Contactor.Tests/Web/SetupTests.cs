@@ -41,7 +41,7 @@ public sealed class SetupTests
 
         Assert.Contains("Welcome to Contactor", html, StringComparison.Ordinal);
         Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
-        Assert.Contains("Skip for now", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Skip for now", html, StringComparison.Ordinal);
         Assert.Contains("value=\"John\"", html, StringComparison.Ordinal);
     }
 
@@ -59,43 +59,48 @@ public sealed class SetupTests
         Assert.Contains("Hi John", guide, StringComparison.Ordinal);
     }
 
+    // Before the guide is done there may be no board at all: every page opens on the guide.
+    [Theory]
+    [InlineData("/settings")]
+    [InlineData("/events")]
+    [InlineData("/debug")]
+    [InlineData("/relay/1")]
+    [InlineData("/group/new")]
+    public async Task Should_OpenEveryPageOnTheGuide_UntilItIsDone(string page)
+    {
+        await using var app = new TestWebApp("Development", John, setUp: false);
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync(page, Cancel));
+
+        Assert.Contains("Welcome to Contactor", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
+    }
+
+    // The guide always starts at the beginning: the board is chosen on step 2 before anything after it.
     [Fact]
-    public async Task Should_CarryOnAtTheStepInTheAddress_AfterARestart()
+    public async Task Should_OpenOnTheFirstStep_WhateverTheAddress()
     {
         await using var app = new TestWebApp("Development", John, setUp: false);
         using var http = app.CreateClient();
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup?step=3", Cancel));
 
-        Assert.Contains("STEP 3 OF 5", html, StringComparison.Ordinal);
-        Assert.Contains("Where is the board?", html, StringComparison.Ordinal);
-        Assert.Contains("Velleman VM201 · its address on your network.", html, StringComparison.Ordinal);
-        Assert.Contains("Go on without a connection", html, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Should_ListEveryModel_OnStepTwo()
-    {
-        await using var app = new TestWebApp("Development", John, setUp: false);
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup?step=2", Cancel));
-
-        Assert.Contains("Which relay board?", html, StringComparison.Ordinal);
-        Assert.Contains("8 relays · 1 input", html, StringComparison.Ordinal);
-        Assert.Contains("Velleman VM204", html, StringComparison.Ordinal);
-        Assert.Matches("value=\"vm201\" checked", html);
-    }
-
-    [Fact]
-    public async Task Should_NotOpenOnTheLastStep_FromTheAddress()
-    {
-        await using var app = new TestWebApp("Development", John, setUp: false);
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup?step=5", Cancel));
-
         Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_StartWithNoBoard_OnANewInstallation()
+    {
+        await using var app = new TestWebApp("Development", John, setUp: false);
+        using var http = app.CreateClient();
+        await http.GetStringAsync("/", Cancel);
+
+        var boards = app.Services.GetRequiredService<BoardSwitch>();
+        Assert.Null(boards.Model);
+        Assert.Equal(0, app.Services.GetRequiredService<IRelayBoard>().Capabilities.RelayCount);
+        await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
+        Assert.False(await db.Relays.AnyAsync(Cancel));
     }
 
     [Fact]
@@ -152,8 +157,9 @@ public sealed class SetupTests
             },
             new Dictionary<string, string?> { ["Vm201:DisableBoardTimers"] = "false" });
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseBoardAsync("vm201");
         var connection = database.Services.GetRequiredService<IBoardConnection>();
-        var client = database.Services.GetRequiredService<Vm201Client>();
+        var client = database.Services.BoardService<Vm201Client>();
         var service = database.Services.GetServices<IHostedService>().OfType<BoardHostedService>().Single();
 
         await service.StartAsync(Cancel);
@@ -188,6 +194,7 @@ public sealed class SetupTests
             },
             new Dictionary<string, string?> { ["Vm201:DisableBoardTimers"] = "false" });
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseBoardAsync("vm201");
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -253,66 +260,113 @@ public sealed class SetupTests
     }
 
     [Fact]
-    public async Task Should_UseTheSavedModel_OverBoardType()
+    public async Task Should_RunNoBoard_UntilOneIsChosen()
     {
-        await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
-        var settings = new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:Default"] = database.ConnectionString,
-            ["Board:Type"] = "vm201",
-        };
+        await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm204" });
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var boards = database.Services.GetRequiredService<BoardSwitch>();
 
-        Assert.Null(PersistenceServiceCollectionExtensions.ReadSavedBoardType(Configuration(settings)));
-        Assert.Equal(Vm201Model.Model, BuildBoards(settings).GetRequiredService<BoardModel>());
+        // A new installation, and one part of the way through the guide: Board:Type doesn't choose for it.
+        await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
+        Assert.Null(boards.Model);
+        await AddInstallationAsync(database, new Installation());
+        await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
-        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
-        {
-            db.Installations.Add(new Installation { BoardType = "vm204" });
-            await db.SaveChangesAsync(Cancel);
-        }
+        Assert.Null(boards.Model);
+        Assert.Same(BoardSwitch.NoBoard, boards.Capabilities);
+        Assert.False(boards.State.HasAnswered);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => boards.TurnOnAsync(ChannelMask.Of(1), Cancel));
+        Assert.Throws<InvalidOperationException>(() => boards.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760)));
+        Assert.Equal("No relay board has been chosen yet.", boards.CheckLogin(BoardLogin.None));
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.Relays.AnyAsync(Cancel));
+        Assert.False(await db.Inputs.AnyAsync(Cancel));
+    }
 
-        Assert.Equal("vm204", PersistenceServiceCollectionExtensions.ReadSavedBoardType(Configuration(settings)));
-        Assert.Equal(Vm204Model.Model, BuildBoards(settings).GetRequiredService<BoardModel>());
+    [Fact]
+    public async Task Should_RunTheSavedModel_AndSeedItsRows_AtStart()
+    {
+        await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm201" });
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await AddInstallationAsync(database, new Installation { BoardType = "waveshare-16", SetupDoneUtc = Now });
+
+        await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
+
+        Assert.Equal("waveshare-16", database.Services.GetRequiredService<BoardSwitch>().Model?.Id);
+        Assert.Equal(16, database.Services.GetRequiredService<IRelayBoard>().Capabilities.RelayCount);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(16, await db.Relays.CountAsync(Cancel));
+        Assert.Equal(16, await db.RelayRuntimes.CountAsync(Cancel));
+    }
+
+    // An installation in use from before the guide chose the model keeps the board it ran: Board:Type's, or the VM201.
+    [Theory]
+    [InlineData(null, "vm201")]
+    [InlineData("vm208", "vm208")]
+    public async Task Should_KeepTheEarlierBoard_OfAnInstallationInUse(string? type, string expected)
+    {
+        await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = type });
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now });
+
+        await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
+
+        Assert.Equal(expected, database.Services.GetRequiredService<BoardSwitch>().Model?.Id);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(expected, (await db.Installations.SingleAsync(Cancel)).BoardType);
     }
 
     [Fact]
     public async Task Should_RefuseToStart_OnASavedModelItDoesNotKnow()
     {
-        await using var database = TestDatabase.Create();
-        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
-        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
-        {
-            db.Installations.Add(new Installation { BoardType = "vm999" });
-            await db.SaveChangesAsync(Cancel);
-        }
+        await using var database = CreateChoiceDatabase();
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await AddInstallationAsync(database, new Installation { BoardType = "vm999" });
 
-        var error = Assert.Throws<InvalidOperationException>(
-            () => BuildBoards(new Dictionary<string, string?> { ["ConnectionStrings:Default"] = database.ConnectionString }));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));
         Assert.Contains("vm999", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Should_ReadNoSavedModel_WithoutADatabase()
+    public async Task Should_RefuseToStart_OnABoardTypeItDoesNotKnow_ForAnInstallationInUse()
     {
-        var folder = Path.Combine(Path.GetTempPath(), "contactor-tests", Guid.NewGuid().ToString("N"));
-        var settings = new Dictionary<string, string?> { ["ConnectionStrings:Default"] = $"Data Source={Path.Combine(folder, "contactor.db")}" };
+        await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm209" });
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now });
 
-        Assert.Null(PersistenceServiceCollectionExtensions.ReadSavedBoardType(Configuration(settings)));
-        Assert.False(Directory.Exists(folder));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));
+        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30.", error.Message);
     }
 
     [Fact]
-    public async Task Should_SayWhetherTheAppMustRestart_ForTheChosenModel()
+    public async Task Should_SwitchToTheChosenModel_WhileTheAppRuns()
+    {
+        await using var rig = await Rig.StartAsync();
+        var boards = rig.Database.Services.GetRequiredService<BoardSwitch>();
+
+        await rig.Setup.ChooseBoardAsync("vm201", Cancel);
+        var vm201 = boards.Current;
+        await rig.Setup.ChooseBoardAsync(" VM204 ", Cancel);
+        await Assert.ThrowsAsync<ArgumentException>(() => rig.Setup.ChooseBoardAsync("vm999", Cancel));
+
+        Assert.Equal("vm204", boards.Model?.Id);
+        Assert.NotSame(vm201, boards.Current);
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal("vm204", (await db.Installations.SingleAsync(Cancel)).BoardType);
+    }
+
+    [Fact]
+    public async Task Should_AddTheRowsOfABiggerBoard_WhenChosen()
     {
         await using var rig = await Rig.StartAsync();
 
-        Assert.False(await rig.Setup.ChooseBoardAsync("vm201", Cancel));
-        Assert.True(await rig.Setup.ChooseBoardAsync(" VM204 ", Cancel));
-        await Assert.ThrowsAsync<ArgumentException>(() => rig.Setup.ChooseBoardAsync("vm999", Cancel));
+        await rig.Setup.ChooseBoardAsync("waveshare-30", Cancel);
 
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Equal("vm204", (await db.Installations.SingleAsync(Cancel)).BoardType);
+        Assert.Equal(Enumerable.Range(1, 30), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
+        Assert.Equal(30, await db.RelayRuntimes.CountAsync(Cancel));
     }
 
     [Fact]
@@ -492,6 +546,8 @@ public sealed class SetupTests
         await using var database = TestDatabase.Create(
             (services, configuration) => services.AddBoards(configuration),
             new Dictionary<string, string?> { ["Vm201:Host"] = "127.0.0.1" });
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseBoardAsync("vm201");
         var connection = database.Services.GetRequiredService<IBoardConnection>();
         var (endpoint, login) = (connection.Endpoint, connection.Login);
 
@@ -603,18 +659,16 @@ public sealed class SetupTests
         return await db.EventLog.OrderBy(e => e.Id).ToListAsync(Cancel);
     }
 
-    private static IConfiguration Configuration(IDictionary<string, string?> settings)
+    private static TestDatabase CreateChoiceDatabase(Dictionary<string, string?>? settings = null)
     {
-        return new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        return TestDatabase.Create((services, configuration) => services.AddBoards(configuration), settings);
     }
 
-    private static ServiceProvider BuildBoards(IDictionary<string, string?> settings)
+    private static async Task AddInstallationAsync(TestDatabase database, Installation installation)
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddBoards(Configuration(settings));
-        return services.BuildServiceProvider();
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        db.Installations.Add(installation);
+        await db.SaveChangesAsync(Cancel);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -631,7 +685,10 @@ public sealed class SetupTests
         }
     }
 
-    /// <summary>The setup guide's handler on a database of its own, with a board in memory running a VM201.</summary>
+    /// <summary>
+    /// The setup guide's handler on a database of its own, with a board in memory with 8 relays in place of the app's
+    /// board; the guide's choice of model still builds the real one behind it.
+    /// </summary>
     private sealed class Rig : IAsyncDisposable
     {
         private Rig(TestDatabase database, FakeRelayBoard board)
@@ -658,7 +715,7 @@ public sealed class SetupTests
 
                 services.AddLocalClock(configuration);
                 services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
-                services.AddSingleton(Vm201Model.Model);
+                services.AddBoards(configuration);
                 services.AddEvents(configuration);
                 services.AddSingleton<IRelayBoard>(board);
                 services.AddRelays(configuration);

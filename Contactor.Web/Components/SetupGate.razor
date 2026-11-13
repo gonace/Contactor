@@ -1,0 +1,32 @@
+@using Contactor.Web.Features.Setup
+@inject SetupHandler Setup
+@inject NavigationManager Navigation
+
+@*
+    Until the setup guide is done, every page opens on it: before then there may be no relay board at all, and the
+    guide is where it is chosen. Nothing of the page is shown on the way.
+*@
+@if (_open)
+{
+    @ChildContent
+}
+
+@code {
+    private bool _open;
+
+    /// <summary>The page asked for.</summary>
+    [Parameter, EditorRequired]
+    public Type PageType { get; set; } = default!;
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _open = PageType == typeof(SetupGuide) || await Setup.IsDoneAsync(CancellationToken.None);
+        if (!_open)
+        {
+            Navigation.NavigateTo("setup", replace: true);
+        }
+    }
+}

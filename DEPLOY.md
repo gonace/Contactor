@@ -49,13 +49,10 @@ image is out: the new `compose.yml` has no separate `cloudflared`, so an older i
 
 **Check it:** open your hostname on your phone and sign in with the code. A new installation opens on a short setup
 guide: your name, which relay board, its address and login (with a live "Board online" check), and names for the
-relays, with "Try" to hear which is which. Without a board, choose "Go on without a connection"; "Skip for now" on
-the first step opens the app at once. Relays then shows "No contact with the relay board", which is right without a
-board. Turn on **Settings → Debugging**: the Debug tab then shows the app trying to connect, so the whole chain from
+relays, with "Try" to hear which is which. Every page opens on the guide until it is done. Without a board on the
+network yet, choose "Go on without a connection": Relays then shows "No contact with the relay board", which is right
+without a board. Turn on **Settings → Debugging**: the Debug tab then shows the app trying to connect, so the whole chain from
 the phone to the Pi works.
-
-Choosing a board other than the VM201 in the guide restarts the app once (compose starts it again by itself), and
-the guide carries on where it was.
 
 ## 3. Nightly updates
 

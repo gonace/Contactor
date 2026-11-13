@@ -40,13 +40,14 @@ public sealed class BoardHostedServiceTests
                 ["Vm201:DisableBoardTimers"] = "false",
             });
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseBoardAsync("vm201");
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             db.BoardSettings.Add(new BoardSetting { Host = "127.0.0.1", Port = saved.Port });
             await db.SaveChangesAsync(Cancel);
         }
 
-        var client = database.Services.GetRequiredService<Vm201Client>();
+        var client = database.Services.BoardService<Vm201Client>();
         var service = database.Services.GetServices<IHostedService>().OfType<BoardHostedService>().Single();
         await service.StartAsync(Cancel);
         try

@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Tests.Web;
@@ -17,7 +18,8 @@ namespace Contactor.Tests.Web;
 /// <summary>
 /// The whole web app in memory with its own database file, a board port where nothing listens, and every request
 /// coming from <see cref="RemoteAddress"/> (the in-memory test server has no address of its own). Unless asked for a
-/// new installation, it has been through the setup guide, so the app opens on the relay list.
+/// new installation, it has been through the setup guide with the board <c>Board:Type</c> names (the VM201 when not
+/// set), so the app opens on the relay list.
 /// </summary>
 internal sealed class TestWebApp : WebApplicationFactory<Program>
 {
@@ -79,6 +81,9 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
             using var db = factory.CreateDbContext();
             db.Installations.Add(new Installation { SetupDoneUtc = DateTime.UtcNow });
             db.SaveChanges();
+
+            // As at the start after an upgrade: an installation in use runs Board:Type's board, or the VM201.
+            host.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
 
         return host;

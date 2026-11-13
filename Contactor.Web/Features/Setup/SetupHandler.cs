@@ -19,7 +19,7 @@ public sealed record SetupRelayChoice(int Id, string? Name, bool IsActive);
 
 /// <summary>
 /// The setup guide a new installation opens on: whether it is done, the model of board, the relays' names and
-/// "Try". Anyone signed in may go through it until someone finishes or skips it; afterwards it isn't shown again.
+/// "Try". Anyone signed in may go through it until someone finishes it; afterwards it isn't shown again.
 /// </summary>
 public sealed class SetupHandler
 {
@@ -33,7 +33,7 @@ public sealed class SetupHandler
     public static readonly TimeSpan TryAutoOffAfter = TryLength + TimeSpan.FromSeconds(5);
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly BoardModel _model;
+    private readonly BoardChoice _choice;
     private readonly IRelayBoard _board;
     private readonly RelayControl _control;
     private readonly RelaySettingsHandler _relays;
@@ -46,7 +46,7 @@ public sealed class SetupHandler
 
     public SetupHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
-        BoardModel model,
+        BoardChoice choice,
         IRelayBoard board,
         RelayControl control,
         RelaySettingsHandler relays,
@@ -55,7 +55,7 @@ public sealed class SetupHandler
         ILogger<SetupHandler> logger)
     {
         _dbFactory = dbFactory;
-        _model = model;
+        _choice = choice;
         _board = board;
         _control = control;
         _relays = relays;
@@ -64,7 +64,7 @@ public sealed class SetupHandler
         _logger = logger;
     }
 
-    /// <summary>Whether the guide has been finished or skipped.</summary>
+    /// <summary>Whether the guide has been finished: until then, every page opens on it.</summary>
     public async Task<bool> IsDoneAsync(CancellationToken cancellationToken)
     {
         if (_done)
@@ -77,7 +77,7 @@ public sealed class SetupHandler
         return _done;
     }
 
-    /// <summary>Records that the guide was finished or skipped; the app opens on the relay list from then on.</summary>
+    /// <summary>Records that the guide was finished; the app opens on the relay list from then on.</summary>
     public async Task MarkDoneAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -88,30 +88,20 @@ public sealed class SetupHandler
     }
 
     /// <summary>
-    /// Saves the model of board, which wins over <c>Board:Type</c> from now on. Returns true when it isn't the model
-    /// the app runs with, so the app has to restart to use it. Throws <see cref="InvalidOperationException"/> once the
-    /// guide is done: the model is never changed afterwards (replacing the board is issue #32).
+    /// Saves the model of board and switches to it at once, while the app runs (<see cref="BoardChoice"/>): the guide
+    /// goes straight on. Throws <see cref="InvalidOperationException"/> once the guide is done: the model is never
+    /// changed afterwards (replacing the board is issue #32).
     /// </summary>
-    public async Task<bool> ChooseBoardAsync(string type, CancellationToken cancellationToken)
+    public async Task ChooseBoardAsync(string type, CancellationToken cancellationToken)
     {
         var model = BoardCatalogue.Find(type)?.Model
             ?? throw new ArgumentException($"\"{type}\" isn't a board in the catalogue.", nameof(type));
-        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var installation = await GetAsync(db, cancellationToken);
-        if (installation.SetupDoneUtc is not null)
+        if (await IsDoneAsync(cancellationToken))
         {
             throw new InvalidOperationException("The setup guide is done; the board's model is no longer chosen there.");
         }
 
-        installation.BoardType = model.Id;
-        await db.SaveChangesAsync(cancellationToken);
-        var restart = model.Id != _model.Id;
-        if (restart)
-        {
-            _logger.BoardChosen(model.Name, _model.Name);
-        }
-
-        return restart;
+        await _choice.ChooseAsync(model, cancellationToken);
     }
 
     /// <summary>Every relay the board has, in order, with its name and group.</summary>
@@ -235,9 +225,6 @@ public sealed class SetupHandler
 
 internal static partial class SetupLog
 {
-    [LoggerMessage(Level = LogLevel.Information, Message = "The setup guide chose the {Chosen}; the app runs with the {Running} and restarts to use it")]
-    public static partial void BoardChosen(this ILogger logger, string chosen, string running);
-
     [LoggerMessage(Level = LogLevel.Information, Message = "\"Try\" of relay {RelayId} failed and the relay didn't come on: nothing to turn off")]
     public static partial void TryNotOn(this ILogger logger, int relayId);
 

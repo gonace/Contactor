@@ -27,7 +27,7 @@ public sealed class RelayControlTests : IAsyncLifetime
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private Vm201Client Client => _database.Services.GetRequiredService<Vm201Client>();
+    private Vm201Client Client => _database.Services.BoardService<Vm201Client>();
 
     private RelayControl Control => _database.Services.GetRequiredService<RelayControl>();
 
@@ -51,6 +51,7 @@ public sealed class RelayControlTests : IAsyncLifetime
                 ["Vm201:DisableBoardTimers"] = "false",
             });
         await _database.Services.InitializeDatabaseAsync(Cancel);
+        await _database.Services.UseBoardAsync("vm201");
         _board = _database.Services.GetServices<IHostedService>().OfType<BoardHostedService>().Single();
         await _board.StartAsync(Cancel);
         await WaitUntilAsync(() => Client.State.IsConnected);

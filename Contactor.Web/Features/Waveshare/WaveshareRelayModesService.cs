@@ -34,7 +34,7 @@ public sealed partial class WaveshareRelayModesService : BackgroundService
         _logger = logger;
     }
 
-    // Subscribes here rather than in ExecuteAsync, which .NET runs on a background thread: BoardHostedService could
+    // Subscribes here rather than in ExecuteAsync, which .NET runs on a background thread: the board could
     // connect, and the client reset the modes, before this listens.
     public override Task StartAsync(CancellationToken cancellationToken)
     {

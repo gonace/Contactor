@@ -30,7 +30,8 @@ public sealed class Vm201TimersServiceTests
         await simulator.SetTimerMaskAsync(0x0F);
         await using var database = CreateDatabase(simulator, disableBoardTimers: true);
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var client = database.Services.GetRequiredService<Vm201Client>();
+        await database.Services.UseBoardAsync("vm201");
+        var client = database.Services.BoardService<Vm201Client>();
         var services = StartOrder(database);
 
         foreach (var service in services)
@@ -78,7 +79,8 @@ public sealed class Vm201TimersServiceTests
         await other.SetTimerMaskAsync(0x0F);
         await using var database = CreateDatabase(simulator, disableBoardTimers: true);
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var client = database.Services.GetRequiredService<Vm201Client>();
+        await database.Services.UseBoardAsync("vm201");
+        var client = database.Services.BoardService<Vm201Client>();
         var services = StartOrder(database);
 
         foreach (var service in services)
@@ -104,6 +106,50 @@ public sealed class Vm201TimersServiceTests
         }
     }
 
+    // Switching boards while the app runs: the VM201's connection and timers stop with it, and a VM201 chosen again
+    // is a new board, whose timers are disabled again.
+    [Fact]
+    public async Task Should_StopWithItsBoard_AndDisableTheTimersAgain_WhenTheVm201IsChosenAgain()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x0F);
+        await using var database = CreateDatabase(simulator, disableBoardTimers: true);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var first = await database.Services.UseBoardAsync("vm201");
+        var services = StartOrder(database);
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
+        try
+        {
+            await WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 1);
+            var timers = Assert.IsType<Vm201TimersService>(Assert.Single(first.Extras));
+
+            await database.Services.UseBoardAsync("vm204");
+            await WaitUntilAsync(() => simulator.State.Clients.Count == 0);
+            Assert.NotNull(timers.ExecuteTask);
+            await timers.ExecuteTask.WaitAsync(WaitTimeout, Cancel);
+
+            await simulator.SetTimerMaskAsync(0x0F);
+            var again = await database.Services.UseBoardAsync("vm201");
+            Assert.NotSame(first, again);
+            await WaitUntilAsync(() => simulator.TimerMask == 0);
+            await WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 2);
+        }
+        finally
+        {
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
+        }
+
+        Assert.Equal(2, simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.TimerDisable));
+    }
+
     [Fact]
     public async Task Should_LeaveBoardTimersAlone_WhenTurnedOffInSettings()
     {
@@ -112,7 +158,8 @@ public sealed class Vm201TimersServiceTests
         await simulator.SetTimerMaskAsync(0x0F);
         await using var database = CreateDatabase(simulator, disableBoardTimers: false);
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var client = database.Services.GetRequiredService<Vm201Client>();
+        await database.Services.UseBoardAsync("vm201");
+        var client = database.Services.BoardService<Vm201Client>();
         var services = StartOrder(database);
 
         foreach (var service in services)
@@ -139,18 +186,18 @@ public sealed class Vm201TimersServiceTests
     }
 
     [Fact]
-    public async Task Should_RegisterOneBoard_AndSeedItsRelays()
+    public async Task Should_BuildTheVm201WithItsTimers_AndSeedItsRelays_WhenChosen()
     {
         await using var simulator = new Vm201Simulator();
         simulator.Start();
         await using var database = CreateDatabase(simulator, disableBoardTimers: false);
-
-        var board = database.Services.GetRequiredService<IRelayBoard>();
         await database.Services.InitializeDatabaseAsync(Cancel);
 
-        // One instance, so the client has exactly one subscriber passing its state on.
-        Assert.Same(database.Services.GetRequiredService<Vm201Board>(), board);
-        Assert.Same(board, database.Services.GetRequiredService<IRelayBoard>());
+        var board = await database.Services.UseBoardAsync("vm201");
+
+        Assert.IsType<Vm201Board>(board.Board);
+        Assert.IsType<Vm201TimersService>(Assert.Single(board.Extras));
+        Assert.Same(database.Services.GetRequiredService<BoardSwitch>(), database.Services.GetRequiredService<IRelayBoard>());
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(Enumerable.Range(1, 8), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
     }
@@ -174,11 +221,10 @@ public sealed class Vm201TimersServiceTests
             });
     }
 
-    // As the app starts them: the VM201's timers listen before the connection runs.
+    // The board's connection, which starts the VM201's timers before it connects.
     private static List<IHostedService> StartOrder(TestDatabase database)
     {
-        var hosted = database.Services.GetServices<IHostedService>().ToList();
-        return [.. hosted.OfType<Vm201TimersService>(), .. hosted.OfType<BoardHostedService>()];
+        return [.. database.Services.GetServices<IHostedService>().OfType<BoardHostedService>()];
     }
 
     private static async Task<int> CountEventsAsync(TestDatabase database)

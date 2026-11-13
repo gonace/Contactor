@@ -4,6 +4,8 @@ using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
 using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -11,47 +13,46 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Contactor.Tests.Web;
 
-/// <summary>Choosing the board model with <c>Board:Type</c>.</summary>
+/// <summary>Building each model of board in the catalogue, as the app does when it is chosen.</summary>
 public sealed class BoardCatalogueTests
 {
     [Theory]
-    [InlineData(null)]
     [InlineData("vm201")]
     [InlineData(" VM201 ")]
-    public void Should_RegisterTheVm201_WhenChosenOrNotSet(string? type)
+    public async Task Should_BuildTheVm201_WhenChosen(string type)
     {
-        using var services = Build(type);
+        await using var board = Build(type);
 
-        Assert.Same(Vm201Model.Model, services.GetRequiredService<BoardModel>());
-        Assert.IsType<Vm201Board>(services.GetRequiredService<IRelayBoard>());
-        Assert.IsType<Vm201Connection>(services.GetRequiredService<IBoardConnection>());
-        Assert.IsType<Vm201Traffic>(services.GetRequiredService<IBoardTraffic>());
+        Assert.Same(Vm201Model.Model, board.Model);
+        Assert.IsType<Vm201Board>(board.Board);
+        Assert.IsType<Vm201Connection>(board.Connection);
+        Assert.IsType<Vm201Traffic>(board.Traffic);
     }
 
     [Theory]
     [InlineData("vm204")]
     [InlineData(" VM204")]
-    public void Should_RegisterTheVm204_WhenChosen(string type)
+    public async Task Should_BuildTheVm204_WhenChosen(string type)
     {
-        using var services = Build(type);
+        await using var board = Build(type);
 
-        Assert.Same(Vm204Model.Model, services.GetRequiredService<BoardModel>());
-        Assert.IsType<Vm204Board>(services.GetRequiredService<IRelayBoard>());
-        Assert.IsType<Vm204Connection>(services.GetRequiredService<IBoardConnection>());
-        Assert.IsType<Vm204Traffic>(services.GetRequiredService<IBoardTraffic>());
+        Assert.Same(Vm204Model.Model, board.Model);
+        Assert.IsType<Vm204Board>(board.Board);
+        Assert.IsType<Vm204Connection>(board.Connection);
+        Assert.IsType<Vm204Traffic>(board.Traffic);
     }
 
     [Theory]
     [InlineData("vm208")]
     [InlineData("VM208 ")]
-    public void Should_RegisterTheVm208_WhenChosen(string type)
+    public async Task Should_BuildTheVm208_WhenChosen(string type)
     {
-        using var services = Build(type);
+        await using var board = Build(type);
 
-        Assert.Same(Vm208Model.Model, services.GetRequiredService<BoardModel>());
-        Assert.IsType<Vm208Board>(services.GetRequiredService<IRelayBoard>());
-        Assert.IsType<Vm208Connection>(services.GetRequiredService<IBoardConnection>());
-        Assert.IsType<Vm208Traffic>(services.GetRequiredService<IBoardTraffic>());
+        Assert.Same(Vm208Model.Model, board.Model);
+        Assert.IsType<Vm208Board>(board.Board);
+        Assert.IsType<Vm208Connection>(board.Connection);
+        Assert.IsType<Vm208Traffic>(board.Traffic);
     }
 
     [Theory]
@@ -60,39 +61,36 @@ public sealed class BoardCatalogueTests
     [InlineData("Waveshare-8C")]
     [InlineData("waveshare-16")]
     [InlineData(" waveshare-30")]
-    public void Should_RegisterEachWaveshareModel_WhenChosen(string type)
+    public async Task Should_BuildEachWaveshareModel_WhenChosen(string type)
     {
-        using var services = Build(type);
+        await using var board = Build(type);
 
-        var model = services.GetRequiredService<BoardModel>();
+        var model = board.Model;
         Assert.Contains(model, WaveshareModels.All);
         Assert.Equal(type.Trim().ToLowerInvariant(), model.Id);
-        var board = Assert.IsType<WaveshareBoard>(services.GetRequiredService<IRelayBoard>());
-        Assert.Same(model.Capabilities, board.Capabilities);
-        Assert.Same(model, services.GetRequiredService<WaveshareClient>().Model);
-        Assert.IsType<WaveshareConnection>(services.GetRequiredService<IBoardConnection>());
-        Assert.IsType<WaveshareTraffic>(services.GetRequiredService<IBoardTraffic>());
-        Assert.False(services.GetRequiredService<IBoardConnection>().Endpoint.HasHost);
-        Assert.Equal(4196, services.GetRequiredService<IBoardConnection>().Endpoint.Port);
+        var waveshare = Assert.IsType<WaveshareBoard>(board.Board);
+        Assert.Same(model.Capabilities, waveshare.Capabilities);
+        Assert.Same(model, board.Services.GetRequiredService<WaveshareClient>().Model);
+        Assert.IsType<WaveshareConnection>(board.Connection);
+        Assert.IsType<WaveshareTraffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(4196, board.Connection.Endpoint.Port);
     }
 
     [Fact]
-    public void Should_BuildTheVm208_WithoutAnAddress()
+    public async Task Should_BuildTheVm208_WithoutAnAddress()
     {
-        using var services = Build("vm208", vm208Host: "");
+        await using var board = Build("vm208", vm208Host: "");
 
-        Assert.False(services.GetRequiredService<IBoardConnection>().Endpoint.HasHost);
-        Assert.Equal("", services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Vm208Options>>().Value.Host);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal("", board.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Vm208Options>>().Value.Host);
     }
 
-    [Theory]
-    [InlineData("vm209")]
-    [InlineData("")]
-    public void Should_RefuseToStart_WithABoardItDoesNotKnow(string type)
+    // Checked when the board is built, so a wrong setting fails where it is chosen, not later on the connection.
+    [Fact]
+    public void Should_RefuseToBuild_WithSettingsTheBoardCannotTake()
     {
-        var error = Assert.Throws<InvalidOperationException>(() => Build(type));
-
-        Assert.Equal($"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30.", error.Message);
+        Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() => Build("vm204", settings: new() { ["Vm204:PollSeconds"] = "0" }));
     }
 
     [Fact]
@@ -102,18 +100,27 @@ public sealed class BoardCatalogueTests
 
         Assert.Equal(ids.Distinct().Count(), ids.Count);
         Assert.All(ids, id => Assert.Equal(id.ToLowerInvariant(), id));
-        Assert.NotNull(BoardCatalogue.Find(BoardCatalogue.DefaultType));
+        Assert.NotNull(BoardCatalogue.Find(BoardCatalogue.EarlierDefaultType));
     }
 
-    private static ServiceProvider Build(string? type, string vm208Host = "127.0.0.1")
+    private static ActiveBoard Build(string type, string vm208Host = "127.0.0.1", Dictionary<string, string?>? settings = null)
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Board:Type"] = type, ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1", ["Vm208:Host"] = vm208Host })
-            .Build();
-        var services = new ServiceCollection();
-        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddBoards(configuration);
-        return services.BuildServiceProvider();
+        var values = new Dictionary<string, string?> { ["Vm201:Host"] = "127.0.0.1", ["Vm204:Host"] = "127.0.0.1", ["Vm208:Host"] = vm208Host };
+        foreach (var (key, value) in settings ?? [])
+        {
+            values[key] = value;
+        }
+
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var app = new ServiceCollection()
+            .AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance)
+            .AddSingleton(typeof(ILogger<>), typeof(NullLogger<>))
+            .AddSingleton(TimeProvider.System)
+
+            // What only some boards have logs events: built, but never used here.
+            .AddDbContextFactory<ContactorDbContext>(options => options.UseSqlite("Data Source=unused.db"))
+            .BuildServiceProvider();
+        var registration = BoardCatalogue.Find(type) ?? throw new ArgumentException($"No board \"{type}\".", nameof(type));
+        return registration.Create(registration.Model, app, configuration);
     }
 }

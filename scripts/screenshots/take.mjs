@@ -25,13 +25,23 @@ const data = mkdtempSync(join(tmpdir(), 'contactor-screenshots-'));
 const database = join(data, 'contactor.db');
 const children = [];
 
+// The built app itself rather than `dotnet run`, so stopping the child stops the app.
 function start(project, env) {
-    const child = spawn('dotnet', ['run', '--project', project, '--no-build', '--no-launch-profile'], {
+    const child = spawn('dotnet', [join('bin', 'Debug', 'net10.0', `${project}.dll`)], {
+        cwd: project,
         env: { ...process.env, DOTNET_ENVIRONMENT: 'Development', ASPNETCORE_ENVIRONMENT: 'Development', ...env },
         stdio: 'ignore',
     });
     children.push(child);
     return child;
+}
+
+async function stop(child) {
+    if (child.exitCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill();
+        await exited;
+    }
 }
 
 async function waitFor(check, what) {
@@ -71,9 +81,6 @@ function seed() {
         rename.run(name, active, id);
     }
 
-    // Past the setup guide, so the app opens on the relays.
-    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "BoardType", "SetupDoneUtc") VALUES (1, NULL, ?)').run('2026-11-01 08:00:00');
-
     const user = db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (?, ?, 0)');
     user.run('john@example.com', 'John');
     user.run('jane@example.com', 'Jane');
@@ -101,6 +108,13 @@ function seed() {
     db.close();
 }
 
+// Past the setup guide with a VM201, so the app runs that board from its next start and opens on the relays.
+function setUp() {
+    const db = new DatabaseSync(database);
+    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "BoardType", "SetupDoneUtc") VALUES (1, \'vm201\', ?)').run('2026-11-01 08:00:00');
+    db.close();
+}
+
 async function shoot(browser, colorScheme, shots) {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme });
     for (const [name, path, act, fullPage] of shots) {
@@ -122,13 +136,20 @@ try {
         Simulator__Boards__0__Type: 'vm201',
         Simulator__Boards__0__Port: String(boardPort),
     });
-    start('Contactor.Web', {
+    const web = {
         ASPNETCORE_URLS: base,
         ConnectionStrings__Default: `Data Source=${database}`,
         Backup__Folder: join(data, 'backups'),
         Vm201__Host: '127.0.0.1',
         Vm201__Port: String(boardPort),
-    });
+    };
+
+    // The first start makes the database; the board is chosen at start, so the app starts again to run it.
+    const first = start('Contactor.Web', web);
+    await waitFor(async () => (await fetch(base + 'alive')).ok, 'the app');
+    setUp();
+    await stop(first);
+    start('Contactor.Web', web);
     await waitFor(async () => (await fetch(base + 'alive')).ok, 'the app');
     seed();
 

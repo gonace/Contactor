@@ -11,7 +11,7 @@
 @inject BackupService Backup
 @inject IRelayBoard Relays
 @inject IBoardConnection Connection
-@inject BoardModel Model
+@inject BoardSwitch Boards
 @inject CurrentUser CurrentUser
 @inject LocalClock Clock
 @inject BoardTrafficSetting Debugging
@@ -150,6 +150,9 @@
 </div>
 
 @code {
+    // Settings only opens once the setup guide is done, and a board is always chosen by then.
+    private BoardModel Model => Boards.Model!;
+
     private static readonly string VersionText = AppBuild.Current.Text;
 
     private SignedInUser? _user;
