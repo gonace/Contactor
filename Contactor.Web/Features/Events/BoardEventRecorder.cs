@@ -53,6 +53,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // comes: a polled board reports a state only when it changes, so its next status may be long in coming.
     private BoardState? _retry;
     private TimeSpan _retryDelay;
+
+    // Whether the waiting status came before the connection was lost since, and how the recorder stood when it first
+    // came: it is then recorded as of that moment, not as the one that brings contact back.
+    private bool _retryBeforeLoss;
+    private (bool Watching, DateTime? DisconnectedSinceUtc, bool LossLogged) _retryContext;
     private DateTime _retryAtUtc;
     private DateTime? _disconnectedSinceUtc;
     private readonly IBoardConnection? _connection;
@@ -122,6 +127,13 @@ public sealed partial class BoardEventRecorder : BackgroundService
                     {
                         while (_states.Reader.TryRead(out var state))
                         {
+                            // The status waiting for its retry first: a change the newer one no longer shows (an input
+                            // that closed and opened again) is recorded too. Not one from a board forgotten since.
+                            if (_retry is { } waiting && !IsForgotten(state))
+                            {
+                                await HandleSafelyAsync(() => HandleAsync(waiting, stoppingToken));
+                            }
+
                             await HandleSafelyAsync(() => HandleAsync(state, stoppingToken));
                         }
                     }
@@ -131,6 +143,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
                     // The check interval passed without a new status.
                 }
 
+                // Also while there is no contact: a status from before the loss is recorded as of before it.
                 if (_retry is { } retry && _clock.UtcNow >= _retryAtUtc)
                 {
                     await HandleSafelyAsync(() => HandleAsync(retry, stoppingToken));
@@ -157,18 +170,25 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     private async Task HandleAsync(BoardState state, CancellationToken cancellationToken)
     {
-        // A newer status replaces one that failed: it is compared with the same last recorded status, so it records
-        // the failed one's changes that it still shows.
+        // A newer connected status replaces one that failed again: it is compared with the same last recorded status,
+        // so it records the failed one's changes that it still shows.
         var retrying = ReferenceEquals(state, _retry);
-        _retry = null;
+        var replacing = _retry is not null && !retrying;
         if (!state.IsConnected)
         {
             // The board's state forgotten: its address changed, and another board may be there. Its first status is
             // taken as at start, not compared with the old board's relays, so nothing is logged as switched outside
-            // the app for being different.
-            if (state.LastContactUtc is null)
+            // the app for being different, and a status from the old board waiting for its retry is dropped. A lost
+            // connection keeps it: it is tried first when contact comes back, while the app's own changes it matched
+            // still match it.
+            if (IsForgotten(state))
             {
                 _known = null;
+                _retry = null;
+            }
+            else if (_retry is not null)
+            {
+                _retryBeforeLoss = true;
             }
 
             // Contact was lost after the last status, the same time the warning on the relay screen shows.
@@ -177,6 +197,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
             return;
         }
 
+        var beforeLoss = retrying && _retryBeforeLoss;
+        var context = _retryContext;
+        _retry = null;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var now = _clock.UtcNow;
 
@@ -188,11 +211,32 @@ public sealed partial class BoardEventRecorder : BackgroundService
         _seenInputChanges.Clear();
         try
         {
-            await RecordAsync(db, state, now, cancellationToken);
+            if (beforeLoss)
+            {
+                // A status from before the connection was lost: recorded as the recorder stood when it came (no gap
+                // ended, no contact restored by it), and the loss is still on after it. Its inputs' changes were seen as
+                // they happened, but their moment has passed: they are logged and don't act. The status that brings
+                // contact back ends the gap itself.
+                (_watching, _disconnectedSinceUtc, _lossLogged) = context;
+                await RecordAsync(db, state, now, act: false, cancellationToken);
+                (_disconnectedSinceUtc, _lossLogged, _watching) = (before._disconnectedSinceUtc, before._lossLogged, false);
+                _retryBeforeLoss = false;
+            }
+            else
+            {
+                await RecordAsync(db, state, now, act: true, cancellationToken);
+                _retryBeforeLoss = false;
+            }
         }
         catch
         {
             (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc) = before;
+            if (!retrying)
+            {
+                // A status new to the recorder: how it stood when it came, for when it is tried again after a loss.
+                _retryContext = (before._watching, before._disconnectedSinceUtc, before._lossLogged);
+                _retryBeforeLoss = false;
+            }
 
             // The app's own changes this status matched are expected again, or the next try would call them external
             // and clear their runtime, e.g. a relay's auto-off.
@@ -201,14 +245,21 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 _expected.Expect(ChannelMask.Of(relayId), on);
             }
 
-            _retryDelay = retrying ? TimeSpan.FromTicks(Math.Min(_retryDelay.Ticks * 2, MaxRetryDelay.Ticks)) : CheckInterval;
+            // A newer status that fails right after the one it replaces failed again keeps the grown wait.
+            _retryDelay = retrying || replacing ? TimeSpan.FromTicks(Math.Min(_retryDelay.Ticks * 2, MaxRetryDelay.Ticks)) : CheckInterval;
             _retryAtUtc = _clock.UtcNow + _retryDelay;
             _retry = state;
             throw;
         }
     }
 
-    private async Task RecordAsync(ContactorDbContext db, BoardState state, DateTime now, CancellationToken cancellationToken)
+    // Not connected and never answered: the board's state forgotten for a new address or another board.
+    private static bool IsForgotten(BoardState state)
+    {
+        return !state.IsConnected && state.LastContactUtc is null;
+    }
+
+    private async Task RecordAsync(ContactorDbContext db, BoardState state, DateTime now, bool act, CancellationToken cancellationToken)
     {
         // Contact again, after the start or a lost contact: was the gap long enough that the inputs' times can't be trusted?
         var afterGap = !_watching;
@@ -258,7 +309,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
         // Only once logged, so the input's change comes before what it did in Events, and a failed save doesn't act
         // twice when the next status records the change again.
-        foreach (var (input, on) in _seenInputChanges)
+        foreach (var (input, on) in act ? _seenInputChanges : [])
         {
             _inputChanges?.Enqueue(input, on);
         }
