@@ -443,18 +443,79 @@ public sealed class WaveshareClientTests
         Assert.All(simulator.ReceivedRequests, r => Assert.StartsWith("01 01", r, StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task Should_ConnectAnyway_WhenTheBoardRefusesTheModes()
+    [Theory]
+    [InlineData("refused")]
+    [InlineData("unreadable")]
+    public async Task Should_SetTheModesAnyway_WhenTheyCantBeRead(string how)
     {
-        // A board that has no mode registers: the app still works, with a warning in the traffic.
-        await using var board = ScriptedBoard.Start(request => request[1] == WaveshareApi.ReadHoldingRegisters
-            ? WaveshareModbus.WithCrc([1, 0x83, 2])
-            : request[1] == WaveshareApi.ReadCoils ? WaveshareModbusTests.Bytes("01 01 01 00 51 88") : WaveshareModbusTests.Bytes("01 02 01 00 A1 88"));
+        // The modes may be anything: all eight are written to normal all the same.
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.ReadHoldingRegisters when how == "refused" => WaveshareModbus.WithCrc([1, 0x83, 4]),
+            WaveshareApi.ReadHoldingRegisters => BadCrc(WaveshareModbus.WithCrc([1, 3, 16, .. new byte[16]])),
+            WaveshareApi.WriteMultipleRegisters => WaveshareModbus.WithCrc(request.AsSpan(0, 6)),
+            _ => AllOff(request),
+        });
         await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B);
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Contains(run.Traces, t => t.Text == "Couldn't set the relays to normal mode: The board refused it: no such address (code 2)." && t.IsError);
+        var reset = Assert.Single(run.Resets);
+        Assert.Null(reset.Modes);
+        Assert.Empty(run.NotResets);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Couldn't read the relay modes: ", StringComparison.Ordinal) && t.IsError);
+        Assert.Contains(run.Traces, t => t.Text == "Relay modes written");
+    }
+
+    [Fact]
+    public async Task Should_ReportOnce_WhenTheBoardRefusesTheModesItCouldntRead()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8B);
+        simulator.RefuseModeReads = true;
+        simulator.RefuseModeWrites = true;
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        await run.PollAsync();
+        await run.PollAsync();
+
+        // Once per connection, not on every poll; the board still works.
+        var notReset = Assert.Single(run.NotResets);
+        Assert.Equal("The board refused it: it failed (code 4).", notReset.Reason);
+        Assert.Empty(run.Resets);
+        Assert.Contains(run.Traces, t => t.Text == "Couldn't set the relays to normal mode: The board refused it: it failed (code 4)." && t.IsError);
+        Assert.Equal(1, simulator.ReceivedRequests.Count(r => r.StartsWith("01 10", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Should_Report_WhenTheBoardRefusesTheModesItRead()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8C);
+        await simulator.SetRelayModeAsync(4, WaveshareApi.ModeToggle);
+        simulator.RefuseModeWrites = true;
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8C);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Single(run.NotResets);
+        Assert.Empty(run.Resets);
+        Assert.Equal(WaveshareApi.ModeToggle, simulator.RelayModes[3]);
+    }
+
+    [Fact]
+    public async Task Should_Report_WhenTheWritesAnswerIsUnreadable()
+    {
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.ReadHoldingRegisters => WaveshareModbus.WithCrc([1, 3, 16, 0, 1, .. new byte[14]]),
+            WaveshareApi.WriteMultipleRegisters => [.. request.AsSpan(0, 6), 0, 0],
+            _ => AllOff(request),
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal("The answer's CRC is wrong.", Assert.Single(run.NotResets).Reason);
         Assert.Empty(run.Resets);
     }
 
@@ -471,6 +532,18 @@ public sealed class WaveshareClientTests
     {
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, WaveshareModels.Relay8, pollSeconds: 0));
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Vm201.Vm201Model.Model));
+    }
+
+    private static byte[] BadCrc(byte[] frame)
+    {
+        frame[^1] ^= 0xFF;
+        return frame;
+    }
+
+    // An answer to a poll on a board whose relays and inputs are all off.
+    private static byte[] AllOff(byte[] request)
+    {
+        return WaveshareModbus.WithCrc([1, request[1], 1, 0]);
     }
 
     private static WaveshareSimulator Started(BoardModel model)
@@ -493,6 +566,7 @@ public sealed class WaveshareClientTests
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<WaveshareState> _changes = [];
         private readonly List<WaveshareRelayModesReset> _resets = [];
+        private readonly List<WaveshareRelayModesNotReset> _notResets = [];
 
         private ClientRun(WaveshareClient client, ManualTimeProvider time, CancellationTokenSource cts)
         {
@@ -502,6 +576,7 @@ public sealed class WaveshareClientTests
             client.Traced += (_, entry) => Add(_traces, entry);
             client.StateChanged += (_, state) => Add(_changes, state);
             client.RelayModesReset += (_, reset) => Add(_resets, reset);
+            client.RelayModesNotReset += (_, notReset) => Add(_notResets, notReset);
             _task = client.RunAsync(cts.Token);
         }
 
@@ -514,6 +589,8 @@ public sealed class WaveshareClientTests
         public List<WaveshareState> Changes => Copy(_changes);
 
         public List<WaveshareRelayModesReset> Resets => Copy(_resets);
+
+        public List<WaveshareRelayModesNotReset> NotResets => Copy(_notResets);
 
         public static ClientRun Start(int port, BoardModel model, int pollSeconds = 2, bool resetRelayModes = true)
         {
@@ -557,7 +634,7 @@ public sealed class WaveshareClientTests
         }
     }
 
-    /// <summary>A board that answers each 8-byte request with what the test's function returns.</summary>
+    /// <summary>A board that answers each request (8 bytes, or a FC 10 with its data) with what the test's function returns.</summary>
     private sealed class ScriptedBoard : IAsyncDisposable
     {
         private readonly TcpListener _listener;
@@ -623,10 +700,18 @@ public sealed class WaveshareClientTests
                 try
                 {
                     var stream = tcp.GetStream();
-                    var request = new byte[8];
+                    var head = new byte[8];
                     while (true)
                     {
-                        await stream.ReadExactlyAsync(request, _stop.Token);
+                        await stream.ReadExactlyAsync(head, _stop.Token);
+                        var request = head;
+                        if (head[1] == WaveshareApi.WriteMultipleRegisters)
+                        {
+                            request = new byte[9 + head[6]];
+                            head.CopyTo(request, 0);
+                            await stream.ReadExactlyAsync(request.AsMemory(8), _stop.Token);
+                        }
+
                         Interlocked.Increment(ref _requests);
                         await stream.WriteAsync(_answer(request), _stop.Token);
                     }

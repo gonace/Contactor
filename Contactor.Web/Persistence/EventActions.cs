@@ -16,6 +16,7 @@ public static class EventActions
     public const string InputChanged = "input-changed";
     public const string BoardTimersDisabled = "board-timers-disabled";
     public const string BoardRelayModesReset = "board-relay-modes-reset";
+    public const string BoardRelayModesNotReset = "board-relay-modes-not-reset";
     public const string BoardAddressChanged = "board-address-changed";
     public const string BoardLoginChanged = "board-login-changed";
     public const string GroupOn = "group-on";

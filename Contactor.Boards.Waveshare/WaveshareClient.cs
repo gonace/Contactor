@@ -74,11 +74,18 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     public event EventHandler<BoardTraceEntry>? Traced;
 
     /// <summary>
-    /// Raised when connecting found a relay not in normal mode and set every relay to normal mode
-    /// (<see cref="WaveshareOptions.ResetRelayModes"/>). On the poller's loop, before the first poll: handlers must be
+    /// Raised when connecting set every relay to normal mode (<see cref="WaveshareOptions.ResetRelayModes"/>): because
+    /// one wasn't, or because the modes couldn't be read. On the poller's loop, before the first poll: handlers must be
     /// quick.
     /// </summary>
     public event EventHandler<WaveshareRelayModesReset>? RelayModesReset;
+
+    /// <summary>
+    /// Raised when connecting had to set the relays to normal mode and the board refused it, or its answer couldn't be
+    /// read: its inputs may switch relays past the app. At most once per connection, on the poller's loop: handlers must
+    /// be quick.
+    /// </summary>
+    public event EventHandler<WaveshareRelayModesNotReset>? RelayModesNotReset;
 
     /// <summary>The model it talks to: how many relays and inputs to read.</summary>
     public BoardModel Model => _model;
@@ -334,34 +341,47 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         return status;
     }
 
-    // Reads the relay control modes, and sets them all to normal when one isn't. A refused or unreadable answer leaves
-    // them as they are, with a warning: the board still works, only its inputs may switch relays past the app. No
-    // answer fails the connection, which the poller tries again.
+    // The relays' control modes, on every connection of a (B) or (C): read first; all normal, nothing is written.
+    // Otherwise, or when the read is refused or unreadable, all eight are written to normal. A write that is refused or
+    // unreadable too is reported (RelayModesNotReset): the board still works, but its inputs may switch relays past the
+    // app. No answer to either fails the connection, which the poller tries again.
     private async Task ResetRelayModesAsync(CancellationToken cancellationToken)
     {
+        ushort[]? modes = null;
         try
         {
             var read = WaveshareModbus.ReadHoldingRegisters(WaveshareApi.UnitId, WaveshareApi.RelayModeRegister, WaveshareApi.RelayModeCount);
             var answer = await ExchangeAsync(read, routine: false, cancellationToken).ConfigureAwait(false);
-            var modes = WaveshareModbus.Registers(answer);
+            modes = WaveshareModbus.Registers(answer);
             Trace(BoardTraceDirection.Received, WaveshareTraceText.Modes(modes), WaveshareModbus.Hex(answer));
             if (modes.All(m => m == WaveshareApi.ModeNormal))
             {
                 return;
             }
+        }
+        catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException)
+        {
+            // Unknown modes may be anything: written to normal all the same.
+            Trace(BoardTraceDirection.None, $"Couldn't read the relay modes: {ex.Message}", isError: true);
+        }
 
+        try
+        {
             var write = WaveshareModbus.WriteMultipleRegisters(WaveshareApi.UnitId, WaveshareApi.RelayModeRegister, new ushort[WaveshareApi.RelayModeCount]);
             var echo = await ExchangeAsync(write, routine: false, cancellationToken).ConfigureAwait(false);
             Trace(BoardTraceDirection.Received, WaveshareTraceText.Confirmed(echo), WaveshareModbus.Hex(echo));
-            var found = string.Join(",", modes);
-            _logger.RelayModesReset(found);
-            RaiseRelayModesReset(new WaveshareRelayModesReset(modes, Endpoint));
         }
         catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException)
         {
             _logger.RelayModesNotReset(ex.Message);
             Trace(BoardTraceDirection.None, $"Couldn't set the relays to normal mode: {ex.Message}", isError: true);
+            Raise(RelayModesNotReset, new WaveshareRelayModesNotReset(ex.Message, Endpoint));
+            return;
         }
+
+        var found = modes is null ? "unknown" : string.Join(",", modes);
+        _logger.RelayModesReset(found);
+        Raise(RelayModesReset, new WaveshareRelayModesReset(modes, Endpoint));
     }
 
     // A request that got no answer at all: it counts as a failed poll, whether a poll or a command sent it.
@@ -505,18 +525,18 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         tcp?.Dispose();
     }
 
-    private void RaiseRelayModesReset(WaveshareRelayModesReset reset)
+    private void Raise<T>(EventHandler<T>? handlers, T value)
     {
-        if (RelayModesReset is not { } handlers)
+        if (handlers is null)
         {
             return;
         }
 
-        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<WaveshareRelayModesReset>>())
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<T>>())
         {
             try
             {
-                handler(this, reset);
+                handler(this, value);
             }
 #pragma warning disable CA1031 // A subscriber's bug must not take down the connection.
             catch (Exception ex)

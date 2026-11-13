@@ -47,6 +47,46 @@ public sealed class WaveshareRelayModesServiceTests
     }
 
     [Fact]
+    public async Task Should_LogTheModesAsUnknown_WhenTheyCouldntBeRead()
+    {
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8B);
+        simulator.Start();
+        simulator.RefuseModeReads = true;
+        await using var database = CreateDatabase(simulator, "waveshare-8b", resetRelayModes: true);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+
+        await RunAsync(database, () => WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 1));
+
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var entry = await db.EventLog.SingleAsync(e => e.Action == EventActions.BoardRelayModesReset, Cancel);
+        Assert.Equal("""{"modes":"unknown"}""", entry.Details);
+    }
+
+    [Fact]
+    public async Task Should_LogARedEventOnce_WhenTheBoardDidntTakeTheModes()
+    {
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8B);
+        simulator.Start();
+        simulator.RefuseModeReads = true;
+        simulator.RefuseModeWrites = true;
+        await using var database = CreateDatabase(simulator, "waveshare-8b", resetRelayModes: true);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var client = database.Services.GetRequiredService<WaveshareClient>();
+
+        await RunAsync(database, async () =>
+        {
+            await WaitUntilAsync(() => client.State.IsConnected);
+            await WaitUntilAsync(() => CountEventsAsync(database, EventActions.BoardRelayModesNotReset).GetAwaiter().GetResult() == 1);
+        });
+
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var entry = await db.EventLog.SingleAsync(e => e.Action == EventActions.BoardRelayModesNotReset, Cancel);
+        Assert.Equal(EventActors.System, entry.Actor);
+        Assert.Equal("""{"reason":"The board refused it: it failed (code 4)."}""", entry.Details);
+        Assert.Equal(0, await CountEventsAsync(database));
+    }
+
+    [Fact]
     public async Task Should_LogNothing_WhenEveryRelayWasInNormalMode()
     {
         await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8C);
@@ -58,6 +98,7 @@ public sealed class WaveshareRelayModesServiceTests
         await RunAsync(database, () => WaitUntilAsync(() => client.State.IsConnected));
 
         Assert.Equal(0, await CountEventsAsync(database));
+        Assert.Equal(0, await CountEventsAsync(database, EventActions.BoardRelayModesNotReset));
         Assert.DoesNotContain(simulator.ReceivedRequests, r => r.StartsWith("01 10", StringComparison.Ordinal));
     }
 
@@ -140,10 +181,10 @@ public sealed class WaveshareRelayModesServiceTests
         }
     }
 
-    private static async Task<int> CountEventsAsync(TestDatabase database)
+    private static async Task<int> CountEventsAsync(TestDatabase database, string action = EventActions.BoardRelayModesReset)
     {
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        return await db.EventLog.CountAsync(e => e.Action == EventActions.BoardRelayModesReset, Cancel);
+        return await db.EventLog.CountAsync(e => e.Action == action, Cancel);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

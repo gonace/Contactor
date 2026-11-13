@@ -98,6 +98,16 @@ public sealed class EventTextTests
         Assert.Equal(new EventView(false, badge, who, what, null), view);
     }
 
+    [Fact]
+    public void Should_ShowInRed_ABoardWhoseRelayModesCouldntBeReset()
+    {
+        var entry = Entry(EventActors.System, EventActions.BoardRelayModesNotReset, """{"reason":"The board refused it: it failed (code 4)."}""", relayId: null);
+
+        var view = EventText.For(entry, relayName: null, personName: null);
+
+        Assert.Equal(new EventView(false, "A", "The board", "couldn't have its relays set to normal mode, so its inputs may switch them", null, IsAlert: true), view);
+    }
+
     [Theory]
     [InlineData(EventActors.Schedule, "schedule")]
     [InlineData(EventActors.AutoOff, "auto-off")]

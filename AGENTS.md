@@ -152,8 +152,8 @@ EventLog
   Action          text           "on" | "off" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
-                                 "board-timers-disabled" | "board-relay-modes-reset" | "board-address-changed" |
-                                 "board-login-changed"
+                                 "board-timers-disabled" | "board-relay-modes-reset" | "board-relay-modes-not-reset" |
+                                 "board-address-changed" | "board-login-changed"
   GroupId         int?           the group it concerns; not a foreign key, events outlive a deleted group
                                  Group actions: "group-on" | "group-off" | "group-start-failed" | "run-on-start" |
                                  "run-on-end" | "interlock-trip" | "group-create" | "group-edit" | "group-delete"
@@ -381,7 +381,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - People: a filled badge with their initial.
      - Schedule/auto/system: a dashed badge with "A".
      - An input's change names it: "Door: Open" or "Door: Closed" (a dashed badge with "I"). Every input is logged, each with its `InputId`.
-     - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off") and a start that failed show as a red row.
+     - Group events name the group: "John turned on the group Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running for 5 min". A safety shut-off ("Heat turned off because Fan was off"), a start that failed and a Waveshare board whose relays couldn't be set to normal mode show as a red row.
    - 50 at a time, with the button "Show more" for the next 50 (a button rather than loading on scroll, so no JavaScript is needed).
 7. **Settings** (`/settings`)
    - "Relay board": the model ("Velleman VM201 · 8 relays"), the board's address ("Address") and "Port" (the model's default port as its placeholder), its login, for a model that has one ("The board has no login", or "User name" and "Password", with the model's login hint, e.g. "At most 8 characters: letters a–z, digits and plain symbols.", or else "At most N characters."; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760", "No contact with the relay board at …" or "The relay board has no address yet"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).

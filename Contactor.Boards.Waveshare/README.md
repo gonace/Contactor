@@ -110,17 +110,21 @@ In modes 1 to 3, an input switches a relay without the app. The app sees that on
 group's interlock cannot stop it before it happens. So the client sets all relays to normal mode on each connection:
 
 1. It reads the 8 mode registers with function 03.
-2. When all are 0, it writes nothing.
+2. When all are 0, it writes nothing and logs nothing.
 3. When one is not 0, it writes 0 to all 8 with one function 10 request.
-4. It raises `RelayModesReset` with the modes it found. `WaveshareRelayModesService` logs this event with Actor
-   `system` and the action `board-relay-modes-reset`.
+4. When the board refuses the read or its answer cannot be read, the modes are unknown. The client writes 0 to all 8
+   all the same.
+5. When the write succeeds, the client raises `RelayModesReset` with the modes it found, or none when they were
+   unknown. `WaveshareRelayModesService` logs the action `board-relay-modes-reset` with Actor `system` and the details
+   `{"modes":[…]}` or `{"modes":"unknown"}`.
+6. When the board refuses the write or its answer cannot be read, the client raises `RelayModesNotReset`.
+   `WaveshareRelayModesService` logs the action `board-relay-modes-not-reset` with Actor `system` and the reason. The
+   Events screen shows it as a red row: "The board couldn't have its relays set to normal mode, so its inputs may switch
+   them". The board still works. This happens at most once per connection, not on each poll.
+7. When the board does not answer the read or the write, the connection fails and the poller tries again.
 
 The client reads first because the board can keep the modes in its flash memory. A write on each reconnect could wear
 the flash, and it would fill the Events screen. Function 10 writes all 8 registers in one request and one answer.
-
-If the board refuses the read or the write, the client logs a warning and continues. The board still works, but its
-inputs can switch relays without the app. If the board does not answer, the connection fails and the poller tries
-again.
 
 The client checks the modes only when it connects. A mode set with the board's own tool while the app is connected
 stays until the next connection.

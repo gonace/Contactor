@@ -127,6 +127,12 @@ public sealed class WaveshareSimulator : ISimulatedBoard
     /// </summary>
     public ulong FailRelays { get; set; }
 
+    /// <summary>When true, reads of the relay modes (FC 03) are answered with exception 04, for the tests.</summary>
+    public bool RefuseModeReads { get; set; }
+
+    /// <summary>When true, writes of the relay modes (FC 06, FC 10) are answered with exception 04, for the tests.</summary>
+    public bool RefuseModeWrites { get; set; }
+
     /// <summary>The requests received, as hex, e.g. "01 05 00 00 FF 00 8C 3A". The newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
 
@@ -366,6 +372,9 @@ public sealed class WaveshareSimulator : ISimulatedBoard
             WaveshareApi.ReadCoils => ReadBits(function, address, value, capabilities.RelayCount, () => _relays, ref _lastRelaysSent, WaveshareTraceText.Relays),
             WaveshareApi.ReadDiscreteInputs when capabilities.InputCount > 0 =>
                 ReadBits(function, address, value, capabilities.InputCount, () => _inputs, ref _lastInputsSent, WaveshareTraceText.Inputs),
+            WaveshareApi.ReadHoldingRegisters when WaveshareModels.HasRelayModes(Model) && RefuseModeReads => Refuse(function, WaveshareApi.DeviceFailure),
+            WaveshareApi.WriteSingleRegister or WaveshareApi.WriteMultipleRegisters when WaveshareModels.HasRelayModes(Model) && RefuseModeWrites =>
+                Refuse(function, WaveshareApi.DeviceFailure),
             WaveshareApi.ReadHoldingRegisters when WaveshareModels.HasRelayModes(Model) => ReadModes(address, value),
             WaveshareApi.WriteSingleCoil => WriteCoil(frame, address, value),
             WaveshareApi.WriteSingleRegister when WaveshareModels.HasRelayModes(Model) => WriteModes(frame, address, [value]),

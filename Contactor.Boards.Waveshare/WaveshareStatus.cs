@@ -25,7 +25,14 @@ public sealed record WaveshareState(bool IsConnected, WaveshareStatus? Status, D
     }
 }
 
-/// <summary>The relays the client set to normal mode on connecting, and the modes it found.</summary>
-/// <param name="Modes">The mode of relay 1 to 8 before, e.g. 1 for linkage; at least one wasn't 0 (normal).</param>
+/// <summary>The client set every relay to normal mode on connecting, and the modes it found.</summary>
+/// <param name="Modes">
+/// The mode of relay 1 to 8 before, e.g. 1 for linkage, at least one not 0 (normal); null when they couldn't be read.
+/// </param>
 /// <param name="Endpoint">The board it was done on.</param>
-public sealed record WaveshareRelayModesReset(IReadOnlyList<ushort> Modes, BoardEndpoint Endpoint);
+public sealed record WaveshareRelayModesReset(IReadOnlyList<ushort>? Modes, BoardEndpoint Endpoint);
+
+/// <summary>The client had to set the relays to normal mode on connecting, and the board didn't take it.</summary>
+/// <param name="Reason">Why, in words, e.g. "The board refused it: no such address (code 2).".</param>
+/// <param name="Endpoint">The board it was tried on.</param>
+public sealed record WaveshareRelayModesNotReset(string Reason, BoardEndpoint Endpoint);
