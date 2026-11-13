@@ -216,6 +216,18 @@ public sealed class InputActionsTests
         Assert.Empty(await rig.Handler.ListAsync(1, Cancel));
     }
 
+    // The Input screen checks the groups and relays before it saves the name: a refusal saves nothing.
+    [Fact]
+    public async Task Should_CheckWithoutSaving()
+    {
+        await using var rig = await RigAsync();
+        await rig.CreateGroupAsync(1, 2);
+
+        Assert.Equal("Relay 1 is in a group now: add the group instead.", await rig.Handler.CheckAsync(1, [new(Relay(1), true, null)], Cancel));
+        Assert.Null(await rig.Handler.CheckAsync(1, [new(Relay(3), true, null)], Cancel));
+        Assert.Empty(await rig.Handler.ListAsync(1, Cancel));
+    }
+
     // A relay left from a board that had more is kept, as relays are, but not shown, saved over or switched.
     [Fact]
     public async Task Should_KeepARelayAboveTheBoardsCount_Unseen()

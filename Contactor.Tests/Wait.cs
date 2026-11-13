@@ -1,8 +1,8 @@
-namespace Contactor.Tests.Vm208;
+namespace Contactor.Tests;
 
 /// <summary>
-/// Waits for something another thread does, e.g. the poller's loop or the simulated board. The clocks the tests
-/// drive are fake, so nothing here waits for time to pass: the deadline only stops a test that would hang.
+/// Waits, in any test, for something another thread does, e.g. the poller's loop or the simulated board. The clocks
+/// the tests drive are fake, so nothing here waits for time to pass: the deadline only stops a test that would hang.
 /// </summary>
 internal static class Wait
 {

@@ -1,9 +1,9 @@
-using Contactor.Web.Features.Groups;
-using Contactor.Web;
-using Contactor.Tests.Boards;
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Tests.Boards;
+using Contactor.Web;
 using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -196,6 +196,38 @@ public sealed class AutoOffServiceTests
         }
 
         await database.Services.GetRequiredService<AutoOffService>().CheckAsync(Cancel);
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(Jane, (await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);
+    }
+
+    // The board is lost while auto-off sends its OFF: the rest of the check waits, so the run of a relay that looked off
+    // is left as it is until there is contact again.
+    [Fact]
+    public async Task Should_LeaveTheRunsOfOffRelays_WhenTheBoardIsLostDuringTheCheck()
+    {
+        var fake = new FakeRelayBoard(relayCount: 4);
+        var board = new StaleOnceBoard(fake, BoardState.Initial with { IsConnected = true, Relays = ChannelMask.Of(1), LastContactUtc = DateTimeOffset.UnixEpoch });
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddSingleton<IRelayBoard>(board);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await RelayRuns.StartAsync(db, 1, Jane, BoardTestRig.Start.AddHours(-3), BoardTestRig.Start.AddHours(-1), Cancel);
+            await RelayRuns.StartAsync(db, 2, Jane, BoardTestRig.Start.AddHours(-3), null, Cancel);
+            await RelayRuns.SaveAsync(db, Cancel);
+        }
+
+        fake.SetConnected(false);
+
+        Assert.Empty(await database.Services.GetRequiredService<AutoOffService>().CheckAsync(Cancel));
 
         await using var check = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(Jane, (await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);

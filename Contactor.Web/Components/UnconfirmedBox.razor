@@ -1,0 +1,23 @@
+@using Contactor.Web.Features.Relays
+
+@* A press the board didn't confirm: the message, and the two choices. Nothing is guessed or queued; the person decides.
+   On the Relays screen's cards and the Relay screen's status card. *@
+<p class="unconfirmed-text" role="alert">@RelayStatusText.Unconfirmed</p>
+<div class="unconfirmed-actions">
+    <button type="button" class="try-again" disabled="@(!CanTryAgain)" @onclick="OnTryAgain">Try again</button>
+    <button type="button" class="leave-it" @onclick="OnLeave">Leave it</button>
+</div>
+
+@code {
+    /// <summary>Whether "Try again" can be pressed: the board is online and nothing else is under way.</summary>
+    [Parameter]
+    public bool CanTryAgain { get; set; }
+
+    /// <summary>Sends the same command again, at once.</summary>
+    [Parameter]
+    public EventCallback OnTryAgain { get; set; }
+
+    /// <summary>Leaves it as the board has it, and closes the box.</summary>
+    [Parameter]
+    public EventCallback OnLeave { get; set; }
+}

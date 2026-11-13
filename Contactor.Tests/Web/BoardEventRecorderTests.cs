@@ -440,6 +440,33 @@ public sealed class BoardEventRecorderTests
         Assert.False(setup.Database.Services.GetRequiredService<InputChangeFeed>().Reader.TryRead(out _));
     }
 
+    // A status from before a lost connection, recorded while there is still no contact, doesn't save a time of contact:
+    // a restart during the loss would read the gap as shorter than it was.
+    [Fact]
+    public async Task Should_NotSaveATimeOfContact_ForAStatusRecordedDuringALoss()
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await setup.StartAsync();
+        await BoardTestRig.WaitUntilAsync(() => setup.State().LastContactUtc == BoardTestRig.Start);
+
+        // The status that ends a short gap fails, then contact is lost again before it is recorded.
+        setup.Board.SetConnected(false);
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+        setup.Time.Now += TimeSpan.FromSeconds(10);
+        setup.Board.SetInput(1, on: true);
+        setup.Board.SetConnected(true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+        setup.Board.SetConnected(false);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 2);
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+
+        // The retry, while there is still no contact.
+        setup.Time.Now += TimeSpan.FromMinutes(20);
+        await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
+
+        Assert.Equal(BoardTestRig.Start, setup.State().LastContactUtc);
+    }
+
     // While the database stays broken, a newer status that replaces a waiting one keeps the grown wait between tries.
     [Fact]
     public async Task Should_KeepTheGrownWait_WhenANewerStatusReplacesAFailedOne()

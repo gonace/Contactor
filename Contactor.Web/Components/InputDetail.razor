@@ -240,7 +240,9 @@
         _busy = true;
         try
         {
-            _saveError = await Inputs.SaveAsync(new InputSettings(Id, _name, _isActive), CancellationToken.None)
+            // The groups and relays are checked first, so a refusal there saves nothing at all.
+            _saveError = await Actions.CheckAsync(Id, _actions, CancellationToken.None)
+                ?? await Inputs.SaveAsync(new InputSettings(Id, _name, _isActive), CancellationToken.None)
                 ?? await Actions.SaveAsync(Id, _actions, CancellationToken.None);
         }
         finally

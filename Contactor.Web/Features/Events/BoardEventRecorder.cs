@@ -265,7 +265,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         var afterGap = !_watching;
         if (afterGap)
         {
-            await StartWatchingAsync(db, now, cancellationToken);
+            await StartWatchingAsync(db, now, saveContact: act, cancellationToken);
         }
 
         if (_disconnectedSinceUtc is { } since)
@@ -368,7 +368,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     // Measures the gap since the last contact (before a restart: the saved one) and saves when a long gap ended. A short
     // gap, e.g. a reboot or an upgrade, keeps the inputs' times: it's taken that nothing changed and changed back.
-    private async Task StartWatchingAsync(ContactorDbContext db, DateTime now, CancellationToken cancellationToken)
+    // Not the time of contact for a status recorded as of before a lost connection (saveContact false): there is no
+    // contact now, and a restart during the loss would read the gap as shorter than it was.
+    private async Task StartWatchingAsync(ContactorDbContext db, DateTime now, bool saveContact, CancellationToken cancellationToken)
     {
         var saved = await db.BoardWatchStates.SingleOrDefaultAsync(cancellationToken);
         if (saved is null)
@@ -386,8 +388,12 @@ public sealed partial class BoardEventRecorder : BackgroundService
             saved.LongGapEndedUtc = now;
         }
 
-        saved.LastContactUtc = now;
-        _contactSavedUtc = now;
+        if (saveContact)
+        {
+            saved.LastContactUtc = now;
+            _contactSavedUtc = now;
+        }
+
         _watching = true;
     }
 

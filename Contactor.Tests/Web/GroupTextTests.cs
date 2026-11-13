@@ -119,6 +119,29 @@ public sealed class GroupTextTests
         Assert.Equal("Needs Fan to be on", GroupStatusText.MemberNote(FanHeater, State(), 1, on: false, "Fan", Now));
     }
 
+    // Only the relay that is next shows a countdown: the one after the last relay on when starting, the last one on
+    // when stopping. A third relay keeps a wrong index from passing.
+    [Fact]
+    public void Should_CountDownOnlyOnTheRelayThatIsNext_InALongerGroup()
+    {
+        var group = FanHeater with
+        {
+            Members = [.. FanHeater.Members, new GroupMemberView(3, 3, "Mist", 3, 0)],
+        };
+        var starting = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
+        var stopping = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(60) } };
+
+        Assert.Equal(["On", "Starts in 3 s", "Off"], Notes(starting, State(1)));
+        Assert.Equal(["On", "On", "Starts in 3 s"], Notes(starting, State(1, 2)));
+        Assert.Equal(["On", "Keeps running for 1 min", "Off"], Notes(stopping, State(1, 2)));
+        Assert.Equal(["Keeps running for 1 min", "Off", "Off"], Notes(stopping, State(1)));
+    }
+
+    private static List<string> Notes(GroupView group, BoardState state)
+    {
+        return [.. Enumerable.Range(0, group.Members.Count).Select(i => GroupStatusText.MemberNote(group, state, i, state.IsOn(group.Members[i].RelayId), null, Now))];
+    }
+
     [Fact]
     public void Should_SayHowLongTheRunOnLasts()
     {
@@ -193,6 +216,7 @@ public sealed class GroupTextTests
     [InlineData(299, "4 min 59 s")]
     [InlineData(299.1, "5 min")]
     [InlineData(1800, "30 min")]
+    [InlineData(7200, "2 h")]
     public void Should_CountDownTheTimeLeft(double seconds, string expected)
     {
         Assert.Equal(expected, GroupStatusText.Remaining(TimeSpan.FromSeconds(seconds)));

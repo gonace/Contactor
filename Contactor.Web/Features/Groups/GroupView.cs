@@ -169,10 +169,7 @@ public static class GroupStatusText
     /// </summary>
     public static string Remaining(TimeSpan left)
     {
-        var seconds = Math.Max((int)Math.Ceiling(left.TotalSeconds), 1);
-        var minutes = (seconds / 60).ToString(CultureInfo.InvariantCulture);
-        var rest = (seconds % 60).ToString(CultureInfo.InvariantCulture);
-        return seconds < 60 ? $"{rest} s" : seconds % 60 == 0 ? $"{minutes} min" : $"{minutes} min {rest} s";
+        return EventText.Seconds(Math.Max((int)Math.Ceiling(left.TotalSeconds), 1));
     }
 }
 

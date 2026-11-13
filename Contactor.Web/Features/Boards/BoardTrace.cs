@@ -36,6 +36,7 @@ public sealed class BoardTrace : IDisposable
 
     private readonly IBoardTraffic _traffic;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<BoardTrace>? _logger;
     private readonly Lock _lock = new();
     private readonly Queue<BoardTraceItem> _items = new(Capacity);
     private readonly ITimer _heldNoticeTimer;
@@ -44,8 +45,9 @@ public sealed class BoardTrace : IDisposable
     private DateTimeOffset? _routineNoticedAt;
     private bool _noticeHeld;
 
-    public BoardTrace(IBoardTraffic traffic, TimeProvider timeProvider)
+    public BoardTrace(IBoardTraffic traffic, TimeProvider timeProvider, ILogger<BoardTrace>? logger = null)
     {
+        _logger = logger;
         _traffic = traffic;
         _timeProvider = timeProvider;
         _heldNoticeTimer = _timeProvider.CreateTimer(_ => RaiseHeldNotice(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
@@ -163,7 +165,7 @@ public sealed class BoardTrace : IDisposable
             StopHeldNotice();
         }
 
-        RoutineCounted?.Invoke(this, EventArgs.Empty);
+        RaiseRoutineCounted();
     }
 
     private void RaiseHeldNotice()
@@ -179,7 +181,31 @@ public sealed class BoardTrace : IDisposable
             _routineNoticedAt = _timeProvider.GetUtcNow();
         }
 
-        RoutineCounted?.Invoke(this, EventArgs.Empty);
+        RaiseRoutineCounted();
+    }
+
+    // Each subscriber on its own, as the boards do: this may run on a timer's thread, where an exception would end the
+    // app, and one subscriber that fails must not keep the count from the others.
+    private void RaiseRoutineCounted()
+    {
+        if (RoutineCounted is not { } handlers)
+        {
+            return;
+        }
+
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler>())
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+#pragma warning disable CA1031 // A subscriber's failure is logged; the others are still told.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _logger?.LogError(ex, "A listener to the board traffic's routine count failed");
+            }
+        }
     }
 
     private void StopHeldNotice()

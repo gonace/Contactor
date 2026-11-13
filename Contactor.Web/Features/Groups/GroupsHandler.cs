@@ -155,6 +155,10 @@ public sealed class GroupsHandler
     private async Task<(int? Id, string? Error)> CreateCoreAsync(GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // Checked inside the transaction, so an input saved at the same moment (InputActionsHandler) can't take one of
+        // its relays between the check and the save.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
         var error = await ValidateAsync(db, draft, relays, groupId: null, cancellationToken)
             ?? AllOff(draft.Members.Select(m => m.RelayId), relays);
@@ -163,7 +167,6 @@ public sealed class GroupsHandler
             return (null, error);
         }
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var group = new RelayGroup
         {
             Name = draft.Name.Trim(),
@@ -204,6 +207,8 @@ public sealed class GroupsHandler
             return "The group no longer exists.";
         }
 
+        // Checked inside the transaction, as when creating one.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
         var error = await ValidateAsync(db, draft, relays, groupId, cancellationToken);
         if (error is not null)
@@ -211,7 +216,6 @@ public sealed class GroupsHandler
             return error;
         }
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var before = group.Members.OrderBy(m => m.Position).Select(m => m.RelayId).ToList();
         var after = draft.Members.Select(m => m.RelayId).ToList();
         if (!before.SequenceEqual(after))

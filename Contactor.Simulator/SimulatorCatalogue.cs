@@ -72,16 +72,19 @@ public static class SimulatorCatalogue
 
     /// <summary>
     /// The port the page offers for a new board of this model: its suggested port, or the first one after it that no
-    /// board here uses. An unknown model counts as the first one.
+    /// board here uses; null when every one up to 65535 is taken. An unknown model counts as the first one.
     /// </summary>
-    public static int FreePort(string? type, IReadOnlyCollection<int> taken)
+    public static int? FreePort(string? type, IReadOnlyCollection<int> taken)
     {
-        var port = (Find(type) ?? All[0]).Port;
-        while (taken.Contains(port) && port < 65535)
+        ArgumentNullException.ThrowIfNull(taken);
+        for (var port = (Find(type) ?? All[0]).Port; port <= 65535; port++)
         {
-            port++;
+            if (!taken.Contains(port))
+            {
+                return port;
+            }
         }
 
-        return port;
+        return null;
     }
 }
