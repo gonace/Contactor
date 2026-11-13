@@ -32,5 +32,10 @@ public sealed class SimulatorPageTests
         Assert.Contains("RELAY 8", html, StringComparison.Ordinal);
         Assert.Contains("Board's own timers on", html, StringComparison.Ordinal);
         Assert.DoesNotContain("secret", html, StringComparison.Ordinal);
+
+        // A new board's login in two fields, so either may hold ':'.
+        Assert.Matches("<label for=\"username\"[^>]*>User name</label>", html);
+        Assert.Matches("<label for=\"password\"[^>]*>Password</label>", html);
+        Assert.DoesNotContain("user:password", html, StringComparison.Ordinal);
     }
 }

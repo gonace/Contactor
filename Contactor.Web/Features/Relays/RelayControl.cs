@@ -99,7 +99,7 @@ public sealed class RelayControl
             }
             catch
             {
-                // A failed command logs nothing: whatever the board did shows as an external change.
+                // A failed or cancelled command logs nothing: whatever the board did shows as an external change.
                 _expected.Forget(wasOn, on: false);
                 throw;
             }
@@ -129,9 +129,9 @@ public sealed class RelayControl
         await _groups.StopAllAsync(userEmail, cancellationToken);
     }
 
-    // Expects the change, then sends it. A command that fails logs nothing, so its expectation goes too: whatever the
-    // board did then shows as an external change rather than vanishing. A failed ON is remembered with who asked, so a
-    // relay the board switched on all the same is credited to them and gets their auto-off.
+    // Expects the change, then sends it. A command that fails or is cancelled logs nothing, so its expectation goes
+    // too: whatever the board did then shows as an external change rather than vanishing. A failed ON is remembered
+    // with who asked, so a relay the board switched on all the same is credited to them and gets their auto-off.
     private async Task SendAsync(ChannelMask mask, bool on, CancellationToken cancellationToken, (int RelayId, string Actor)? failedOnBy = null)
     {
         _expected.Expect(mask, on);

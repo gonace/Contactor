@@ -41,20 +41,15 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
     }
 
     /// <summary>
-    /// Starts a board as the page asks: <paramref name="login"/> is "user:password", or empty for a board without a
-    /// login. Returns null when it runs, otherwise why it can't, in words for the page.
+    /// Starts a board as the page asks, with a login, or none when the user name and password are both empty. Either
+    /// may hold any character the model takes, ':' included. Returns null when it runs, otherwise why it can't, in
+    /// words for the page.
     /// </summary>
-    public string? Add(string? type, int port, string? login)
+    public string? Add(string? type, int port, string? username, string? password)
     {
-        if (string.IsNullOrEmpty(login))
-        {
-            return Add(type, port, null, null, fromSettings: false);
-        }
-
-        var colon = login.IndexOf(':', StringComparison.Ordinal);
-        return colon <= 0
-            ? "Write the login as user:password, e.g. john:secret."
-            : Add(type, port, login[..colon], login[(colon + 1)..], fromSettings: false);
+        return string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password)
+            ? "Write the user name too, or leave both empty."
+            : Add(type, port, username, password, fromSettings: false);
     }
 
     /// <summary>
