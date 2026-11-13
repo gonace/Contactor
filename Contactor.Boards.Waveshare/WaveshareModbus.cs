@@ -97,6 +97,30 @@ public static class WaveshareModbus
         return Simple(unit, WaveshareApi.WriteSingleCoil, address, on ? WaveshareApi.CoilOn : WaveshareApi.CoilOff);
     }
 
+    /// <summary>
+    /// FC 05 at the "flash on" address of <paramref name="relay"/> (1-based): the board turns it on, and off again by
+    /// itself after <paramref name="length"/>, and echoes the request. Only a length <see cref="WaveshareModels.Pulse"/>
+    /// can do.
+    /// </summary>
+    public static WaveshareRequest FlashOn(byte unit, int relay, TimeSpan length)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, ChannelMask.MaxChannels);
+        if (!WaveshareModels.Pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "A Waveshare board pulses for 0.1 s to 3276.7 s, in steps of 0.1 s.");
+        }
+
+        var time = (ushort)(length.Ticks / WaveshareApi.FlashUnit.Ticks);
+        return Simple(unit, WaveshareApi.WriteSingleCoil, (ushort)(WaveshareApi.FlashOnAddress + relay - 1), time);
+    }
+
+    /// <summary>Whether an FC 05 address is a "flash on" one.</summary>
+    public static bool IsFlashOn(ushort address)
+    {
+        return address is >= WaveshareApi.FlashOnAddress and < WaveshareApi.FlashOnAddress + WaveshareApi.FlashOnAddressCount;
+    }
+
     /// <summary>FC 10: write <paramref name="values"/> to the holding registers from <paramref name="address"/>.</summary>
     public static WaveshareRequest WriteMultipleRegisters(byte unit, ushort address, ReadOnlySpan<ushort> values)
     {

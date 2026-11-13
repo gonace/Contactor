@@ -11,6 +11,12 @@ public static class WaveshareModels
     /// <summary>Who makes them: the setup guide lists the models by brand.</summary>
     public const string Brand = "Waveshare";
 
+    /// <summary>
+    /// The pulse all five have ("flash on", <see cref="WaveshareApi.FlashOnAddress"/>): 0.1 s to 3276.7 s in steps of
+    /// 0.1 s. Before the models, which take it.
+    /// </summary>
+    public static PulseAbility Pulse { get; } = new(WaveshareApi.FlashUnit, WaveshareApi.FlashUnit * WaveshareApi.MaxFlashTime, WaveshareApi.FlashUnit);
+
     public static BoardModel Relay8 { get; } = Create("waveshare-8", "Modbus PoE ETH Relay", relays: 8, inputs: 0);
 
     public static BoardModel Relay8B { get; } = Create("waveshare-8b", "Modbus PoE ETH Relay (B)", relays: 8, inputs: 8);
@@ -41,6 +47,6 @@ public static class WaveshareModels
 
     private static BoardModel Create(string id, string name, int relays, int inputs)
     {
-        return new BoardModel(id, Brand, name, new BoardCapabilities(relays, inputs, ReportsChanges: false), WaveshareApi.DefaultPort, LoginMaxLength: 0);
+        return new BoardModel(id, Brand, name, new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: Pulse), WaveshareApi.DefaultPort, LoginMaxLength: 0);
     }
 }

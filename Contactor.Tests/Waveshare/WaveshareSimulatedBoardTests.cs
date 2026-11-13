@@ -48,6 +48,72 @@ public sealed class WaveshareSimulatedBoardTests
     }
 
     [Fact]
+    public async Task Should_FlashARelayOn_AndTurnItOffAfterTheTime_OnItsOwnClock()
+    {
+        var time = new Web.ManualTimeProvider();
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8) { TimeProvider = time };
+        simulator.Start();
+
+        Assert.Equal("01 05 02 00 00 07 8D B0", await AskAsync(simulator, "01 05 02 00 00 07 8D B0"));
+        Assert.Equal(0b1UL, simulator.Relays);
+        Assert.Equal(ChannelMask.Of(1), simulator.Pulsing);
+        time.Advance(TimeSpan.FromMilliseconds(699));
+        Assert.Equal(0b1UL, simulator.Relays);
+        time.Advance(TimeSpan.FromMilliseconds(1));
+
+        Assert.Equal(0UL, simulator.Relays);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Theory]
+    [InlineData("01 05 02 08 00 07 0C 72", "01 85 02 C3 51")]
+    [InlineData("01 05 02 00 00 00 CC 72", "01 85 03 02 91")]
+    [InlineData("01 05 02 00 80 00 AD B2", "01 85 03 02 91")]
+    public async Task Should_RefuseAFlashOn_ItCantDo(string request, string answer)
+    {
+        var time = new Web.ManualTimeProvider();
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8) { TimeProvider = time };
+        simulator.Start();
+
+        Assert.Equal(answer, await AskAsync(simulator, request));
+        Assert.Equal(0UL, simulator.Relays);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
+    public async Task Should_EndAFlash_WhenTheRelayIsSwitchedForGood_AndLeaveALinkedRelay()
+    {
+        var time = new Web.ManualTimeProvider();
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8B) { TimeProvider = time };
+        simulator.Start();
+        await simulator.SetRelayModeAsync(2, WaveshareApi.ModeLinkage);
+
+        await AskAsync(simulator, WaveshareModbus.Hex(WaveshareModbus.FlashOn(1, 1, TimeSpan.FromSeconds(1)).Frame));
+        await AskAsync(simulator, WaveshareModbus.Hex(WaveshareModbus.FlashOn(1, 2, TimeSpan.FromSeconds(1)).Frame));
+        Assert.Equal(ChannelMask.Of(1), simulator.Pulsing);
+        await AskAsync(simulator, "01 05 00 00 FF 00 8C 3A");
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0b01UL, simulator.Relays);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
+    public async Task Should_StopItsFlashes_WhenDisposed()
+    {
+        var time = new Web.ManualTimeProvider();
+        var simulator = new WaveshareSimulator(WaveshareModels.Relay8) { TimeProvider = time };
+        simulator.Start();
+        await AskAsync(simulator, "01 05 02 00 00 07 8D B0");
+
+        await simulator.DisposeAsync();
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0b1UL, simulator.Relays);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
     public async Task Should_SwitchAllRelays_AtAddressFF()
     {
         await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8);

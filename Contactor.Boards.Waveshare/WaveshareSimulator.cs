@@ -11,7 +11,8 @@ namespace Contactor.Boards.Waveshare;
 /// A fake Waveshare Modbus PoE ETH relay of any of the five models, on a local TCP port, speaking Modbus RTU over TCP
 /// as the board does (<see cref="WaveshareApi"/>): its relays (FC 01, 05), inputs (FC 02) and, on the models with
 /// inputs, the relay control mode registers (FC 03, 06, 10), with the relays following their inputs in linkage, toggle
-/// and edge mode. A request with a bad address, quantity or value gets a Modbus exception answer; one with a bad CRC
+/// and edge mode, and "flash on" (FC 05 at 0x0200 + relay − 1), which turns a relay off again after its time on
+/// <see cref="TimeProvider"/>. A request with a bad address, quantity or value gets a Modbus exception answer; one with a bad CRC
 /// or for another unit gets none, as on a serial Modbus line. It never tells the app anything by itself, as the real
 /// board. Several clients may connect at once. Used by the tests and, in development, by Contactor.Simulator. It
 /// listens on the loopback interface only.
@@ -27,6 +28,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard
     private readonly ConcurrentQueue<string> _receivedRequests = new();
     private readonly Lock _lock = new();
     private readonly ushort[] _modes = new ushort[WaveshareApi.RelayModeCount];
+    private SimulatedPulses? _pulses;
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
@@ -60,8 +62,26 @@ public sealed class WaveshareSimulator : ISimulatedBoard
 
     public BoardModel Model { get; }
 
-    /// <summary>The clock for the traffic's times.</summary>
+    /// <summary>The clock for the traffic's times and the end of a flash.</summary>
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
+    /// <summary>The relays whose flash is still running.</summary>
+    public ChannelMask Pulsing => new(Pulses.Running);
+
+    // Made on first use, so it takes the TimeProvider set by the initializer.
+    private SimulatedPulses Pulses
+    {
+        get
+        {
+            if (Volatile.Read(ref _pulses) is { } pulses)
+            {
+                return pulses;
+            }
+
+            var created = new SimulatedPulses(TimeProvider);
+            return Interlocked.CompareExchange(ref _pulses, created, null) ?? created;
+        }
+    }
 
     public int Port { get; private set; }
 
@@ -153,6 +173,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
         var bit = Model.Capabilities.Relay(relay).Bits;
+        Pulses.Cancel(bit);
         Change(() => _relays = turnOn ? _relays | bit : _relays & ~bit);
         return Task.CompletedTask;
     }
@@ -221,6 +242,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard
 
     public async ValueTask DisposeAsync()
     {
+        Pulses.Dispose();
         await _stopping.CancelAsync().ConfigureAwait(false);
         _listener?.Stop();
         DropConnections();
@@ -376,6 +398,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard
             WaveshareApi.WriteSingleRegister or WaveshareApi.WriteMultipleRegisters when WaveshareModels.HasRelayModes(Model) && RefuseModeWrites =>
                 Refuse(function, WaveshareApi.DeviceFailure),
             WaveshareApi.ReadHoldingRegisters when WaveshareModels.HasRelayModes(Model) => ReadModes(address, value),
+            WaveshareApi.WriteSingleCoil when WaveshareModbus.IsFlashOn(address) => FlashOn(frame, address, value),
             WaveshareApi.WriteSingleCoil => WriteCoil(frame, address, value),
             WaveshareApi.WriteSingleRegister when WaveshareModels.HasRelayModes(Model) => WriteModes(frame, address, [value]),
             WaveshareApi.WriteMultipleRegisters when WaveshareModels.HasRelayModes(Model) => WriteRegisters(frame, address, value),
@@ -477,6 +500,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard
             return Refuse(WaveshareApi.WriteSingleCoil, WaveshareApi.IllegalDataAddress);
         }
 
+        Pulses.Cancel(bits);
         Change(() =>
         {
             var free = bits & ~Linked();
@@ -487,6 +511,38 @@ public sealed class WaveshareSimulator : ISimulatedBoard
                 _ => _relays ^ free,
             };
         });
+        return Answer(frame.AsSpan(0, 6).ToArray(), WaveshareTraceText.Confirmed(frame), routine: false);
+    }
+
+    // FC 05 "flash on": the relay on now, off again after value × 100 ms; echo. A relay in linkage mode follows its input
+    // only. A later FC 05 for the relay ends the flash, or starts it again.
+    private byte[] FlashOn(byte[] frame, ushort address, ushort value)
+    {
+        var relay = address - WaveshareApi.FlashOnAddress;
+        if (relay >= Model.Capabilities.RelayCount)
+        {
+            return Refuse(WaveshareApi.WriteSingleCoil, WaveshareApi.IllegalDataAddress);
+        }
+
+        if (value is < 1 or > WaveshareApi.MaxFlashTime)
+        {
+            return Refuse(WaveshareApi.WriteSingleCoil, WaveshareApi.IllegalDataValue);
+        }
+
+        var bit = 1UL << relay;
+        if ((FailRelays & bit) != 0)
+        {
+            return Refuse(WaveshareApi.WriteSingleCoil, WaveshareApi.DeviceFailure);
+        }
+
+        Pulses.Cancel(bit);
+        ulong free = 0;
+        Change(() =>
+        {
+            free = bit & ~Linked();
+            _relays |= free;
+        });
+        Pulses.Start(free, WaveshareApi.FlashUnit * value, relays => Change(() => _relays &= ~relays));
         return Answer(frame.AsSpan(0, 6).ToArray(), WaveshareTraceText.Confirmed(frame), routine: false);
     }
 

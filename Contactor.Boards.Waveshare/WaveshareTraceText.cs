@@ -9,7 +9,10 @@ namespace Contactor.Boards.Waveshare;
 /// </summary>
 public static class WaveshareTraceText
 {
-    /// <summary>What a request asks for: "Ask for the relays", "Turn on relay 3", "Set every relay to normal mode".</summary>
+    /// <summary>
+    /// What a request asks for: "Ask for the relays", "Turn on relay 3", "Pulse relay 3 for 0.7 s", "Set every relay to
+    /// normal mode".
+    /// </summary>
     public static string Request(ReadOnlySpan<byte> frame)
     {
         if (frame.Length < 8)
@@ -25,6 +28,8 @@ public static class WaveshareTraceText
             WaveshareApi.ReadCoils => "Ask for the relays",
             WaveshareApi.ReadDiscreteInputs => "Ask for the inputs",
             WaveshareApi.ReadHoldingRegisters when address == WaveshareApi.RelayModeRegister => "Ask for the relay modes",
+            WaveshareApi.WriteSingleCoil when WaveshareModbus.IsFlashOn(address) =>
+                $"Pulse relay {Number(address - WaveshareApi.FlashOnAddress + 1)} for {Seconds(value)}",
             WaveshareApi.WriteSingleCoil => value switch
             {
                 WaveshareApi.CoilOn => $"Turn on relay {Number(address + 1)}",
@@ -62,7 +67,7 @@ public static class WaveshareTraceText
             : $"Relay modes: {string.Join(", ", special.Select(m => $"{Number(m.relay)} {ModeName(m.mode)}"))}";
     }
 
-    /// <summary>What a write's answer confirms: "Relay 3 turned on", "Relay modes written".</summary>
+    /// <summary>What a write's answer confirms: "Relay 3 turned on", "Relay 3 turned on for 0.7 s", "Relay modes written".</summary>
     public static string Confirmed(ReadOnlySpan<byte> frame)
     {
         if (frame.Length < 8)
@@ -74,6 +79,8 @@ public static class WaveshareTraceText
         var value = BinaryPrimitives.ReadUInt16BigEndian(frame[4..]);
         return frame[1] switch
         {
+            WaveshareApi.WriteSingleCoil when WaveshareModbus.IsFlashOn(address) =>
+                $"Relay {Number(address - WaveshareApi.FlashOnAddress + 1)} turned on for {Seconds(value)}",
             WaveshareApi.WriteSingleCoil when value == WaveshareApi.CoilOn => $"Relay {Number(address + 1)} turned on",
             WaveshareApi.WriteSingleCoil when value == WaveshareApi.CoilOff => $"Relay {Number(address + 1)} turned off",
             WaveshareApi.WriteSingleCoil when value == WaveshareApi.CoilToggle => $"Relay {Number(address + 1)} flipped",
@@ -134,6 +141,12 @@ public static class WaveshareTraceText
         return channels.Count == 1
             ? $"{channels[0]} on"
             : $"{string.Join(", ", channels[..^1])} and {channels[^1]} on";
+    }
+
+    // A flash time in 100 ms units: "0.7 s", "3276.7 s".
+    private static string Seconds(ushort time)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{time / 10.0:0.0} s");
     }
 
     private static bool IsModeRegister(ushort address)
