@@ -14,6 +14,7 @@
 @inject RelayChanges Changes
 @inject CurrentUser CurrentUser
 @inject LocalClock Clock
+@inject TimeProvider Time
 @inject ScheduleOutlook Outlook
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject GroupsHandler Groups
@@ -245,7 +246,7 @@
     private IReadOnlyList<InputView> _inputs = [];
     private int? _failedGroupId;
     private string? _groupError;
-    private Timer? _tick;
+    private ITimer? _tick;
     private Dictionary<int, RelayRuntime> _runtimes = [];
     private Dictionary<string, string> _names = [];
     private Dictionary<int, EventLogEntry> _lastOff = [];
@@ -294,7 +295,7 @@
     {
         // A group's start or stop counts down in seconds; nothing else re-renders the page that often. Made before the
         // first await, so a page closed while it loads still disposes it.
-        _tick = new Timer(_ =>
+        _tick = Time.CreateTimer(_ =>
         {
             if (_groups.Any(g => g.Runtime.Phase != GroupPhases.Idle))
             {

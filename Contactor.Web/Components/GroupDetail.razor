@@ -17,6 +17,7 @@
 @inject RelayChanges Changes
 @inject CurrentUser CurrentUser
 @inject LocalClock Clock
+@inject TimeProvider Time
 @inject NavigationManager Navigation
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject ILogger<GroupDetail> Log
@@ -304,7 +305,7 @@
     private const string SomethingWentWrong = "Something went wrong. Try again.";
 
     private List<EditMember> _removed = [];
-    private Timer? _tick;
+    private ITimer? _tick;
     private bool _changedElsewhere;
     private string? _toggleError;
     private bool _confirmDelete;
@@ -367,7 +368,7 @@
         Changes.Changed += OnRelaysChanged;
 
         // A start or stop counts down in seconds; nothing else re-renders the page that often.
-        _tick = new Timer(_ =>
+        _tick = Time.CreateTimer(_ =>
         {
             if (_group is { } group && group.Runtime.Phase != GroupPhases.Idle)
             {
