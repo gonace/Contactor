@@ -46,8 +46,8 @@ public sealed partial class AutoOffService : BackgroundService
     }
 
     /// <summary>
-    /// Gives every relay that is on with nobody's run its own auto-off, then handles every auto-off that is due now.
-    /// Returns the relays it turned off.
+    /// Gives every relay that is on with nobody's run its own auto-off, handles every auto-off that is due now, and
+    /// ends the run of every relay the board shows off. Returns the relays it turned off.
     /// </summary>
     public async Task<IReadOnlyList<int>> CheckAsync(CancellationToken cancellationToken)
     {
@@ -110,7 +110,12 @@ public sealed partial class AutoOffService : BackgroundService
             await RelayRuns.EndOutsideAsync(db, runtime.RelayId, cancellationToken);
         }
 
-        await EndRunsOfOffRelaysAsync(db, state, [.. due.Select(r => r.RelayId)], cancellationToken);
+        // Not after the board was lost on the way: nothing happens without it.
+        if (_board.State.IsConnected)
+        {
+            await EndRunsOfOffRelaysAsync(db, state, [.. due.Select(r => r.RelayId)], cancellationToken);
+        }
+
         if (db.ChangeTracker.HasChanges())
         {
             await RelayRuns.SaveAsync(db, cancellationToken);
@@ -136,11 +141,12 @@ public sealed partial class AutoOffService : BackgroundService
         }
 
         // Tracked, so the end is checked against these rows' versions. An ON whose run was saved just before they were
-        // read is still pending now, and keeps its run.
+        // read is either still on its way, or the board shows it on by now: the state at the start of the check may be
+        // older. Pending first: the board's state changes before the expectation is used up.
         var stale = await db.RelayRuntimes
             .Where(r => off.Contains(r.RelayId) && r.OnSinceUtc != null)
             .ToListAsync(cancellationToken);
-        foreach (var run in stale.Where(r => !_expected.IsPending(r.RelayId, on: true)))
+        foreach (var run in stale.Where(r => !_expected.IsPending(r.RelayId, on: true) && !_board.State.IsOn(r.RelayId)))
         {
             await RelayRuns.EndOutsideAsync(db, run.RelayId, cancellationToken);
             LogStaleRun(run.RelayId);
@@ -214,6 +220,6 @@ public sealed partial class AutoOffService : BackgroundService
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is on with nobody's run: it gets its own auto-off")]
     private partial void LogOwnerless(int relayId);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is off but still had a run: it ends")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is off but has a run: ending it")]
     private partial void LogStaleRun(int relayId);
 }
