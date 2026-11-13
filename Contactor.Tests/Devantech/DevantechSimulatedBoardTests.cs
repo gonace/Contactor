@@ -35,6 +35,63 @@ public sealed class DevantechSimulatedBoardTests
     }
 
     [Fact]
+    public async Task Should_SwitchARelayBack_AfterItsPulseTime_OnItsOwnClock()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        await simulator.SwitchRelayAsync(2, true);
+        using var board = await Board.ConnectAsync(simulator);
+
+        Assert.Equal("00", await board.AskAsync("20 01 05", 1));
+        Assert.Equal("00", await board.AskAsync("21 02 FF", 1));
+        Assert.Equal("01", await board.AskAsync("24", 1));
+        Assert.Equal(ChannelMask.Of([1, 2]), simulator.Pulsing);
+        time.Advance(TimeSpan.FromMilliseconds(499));
+        Assert.Equal("01", await board.AskAsync("24", 1));
+        time.Advance(TimeSpan.FromMilliseconds(1));
+
+        // 0x20 turns it off again; 0x21 on again, after 25.5 s.
+        Assert.Equal("00", await board.AskAsync("24", 1));
+        time.Advance(TimeSpan.FromMilliseconds(25_000));
+        Assert.Equal("02", await board.AskAsync("24", 1));
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
+    public async Task Should_EndAPulse_WhenTheRelayIsSwitchedForGood()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        using var board = await Board.ConnectAsync(simulator);
+
+        Assert.Equal("00", await board.AskAsync("20 01 0A", 1));
+        Assert.Equal("00", await board.AskAsync("20 02 0A", 1));
+        Assert.Equal("00", await board.AskAsync("20 01 00", 1));
+        Assert.Equal("00", await board.AskAsync("23 03", 1));
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal("03", await board.AskAsync("24", 1));
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
+    public async Task Should_StopItsPulses_WhenDisposed()
+    {
+        var time = new ManualTimeProvider();
+        var simulator = Started(DevantechModels.Eth008, time: time);
+        using (var board = await Board.ConnectAsync(simulator))
+        {
+            Assert.Equal("00", await board.AskAsync("20 01 0A", 1));
+        }
+
+        await simulator.DisposeAsync();
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0b1UL, simulator.Relays);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
     public async Task Should_AnswerNothing_ForACommandTheModelDoesntHave()
     {
         await using var simulator = Started(DevantechModels.Eth008);

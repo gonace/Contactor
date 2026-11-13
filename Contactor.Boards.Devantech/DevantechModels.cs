@@ -19,6 +19,12 @@ public static class DevantechModels
     /// <summary>Who makes them: the setup guide lists the models by brand.</summary>
     public const string Brand = "Devantech";
 
+    /// <summary>
+    /// The pulse all four have (0x20 with a pulse time): 0.1 s to 25.5 s in steps of 0.1 s. Before the models, which
+    /// take it.
+    /// </summary>
+    public static PulseAbility Pulse { get; } = new(DevantechApi.PulseUnit, DevantechApi.PulseUnit * DevantechApi.MaxPulseTime, DevantechApi.PulseUnit);
+
     public static BoardModel Eth002 { get; } = Create("devantech-eth002", "ETH002-B", relays: 2, inputs: 0, analog: 0);
 
     public static BoardModel Eth008 { get; } = Create("devantech-eth008", "ETH008-B", relays: 8, inputs: 0, analog: 0);
@@ -111,7 +117,7 @@ public static class DevantechModels
             id,
             Brand,
             name,
-            new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog),
+            new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog, Pulse: Pulse),
             DevantechApi.DefaultPort,
             LoginMaxLength: DevantechApi.PasswordMaxLength,
             LoginHint: string.Create(

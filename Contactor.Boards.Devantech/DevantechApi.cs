@@ -32,8 +32,17 @@ public static class DevantechApi
     /// <summary>0x7A: how long the board stays unlocked, 1 byte.</summary>
     public const byte GetUnlockTime = 0x7A;
 
-    /// <summary>The pulse time of 0x20 and 0x21 that keeps the output as set: the app never sends a pulse.</summary>
+    /// <summary>The pulse time of 0x20 and 0x21 that keeps the output as set, for a plain ON or OFF.</summary>
     public const byte Permanent = 0x00;
+
+    /// <summary>
+    /// The longest pulse time of 0x20: in <see cref="PulseUnit"/>s, 25.5 s. The board turns the relay on, and off again
+    /// by itself after the time.
+    /// </summary>
+    public const byte MaxPulseTime = 0xFF;
+
+    /// <summary>The unit of the pulse time of 0x20 and 0x21: 100 ms.</summary>
+    public static readonly TimeSpan PulseUnit = TimeSpan.FromMilliseconds(100);
 
     /// <summary>The answer to 0x20 and 0x21 when the board did it.</summary>
     public const byte Success = 0x00;

@@ -14,6 +14,8 @@ public sealed class DevantechTraceTextTests
     [InlineData("20 03 00", "Turn on relay 3")]
     [InlineData("21 08 00", "Turn off relay 8")]
     [InlineData("20 02 32", "Turn on relay 2 for 5.0 s")]
+    [InlineData("20 03 05", "Turn on relay 3 for 0.5 s")]
+    [InlineData("20 14 FF", "Turn on relay 20 for 25.5 s")]
     [InlineData("20 02", "Command 20")]
     [InlineData("3A", "Command 3A")]
     [InlineData("", "An empty command")]
@@ -57,6 +59,8 @@ public sealed class DevantechTraceTextTests
         Assert.Equal("Relay 3 turned on", DevantechTraceText.Switched(DevantechProtocol.Switch(3, on: true).Bytes, 0));
         Assert.Equal("Relay 3 turned off", DevantechTraceText.Switched(DevantechProtocol.Switch(3, on: false).Bytes, 0));
         Assert.Equal("Refused: relay 9", DevantechTraceText.Switched(DevantechProtocol.Switch(9, on: true).Bytes, 1));
+        Assert.Equal("Relay 3 turned on for 0.5 s", DevantechTraceText.Switched(DevantechProtocol.Pulse(3, TimeSpan.FromMilliseconds(500)).Bytes, 0));
+        Assert.Equal("Refused: relay 3", DevantechTraceText.Switched(DevantechProtocol.Pulse(3, TimeSpan.FromMilliseconds(500)).Bytes, 1));
         Assert.Equal("Relays: 1, 3 and 20 on", DevantechTraceText.Relays(0b101 | (1UL << 19), 20));
         Assert.Equal("Relays: all on", DevantechTraceText.Relays(0b11, 2));
         Assert.Equal("Inputs: all off", DevantechTraceText.Inputs(0, 8));

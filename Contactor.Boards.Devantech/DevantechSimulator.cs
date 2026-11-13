@@ -14,8 +14,9 @@ namespace Contactor.Boards.Devantech;
 /// a password each connection starts locked, and locks again after 30 s on <see cref="TimeProvider"/> without a command;
 /// a relay command while locked is refused (01). A command it doesn't know, or one the model doesn't have, gets no
 /// answer at all, as on the board. It reads each TCP packet as the commands in it, and a password as the rest of its
-/// packet. A pulse time is taken as permanent. It never tells the app anything by itself. Several clients may connect at
-/// once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
+/// packet. A pulse time switches the relay back by itself after the time on <see cref="TimeProvider"/>; a later command
+/// for the relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may
+/// connect at once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
 public sealed class DevantechSimulator : ISimulatedBoard
 {
@@ -33,6 +34,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
     private readonly ConcurrentDictionary<TcpClient, string> _connections = new();
     private readonly ConcurrentQueue<string> _receivedRequests = new();
     private readonly Lock _lock = new();
+    private SimulatedPulses? _pulses;
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
@@ -77,8 +79,26 @@ public sealed class DevantechSimulator : ISimulatedBoard
 
     public BoardModel Model { get; }
 
-    /// <summary>The clock for the traffic's times and the 30 s lock.</summary>
+    /// <summary>The clock for the traffic's times, the 30 s lock and the end of a pulse.</summary>
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
+    /// <summary>The relays whose pulse is still running.</summary>
+    public ChannelMask Pulsing => new(Pulses.Running);
+
+    // Made on first use, so it takes the TimeProvider set by the initializer.
+    private SimulatedPulses Pulses
+    {
+        get
+        {
+            if (Volatile.Read(ref _pulses) is { } pulses)
+            {
+                return pulses;
+            }
+
+            var created = new SimulatedPulses(TimeProvider);
+            return Interlocked.CompareExchange(ref _pulses, created, null) ?? created;
+        }
+    }
 
     public int Port { get; private set; }
 
@@ -155,6 +175,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
         var bit = Model.Capabilities.Relay(relay).Bits;
+        Pulses.Cancel(bit);
         Change(() => _relays = turnOn ? _relays | bit : _relays & ~bit);
         return Task.CompletedTask;
     }
@@ -178,6 +199,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
 
     public async ValueTask DisposeAsync()
     {
+        Pulses.Dispose();
         await _stopping.CancelAsync().ConfigureAwait(false);
         _listener?.Stop();
         DropConnections();
@@ -381,18 +403,26 @@ public sealed class DevantechSimulator : ISimulatedBoard
             : Answer(DevantechProtocol.InputBytes(bits, _layout.InputBytes), DevantechTraceText.Inputs(bits, capabilities.InputCount), routine);
     }
 
-    // 0x20 or 0x21: a relay out of range, one in FailRelays, or any while locked is refused (01).
+    // 0x20 or 0x21: a relay out of range, one in FailRelays, or any while locked is refused (01). With a pulse time the
+    // relay switches back after it, as on the board; a command for the relay ends a pulse that runs.
     private byte[] Switch(ReadOnlySpan<byte> command, bool locked)
     {
         var relay = command[1];
         var on = command[0] == DevantechApi.DigitalActive;
+        var pulse = command[2];
         var bit = relay is >= 1 and <= 64 ? 1UL << (relay - 1) : 0;
         if (locked || relay < 1 || relay > Model.Capabilities.RelayCount || (FailRelays & bit) != 0)
         {
             return Answer([DevantechApi.Failure], DevantechTraceText.Switched(command, DevantechApi.Failure), isError: true);
         }
 
+        Pulses.Cancel(bit);
         Change(() => _relays = on ? _relays | bit : _relays & ~bit);
+        if (pulse != DevantechApi.Permanent)
+        {
+            Pulses.Start(bit, DevantechApi.PulseUnit * pulse, relays => Change(() => _relays = on ? _relays & ~relays : _relays | relays));
+        }
+
         return Answer([DevantechApi.Success], DevantechTraceText.Switched(command, DevantechApi.Success));
     }
 
@@ -405,6 +435,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
         }
 
         var relays = DevantechProtocol.Outputs(image, Model.Capabilities.RelayCount);
+        Pulses.Cancel(Model.Capabilities.AllRelays.Bits);
         Change(() => _relays = relays);
         return Answer([DevantechApi.Success], DevantechTraceText.Relays(relays, Model.Capabilities.RelayCount));
     }

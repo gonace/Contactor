@@ -55,8 +55,12 @@ length. There is no framing and no checksum.
 | Send the password | `79` and the password's ASCII bytes | `01` accepted, `02` refused |
 | Is the board locked? | `7A` | `00` locked, `01` to `1E` seconds left, `FF` no password |
 
-`nn` is the relay number. `tt` is a pulse time in units of 100 ms. The app always sends `tt` = `00`, so the relay stays
-as set. A relay number that the board does not have gets `01`.
+`nn` is the relay number. `tt` is a pulse time in units of 100 ms. For ON and OFF the app sends `tt` = `00`, so the
+relay stays as set. A relay number that the board does not have gets `01`.
+
+A pulse is `20 nn tt` with `tt` from 1 to 255: the board turns the relay on, and off again by itself after `tt` × 100 ms,
+also when the app stops in between. So all four models pulse for 0.1 s to 25.5 s, in steps of 0.1 s
+(`DevantechModels.Pulse`). For example, `20 03 05` pulses relay 3 for 0.5 s, and the board answers `00`.
 
 Layouts:
 
@@ -114,7 +118,7 @@ Then:
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the VM204, the VM208 and the
   Waveshare boards.
 
-A command switches the relays in the mask one at a time:
+A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
 
 - First the client sends 0x7A. When the board locked again, it sends the password again.
 - The client sends 0x20 or 0x21 for every relay in the mask, also when the board refuses one.
@@ -129,6 +133,9 @@ A command switches the relays in the mask one at a time:
   command is a refusal (`BoardRefusedException`), which does not count.
 - After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
   new state. When that read cannot be read, the client keeps the last state it read and reads again at once.
+
+`DevantechClient.PulseAsync` and `DevantechBoard.PulseAsync` throw `ArgumentOutOfRangeException` for a length outside
+0.1 s to 25.5 s, or not in steps of 0.1 s, before anything is sent.
 
 `DevantechBoard`, `DevantechConnection` and `DevantechTraffic` are the adapters for the app. `Features/Devantech` in
 `Contactor.Web` registers them. `DevantechTraceText` puts each command in plain words. The polls and the answers that
@@ -158,7 +165,9 @@ When `Host` is empty, the setup guide asks for the address.
 - It reads each TCP packet as the commands in it, and a password as the rest of its packet.
 - With a password, each connection starts locked and locks again after 30 s without a command. A relay command while
   locked gets `01`. Every command counts as activity.
-- It takes a pulse time as permanent.
+- A pulse time switches the relay back after the time, on the simulator's `TimeProvider`: 0x20 turns it off again, and
+  0x21 on again. The next poll shows it. A later 0x20, 0x21 or 0x23 for the relay ends its pulse; a later pulse starts
+  it again.
 - Relays and inputs can be set "at the board", and connections can be dropped or refused.
 - For the tests, `NoAnswer` stops all answers, `FailRelays` refuses some relays, and `ModuleId` makes it answer as
   another model.
@@ -174,5 +183,7 @@ When `Host` is empty, the setup guide asks for the address.
 - That an input bit of 1 means a closed contact.
 - The relay states after a power cut, with "Latched Outputs" on and off. The recorded ETH008-B had all relays off.
 - How many TCP clients the board accepts. The documents say five.
+- The pulse: that the relay goes off by itself after `tt` × 100 ms, and what a 0x20, 0x21 or a second pulse for the
+  relay does to a pulse that runs.
 - That the board never sends data that the app did not ask for.
 - How the board handles a poll every 2 s for days.

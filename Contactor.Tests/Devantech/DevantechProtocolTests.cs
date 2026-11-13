@@ -29,6 +29,41 @@ public sealed class DevantechProtocolTests
         Assert.Equal("7A", DevantechProtocol.Hex(DevantechProtocol.GetUnlockTime().Bytes));
     }
 
+    [Theory]
+    [InlineData(3, 100, "20 03 01")]
+    [InlineData(3, 500, "20 03 05")]
+    [InlineData(8, 2000, "20 08 14")]
+    [InlineData(20, 25_500, "20 14 FF")]
+    public void Should_BuildAPulse_InTenthsOfASecond(int relay, int milliseconds, string bytes)
+    {
+        var request = DevantechProtocol.Pulse(relay, TimeSpan.FromMilliseconds(milliseconds));
+
+        Assert.Equal(bytes, DevantechProtocol.Hex(request.Bytes));
+        Assert.Equal(1, request.AnswerLength);
+        Assert.True(DevantechModels.Pulse.CanDo(TimeSpan.FromMilliseconds(milliseconds)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    [InlineData(50)]
+    [InlineData(150)]
+    [InlineData(25_600)]
+    [InlineData(int.MaxValue)]
+    public void Should_RefuseAPulseLengthTheBoardCantDo(int milliseconds)
+    {
+        Assert.False(DevantechModels.Pulse.CanDo(TimeSpan.FromMilliseconds(milliseconds)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.Pulse(1, TimeSpan.FromMilliseconds(milliseconds)));
+    }
+
+    [Fact]
+    public void Should_RefuseAPulseOfPartsOfATenth_AndRelaysThatDontFitAByte()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.Pulse(1, TimeSpan.FromMilliseconds(100) + TimeSpan.FromTicks(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.Pulse(0, TimeSpan.FromSeconds(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.Pulse(256, TimeSpan.FromSeconds(1)));
+    }
+
     [Fact]
     public void Should_SendThePasswordAsAscii_WithNothingElse()
     {

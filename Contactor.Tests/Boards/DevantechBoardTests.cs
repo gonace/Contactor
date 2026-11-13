@@ -21,7 +21,8 @@ public sealed class DevantechBoardTests
         var model = Assert.Single(DevantechModels.All, m => m.Id == id);
 
         Assert.Equal(name, model.Name);
-        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog), model.Capabilities);
+        var pulse = new PulseAbility(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(25_500), TimeSpan.FromMilliseconds(100));
+        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog, Pulse: pulse), model.Capabilities);
         Assert.Equal(17494, model.DefaultPort);
         Assert.True(model.HasLogin);
         Assert.True(model.PasswordOnly);
@@ -49,6 +50,40 @@ public sealed class DevantechBoardTests
         Assert.Equal(4, board.Capabilities.RelayCount);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOnAsync(ChannelMask.Of(5), Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOnAsync(ChannelMask.Of(4), Cancel));
+    }
+
+    [Fact]
+    public async Task Should_RefuseAPulse_ItCantDo_BeforeAnythingIsSent()
+    {
+        using var client = Client(new DevantechOptions { Host = "127.0.0.1" }, DevantechModels.Eth484);
+        var board = new DevantechBoard(client, NullLogger<DevantechBoard>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromSeconds(26), Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromMilliseconds(50), Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(5), TimeSpan.FromSeconds(1), Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.PulseAsync(ChannelMask.Of(4), TimeSpan.FromSeconds(1), Cancel));
+    }
+
+    [Fact]
+    public async Task Should_Pulse_AndReturnOnlyTheRelaysTheBoardTook()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new DevantechSimulator(DevantechModels.Eth008, null, NullLogger.Instance) { TimeProvider = boardTime, FailRelays = 0b0100 };
+        simulator.Start();
+        using var client = Client(new DevantechOptions { Host = "127.0.0.1", Port = simulator.Port }, DevantechModels.Eth008);
+        var board = new DevantechBoard(client, NullLogger<DevantechBoard>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => board.State.IsConnected);
+
+        Assert.Equal(ChannelMask.Of([2, 4]), await board.PulseAsync(ChannelMask.Of([2, 3, 4]), TimeSpan.FromSeconds(2.5), Cancel));
+
+        Assert.Equal(ChannelMask.Of([2, 4]), board.State.Relays);
+        Assert.Contains("20 02 19", simulator.ReceivedRequests);
+        boardTime.Advance(TimeSpan.FromSeconds(2.5));
+        Assert.Equal(0UL, simulator.Relays);
+        await stop.CancelAsync();
+        await run.WaitAsync(Cancel);
     }
 
     [Fact]
