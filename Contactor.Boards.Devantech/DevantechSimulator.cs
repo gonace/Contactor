@@ -267,8 +267,10 @@ public sealed class DevantechSimulator : ISimulatedBoard
             var length = CommandLength(packet);
             if (length is null || length > packet.Length)
             {
-                Remember(DevantechProtocol.Hex(packet));
-                Trace(BoardTraceDirection.Sent, DevantechTraceText.Request(packet), DevantechProtocol.Hex(packet));
+                // Only the command byte: the rest of the packet may hold a password.
+                var shown = packet.Length > 1 ? $"{DevantechProtocol.Hex(packet[..1])} …" : DevantechProtocol.Hex(packet);
+                Remember(shown);
+                Trace(BoardTraceDirection.Sent, DevantechTraceText.Request(packet[..1]), shown);
                 Silent(length is null ? "No answer: a command this board doesn't know" : "No answer: the command was cut short");
                 break;
             }

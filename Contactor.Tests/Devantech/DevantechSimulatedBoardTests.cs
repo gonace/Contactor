@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using Contactor.Boards;
 using Contactor.Boards.Devantech;
 using Contactor.Tests.Vm208;
 using Contactor.Tests.Web;
@@ -47,6 +48,31 @@ public sealed class DevantechSimulatedBoardTests
 
         // The next command is answered as usual.
         Assert.Equal("00", await board.AskAsync("24", 1));
+        Assert.Equal(["25", "3A …", "24"], simulator.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task Should_NeverShowAPassword_InAPacketItCantRead()
+    {
+        await using var simulator = Started(DevantechModels.Eth008, "apple", new ManualTimeProvider());
+        List<BoardTraceEntry> traces = [];
+        simulator.Traced += (_, entry) =>
+        {
+            lock (traces)
+            {
+                traces.Add(entry);
+            }
+        };
+        using var board = await Board.ConnectAsync(simulator);
+
+        await board.SendAsync("25 79 61 70 70 6C 65");
+        await Wait.UntilAsync(() => simulator.UnansweredCount == 1);
+
+        Assert.Equal(["25 …"], simulator.ReceivedRequests);
+        lock (traces)
+        {
+            Assert.DoesNotContain(traces, t => (t.Bytes ?? "").Contains("61", StringComparison.Ordinal));
+        }
     }
 
     [Fact]
@@ -171,7 +197,7 @@ public sealed class DevantechSimulatedBoardTests
         Assert.False(simulator.HasLogin);
     }
 
-    private static DevantechSimulator Started(Contactor.Boards.BoardModel model, string? password = null, TimeProvider? time = null)
+    private static DevantechSimulator Started(BoardModel model, string? password = null, TimeProvider? time = null)
     {
         var simulator = new DevantechSimulator(model, password, NullLogger.Instance) { TimeProvider = time ?? TimeProvider.System };
         simulator.Start();
