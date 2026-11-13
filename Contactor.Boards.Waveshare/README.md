@@ -85,6 +85,7 @@ A command switches the relays in the mask one at a time with function 05:
 - The client sends a request for every relay in the mask, also when the board refuses one.
 - A request with no answer stops the rest of the mask.
 - When the board takes no relay, the command throws "The Waveshare board didn't take the command: …".
+- Otherwise it returns the relays the board confirmed. A refused relay, or one whose answer couldn't be read, isn't among them.
 - When a request gets no answer, the command throws "The Waveshare board didn't answer; the command may not have been
   carried out."
 - The poller reads the board at once after each of these two failures. It counts a request with no answer as a failed

@@ -89,12 +89,16 @@ public sealed class RelayControl
         var single = _board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(cancellationToken));
         var wasOn = _board.State.Relays & single;
         var sent = _clock.UtcNow;
+        var refused = ChannelMask.None;
         if (!single.IsEmpty)
         {
             _expected.Expect(wasOn, on: false);
             try
             {
-                await _board.TurnOffAsync(single, cancellationToken);
+                // Not taken: refused, or an answer the app couldn't read. The board's state, which already holds what
+                // the command read, tells: one it shows off went off all the same.
+                var taken = await _board.TurnOffAsync(single, cancellationToken);
+                refused = single.Except(taken) & _board.State.Relays;
             }
             catch
             {
@@ -102,16 +106,24 @@ public sealed class RelayControl
                 _expected.Forget(wasOn, on: false);
                 throw;
             }
+
+            // A relay the board refused (a board that switches a relay per request can refuse some) didn't go off: it
+            // isn't logged, its run stays, and whatever it does later is its own change.
+            // Only the expectations this command added: a relay that was off before isn't this command's.
+            _expected.Forget(wasOn & refused, on: false);
         }
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         foreach (var relayId in await db.RelayRuntimes.Where(r => r.OnSinceUtc != null).Select(r => r.RelayId).ToListAsync(cancellationToken))
         {
-            await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
+            if (!refused.Contains(relayId))
+            {
+                await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
+            }
         }
 
-        foreach (var relayId in wasOn.Channels)
+        foreach (var relayId in wasOn.Except(refused).Channels)
         {
             db.EventLog.Add(new EventLogEntry
             {

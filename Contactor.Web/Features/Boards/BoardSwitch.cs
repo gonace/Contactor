@@ -56,12 +56,12 @@ public sealed partial class BoardSwitch : IRelayBoard, IBoardConnection, IBoardT
 
     public BoardLogin Login => Current?.Connection.Login ?? BoardLogin.None;
 
-    public Task TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
         return Chosen().Board.TurnOnAsync(relays, cancellationToken);
     }
 
-    public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    public Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
         return Chosen().Board.TurnOffAsync(relays, cancellationToken);
     }

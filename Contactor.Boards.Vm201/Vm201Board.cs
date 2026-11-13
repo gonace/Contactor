@@ -26,14 +26,17 @@ public sealed class Vm201Board : IRelayBoard
 
     public BoardState State => ToBoardState(_client.State);
 
-    public Task TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    // The board takes the mask at once: all of it, or the command fails.
+    public async Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
-        return _client.TurnOnAsync(ToMask(relays), cancellationToken);
+        await _client.TurnOnAsync(ToMask(relays), cancellationToken).ConfigureAwait(false);
+        return relays;
     }
 
-    public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    public async Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
-        return _client.TurnOffAsync(ToMask(relays), cancellationToken);
+        await _client.TurnOffAsync(ToMask(relays), cancellationToken).ConfigureAwait(false);
+        return relays;
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

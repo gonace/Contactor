@@ -52,7 +52,7 @@ public sealed class Vm201BoardTests
         var run = client.RunAsync(stop.Token);
         await WaitUntilAsync(() => board.State.IsConnected);
 
-        await board.TurnOnAsync(ChannelMask.Of([2, 4]), Cancel);
+        Assert.Equal(ChannelMask.Of([2, 4]), await board.TurnOnAsync(ChannelMask.Of([2, 4]), Cancel));
         await WaitUntilAsync(() => reported?.Relays == ChannelMask.Of([2, 4]));
         await board.TurnOffAsync(ChannelMask.Of(2), Cancel);
         await WaitUntilAsync(() => board.State.Relays == ChannelMask.Of(4));

@@ -26,14 +26,15 @@ public sealed class WaveshareBoard : IRelayBoard
 
     public BoardState State => ToBoardState(_client.State);
 
-    public Task TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    // A relay per request: only the relays the board took.
+    public async Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
-        return _client.TurnOnAsync(ToMask(relays), cancellationToken);
+        return new ChannelMask(await _client.TurnOnAsync(ToMask(relays), cancellationToken).ConfigureAwait(false));
     }
 
-    public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    public async Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
-        return _client.TurnOffAsync(ToMask(relays), cancellationToken);
+        return new ChannelMask(await _client.TurnOffAsync(ToMask(relays), cancellationToken).ConfigureAwait(false));
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

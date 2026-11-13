@@ -116,13 +116,18 @@ public sealed class WaveshareClientTests
         await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        await run.Client.TurnOnAsync(0b0111, Cancel);
+        // Only the relays it took.
+        Assert.Equal(0b0101UL, await run.Client.TurnOnAsync(0b0111, Cancel));
 
         Assert.Equal(0b0101UL, simulator.Relays);
         Assert.Equal(0b0101UL, run.Client.State.Relays);
         Assert.Contains(run.Traces, t => t.Text == "Refused: it failed (code 4)" && t.IsError);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("The board didn't take the command for relay 2: ", StringComparison.Ordinal) && t.IsError);
         Assert.True(run.Client.State.IsConnected);
+
+        // OFF, as "All off" sends it: only the relays it took.
+        Assert.Equal(0b0101UL, await run.Client.TurnOffAsync(0b0111, Cancel));
+        Assert.Equal(0UL, simulator.Relays);
     }
 
     [Fact]
