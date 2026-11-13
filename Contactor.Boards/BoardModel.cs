@@ -1,7 +1,7 @@
 namespace Contactor.Boards;
 
 /// <summary>A model of relay board the app supports, as the board catalogue lists it.</summary>
-/// <param name="Id">The value of <c>Board:Type</c> that chooses it, e.g. <c>vm201</c>. Lower case.</param>
+/// <param name="Id">Its id in the board catalogue, saved when the setup guide chooses it, e.g. <c>vm201</c>. Lower case.</param>
 /// <param name="Name">Its name as people know it, e.g. "Velleman VM201".</param>
 /// <param name="Capabilities">How many relays and inputs it has, and whether it reports changes by itself.</param>
 /// <param name="DefaultPort">The TCP port it listens on unless someone changed it.</param>

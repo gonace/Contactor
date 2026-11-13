@@ -10,27 +10,30 @@ using Contactor.Web.Features.Waveshare;
 
 namespace Contactor.Web.Features.Boards;
 
-/// <summary>A model of board the app supports, and how to register it: its <see cref="IRelayBoard"/>,
-/// <see cref="IBoardConnection"/> and <see cref="IBoardTraffic"/>, and anything only it has.</summary>
-public sealed record BoardRegistration(BoardModel Model, Action<IServiceCollection, IConfiguration> Register);
+/// <summary>
+/// A model of board the app supports, and how to build it while the app runs: its <see cref="IRelayBoard"/>,
+/// <see cref="IBoardConnection"/> and <see cref="IBoardTraffic"/>, and anything only it has.
+/// </summary>
+public sealed record BoardRegistration(BoardModel Model, Func<BoardModel, IServiceProvider, IConfiguration, ActiveBoard> Create);
 
 /// <summary>
 /// Every model of board the app supports. A new model is a project of its own with its adapters, and one line here.
 /// </summary>
 public static class BoardCatalogue
 {
-    public const string DefaultType = "vm201";
+    /// <summary>The model an installation in use from before the setup guide chose its model has: see <see cref="BoardChoice"/>.</summary>
+    public const string EarlierDefaultType = "vm201";
 
     public static IReadOnlyList<BoardRegistration> All { get; } =
     [
-        new(Vm201Model.Model, (services, configuration) => services.AddVm201(configuration)),
-        new(Vm204Model.Model, (services, configuration) => services.AddVm204(configuration)),
-        new(Vm208Model.Model, (services, configuration) => services.AddVm208(configuration)),
-        new(WaveshareModels.Relay8, (services, configuration) => services.AddWaveshare(configuration)),
-        new(WaveshareModels.Relay8B, (services, configuration) => services.AddWaveshare(configuration)),
-        new(WaveshareModels.Relay8C, (services, configuration) => services.AddWaveshare(configuration)),
-        new(WaveshareModels.Relay16, (services, configuration) => services.AddWaveshare(configuration)),
-        new(WaveshareModels.Relay30, (services, configuration) => services.AddWaveshare(configuration)),
+        new(Vm201Model.Model, Vm201Boards.Create),
+        new(Vm204Model.Model, Vm204Boards.Create),
+        new(Vm208Model.Model, Vm208Boards.Create),
+        new(WaveshareModels.Relay8, WaveshareBoards.Create),
+        new(WaveshareModels.Relay8B, WaveshareBoards.Create),
+        new(WaveshareModels.Relay8C, WaveshareBoards.Create),
+        new(WaveshareModels.Relay16, WaveshareBoards.Create),
+        new(WaveshareModels.Relay30, WaveshareBoards.Create),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>
@@ -39,4 +42,7 @@ public static class BoardCatalogue
         var id = type?.Trim() ?? "";
         return All.FirstOrDefault(r => string.Equals(r.Model.Id, id, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>The ids, for a message about one the app doesn't know.</summary>
+    public static string Ids => string.Join(", ", All.Select(r => r.Model.Id));
 }

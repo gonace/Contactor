@@ -31,6 +31,7 @@ public sealed class WaveshareRelayModesServiceTests
         await simulator.SetRelayModeAsync(2, WaveshareApi.ModeLinkage);
         await using var database = CreateDatabase(simulator, "waveshare-8b", resetRelayModes: true);
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseBoardAsync("waveshare-8b");
 
         await RunAsync(database, async () =>
         {
@@ -54,6 +55,7 @@ public sealed class WaveshareRelayModesServiceTests
         simulator.RefuseModeReads = true;
         await using var database = CreateDatabase(simulator, "waveshare-8b", resetRelayModes: true);
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseBoardAsync("waveshare-8b");
 
         await RunAsync(database, () => WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 1));
 
@@ -71,7 +73,8 @@ public sealed class WaveshareRelayModesServiceTests
         simulator.RefuseModeWrites = true;
         await using var database = CreateDatabase(simulator, "waveshare-8b", resetRelayModes: true);
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var client = database.Services.GetRequiredService<WaveshareClient>();
+        await database.Services.UseBoardAsync("waveshare-8b");
+        var client = database.Services.BoardService<WaveshareClient>();
 
         await RunAsync(database, async () =>
         {
@@ -93,7 +96,8 @@ public sealed class WaveshareRelayModesServiceTests
         simulator.Start();
         await using var database = CreateDatabase(simulator, "waveshare-8c", resetRelayModes: true);
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var client = database.Services.GetRequiredService<WaveshareClient>();
+        await database.Services.UseBoardAsync("waveshare-8c");
+        var client = database.Services.BoardService<WaveshareClient>();
 
         await RunAsync(database, () => WaitUntilAsync(() => client.State.IsConnected));
 
@@ -110,7 +114,8 @@ public sealed class WaveshareRelayModesServiceTests
         await simulator.SetRelayModeAsync(2, WaveshareApi.ModeLinkage);
         await using var database = CreateDatabase(simulator, "waveshare-8b", resetRelayModes: false);
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var client = database.Services.GetRequiredService<WaveshareClient>();
+        await database.Services.UseBoardAsync("waveshare-8b");
+        var client = database.Services.BoardService<WaveshareClient>();
 
         await RunAsync(database, () => WaitUntilAsync(() => client.State.IsConnected));
 
@@ -122,17 +127,18 @@ public sealed class WaveshareRelayModesServiceTests
     [InlineData("waveshare-8", 8, 0)]
     [InlineData("waveshare-8b", 8, 8)]
     [InlineData("waveshare-30", 30, 0)]
-    public async Task Should_RegisterOneBoard_AndSeedItsRelaysAndInputs(string type, int relays, int inputs)
+    public async Task Should_BuildTheBoardWithItsModes_AndSeedItsRelaysAndInputs_WhenChosen(string type, int relays, int inputs)
     {
         await using var simulator = new WaveshareSimulator(WaveshareModels.All.Single(m => m.Id == type));
         simulator.Start();
         await using var database = CreateDatabase(simulator, type, resetRelayModes: true);
-
-        var board = database.Services.GetRequiredService<IRelayBoard>();
         await database.Services.InitializeDatabaseAsync(Cancel);
 
-        // One instance, so the client has exactly one subscriber passing its state on.
-        Assert.Same(database.Services.GetRequiredService<WaveshareBoard>(), board);
+        var board = await database.Services.UseBoardAsync(type);
+
+        Assert.IsType<WaveshareBoard>(board.Board);
+        Assert.IsType<WaveshareRelayModesService>(Assert.Single(board.Extras));
+        Assert.Equal(board.Model.Capabilities, database.Services.GetRequiredService<IRelayBoard>().Capabilities);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(Enumerable.Range(1, relays), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
         Assert.Equal(inputs, await db.Inputs.CountAsync(Cancel));
@@ -151,18 +157,16 @@ public sealed class WaveshareRelayModesServiceTests
             },
             new Dictionary<string, string?>
             {
-                ["Board:Type"] = type,
                 ["Waveshare:Host"] = "127.0.0.1",
                 ["Waveshare:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Waveshare:ResetRelayModes"] = resetRelayModes ? "true" : "false",
             });
     }
 
-    // As the app starts them: the service listens before the connection runs.
+    // The board's connection, which starts the relay-mode service before it connects.
     private static async Task RunAsync(TestDatabase database, Func<Task> whileRunning)
     {
-        var hosted = database.Services.GetServices<IHostedService>().ToList();
-        List<IHostedService> services = [.. hosted.OfType<WaveshareRelayModesService>(), .. hosted.OfType<BoardHostedService>()];
+        List<IHostedService> services = [.. database.Services.GetServices<IHostedService>().OfType<BoardHostedService>()];
         foreach (var service in services)
         {
             await service.StartAsync(Cancel);

@@ -8,7 +8,6 @@
 @using Contactor.Web.Features.Inputs
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
-@using Contactor.Web.Features.Setup
 @using Contactor.Web.Persistence
 @inject IRelayBoard Board
 @inject RelayControl Control
@@ -20,8 +19,6 @@
 @inject GroupsHandler Groups
 @inject InputsHandler Inputs
 @inject GroupSequencer Sequencer
-@inject SetupHandler Setup
-@inject NavigationManager Navigation
 @inject ILogger<Relays> Log
 
 <PageTitle>Relays · Contactor</PageTitle>
@@ -304,13 +301,6 @@
                 _ = RefreshAsync(reload: false);
             }
         }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-
-        // A new installation opens on the setup guide until someone finishes or skips it.
-        if (!await Setup.IsDoneAsync(CancellationToken.None))
-        {
-            Navigation.NavigateTo("setup", replace: true);
-            return;
-        }
 
         _user = await CurrentUser.GetAsync();
         await LoadAsync();

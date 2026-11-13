@@ -48,6 +48,7 @@ public sealed partial class Program
             LogEarlierFolder(app.Logger, location.Path);
         }
         app.Services.InitializeDatabaseAsync(CancellationToken.None).GetAwaiter().GetResult();
+        app.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         app.UseCloudflareAccess();
         app.UseAntiforgery();

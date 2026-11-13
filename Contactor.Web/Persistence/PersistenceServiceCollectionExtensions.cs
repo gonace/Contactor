@@ -1,13 +1,10 @@
 using System.Data.Common;
-using System.Reflection;
 using Contactor.Boards;
-using Contactor.Web.Persistence.Migrations;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Contactor.Web.Persistence;
 
@@ -71,41 +68,9 @@ public static class PersistenceServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The board model the setup guide saved (<see cref="Installation.BoardType"/>), read before the app's services
-    /// are built, since the model decides which board's services are registered. Null when there is no database
-    /// yet, it predates the Installation table, or no model is saved; the database is never created or changed here.
-    /// </summary>
-    public static string? ReadSavedBoardType(IConfiguration configuration)
-    {
-        ArgumentNullException.ThrowIfNull(configuration);
-        var connectionString = configuration.GetConnectionString(ConnectionStringName);
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return null;
-        }
-
-        (connectionString, _) = Resolve(connectionString, File.Exists);
-        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
-        if (dataSource == ":memory:" || !File.Exists(dataSource))
-        {
-            return null;
-        }
-
-        var options = new DbContextOptionsBuilder<ContactorDbContext>();
-        Configure(options, connectionString);
-        using var db = new ContactorDbContext(options.Options);
-        var migration = typeof(AddInstallation).GetCustomAttribute<MigrationAttribute>()?.Id;
-        if (migration is null || !db.Database.GetAppliedMigrations().Contains(migration))
-        {
-            return null;
-        }
-
-        return db.Installations.AsNoTracking().Select(i => i.BoardType).SingleOrDefault();
-    }
-
-    /// <summary>
-    /// Brings the database up to date and seeds what must always exist: a row for each of the board's relays and the
-    /// input. Runs before the app starts serving, so every other part can rely on them.
+    /// Brings the database up to date and seeds what must always exist: a row for each of the board's relays and
+    /// inputs. Runs before the app starts serving, so every other part can rely on them. Before a board is chosen there
+    /// is nothing to seed; <c>BoardChoice</c> seeds the board's rows once one is.
     /// </summary>
     public static Task InitializeDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken)
     {
@@ -122,30 +87,41 @@ public static class PersistenceServiceCollectionExtensions
 
     /// <summary>
     /// As <see cref="InitializeDatabaseAsync(IServiceProvider, CancellationToken)"/>, for relays 1 to
-    /// <paramref name="relayCount"/> and inputs 1 to <paramref name="inputCount"/>. Existing rows are left as they are,
-    /// also relays and inputs above the count, which a board with more left behind: their events still point to them.
+    /// <paramref name="relayCount"/> and inputs 1 to <paramref name="inputCount"/> (<see cref="SeedBoardAsync"/>).
     /// </summary>
     public static async Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(relayCount, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(relayCount, ChannelMask.MaxChannels);
-        ArgumentOutOfRangeException.ThrowIfNegative(inputCount);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(inputCount, ChannelMask.MaxChannels);
+        CheckCounts(relayCount, inputCount);
         var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
-        await using var db = await factory.CreateDbContextAsync(cancellationToken);
-
-        var dataSource = new SqliteConnectionStringBuilder(db.Database.GetConnectionString()).DataSource;
-        var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
-        if (!string.IsNullOrEmpty(directory) && dataSource != ":memory:")
+        await using (var db = await factory.CreateDbContextAsync(cancellationToken))
         {
-            Directory.CreateDirectory(directory);
+            var dataSource = new SqliteConnectionStringBuilder(db.Database.GetConnectionString()).DataSource;
+            var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
+            if (!string.IsNullOrEmpty(directory) && dataSource != ":memory:")
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await db.Database.MigrateAsync(cancellationToken);
+
+            // Kept in the database file, so setting it once is enough; readers then never block the writer.
+            await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", cancellationToken);
         }
 
-        await db.Database.MigrateAsync(cancellationToken);
+        await services.SeedBoardAsync(relayCount, inputCount, cancellationToken);
+    }
 
-        // Kept in the database file, so setting it once is enough; readers then never block the writer.
-        await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", cancellationToken);
-
+    /// <summary>
+    /// Adds the rows a board with <paramref name="relayCount"/> relays and <paramref name="inputCount"/> inputs needs:
+    /// a relay, its runtime row and an input for each, numbered from 1. Existing rows are left as they are, also
+    /// relays and inputs above the count, which a board with more left behind: their events still point to them.
+    /// </summary>
+    public static async Task SeedBoardAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        CheckCounts(relayCount, inputCount);
+        var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var existing = await db.Relays.Select(r => r.Id).ToListAsync(cancellationToken);
         for (var id = 1; id <= relayCount; id++)
         {
@@ -182,6 +158,14 @@ public static class PersistenceServiceCollectionExtensions
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void CheckCounts(int relayCount, int inputCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(relayCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relayCount, ChannelMask.MaxChannels);
+        ArgumentOutOfRangeException.ThrowIfNegative(inputCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(inputCount, ChannelMask.MaxChannels);
     }
 
     internal static void Configure(DbContextOptionsBuilder options, string connectionString)

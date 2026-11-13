@@ -36,7 +36,7 @@ internal sealed class BoardTestRig : IAsyncDisposable
 
     public FixedTimeProvider Time { get; }
 
-    public Vm201Client Client => Database.Services.GetRequiredService<Vm201Client>();
+    public Vm201Client Client => Database.Services.BoardService<Vm201Client>();
 
     public RelayControl Control => Database.Services.GetRequiredService<RelayControl>();
 
@@ -75,6 +75,7 @@ internal sealed class BoardTestRig : IAsyncDisposable
             });
         var rig = new BoardTestRig(simulator, database, time);
         await database.Services.InitializeDatabaseAsync(TestContext.Current.CancellationToken);
+        await database.Services.UseBoardAsync("vm201");
 
         // The recorder first, so it sees the first status.
         var hosted = database.Services.GetServices<IHostedService>().ToList();
