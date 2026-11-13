@@ -19,7 +19,8 @@ public enum SetupCodeResult
 
 /// <summary>
 /// The setup code: while an installation is being set up (no sign-in chosen), only someone who can read the app's log
-/// gets into the setup guide. A new code is made at each start, kept in memory only, and written to the log. Typing it gives the browser a cookie the app has signed, which holds until the code changes.
+/// gets into the setup guide. A new code is made at each start, kept in memory only, and written to the log. Typing it
+/// gives the browser a cookie the app has signed, which holds until the code changes.
 /// </summary>
 public sealed partial class SetupCode
 {
