@@ -1,41 +1,39 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Web.Features.Identity;
 
 /// <summary>
-/// Lets a request through only with a valid Cloudflare Access token (or, in Development, as
-/// <c>CloudflareAccess:DevUserEmail</c>), and puts the user on <see cref="HttpContext.User"/>. Blazor Server copies
+/// Lets a request through only when the chosen sign-in (<see cref="SignInChoice"/>) says who made it, and puts the
+/// user on <see cref="HttpContext.User"/>. Blazor Server copies
 /// that user into the circuit when it starts, which is where <see cref="CurrentUser"/> reads it. An unknown e-mail
 /// becomes a new <see cref="User"/>.
 /// </summary>
-public sealed partial class CloudflareAccessMiddleware
+public sealed partial class SignInMiddleware
 {
-    public const string AuthenticationType = "CloudflareAccess";
+    public const string AuthenticationType = "Contactor";
 
     private readonly RequestDelegate _next;
-    private readonly CloudflareAccessOptions _options;
+    private readonly SignInChoice _choice;
+    private readonly IServiceProvider _services;
     private readonly IHostEnvironment _environment;
-    private readonly CloudflareAccessTokenValidator _validator;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly ILogger<CloudflareAccessMiddleware> _logger;
+    private readonly ILogger<SignInMiddleware> _logger;
 
-    public CloudflareAccessMiddleware(
+    public SignInMiddleware(
         RequestDelegate next,
-        IOptions<CloudflareAccessOptions> options,
+        SignInChoice choice,
+        IServiceProvider services,
         IHostEnvironment environment,
-        CloudflareAccessTokenValidator validator,
         IDbContextFactory<ContactorDbContext> dbFactory,
-        ILogger<CloudflareAccessMiddleware> logger)
+        ILogger<SignInMiddleware> logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
         _next = next;
-        _options = options.Value;
+        _choice = choice;
+        _services = services;
         _environment = environment;
-        _validator = validator;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -49,9 +47,7 @@ public sealed partial class CloudflareAccessMiddleware
             return;
         }
 
-        var email = _options.UsesDevUser
-            ? IdentityRules.NormalizeEmail(_options.DevUserEmail!)
-            : await _validator.ValidateAsync(context.Request.Headers[CloudflareAccessTokenValidator.HeaderName], context.RequestAborted);
+        var email = await _choice.Current.Create(_services).AuthenticateAsync(context);
         if (email is null)
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -67,7 +63,7 @@ public sealed partial class CloudflareAccessMiddleware
         await _next(context);
     }
 
-    // The health checks answer only this machine (see their endpoints), which has no Access token.
+    // The health checks answer only this machine (see their endpoints), which isn't signed in.
     private bool IsOpenPath(PathString path)
     {
         return path.StartsWithSegments(HealthEndpoints.Path)

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
 
 namespace Contactor.Tests.Web;

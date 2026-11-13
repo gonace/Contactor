@@ -1,8 +1,9 @@
+using Contactor.Web.Features.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Contactor.Web.Features.Identity;
+namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>
 /// Validates the <c>Cf-Access-Jwt-Assertion</c> token: signed by Access with RS256, issued by our team domain, for

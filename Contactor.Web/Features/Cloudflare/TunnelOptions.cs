@@ -1,4 +1,4 @@
-namespace Contactor.Web.Features.Tunnel;
+namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>The <c>Tunnel</c> configuration section: the Cloudflare tunnel the app runs itself, when it has a token.</summary>
 public sealed class TunnelOptions

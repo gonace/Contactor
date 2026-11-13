@@ -1,12 +1,12 @@
 using System.Collections.Concurrent;
-using Contactor.Web.Features.Tunnel;
+using Contactor.Web.Features.Cloudflare;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>The app keeping cloudflared running, with a fake process and a clock the test moves.</summary>
-public sealed class TunnelHostedServiceTests
+public sealed class CloudflareTunnelTests
 {
     private const string Token = "eyJhIjoiZXhhbXBsZSJ9";
 
@@ -133,10 +133,41 @@ public sealed class TunnelHostedServiceTests
         time.Advance(by);
     }
 
-    private static TunnelHostedService Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
+    private static Run Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
     {
         var options = Options.Create(new TunnelOptions { Token = token, Path = "/opt/cloudflared" });
-        return new TunnelHostedService(options, process, time, logger);
+        return new Run(new CloudflareTunnel(options, process, time, logger));
+    }
+
+    // The tunnel run as the app's way in runs it: from start until the app stops.
+    private sealed class Run : IDisposable
+    {
+        private readonly CloudflareTunnel _tunnel;
+        private readonly CancellationTokenSource _stop = new();
+
+        public Run(CloudflareTunnel tunnel)
+        {
+            _tunnel = tunnel;
+        }
+
+        public Task? ExecuteTask { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            ExecuteTask = _tunnel.RunAsync(_stop.Token);
+            return Task.CompletedTask;
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            await _stop.CancelAsync();
+            await ExecuteTask!.WaitAsync(cancellationToken);
+        }
+
+        public void Dispose()
+        {
+            _stop.Dispose();
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -212,7 +243,7 @@ public sealed class TunnelHostedServiceTests
         }
     }
 
-    private sealed class ListLogger : ILogger<TunnelHostedService>
+    private sealed class ListLogger : ILogger<CloudflareTunnel>
     {
         private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries = new();
 

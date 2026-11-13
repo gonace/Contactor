@@ -1,6 +1,7 @@
+using Contactor.Web.Features.Identity;
 using Microsoft.Extensions.Options;
 
-namespace Contactor.Web.Features.Identity;
+namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>
 /// The <c>CloudflareAccess</c> configuration section.
