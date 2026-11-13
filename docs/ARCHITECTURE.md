@@ -7,18 +7,28 @@ The architecture and design of Contactor: what the app does and how it is built.
 ## Architecture
 
 ```
-Phone ──HTTPS──▶ <your hostname>: Cloudflare Access (e-mail OTP) ──▶ Cloudflare Tunnel
+Phone ──▶ the way in the setup guide chose
+            ├─ Only on this network: the address of the machine the app runs on
+            ├─ Cloudflare: <your hostname> ──HTTPS──▶ Cloudflare Access ──▶ Cloudflare Tunnel
+            │               ──▶ cloudflared, started by the app in its container ──▶ http://contactor:8080
+            └─ Tailscale: later
                                                          │
-                                cloudflared, started by the app in its container on the Raspberry Pi
-                                                         │ http://contactor:8080 (compose network)
                                               Contactor.Web (Blazor Server, .NET 10)
+                                              the chosen sign-in checks every request
                                                  │                    │
                                            SQLite (WAL)        TCP :9760 ──▶ VM201
 ```
 
-- **No port is opened to the internet.** All access goes through Cloudflare Tunnel + Access on the installation's own hostname. Each installation has its own Access team domain (`<team>.cloudflareaccess.com`) and application; the AUD tag is in Zero Trust → Access controls → Applications → Edit → Additional settings.
-- **Sign-in is handled entirely by Cloudflare Access** (one-time PIN by e-mail, session length 1 month, an allow list of e-mail addresses). The app has no sign-in of its own.
-- The app runs in a container and listens on port 8080 on all of the container's addresses. It starts `cloudflared` itself when `Tunnel:Token` is set, and starts it again with a growing wait (1 s doubling to 1 min) whenever it stops (`Features/Tunnel`); the image has no shell or process manager. The token goes to `cloudflared` only through its environment and is never logged. The port is **never published** on the Raspberry Pi, so nobody on the LAN can get around Access.
+- **Never on the internet directly.** No port is opened to the internet. People reach the app through the way in chosen in the setup guide (`Installation.AccessType`), and every request goes through the sign-in chosen there (`Installation.SignInType`, see [Identity](#identity-sign-in)).
+  - "Only on this network" (`local`, `LocalNetwork`): runs nothing. People open the address of the machine the app runs on, so the app is as private as that network. Its only sign-in is "No sign-in".
+  - "Cloudflare" (`cloudflare`, `CloudflareTunnel`): Cloudflare Tunnel on the installation's own hostname. Its only sign-in is "Cloudflare Access".
+  - Tailscale comes later. A new way in is a class of its own and one line in the catalogue.
+- **Ways in** (`Features/Access`): `IAccessMethod` runs one, e.g. keeps a tunnel open. `AccessCatalogue` lists each `AccessMethod`: its id, name, description for the guide, and the sign-ins it works with. `AccessChoice` reads the saved one at start and saves the guide's choice (`ChooseAsync`), which is used at once. `AccessHostedService` keeps the chosen one running; a new choice stops the old one and starts the new one. Nothing runs before one is chosen.
+- **Sign-ins** (`Features/Identity`): `ISignInMethod` tells who made a request. `SignInCatalogue` lists each `SignInMethod`, and `SignInMethod.Create` gets the `ISignInMethod` registered (keyed) under its id. `SignInChoice` reads the saved one at start and saves the guide's choice (`ChooseAsync`). `SignInMiddleware` checks every request.
+- **Cloudflare** (`Features/Cloudflare`): what only Cloudflare has. The tunnel (`CloudflareTunnel`, `CloudflaredProcess`), Access (`CloudflareAccess`, `CloudflareAccessTokenValidator`, `CloudflareAccessKeys`) and their settings (`CloudflareSettings`, `CloudflareMethods` for their ids).
+- A saved way in or sign-in that the catalogue doesn't have stops the app at start.
+- The app runs in a container and listens on port 8080 on all of the container's addresses. With Cloudflare as the way in, it starts `cloudflared` itself with the tunnel's token, and starts it again with a growing wait (1 s doubling to 1 min) whenever it stops; the image has no shell or process manager. Without a token it waits for one, and a new token starts it again at once. The token comes from the setup guide (`CloudflareSetting`), else from `Tunnel:Token`. It goes to `cloudflared` only through its environment and is never logged. With Cloudflare the port is **never published** on the machine the app runs on, so nobody on the LAN can get around Access.
+- **Cloudflare Access** (one-time PIN by e-mail, session length 1 month, an allow list of e-mail addresses) is set up in Cloudflare. Each installation has its own Access team domain (`<team>.cloudflareaccess.com`) and application; the AUD tag is in Zero Trust → Access controls → Applications → Edit → Additional settings.
 - Give the Pi and the VM201 DHCP reservations in the router, so their addresses don't change.
 
 ---
@@ -147,8 +157,23 @@ GroupRuntime            (internal; the sequence in progress, so it carries on af
 Installation            (one row; none on a new installation)
   Id              int PK = 1
   BoardType       text?          the model chosen in the setup guide (catalogue id); null: no board yet
+  AccessType      text?          the way in chosen in the setup guide: "local" | "cloudflare"; null: not chosen yet
+  SignInType      text?          the sign-in chosen in the setup guide: "none" | "cloudflare-access";
+                                 null: not chosen yet, and the app is in setup mode (see Identity)
+                                 The migration FillInstallationMethods gave installations already in use "cloudflare"
+                                 and "cloudflare-access", which they all had.
   SetupDoneUtc    datetime?      when the setup guide was finished; null: every page opens on the guide
                                  The migration that added it marked installations already in use as done.
+
+CloudflareSetting       (one row; Cloudflare's settings saved in the setup guide)
+  Id              int PK = 1
+  TunnelToken     text?          the tunnel's token; a secret: never logged or shown, given to cloudflared only
+                                 through its environment. In the backups, like the board's password.
+  Address         text?          the tunnel's public hostname, where people open the app, e.g. relays.example.com
+  TeamDomain      text?          the Access team domain: <team>.cloudflareaccess.com
+  Audience        text?          the Access application's AUD tag
+                                 A column without a value takes Tunnel:Token, CloudflareAccess:TeamDomain or
+                                 CloudflareAccess:Audience from the settings (install.sh).
 
 BoardWatchState         (one row; the app's contact with the board over time, kept by BoardEventRecorder)
   Id              int PK = 1
@@ -246,15 +271,22 @@ A group runs its relays in a start order, e.g. a fan heater: the fan first, then
 
 ---
 
-## Identity (Cloudflare Access)
+## Identity (sign-in)
 
-- **Validate `Cf-Access-Jwt-Assertion`** on every request (including static files and Blazor's SignalR connection): RS256, `aud` against the Access application's AUD tag, `iss` against `https://<TeamDomain>`, lifetime against `TimeProvider`. Missing or invalid JWT: answer 403 "Access denied.". Configured under `CloudflareAccess:TeamDomain` (the host name only) and `CloudflareAccess:Audience`; the app doesn't start in Production without them.
-- **The e-mail comes from the JWT's `email` claim**, not from the `Cf-Access-Authenticated-User-Email` header: the claim is signed, the header isn't.
-- The JWKS is fetched from `https://<TeamDomain>/cdn-cgi/access/certs` and cached for 1 h. A JWT with an unknown key refetches the list at once, at most once a minute. A failed fetch keeps the keys it had; without keys everyone is denied.
-- `/healthz` needs no JWT (it answers localhost only), and in Development neither do `/health` and `/alive`.
-- Unknown e-mail, i.e. let in by Access but missing from `User`: create a `User` automatically with DisplayName = the part before @, with a capital first letter.
-- **Development:** `CloudflareAccess:DevUserEmail` instead of the header. Must never be active in Production; throw at start if it is set there.
-- Blazor Server: the middleware sets `HttpContext.User`, which Blazor carries into the circuit when it starts. Components read the user through the scoped `CurrentUser` (built on `AuthenticationStateProvider`), since headers are gone in the SignalR circuit afterwards.
+- **Every request goes through the chosen sign-in.** `SignInMiddleware` runs before anything that serves content, including static files and Blazor's SignalR connection. It asks the chosen sign-in method (`SignInChoice.Current`) who made the request. Nobody: answer 403 "Access denied.". An e-mail missing from `User` gets a new `User`, with DisplayName = the part before @, with a capital first letter.
+- `/healthz` and `/setup/reload` need no sign-in and answer localhost only; in Development `/health` and `/alive` need none either.
+- **The sign-ins** (`SignInCatalogue`):
+  - "Cloudflare Access" (`cloudflare-access`, `CloudflareAccess`): see below.
+  - "No sign-in" (`none`, `NoSignIn`), "Not recommended" in the guide: every request is let in as one shared person, `someone@contactor.invalid`, whose name is "Someone". The events can't tell people apart.
+- **The sign-in must fit the way in.** Each way in lists the sign-ins it works with: "Only on this network" only No sign-in, Cloudflare only Cloudflare Access. So No sign-in is never used with a public link. The guide offers only what fits, and at start the app refuses a saved sign-in that doesn't fit its way in, or has no way in (`CheckSignInFitsWayIn`); the message says to run `reset-sign-in`.
+- **Setup mode:** while no sign-in is chosen (`Installation.SignInType` empty), nobody is signed in, and `SetupMode` lets through only the static files and the setup code's page (`/setup/code`). A browser with the setup code's cookie also gets the guide (`/setup`) and Blazor's connection (`/_blazor`). Any other GET goes to the code page (or the guide once the code is typed); any other request gets 403. An empty database always starts this way, also in development.
+- **The setup code** (`SetupCode`): 8 letters and digits without look-alikes, shown as `ABCD-EFGH`. A new code is made at each start without a sign-in, and when `reset-sign-in` clears the sign-in. It is kept in memory only and written to the log. Case, spaces and dashes don't matter. The right code gives the browser the cookie `contactor-setup` (HttpOnly, SameSite Lax, Secure over HTTPS), signed with data protection and tied to the current code, so a new code ends it. After 5 wrong codes in a row, no code is tried for a minute; a new code doesn't reset that count.
+- **Locked out:** `docker exec contactor dotnet Contactor.Web.dll reset-sign-in` (`SignInReset`) clears `Installation.SignInType` and calls `POST /setup/reload`. That reads the sign-in again and makes a new setup code only when the sign-in has just gone; it returns nothing. The guide then opens again at "How do people sign in?", or at "How do people reach the app?" for a Cloudflare installation without a saved address (one set up with install.sh), which asks for the tunnel's address first; an empty token keeps the saved one. The way in (so the tunnel keeps running), the board, the relays, the events and the schedules stay. When the app isn't running, it writes a code when it starts.
+- **Cloudflare Access:** validate `Cf-Access-Jwt-Assertion`: RS256, `aud` against the Access application's AUD tag, `iss` against `https://<TeamDomain>`, lifetime against `TimeProvider`. Missing or invalid JWT: denied.
+  - **The settings** come from `CloudflareSettings`: what the setup guide saved (`CloudflareSetting`), else `CloudflareAccess:TeamDomain` (the host name only) and `CloudflareAccess:Audience` from the configuration. They are read at each request, so a change takes effect at once. The team domain must end in `.cloudflareaccess.com`, with one label before it: the app fetches its keys from there, and whoever controls that domain decides who may sign in. The app doesn't start while Cloudflare Access is the sign-in and its settings can't be used.
+  - **The e-mail comes from the JWT's `email` claim**, not from the `Cf-Access-Authenticated-User-Email` header: the claim is signed, the header isn't.
+  - The JWKS is fetched from `https://<TeamDomain>/cdn-cgi/access/certs` and cached for 1 h. A JWT with an unknown key refetches the list at once, at most once a minute. A failed fetch keeps the keys it had; without keys everyone is denied. A new team domain drops the old team's keys.
+- Blazor Server: the middleware sets `HttpContext.User`, which Blazor carries into the circuit when it starts. Components read the user through the scoped `CurrentUser` (built on `AuthenticationStateProvider`), since headers are gone in the SignalR circuit afterwards. It is null only for a setup connection, let in by the setup code.
 
 ---
 
@@ -326,19 +358,25 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
 7. **Settings** (`/settings`)
    - "Relay board": the model ("Velleman VM201 · 8 relays"), the board's address ("Address") and "Port" (the model's default port as its placeholder), its login, for a model that has one ("The board has no login", or "User name" and "Password", with the model's login hint, e.g. "At most 8 characters: letters a–z, digits and plain symbols.", or else "At most N characters."; a model whose login is a password alone, the Devantech boards, shows only "Password" and "The board has no password", with its hint alone; the password is never shown, an empty field keeps it), the live status ("Board online at 192.168.1.50:9760", "No contact with the relay board at …" or "The relay board has no address yet"), and "Save". Saving moves the connection at once and is logged ("John changed the relay board's address from … to …", "John changed the relay board's login", never the values).
    - "People": everyone who has signed in, by e-mail, with their name ("Alex.smith" → "Alex") and "Save".
-   - "Backups": the newest nightly copy ("Latest: 02:30 · 68 kB"), "Make a copy now" and "Download" (`GET /settings/backup`, behind Access): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
+   - "Backups": the newest nightly copy ("Latest: 02:30 · 68 kB"), "Make a copy now" and "Download" (`GET /settings/backup`, behind the sign-in): the newest copy as a zip (`contactor-YYYY-MM-DD.zip` with the `.db` inside), so browsers don't warn about a `.db` file. The copies on the Pi stay plain `.db` files.
    - "Debugging": the checkbox "Show the traffic to the relay board", per person and saved at once. While it is on, that person sees each packet to and from the board as a toast at the bottom of every page (at most 3, 6 s each, errors red; not the keep-alive or the channel names), and gets a fourth tab, Debug.
    - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Development version" for local builds; `AppBuild.Text`); the only place it shows, except on a desktop, where it sits at the bottom of the side menu instead.
 8. **Debug** (`/debug`; the tab only shows while the person has Debugging on)
    - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in plain words ("Turn on relay 3", "Status: relay 1 and 3 on · input off", "Connection lost: …") and the packet's bytes. The button "Clear".
    - Routine steps (the VM201's keep-alive and channel names, the polled boards' polls and answers that change nothing) are only counted (`BoardTrace.RoutineLeftOut`): "N routine steps left out, such as status checks that changed nothing", kept current at most once a second (`RoutineCounted`), so a board that is asked every 2 s can't push the rest out of the list.
 
-9. **Setup** (`/setup`, `SetupGuide.razor`, `Features/Setup`): a new installation has no board, and every page opens on the guide (`SetupGate.razor`) until someone finishes it; anyone signed in may go through it. No tab bar; "STEP n OF 5" with a progress bar, and "Back" after the first step.
-   1. "Welcome to Contactor": "Your name" (saved as the person's DisplayName) and "YOU'LL NEED".
-   2. "Which relay board?": "Brand", then "Model", none chosen to begin with. Each field opens a list from the bottom of the screen on a phone, and a dropdown under the field on a tablet or desktop: the brands with how many models each has, then only that brand's models with what they have ("8 relays · 1 input"). A new brand opens its models at once. "Next" works once a model is chosen. The one chosen is saved and the app switches to it at once, while it runs (`BoardChoice`), and the guide goes straight on.
-   3. "Where is the board?": address, port (empty: the model's default) and login, saved through `BoardAddressHandler`; "Next" waits up to 10 s for the board (`BoardContact`, which ignores a connection to the old address) and shows "Board online" or "No answer from …". "Go on without a connection" saves what was typed and goes on.
-   4. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes.
-   5. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
+9. **Setup** (`/setup/code`, `SetupCodePage.razor`; `/setup`, `SetupGuide.razor`; `Features/Setup`): a new installation has no way in, no sign-in and no board. While no sign-in is chosen, every page opens on the setup code's page (see Identity). After that, every page opens on the guide (`SetupGate.razor`) until someone finishes it. Whoever has the setup code goes through Part 1; anyone signed in may go through the rest. No tab bar. The header shows "PART 1 OF 2 · THE APP" or "PART 2 OF 2 · THE BOARD", and "STEP n OF 4" with a progress bar. "Back" goes to the step before, but never to the setup code, and never back to a sign-in that is saved.
+   - **Part 1, the app** (`SetupSignInHandler`):
+     1. "Welcome to Contactor": "Setup code", and "WHERE IS IT?" (the app's log, e.g. `docker logs contactor`). This page has no live connection (`[ExcludeFromInteractiveRouting]`; `App.razor` renders such pages without it), because only an ordinary page's answer can set the cookie. "That isn't the setup code. Check the log and try again.", or after 5 wrong codes "Too many wrong codes. Wait a minute, then try again.".
+     2. "How do people reach the app?": the ways in as choices, each with its description. "Only on this network" is tagged "SIMPLEST" and is chosen to begin with. Cloudflare also asks for the "Tunnel token" and the "Address" (the tunnel's public hostname). Both are saved in `CloudflareSetting`, and the tunnel starts at once (`AccessChoice.ChooseAsync`, `AccessHostedService`).
+     3. "How do people sign in?": every sign-in. Those that fit the way in can be chosen, with the recommended one first ("RECOMMENDED"). The rest show greyed out with their reason, e.g. "Only with Cloudflare.". No sign-in is tagged "NOT RECOMMENDED" and warns that anyone on the network can switch the relays. Cloudflare Access also asks for the "Team domain" and the "AUD tag". With Cloudflare as the way in, the step shows whether the tunnel is connected. Saving the sign-in ends setup mode (`SignInChoice.ChooseAsync`). With Cloudflare Access, only the tunnel's address answers from then on. So the page says "Go on at your new address" and links there. With No sign-in the guide loads again and goes on as "Someone".
+     4. "About you": "Your name" (saved as the person's DisplayName) and "YOU'LL NEED". Skipped with No sign-in.
+   - **Part 2, the board:**
+     1. "Which relay board?": "Brand", then "Model", none chosen to begin with. Each field opens a list from the bottom of the screen on a phone, and a dropdown under the field on a tablet or desktop: the brands with how many models each has, then only that brand's models with what they have ("8 relays · 1 input"). A new brand opens its models at once. "Next" works once a model is chosen. The one chosen is saved and the app switches to it at once, while it runs (`BoardChoice`), and the guide goes straight on.
+     2. "Where is the board?": address, port (empty: the model's default) and login, saved through `BoardAddressHandler`; "Next" waits up to 10 s for the board (`BoardContact`, which ignores a connection to the old address) and shows "Board online" or "No answer from …". "Go on without a connection" saves what was typed and goes on.
+     3. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes.
+     4. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
+   - After `reset-sign-in`, the guide opens behind a new setup code at "How do people sign in?". A Cloudflare installation without a saved address (one set up with install.sh) opens at "How do people reach the app?" instead, which asks for the tunnel's address first; an empty token keeps the saved one. An installation that was done goes on to the relays once a sign-in is chosen.
 
 10. **Input** (`/input/{id}`, `InputDetail.razor`, `Features/Inputs`)
    - "INPUT n · NAME", the checkbox "Active: shown in the list", the state now ("NOW", "Open since 14:02" or "Open since unknown" with the same ⓘ, and its badge), "Groups and relays" (a card per relay or group it controls: "Group: Fan heater" or "Relay 4: Lighting", "CLOSES" and "OPENS" each with Turn on / Turn off / Nothing, and "Remove"; "+ Add a group or relay" offers what it doesn't control yet, groups first), its latest 4 events with "All events", and "Save". Saving isn't logged. Like the Relay screen: the side menu on a desktop, two columns and Save at the top right.
@@ -409,19 +447,18 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
     "Password": "",                 // the board's TCP password, its only login; empty: none
     "PollSeconds": 2
   },
-  "CloudflareAccess": {
+  "CloudflareAccess": {             // optional: only where the setup guide saved none (CloudflareSetting)
     "TeamDomain": "",               // e.g. myteam.cloudflareaccess.com; install.sh asks for it
-    "Audience": "<AUD tag of the Access application>",
-    "DevUserEmail": null
+    "Audience": ""                  // the AUD tag of the Access application
   },
-  "Tunnel": { "Token": "" },        // the Cloudflare tunnel's token; empty: no cloudflared
+  "Tunnel": { "Token": "" },        // optional: the Cloudflare tunnel's token, where the setup guide saved none
   "TimeZone": "Europe/Stockholm"
 }
 ```
 
 No `Urls` in the settings: the .NET image listens on 8080 (`ASPNETCORE_HTTP_PORTS`), and in development Aspire picks the port. ASP.NET Core's data protection keys are kept in `keys/` next to the database, so they survive upgrades.
 
-Anything specific to the installation or secret (the Access team domain and AUD tag, the board's address and password, the tunnel token) is never in the repository or the image. An install script asks for them once, saves them in `/opt/contactor/.env` (readable by root only), and compose passes them in as environment variables, e.g. `CloudflareAccess__Audience` and `Tunnel__Token`.
+Anything specific to the installation or secret (the Access team domain and AUD tag, the board's address and password, the tunnel token) is never in the repository or the image. The setup guide saves them in the database. An install script can also ask for them once, save them in `/opt/contactor/.env` (readable by root only), and compose passes them in as environment variables, e.g. `CloudflareAccess__Audience` and `Tunnel__Token`. What the guide saved wins over them.
 
 ---
 
@@ -431,11 +468,12 @@ See [`DEPLOY.md`](DEPLOY.md) for the steps.
 
 - **Versions:** `YYYY.M.D` in UTC without leading zeros, plus `.N` for a later release the same day (`scripts/release-version.sh`). A release is built with `-p:Version=<version>`; every other build is `0.0.0-dev` (`Directory.Build.props`). `AppBuild` reads the version and commit; they show in `/healthz`, the start log, the image label `org.opencontainers.image.version`, the upgrade's output and at the bottom of Settings.
 - **Publish:** the Images workflow (started by hand) or `scripts/images-publish.sh` builds the solution and runs every test (a failure publishes nothing), builds and pushes the image from the `Dockerfile` with `docker buildx` (`scripts/images-build.sh`), tags it `YYYY.M.D[.N]`, `latest` and `sha-<commit>`, signs it with cosign by digest (`scripts/images-sign.sh`, keys in `deploy/cosign/`) and tags the commit `v<version>`.
-- **Run:** Docker Compose on the Raspberry Pi (Raspberry Pi OS Lite 64-bit on an SD card, an endurance card recommended), from `/opt/contactor` with `compose.yml` and `.env`. One container, run as the image's user 1654; the Pi's `/var/lib/contactor` is mounted as `/data` (database, `backups/`, `keys/`) and owned by it. `cloudflared` is pinned by digest in the `Dockerfile` and runs a remotely managed tunnel: `<your hostname> → http://contactor:8080`. An installation whose `compose.yml` predates `/data` still finds its database in `/var/lib/contactor` and logs that `install.sh` should be run again (`PersistenceServiceCollectionExtensions.Resolve`).
+- **Run:** Docker Compose on the Raspberry Pi (Raspberry Pi OS Lite 64-bit on an SD card, an endurance card recommended), from `/opt/contactor` with `compose.yml` and `.env`. One container, run as the image's user 1654; the Pi's `/var/lib/contactor` is mounted as `/data` (database, `backups/`, `keys/`) and owned by it. `cloudflared` is pinned by digest in the `Dockerfile` and, with Cloudflare as the way in, runs a remotely managed tunnel: `<your hostname> → http://contactor:8080`. An installation whose `compose.yml` predates `/data` still finds its database in `/var/lib/contactor` and logs that `install.sh` should be run again (`PersistenceServiceCollectionExtensions.Resolve`).
 - **Upgrade:** `contactor-upgrade` (`deploy/upgrade.sh`) only runs an image signed with one of the keys in its `COSIGN_KEYS`; a systemd timer runs it nightly between 03:00 and 04:00 (`deploy/autoupdate-install.sh`). After a healthy start it keeps the 3 newest versions of the app's image (`KEEP_VERSIONS`, never the running one) and removes older ones, so a 16 GB SD card doesn't fill up.
 - **Migration:** run `Database.Migrate()` at start.
 - **Backup:** every night at 02:30 the app copies the database with SQLite's `VACUUM INTO` into `backups/contactor-YYYY-MM-DD.db` and keeps the latest 14 (`Backup:Folder`, `Backup:Keep`, `Backup:At`).
 - **Health check:** `/healthz` (localhost only, otherwise 404) returns 200 and the board's connection status (`boardConnected`, `boardLastContactUtc`). The image has no shell or curl; `dotnet /app/Contactor.Web.dll healthcheck` asks it and exits 0 or 1, and compose uses that.
+- **Locked out:** `docker exec contactor dotnet Contactor.Web.dll reset-sign-in` forgets the sign-in, and the setup guide opens again behind a new setup code in the log (see [Identity](#identity-sign-in)).
 
 ---
 
