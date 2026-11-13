@@ -126,7 +126,7 @@ public sealed class BoardCatalogueTests
 
     // The setup guide asks for the brand, then the model: every model is under its brand, once, in the catalogue's order.
     [Fact]
-    public void Should_ListTheMakes_InAlphabeticalOrder_EachWithItsModels()
+    public void Should_ListTheBrands_InAlphabeticalOrder_EachWithItsModels()
     {
         Assert.Equal(["Devantech", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
         Assert.Equal(
@@ -139,7 +139,7 @@ public sealed class BoardCatalogueTests
 
     // The brand isn't repeated in the model's name, and the full name still reads as people know it.
     [Fact]
-    public void Should_NameEachModel_WithoutItsMake()
+    public void Should_NameEachModel_WithoutItsBrand()
     {
         Assert.All(BoardCatalogue.All, r =>
         {

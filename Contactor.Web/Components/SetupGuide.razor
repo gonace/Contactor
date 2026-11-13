@@ -22,7 +22,7 @@
 <PageTitle>Setup · Contactor</PageTitle>
 
 <div class="screen">
-    @* While a list of step 2 is open, the page behind it takes no focus or clicks. *@
+    @* While a list of step 2 is open, everything but the list and its field takes no focus or clicks. *@
     <header class="header" inert="@(_sheet != Sheet.None)">
         @if (_step > 1)
         {
@@ -70,7 +70,7 @@
                 <h1 tabindex="-1" @ref="_heading">Which relay board?</h1>
                 <p>Choose the brand first, then the model. Both are printed on the board.</p>
             </div>
-            <div class="field" inert="@(_sheet == Sheet.Model)">
+            <div class="field" inert="@(_sheet == Sheet.Model)" @onkeydown="OnSheetKey">
                 <span class="field-label" id="brand-label">Brand</span>
                 <button type="button" class="select @(_sheet == Sheet.Brand ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Brand ? "true" : "false")"
                         aria-labelledby="brand-label brand-value" @ref="_brandField" @onclick="() => Open(Sheet.Brand)">
@@ -91,7 +91,7 @@
                     @List
                 }
             </div>
-            <div class="field" inert="@(_sheet == Sheet.Brand)">
+            <div class="field" inert="@(_sheet == Sheet.Brand)" @onkeydown="OnSheetKey">
                 <span class="field-label" id="model-label">Model</span>
                 <button type="button" class="select @(_sheet == Sheet.Model ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Model ? "true" : "false")"
                         aria-labelledby="model-label model-value" disabled="@(_brand is null)" @ref="_modelField" @onclick="() => Open(Sheet.Model)">
@@ -289,7 +289,7 @@
     private RenderFragment List => __builder =>
     {
         <div class="sheet-backdrop" @onclick="Close"></div>
-        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @onkeydown="OnSheetKey">
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
             <span class="grab" aria-hidden="true"></span>
             <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Brand ? "Brand" : $"{_brand} model")</h2>
             <div class="sheet-options">
@@ -733,7 +733,8 @@
 
     private void OnSheetKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape")
+        // On the field, so Escape also closes the list from the field's own button.
+        if (e.Key == "Escape" && _sheet != Sheet.None)
         {
             Close();
         }
