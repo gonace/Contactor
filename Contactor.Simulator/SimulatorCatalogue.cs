@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Boards.Devantech;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
@@ -54,6 +55,12 @@ public static class SimulatorCatalogue
             model,
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Waveshare board takes no login.",
             (_, _, logger, time) => new WaveshareSimulator(model, logger) { TimeProvider = time })),
+        .. DevantechModels.All.Select(model => new SimulatorModel(
+            model,
+            (username, password) => username.Length > 0
+                ? "The Devantech board takes a password only, no user name."
+                : DevantechModels.CheckPassword(password),
+            (_, password, logger, time) => new DevantechSimulator(model, password, logger) { TimeProvider = time })),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>

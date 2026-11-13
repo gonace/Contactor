@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Boards.Devantech;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
@@ -75,6 +76,26 @@ public sealed class BoardCatalogueTests
         Assert.IsType<WaveshareTraffic>(board.Traffic);
         Assert.False(board.Connection.Endpoint.HasHost);
         Assert.Equal(4196, board.Connection.Endpoint.Port);
+    }
+
+    [Theory]
+    [InlineData("devantech-eth002")]
+    [InlineData("devantech-eth008")]
+    [InlineData("Devantech-ETH484")]
+    [InlineData(" devantech-eth8020 ")]
+    public async Task Should_BuildEachDevantechModel_WhenChosen(string type)
+    {
+        await using var board = Build(type);
+
+        Assert.Contains(board.Model, DevantechModels.All);
+        Assert.Equal(type.Trim().ToLowerInvariant(), board.Model.Id);
+        var devantech = Assert.IsType<DevantechBoard>(board.Board);
+        Assert.Same(board.Model.Capabilities, devantech.Capabilities);
+        Assert.Same(board.Model, board.Services.GetRequiredService<DevantechClient>().Model);
+        Assert.IsType<DevantechConnection>(board.Connection);
+        Assert.IsType<DevantechTraffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(17494, board.Connection.Endpoint.Port);
     }
 
     [Fact]

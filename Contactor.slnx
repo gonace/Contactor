@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="Contactor.AppHost/Contactor.AppHost.csproj" />
   <Project Path="Contactor.Boards/Contactor.Boards.csproj" />
+  <Project Path="Contactor.Boards.Devantech/Contactor.Boards.Devantech.csproj" />
   <Project Path="Contactor.Boards.Vm201/Contactor.Boards.Vm201.csproj" />
   <Project Path="Contactor.Boards.Vm204/Contactor.Boards.Vm204.csproj" />
   <Project Path="Contactor.Boards.Vm208/Contactor.Boards.Vm208.csproj" />

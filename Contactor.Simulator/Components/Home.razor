@@ -156,7 +156,7 @@
                         }
                         @if (current.Traffic.Count == 0)
                         {
-                            <p class="hint empty">@(state.Clients.Count == 0 ? $"Nothing yet. Set the app's board to 127.0.0.1, port {current.Board.Port}{(current.Username is null ? "" : $", user {current.Username}")}." : "Nothing new.")</p>
+                            <p class="hint empty">@(state.Clients.Count == 0 ? $"Nothing yet. Set the app's board to 127.0.0.1, port {current.Board.Port}{(current.Username switch { null => "", "" => ", its password", var username => $", user {username}" })}." : "Nothing new.")</p>
                         }
                     </div>
                 </section>
@@ -247,13 +247,23 @@
 
     private static string LoginText(RunningBoard board)
     {
-        return board.Username is null ? "" : $" · login {board.Username}";
+        return board.Username switch
+        {
+            null => "",
+            "" => " · password",
+            var username => $" · login {username}",
+        };
     }
 
     private static string Connection(RunningBoard board)
     {
         var clients = board.Board.State.Clients;
-        var login = board.Username is null ? "no login" : $"login {board.Username}";
+        var login = board.Username switch
+        {
+            null => "no login",
+            "" => "password",
+            var username => $"login {username}",
+        };
         return clients.Count switch
         {
             0 => $"Waiting for the app · {login}",
