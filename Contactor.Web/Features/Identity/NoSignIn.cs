@@ -6,11 +6,11 @@ namespace Contactor.Web.Features.Identity;
 /// </summary>
 public sealed class NoSignIn : ISignInMethod
 {
-    /// <summary>The shared person's e-mail: in a reserved domain (.invalid), so it can never be a real one.</summary>
+    /// <summary>
+    /// The shared person's e-mail: in a reserved domain (.invalid), so it can never be a real one. Its name, made from
+    /// it on first sign-in as for anyone, is "Someone".
+    /// </summary>
     public const string Email = "someone@contactor.invalid";
-
-    /// <summary>The shared person's name in the app and the events.</summary>
-    public const string DisplayName = "Someone";
 
     public Task<string?> AuthenticateAsync(HttpContext context) => Task.FromResult<string?>(Email);
 }

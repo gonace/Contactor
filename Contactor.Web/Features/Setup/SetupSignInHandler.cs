@@ -28,12 +28,13 @@ public sealed record SetupSignInOption(SignInMethod Method, bool Allowed, bool R
 /// Part 1 of the setup guide: how people reach the app and how they sign in. Between the guide and the choices
 /// (<see cref="AccessChoice"/>, <see cref="SignInChoice"/>) and Cloudflare's settings.
 /// </summary>
-public sealed class SetupSignInHandler
+public sealed class SetupSignInHandler : IDisposable
 {
     private readonly AccessChoice _access;
     private readonly SignInChoice _signIn;
     private readonly CloudflareSettings _cloudflare;
     private readonly CloudflareTunnel _tunnel;
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     public SetupSignInHandler(
         AccessChoice access,
@@ -98,27 +99,27 @@ public sealed class SetupSignInHandler
     /// <summary>Chooses how people reach the app; Cloudflare also needs its tunnel's token and address.</summary>
     public Task<string?> ChooseWayInAsync(string id, string? token, string? address, CancellationToken cancellationToken)
     {
-        return AccessCatalogue.Find(id)?.Id switch
+        return OneAtATimeAsync(() => AccessCatalogue.Find(id)?.Id switch
         {
-            CloudflareMethods.TunnelId => ChooseCloudflareAsync(token, address, cancellationToken),
-            AccessCatalogue.LocalId => ChooseLocalAsync(cancellationToken),
+            CloudflareMethods.TunnelId => ChooseCloudflareCoreAsync(token, address, cancellationToken),
+            AccessCatalogue.LocalId => ChooseLocalCoreAsync(cancellationToken),
             _ => Task.FromResult<string?>("Choose how people reach the app."),
-        };
+        }, cancellationToken);
     }
 
     /// <summary>Chooses how people sign in; Cloudflare Access also needs its team domain and AUD tag.</summary>
     public Task<string?> ChooseSignInAsync(string id, string? teamDomain, string? audience, CancellationToken cancellationToken)
     {
-        return SignInCatalogue.Find(id)?.Id switch
+        return OneAtATimeAsync(() => SignInCatalogue.Find(id)?.Id switch
         {
-            CloudflareMethods.AccessId => ChooseCloudflareAccessAsync(teamDomain, audience, cancellationToken),
-            SignInCatalogue.NoneId => ChooseNoSignInAsync(cancellationToken),
+            CloudflareMethods.AccessId => ChooseCloudflareAccessCoreAsync(teamDomain, audience, cancellationToken),
+            SignInCatalogue.NoneId => ChooseNoSignInCoreAsync(cancellationToken),
             _ => Task.FromResult<string?>("Choose how people sign in."),
-        };
+        }, cancellationToken);
     }
 
     /// <summary>"Only on this network": nothing to save but the choice.</summary>
-    public async Task<string?> ChooseLocalAsync(CancellationToken cancellationToken)
+    private async Task<string?> ChooseLocalCoreAsync(CancellationToken cancellationToken)
     {
         if (_signIn.Current is not null)
         {
@@ -130,7 +131,7 @@ public sealed class SetupSignInHandler
     }
 
     /// <summary>No sign-in: only with "Only on this network", never with a public link.</summary>
-    public async Task<string?> ChooseNoSignInAsync(CancellationToken cancellationToken)
+    private async Task<string?> ChooseNoSignInCoreAsync(CancellationToken cancellationToken)
     {
         if (_signIn.Current is not null)
         {
@@ -144,6 +145,40 @@ public sealed class SetupSignInHandler
 
         await _signIn.ChooseAsync(SignInCatalogue.Find(SignInCatalogue.NoneId)!, cancellationToken);
         return null;
+    }
+
+    /// <summary>"Only on this network": nothing to save but the choice.</summary>
+    public Task<string?> ChooseLocalAsync(CancellationToken cancellationToken) => OneAtATimeAsync(() => ChooseLocalCoreAsync(cancellationToken), cancellationToken);
+
+    /// <summary>No sign-in: only with "Only on this network", never with a public link.</summary>
+    public Task<string?> ChooseNoSignInAsync(CancellationToken cancellationToken) => OneAtATimeAsync(() => ChooseNoSignInCoreAsync(cancellationToken), cancellationToken);
+
+    /// <summary>Cloudflare as the way in, with its tunnel's token and address.</summary>
+    public Task<string?> ChooseCloudflareAsync(string? token, string? address, CancellationToken cancellationToken) =>
+        OneAtATimeAsync(() => ChooseCloudflareCoreAsync(token, address, cancellationToken), cancellationToken);
+
+    /// <summary>Cloudflare Access as the sign-in, with its team domain and AUD tag.</summary>
+    public Task<string?> ChooseCloudflareAccessAsync(string? teamDomain, string? audience, CancellationToken cancellationToken) =>
+        OneAtATimeAsync(() => ChooseCloudflareAccessCoreAsync(teamDomain, audience, cancellationToken), cancellationToken);
+
+    public void Dispose()
+    {
+        _gate.Dispose();
+    }
+
+    // Every choice checks the other one, then saves its own: one at a time (two tabs of the guide), so a check can't
+    // pass on a choice another tab is changing, e.g. Cloudflare saved while No sign-in is.
+    private async Task<string?> OneAtATimeAsync(Func<Task<string?>> choose, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await choose();
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     // "Only with Cloudflare", or "Only on this network.": the ways in a sign-in works with.
@@ -166,7 +201,7 @@ public sealed class SetupSignInHandler
     /// one saved before, once Cloudflare is the way in (the guide never shows it again). Returns what is wrong in plain
     /// words, and changes nothing then.
     /// </summary>
-    public async Task<string?> ChooseCloudflareAsync(string? token, string? address, CancellationToken cancellationToken)
+    private async Task<string?> ChooseCloudflareCoreAsync(string? token, string? address, CancellationToken cancellationToken)
     {
         if (_signIn.Current is not null)
         {
@@ -192,7 +227,7 @@ public sealed class SetupSignInHandler
     /// Cloudflare Access as the sign-in: saves its team domain and AUD tag, and uses it from the next request on, which
     /// ends setup mode. Returns what is wrong in plain words, and changes nothing then.
     /// </summary>
-    public async Task<string?> ChooseCloudflareAccessAsync(string? teamDomain, string? audience, CancellationToken cancellationToken)
+    private async Task<string?> ChooseCloudflareAccessCoreAsync(string? teamDomain, string? audience, CancellationToken cancellationToken)
     {
         if (_signIn.Current is not null)
         {

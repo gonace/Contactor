@@ -71,7 +71,8 @@ public sealed class SetupSignInHandlerTests
         var handler = database.Services.GetRequiredService<SetupSignInHandler>();
         Assert.NotNull(await handler.ChooseNoSignInAsync(Cancel));
 
-        await handler.ChooseWayInAsync(CloudflareMethods.TunnelId, "tunnel-token", "relays.example.com", Cancel);
+        Assert.Null(await handler.ChooseWayInAsync(CloudflareMethods.TunnelId, "tunnel-token", "relays.example.com", Cancel));
+        Assert.Equal(CloudflareMethods.TunnelId, handler.WayIn?.Id);
 
         Assert.NotNull(await handler.ChooseSignInAsync(SignInCatalogue.NoneId, null, null, Cancel));
         Assert.Equal(SetupPart1Step.SignIn, handler.Step);
@@ -93,6 +94,30 @@ public sealed class SetupSignInHandlerTests
         await handler.ChooseCloudflareAsync("tunnel-token", "relays.example.com", Cancel);
         Assert.NotNull(await handler.ChooseCloudflareAccessAsync("evil.example.com", "aud", Cancel));
         Assert.Equal(SetupPart1Step.SignIn, handler.Step);
+    }
+
+    // Two tabs of the guide at once: one chooses Cloudflare as the way in while the other chooses No sign-in. However
+    // they meet, the installation never ends up with a public link and No sign-in.
+    [Fact]
+    public async Task Should_NeverCombineCloudflare_WithNoSignIn_FromTwoTabs()
+    {
+        for (var round = 0; round < 20; round++)
+        {
+            await using var database = await CreateAsync();
+            var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+            await handler.ChooseLocalAsync(Cancel);
+
+            await Task.WhenAll(
+                Task.Run(() => handler.ChooseCloudflareAsync("tunnel-token", "relays.example.com", Cancel), Cancel),
+                Task.Run(() => handler.ChooseNoSignInAsync(Cancel), Cancel));
+
+            await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+            var installation = await db.Installations.SingleAsync(Cancel);
+            Assert.False(
+                installation.AccessType == CloudflareMethods.TunnelId && installation.SignInType == SignInCatalogue.NoneId,
+                "Cloudflare and No sign-in were both saved.");
+            Assert.Equal(installation.AccessType, handler.WayIn?.Id);
+        }
     }
 
     // Back on the way-in step, the token field is empty: the saved token stays, and a new address is taken.

@@ -31,7 +31,7 @@ public sealed class MethodCatalogueTests
         Assert.All(access.Concat(signIns), id => Assert.Equal(id.ToLowerInvariant(), id));
     }
 
-    // The guide offers what a way in works with: each must be a sign-in the app has, and the first is recommended.
+    // The guide offers what a way in works with: each must be a sign-in the app has.
     [Fact]
     public void Should_OfferOnlyKnownSignIns_ForEachWayIn()
     {

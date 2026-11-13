@@ -82,7 +82,6 @@ function seed() {
     }
 
     const user = db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (?, ?, 0)');
-    user.run('john@example.com', 'John');
     user.run('jane@example.com', 'Jane');
     user.run('alex@example.com', 'Alex');
 

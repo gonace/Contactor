@@ -706,6 +706,23 @@ public sealed class SetupTests
         await db.SaveChangesAsync(Cancel);
     }
 
+    // No sign-in: everyone is let in as Someone, and the guide goes on with the board, with nothing about you and no
+    // way back to the sign-in.
+    [Fact]
+    public async Task Should_GoOnWithTheBoard_WithNoSignIn()
+    {
+        await using var app = new TestWebApp("Development", setUp: false);
+        app.SaveBeforeStart(new Installation { AccessType = "local", SignInType = "none" });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup", Cancel));
+
+        Assert.Contains("Which relay board?", html, StringComparison.Ordinal);
+        Assert.Contains("PART 2 OF 2", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 1 OF 4", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"back\"", html, StringComparison.Ordinal);
+    }
+
     // Part 1 done (Cloudflare and Cloudflare Access, which the test app answers for as John), the guide not yet.
     private static TestWebApp SignedInNotSetUp()
     {

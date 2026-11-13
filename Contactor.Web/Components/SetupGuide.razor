@@ -379,7 +379,7 @@
                 <label class="choice @(id == _wayIn ? "chosen" : null)">
                     <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
                     <span class="choice-text">
-                        <span class="name">@way.Name@if (way.Simplest)
+                        <span class="name">@way.Name @if (way.Simplest)
                             {
                                 <span class="tag">SIMPLEST</span>
                             }</span>
@@ -427,7 +427,7 @@
                     <label class="choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
                         <input type="radio" name="sign-in" checked="@(id == _signInId)" disabled="@(!option.Allowed)" @onchange="() => _signInId = id" />
                         <span class="choice-text">
-                            <span class="name">@option.Method.Name@if (option.Recommended)
+                            <span class="name">@option.Method.Name @if (option.Recommended)
                                 {
                                     <span class="tag">RECOMMENDED</span>
                                 }
@@ -735,7 +735,7 @@
             return;
         }
 
-        // Nobody is signed in in this page (the development user never comes here): from now on only the new address
+        // Nobody is signed in in this page: from now on only the new address
         // answers. The handler took the sign-in only with an address saved.
         _setupDone = await Setup.IsDoneAsync(CancellationToken.None);
         _elsewhere = NewAddress();

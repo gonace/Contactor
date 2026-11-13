@@ -369,7 +369,7 @@ input[type="password"] {
 }
 
 .tag {
-    margin-left: 6px;
+    margin-left: 2px;
     padding: 1px 6px;
     border-radius: 6px;
     background: var(--accent);

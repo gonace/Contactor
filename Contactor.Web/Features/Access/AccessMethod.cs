@@ -14,7 +14,9 @@ public interface IAccessMethod
 /// <param name="Id">Its id, saved with the installation (<c>Installation.AccessType</c>). Lower case.</param>
 /// <param name="Name">Its name as people know it, e.g. "Cloudflare".</param>
 /// <param name="Description">What it is and needs, in plain words, as the setup guide shows it.</param>
-/// <param name="SignIns">The sign-in methods it works with, by id; the first is the one to recommend.</param>
+/// <param name="SignIns">
+/// The sign-in methods it works with, by id; the first that isn't "Not recommended" is the one the guide recommends.
+/// </param>
 /// <param name="Create">Gets it from the app's services.</param>
 /// <param name="Simplest">Whether the guide tags it "Simplest" and has it chosen to begin with.</param>
 public sealed record AccessMethod(
