@@ -1,13 +1,15 @@
+using Contactor.Web.Features.Access;
 using Microsoft.Extensions.Options;
 
-namespace Contactor.Web.Features.Tunnel;
+namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>
-/// Keeps the Cloudflare tunnel running for the app's lifetime when <c>Tunnel:Token</c> is set: starts cloudflared,
-/// and starts it again after a growing wait (1 s, doubling to at most 1 min) whenever it stops. Without a token it
-/// does nothing. The image has no shell or process manager, so the app looks after cloudflared itself.
+/// Cloudflare as the way in: keeps the Cloudflare tunnel running while it is the chosen way in, when
+/// <c>Tunnel:Token</c> is set. Starts cloudflared, and starts it again after a growing wait (1 s, doubling to at most
+/// 1 min) whenever it stops. Without a token it does nothing. The image has no shell or process manager, so the app
+/// looks after cloudflared itself.
 /// </summary>
-public sealed partial class TunnelHostedService : BackgroundService
+public sealed partial class CloudflareTunnel : IAccessMethod
 {
     public static readonly TimeSpan FirstWait = TimeSpan.FromSeconds(1);
     public static readonly TimeSpan LongestWait = TimeSpan.FromMinutes(1);
@@ -18,9 +20,9 @@ public sealed partial class TunnelHostedService : BackgroundService
     private readonly TunnelOptions _options;
     private readonly ICloudflaredProcess _process;
     private readonly TimeProvider _time;
-    private readonly ILogger<TunnelHostedService> _logger;
+    private readonly ILogger<CloudflareTunnel> _logger;
 
-    public TunnelHostedService(IOptions<TunnelOptions> options, ICloudflaredProcess process, TimeProvider time, ILogger<TunnelHostedService> logger)
+    public CloudflareTunnel(IOptions<TunnelOptions> options, ICloudflaredProcess process, TimeProvider time, ILogger<CloudflareTunnel> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value;
@@ -29,7 +31,7 @@ public sealed partial class TunnelHostedService : BackgroundService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public async Task RunAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.Token))
         {
@@ -38,7 +40,7 @@ public sealed partial class TunnelHostedService : BackgroundService
         }
 
         var wait = FirstWait;
-        while (!stoppingToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             var started = _time.GetUtcNow();
             int? exitCode = null;
@@ -46,9 +48,9 @@ public sealed partial class TunnelHostedService : BackgroundService
             try
             {
                 LogStarting();
-                exitCode = await _process.RunAsync(_options.Path, _options.Token.Trim(), LogOutput, stoppingToken);
+                exitCode = await _process.RunAsync(_options.Path, _options.Token.Trim(), LogOutput, cancellationToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 return;
             }
@@ -76,7 +78,7 @@ public sealed partial class TunnelHostedService : BackgroundService
 
             try
             {
-                await Task.Delay(wait, _time, stoppingToken);
+                await Task.Delay(wait, _time, cancellationToken);
             }
             catch (OperationCanceledException)
             {

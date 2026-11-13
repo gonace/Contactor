@@ -1,13 +1,14 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// The installation itself: which model of board it has, and whether the setup guide has been done. One row; while
-/// it doesn't exist there is no board, and every page opens on the setup guide.
+/// The installation itself: which model of board it has, how people reach the app and sign in, and whether the setup
+/// guide has been done. One row; while it doesn't exist there is no board, and every page opens on the setup guide.
 /// </summary>
 public sealed class Installation
 {
     public const int SingletonId = 1;
     public const int BoardTypeMaxLength = 32;
+    public const int MethodTypeMaxLength = 32;
 
     public int Id { get; set; } = SingletonId;
 
@@ -16,6 +17,18 @@ public sealed class Installation
     /// chosen: the app then has no board.
     /// </summary>
     public string? BoardType { get; set; }
+
+    /// <summary>
+    /// How people reach the app, by its id in the catalogue of ways in (e.g. <c>cloudflare</c>). Null: Cloudflare
+    /// Tunnel, as every installation had before it could choose.
+    /// </summary>
+    public string? AccessType { get; set; }
+
+    /// <summary>
+    /// How people sign in, by its id in the catalogue of sign-in methods (e.g. <c>cloudflare-access</c>). Null:
+    /// Cloudflare Access, as every installation had before it could choose.
+    /// </summary>
+    public string? SignInType { get; set; }
 
     /// <summary>When the setup guide was finished; null while every page should open on it.</summary>
     public DateTime? SetupDoneUtc { get; set; }

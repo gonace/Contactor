@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Persistence;
@@ -11,12 +12,12 @@ namespace Contactor.Tests.Web;
 /// <summary>
 /// The whole app in Production behind a fake Cloudflare Access.
 /// </summary>
-public sealed class CloudflareAccessMiddlewareTests : IDisposable
+public sealed class CloudflareAccessTests : IDisposable
 {
     private readonly AccessTokens _tokens = new();
     private readonly CertificatesHandler _handler;
 
-    public CloudflareAccessMiddlewareTests()
+    public CloudflareAccessTests()
     {
         _handler = new CertificatesHandler(_tokens.Certificates);
     }

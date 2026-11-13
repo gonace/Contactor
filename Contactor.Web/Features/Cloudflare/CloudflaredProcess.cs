@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Contactor.Web.Features.Tunnel;
+namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>Runs cloudflared once, until it exits or is cancelled.</summary>
 public interface ICloudflaredProcess
