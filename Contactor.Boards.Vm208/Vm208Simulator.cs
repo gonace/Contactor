@@ -313,7 +313,7 @@ public sealed class Vm208Simulator : ISimulatedBoard
 
         // ESPAsyncWebServer reads a body's parameters only from a form (AsyncWebServerRequest::_isPlainPost); any
         // other body leaves the request without them.
-        if (!lines.Skip(1).Any(IsFormContentType))
+        if (!IsPlainPost(ContentType(lines.Skip(1)), form))
         {
             form = "";
         }
@@ -363,12 +363,54 @@ public sealed class Vm208Simulator : ISimulatedBoard
         return Respond(HttpStatusCode.NotFound, "", "Not found", isError: true);
     }
 
-    private static bool IsFormContentType(string headerLine)
+    // The Content-Type as ESPAsyncWebServer keeps it (AsyncWebServerRequest::_parseReqHeader): a header whose name
+    // matches in any case, its value from two characters after the colon, up to a ';'. The last one wins.
+    private static string ContentType(IEnumerable<string> headerLines)
     {
-        var colon = headerLine.IndexOf(':', StringComparison.Ordinal);
-        return colon > 0
-            && headerLine[..colon].Trim().Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
-            && headerLine[(colon + 1)..].Trim().StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
+        var contentType = "";
+        foreach (var line in headerLines)
+        {
+            var colon = line.IndexOf(':', StringComparison.Ordinal);
+            if (colon > 0 && line[..colon].Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = colon + 2 < line.Length ? line[(colon + 2)..] : "";
+                var semicolon = value.IndexOf(';', StringComparison.Ordinal);
+                contentType = semicolon < 0 ? value : value[..semicolon];
+            }
+        }
+
+        return contentType;
+    }
+
+    // Whether ESPAsyncWebServer reads the body as a form (AsyncWebServerRequest::_parseReqBody, _isPlainPost): a
+    // Content-Type that starts with application/x-www-form-urlencoded, compared case-sensitively, or exactly
+    // text/plain with a body that starts like "name=". The firmware looks at the body's first TCP segment; the
+    // simulator at the whole body, which is the same for a request as small as the app's.
+    private static bool IsPlainPost(string contentType, string body)
+    {
+        if (contentType.StartsWith("application/x-www-form-urlencoded", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (contentType != "text/plain" || body.Length == 0 || !IsParamChar(body[0]))
+        {
+            return false;
+        }
+
+        // As the library's loop: i ends one past the first character that can't be in a name.
+        var i = 0;
+        while (i < body.Length && IsParamChar(body[i++]))
+        {
+        }
+
+        return i < body.Length && body[i - 1] == '=';
+    }
+
+    // __is_param_char in ESPAsyncWebServer's WebRequest.cpp.
+    private static bool IsParamChar(char c)
+    {
+        return c is not ('\0' or '{' or '[' or '&' or '=');
     }
 
     private static string Value(string pair)

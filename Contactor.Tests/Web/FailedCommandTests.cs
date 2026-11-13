@@ -22,6 +22,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
     private static readonly DateTime Now = new(2026, 11, 4, 13, 2, 0, DateTimeKind.Utc);
 
     private readonly FakeRelayBoard _board = new(4);
+    private readonly FixedTimeProvider _time = new(Now);
     private TestDatabase _database = null!;
     private BoardEventRecorder _recorder = null!;
 
@@ -29,12 +30,16 @@ public sealed class FailedCommandTests : IAsyncLifetime
 
     private RelayControl Control => _database.Services.GetRequiredService<RelayControl>();
 
+    private AutoOffService AutoOff => _database.Services.GetRequiredService<AutoOffService>();
+
+    private SchedulerService Scheduler => _database.Services.GetRequiredService<SchedulerService>();
+
     public async ValueTask InitializeAsync()
     {
         _database = TestDatabase.Create((services, configuration) =>
         {
             services.AddSingleton<IRelayBoard>(_board);
-            services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
+            services.AddSingleton<TimeProvider>(_time);
             services.AddLocalClock(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
@@ -52,10 +57,10 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await _database.DisposeAsync();
     }
 
-    // Jane was told her ON failed, but the board switched the relay on: it is her ON, with her auto-off, so a fan
-    // heater doesn't run until someone notices.
+    // Jane was told her ON failed, but the board switched the relay on. Nobody guesses it was hers: it is on outside the
+    // app, with the relay's own auto-off, so a fan heater doesn't run until someone notices.
     [Fact]
-    public async Task Should_CreditThePerson_WhenARelayCameOnButItsCommandFailed()
+    public async Task Should_GiveARelayItsOwnAutoOff_WhenItCameOnButItsCommandFailed()
     {
         _board.SwitchSilentlyThenFail = true;
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOnAsync(3, Jane, Cancel));
@@ -64,13 +69,13 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await _board.RefreshAsync(Cancel);
 
         var entry = await SingleEventAsync();
-        Assert.Equal((3, Jane, EventActions.On, """{"afterFailedCommand":true}"""), (entry.RelayId!.Value, entry.Actor, entry.Action, entry.Details));
+        Assert.Equal((3, EventActors.External, EventActions.On), (entry.RelayId!.Value, entry.Actor, entry.Action));
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
-        Assert.Equal(((DateTime?)Now, (DateTime?)Now.AddMinutes(Relay.DefaultMaxOnMinutes), Jane), (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy));
+        Assert.Equal(((DateTime?)Now, (DateTime?)Now.AddMinutes(Relay.DefaultMaxOnMinutes), EventActors.External), (runtime.OnSinceUtc, runtime.AutoOffAtUtc, runtime.TurnedOnBy));
     }
 
-    // Only an ON is credited: a failed OFF the board carried out anyway is still an external change.
+    // A failed OFF the board carried out anyway is an external change too.
     [Fact]
     public async Task Should_LogExternal_WhenARelayWentOffButItsCommandFailed()
     {
@@ -122,6 +127,117 @@ public sealed class FailedCommandTests : IAsyncLifetime
         var events = await WaitForEventsAsync(e => e.Any(x => x.RelayId == 1));
         var entry = Assert.Single(events, e => e.RelayId == 1);
         Assert.Equal((EventActors.External, EventActions.On), (entry.Actor, entry.Action));
+    }
+
+    [Fact]
+    public async Task Should_LogExternal_WhenAnAutoOffSwitchedButFailed()
+    {
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        await WaitForEventsAsync(1);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
+
+        _board.SwitchSilentlyThenFail = true;
+        Assert.Empty(await AutoOff.CheckAsync(Cancel));
+        await _board.RefreshAsync(Cancel);
+
+        var events = await WaitForEventsAsync(2);
+        Assert.Equal([(Jane, EventActions.On), (EventActors.External, EventActions.Off)], events.Select(e => (e.Actor, e.Action)));
+    }
+
+    [Fact]
+    public async Task Should_LogAnAutoOffAsItsOwn_WhenItsRetrySucceeds()
+    {
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        await WaitForEventsAsync(1);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
+
+        _board.FailNextOff = true;
+        Assert.Empty(await AutoOff.CheckAsync(Cancel));
+        Assert.True(_board.State.IsOn(3));
+        Assert.Equal([3], await AutoOff.CheckAsync(Cancel));
+        await _board.RefreshAsync(Cancel);
+
+        var events = await WaitForEventsAsync(2);
+        Assert.Equal([(Jane, EventActions.On), (EventActors.AutoOff, EventActions.Off)], events.Select(e => (e.Actor, e.Action)));
+        await AssertNoExternalEventAsync();
+    }
+
+    [Fact]
+    public async Task Should_LogExternal_WhenAScheduleSwitchedButFailed()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+
+        _board.SwitchSilentlyThenFail = true;
+        await Scheduler.TickAsync(Cancel);
+        await _board.RefreshAsync(Cancel);
+
+        var entry = await SingleEventAsync();
+        Assert.Equal((2, EventActors.External, EventActions.On), (entry.RelayId!.Value, entry.Actor, entry.Action));
+        await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
+        {
+            // On outside the app, with its own auto-off for now.
+            Assert.Equal(EventActors.External, (await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);
+        }
+
+        // The next tick in its window takes it over: it is the schedule's, off at the OffTime.
+        _time.Now = OnTime.AddMinutes(1);
+        await Scheduler.TickAsync(Cancel);
+        await using var check = await _database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+    }
+
+    [Fact]
+    public async Task Should_LogAScheduleAsItsOwn_WhenItsRetrySucceeds()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        await Scheduler.TickAsync(Cancel);
+        await WaitForEventsAsync(1);
+
+        // The OFF fails and the minute isn't done: the next tick sends it again.
+        _time.Now = OffTime;
+        _board.FailNextOff = true;
+        await Scheduler.TickAsync(Cancel);
+        Assert.True(_board.State.IsOn(2));
+        await Scheduler.TickAsync(Cancel);
+        Assert.False(_board.State.IsOn(2));
+        await _board.RefreshAsync(Cancel);
+
+        var events = await WaitForEventsAsync(2);
+        Assert.Equal([(EventActors.Schedule, EventActions.On), (EventActors.Schedule, EventActions.Off)], events.Select(e => (e.Actor, e.Action)));
+        await AssertNoExternalEventAsync();
+    }
+
+    // 14:05 and 14:10 local on the test's day; it starts at 14:02.
+    private static DateTimeOffset OnTime => new(2026, 11, 4, 13, 5, 0, TimeSpan.Zero);
+
+    private static DateTimeOffset OffTime => new(2026, 11, 4, 13, 10, 0, TimeSpan.Zero);
+
+    private async Task AddScheduleAsync(int relayId)
+    {
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        db.Schedules.Add(new Schedule
+        {
+            RelayId = relayId,
+            Days = ScheduleDays.All,
+            OnTime = new TimeOnly(14, 5),
+            OffTime = new TimeOnly(14, 10),
+            IsEnabled = true,
+            CreatedBy = Jane,
+        });
+        await db.SaveChangesAsync(Cancel);
+    }
+
+    // The recorder handles each status in order, so once a later status is logged, an earlier one would be too.
+    private async Task AssertNoExternalEventAsync()
+    {
+        _board.SetInput(1, true);
+        var events = await WaitForEventsAsync(e => e.Any(x => x.Action == EventActions.InputChanged));
+        Assert.DoesNotContain(events, e => e.Actor == EventActors.External && e.Action != EventActions.InputChanged);
     }
 
     private async Task<int> AddGroupAsync(params (int RelayId, string Role)[] members)

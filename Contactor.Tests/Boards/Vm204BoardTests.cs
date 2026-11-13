@@ -1,5 +1,7 @@
 using Contactor.Boards;
 using Contactor.Boards.Vm204;
+using Contactor.Tests.Vm208;
+using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -40,39 +42,28 @@ public sealed class Vm204BoardTests
     {
         await using var simulator = new Vm204Simulator();
         simulator.Start();
-        var options = Options.Create(new Vm204Options { Host = "127.0.0.1", Port = simulator.Port, PollSeconds = 1 });
-        using var client = new Vm204Client(options, TimeProvider.System, NullLogger<Vm204Client>.Instance);
+
+        // No poll comes on its own: the clock only moves when the test moves it, so the command's answer and the read
+        // RefreshAsync asks for are what the state shows.
+        var options = Options.Create(new Vm204Options { Host = "127.0.0.1", Port = simulator.Port, PollSeconds = 2 });
+        using var client = new Vm204Client(options, new ManualTimeProvider(), NullLogger<Vm204Client>.Instance);
         var board = new Vm204Board(client, NullLogger<Vm204Board>.Instance);
         BoardState? reported = null;
         board.StateChanged += (_, _) => throw new InvalidOperationException("A broken subscriber.");
         board.StateChanged += (_, state) => Volatile.Write(ref reported, state);
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = client.RunAsync(stop.Token);
-        await WaitUntilAsync(() => board.State.IsConnected);
+        await Wait.UntilAsync(() => board.State.IsConnected);
 
         await board.TurnOnAsync(ChannelMask.Of([2, 3]), Cancel);
-        await WaitUntilAsync(() => Volatile.Read(ref reported)?.Relays == ChannelMask.Of([2, 3]));
+        await Wait.UntilAsync(() => Volatile.Read(ref reported)?.Relays == ChannelMask.Of([2, 3]));
         await simulator.SetInputAsync(3, true);
         await board.RefreshAsync(Cancel);
-        await WaitUntilAsync(() => board.State.Inputs == ChannelMask.Of(3));
+        await Wait.UntilAsync(() => board.State.Inputs == ChannelMask.Of(3));
 
         await stop.CancelAsync();
         await run;
         Assert.False(board.State.IsConnected);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.RefreshAsync(Cancel));
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                Assert.Fail("The condition was not met in time.");
-            }
-
-            await Task.Delay(20, Cancel);
-        }
     }
 }

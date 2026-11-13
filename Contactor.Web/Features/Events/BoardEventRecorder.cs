@@ -53,9 +53,6 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     // The app's own changes the status in hand matched, to expect again if recording it fails.
     private readonly List<(int RelayId, bool On)> _consumed = [];
-
-    // The failed ONs the status in hand was credited to, to remember again if recording it fails.
-    private readonly List<FailedOn> _consumedFailures = [];
     private DateTime? _contactSavedUtc;
     private bool _lossLogged;
 
@@ -165,7 +162,6 @@ public sealed partial class BoardEventRecorder : BackgroundService
         // status starts over: the changes, a gap that just ended and a restored connection are recorded then.
         var before = (_known, _disconnectedSinceUtc, _lossLogged, _watching, _contactSavedUtc);
         _consumed.Clear();
-        _consumedFailures.Clear();
         _seenInputChanges.Clear();
         try
         {
@@ -180,11 +176,6 @@ public sealed partial class BoardEventRecorder : BackgroundService
             foreach (var (relayId, on) in _consumed)
             {
                 _expected.Expect(ChannelMask.Of(relayId), on);
-            }
-
-            foreach (var note in _consumedFailures)
-            {
-                _expected.PutBackFailedOn(note);
             }
 
             throw;
@@ -229,6 +220,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
             // At start the inputs are compared with what the event log last says about each: one that changed while
             // the app was down is logged now, as noticed, so its "since" reads unknown.
             RecordInputChanges(db, await LastLoggedInputsAsync(db, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
+            await GiveOwnerlessRelaysAutoOffAsync(db, state.Relays, now, cancellationToken);
         }
 
         _known = state;
@@ -371,17 +363,6 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 continue;
             }
 
-            var runtime = await db.RelayRuntimes.SingleOrDefaultAsync(r => r.RelayId == relayId, cancellationToken);
-
-            // Someone pressed ON and was told it failed, but the board switched it on: it is their ON, with their
-            // auto-off, so a fan heater doesn't run until someone notices.
-            if (isOn && _expected.TakeFailedOn(relayId, receivedUtc) is { } failed)
-            {
-                _consumedFailures.Add(failed);
-                await CreditFailedOnAsync(db, relayId, failed.Actor, runtime, now, cancellationToken);
-                continue;
-            }
-
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
@@ -390,10 +371,17 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 Action = isOn ? EventActions.On : EventActions.Off,
             });
 
-            // Whoever turned it on in the app no longer has it on: the status line must not keep their name, and
-            // auto-off must not act on it.
-            if (runtime is not null)
+            var runtime = await db.RelayRuntimes.SingleOrDefaultAsync(r => r.RelayId == relayId, cancellationToken);
+            if (isOn)
             {
+                // Nobody in the app turned it on: it gets the relay's own auto-off all the same, so nothing runs for
+                // ever by accident.
+                await GiveOwnAutoOffAsync(db, relayId, runtime, now, cancellationToken);
+            }
+            else if (runtime is not null)
+            {
+                // Whoever turned it on no longer has it on: the status line must not keep their name, and auto-off
+                // must not act on it.
                 runtime.OnSinceUtc = null;
                 runtime.AutoOffAtUtc = null;
                 runtime.TurnedOnBy = null;
@@ -401,15 +389,37 @@ public sealed partial class BoardEventRecorder : BackgroundService
         }
     }
 
-    // As RelayControl records a successful ON, logged with Details {"afterFailedCommand":true}.
-    private static async Task CreditFailedOnAsync(
-        ContactorDbContext db,
-        int relayId,
-        string actor,
-        RelayRuntime? runtime,
-        DateTime now,
-        CancellationToken cancellationToken)
+    // At start, and when the board's state was forgotten for a new address: a relay that is on with nobody's run gets
+    // its own auto-off from now, as if it had just come on outside the app. One with a run (a person's, a schedule's)
+    // keeps it.
+    private async Task GiveOwnerlessRelaysAutoOffAsync(ContactorDbContext db, ChannelMask relays, DateTime now, CancellationToken cancellationToken)
     {
+        var on = relays.Channels.Where(r => r <= _board.Capabilities.RelayCount).ToList();
+        if (on.Count == 0)
+        {
+            return;
+        }
+
+        var runtimes = await db.RelayRuntimes.Where(r => on.Contains(r.RelayId)).ToDictionaryAsync(r => r.RelayId, cancellationToken);
+        foreach (var relayId in on)
+        {
+            var runtime = runtimes.GetValueOrDefault(relayId);
+            if (runtime?.OnSinceUtc is null)
+            {
+                await GiveOwnAutoOffAsync(db, relayId, runtime, now, cancellationToken);
+            }
+        }
+    }
+
+    // A relay on outside the app: "outside the app" since now, with the relay's own "Turn off automatically after". A
+    // relay in a group gets none of its own: its group's run applies (GroupSequencer).
+    private static async Task GiveOwnAutoOffAsync(ContactorDbContext db, int relayId, RelayRuntime? runtime, DateTime now, CancellationToken cancellationToken)
+    {
+        if (await db.RelayGroupMembers.AnyAsync(m => m.RelayId == relayId, cancellationToken))
+        {
+            return;
+        }
+
         var maxOnMinutes = await db.Relays.Where(r => r.Id == relayId).Select(r => r.MaxOnMinutes).SingleOrDefaultAsync(cancellationToken);
         if (runtime is null)
         {
@@ -418,16 +428,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
         }
 
         runtime.OnSinceUtc = now;
-        runtime.TurnedOnBy = actor;
+        runtime.TurnedOnBy = EventActors.External;
         runtime.AutoOffAtUtc = maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
-        db.EventLog.Add(new EventLogEntry
-        {
-            TimestampUtc = now,
-            RelayId = relayId,
-            Actor = actor,
-            Action = EventActions.On,
-            Details = """{"afterFailedCommand":true}""",
-        });
     }
 
     private async Task CheckConnectionLostAsync(CancellationToken cancellationToken)

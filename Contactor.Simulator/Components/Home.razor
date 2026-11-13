@@ -57,9 +57,15 @@
                         <label for="port">Port</label>
                         <input id="port" class="mono" inputmode="numeric" maxlength="5" autocomplete="off" @bind="_newPort" />
                     </div>
+                </div>
+                <div class="row">
                     <div class="field">
-                        <label for="login">Login (optional)</label>
-                        <input id="login" class="mono" placeholder="user:password" autocomplete="off" spellcheck="false" @bind="_newLogin" />
+                        <label for="username">User name</label>
+                        <input id="username" class="mono" placeholder="optional" autocomplete="off" spellcheck="false" @bind="_newUsername" />
+                    </div>
+                    <div class="field">
+                        <label for="password">Password</label>
+                        <input id="password" class="mono" placeholder="optional" autocomplete="off" spellcheck="false" @bind="_newPassword" />
                     </div>
                 </div>
                 <button type="submit" class="primary">Add board</button>
@@ -170,7 +176,8 @@
     private int? _selectedId;
     private string _newType = SimulatorCatalogue.All[0].Model.Id;
     private string _newPort = "";
-    private string _newLogin = "";
+    private string _newUsername = "";
+    private string _newPassword = "";
     private string? _addError;
 
     private RunningBoard? Selected => _boards.FirstOrDefault(b => b.Id == _selectedId) ?? _boards.FirstOrDefault();
@@ -197,13 +204,14 @@
             return;
         }
 
-        _addError = Simulator.Add(_newType, port, _newLogin.Trim());
+        _addError = Simulator.Add(_newType, port, _newUsername.Trim(), _newPassword);
         if (_addError is null)
         {
             _boards = Simulator.Boards;
             _selectedId = _boards.FirstOrDefault(b => b.Board.Port == port)?.Id;
             _newPort = NextFreePort();
-            _newLogin = "";
+            _newUsername = "";
+            _newPassword = "";
         }
     }
 

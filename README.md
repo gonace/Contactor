@@ -87,7 +87,7 @@ simulator's page, linked from the dashboard, shows the board's relays and every 
 board's own buttons would. Stop and start the simulator in the dashboard to test a lost connection to the board. The
 tests use the same simulator, so no hardware is needed.
 
-`AGENTS.md` describes the architecture, the board's protocol and the rules the app follows.
+`AGENTS.md` describes the architecture and the rules the app follows. Each board's protocol or routes are in the `README.md` of its project, e.g. `Contactor.Boards.Vm201/README.md`.
 
 ### Screenshots
 

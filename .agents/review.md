@@ -9,6 +9,7 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
 ## What to read first
 
 - `AGENTS.md`: the project's architecture, domain rules and conventions. Review against them.
+- For a change to a board, its `Contactor.Boards.<Model>/README.md`: the board's protocol or routes, and what to check on a real board.
 - `.agents/writing.md`, for how to write the report.
 - The whole diff you're given (`git diff origin/<base>...origin/<branch>`, after fetching both with
   `git fetch origin <name>:refs/remotes/origin/<name>`), then whatever surrounding code you need to understand each
@@ -38,7 +39,7 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
 - **Platform independence:** code and tests must behave the same on Windows, Linux and macOS. Developers run the
   tests on Windows; the app runs in a Linux container on a Raspberry Pi (arm64). Flag path separators, case
   sensitivity, line endings, file locking, time zone ids and culture.
-- **Stale text:** comments, `AGENTS.md`, `README.md` and `DEPLOY.md` that the change made wrong.
+- **Stale text:** comments, `AGENTS.md`, `README.md`, the boards' `README.md` files and `DEPLOY.md` that the change made wrong.
 
 ## How you work
 
