@@ -349,6 +349,10 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasMaxLength(254)
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("RelayId");
 
                     b.ToTable("RelayRuntime", (string)null);

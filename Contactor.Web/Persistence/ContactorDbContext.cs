@@ -161,6 +161,7 @@ public sealed class ContactorDbContext : DbContext
         runtime.HasKey(r => r.RelayId);
         runtime.Property(r => r.RelayId).ValueGeneratedNever();
         runtime.Property(r => r.TurnedOnBy).HasMaxLength(User.EmailMaxLength);
+        runtime.Property(r => r.Version).IsConcurrencyToken();
         runtime.HasOne<Relay>().WithOne().HasForeignKey<RelayRuntime>(r => r.RelayId).OnDelete(DeleteBehavior.Restrict);
     }
 

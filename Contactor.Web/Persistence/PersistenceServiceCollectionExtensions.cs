@@ -170,7 +170,7 @@ public static class PersistenceServiceCollectionExtensions
 
     internal static void Configure(DbContextOptionsBuilder options, string connectionString)
     {
-        options.UseSqlite(connectionString).AddInterceptors(BusyTimeoutInterceptor.Instance);
+        options.UseSqlite(connectionString).AddInterceptors(BusyTimeoutInterceptor.Instance, RelayRunVersionInterceptor.Instance);
     }
 
     /// <summary>

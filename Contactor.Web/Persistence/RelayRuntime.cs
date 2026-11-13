@@ -12,4 +12,11 @@ public sealed class RelayRuntime
     public DateTime? AutoOffAtUtc { get; set; }
 
     public string? TurnedOnBy { get; set; }
+
+    /// <summary>
+    /// Goes up by one at every save of the row (<see cref="RelayRunVersionInterceptor"/>), and a save checks it: one
+    /// made from a row that someone else changed since it was read fails with a
+    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/> instead of overwriting their change.
+    /// </summary>
+    public long Version { get; set; }
 }
