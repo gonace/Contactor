@@ -8,7 +8,11 @@ namespace Contactor.Boards;
 /// ask, and changes made elsewhere show later.
 /// </param>
 /// <param name="AnalogInputCount">How many analog inputs it has. The app doesn't show them yet.</param>
-public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, int AnalogInputCount = 0)
+/// <param name="Pulse">
+/// Whether, and how long, the board can pulse a relay (<see cref="IRelayBoard.PulseAsync"/>): turn it on, and off again
+/// by itself after a time, without the app. Null: it can't.
+/// </param>
+public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, int AnalogInputCount = 0, PulseAbility? Pulse = null)
 {
     /// <summary>All of the board's relays.</summary>
     public ChannelMask AllRelays => ChannelMask.FirstN(RelayCount);
@@ -20,4 +24,11 @@ public sealed record BoardCapabilities(int RelayCount, int InputCount, bool Repo
         ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, RelayCount);
         return ChannelMask.Of(relay);
     }
+}
+
+/// <summary>The lengths a board can pulse a relay for: from <paramref name="Shortest"/> to <paramref name="Longest"/>, in steps of <paramref name="Step"/>.</summary>
+public sealed record PulseAbility(TimeSpan Shortest, TimeSpan Longest, TimeSpan Step)
+{
+    /// <summary>Whether the board can pulse for exactly <paramref name="length"/>.</summary>
+    public bool CanDo(TimeSpan length) => length >= Shortest && length <= Longest && length.Ticks % Step.Ticks == 0;
 }

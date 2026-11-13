@@ -265,6 +265,11 @@ public sealed class AutoOffServiceTests
             return _inner.TurnOffAsync(relays, cancellationToken);
         }
 
+        public Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
+        {
+            return _inner.PulseAsync(relays, length, cancellationToken);
+        }
+
         public Task RefreshAsync(CancellationToken cancellationToken = default)
         {
             return _inner.RefreshAsync(cancellationToken);

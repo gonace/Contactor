@@ -39,6 +39,12 @@ public sealed class Vm201Board : IRelayBoard
         return relays;
     }
 
+    // No pulse yet (Issue #83).
+    public Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This board can't pulse a relay.");
+    }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         return _client.RequestStatusAsync(cancellationToken);

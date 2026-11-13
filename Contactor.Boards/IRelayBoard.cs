@@ -31,6 +31,15 @@ public interface IRelayBoard
     /// <summary>Turns off the relays in <paramref name="relays"/>, as <see cref="TurnOnAsync"/> turns them on.</summary>
     Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Pulses the relays in <paramref name="relays"/>: turns them on, and the board turns them off again by itself after
+    /// <paramref name="length"/>, also when the app stops in between. Returns the relays the board took, as
+    /// <see cref="TurnOnAsync"/>. Throws <see cref="NotSupportedException"/> on a board without a pulse
+    /// (<see cref="BoardCapabilities.Pulse"/> null), and <see cref="ArgumentOutOfRangeException"/> for a length it can't
+    /// do (<see cref="PulseAbility.CanDo"/>), before anything is sent.
+    /// </summary>
+    Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default);
+
     /// <summary>Asks the board for its state; the answer comes as <see cref="StateChanged"/>.</summary>
     Task RefreshAsync(CancellationToken cancellationToken = default);
 }
