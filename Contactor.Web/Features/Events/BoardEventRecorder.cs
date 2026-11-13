@@ -49,8 +49,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // The last status the board reported while connected; null until the first one after start.
     private BoardState? _known;
 
-    // A status whose recording failed, tried again at every check until it is recorded or a newer status comes: a
-    // polled board reports a state only when it changes, so its next status may be long in coming.
+    // A status whose recording failed, tried again after a growing wait until it is recorded or a newer status
+    // comes: a polled board reports a state only when it changes, so its next status may be long in coming.
     private BoardState? _retry;
     private TimeSpan _retryDelay;
     private DateTime _retryAtUtc;
