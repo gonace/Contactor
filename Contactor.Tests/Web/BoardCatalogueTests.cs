@@ -124,27 +124,27 @@ public sealed class BoardCatalogueTests
         Assert.NotNull(BoardCatalogue.Find(BoardCatalogue.EarlierDefaultType));
     }
 
-    // The setup guide asks for the make, then the model: every model is under its make, once, in the catalogue's order.
+    // The setup guide asks for the brand, then the model: every model is under its brand, once, in the catalogue's order.
     [Fact]
     public void Should_ListTheMakes_InAlphabeticalOrder_EachWithItsModels()
     {
-        Assert.Equal(["Devantech", "Velleman", "Waveshare"], BoardCatalogue.Makes.Select(m => m.Name));
+        Assert.Equal(["Devantech", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
         Assert.Equal(
             ["VM201", "VM204", "VM208"],
-            BoardCatalogue.Makes.Single(m => m.Name == "Velleman").Models.Select(m => m.ModelName));
+            BoardCatalogue.Brands.Single(m => m.Name == "Velleman").Models.Select(m => m.ModelName));
         Assert.Equal(
-            BoardCatalogue.All.Select(r => r.Model).OrderBy(m => m.Make, StringComparer.OrdinalIgnoreCase),
-            BoardCatalogue.Makes.SelectMany(m => m.Models));
+            BoardCatalogue.All.Select(r => r.Model).OrderBy(m => m.Brand, StringComparer.OrdinalIgnoreCase),
+            BoardCatalogue.Brands.SelectMany(m => m.Models));
     }
 
-    // The make isn't repeated in the model's name, and the full name still reads as people know it.
+    // The brand isn't repeated in the model's name, and the full name still reads as people know it.
     [Fact]
     public void Should_NameEachModel_WithoutItsMake()
     {
         Assert.All(BoardCatalogue.All, r =>
         {
-            Assert.False(r.Model.ModelName.StartsWith(r.Model.Make, StringComparison.OrdinalIgnoreCase), r.Model.Id);
-            Assert.Equal($"{r.Model.Make} {r.Model.ModelName}", r.Model.Name);
+            Assert.False(r.Model.ModelName.StartsWith(r.Model.Brand, StringComparison.OrdinalIgnoreCase), r.Model.Id);
+            Assert.Equal($"{r.Model.Brand} {r.Model.ModelName}", r.Model.Name);
         });
         Assert.Equal("Waveshare Modbus PoE ETH Relay 30CH", BoardCatalogue.Find("waveshare-30")!.Model.Name);
     }

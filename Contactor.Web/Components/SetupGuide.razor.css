@@ -172,7 +172,7 @@ input[type="password"] {
     line-height: 1.45;
 }
 
-/* Step 2: "Make" and "Model" look like fields and open a list from the bottom of the screen. */
+/* Step 2: "Brand" and "Model" look like fields; each opens a list from the bottom of the screen on a phone. */
 .field-label {
     font-size: 16px;
     font-weight: 700;
@@ -559,21 +559,44 @@ button:disabled {
 
 /* A tablet or a desktop: the guide stays narrow and centred, as a card; it has no side menu. */
 @media (min-width: 768px) {
+    /* The list opens right under its field, as a dropdown; a click outside closes it, without dimming the page. */
+    .field {
+        position: relative;
+    }
+
+    .sheet-backdrop {
+        background: transparent;
+    }
+
     .sheet {
-        top: 50%;
+        position: absolute;
+        top: calc(100% + 6px);
         bottom: auto;
-        max-width: 480px;
-        max-height: 80vh;
-        border-radius: 14px;
-        transform: translateY(-50%);
+        max-width: none;
+        max-height: 60vh;
+        padding: 6px 0;
+        border-radius: 12px;
+        border: 1.5px solid var(--line-strong);
+        box-shadow: 0 12px 32px var(--backdrop);
     }
 
     .grab {
         display: none;
     }
 
+    /* The field above already says which list it is; a screen reader still reads the title. */
     .sheet h2 {
-        padding-top: 14px;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    .sheet-option:first-of-type {
+        border-top: none;
     }
 
     .screen {

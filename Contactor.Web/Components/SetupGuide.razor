@@ -46,7 +46,7 @@
         }
     </div>
 
-    <main class="content" inert="@(_sheet != Sheet.None)">
+    <main class="content">
         @if (_step == 1)
         {
             <div class="intro">
@@ -66,31 +66,35 @@
         else if (_step == 2)
         {
             var chosen = BoardCatalogue.Find(_type)?.Model;
-            <div class="intro">
+            <div class="intro" inert="@(_sheet != Sheet.None)">
                 <h1 tabindex="-1" @ref="_heading">Which relay board?</h1>
-                <p>Choose the make first, then the model. Both are printed on the board.</p>
+                <p>Choose the brand first, then the model. Both are printed on the board.</p>
             </div>
-            <div class="field">
-                <span class="field-label" id="make-label">Make</span>
-                <button type="button" class="select @(_sheet == Sheet.Make ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Make ? "true" : "false")"
-                        aria-labelledby="make-label make-value" @ref="_makeField" @onclick="() => Open(Sheet.Make)">
-                    <span class="select-text" id="make-value">
-                        @if (_make is null)
+            <div class="field" inert="@(_sheet == Sheet.Model)">
+                <span class="field-label" id="brand-label">Brand</span>
+                <button type="button" class="select @(_sheet == Sheet.Brand ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Brand ? "true" : "false")"
+                        aria-labelledby="brand-label brand-value" @ref="_brandField" @onclick="() => Open(Sheet.Brand)">
+                    <span class="select-text" id="brand-value">
+                        @if (_brand is null)
                         {
-                            <span class="placeholder">Choose the make</span>
+                            <span class="placeholder">Choose the brand</span>
                         }
                         else
                         {
-                            <span>@_make</span>
+                            <span>@_brand</span>
                         }
                     </span>
                     <svg class="chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
                 </button>
+                @if (_sheet == Sheet.Brand)
+                {
+                    @List
+                }
             </div>
-            <div class="field">
+            <div class="field" inert="@(_sheet == Sheet.Brand)">
                 <span class="field-label" id="model-label">Model</span>
                 <button type="button" class="select @(_sheet == Sheet.Model ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Model ? "true" : "false")"
-                        aria-labelledby="model-label model-value" disabled="@(_make is null)" @ref="_modelField" @onclick="() => Open(Sheet.Model)">
+                        aria-labelledby="model-label model-value" disabled="@(_brand is null)" @ref="_modelField" @onclick="() => Open(Sheet.Model)">
                     <span class="select-text" id="model-value">
                         @if (chosen is not null)
                         {
@@ -99,13 +103,17 @@
                         }
                         else
                         {
-                            <span class="placeholder">@(_make is null ? "Choose the make first" : "Choose the model")</span>
+                            <span class="placeholder">@(_brand is null ? "Choose the brand first" : "Choose the model")</span>
                         }
                     </span>
                     <svg class="chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
                 </button>
+                @if (_sheet == Sheet.Model)
+                {
+                    @List
+                }
             </div>
-            <p class="hint">Not on the list? Contactor only lists the boards it can switch.</p>
+            <p class="hint" inert="@(_sheet != Sheet.None)">Not on the list? Contactor only lists the boards it can switch.</p>
         }
         else if (_step == 3)
         {
@@ -272,24 +280,30 @@
         }
     </div>
 
-    @if (_step == 2 && _sheet != Sheet.None)
+</div>
+
+@code {
+    private const int StepCount = 5;
+
+    // Step 2's open list: under its field on a tablet or desktop, from the bottom of the screen on a phone.
+    private RenderFragment List => __builder =>
     {
         <div class="sheet-backdrop" @onclick="Close"></div>
         <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @onkeydown="OnSheetKey">
             <span class="grab" aria-hidden="true"></span>
-            <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Make ? "Make" : $"{_make} model")</h2>
+            <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Brand ? "Brand" : $"{_brand} model")</h2>
             <div class="sheet-options">
-                @if (_sheet == Sheet.Make)
+                @if (_sheet == Sheet.Brand)
                 {
-                    @foreach (var make in BoardCatalogue.Makes)
+                    @foreach (var brand in BoardCatalogue.Brands)
                     {
-                        var name = make.Name;
-                        <button type="button" class="sheet-option @(name == _make ? "chosen" : null)" aria-current="@(name == _make ? "true" : null)" @onclick="() => ChooseMake(name)">
+                        var name = brand.Name;
+                        <button type="button" class="sheet-option @(name == _brand ? "chosen" : null)" aria-current="@(name == _brand ? "true" : null)" @onclick="() => ChooseBrand(name)">
                             <span class="option-text">
                                 <span class="name">@name</span>
-                                <span class="note">@(make.Models.Count == 1 ? "1 model" : $"{make.Models.Count} models")</span>
+                                <span class="note">@(brand.Models.Count == 1 ? "1 model" : $"{brand.Models.Count} models")</span>
                             </span>
-                            @if (name == _make)
+                            @if (name == _brand)
                             {
                                 <svg class="tick" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
                             }
@@ -298,7 +312,7 @@
                 }
                 else
                 {
-                    @foreach (var model in BoardCatalogue.Makes.FirstOrDefault(m => m.Name == _make)?.Models ?? [])
+                    @foreach (var model in BoardCatalogue.Brands.FirstOrDefault(m => m.Name == _brand)?.Models ?? [])
                     {
                         var id = model.Id;
                         <button type="button" class="sheet-option @(id == _type ? "chosen" : null)" aria-current="@(id == _type ? "true" : null)" @onclick="() => ChooseModel(id)">
@@ -315,11 +329,7 @@
                 }
             </div>
         </div>
-    }
-</div>
-
-@code {
-    private const int StepCount = 5;
+    };
 
     private readonly List<RelayRow> _relays = [];
     private ElementReference _heading;
@@ -327,9 +337,9 @@
     private int _step = 1;
     private string _name = "";
     private string _type = "";
-    private string? _make;
+    private string? _brand;
     private Sheet _sheet;
-    private ElementReference _makeField;
+    private ElementReference _brandField;
     private ElementReference _modelField;
     private ElementReference _sheetTitle;
 
@@ -368,7 +378,7 @@
         _user = await CurrentUser.GetAsync();
         _name = _user?.DisplayName ?? "";
         _type = Boards.Model?.Id ?? "";
-        _make = Boards.Model?.Make;
+        _brand = Boards.Model?.Brand;
         if (Boards.Model is not null)
         {
             await LoadBoardAsync();
@@ -411,7 +421,7 @@
             _focusNext = null;
             await (focus switch
             {
-                Sheet.Make => _makeField,
+                Sheet.Brand => _brandField,
                 Sheet.Model => _modelField,
                 _ => _sheetTitle,
             }).FocusAsync();
@@ -664,11 +674,17 @@
         }
     }
 
-    // Step 2's lists: a make, then that make's models.
+    // Step 2's lists: a brand, then that brand's models.
     private void Open(Sheet sheet)
     {
-        if (_busy || _step != 2 || (sheet == Sheet.Model && _make is null))
+        if (_busy || _step != 2 || (sheet == Sheet.Model && _brand is null))
         {
+            return;
+        }
+
+        if (_sheet == sheet)
+        {
+            Close();
             return;
         }
 
@@ -677,21 +693,21 @@
         _focusNext = Sheet.None;
     }
 
-    // A new make clears the model and opens its models at once: the next thing to choose.
-    private void ChooseMake(string make)
+    // A new brand clears the model and opens its models at once: the next thing to choose.
+    private void ChooseBrand(string brand)
     {
-        if (_busy || _sheet != Sheet.Make)
+        if (_busy || _sheet != Sheet.Brand)
         {
             return;
         }
 
-        if (make == _make)
+        if (brand == _brand)
         {
             Close();
             return;
         }
 
-        _make = make;
+        _brand = brand;
         _type = "";
         _sheet = Sheet.Model;
         _focusNext = Sheet.None;
@@ -768,7 +784,7 @@
     private enum Sheet
     {
         None,
-        Make,
+        Brand,
         Model,
     }
 
