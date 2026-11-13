@@ -302,18 +302,17 @@ public sealed class Vm208ClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Should_KeepABoardThatIsBusyForEveryRelay_AndLoseOneWhoseAnswersCantBeRead(bool busy)
+    [Fact]
+    public async Task Should_LoseABoardThatIsBusyForEveryRelay_AfterThreeCommands()
     {
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        // Every relay and every read gets the same answer: "busy", or broken JSON. A busy read still counts.
+        // Every relay and every read answers "busy". That is no refusal: each command counts, as would an answer the
+        // app can't read (retrying on busy is issue #128).
         board.BadAnswerFor = 0b0011;
-        board.BadAnswer = (200, busy ? "{\"Channels\":[]}" : "not json");
+        board.BadAnswer = (200, "{\"Channels\":[]}");
         board.BadStatus = true;
 
         for (var command = 0; command < 3; command++)
@@ -321,12 +320,8 @@ public sealed class Vm208ClientTests
             await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
         }
 
-        // Busy: each command is a refusal and starts the count over, so the failed reads between them never reach 3.
-        await Wait.UntilAsync(() => busy
-            ? board.Requests.Count(r => r.StartsWith(StatusRequest, StringComparison.Ordinal)) >= 2 && run.Time.WaitsOnly(run.PollInterval)
-            : !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        Assert.Equal(busy, run.Client.State.IsConnected);
-        Assert.Equal(!busy, run.Traces.Any(t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal)));
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal) && t.IsError);
     }
 
     [Fact]

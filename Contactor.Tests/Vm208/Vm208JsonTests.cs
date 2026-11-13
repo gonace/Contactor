@@ -61,9 +61,7 @@ public sealed class Vm208JsonTests
     [InlineData("[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]")]
     public void Should_RefuseAnythingElse(string json)
     {
-        var error = Assert.Throws<Vm208ProtocolException>(() => Vm208Json.ReadStatus(Bytes(json)));
-
-        Assert.False(error.IsBusy);
+        Assert.Throws<Vm208ProtocolException>(() => Vm208Json.ReadStatus(Bytes(json)));
     }
 
     [Fact]
@@ -73,7 +71,6 @@ public sealed class Vm208JsonTests
         var error = Assert.Throws<Vm208ProtocolException>(() => Vm208Json.ReadStatus(Bytes("{\"Channels\":[]}")));
 
         Assert.Equal("The VM208 was busy and sent no relays.", error.Message);
-        Assert.True(error.IsBusy);
     }
 
     [Fact]

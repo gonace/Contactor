@@ -239,10 +239,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
             // The poller counted it as a failed poll and reads the board at once, which shows what it did.
             throw new BoardNotConnectedException("The VM208 didn't answer; the command may not have been carried out.", ex);
         }
-        catch (Exception ex) when (ex is Vm208ProtocolException or BoardRefusedException)
+        catch (Vm208ProtocolException ex)
         {
-            // No relay was taken. The poller read the board at once, and counted it as a failed poll unless the board
-            // was busy for every relay (BoardRefusedException): that is an answer.
+            // No relay's answer could be read: counted and read in the same way.
             throw new BoardNotConnectedException($"The VM208 didn't take the command: {ex.Message}", ex);
         }
     }
@@ -252,7 +251,6 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
     {
         Vm208Status? status = null;
         string? refusal = null;
-        var unreadable = false;
         for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
         {
             if ((mask & (1 << (relay - 1))) == 0)
@@ -272,7 +270,6 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
                 // The board answered, but not with a status the app can read (an error, too busy, too long): the
                 // relay may or may not have switched. The others still go; a poll straight after shows the truth.
                 refusal ??= ex.Message;
-                unreadable |= !ex.IsBusy;
                 Trace(
                     BoardTraceDirection.None,
                     string.Create(CultureInfo.InvariantCulture, $"The VM208 didn't take the command for relay {relay}: {ex.Message}"),
@@ -286,12 +283,11 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         }
 
         // Not one relay was taken: the command failed, as on a board that takes the mask at once, and nothing is
-        // counted as switched. The poller reads the board at once, which shows what really happened. When the board
-        // answered "busy" for every relay, it answered: that doesn't count toward losing it. Any other answer it
-        // can't read counts as a failed poll, as a poll's would.
+        // counted as switched. The poller counts it as a failed poll, as it would a poll whose answer it can't read,
+        // and reads the board at once, which shows what really happened.
         if (status is null)
         {
-            throw unreadable ? new Vm208ProtocolException(refusal) : new BoardRefusedException(refusal);
+            throw new Vm208ProtocolException(refusal);
         }
 
         // Some were: the last readable answer is the state for now, and a read at once confirms the rest. The command

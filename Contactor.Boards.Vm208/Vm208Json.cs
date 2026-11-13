@@ -48,7 +48,7 @@ public static class Vm208Json
         // The firmware sends no channels (and no input) when it couldn't take its I/O lock within a second.
         if (channels.GetArrayLength() == 0)
         {
-            throw new Vm208ProtocolException("The VM208 was busy and sent no relays.") { IsBusy = true };
+            throw new Vm208ProtocolException("The VM208 was busy and sent no relays.");
         }
 
         if (channels.GetArrayLength() != Vm208Api.RelayCount)
