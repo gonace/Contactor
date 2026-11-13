@@ -401,7 +401,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - The running version at the bottom ("Version 2026.11.4 · 1fdaf34", "Development version" for local builds; `AppBuild.Text`); the only place it shows, except on a desktop, where it sits at the bottom of the side menu instead.
 8. **Debug** (`/debug`; the tab only shows while the person has Debugging on)
    - The latest 100 steps on the board connection, newest first, in memory only: time, → / ←, the step in plain words ("Turn on relay 3", "Status: relay 1 and 3 on · input off", "Connection lost: …") and the packet's bytes. The button "Clear".
-   - Routine steps (the VM201's keep-alive and channel names, the VM204's and VM208's polls and answers that change nothing) are only counted (`BoardTrace.RoutineLeftOut`): "N routine steps left out, such as status checks that changed nothing", kept current at most once a second (`RoutineCounted`), so a board that is asked every 2 s can't push the rest out of the list.
+   - Routine steps (the VM201's keep-alive and channel names, the polled boards' polls and answers that change nothing) are only counted (`BoardTrace.RoutineLeftOut`): "N routine steps left out, such as status checks that changed nothing", kept current at most once a second (`RoutineCounted`), so a board that is asked every 2 s can't push the rest out of the list.
 
 9. **Setup** (`/setup`, `SetupGuide.razor`, `Features/Setup`): a new installation has no board, and every page opens on the guide (`SetupGate.razor`) until someone finishes it; anyone signed in may go through it. No tab bar; "STEP n OF 5" with a progress bar, and "Back" after the first step.
    1. "Welcome to Contactor": "Your name" (saved as the person's DisplayName) and "YOU'LL NEED".

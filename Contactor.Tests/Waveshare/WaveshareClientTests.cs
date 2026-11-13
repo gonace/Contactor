@@ -221,6 +221,31 @@ public sealed class WaveshareClientTests
     }
 
     [Fact]
+    public async Task Should_LoseTheBoard_WhenOneRelayIsRefusedAndAnothersAnswerCantBeRead()
+    {
+        // Relay 1 is refused, relay 2's echo has a broken CRC, and relay 3 is refused again: the last answer is a
+        // refusal, but one answer couldn't be read, so each command counts. Reads as in the test above.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.WriteSingleCoil when request[3] == 1 => [.. request[..6], 0, 0],
+            WaveshareApi.WriteSingleCoil => WaveshareModbus.WithCrc([1, WaveshareApi.WriteSingleCoil | 0x80, 4]),
+            _ when Interlocked.Increment(ref reads) == 1 => WaveshareModbus.WithCrc([1, 1, 1, 0]),
+            _ => [1, 1, 1, 0, 0, 0],
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+
+        for (var command = 0; command < 3; command++)
+        {
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0111, Cancel));
+        }
+
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Should_SeeChangesMadeAtTheBoard_OnTheNextPoll_AndReportOnlyThose()
     {
         await using var simulator = Started(WaveshareModels.Relay8C);
