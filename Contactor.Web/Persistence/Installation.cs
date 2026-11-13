@@ -2,8 +2,7 @@ namespace Contactor.Web.Persistence;
 
 /// <summary>
 /// The installation itself: which model of board it has, how people reach the app and sign in, and whether the setup
-/// guide has been done. One row; while
-/// it doesn't exist there is no board, and every page opens on the setup guide.
+/// guide has been done. One row; while it doesn't exist there is no board, and every page opens on the setup guide.
 /// </summary>
 public sealed class Installation
 {

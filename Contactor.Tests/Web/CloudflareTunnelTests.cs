@@ -1,7 +1,12 @@
 using System.Collections.Concurrent;
+using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
+using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Web;
 
@@ -133,41 +138,61 @@ public sealed class CloudflareTunnelTests
         time.Advance(by);
     }
 
-    private static Run Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
+    // The tunnel as the app runs it: the chosen way in, kept running by AccessHostedService for the app's lifetime.
+    private static RunningTunnel Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
     {
-        var options = Options.Create(new TunnelOptions { Token = token, Path = "/opt/cloudflared" });
-        return new Run(new CloudflareTunnel(options, process, time, logger));
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton<IDbContextFactory<ContactorDbContext>>(new NoDatabase());
+        services.AddCloudflare(new ConfigurationBuilder().Build());
+        services.AddAccess(new ConfigurationBuilder().Build());
+        services.Configure<TunnelOptions>(o =>
+        {
+            o.Token = token;
+            o.Path = "/opt/cloudflared";
+        });
+        services.AddSingleton(time);
+        services.AddSingleton<ICloudflaredProcess>(process);
+        services.AddSingleton<ILogger<CloudflareTunnel>>(logger);
+        var provider = services.BuildServiceProvider();
+        return new RunningTunnel(provider, provider.GetServices<IHostedService>().OfType<AccessHostedService>().Single());
     }
 
-    // The tunnel run as the app's way in runs it: from start until the app stops.
-    private sealed class Run : IDisposable
+    private sealed class RunningTunnel : IDisposable
     {
-        private readonly CloudflareTunnel _tunnel;
-        private readonly CancellationTokenSource _stop = new();
+        private readonly ServiceProvider _provider;
+        private readonly AccessHostedService _service;
 
-        public Run(CloudflareTunnel tunnel)
+        public RunningTunnel(ServiceProvider provider, AccessHostedService service)
         {
-            _tunnel = tunnel;
+            _provider = provider;
+            _service = service;
         }
 
-        public Task? ExecuteTask { get; private set; }
+        public Task? ExecuteTask => _service.ExecuteTask;
 
-        public Task StartAsync(CancellationToken cancellationToken)
-        {
-            ExecuteTask = _tunnel.RunAsync(_stop.Token);
-            return Task.CompletedTask;
-        }
+        public Task StartAsync(CancellationToken cancellationToken) => _service.StartAsync(cancellationToken);
 
+        // As the app stops: it waits only so long, so a service that doesn't stop cloudflared fails a test instead
+        // of hanging it.
         public async Task StopAsync(CancellationToken cancellationToken)
         {
-            await _stop.CancelAsync();
-            await ExecuteTask!.WaitAsync(cancellationToken);
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            stop.CancelAfter(TimeSpan.FromSeconds(10));
+            await _service.StopAsync(stop.Token);
         }
 
         public void Dispose()
         {
-            _stop.Dispose();
+            _service.Dispose();
+            _provider.Dispose();
         }
+    }
+
+    // The way in is chosen from the database at start; these tests never read it, so the default stays.
+    private sealed class NoDatabase : IDbContextFactory<ContactorDbContext>
+    {
+        public ContactorDbContext CreateDbContext() => throw new InvalidOperationException("No database in these tests.");
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

@@ -7,9 +7,8 @@ namespace Contactor.Web.Features.Identity;
 
 /// <summary>
 /// Lets a request through only when the chosen sign-in (<see cref="SignInChoice"/>) says who made it, and puts the
-/// user on <see cref="HttpContext.User"/>. Blazor Server copies
-/// that user into the circuit when it starts, which is where <see cref="CurrentUser"/> reads it. An unknown e-mail
-/// becomes a new <see cref="User"/>.
+/// user on <see cref="HttpContext.User"/>. Blazor Server copies that user into the circuit when it starts, which is
+/// where <see cref="CurrentUser"/> reads it. An unknown e-mail becomes a new <see cref="User"/>.
 /// </summary>
 public sealed partial class SignInMiddleware
 {

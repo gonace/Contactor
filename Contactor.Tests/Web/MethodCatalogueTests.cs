@@ -59,6 +59,8 @@ public sealed class MethodCatalogueTests
         Assert.IsType<CloudflareAccess>(signIn.Current.Create(database.Services));
     }
 
+    // With one method in each catalogue the saved one is also the default: this only shows a saved id is read. It
+    // tells them apart once a second method is added (Issue #3).
     [Fact]
     public async Task Should_UseTheSavedMethods_IgnoringCase()
     {
