@@ -215,6 +215,92 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
         _settings.Dispose();
     }
 
+    // A request that comes while the first keys are on their way waits for them, rather than being denied with none.
+    [Fact]
+    public async Task Should_LetARequestWaitForTheKeys_WhileTheFirstAreFetched()
+    {
+        using var held = new HeldCertificates(_tokens.Certificates());
+        using var keys = Keys(held, out var provider);
+        await using var _ = provider;
+        var access = new CloudflareAccessSettings(AccessTokens.TeamDomain, AccessTokens.Audience);
+
+        var first = Task.Run(() => keys.GetAsync(access, refresh: false, Cancel), Cancel);
+        Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The first fetch never started.");
+        var second = keys.GetAsync(access, refresh: false, Cancel);
+        Assert.False(second.IsCompleted, "The second request didn't wait for the keys.");
+        held.Answer.Set();
+
+        Assert.Equal(_tokens.KeyId, Assert.Single(await first).KeyId);
+        Assert.Equal(_tokens.KeyId, Assert.Single(await second).KeyId);
+        Assert.Equal(1, held.RequestCount);
+    }
+
+    // A fetch that fails still counts: the requests that waited for it take what it got, and don't each fetch again.
+    [Fact]
+    public async Task Should_FetchOnce_ForTheRequestsThatWaited_WhenTheFetchFails()
+    {
+        using var held = new HeldCertificates(_tokens.Certificates()) { StatusCode = HttpStatusCode.InternalServerError };
+        using var keys = Keys(held, out var provider);
+        await using var _ = provider;
+        var access = new CloudflareAccessSettings(AccessTokens.TeamDomain, AccessTokens.Audience);
+
+        var first = Task.Run(() => keys.GetAsync(access, refresh: false, Cancel), Cancel);
+        Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The first fetch never started.");
+        var waiting = Enumerable.Range(0, 5).Select(_ => keys.GetAsync(access, refresh: true, Cancel)).ToList();
+        held.Answer.Set();
+
+        Assert.Empty(await first);
+        Assert.All(await Task.WhenAll(waiting), Assert.Empty);
+        Assert.Equal(1, held.RequestCount);
+    }
+
+    private CloudflareAccessKeys Keys(HttpMessageHandler handler, out ServiceProvider provider)
+    {
+        var services = new ServiceCollection();
+        services.AddHttpClient(CloudflareAccessKeys.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => handler);
+        provider = services.BuildServiceProvider();
+        return new CloudflareAccessKeys(provider.GetRequiredService<IHttpClientFactory>(), _settings, _time, NullLogger<CloudflareAccessKeys>.Instance);
+    }
+
+    // Cloudflare's certs endpoint, answering only once the test lets it.
+    private sealed class HeldCertificates : HttpMessageHandler
+    {
+        private readonly string _certificates;
+        private int _requestCount;
+
+        public HeldCertificates(string certificates)
+        {
+            _certificates = certificates;
+        }
+
+        public HttpStatusCode StatusCode { get; init; } = HttpStatusCode.OK;
+
+        public ManualResetEventSlim Fetching { get; } = new();
+
+        public ManualResetEventSlim Answer { get; } = new();
+
+        public int RequestCount => Volatile.Read(ref _requestCount);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _requestCount);
+            Fetching.Set();
+            await Task.Run(() => Answer.Wait(TimeSpan.FromSeconds(10), cancellationToken), cancellationToken);
+            return new HttpResponseMessage(StatusCode) { Content = new StringContent(StatusCode == HttpStatusCode.OK ? _certificates : "", System.Text.Encoding.UTF8, "application/json") };
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Fetching.Dispose();
+                Answer.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+
     // A request that has checked which team the keys are for, and is about to take them, while another team's keys
     // come in: it still gets only its own team's keys. The request is held in the clock, which it reads between the two.
     [Fact]

@@ -96,9 +96,10 @@ public sealed partial class CloudflareAccessKeys : IDisposable
         var before = Volatile.Read(ref _fetched);
         IReadOnlyList<SecurityKey> had = string.Equals(before?.Team, access.TeamDomain, StringComparison.Ordinal) ? before!.Keys : [];
 
-        // Counts as a fetch even when it fails, so a Cloudflare outage doesn't get a request per page view.
+        // Saved only once it is done, so a request that comes meanwhile goes to the fetch gate and waits for these keys,
+        // rather than being denied with none. Then it counts as a fetch even when it failed, so a Cloudflare outage
+        // doesn't get a request per page view: the requests that waited find it fresh, and take what it got.
         var at = _timeProvider.GetUtcNow();
-        Volatile.Write(ref _fetched, new Fetched(access.TeamDomain, at, had));
         try
         {
             using var http = _httpClientFactory.CreateClient(HttpClientName);
@@ -134,6 +135,7 @@ public sealed partial class CloudflareAccessKeys : IDisposable
             // Keeps the keys it had: they are still Cloudflare's. Without any, every token is denied, and the
             // first unknown key retries after a minute.
             LogFetchFailed(ex.GetType().Name, ex.Message);
+            Volatile.Write(ref _fetched, new Fetched(access.TeamDomain, at, had));
             return had;
         }
     }
