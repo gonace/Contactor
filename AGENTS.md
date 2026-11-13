@@ -15,7 +15,7 @@ The relays drive real machines. Each rule is told in full in its section of `doc
 - **A group's interlock is never bypassed.** A relay may only be on while every relay above it is. This is checked first on every status, and at start and reconnect. A relay in a group is only switched through its group. ([Relay groups](docs/ARCHITECTURE.md#relay-groups))
 - **The scheduler turns nothing off at start or reconnect,** except auto-off times that have already passed and a schedule's missed OffTime for a relay that schedule turned on. ([Scheduling](docs/ARCHITECTURE.md#scheduling))
 - **Secrets stay secret.** The board's password is never logged or shown, and the tunnel token is never logged. The Access team domain and AUD tag, the board's address and password and the tunnel token are never in the repository or the image. ([Architecture](docs/ARCHITECTURE.md#architecture), [Data model](docs/ARCHITECTURE.md#data-model-sqlite), [Configuration](docs/ARCHITECTURE.md#configuration-appsettingsjson))
-- **Every request goes through Cloudflare Access.** `/healthz` needs no JWT and answers localhost only. ([Identity](docs/ARCHITECTURE.md#identity-cloudflare-access))
+- **Every request goes through the chosen sign-in.** "No sign-in" is allowed only with "Only on this network", never with a public link; the app refuses to start on a sign-in that doesn't fit its way in. Until a sign-in is chosen, only the setup code's page and, with its cookie, the setup guide answer. `/healthz` and `/setup/reload` need no sign-in and answer localhost only. ([Identity](docs/ARCHITECTURE.md#identity-cloudflare-access))
 - **Every colour comes from a design token,** never a hex value of its own, so dark mode works on every page. ([Design tokens](docs/ARCHITECTURE.md#design-tokens))
 
 ---
@@ -95,7 +95,7 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 - **Client against the simulator:** login with and without auth, wrong password, pushed status, reconnect after a disconnect.
 - **Scheduling:** with an injected `TimeProvider`. Test weekdays, over midnight, both daylight saving changes, overlaps and the reconciliation at start.
 - **Auto-off:** that it triggers, and not for relays turned on by a schedule.
-- **Identity:** valid and invalid JWT, wrong `aud`, and that the dev fallback is blocked in Production.
+- **Identity:** valid and invalid JWT, wrong `aud`, and that the app refuses to start on a sign-in that doesn't fit its way in.
 - **CI:** the Build workflow runs `dotnet build` and `dotnet test` on every pull request to `main`, on every merge into `main` and by hand, and shows the results as a "Tests" check (`dorny/test-reporter`). A new push to a pull request cancels its older run. Run the related tests locally before pushing.
 - **While the Build workflow is disabled** (to save Actions minutes during heavy development): ignore the missing GitHub checks and don't bring them up. The gate is a full local run instead: a Release build and every test on a clean checkout of the pull request's latest commit, with the commit and the result in the pull request's description.
 
