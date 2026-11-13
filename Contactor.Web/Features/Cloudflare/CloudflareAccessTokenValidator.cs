@@ -70,7 +70,7 @@ public sealed partial class CloudflareAccessTokenValidator
     {
         // The settings as they are now: the setup guide may have just saved new ones.
         var access = _settings.Access;
-        var keys = await _keys.GetAsync(refresh, cancellationToken);
+        var keys = await _keys.GetAsync(access, refresh, cancellationToken);
         var parameters = new TokenValidationParameters
         {
             ValidIssuer = access.Issuer,

@@ -34,7 +34,7 @@ public sealed class CloudflareSettingsTests : IDisposable
         Assert.Null(await settings.SaveTunnelAsync("saved-token", "relays.example.com", Cancel));
 
         // What was saved wins, also after a restart.
-        var restarted = new CloudflareSettings(
+        using var restarted = new CloudflareSettings(
             database.Factory,
             database.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<TunnelOptions>>(),
             database.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<CloudflareAccessOptions>>(),
@@ -42,7 +42,6 @@ public sealed class CloudflareSettingsTests : IDisposable
         await restarted.LoadAsync(Cancel);
         Assert.Equal(("other.cloudflareaccess.com", "aud-new"), (restarted.Access.TeamDomain, restarted.Access.Audience));
         Assert.Equal(("saved-token", "relays.example.com"), (restarted.Tunnel.Token, restarted.Tunnel.Address));
-        restarted.Dispose();
     }
 
     [Theory]
@@ -102,6 +101,9 @@ public sealed class CloudflareSettingsTests : IDisposable
 
         Assert.Null(await validator.ValidateAsync(token, Cancel));
         Assert.Equal(new Uri("https://other.cloudflareaccess.com/cdn-cgi/access/certs"), _handler.LastRequestUri);
+        Assert.Equal(
+            "john@example.com",
+            await validator.ValidateAsync(_tokens.Create("john@example.com", issuer: "https://other.cloudflareaccess.com"), Cancel));
     }
 
     public void Dispose()

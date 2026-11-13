@@ -154,7 +154,7 @@ public sealed partial class CloudflareTunnel : IAccessMethod
     [LoggerMessage(Level = LogLevel.Information, Message = "The tunnel's token changed: starting cloudflared again with it")]
     private partial void LogTokenChanged();
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "No tunnel token (Tunnel__Token): cloudflared isn't started")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "No tunnel token yet: cloudflared waits for one")]
     private partial void LogNoTunnel();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting cloudflared")]

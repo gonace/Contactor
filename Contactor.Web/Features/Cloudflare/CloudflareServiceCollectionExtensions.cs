@@ -7,8 +7,8 @@ namespace Contactor.Web.Features.Cloudflare;
 public static class CloudflareServiceCollectionExtensions
 {
     /// <summary>
-    /// What Cloudflare has as a way in and a sign-in: the tunnel the app runs itself when <c>Tunnel:Token</c> is set,
-    /// and Cloudflare Access's options, key cache and token check.
+    /// What Cloudflare has as a way in and a sign-in: its settings (saved in the setup guide, or the app's settings),
+    /// the tunnel the app runs itself when it has a token, and Cloudflare Access's key cache and token check.
     /// </summary>
     public static IServiceCollection AddCloudflare(this IServiceCollection services, IConfiguration configuration)
     {
@@ -45,7 +45,7 @@ public static class CloudflareServiceCollectionExtensions
             && settings.Access.Problem is { } problem)
         {
             throw new InvalidOperationException(
-                $"Cloudflare Access is the sign-in, but its settings can't be used: {problem} Set CloudflareAccess:TeamDomain and CloudflareAccess:Audience.");
+                $"Cloudflare Access is the sign-in, but its settings can't be used: {problem} Save them in the setup guide, or set CloudflareAccess:TeamDomain and CloudflareAccess:Audience when the guide hasn't saved any.");
         }
     }
 }

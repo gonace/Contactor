@@ -84,9 +84,16 @@ public sealed partial class CloudflareSettings : IDisposable
             return problem;
         }
 
+        var before = Tunnel.Token;
         await SaveAsync(row => (row.TunnelToken, row.Address) = (token, address), cancellationToken);
         LogTunnelSaved(address);
-        TunnelChanged?.Invoke(this, EventArgs.Empty);
+
+        // Only a new token starts the tunnel again: that drops the connection of whoever uses the app through it.
+        if (!string.Equals(before, token, StringComparison.Ordinal))
+        {
+            TunnelChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         return null;
     }
 

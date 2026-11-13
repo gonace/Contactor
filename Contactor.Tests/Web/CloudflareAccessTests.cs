@@ -161,6 +161,19 @@ public sealed class CloudflareAccessTests : IDisposable
         Assert.Contains("Cloudflare Access is the sign-in", error.Message, StringComparison.Ordinal);
     }
 
+    // In Development the development user signs everyone in, so Access's settings aren't needed.
+    [Fact]
+    public async Task Should_Start_WithoutAccessSettings_WithTheDevelopmentUser()
+    {
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { ["CloudflareAccess:DevUserEmail"] = "john@example.com" }, setUp: false);
+        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
+
+        using var http = app.CreateClient();
+        using var response = await http.GetAsync("/", Cancel);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     // A new installation chooses its sign-in in the setup guide: it starts without Access's settings.
     [Fact]
     public async Task Should_Start_WithoutAccessSettings_OnANewInstallation()

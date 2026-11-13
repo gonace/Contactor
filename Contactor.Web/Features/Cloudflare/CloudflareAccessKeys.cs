@@ -44,9 +44,9 @@ public sealed partial class CloudflareAccessKeys : IDisposable
     /// The current keys; empty until a fetch has succeeded, so every token fails. With <paramref name="refresh"/>
     /// they are fetched again unless that happened less than a minute ago.
     /// </summary>
-    public async Task<IReadOnlyList<SecurityKey>> GetAsync(bool refresh, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SecurityKey>> GetAsync(CloudflareAccessSettings access, bool refresh, CancellationToken cancellationToken)
     {
-        var access = _settings.Access;
+        ArgumentNullException.ThrowIfNull(access);
         if (!NeedsFetch(access, refresh))
         {
             return Volatile.Read(ref _keys);

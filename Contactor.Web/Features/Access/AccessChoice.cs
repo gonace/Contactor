@@ -7,9 +7,10 @@ namespace Contactor.Web.Features.Access;
 /// Which way in the app runs: the one saved with the installation (<see cref="Installation.AccessType"/>), or none
 /// while a new installation hasn't chosen one.
 /// </summary>
-public sealed class AccessChoice
+public sealed class AccessChoice : IDisposable
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private AccessMethod? _current;
 
     public AccessChoice(IDbContextFactory<ContactorDbContext> dbFactory)
@@ -40,6 +41,26 @@ public sealed class AccessChoice
     public async Task ChooseAsync(AccessMethod method, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(method);
+
+        // One choice at a time (two tabs of the guide): what is saved is what runs.
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await SaveAndUseAsync(method, cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _gate.Dispose();
+    }
+
+    private async Task SaveAndUseAsync(AccessMethod method, CancellationToken cancellationToken)
+    {
         await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
         {
             var installation = await db.Installations.SingleOrDefaultAsync(cancellationToken);

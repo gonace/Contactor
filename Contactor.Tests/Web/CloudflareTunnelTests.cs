@@ -27,7 +27,7 @@ public sealed class CloudflareTunnelTests
         await service.StartAsync(Cancel);
 
         // It waits for a token from the setup guide, and stops with the app.
-        await WaitUntilAsync(() => logger.Lines.Contains("No tunnel token (Tunnel__Token): cloudflared isn't started"));
+        await WaitUntilAsync(() => logger.Lines.Contains("No tunnel token yet: cloudflared waits for one"));
         await service.StopAsync(Cancel);
         Assert.Equal(0, process.Runs);
         Assert.True(service.ExecuteTask!.IsCompletedSuccessfully);
@@ -154,6 +154,23 @@ public sealed class CloudflareTunnelTests
         Assert.DoesNotContain(logger.Lines, line => line.Contains("new-token", StringComparison.Ordinal));
     }
 
+    // Saving the same token again (e.g. only the address changed) doesn't drop the connection through the tunnel.
+    [Fact]
+    public async Task Should_KeepTheTunnel_WhenTheSameTokenIsSaved()
+    {
+        var process = new FakeCloudflared { RunUntilCancelled = true };
+        var logger = new ListLogger();
+        await using var service = await CreateAsync(Token, process, new ManualTimeProvider(), logger);
+        await service.StartAsync(Cancel);
+        await WaitUntilAsync(() => process.Runs == 1);
+
+        await service.Services.GetRequiredService<CloudflareSettings>().SaveTunnelAsync(Token, "other.example.com", Cancel);
+        await service.StopAsync(Cancel);
+
+        Assert.Equal(1, process.Runs);
+        Assert.DoesNotContain("The tunnel's token changed: starting cloudflared again with it", logger.Lines);
+    }
+
     [Fact]
     public async Task Should_StartTheTunnel_WhenATokenIsSaved()
     {
@@ -161,7 +178,7 @@ public sealed class CloudflareTunnelTests
         var logger = new ListLogger();
         await using var service = await CreateAsync("", process, new ManualTimeProvider(), logger);
         await service.StartAsync(Cancel);
-        await WaitUntilAsync(() => logger.Lines.Contains("No tunnel token (Tunnel__Token): cloudflared isn't started"));
+        await WaitUntilAsync(() => logger.Lines.Contains("No tunnel token yet: cloudflared waits for one"));
 
         await service.Services.GetRequiredService<CloudflareSettings>().SaveTunnelAsync(Token, "relays.example.com", Cancel);
 
