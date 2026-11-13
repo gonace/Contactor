@@ -222,11 +222,19 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AccessType")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("BoardType")
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("SetupDoneUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignInType")
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");

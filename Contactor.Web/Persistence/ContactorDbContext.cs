@@ -189,6 +189,8 @@ public sealed class ContactorDbContext : DbContext
         installation.ToTable("Installation", t => t.HasCheckConstraint("CK_Installation_Id", $"\"Id\" = {Installation.SingletonId}"));
         installation.Property(i => i.Id).ValueGeneratedNever();
         installation.Property(i => i.BoardType).HasMaxLength(Installation.BoardTypeMaxLength);
+        installation.Property(i => i.AccessType).HasMaxLength(Installation.MethodTypeMaxLength);
+        installation.Property(i => i.SignInType).HasMaxLength(Installation.MethodTypeMaxLength);
     }
 
     private static void ConfigureBoardWatchState(EntityTypeBuilder<BoardWatchState> state)

@@ -1,12 +1,17 @@
 using System.Collections.Concurrent;
-using Contactor.Web.Features.Tunnel;
+using Contactor.Web.Features.Access;
+using Contactor.Web.Features.Cloudflare;
+using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>The app keeping cloudflared running, with a fake process and a clock the test moves.</summary>
-public sealed class TunnelHostedServiceTests
+public sealed class CloudflareTunnelTests
 {
     private const string Token = "eyJhIjoiZXhhbXBsZSJ9";
 
@@ -133,10 +138,61 @@ public sealed class TunnelHostedServiceTests
         time.Advance(by);
     }
 
-    private static TunnelHostedService Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
+    // The tunnel as the app runs it: the chosen way in, kept running by AccessHostedService for the app's lifetime.
+    private static RunningTunnel Create(string token, FakeCloudflared process, TimeProvider time, ListLogger logger)
     {
-        var options = Options.Create(new TunnelOptions { Token = token, Path = "/opt/cloudflared" });
-        return new TunnelHostedService(options, process, time, logger);
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton<IDbContextFactory<ContactorDbContext>>(new NoDatabase());
+        services.AddCloudflare(new ConfigurationBuilder().Build());
+        services.AddAccess(new ConfigurationBuilder().Build());
+        services.Configure<TunnelOptions>(o =>
+        {
+            o.Token = token;
+            o.Path = "/opt/cloudflared";
+        });
+        services.AddSingleton(time);
+        services.AddSingleton<ICloudflaredProcess>(process);
+        services.AddSingleton<ILogger<CloudflareTunnel>>(logger);
+        var provider = services.BuildServiceProvider();
+        return new RunningTunnel(provider, provider.GetServices<IHostedService>().OfType<AccessHostedService>().Single());
+    }
+
+    private sealed class RunningTunnel : IDisposable
+    {
+        private readonly ServiceProvider _provider;
+        private readonly AccessHostedService _service;
+
+        public RunningTunnel(ServiceProvider provider, AccessHostedService service)
+        {
+            _provider = provider;
+            _service = service;
+        }
+
+        public Task? ExecuteTask => _service.ExecuteTask;
+
+        public Task StartAsync(CancellationToken cancellationToken) => _service.StartAsync(cancellationToken);
+
+        // As the app stops: it waits only so long, so a service that doesn't stop cloudflared fails a test instead
+        // of hanging it.
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            stop.CancelAfter(TimeSpan.FromSeconds(10));
+            await _service.StopAsync(stop.Token);
+        }
+
+        public void Dispose()
+        {
+            _service.Dispose();
+            _provider.Dispose();
+        }
+    }
+
+    // The way in is chosen from the database at start; these tests never read it, so the default stays.
+    private sealed class NoDatabase : IDbContextFactory<ContactorDbContext>
+    {
+        public ContactorDbContext CreateDbContext() => throw new InvalidOperationException("No database in these tests.");
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -212,7 +268,7 @@ public sealed class TunnelHostedServiceTests
         }
     }
 
-    private sealed class ListLogger : ILogger<TunnelHostedService>
+    private sealed class ListLogger : ILogger<CloudflareTunnel>
     {
         private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries = new();
 

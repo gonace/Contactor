@@ -16,8 +16,8 @@ public sealed record DevantechLayout(string Family, byte ModuleId, int OutputByt
 /// </summary>
 public static class DevantechModels
 {
-    /// <summary>Who makes them: the setup guide lists the models by make.</summary>
-    public const string Make = "Devantech";
+    /// <summary>Who makes them: the setup guide lists the models by brand.</summary>
+    public const string Brand = "Devantech";
 
     public static BoardModel Eth002 { get; } = Create("devantech-eth002", "ETH002-B", relays: 2, inputs: 0, analog: 0);
 
@@ -109,7 +109,7 @@ public static class DevantechModels
     {
         return new BoardModel(
             id,
-            Make,
+            Brand,
             name,
             new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog),
             DevantechApi.DefaultPort,

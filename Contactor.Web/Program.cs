@@ -1,7 +1,9 @@
 using Contactor.ServiceDefaults;
 using Contactor.Web.Components;
+using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Backup;
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Health;
@@ -10,7 +12,6 @@ using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Features.Setup;
-using Contactor.Web.Features.Tunnel;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Web;
@@ -30,7 +31,8 @@ public sealed partial class Program
         builder.Services.AddLocalClock(builder.Configuration);
         builder.Services.AddPersistence(builder.Configuration);
         builder.Services.AddBoards(builder.Configuration);
-        builder.Services.AddCloudflareAccess(builder.Configuration);
+        builder.Services.AddSignIn(builder.Configuration);
+        builder.Services.AddCloudflare(builder.Configuration);
         builder.Services.AddRelays(builder.Configuration);
         builder.Services.AddGroups(builder.Configuration);
         builder.Services.AddEvents(builder.Configuration);
@@ -38,7 +40,7 @@ public sealed partial class Program
         builder.Services.AddSchedules(builder.Configuration);
         builder.Services.AddBackup(builder.Configuration);
         builder.Services.AddSetup(builder.Configuration);
-        builder.Services.AddTunnel(builder.Configuration);
+        builder.Services.AddAccess(builder.Configuration);
         builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
         var app = builder.Build();
@@ -49,8 +51,10 @@ public sealed partial class Program
         }
         app.Services.InitializeDatabaseAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
+        app.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
+        app.Services.GetRequiredService<SignInChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-        app.UseCloudflareAccess();
+        app.UseSignIn();
         app.UseAntiforgery();
         app.MapStaticAssets();
         app.MapDefaultEndpoints();

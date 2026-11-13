@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Contactor.Web.Features.Identity;
+namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>
 /// The keys Cloudflare Access signs its tokens with, fetched from the team's certs endpoint and kept for an hour.

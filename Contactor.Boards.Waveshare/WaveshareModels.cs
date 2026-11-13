@@ -8,8 +8,8 @@ namespace Contactor.Boards.Waveshare;
 /// </summary>
 public static class WaveshareModels
 {
-    /// <summary>Who makes them: the setup guide lists the models by make.</summary>
-    public const string Make = "Waveshare";
+    /// <summary>Who makes them: the setup guide lists the models by brand.</summary>
+    public const string Brand = "Waveshare";
 
     public static BoardModel Relay8 { get; } = Create("waveshare-8", "Modbus PoE ETH Relay", relays: 8, inputs: 0);
 
@@ -41,6 +41,6 @@ public static class WaveshareModels
 
     private static BoardModel Create(string id, string name, int relays, int inputs)
     {
-        return new BoardModel(id, Make, name, new BoardCapabilities(relays, inputs, ReportsChanges: false), WaveshareApi.DefaultPort, LoginMaxLength: 0);
+        return new BoardModel(id, Brand, name, new BoardCapabilities(relays, inputs, ReportsChanges: false), WaveshareApi.DefaultPort, LoginMaxLength: 0);
     }
 }

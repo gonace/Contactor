@@ -8,7 +8,7 @@ public sealed record SignedInUser(string Email, string DisplayName);
 
 /// <summary>
 /// Who is using this page. Scoped, so in Blazor Server it belongs to one circuit: it reads the user that
-/// <see cref="CloudflareAccessMiddleware"/> put on the request that started the circuit, since request headers are
+/// <see cref="SignInMiddleware"/> put on the request that started the circuit, since request headers are
 /// gone once the circuit runs.
 /// </summary>
 public sealed class CurrentUser

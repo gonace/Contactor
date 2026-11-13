@@ -18,8 +18,8 @@ namespace Contactor.Web.Features.Boards;
 /// </summary>
 public sealed record BoardRegistration(BoardModel Model, Func<BoardModel, IServiceProvider, IConfiguration, ActiveBoard> Create);
 
-/// <summary>A make of board and its models, as the setup guide lists them.</summary>
-public sealed record BoardMake(string Name, IReadOnlyList<BoardModel> Models);
+/// <summary>A brand of board and its models, as the setup guide lists them.</summary>
+public sealed record BoardBrand(string Name, IReadOnlyList<BoardModel> Models);
 
 /// <summary>
 /// Every model of board the app supports. A new model is a project of its own with its adapters, and one line here.
@@ -45,13 +45,13 @@ public static class BoardCatalogue
         new(DevantechModels.Eth8020, DevantechBoards.Create),
     ];
 
-    /// <summary>The makes in alphabetical order, each with its models in the catalogue's order.</summary>
-    public static IReadOnlyList<BoardMake> Makes { get; } =
+    /// <summary>The brands in alphabetical order, each with its models in the catalogue's order.</summary>
+    public static IReadOnlyList<BoardBrand> Brands { get; } =
     [
         .. All
-            .GroupBy(r => r.Model.Make, StringComparer.Ordinal)
+            .GroupBy(r => r.Model.Brand, StringComparer.Ordinal)
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new BoardMake(g.Key, [.. g.Select(r => r.Model)])),
+            .Select(g => new BoardBrand(g.Key, [.. g.Select(r => r.Model)])),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>
