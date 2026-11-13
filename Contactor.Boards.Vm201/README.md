@@ -1,6 +1,6 @@
 # The VM201 (`Contactor.Boards.Vm201`)
 
-How the app talks to this board. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is in `AGENTS.md` at the repository root.
+How the app talks to this board. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is in `docs/ARCHITECTURE.md`.
 
 ## TCP protocol (port 9760)
 

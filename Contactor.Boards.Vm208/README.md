@@ -1,6 +1,6 @@
 # The VM208 (`Contactor.Boards.Vm208`)
 
-How the app talks to this board. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is in `AGENTS.md` at the repository root.
+How the app talks to this board. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is in `docs/ARCHITECTURE.md`.
 
 
 The VM208 (ESP32, WLAN or Ethernet) is neither the VM201's nor the VM204's protocol. Source: Velleman's firmware, https://github.com/Velleman/VM208 (`src/Network/server_VM208.cpp`, ESPAsyncWebServer, ArduinoJson 5), and its library https://github.com/velleman/VM208INT; each route names its firmware file in `Vm208Api`. Plain HTTP on port 80, JSON answers, one request per connection. It never reports a change by itself, so the app polls. Only the card itself is used (`interface=-1`); VM208EX extension modules are left out for now.
