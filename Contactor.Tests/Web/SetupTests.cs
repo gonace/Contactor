@@ -471,6 +471,13 @@ public sealed class SetupTests
 
         Assert.True(rig.Board.State.IsOn(3));
         await WaitUntilAsync(() => !rig.Board.State.IsOn(3));
+
+        // Until the turn-off has saved its event too, so the test's database isn't deleted under it.
+        await WaitUntilAsync(() =>
+        {
+            using var db = rig.Database.Factory.CreateDbContext();
+            return db.EventLog.Any(e => e.RelayId == 3 && e.Action == EventActions.Off);
+        });
     }
 
     [Fact]

@@ -50,13 +50,10 @@ public sealed class RelayControl
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var relay = await db.Relays.SingleAsync(r => r.Id == relayId, cancellationToken);
-        var runtime = await GetRuntimeAsync(db, relayId, cancellationToken);
-        runtime.OnSinceUtc = now;
-        runtime.TurnedOnBy = actor;
-        runtime.AutoOffAtUtc = relay.MaxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
+        var maxOnMinutes = await db.Relays.Where(r => r.Id == relayId).Select(r => r.MaxOnMinutes).SingleAsync(cancellationToken);
+        await RelayRuns.StartAsync(db, relayId, actor, now, maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null, cancellationToken);
         db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.On });
-        await db.SaveChangesAsync(cancellationToken);
+        await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
     }
 
@@ -66,13 +63,14 @@ public sealed class RelayControl
         var mask = _board.Capabilities.Relay(relayId);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
+        var sent = _clock.UtcNow;
         await SendAsync(mask, on: false, cancellationToken);
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        Clear(await GetRuntimeAsync(db, relayId, cancellationToken));
+        await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
         db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.Off });
-        await db.SaveChangesAsync(cancellationToken);
+        await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
     }
 
@@ -90,6 +88,7 @@ public sealed class RelayControl
 
         var single = _board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(cancellationToken));
         var wasOn = _board.State.Relays & single;
+        var sent = _clock.UtcNow;
         if (!single.IsEmpty)
         {
             _expected.Expect(wasOn, on: false);
@@ -107,9 +106,9 @@ public sealed class RelayControl
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        foreach (var runtime in await db.RelayRuntimes.ToListAsync(cancellationToken))
+        foreach (var relayId in await db.RelayRuntimes.Where(r => r.OnSinceUtc != null).Select(r => r.RelayId).ToListAsync(cancellationToken))
         {
-            Clear(runtime);
+            await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
         }
 
         foreach (var relayId in wasOn.Channels)
@@ -124,7 +123,7 @@ public sealed class RelayControl
             });
         }
 
-        await db.SaveChangesAsync(cancellationToken);
+        await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
         await _groups.StopAllAsync(userEmail, cancellationToken);
     }
@@ -158,25 +157,6 @@ public sealed class RelayControl
         {
             throw new RelayInGroupException();
         }
-    }
-
-    private static async Task<RelayRuntime> GetRuntimeAsync(ContactorDbContext db, int relayId, CancellationToken cancellationToken)
-    {
-        var runtime = await db.RelayRuntimes.SingleOrDefaultAsync(r => r.RelayId == relayId, cancellationToken);
-        if (runtime is null)
-        {
-            runtime = new RelayRuntime { RelayId = relayId };
-            db.RelayRuntimes.Add(runtime);
-        }
-
-        return runtime;
-    }
-
-    private static void Clear(RelayRuntime runtime)
-    {
-        runtime.OnSinceUtc = null;
-        runtime.AutoOffAtUtc = null;
-        runtime.TurnedOnBy = null;
     }
 }
 

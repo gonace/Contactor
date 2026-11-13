@@ -252,7 +252,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         _known = state;
         if (db.ChangeTracker.HasChanges())
         {
-            await db.SaveChangesAsync(cancellationToken);
+            await RelayRuns.SaveAsync(db, cancellationToken);
             _changes.Notify();
         }
 
@@ -397,20 +397,20 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 Action = isOn ? EventActions.On : EventActions.Off,
             });
 
-            var runtime = await db.RelayRuntimes.SingleOrDefaultAsync(r => r.RelayId == relayId, cancellationToken);
             if (isOn)
             {
                 // Nobody in the app turned it on: it gets the relay's own auto-off all the same, so nothing runs for
                 // ever by accident.
-                await GiveOwnAutoOffAsync(db, relayId, runtime, now, cancellationToken);
+                if (await OwnAutoOffAtAsync(db, relayId, now, cancellationToken) is { } own)
+                {
+                    await RelayRuns.StartOutsideAsync(db, relayId, now, own.AutoOffAt, cancellationToken);
+                }
             }
-            else if (runtime is not null)
+            else
             {
                 // Whoever turned it on no longer has it on: the status line must not keep their name, and auto-off
                 // must not act on it.
-                runtime.OnSinceUtc = null;
-                runtime.AutoOffAtUtc = null;
-                runtime.TurnedOnBy = null;
+                await RelayRuns.EndOutsideAsync(db, relayId, cancellationToken);
             }
         }
     }
@@ -426,37 +426,33 @@ public sealed partial class BoardEventRecorder : BackgroundService
             return;
         }
 
-        var runtimes = await db.RelayRuntimes.Where(r => on.Contains(r.RelayId)).ToDictionaryAsync(r => r.RelayId, cancellationToken);
-        foreach (var relayId in on)
+        var withRun = await db.RelayRuntimes.AsNoTracking()
+            .Where(r => on.Contains(r.RelayId) && r.OnSinceUtc != null)
+            .Select(r => r.RelayId)
+            .ToListAsync(cancellationToken);
+        foreach (var relayId in on.Except(withRun))
         {
-            var runtime = runtimes.GetValueOrDefault(relayId);
-            if (runtime?.OnSinceUtc is null)
+            if (await OwnAutoOffAtAsync(db, relayId, now, cancellationToken) is { } own)
             {
-                await GiveOwnAutoOffAsync(db, relayId, runtime, now, cancellationToken);
+                await RelayRuns.GiveOwnAutoOffAsync(db, relayId, now, own.AutoOffAt, cancellationToken);
             }
         }
     }
 
-    // A relay on outside the app: "outside the app" since now, with the relay's own "Turn off automatically after". A
-    // relay in a group gets none of its own: its group's run applies (GroupSequencer).
-    private static async Task GiveOwnAutoOffAsync(ContactorDbContext db, int relayId, RelayRuntime? runtime, DateTime now, CancellationToken cancellationToken)
+    // A relay on outside the app gets the relay's own "Turn off automatically after", counted from now; null for a
+    // relay in a group, which gets none of its own: its group's run applies (GroupSequencer).
+    private static async Task<OwnAutoOff?> OwnAutoOffAtAsync(ContactorDbContext db, int relayId, DateTime now, CancellationToken cancellationToken)
     {
         if (await db.RelayGroupMembers.AnyAsync(m => m.RelayId == relayId, cancellationToken))
         {
-            return;
+            return null;
         }
 
         var maxOnMinutes = await db.Relays.Where(r => r.Id == relayId).Select(r => r.MaxOnMinutes).SingleOrDefaultAsync(cancellationToken);
-        if (runtime is null)
-        {
-            runtime = new RelayRuntime { RelayId = relayId };
-            db.RelayRuntimes.Add(runtime);
-        }
-
-        runtime.OnSinceUtc = now;
-        runtime.TurnedOnBy = EventActors.External;
-        runtime.AutoOffAtUtc = maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
+        return new OwnAutoOff(maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null);
     }
+
+    private sealed record OwnAutoOff(DateTime? AutoOffAt);
 
     private async Task CheckConnectionLostAsync(CancellationToken cancellationToken)
     {

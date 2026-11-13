@@ -178,7 +178,7 @@ public sealed class GroupsHandler
         db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
         await ForgetRelayRunsAsync(db, group.Members.Select(m => m.RelayId), cancellationToken);
         Log(db, group.Id, userEmail, EventActions.GroupCreate, new { name = group.Name, steps = group.Members.Select(m => m.RoleName) });
-        await db.SaveChangesAsync(cancellationToken);
+        await RelayRuns.SaveAsync(db, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         _changes.Notify();
         return (group.Id, null);
@@ -243,7 +243,7 @@ public sealed class GroupsHandler
         group.Icon = draft.Icon;
         group.MaxOnMinutes = draft.MaxOnMinutes;
         Log(db, group.Id, userEmail, EventActions.GroupEdit, new { name = group.Name });
-        await db.SaveChangesAsync(cancellationToken);
+        await RelayRuns.SaveAsync(db, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         _changes.Notify();
         return null;
@@ -405,11 +405,9 @@ public sealed class GroupsHandler
     private static async Task ForgetRelayRunsAsync(ContactorDbContext db, IEnumerable<int> relayIds, CancellationToken cancellationToken)
     {
         var ids = relayIds.ToList();
-        foreach (var runtime in await db.RelayRuntimes.Where(r => ids.Contains(r.RelayId)).ToListAsync(cancellationToken))
+        foreach (var relayId in await db.RelayRuntimes.Where(r => ids.Contains(r.RelayId)).Select(r => r.RelayId).ToListAsync(cancellationToken))
         {
-            runtime.OnSinceUtc = null;
-            runtime.AutoOffAtUtc = null;
-            runtime.TurnedOnBy = null;
+            await RelayRuns.ClearAsync(db, relayId, cancellationToken);
         }
     }
 

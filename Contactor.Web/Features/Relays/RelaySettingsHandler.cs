@@ -110,15 +110,15 @@ public sealed class RelaySettingsHandler
         if (relay.MaxOnMinutes != settings.MaxOnMinutes)
         {
             relay.MaxOnMinutes = settings.MaxOnMinutes;
-            var runtime = await db.RelayRuntimes.SingleOrDefaultAsync(r => r.RelayId == relay.Id, cancellationToken);
+            var runtime = await db.RelayRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.RelayId == relay.Id, cancellationToken);
             // A relay a schedule turned on has no auto-off: the schedule's OffTime is its end.
             if (runtime?.OnSinceUtc is { } since && runtime.TurnedOnBy != EventActors.Schedule)
             {
-                runtime.AutoOffAtUtc = settings.MaxOnMinutes is { } minutes ? since.AddMinutes(minutes) : null;
+                await RelayRuns.SetAutoOffAsync(db, relay.Id, since, settings.MaxOnMinutes is { } minutes ? since.AddMinutes(minutes) : null, cancellationToken);
             }
         }
 
-        await db.SaveChangesAsync(cancellationToken);
+        await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
         return null;
     }

@@ -169,9 +169,12 @@ public sealed class SetupHandler
         // ON has gone out: the turn-off starts now, whatever happens to the save below.
         _ = TurnOffLaterAsync(relayId, userEmail);
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == relayId, cancellationToken);
-        runtime.AutoOffAtUtc = _clock.UtcNow + TryAutoOffAfter;
-        await db.SaveChangesAsync(cancellationToken);
+        var runtime = await db.RelayRuntimes.AsNoTracking().SingleAsync(r => r.RelayId == relayId, cancellationToken);
+        if (runtime.OnSinceUtc is { } since && runtime.TurnedOnBy == userEmail)
+        {
+            await RelayRuns.SetAutoOffAsync(db, relayId, since, _clock.UtcNow + TryAutoOffAfter, cancellationToken);
+            await RelayRuns.SaveAsync(db, cancellationToken);
+        }
     }
 
     // After an ON that failed: the try promised only a moment, so a relay the board shows on by its end is turned off.

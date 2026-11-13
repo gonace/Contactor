@@ -167,6 +167,11 @@ RelayRuntime            (internal, for auto-off; one row per relay, seeded at st
   AutoOffAtUtc    datetime?
   TurnedOnBy      text?          e-mail, "input:n" (counts as a person), "schedule", or "external" (on outside the app,
                                  with the relay's own auto-off; a running schedule window takes it over)
+  Version         int            raised at every save; a save from a row changed since it was read fails
+                                 Written only through RelayRuns (Features/Relays): after an ON the one who turned it on
+                                 owns the run; after an OFF only the run that was on when it went out ends; without a
+                                 command a change applies only to the run as it was read or as its rule requires. On a
+                                 conflict RelayRuns reads the row again, applies the same wish by its rule, and saves again.
 
 SchedulerState          (internal, one row: the scheduler's progress)
   Id              int PK = 1

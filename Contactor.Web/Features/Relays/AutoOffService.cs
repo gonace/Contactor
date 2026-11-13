@@ -72,6 +72,7 @@ public sealed partial class AutoOffService : BackgroundService
         {
             if (state.IsOn(runtime.RelayId))
             {
+                var sent = _clock.UtcNow;
                 var mask = _board.Capabilities.Relay(runtime.RelayId);
                 _expected.Expect(mask, on: false);
                 try
@@ -96,17 +97,20 @@ public sealed partial class AutoOffService : BackgroundService
                     Details = minutes is null ? null : JsonSerializer.Serialize(new { afterMinutes = minutes }),
                 });
                 turnedOff.Add(runtime.RelayId);
+
+                // Its run ends; one begun after the OFF went out (someone turned it on again meanwhile) stays.
+                await RelayRuns.EndAsync(db, runtime.RelayId, sent, cancellationToken);
+                continue;
             }
 
-            // Off already (turned off some other way): nothing to send, but the plan is stale.
-            runtime.OnSinceUtc = null;
-            runtime.AutoOffAtUtc = null;
-            runtime.TurnedOnBy = null;
+            // Off already, turned off some other way: nothing to send, but the plan is stale. Only the run as read
+            // ends; one saved meanwhile (someone turned it on again) stays.
+            await RelayRuns.EndOutsideAsync(db, runtime.RelayId, cancellationToken);
         }
 
         if (db.ChangeTracker.HasChanges())
         {
-            await db.SaveChangesAsync(cancellationToken);
+            await RelayRuns.SaveAsync(db, cancellationToken);
             _changes.Notify();
         }
 
@@ -141,15 +145,7 @@ public sealed partial class AutoOffService : BackgroundService
             }
 
             var autoOffAt = relay.MaxOnMinutes is { } minutes ? now.AddMinutes(minutes) : (DateTime?)null;
-            var updated = await db.RelayRuntimes
-                .Where(r => r.RelayId == relay.Id && r.OnSinceUtc == null)
-                .ExecuteUpdateAsync(
-                    set => set
-                        .SetProperty(r => r.OnSinceUtc, now)
-                        .SetProperty(r => r.TurnedOnBy, EventActors.External)
-                        .SetProperty(r => r.AutoOffAtUtc, autoOffAt),
-                    cancellationToken);
-            if (updated > 0)
+            if (await RelayRuns.GiveOwnAutoOffNowAsync(db, relay.Id, now, autoOffAt, cancellationToken))
             {
                 LogOwnerless(relay.Id);
                 changed = true;
