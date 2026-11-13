@@ -241,6 +241,15 @@ public static class EventText
         };
     }
 
+    /// <summary>When a "pulse" event's pulse ended: the board turned the relay off by itself then.</summary>
+    public static DateTime PulseEndUtc(EventLogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return Number(entry.Details, "milliseconds") is > 0 and var milliseconds
+            ? entry.TimestampUtc.AddMilliseconds(milliseconds)
+            : entry.TimestampUtc;
+    }
+
     // As Seconds, and "0.5 s" for a pulse that isn't whole seconds.
     private static string PulseLength(int? milliseconds)
     {

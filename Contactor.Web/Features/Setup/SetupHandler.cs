@@ -156,7 +156,7 @@ public sealed class SetupHandler
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
-        if (_board.Capabilities.Pulse?.CanDo(TryLength) == true)
+        if (_board.Capabilities.Pulse?.CanDo(TryLength) == true && TryLength <= RelayControl.MaxPulse)
         {
             await _control.PulseAsync(relayId, TryLength, userEmail, cancellationToken);
             return;

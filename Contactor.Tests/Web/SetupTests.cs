@@ -431,10 +431,14 @@ public sealed class SetupTests
 
     // On a board with a pulse, "Try" uses it: the board turns the relay off by itself, also when the app has stopped
     // meanwhile, and the try is one event, the person's. The board's own OFF isn't taken for a change outside the app.
-    [Fact]
-    public async Task Should_TryWithTheBoardsPulse_WhenItHasOne()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(20)]
+    public async Task Should_TryWithTheBoardsPulse_WhenItHasOne(int secondsUntilTheOffShows)
     {
         await using var rig = await Rig.StartAsync(startRecorder: true, pulse: TenthsUpTo25s);
+        var time = (FixedTimeProvider)rig.Database.Services.GetRequiredService<TimeProvider>();
+        rig.Board.Time = time;
 
         await rig.Setup.TryAsync(3, JohnEmail, Cancel);
 
@@ -446,11 +450,13 @@ public sealed class SetupTests
             Assert.Equal((JohnEmail, Now + SetupHandler.TryLength + RelayControl.PulseBackstop), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
         }
 
-        // The board's own end of the pulse, with nothing from the app.
+        // The board's own end of the pulse, with nothing from the app: at once, or on a polled board after a slow poll,
+        // well past the 5 s an ordinary expectation lasts.
+        var expected = rig.Database.Services.GetRequiredService<ExpectedChanges>();
+        await WaitUntilAsync(() => !expected.IsPending(3, on: true));
+        time.Now += TimeSpan.FromSeconds(secondsUntilTheOffShows);
         await rig.Board.EndPulsesAsync();
-        await WaitUntilAsync(() => !rig.Board.State.IsOn(3));
-        await rig.Board.RefreshAsync(Cancel);
-        await Task.Delay(BoardEventRecorder.CheckInterval * 3, Cancel);
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && !expected.IsPending(3, on: false));
 
         await using var check = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var events = await check.EventLog.Where(e => e.RelayId == 3).ToListAsync(Cancel);
@@ -468,6 +474,47 @@ public sealed class SetupTests
 
         Assert.Empty(rig.Board.Pulses);
         await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && OffLogged(rig, JohnEmail));
+    }
+
+    // Without the board, a try with a pulse records nothing and expects nothing.
+    [Fact]
+    public async Task Should_NotTryWithAPulse_WithoutTheBoard()
+    {
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s);
+        rig.Board.SetConnected(false);
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+
+        var expected = rig.Database.Services.GetRequiredService<ExpectedChanges>();
+        Assert.False(expected.IsPending(3, on: true) || expected.IsPending(3, on: false));
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.EventLog.AnyAsync(Cancel));
+        Assert.Null((await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel)).OnSinceUtc);
+    }
+
+    // Only lengths the board can do, and only short ones, for "Try", until longer pulses are designed.
+    [Theory]
+    [InlineData(0.05)]
+    [InlineData(2.05)]
+    [InlineData(25.6)]
+    public async Task Should_RefuseAPulse_ThatTheBoardCantDo(double seconds)
+    {
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s);
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => control.PulseAsync(3, TimeSpan.FromSeconds(seconds), JohnEmail, Cancel));
+        Assert.Empty(rig.Board.Pulses);
+    }
+
+    [Fact]
+    public async Task Should_RefuseAPulse_LongerThanATry()
+    {
+        await using var rig = await Rig.StartAsync(pulse: new PulseAbility(TimeSpan.FromSeconds(1), TimeSpan.FromHours(99), TimeSpan.FromSeconds(1)));
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => control.PulseAsync(3, RelayControl.MaxPulse + TimeSpan.FromSeconds(1), JohnEmail, Cancel));
+        await control.PulseAsync(3, RelayControl.MaxPulse, JohnEmail, Cancel);
+        Assert.Equal([(ChannelMask.Of(3), RelayControl.MaxPulse)], rig.Board.Pulses);
     }
 
     [Fact]

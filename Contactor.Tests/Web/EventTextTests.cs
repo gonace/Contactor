@@ -34,6 +34,19 @@ public sealed class EventTextTests
         Assert.Equal(new EventView(true, "J", "Jane", what, Relay), EventText.For(entry, Relay, "Jane"));
     }
 
+    // "Off since" after a pulse: when the board turned the relay off, at the pulse's end.
+    [Fact]
+    public void Should_EndAPulse_AfterItsLength()
+    {
+        var at = new DateTime(2026, 11, 13, 12, 0, 0, DateTimeKind.Utc);
+        var entry = Entry("jane@example.com", EventActions.Pulse, """{"milliseconds":2000}""");
+        entry.TimestampUtc = at;
+
+        Assert.Equal(at.AddSeconds(2), EventText.PulseEndUtc(entry));
+        entry.Details = null;
+        Assert.Equal(at, EventText.PulseEndUtc(entry));
+    }
+
     [Fact]
     public void Should_FallBackToTheAddress_WhenThePersonIsUnknown()
     {

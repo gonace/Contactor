@@ -320,9 +320,9 @@
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
         _names = await ActorNames.LoadAsync(db, CancellationToken.None);
 
-        // The newest "off" event per relay, for "Off since yesterday · Alex".
+        // The newest "off" event per relay, for "Off since yesterday · Alex", or a pulse, which the board ended itself.
         var lastOffIds = await db.EventLog.AsNoTracking()
-            .Where(e => e.Action == EventActions.Off && e.RelayId != null)
+            .Where(e => (e.Action == EventActions.Off || e.Action == EventActions.Pulse) && e.RelayId != null)
             .GroupBy(e => e.RelayId)
             .Select(g => g.Max(e => e.Id))
             .ToListAsync();
@@ -344,7 +344,8 @@
         var autoOff = offAtUtc is { } offAt ? Clock.ToLocal(offAt) : (DateTime?)null;
         var nextOn = outlook?.NextOnUtc is { } next ? Clock.ToLocal(next) : (DateTime?)null;
         _lastOff.TryGetValue(relay.Id, out var lastOff);
-        var offSince = lastOff is null ? (DateTime?)null : Clock.ToLocal(lastOff.TimestampUtc);
+        var offSince = lastOff is null ? (DateTime?)null
+            : Clock.ToLocal(lastOff.Action == EventActions.Pulse ? EventText.PulseEndUtc(lastOff) : lastOff.TimestampUtc);
         var offBy = lastOff is null ? null
             : EventText.IsPersonActor(lastOff.Actor) ? NameOf(lastOff.Actor)
             : EventText.ShortWho(lastOff.Actor, _names.GetValueOrDefault(lastOff.Actor));

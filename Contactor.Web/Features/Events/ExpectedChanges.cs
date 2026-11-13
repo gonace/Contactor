@@ -25,10 +25,13 @@ public sealed class ExpectedChanges
         _clock = clock;
     }
 
-    /// <summary>Expects every relay in <paramref name="mask"/> to become <paramref name="on"/>.</summary>
-    public void Expect(ChannelMask mask, bool on)
+    /// <summary>
+    /// Expects every relay in <paramref name="mask"/> to become <paramref name="on"/>, for <see cref="Lifetime"/>, or
+    /// <paramref name="lifetime"/> for a change the board makes later by itself, e.g. the end of a pulse.
+    /// </summary>
+    public void Expect(ChannelMask mask, bool on, TimeSpan? lifetime = null)
     {
-        var expires = _clock.UtcNow + Lifetime;
+        var expires = _clock.UtcNow + (lifetime ?? Lifetime);
         lock (_lock)
         {
             foreach (var relayId in mask.Channels)
