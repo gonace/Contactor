@@ -9,7 +9,8 @@ public static class Vm208Model
 {
     public static BoardModel Model { get; } = new(
         "vm208",
-        "Velleman VM208",
+        "Velleman",
+        "VM208",
         Vm208Board.Vm208Capabilities,
         Vm208Api.DefaultPort,
         LoginMaxLength: 0);

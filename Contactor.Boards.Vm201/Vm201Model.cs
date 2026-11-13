@@ -8,7 +8,8 @@ public static class Vm201Model
 
     public static BoardModel Model { get; } = new(
         "vm201",
-        "Velleman VM201",
+        "Velleman",
+        "VM201",
         Vm201Board.Vm201Capabilities,
         DefaultPort,
         Vm201Command.CredentialMaxLength,

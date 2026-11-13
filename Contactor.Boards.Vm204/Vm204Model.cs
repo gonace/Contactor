@@ -5,7 +5,8 @@ public static class Vm204Model
 {
     public static BoardModel Model { get; } = new(
         "vm204",
-        "Velleman VM204",
+        "Velleman",
+        "VM204",
         Vm204Board.Vm204Capabilities,
         Vm204Api.DefaultPort,
         Vm204Api.CredentialMaxLength,

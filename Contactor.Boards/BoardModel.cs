@@ -2,7 +2,8 @@ namespace Contactor.Boards;
 
 /// <summary>A model of relay board the app supports, as the board catalogue lists it.</summary>
 /// <param name="Id">Its id in the board catalogue, saved when the setup guide chooses it, e.g. <c>vm201</c>. Lower case.</param>
-/// <param name="Name">Its name as people know it, e.g. "Velleman VM201".</param>
+/// <param name="Make">Who makes it, e.g. "Velleman": the setup guide lists the models by make.</param>
+/// <param name="ModelName">Its name without the make, e.g. "VM201".</param>
 /// <param name="Capabilities">How many relays and inputs it has, and whether it reports changes by itself.</param>
 /// <param name="DefaultPort">The TCP port it listens on unless someone changed it.</param>
 /// <param name="LoginMaxLength">The longest user name and password it takes; 0 when it has no login.</param>
@@ -15,13 +16,17 @@ namespace Contactor.Boards;
 /// </param>
 public sealed record BoardModel(
     string Id,
-    string Name,
+    string Make,
+    string ModelName,
     BoardCapabilities Capabilities,
     int DefaultPort,
     int LoginMaxLength,
     string? LoginHint = null,
     bool PasswordOnly = false)
 {
+    /// <summary>Its name as people know it, with the make, e.g. "Velleman VM201".</summary>
+    public string Name => $"{Make} {ModelName}";
+
     /// <summary>Whether the board can have a login.</summary>
     public bool HasLogin => LoginMaxLength > 0;
 }
