@@ -3,12 +3,14 @@ using Microsoft.Extensions.Logging;
 namespace Contactor.Boards.Vm201;
 
 /// <summary>
-/// The VM201 as an <see cref="IRelayBoard"/>: 8 relays and one input, which it reports by itself on every change. The
-/// connection itself is <see cref="Vm201Client"/>'s; this only translates its state and commands.
+/// The VM201 as an <see cref="IRelayBoard"/>: 8 relays and one input, which it reports by itself on every change, and
+/// a pulse of 1 s to 99 h. The connection itself is <see cref="Vm201Client"/>'s; this only translates its state and
+/// commands.
 /// </summary>
 public sealed class Vm201Board : IRelayBoard
 {
-    public static readonly BoardCapabilities Vm201Capabilities = new(Vm201Channel.Count, InputCount: 1, ReportsChanges: true);
+    public static readonly BoardCapabilities Vm201Capabilities = new(
+        Vm201Channel.Count, InputCount: 1, ReportsChanges: true, Pulse: Vm201Pulse.Ability);
 
     private readonly Vm201Client _client;
     private readonly ILogger<Vm201Board> _logger;
@@ -39,10 +41,16 @@ public sealed class Vm201Board : IRelayBoard
         return relays;
     }
 
-    // No pulse yet (Issue #83).
-    public Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Pulses the relays, all at once, as <see cref="TurnOnAsync"/>. Only a length the board can send exactly
+    /// (<see cref="Vm201Pulse.TryEncode"/>): any other gets <see cref="ArgumentOutOfRangeException"/>, even one
+    /// <see cref="PulseAbility.CanDo"/> allows, such as 100 s.
+    /// </summary>
+    public async Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException("This board can't pulse a relay.");
+        var mask = ToMask(relays);
+        await _client.PulseAsync(mask, length, cancellationToken).ConfigureAwait(false);
+        return relays;
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

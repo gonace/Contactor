@@ -148,6 +148,24 @@ public sealed class Vm201Client
         return SendAsync(Vm201PacketCodec.Encode(Vm201Command.Off, mask), cancellationToken);
     }
 
+    /// <summary>
+    /// Pulses the relays in <paramref name="mask"/>: the board turns them on, and off again by itself after
+    /// <paramref name="length"/>. Throws <see cref="ArgumentOutOfRangeException"/>, before anything is sent, for a length
+    /// the board can't take exactly (<see cref="Vm201Pulse.TryEncode"/>).
+    /// </summary>
+    public Task PulseAsync(byte mask, TimeSpan length, CancellationToken cancellationToken = default)
+    {
+        if (!Vm201Pulse.TryEncode(length, out var time, out var unit))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(length),
+                length,
+                "The VM201 pulses for whole seconds up to 99 s, whole minutes up to 99 min or whole hours up to 99 h.");
+        }
+
+        return SendAsync(Vm201PacketCodec.Encode(Vm201Command.Pulse, [mask, time, unit]), cancellationToken);
+    }
+
     public Task RequestStatusAsync(CancellationToken cancellationToken = default)
     {
         return SendAsync(Vm201PacketCodec.Encode(Vm201Command.StatusRequest), cancellationToken);
