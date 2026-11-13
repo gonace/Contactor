@@ -22,7 +22,8 @@
 <PageTitle>Setup · Contactor</PageTitle>
 
 <div class="screen">
-    <header class="header">
+    @* While a list of step 2 is open, the page behind it takes no focus or clicks. *@
+    <header class="header" inert="@(_sheet != Sheet.None)">
         @if (_step > 1)
         {
             var shown = _step;
@@ -38,14 +39,14 @@
         <span class="step-count">STEP @_step OF @StepCount</span>
     </header>
 
-    <div class="progress" aria-hidden="true">
+    <div class="progress" aria-hidden="true" inert="@(_sheet != Sheet.None)">
         @for (var i = 1; i <= StepCount; i++)
         {
             <span class="@(i <= _step ? "done" : null)"></span>
         }
     </div>
 
-    <main class="content">
+    <main class="content" inert="@(_sheet != Sheet.None)">
         @if (_step == 1)
         {
             <div class="intro">
@@ -251,7 +252,7 @@
         }
     </main>
 
-    <div class="next">
+    <div class="next" inert="@(_sheet != Sheet.None)">
         @if (_error is not null)
         {
             <p class="error" role="alert">@_error</p>
@@ -274,9 +275,9 @@
     @if (_step == 2 && _sheet != Sheet.None)
     {
         <div class="sheet-backdrop" @onclick="Close"></div>
-        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1" @ref="_sheetBox" @onkeydown="OnSheetKey">
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @onkeydown="OnSheetKey">
             <span class="grab" aria-hidden="true"></span>
-            <h2 id="sheet-title">@(_sheet == Sheet.Make ? "Make" : $"{_make} model")</h2>
+            <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Make ? "Make" : $"{_make} model")</h2>
             <div class="sheet-options">
                 @if (_sheet == Sheet.Make)
                 {
@@ -330,7 +331,7 @@
     private Sheet _sheet;
     private ElementReference _makeField;
     private ElementReference _modelField;
-    private ElementReference _sheetBox;
+    private ElementReference _sheetTitle;
 
     // Where the focus goes after the render: into a list just opened, or back to its field once it closes. The
     // references are read after the render, when the list is there.
@@ -412,7 +413,7 @@
             {
                 Sheet.Make => _makeField,
                 Sheet.Model => _modelField,
-                _ => _sheetBox,
+                _ => _sheetTitle,
             }).FocusAsync();
         }
     }
@@ -679,6 +680,11 @@
     // A new make clears the model and opens its models at once: the next thing to choose.
     private void ChooseMake(string make)
     {
+        if (_busy || _sheet != Sheet.Make)
+        {
+            return;
+        }
+
         if (make == _make)
         {
             Close();
@@ -693,6 +699,11 @@
 
     private void ChooseModel(string id)
     {
+        if (_busy || _sheet != Sheet.Model)
+        {
+            return;
+        }
+
         _type = id;
         Close();
     }

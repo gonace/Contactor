@@ -253,7 +253,8 @@ input[type="password"] {
     flex-direction: column;
 }
 
-.sheet:focus {
+/* The title takes the focus when a list opens, so a screen reader reads which list it is. */
+.sheet h2:focus {
     outline: none;
 }
 
@@ -273,6 +274,7 @@ input[type="password"] {
 
 .sheet-options {
     overflow-y: auto;
+    overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
 }
