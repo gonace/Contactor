@@ -157,7 +157,7 @@ public static class EventText
     {
         return entry.Action switch
         {
-            EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled => "The board",
+            EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled or EventActions.BoardRelayModesReset => "The board",
             EventActions.RunOnStart => "Run-on:",
             EventActions.RunOnEnd => "Run-on done:",
             EventActions.InterlockTrip => "Safety shut-off:",
@@ -190,6 +190,7 @@ public static class EventText
             EventActions.ConnectionLost => ("lost contact with the app", null),
             EventActions.ConnectionRestored => ("reconnected", null),
             EventActions.BoardTimersDisabled => ("had its own timers turned off", null),
+            EventActions.BoardRelayModesReset => ("had its relays set to normal mode, so its inputs don't switch them", null),
             EventActions.BoardLoginChanged => ("changed the relay board's login", null),
             EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from
                 ? ($"changed the relay board's address from {from} to {Text(entry.Details, "to") ?? "?"}", null)

@@ -2,9 +2,11 @@ using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
+using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Features.Vm204;
 using Contactor.Web.Features.Vm208;
+using Contactor.Web.Features.Waveshare;
 
 namespace Contactor.Web.Features.Boards;
 
@@ -24,6 +26,11 @@ public static class BoardCatalogue
         new(Vm201Model.Model, (services, configuration) => services.AddVm201(configuration)),
         new(Vm204Model.Model, (services, configuration) => services.AddVm204(configuration)),
         new(Vm208Model.Model, (services, configuration) => services.AddVm208(configuration)),
+        new(WaveshareModels.Relay8, (services, configuration) => services.AddWaveshare(configuration)),
+        new(WaveshareModels.Relay8B, (services, configuration) => services.AddWaveshare(configuration)),
+        new(WaveshareModels.Relay8C, (services, configuration) => services.AddWaveshare(configuration)),
+        new(WaveshareModels.Relay16, (services, configuration) => services.AddWaveshare(configuration)),
+        new(WaveshareModels.Relay30, (services, configuration) => services.AddWaveshare(configuration)),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>
