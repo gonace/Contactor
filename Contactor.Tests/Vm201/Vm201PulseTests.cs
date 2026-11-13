@@ -115,7 +115,7 @@ public sealed class Vm201PulseTests
 
         await run.Client.PulseAsync(0x06, TimeSpan.FromSeconds(2), Cancel);
 
-        await WaitUntilAsync(() => run.Client.State.Outputs == 0x06 && time.WaitsOnly(TimeSpan.FromSeconds(2)));
+        await Wait.UntilAsync(() => run.Client.State.Outputs == 0x06 && time.WaitsOnly(TimeSpan.FromSeconds(2)));
         Assert.Equal(ChannelMask.Of([2, 3]), simulator.Pulsing);
         var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command != Vm201Command.StatusRequest);
         Assert.Equal(Vm201Command.Pulse, sent.Command);
@@ -126,7 +126,7 @@ public sealed class Vm201PulseTests
         Assert.Equal(0x06, simulator.Outputs);
         time.Advance(TimeSpan.FromSeconds(1));
 
-        await WaitUntilAsync(() => run.Client.State.Outputs == 0);
+        await Wait.UntilAsync(() => run.Client.State.Outputs == 0);
         Assert.Equal(ChannelMask.None, simulator.Pulsing);
         Assert.Equal(0, time.PendingTimers);
         Assert.Single(simulator.ReceivedCommands, p => p.Command != Vm201Command.StatusRequest);
@@ -140,12 +140,12 @@ public sealed class Vm201PulseTests
         simulator.Start();
         await using var run = await ClientRun.StartAsync(simulator);
         await run.Client.PulseAsync(0x01, TimeSpan.FromMinutes(5), Cancel);
-        await WaitUntilAsync(() => time.Waits(TimeSpan.FromMinutes(5)));
+        await Wait.UntilAsync(() => time.Waits(TimeSpan.FromMinutes(5)));
 
         await run.Client.TurnOffAsync(0x01, Cancel);
-        await WaitUntilAsync(() => simulator.Pulsing == ChannelMask.None);
+        await Wait.UntilAsync(() => simulator.Pulsing == ChannelMask.None);
         await run.Client.TurnOnAsync(0x01, Cancel);
-        await WaitUntilAsync(() => run.Client.State.Outputs == 0x01);
+        await Wait.UntilAsync(() => run.Client.State.Outputs == 0x01);
         time.Advance(TimeSpan.FromMinutes(5));
 
         Assert.Equal(0x01, simulator.Outputs);
@@ -160,17 +160,17 @@ public sealed class Vm201PulseTests
         simulator.Start();
         await using var run = await ClientRun.StartAsync(simulator);
         await run.Client.PulseAsync(0x03, TimeSpan.FromSeconds(10), Cancel);
-        await WaitUntilAsync(() => time.Waits(TimeSpan.FromSeconds(10)));
+        await Wait.UntilAsync(() => time.Waits(TimeSpan.FromSeconds(10)));
         time.Advance(TimeSpan.FromSeconds(5));
 
         await run.Client.PulseAsync(0x01, TimeSpan.FromSeconds(10), Cancel);
-        await WaitUntilAsync(() => time.Waits(TimeSpan.FromSeconds(10)));
+        await Wait.UntilAsync(() => time.Waits(TimeSpan.FromSeconds(10)));
         time.Advance(TimeSpan.FromSeconds(5));
 
         // Relay 2 ends with its first pulse; relay 1 runs on with its second.
-        await WaitUntilAsync(() => run.Client.State.Outputs == 0x01);
+        await Wait.UntilAsync(() => run.Client.State.Outputs == 0x01);
         time.Advance(TimeSpan.FromSeconds(5));
-        await WaitUntilAsync(() => run.Client.State.Outputs == 0);
+        await Wait.UntilAsync(() => run.Client.State.Outputs == 0);
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public sealed class Vm201PulseTests
         await stream.WriteAsync(Vm201PacketCodec.Encode(Vm201Command.Pulse, [0x01, 100, (byte)'s']), Cancel);
         await stream.WriteAsync(Vm201PacketCodec.Encode(Vm201Command.StatusRequest), Cancel);
 
-        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.StatusRequest));
+        await Wait.UntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.StatusRequest));
         Assert.Equal(0, simulator.Outputs);
         Assert.Equal(0, time.PendingTimers);
     }
@@ -201,7 +201,7 @@ public sealed class Vm201PulseTests
         await using (var run = await ClientRun.StartAsync(simulator))
         {
             await run.Client.PulseAsync(0x01, TimeSpan.FromSeconds(3), Cancel);
-            await WaitUntilAsync(() => time.Waits(TimeSpan.FromSeconds(3)));
+            await Wait.UntilAsync(() => time.Waits(TimeSpan.FromSeconds(3)));
         }
 
         await simulator.DisposeAsync();
@@ -222,7 +222,7 @@ public sealed class Vm201PulseTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.PulseAsync(0x01, TimeSpan.Zero, Cancel));
         await run.Client.RequestStatusAsync(Cancel);
 
-        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.StatusRequest));
+        await Wait.UntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.StatusRequest));
         Assert.DoesNotContain(simulator.ReceivedCommands, p => p.Command == Vm201Command.Pulse);
     }
 
@@ -232,20 +232,6 @@ public sealed class Vm201PulseTests
         var client = new Vm201Client(Options.Create(new Vm201Options { Host = "127.0.0.1", Port = 1 }), TimeProvider.System, NullLogger<Vm201Client>.Instance);
 
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.PulseAsync(0x01, TimeSpan.FromSeconds(2), Cancel));
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                Assert.Fail("The condition was not met in time.");
-            }
-
-            await Task.Delay(20, Cancel);
-        }
     }
 
     // The client on the real clock (its keep-alive and timeouts), the simulator on the test's.
@@ -269,7 +255,7 @@ public sealed class Vm201PulseTests
             var client = new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance);
             var cts = new CancellationTokenSource();
             var run = new ClientRun(client, cts, client.RunAsync(cts.Token));
-            await WaitUntilAsync(() => client.State.IsConnected);
+            await Wait.UntilAsync(() => client.State.IsConnected);
             return run;
         }
 
