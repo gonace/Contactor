@@ -330,7 +330,8 @@ public sealed class BoardEventRecorderTests
     }
 
     // A polled board reports a state only when it changes, so the recorder doesn't wait for the next one: the same
-    // status is tried again by itself, and the app's own change stays the app's.
+    // status is tried again by itself, waiting longer after each failure, and the app's own change stays the app's
+    // even when its expectation would have run out between the tries.
     [Fact]
     public async Task Should_TryTheSameStatusAgain_WithoutWaitingForTheBoard()
     {
@@ -340,13 +341,53 @@ public sealed class BoardEventRecorderTests
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
-        await BoardTestRig.WaitUntilAsync(() => setup.Errors.Count > 0);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+        setup.Time.Now += ExpectedChanges.Lifetime;
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 2);
         await setup.ExecuteAsync("DROP TRIGGER fail_once;");
 
-        // No new status from the board: the retry records it.
+        // The second failure waits twice as long: not yet after 1 s.
+        setup.Time.Now += BoardEventRecorder.CheckInterval;
+        await Task.Delay(BoardEventRecorder.CheckInterval * 2, TestContext.Current.CancellationToken);
+        Assert.Empty(InputEvents(setup.Database));
+
+        // No new status from the board: the retry records it, once.
+        setup.Time.Now += BoardEventRecorder.CheckInterval;
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 1);
         Assert.Contains(InputEvents(setup.Database), e => e is { InputId: 1, Details: """{"on":true}""" });
         Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
+        Assert.Equal(2, setup.Errors.RecorderFailures);
+    }
+
+    // A status the board then took back (another board at a new address, or a lost connection) isn't tried again: the
+    // next status is taken as it comes.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_DropTheRetry_WhenTheStateIsForgottenOrLost(bool forgotten)
+    {
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
+        await setup.StartAsync();
+        await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
+        setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
+        await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
+
+        if (forgotten)
+        {
+            setup.Board.Forget();
+        }
+        else
+        {
+            setup.Board.SetConnected(false);
+        }
+
+        await setup.ExecuteAsync("DROP TRIGGER fail_once;");
+        setup.Time.Now += BoardEventRecorder.CheckInterval;
+        await Task.Delay(BoardEventRecorder.CheckInterval * 2, TestContext.Current.CancellationToken);
+
+        // Nothing of the status that failed: its input and relay changes are compared afresh with the next one.
+        Assert.DoesNotContain(Events(setup.Database), e => e.InputId is not null || e.RelayId is not null);
+        Assert.Equal(1, setup.Errors.RecorderFailures);
     }
 
     // A relay that comes on outside the app gets its own auto-off, so nothing runs for ever by accident; one that goes
@@ -459,8 +500,12 @@ public sealed class BoardEventRecorderTests
     private sealed class ErrorCounter : ILoggerProvider, ILogger
     {
         private int _count;
+        private int _recorderFailures;
 
         public int Count => Volatile.Read(ref _count);
+
+        /// <summary>The recorder's own "Could not record" errors only: one per failed try, whatever else logs it.</summary>
+        public int RecorderFailures => Volatile.Read(ref _recorderFailures);
 
         public ILogger CreateLogger(string categoryName)
         {
@@ -483,6 +528,10 @@ public sealed class BoardEventRecorderTests
             if (IsEnabled(logLevel))
             {
                 Interlocked.Increment(ref _count);
+                if (formatter(state, exception) == "Could not record a board event")
+                {
+                    Interlocked.Increment(ref _recorderFailures);
+                }
             }
         }
 

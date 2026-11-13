@@ -22,6 +22,13 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // How often a lasting disconnect is checked for while there is no new status.
     public static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// The longest wait before a status whose recording failed is tried again. The wait starts at
+    /// <see cref="CheckInterval"/> and doubles with each failure in a row, so a database that stays broken fills the
+    /// log with one error a minute, not one a second.
+    /// </summary>
+    public static readonly TimeSpan MaxRetryDelay = TimeSpan.FromMinutes(1);
+
     /// <summary>A gap in contact longer than this, e.g. a crash or a board that was off, makes the inputs' times unknown.</summary>
     public static readonly TimeSpan LongGap = TimeSpan.FromMinutes(10);
 
@@ -45,6 +52,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // A status whose recording failed, tried again at every check until it is recorded or a newer status comes: a
     // polled board reports a state only when it changes, so its next status may be long in coming.
     private BoardState? _retry;
+    private TimeSpan _retryDelay;
+    private DateTime _retryAtUtc;
     private DateTime? _disconnectedSinceUtc;
     private readonly IBoardConnection? _connection;
     private readonly InputChangeFeed? _inputChanges;
@@ -122,7 +131,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
                     // The check interval passed without a new status.
                 }
 
-                if (_retry is { } retry)
+                if (_retry is { } retry && _clock.UtcNow >= _retryAtUtc)
                 {
                     await HandleSafelyAsync(() => HandleAsync(retry, stoppingToken));
                 }
@@ -149,7 +158,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
     private async Task HandleAsync(BoardState state, CancellationToken cancellationToken)
     {
         // A newer status replaces one that failed: it is compared with the same last recorded status, so it records
-        // the failed one's changes too.
+        // the failed one's changes that it still shows.
+        var retrying = ReferenceEquals(state, _retry);
         _retry = null;
         if (!state.IsConnected)
         {
@@ -191,6 +201,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 _expected.Expect(ChannelMask.Of(relayId), on);
             }
 
+            _retryDelay = retrying ? TimeSpan.FromTicks(Math.Min(_retryDelay.Ticks * 2, MaxRetryDelay.Ticks)) : CheckInterval;
+            _retryAtUtc = _clock.UtcNow + _retryDelay;
             _retry = state;
             throw;
         }
