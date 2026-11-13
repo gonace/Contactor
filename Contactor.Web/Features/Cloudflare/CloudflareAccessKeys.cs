@@ -5,7 +5,8 @@ namespace Contactor.Web.Features.Cloudflare;
 /// <summary>
 /// The keys Cloudflare Access signs its tokens with, fetched from the team's certs endpoint and kept for an hour.
 /// A token signed with a key we don't have triggers a refetch (Access rotates keys), at most once a minute. A new team
-/// domain (<see cref="CloudflareSettings"/>) starts over: the old team's keys are dropped and the new team's fetched.
+/// domain (<see cref="CloudflareSettings"/>) starts over: the new team's keys are fetched, and the old team's dropped once
+/// that fetch is done. A request with no keys to use (the first fetch, or a new team) waits for the fetch.
 /// </summary>
 public sealed partial class CloudflareAccessKeys : IDisposable
 {
@@ -13,6 +14,12 @@ public sealed partial class CloudflareAccessKeys : IDisposable
 
     public static readonly TimeSpan CacheDuration = TimeSpan.FromHours(1);
     public static readonly TimeSpan MinRefreshInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How long a fetch may take, answer included: requests without keys wait for it, so a stalled connection must not
+    /// hold them for ever. The HTTP client's own timeouts end once the headers are in.
+    /// </summary>
+    public static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(30);
 
     // The certs endpoint returns a few keys; anything this big is not it.
     private const int MaxResponseBytes = 64 * 1024;
@@ -55,14 +62,12 @@ public sealed partial class CloudflareAccessKeys : IDisposable
         try
         {
             // Another request may have fetched them while this one waited.
-            // Not on the visitor's request: if their phone drops it, the fetch must still finish, or everyone is
-            // denied until the next one is allowed a minute later. The HTTP client's own timeout bounds it.
             if (!NeedsFetch(Volatile.Read(ref _fetched), access, refresh, out keys))
             {
                 return keys;
             }
 
-            return await FetchAsync(access, CancellationToken.None);
+            return await FetchAsync(access);
         }
         finally
         {
@@ -90,30 +95,38 @@ public sealed partial class CloudflareAccessKeys : IDisposable
     }
 
     // Fetches the team's keys and returns them; on a failure, the keys it had for that team. Only under the fetch gate.
-    private async Task<IReadOnlyList<SecurityKey>> FetchAsync(CloudflareAccessSettings access, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<SecurityKey>> FetchAsync(CloudflareAccessSettings access)
     {
-        // Another team's keys are no use: they go, whether or not the new team's come.
+        // Another team's keys are no use: they go once this fetch is done, whether or not the new team's come.
         var before = Volatile.Read(ref _fetched);
         IReadOnlyList<SecurityKey> had = string.Equals(before?.Team, access.TeamDomain, StringComparison.Ordinal) ? before!.Keys : [];
-
-        // Saved only once it is done, so a request that comes meanwhile goes to the fetch gate and waits for these keys,
-        // rather than being denied with none. Then it counts as a fetch even when it failed, so a Cloudflare outage
-        // doesn't get a request per page view: the requests that waited find it fresh, and take what it got.
         var at = _timeProvider.GetUtcNow();
+
+        // With keys to hand out, requests go on with them while these are fetched. Without any (the first fetch, or a
+        // new team), the fetch is saved only once it is done: a request that comes meanwhile waits at the fetch gate
+        // for its keys, rather than being denied with none.
+        if (had.Count > 0)
+        {
+            Volatile.Write(ref _fetched, new Fetched(access.TeamDomain, at, had));
+        }
+
+        // Not on the visitor's request: if their phone drops it, the fetch must still finish, or everyone is denied
+        // until the next one is allowed a minute later.
+        using var limit = new CancellationTokenSource(FetchTimeout, _timeProvider);
         try
         {
             using var http = _httpClientFactory.CreateClient(HttpClientName);
-            using var response = await http.GetAsync(access.CertificatesUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await http.GetAsync(access.CertificatesUri, HttpCompletionOption.ResponseHeadersRead, limit.Token);
             response.EnsureSuccessStatusCode();
             if (response.Content.Headers.ContentLength > MaxResponseBytes)
             {
                 throw new InvalidDataException("The Access certs response is too large.");
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await using var stream = await response.Content.ReadAsStreamAsync(limit.Token);
             using var reader = new StreamReader(stream);
             var buffer = new char[MaxResponseBytes + 1];
-            var read = await reader.ReadBlockAsync(buffer, cancellationToken);
+            var read = await reader.ReadBlockAsync(buffer, limit.Token);
             if (read > MaxResponseBytes)
             {
                 throw new InvalidDataException("The Access certs response is too large.");
@@ -124,16 +137,13 @@ public sealed partial class CloudflareAccessKeys : IDisposable
             LogFetched(keys.Count);
             return keys;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
 #pragma warning disable CA1031 // A failed fetch must not crash the request; it is logged.
         catch (Exception ex)
 #pragma warning restore CA1031
         {
             // Keeps the keys it had: they are still Cloudflare's. Without any, every token is denied, and the
-            // first unknown key retries after a minute.
+            // first unknown key retries after a minute. Counts as a fetch, timeouts too, so a Cloudflare outage doesn't
+            // get a request per page view: the requests that waited find it fresh, and take what it got.
             LogFetchFailed(ex.GetType().Name, ex.Message);
             Volatile.Write(ref _fetched, new Fetched(access.TeamDomain, at, had));
             return had;

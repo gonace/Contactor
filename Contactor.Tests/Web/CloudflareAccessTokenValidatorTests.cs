@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -219,8 +220,8 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
     [Fact]
     public async Task Should_LetARequestWaitForTheKeys_WhileTheFirstAreFetched()
     {
-        using var held = new HeldCertificates(_tokens.Certificates());
-        using var keys = Keys(held, out var provider);
+        using var held = new HeldCertificates(_ => _tokens.Certificates());
+        using var keys = Keys(held, _time, out var provider);
         await using var _ = provider;
         var access = new CloudflareAccessSettings(AccessTokens.TeamDomain, AccessTokens.Audience);
 
@@ -239,14 +240,15 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
     [Fact]
     public async Task Should_FetchOnce_ForTheRequestsThatWaited_WhenTheFetchFails()
     {
-        using var held = new HeldCertificates(_tokens.Certificates()) { StatusCode = HttpStatusCode.InternalServerError };
-        using var keys = Keys(held, out var provider);
+        using var held = new HeldCertificates(_ => _tokens.Certificates()) { StatusCode = HttpStatusCode.InternalServerError };
+        using var keys = Keys(held, _time, out var provider);
         await using var _ = provider;
         var access = new CloudflareAccessSettings(AccessTokens.TeamDomain, AccessTokens.Audience);
 
         var first = Task.Run(() => keys.GetAsync(access, refresh: false, Cancel), Cancel);
         Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The first fetch never started.");
         var waiting = Enumerable.Range(0, 5).Select(_ => keys.GetAsync(access, refresh: true, Cancel)).ToList();
+        Assert.All(waiting, t => Assert.False(t.IsCompleted, "A request didn't wait for the fetch."));
         held.Answer.Set();
 
         Assert.Empty(await first);
@@ -254,26 +256,107 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
         Assert.Equal(1, held.RequestCount);
     }
 
-    private CloudflareAccessKeys Keys(HttpMessageHandler handler, out ServiceProvider provider)
+    // The hourly fetch: requests go on with the keys they have meanwhile, rather than all waiting for Cloudflare.
+    [Fact]
+    public async Task Should_GoOnWithTheKeysItHas_WhileTheyAreFetchedAgain()
+    {
+        using var held = new HeldCertificates(_ => _tokens.Certificates());
+        held.Answer.Set();
+        using var keys = Keys(held, _time, out var provider);
+        await using var _ = provider;
+        var access = new CloudflareAccessSettings(AccessTokens.TeamDomain, AccessTokens.Audience);
+        await keys.GetAsync(access, refresh: false, Cancel);
+        held.Answer.Reset();
+        held.Fetching.Reset();
+        _time.Now += CloudflareAccessKeys.CacheDuration;
+
+        var refetch = Task.Run(() => keys.GetAsync(access, refresh: false, Cancel), Cancel);
+        Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The hourly fetch never started.");
+        var meanwhile = keys.GetAsync(access, refresh: false, Cancel);
+
+        Assert.True(meanwhile.IsCompleted, "A request waited for the hourly fetch.");
+        Assert.Equal(_tokens.KeyId, Assert.Single(await meanwhile).KeyId);
+        held.Answer.Set();
+        await refetch;
+        Assert.Equal(2, held.RequestCount);
+    }
+
+    // A new team domain: its requests wait for its keys rather than being denied, and the old team's keys go.
+    [Fact]
+    public async Task Should_LetANewTeamWaitForItsKeys_AndDropTheOldTeams()
+    {
+        const string NewTeam = "other.cloudflareaccess.com";
+        using var newTokens = new AccessTokens(keyId: "key-of-the-new-team");
+        using var held = new HeldCertificates(r => r.RequestUri!.Host == NewTeam ? newTokens.Certificates() : _tokens.Certificates());
+        held.Answer.Set();
+        using var keys = Keys(held, _time, out var provider);
+        await using var _ = provider;
+        var old = new CloudflareAccessSettings(AccessTokens.TeamDomain, AccessTokens.Audience);
+        await keys.GetAsync(old, refresh: false, Cancel);
+        held.Answer.Reset();
+        held.Fetching.Reset();
+
+        var access = new CloudflareAccessSettings(NewTeam, AccessTokens.Audience);
+        var first = Task.Run(() => keys.GetAsync(access, refresh: false, Cancel), Cancel);
+        Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The new team's fetch never started.");
+        var second = keys.GetAsync(access, refresh: false, Cancel);
+        Assert.False(second.IsCompleted, "The new team's request didn't wait for its keys.");
+        held.Answer.Set();
+
+        Assert.Equal("key-of-the-new-team", Assert.Single(await first).KeyId);
+        Assert.Equal("key-of-the-new-team", Assert.Single(await second).KeyId);
+        Assert.Equal(2, held.RequestCount);
+
+        // The old team's keys went: asking for them fetches them again.
+        Assert.Equal(_tokens.KeyId, Assert.Single(await keys.GetAsync(old, refresh: false, Cancel)).KeyId);
+        Assert.Equal(3, held.RequestCount);
+    }
+
+    // A connection that stalls after Cloudflare's headers: the fetch gives up after its time limit, as a failed fetch,
+    // so the requests waiting for it aren't held for ever.
+    [Fact]
+    public async Task Should_GiveUpOnAFetch_ThatStalls()
+    {
+        var time = new ManualTimeProvider();
+        using var held = new HeldCertificates(_ => _tokens.Certificates()) { StallBody = true };
+        held.Answer.Set();
+        using var keys = Keys(held, time, out var provider);
+        await using var _ = provider;
+        var access = new CloudflareAccessSettings(AccessTokens.TeamDomain, AccessTokens.Audience);
+
+        var fetch = keys.GetAsync(access, refresh: false, Cancel);
+        Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The fetch never started.");
+        await Wait.UntilAsync(() => time.PendingTimers == 1);
+        Assert.False(fetch.IsCompleted);
+        time.Advance(CloudflareAccessKeys.FetchTimeout);
+
+        Assert.Empty(await fetch);
+        Assert.Empty(await keys.GetAsync(access, refresh: true, Cancel));
+        Assert.Equal(1, held.RequestCount);
+    }
+
+    private CloudflareAccessKeys Keys(HttpMessageHandler handler, TimeProvider time, out ServiceProvider provider)
     {
         var services = new ServiceCollection();
         services.AddHttpClient(CloudflareAccessKeys.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => handler);
         provider = services.BuildServiceProvider();
-        return new CloudflareAccessKeys(provider.GetRequiredService<IHttpClientFactory>(), _settings, _time, NullLogger<CloudflareAccessKeys>.Instance);
+        return new CloudflareAccessKeys(provider.GetRequiredService<IHttpClientFactory>(), _settings, time, NullLogger<CloudflareAccessKeys>.Instance);
     }
 
-    // Cloudflare's certs endpoint, answering only once the test lets it.
+    // Cloudflare's certs endpoint, answering only once the test lets it; with StallBody, its answer never ends.
     private sealed class HeldCertificates : HttpMessageHandler
     {
-        private readonly string _certificates;
+        private readonly Func<HttpRequestMessage, string> _certificates;
         private int _requestCount;
 
-        public HeldCertificates(string certificates)
+        public HeldCertificates(Func<HttpRequestMessage, string> certificates)
         {
             _certificates = certificates;
         }
 
         public HttpStatusCode StatusCode { get; init; } = HttpStatusCode.OK;
+
+        public bool StallBody { get; init; }
 
         public ManualResetEventSlim Fetching { get; } = new();
 
@@ -286,7 +369,10 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
             Interlocked.Increment(ref _requestCount);
             Fetching.Set();
             await Task.Run(() => Answer.Wait(TimeSpan.FromSeconds(10), cancellationToken), cancellationToken);
-            return new HttpResponseMessage(StatusCode) { Content = new StringContent(StatusCode == HttpStatusCode.OK ? _certificates : "", System.Text.Encoding.UTF8, "application/json") };
+            HttpContent content = StallBody
+                ? new StreamContent(new StalledStream())
+                : new StringContent(StatusCode == HttpStatusCode.OK ? _certificates(request) : "", Encoding.UTF8, "application/json");
+            return new HttpResponseMessage(StatusCode) { Content = content };
         }
 
         protected override void Dispose(bool disposing)
@@ -299,6 +385,45 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
 
             base.Dispose(disposing);
         }
+    }
+
+    // A body whose bytes never come, until the read is cancelled.
+    private sealed class StalledStream : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     // A request that has checked which team the keys are for, and is about to take them, while another team's keys
@@ -380,7 +505,7 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(_certificates[request.RequestUri!.Host], System.Text.Encoding.UTF8, "application/json"),
+                Content = new StringContent(_certificates[request.RequestUri!.Host], Encoding.UTF8, "application/json"),
             });
         }
     }
