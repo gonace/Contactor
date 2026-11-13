@@ -138,9 +138,7 @@ public sealed partial class SchedulerService : BackgroundService
                     // an auto-off of its own.
                     if (isOn && runtime?.TurnedOnBy == EventActors.External)
                     {
-                        runtime.TurnedOnBy = Actor;
-                        runtime.AutoOffAtUtc = null;
-                        WriteRun(db, runtime);
+                        await RelayRuns.TakeOverForScheduleAsync(db, relayId, cancellationToken);
                         changed = true;
                     }
 
@@ -153,11 +151,7 @@ public sealed partial class SchedulerService : BackgroundService
                             break;
                         }
 
-                        runtime = GetRuntime(db, runtimes, relayId);
-                        runtime.OnSinceUtc = now;
-                        runtime.TurnedOnBy = Actor;
-                        runtime.AutoOffAtUtc = null;
-                        WriteRun(db, runtime);
+                        await RelayRuns.StartAsync(db, relayId, Actor, now, autoOffAt: null, cancellationToken);
                         Log(db, now, relayId, EventActions.On, running.ScheduleId);
                         changed = true;
                     }
@@ -187,19 +181,14 @@ public sealed partial class SchedulerService : BackgroundService
                     continue;
                 }
 
+                var sent = _clock.UtcNow;
                 if (!await SendAsync(relayId, on: false, cancellationToken))
                 {
                     interrupted = true;
                     break;
                 }
 
-                if (runtime is not null)
-                {
-                    runtime.OnSinceUtc = null;
-                    runtime.AutoOffAtUtc = null;
-                    runtime.TurnedOnBy = null;
-                    WriteRun(db, runtime);
-                }
+                await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
 
                 Log(db, now, relayId, EventActions.Off, ended?.ScheduleId);
                 changed = true;
@@ -207,7 +196,7 @@ public sealed partial class SchedulerService : BackgroundService
 
             // The relays' runs are saved first: whatever happens to the groups, a relay this tick switched keeps its
             // "turned on by the schedule" and its event.
-            await db.SaveChangesAsync(cancellationToken);
+            await RelayRuns.SaveAsync(db, cancellationToken);
             if (!interrupted)
             {
                 var groups = await TickGroupsAsync(db, windows, from, now, reconcile, cancellationToken);
@@ -427,34 +416,6 @@ public sealed partial class SchedulerService : BackgroundService
             Interlocked.Increment(ref _connectGeneration);
             return false;
         }
-    }
-
-    // The runtimes were read before the commands went out, and another writer may have changed a row since (e.g.
-    // AutoOffService giving a relay that just came on an auto-off of its own). Every value of the run is written, not
-    // only those that differ from what was read, so a schedule's run never keeps someone else's auto-off.
-    private static void WriteRun(ContactorDbContext db, RelayRuntime runtime)
-    {
-        var entry = db.Entry(runtime);
-        if (entry.State == EntityState.Added)
-        {
-            return;
-        }
-
-        entry.Property(r => r.OnSinceUtc).IsModified = true;
-        entry.Property(r => r.TurnedOnBy).IsModified = true;
-        entry.Property(r => r.AutoOffAtUtc).IsModified = true;
-    }
-
-    private static RelayRuntime GetRuntime(ContactorDbContext db, Dictionary<int, RelayRuntime> runtimes, int relayId)
-    {
-        if (!runtimes.TryGetValue(relayId, out var runtime))
-        {
-            runtime = new RelayRuntime { RelayId = relayId };
-            db.RelayRuntimes.Add(runtime);
-            runtimes[relayId] = runtime;
-        }
-
-        return runtime;
     }
 
     // Without a schedule id when the schedule that turned the relay on no longer runs it.

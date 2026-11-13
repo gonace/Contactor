@@ -70,6 +70,7 @@ public sealed partial class AutoOffService : BackgroundService
         List<int> turnedOff = [];
         foreach (var runtime in due)
         {
+            var sent = _clock.UtcNow;
             if (state.IsOn(runtime.RelayId))
             {
                 var mask = _board.Capabilities.Relay(runtime.RelayId);
@@ -98,15 +99,14 @@ public sealed partial class AutoOffService : BackgroundService
                 turnedOff.Add(runtime.RelayId);
             }
 
-            // Off already (turned off some other way): nothing to send, but the plan is stale.
-            runtime.OnSinceUtc = null;
-            runtime.AutoOffAtUtc = null;
-            runtime.TurnedOnBy = null;
+            // Its run ends: turned off just now, or off already some other way (nothing to send, but the plan is
+            // stale). One that began after this check (someone turned it on again meanwhile) stays.
+            await RelayRuns.EndAsync(db, runtime.RelayId, sent, cancellationToken);
         }
 
         if (db.ChangeTracker.HasChanges())
         {
-            await db.SaveChangesAsync(cancellationToken);
+            await RelayRuns.SaveAsync(db, cancellationToken);
             _changes.Notify();
         }
 
@@ -141,15 +141,7 @@ public sealed partial class AutoOffService : BackgroundService
             }
 
             var autoOffAt = relay.MaxOnMinutes is { } minutes ? now.AddMinutes(minutes) : (DateTime?)null;
-            var updated = await db.RelayRuntimes
-                .Where(r => r.RelayId == relay.Id && r.OnSinceUtc == null)
-                .ExecuteUpdateAsync(
-                    set => set
-                        .SetProperty(r => r.OnSinceUtc, now)
-                        .SetProperty(r => r.TurnedOnBy, EventActors.External)
-                        .SetProperty(r => r.AutoOffAtUtc, autoOffAt),
-                    cancellationToken);
-            if (updated > 0)
+            if (await RelayRuns.GiveOwnAutoOffNowAsync(db, relay.Id, now, autoOffAt, cancellationToken))
             {
                 LogOwnerless(relay.Id);
                 changed = true;

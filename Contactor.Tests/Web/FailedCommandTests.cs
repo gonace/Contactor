@@ -191,6 +191,27 @@ public sealed class FailedCommandTests : IAsyncLifetime
 
     // The board confirms a schedule's ON before the scheduler has saved its run, and auto-off's check sees the relay on
     // with nobody's run in between: the schedule's run wins, with no auto-off, so it isn't turned off mid-window.
+    // Auto-off turns a relay off, and someone turns it on again before auto-off saves: their new run stays.
+    [Fact]
+    public async Task Should_KeepANewRun_WhenAutoOffEndsTheOldOneMeanwhile()
+    {
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes + 1);
+        _board.AfterSwitch = async () =>
+        {
+            _board.AfterSwitch = null;
+            _time.Now += TimeSpan.FromSeconds(1);
+            await Control.TurnOnAsync(3, "john@example.com", Cancel);
+        };
+
+        await AutoOff.CheckAsync(Cancel);
+
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
+        Assert.Equal(("john@example.com", (DateTime?)_time.Now.UtcDateTime), (runtime.TurnedOnBy, runtime.OnSinceUtc));
+        Assert.True(_board.State.IsOn(3));
+    }
+
     [Fact]
     public async Task Should_KeepAScheduleRunFree_OfAnAutoOffGivenMeanwhile()
     {
