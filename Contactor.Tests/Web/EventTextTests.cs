@@ -20,6 +20,20 @@ public sealed class EventTextTests
         Assert.Equal(new EventView(true, "J", "Jane", what, Relay), view);
     }
 
+    // A pulse: one event, with how long.
+    [Theory]
+    [InlineData("""{"milliseconds":2000}""", "tried for 2 s")]
+    [InlineData("""{"milliseconds":500}""", "tried for 0.5 s")]
+    [InlineData("""{"milliseconds":90000}""", "tried for 1 min 30 s")]
+    [InlineData(null, "tried for a moment")]
+    public void Should_SayHowLongAPulseWas(string? details, string what)
+    {
+        var entry = Entry("jane@example.com", EventActions.Pulse);
+        entry.Details = details;
+
+        Assert.Equal(new EventView(true, "J", "Jane", what, Relay), EventText.For(entry, Relay, "Jane"));
+    }
+
     [Fact]
     public void Should_FallBackToTheAddress_WhenThePersonIsUnknown()
     {

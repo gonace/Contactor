@@ -5,6 +5,9 @@ public static class EventActions
 {
     public const string On = "on";
     public const string Off = "off";
+
+    /// <summary>A pulse: on, and off again by the board itself. Details: <c>{"milliseconds":2000}</c>.</summary>
+    public const string Pulse = "pulse";
     public const string Rename = "rename";
     public const string Activate = "activate";
     public const string Deactivate = "deactivate";

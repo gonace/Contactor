@@ -93,7 +93,7 @@ EventLog
   TimestampUtc    datetime
   RelayId         int?           null for events that don't concern one relay
   Actor           text           e-mail, or "schedule" | "auto-off" | "external" | "system" | "input:n" (an input's actions)
-  Action          text           "on" | "off" | "rename" | "activate" | "deactivate" |
+  Action          text           "on" | "off" | "pulse" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
                                  "board-timers-disabled" | "board-relay-modes-reset" | "board-relay-modes-not-reset" |
@@ -375,7 +375,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - **Part 2, the board:**
      1. "Which relay board?": "Brand", then "Model", none chosen to begin with. Each field opens a list from the bottom of the screen on a phone, and a dropdown under the field on a tablet or desktop: the brands with how many models each has, then only that brand's models with what they have ("8 relays · 1 input"). A new brand opens its models at once. "Next" works once a model is chosen. The one chosen is saved and the app switches to it at once, while it runs (`BoardChoice`), and the guide goes straight on.
      2. "Where is the board?": address, port (empty: the model's default) and login, saved through `BoardAddressHandler`; "Next" waits up to 10 s for the board (`BoardContact`, which ignores a connection to the old address) and shows "Board online" or "No answer from …". "Go on without a connection" saves what was typed and goes on.
-     3. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes.
+     3. "Name your relays": a name ("Relay n" as its hint) and "In use" for each relay, saved as on the Relay screen. "Try" turns a relay on for 2 s through `RelayControl` (refused for a relay in a group), off again even if the page closes. On a board with a pulse that can do 2 s (`BoardCapabilities.Pulse`: the VM201, the Devantech and the Waveshare boards), it is the board's own pulse (`RelayControl.PulseAsync`): the board turns the relay off by itself, also when the app stops meanwhile. It is logged as one event, "tried for 2 s", and the board's own OFF is expected, so it isn't a change outside the app; the run is the person's, with an auto-off 5 s after the pulse as a backstop. Otherwise the app turns it on and off, both logged.
      4. "All set, {name}": the board and "6 in use, 2 hidden", links to "Make a group" and a relay's page for a schedule, and "Go to Relays". Reaching it marks the guide done.
    - After `reset-sign-in`, the guide opens behind a new setup code at "How do people sign in?". A Cloudflare installation without a saved address (one set up with install.sh) opens at "How do people reach the app?" instead, which asks for the tunnel's address first; an empty token keeps the saved one. An installation that was done goes on to the relays once a sign-in is chosen.
 

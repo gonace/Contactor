@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -56,6 +57,55 @@ public sealed class RelayControl
         await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
     }
+
+    /// <summary>
+    /// Pulses a relay for a person: the board turns it on, and off again by itself after <paramref name="length"/>, also
+    /// when the app stops in between. Only on a board with a pulse that can do that length
+    /// (<see cref="BoardCapabilities.Pulse"/>), and never for a relay in a group, whose interlock the board's own OFF
+    /// would ignore. Logged as one event. The relay's run is the person's, with an auto-off a little after the pulse as
+    /// a backstop; the board's own OFF is expected, so it isn't taken for a change outside the app.
+    /// </summary>
+    public async Task PulseAsync(int relayId, TimeSpan length, string actor, CancellationToken cancellationToken)
+    {
+        var mask = _board.Capabilities.Relay(relayId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        if (_board.Capabilities.Pulse?.CanDo(length) != true)
+        {
+            throw new NotSupportedException("This board can't pulse a relay for that long.");
+        }
+
+        await EnsureNotInGroupAsync(mask, cancellationToken);
+        _expected.Expect(mask, on: true);
+        _expected.Expect(mask, on: false);
+        try
+        {
+            await _board.PulseAsync(mask, length, cancellationToken);
+        }
+        catch
+        {
+            // As for ON: a failed or cancelled pulse logs nothing, and whatever the board did shows as an external change.
+            _expected.Forget(mask, on: true);
+            _expected.Forget(mask, on: false);
+            throw;
+        }
+
+        var now = _clock.UtcNow;
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await RelayRuns.StartAsync(db, relayId, actor, now, now + length + PulseBackstop, cancellationToken);
+        db.EventLog.Add(new EventLogEntry
+        {
+            TimestampUtc = now,
+            RelayId = relayId,
+            Actor = actor,
+            Action = EventActions.Pulse,
+            Details = JsonSerializer.Serialize(new { milliseconds = (int)length.TotalMilliseconds }),
+        });
+        await RelayRuns.SaveAsync(db, cancellationToken);
+        _changes.Notify();
+    }
+
+    /// <summary>How long after a pulse's end its auto-off comes, should the board not have turned the relay off.</summary>
+    public static readonly TimeSpan PulseBackstop = TimeSpan.FromSeconds(5);
 
     /// <summary>Turns a relay off for a person or an input, as a press of its button.</summary>
     public async Task TurnOffAsync(int relayId, string actor, CancellationToken cancellationToken)
