@@ -123,9 +123,9 @@ A command switches the relays in the mask one at a time:
 - When a command gets no answer, the command throws "The Devantech board didn't answer; the command may not have been
   carried out."
 - The poller reads the board at once after each of these two failures. It counts a command with no answer as a failed
-  poll, and also a command with an answer that cannot be read or a new connection it cannot check or unlock. When the
-  board answered `01` to every relay, the board answered: the command is a refusal (`BoardRefusedException`), which
-  does not count.
+  poll, and also a command with an answer that cannot be read, or a connection it cannot check or unlock: a new one, or
+  the open one when `7A` before a command fails. When the board answered `01` to every relay, the board answered: the
+  command is a refusal (`BoardRefusedException`), which does not count.
 - After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
   new state. When that read cannot be read, the client keeps the last state it read and reads again at once.
 
