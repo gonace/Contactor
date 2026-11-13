@@ -7,6 +7,7 @@ namespace Contactor.Web.Features.Setup;
 /// </summary>
 public sealed class SetupMode
 {
+    /// <summary>The page that asks for the code (<c>SetupCodePage</c>; a test checks its route is this).</summary>
     public const string CodePath = "/setup/code";
     public const string GuidePath = "/setup";
 

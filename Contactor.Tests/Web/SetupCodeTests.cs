@@ -76,7 +76,7 @@ public sealed partial class SetupCodeTests
         Assert.Equal(SetupCodeResult.Accepted, code.TryAccept(right, new DefaultHttpContext()));
     }
 
-    // A restart or reset-sign-in makes a new code: a browser let in by the old one is out again.
+    // A restart makes a new code: a browser let in by the old one is out again.
     [Fact]
     public void Should_EndTheCookie_WhenANewCodeIsMade()
     {
@@ -159,41 +159,35 @@ public sealed partial class SetupCodeTests
         Assert.Equal("/setup", backup.Headers.Location?.OriginalString);
     }
 
-    // reset-sign-in forgets the sign-in in the database and tells the running app, which makes a new code.
+    // As an installation in use starts: its choice is in the database before the app starts, so the sign-in holds from
+    // the first request and no setup code is made.
     [Fact]
-    public async Task Should_GoBackToSetup_WhenTheSignInIsReset()
+    public async Task Should_KeepTheSignIn_OfAnInstallationInUse_FromTheStart()
     {
         var logs = new LogCapture();
-        await using var app = new TestWebApp("Production", AccessTokens.Settings, services => services.AddSingleton<ILoggerProvider>(logs));
+        await using var app = NewInstallation(logs);
+        Directory.CreateDirectory(Path.GetDirectoryName(app.DatabasePath)!);
+        var options = new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite($"Data Source={app.DatabasePath}").Options;
+        await using (var db = new ContactorDbContext(options))
+        {
+            await db.Database.MigrateAsync(Cancel);
+            db.Installations.Add(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
+            await db.SaveChangesAsync(Cancel);
+        }
+
         using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        using (var before = await http.GetAsync("/", Cancel))
-        {
-            Assert.Equal(HttpStatusCode.Forbidden, before.StatusCode);
-        }
+        using var response = await http.GetAsync("/", Cancel);
 
-        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
-        {
-            await db.Installations.ExecuteUpdateAsync(set => set.SetProperty(i => i.SignInType, (string?)null), Cancel);
-        }
-
-        using var reload = await http.PostAsync(SetupEndpoints.ReloadPath, content: null, Cancel);
-
-        Assert.Equal(HttpStatusCode.NoContent, reload.StatusCode);
-        Assert.Null(app.Services.GetRequiredService<SignInChoice>().Current);
-        Assert.Matches(CodePattern(), logs.Text);
-        using var after = await http.GetAsync("/", Cancel);
-        Assert.Equal(SetupMode.CodePath, after.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.DoesNotMatch(CodePattern(), logs.Text);
+        Assert.NotNull(app.Services.GetRequiredService<SignInChoice>().Current);
     }
 
     [Fact]
-    public async Task Should_ReloadOnlyForThisMachine()
+    public void Should_AskForTheCode_WhereSetupModeSendsPeople()
     {
-        await using var app = new TestWebApp("Production", AccessTokens.Settings) { RemoteAddress = IPAddress.Parse("192.168.1.20") };
-        using var http = app.CreateClient();
-
-        using var reload = await http.PostAsync(SetupEndpoints.ReloadPath, content: null, Cancel);
-
-        Assert.Equal(HttpStatusCode.NotFound, reload.StatusCode);
+        var route = Assert.Single(typeof(Contactor.Web.Components.SetupCodePage).GetCustomAttributes(typeof(Microsoft.AspNetCore.Components.RouteAttribute), inherit: false));
+        Assert.Equal(SetupMode.CodePath, ((Microsoft.AspNetCore.Components.RouteAttribute)route).Template);
     }
 
     // Every installation in use ran Cloudflare: the upgrade saves that, so only a new one opens on the setup code.

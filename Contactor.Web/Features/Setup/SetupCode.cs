@@ -19,8 +19,7 @@ public enum SetupCodeResult
 
 /// <summary>
 /// The setup code: while an installation is being set up (no sign-in chosen), only someone who can read the app's log
-/// gets into the setup guide. A new code is made at each start and at each <c>reset-sign-in</c>, kept in memory only,
-/// and written to the log. Typing it gives the browser a cookie the app has signed, which holds until the code changes.
+/// gets into the setup guide. A new code is made at each start, kept in memory only, and written to the log. Typing it gives the browser a cookie the app has signed, which holds until the code changes.
 /// </summary>
 public sealed partial class SetupCode
 {
@@ -53,7 +52,10 @@ public sealed partial class SetupCode
         _logger = logger;
     }
 
-    /// <summary>Makes a new code, which ends every cookie given for the one before, and writes it to the log.</summary>
+    /// <summary>
+    /// Makes a new code, which ends every cookie given for the one before (a live connection opened with one runs on
+    /// until it closes), and writes it to the log.
+    /// </summary>
     public void Renew()
     {
         string code;
@@ -111,11 +113,14 @@ public sealed partial class SetupCode
             generation = _generation;
         }
 
+        // Lax, not Strict: coming back from Cloudflare Access's sign-in page is a visit from another site, and must
+        // keep the cookie. Secure only over HTTPS: behind cloudflared, and on the local network, the app itself
+        // answers plain HTTP.
         context.Response.Cookies.Append(CookieName, _protector.Protect(generation), new CookieOptions
         {
             HttpOnly = true,
             Secure = context.Request.IsHttps,
-            SameSite = SameSiteMode.Strict,
+            SameSite = SameSiteMode.Lax,
             IsEssential = true,
         });
         return SetupCodeResult.Accepted;

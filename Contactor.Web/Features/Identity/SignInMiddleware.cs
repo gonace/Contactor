@@ -94,11 +94,10 @@ public sealed partial class SignInMiddleware
         await _next(context);
     }
 
-    // The health checks and reset-sign-in's reload answer only this machine (see their endpoints), which isn't signed in.
+    // The health checks answer only this machine (see their endpoints), which isn't signed in.
     private bool IsOpenPath(PathString path)
     {
         return path.StartsWithSegments(HealthEndpoints.Path)
-            || path.Equals(SetupEndpoints.ReloadPath, StringComparison.OrdinalIgnoreCase)
             || (_environment.IsDevelopment() && (path.StartsWithSegments("/health") || path.StartsWithSegments("/alive")));
     }
 

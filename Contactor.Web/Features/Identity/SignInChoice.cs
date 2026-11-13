@@ -5,8 +5,8 @@ namespace Contactor.Web.Features.Identity;
 
 /// <summary>
 /// Which sign-in the app uses: the one saved with the installation (<see cref="Installation.SignInType"/>), or none
-/// while the installation is being set up: a new one, or one whose sign-in was reset (<c>reset-sign-in</c>). Without
-/// one, only the setup guide answers, to whoever has the setup code.
+/// while a new installation is being set up. Without one, only the setup guide answers, to whoever has the setup
+/// code.
 /// </summary>
 public sealed class SignInChoice
 {
@@ -21,10 +21,7 @@ public sealed class SignInChoice
     /// <summary>The sign-in the app uses, or null while the installation is being set up.</summary>
     public SignInMethod? Current => Volatile.Read(ref _current);
 
-    /// <summary>
-    /// Reads the saved sign-in: at start, and after <c>reset-sign-in</c> changed it. Throws for one the catalogue
-    /// doesn't have.
-    /// </summary>
+    /// <summary>At start: reads the saved sign-in. Throws for one the catalogue doesn't have.</summary>
     public async Task ApplySavedAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);

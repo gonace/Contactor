@@ -26,7 +26,7 @@ public sealed class Installation
 
     /// <summary>
     /// How people sign in, by its id in the catalogue of sign-in methods (e.g. <c>cloudflare-access</c>). Null: not
-    /// chosen yet, or reset (<c>reset-sign-in</c>); the app is then in setup mode. The migration that made it so gave
+    /// chosen yet; the app is then in setup mode. The migration that made it so gave
     /// installations already in use Cloudflare Access, which they all had.
     /// </summary>
     public string? SignInType { get; set; }
