@@ -67,7 +67,7 @@ public sealed class EventsPageTests
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, "· time unknown"));
         Assert.Matches(@"Open<span[^>]*> · time unknown</span>", html);
         Assert.Contains(EventText.WhyTimeUnknown, html, StringComparison.Ordinal);
-        Assert.Contains("aria-label=\"Why is the time unknown?\"", html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Why is the time unknown for Input 1?\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
