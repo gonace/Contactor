@@ -219,23 +219,31 @@ public sealed class Vm208ClientTests
         Assert.Equal(0b0001, simulator.Relays);
     }
 
-    // The fake board itself: a client that gives up while writing its request, as one that loses the board does, is
-    // no answer and no error.
+    // The fake board itself: a connection the client closes before its request is all there, as one that loses the
+    // board does, is neither recorded, answered nor an error.
     [Theory]
     [InlineData("")]
     [InlineData("POST /setrelay HTTP/1.1\r\nHost: board\r\n")]
     [InlineData("POST /setrelay HTTP/1.1\r\nContent-Length: 20\r\n\r\nrelay=1")]
     public async Task Should_TakeARequestTheClientGaveUpOn(string written)
     {
+        // Stopped before the test looks, also when the wait fails; not with await using, as it can't stop twice.
         var board = ScriptedBoard.Start();
-        using (var client = new TcpClient())
+        try
         {
-            await client.ConnectAsync(IPAddress.Loopback, board.Port, TestContext.Current.CancellationToken);
-            await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(written), TestContext.Current.CancellationToken);
+            using (var client = new TcpClient())
+            {
+                await client.ConnectAsync(IPAddress.Loopback, board.Port, TestContext.Current.CancellationToken);
+                await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(written), TestContext.Current.CancellationToken);
+            }
+
+            await Wait.UntilAsync(() => board.Handled == 1);
+        }
+        finally
+        {
+            await board.DisposeAsync();
         }
 
-        await Wait.UntilAsync(() => board.Handled == 1);
-        await board.DisposeAsync();
         Assert.Empty(board.Requests);
     }
 

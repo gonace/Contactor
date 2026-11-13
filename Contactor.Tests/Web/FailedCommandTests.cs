@@ -204,7 +204,37 @@ public sealed class FailedCommandTests : IAsyncLifetime
         Assert.Equal(EventActors.External, events.Single(e => e is { RelayId: 4, Action: EventActions.Off }).Actor);
     }
 
+    // A relay whose answer the board couldn't confirm in a group's stop, but which the board's state after the command
+    // shows off, went off all the same: it is the stop's, not changed outside the app, whichever comes first, the
+    // command's return or the recorder's turn with that state.
+    [Fact]
+    public async Task Should_LogARelayThatWentOffUnconfirmed_InAGroupStop()
+    {
+        var first = await AddGroupAsync((1, "Fan"), (2, "Heat"));
+        var second = await AddGroupAsync((3, "Fan"), (4, "Heat"));
+        foreach (var relay in new[] { 1, 2, 3, 4 })
+        {
+            _board.SetRelay(relay, on: true);
+        }
+
+        await WaitForEventsAsync(4);
+        var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
+
+        _board.Unconfirmed = ChannelMask.Of(4);
+        await sequencer.StopAllAsync(Jane, Cancel);
+        Assert.Equal((false, false), (_board.State.IsOn(2), _board.State.IsOn(4)));
+        await _board.RefreshAsync(Cancel);
+
+        // The recorder handles each status in order: once the input's is logged, an OFF from before would be too.
+        _board.SetInput(1, true);
+        var events = await WaitForEventsAsync(e => e.Any(x => x.Action == EventActions.InputChanged));
+        Assert.Equal([first, second], events.Where(e => e.Action == EventActions.GroupOff).Select(e => e.GroupId!.Value).Order());
+        Assert.DoesNotContain(events, e => e.Action == EventActions.Off);
+    }
+
     // An auto-off the board refuses changes nothing: it isn't logged, the run stays, and the next check tries again.
+    // A regression guard: auto-off switches one relay at a time, so this was right already before the app logged only
+    // the relays a command really switched.
     [Fact]
     public async Task Should_KeepTheRun_WhenTheBoardRefusesAnAutoOff()
     {
