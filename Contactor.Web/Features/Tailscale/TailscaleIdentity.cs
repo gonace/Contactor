@@ -1,25 +1,36 @@
 using System.Globalization;
-using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using Contactor.Web.Features.Identity;
+using Microsoft.AspNetCore.Connections.Features;
+using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Tailscale;
 
 /// <summary>
 /// Tailscale identity as the sign-in: the person is who Tailscale Serve says (<c>Tailscale-User-Login</c>). Serve removes
 /// any copy of that header a client sends itself, and sends none for tagged devices or Funnel. The header is believed
-/// only on a request from the machine itself, where Serve connects from: anyone who reaches the app's port another way
-/// could write it. Nothing in the app rewrites the remote address (no forwarded headers).
+/// only on a request that came in on the app's socket for Serve (<see cref="TailscaleOptions.AppSocket"/>), which only
+/// the machine itself can reach. Not on one from 127.0.0.1: tailscaled passes connections from the Tailscale network
+/// there, past Serve, and so could anyone on that network with a header of their own.
 /// </summary>
 public sealed class TailscaleIdentity : ISignInMethod
 {
     /// <summary>The header Tailscale Serve puts the person's Tailscale login in.</summary>
     public const string HeaderName = "Tailscale-User-Login";
 
+    private readonly TailscaleOptions _options;
+
+    public TailscaleIdentity(IOptions<TailscaleOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options.Value;
+    }
+
     public Task<string?> AuthenticateAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (!IsFromThisMachine(context.Connection.RemoteIpAddress)
+        if (!CameThroughServe(context)
             || context.Request.Headers[HeaderName] is not [{ } value]
             || Decode(value) is not { } login
             || !IdentityRules.IsValidEmail(login))
@@ -30,9 +41,13 @@ public sealed class TailscaleIdentity : ISignInMethod
         return Task.FromResult<string?>(IdentityRules.NormalizeEmail(login));
     }
 
-    private static bool IsFromThisMachine(IPAddress? address)
+    // Whether the request came in on the app's socket for Serve. Kestrel gives the connection's socket, not its end
+    // points, to a request.
+    private bool CameThroughServe(HttpContext context)
     {
-        return address is not null && IPAddress.IsLoopback(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address);
+        return !string.IsNullOrWhiteSpace(_options.AppSocket)
+            && context.Features.Get<IConnectionSocketFeature>()?.Socket.LocalEndPoint is UnixDomainSocketEndPoint socket
+            && string.Equals(Path.GetFullPath(socket.ToString()), Path.GetFullPath(_options.AppSocket), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -97,7 +112,8 @@ public sealed class TailscaleIdentity : ISignInMethod
         try
         {
             var decoded = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString([.. bytes]);
-            return decoded.Length == 0 || decoded.Any(char.IsControl) ? null : decoded;
+            // Tailscale encodes only what isn't plain ASCII: anything else in encoded words isn't from Tailscale.
+            return decoded.Length == 0 || decoded.Any(char.IsControl) || decoded.All(char.IsAscii) ? null : decoded;
         }
         catch (DecoderFallbackException)
         {

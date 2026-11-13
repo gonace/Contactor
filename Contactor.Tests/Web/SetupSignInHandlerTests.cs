@@ -155,7 +155,11 @@ public sealed class SetupSignInHandlerTests
     [Fact]
     public async Task Should_GoThroughPart1_WithTailscale()
     {
-        await using var database = await CreateAsync(services => services.AddSingleton<ITailscaleProcess>(new OnTheNetwork()));
+        await using var database = await CreateAsync(services =>
+        {
+            services.AddSingleton<ITailscaleProcess>(new OnTheNetwork());
+            services.Configure<TailscaleOptions>(o => o.AppSocket = "/data/tailscale/contactor.sock");
+        });
         var handler = database.Services.GetRequiredService<SetupSignInHandler>();
 
         Assert.Null(await handler.ChooseWayInAsync(TailscaleMethods.NetworkId, new WayInFields(AuthKey: "tskey-auth-kExample-1", HostName: "Relays"), Cancel));
@@ -247,12 +251,15 @@ public sealed class SetupSignInHandlerTests
 
         public Task<TailscaleCommandResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
         {
-            return Task.FromResult(new TailscaleCommandResult(0, arguments is ["status", ..]
-                ? "{\"BackendState\":\"Running\",\"Self\":{\"DNSName\":\"relays.tail1234.ts.net.\"}}"
-                : ""));
+            return Task.FromResult(new TailscaleCommandResult(0, arguments switch
+            {
+                ["status", ..] => "{\"BackendState\":\"Running\",\"Self\":{\"DNSName\":\"relays.tail1234.ts.net.\"}}",
+                ["serve", "status", ..] => "{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"unix:/data/tailscale/contactor.sock\"}}}}}",
+                _ => "",
+            }));
         }
 
-        public Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, TimeSpan timeout, CancellationToken cancellationToken)
+        public Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, bool force, TimeSpan timeout, CancellationToken cancellationToken)
         {
             return Task.FromResult(new TailscaleCommandResult(0, ""));
         }
