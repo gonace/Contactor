@@ -13,7 +13,14 @@
 <PageTitle>Setup · Contactor</PageTitle>
 
 <div class="screen">
-    <header class="header"></header>
+    <header class="header">
+        <span></span>
+        <span class="step-count">STEP 1 OF 4</span>
+    </header>
+    <div class="part">PART 1 OF 2 · THE APP</div>
+    <div class="progress" aria-hidden="true">
+        <span class="done"></span><span></span><span></span><span></span>
+    </div>
     <form method="post" class="form" @formname="setup-code" @onsubmit="Submit">
         <AntiforgeryToken />
         <main class="content">

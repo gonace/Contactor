@@ -19,7 +19,8 @@ public enum SetupCodeResult
 
 /// <summary>
 /// The setup code: while an installation is being set up (no sign-in chosen), only someone who can read the app's log
-/// gets into the setup guide. A new code is made at each start, kept in memory only, and written to the log. Typing it
+/// gets into the setup guide. A new code is made at each start and at <c>reset-sign-in</c>, kept in memory only, and
+/// written to the log. Typing it
 /// gives the browser a cookie the app has signed, which holds until the code changes.
 /// </summary>
 public sealed partial class SetupCode
@@ -69,10 +70,9 @@ public sealed partial class SetupCode
                     chars[i] = Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)];
                 }
             });
+            // The wrong codes and the wait carry over: a new code is no way round the limit.
             _code = code;
             _generation = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-            _wrong = 0;
-            _waitUntil = default;
         }
 
         LogCode(Format(code));
