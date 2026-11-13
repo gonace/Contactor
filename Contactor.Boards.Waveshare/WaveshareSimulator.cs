@@ -173,8 +173,11 @@ public sealed class WaveshareSimulator : ISimulatedBoard
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
         var bit = Model.Capabilities.Relay(relay).Bits;
-        Pulses.Cancel(bit);
-        Change(() => _relays = turnOn ? _relays | bit : _relays & ~bit);
+        Change(() =>
+        {
+            Pulses.Cancel(bit);
+            _relays = turnOn ? _relays | bit : _relays & ~bit;
+        });
         return Task.CompletedTask;
     }
 
@@ -500,9 +503,9 @@ public sealed class WaveshareSimulator : ISimulatedBoard
             return Refuse(WaveshareApi.WriteSingleCoil, WaveshareApi.IllegalDataAddress);
         }
 
-        Pulses.Cancel(bits);
         Change(() =>
         {
+            Pulses.Cancel(bits);
             var free = bits & ~Linked();
             _relays = value switch
             {
@@ -535,14 +538,15 @@ public sealed class WaveshareSimulator : ISimulatedBoard
             return Refuse(WaveshareApi.WriteSingleCoil, WaveshareApi.DeviceFailure);
         }
 
-        Pulses.Cancel(bit);
-        ulong free = 0;
+        // All under the state lock, and the end takes its relays under it too, so a command that came first wins
+        // (see SimulatedPulses).
         Change(() =>
         {
-            free = bit & ~Linked();
+            Pulses.Cancel(bit);
+            var free = bit & ~Linked();
             _relays |= free;
+            Pulses.Start(free, WaveshareApi.FlashUnit * value, take => Change(() => _relays &= ~take()));
         });
-        Pulses.Start(free, WaveshareApi.FlashUnit * value, relays => Change(() => _relays &= ~relays));
         return Answer(frame.AsSpan(0, 6).ToArray(), WaveshareTraceText.Confirmed(frame), routine: false);
     }
 

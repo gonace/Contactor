@@ -140,8 +140,11 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     /// <summary>Changes the outputs as the board's web page, buttons or timers would, and pushes the status.</summary>
     public Task SetOutputsAsync(byte outputs)
     {
-        Pulses.Cancel(Vm201Channel.All);
-        return ChangeAsync(() => _outputs = outputs);
+        return ChangeAsync(() =>
+        {
+            Pulses.Cancel(Vm201Channel.All);
+            _outputs = outputs;
+        });
     }
 
     public Task SetTimerMaskAsync(byte timerMask)
@@ -157,8 +160,11 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
         var mask = (byte)Model.Capabilities.Relay(relay).Bits;
-        Pulses.Cancel(mask);
-        return turnOn ? ChangeAsync(() => _outputs |= mask) : ChangeAsync(() => _outputs &= (byte)~mask);
+        return ChangeAsync(() =>
+        {
+            Pulses.Cancel(mask);
+            _outputs = turnOn ? (byte)(_outputs | mask) : (byte)(_outputs & ~mask);
+        });
     }
 
     public Task SetInputAsync(int input, bool closed)
@@ -394,17 +400,19 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             return;
         }
 
-        // A relay switched for good ends its pulse.
-        if (packet.Command is Vm201Command.On or Vm201Command.Off or Vm201Command.Toggle)
+        // A relay switched for good ends its pulse, in the same change, under the gate (see SimulatedPulses).
+        var ends = packet.Command switch
         {
-            Pulses.Cancel(mask);
-        }
-        else if (packet.Command == Vm201Command.Update)
-        {
-            Pulses.Cancel(Vm201Channel.All);
-        }
+            Vm201Command.On or Vm201Command.Off or Vm201Command.Toggle => mask,
+            Vm201Command.Update => Vm201Channel.All,
+            _ => (byte)0,
+        };
 
-        await ChangeAsync(change).ConfigureAwait(false);
+        await ChangeAsync(() =>
+        {
+            Pulses.Cancel(ends);
+            change();
+        }).ConfigureAwait(false);
     }
 
     // The relays on now, and off again after the time, each with a status. A time or unit the board can't take does
@@ -418,10 +426,14 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             return;
         }
 
+        // The end takes its relays under the gate, so a command that came first wins (see SimulatedPulses).
         var mask = data[0];
-        Pulses.Cancel(mask);
-        await ChangeAsync(() => _outputs |= mask).ConfigureAwait(false);
-        Pulses.Start(mask, length, relays => _ = ChangeAsync(() => _outputs &= (byte)~relays));
+        await ChangeAsync(() =>
+        {
+            Pulses.Cancel(mask);
+            _outputs |= mask;
+            Pulses.Start(mask, length, take => _ = ChangeAsync(() => _outputs &= (byte)~take()));
+        }).ConfigureAwait(false);
     }
 
     /// <summary>

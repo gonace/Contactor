@@ -175,8 +175,11 @@ public sealed class DevantechSimulator : ISimulatedBoard
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
         var bit = Model.Capabilities.Relay(relay).Bits;
-        Pulses.Cancel(bit);
-        Change(() => _relays = turnOn ? _relays | bit : _relays & ~bit);
+        Change(() =>
+        {
+            Pulses.Cancel(bit);
+            _relays = turnOn ? _relays | bit : _relays & ~bit;
+        });
         return Task.CompletedTask;
     }
 
@@ -416,12 +419,21 @@ public sealed class DevantechSimulator : ISimulatedBoard
             return Answer([DevantechApi.Failure], DevantechTraceText.Switched(command, DevantechApi.Failure), isError: true);
         }
 
-        Pulses.Cancel(bit);
-        Change(() => _relays = on ? _relays | bit : _relays & ~bit);
-        if (pulse != DevantechApi.Permanent)
+        // All under the state lock, and the end takes its relays under it too, so a command that came first wins
+        // (see SimulatedPulses).
+        Change(() =>
         {
-            Pulses.Start(bit, DevantechApi.PulseUnit * pulse, relays => Change(() => _relays = on ? _relays & ~relays : _relays | relays));
-        }
+            Pulses.Cancel(bit);
+            _relays = on ? _relays | bit : _relays & ~bit;
+            if (pulse != DevantechApi.Permanent)
+            {
+                Pulses.Start(bit, DevantechApi.PulseUnit * pulse, take => Change(() =>
+                {
+                    var relays = take();
+                    _relays = on ? _relays & ~relays : _relays | relays;
+                }));
+            }
+        });
 
         return Answer([DevantechApi.Success], DevantechTraceText.Switched(command, DevantechApi.Success));
     }
@@ -435,8 +447,11 @@ public sealed class DevantechSimulator : ISimulatedBoard
         }
 
         var relays = DevantechProtocol.Outputs(image, Model.Capabilities.RelayCount);
-        Pulses.Cancel(Model.Capabilities.AllRelays.Bits);
-        Change(() => _relays = relays);
+        Change(() =>
+        {
+            Pulses.Cancel(Model.Capabilities.AllRelays.Bits);
+            _relays = relays;
+        });
         return Answer([DevantechApi.Success], DevantechTraceText.Relays(relays, Model.Capabilities.RelayCount));
     }
 

@@ -75,6 +75,22 @@ public sealed class DevantechSimulatedBoardTests
     }
 
     [Fact]
+    public async Task Should_EndAPulse_WhenEveryRelayIsSet()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        using var board = await Board.ConnectAsync(simulator);
+
+        Assert.Equal("00", await board.AskAsync("20 01 0A", 1));
+        Assert.Equal("00", await board.AskAsync("23 01", 1));
+        Assert.Equal(ChannelMask.None, simulator.Pulsing);
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal("01", await board.AskAsync("24", 1));
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
     public async Task Should_StopItsPulses_WhenDisposed()
     {
         var time = new ManualTimeProvider();

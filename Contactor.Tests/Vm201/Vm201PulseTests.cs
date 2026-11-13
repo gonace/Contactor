@@ -192,6 +192,46 @@ public sealed class Vm201PulseTests
         Assert.Equal(0, time.PendingTimers);
     }
 
+    [Theory]
+    [InlineData(Vm201Command.Toggle)]
+    [InlineData(Vm201Command.Update)]
+    public async Task Should_EndThePulse_WhenTheRelayIsToggledOrSet(byte command)
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = new Vm201Simulator { TimeProvider = time };
+        simulator.Start();
+        using var app = await RawApp.ConnectAsync(simulator);
+
+        // Relay 1 and 2 pulsed; then relay 1 toggled twice, or every relay set (1 and 2 on): their pulse ends.
+        byte[][] packets = command == Vm201Command.Toggle
+            ? [Vm201PacketCodec.Encode(Vm201Command.Toggle, 0x01), Vm201PacketCodec.Encode(Vm201Command.Toggle, 0x01)]
+            : [Vm201PacketCodec.Encode(Vm201Command.Update, 0x03)];
+        await app.SendAsync(Vm201PacketCodec.Encode(Vm201Command.Pulse, [0x03, 5, (byte)'s']));
+        await app.SendAsync(packets);
+        time.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(command == Vm201Command.Toggle ? (byte)0x01 : (byte)0x03, simulator.Outputs);
+        Assert.Equal(ChannelMask.None, simulator.Pulsing);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
+    [Fact]
+    public async Task Should_EndThePulse_WhenTheOutputsAreSetAtTheBoard()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = new Vm201Simulator { TimeProvider = time };
+        simulator.Start();
+        using var app = await RawApp.ConnectAsync(simulator);
+        await app.SendAsync(Vm201PacketCodec.Encode(Vm201Command.Pulse, [0x01, 5, (byte)'s']));
+
+        await simulator.SetOutputsAsync(0x01);
+        time.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(0x01, simulator.Outputs);
+        Assert.Equal(ChannelMask.None, simulator.Pulsing);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
     [Fact]
     public async Task Should_StopItsPulses_WhenDisposed()
     {
@@ -232,6 +272,44 @@ public sealed class Vm201PulseTests
         var client = new Vm201Client(Options.Create(new Vm201Options { Host = "127.0.0.1", Port = 1 }), TimeProvider.System, NullLogger<Vm201Client>.Instance);
 
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.PulseAsync(0x01, TimeSpan.FromSeconds(2), Cancel));
+    }
+
+    // Raw packets to the simulator, which has no login: each send waits until the simulator handled them, as it reads
+    // a connection's packets one after the other and a status request follows them.
+    private sealed class RawApp : IDisposable
+    {
+        private readonly System.Net.Sockets.TcpClient _tcp;
+        private readonly Vm201Simulator _simulator;
+
+        private RawApp(System.Net.Sockets.TcpClient tcp, Vm201Simulator simulator)
+        {
+            _tcp = tcp;
+            _simulator = simulator;
+        }
+
+        public static async Task<RawApp> ConnectAsync(Vm201Simulator simulator)
+        {
+            var tcp = new System.Net.Sockets.TcpClient();
+            await tcp.ConnectAsync("127.0.0.1", simulator.Port, Cancel);
+            return new RawApp(tcp, simulator);
+        }
+
+        public async Task SendAsync(params byte[][] packets)
+        {
+            var asked = _simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.StatusRequest);
+            foreach (var packet in packets)
+            {
+                await _tcp.GetStream().WriteAsync(packet, Cancel);
+            }
+
+            await _tcp.GetStream().WriteAsync(Vm201PacketCodec.Encode(Vm201Command.StatusRequest), Cancel);
+            await Wait.UntilAsync(() => _simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.StatusRequest) > asked);
+        }
+
+        public void Dispose()
+        {
+            _tcp.Dispose();
+        }
     }
 
     // The client on the real clock (its keep-alive and timeouts), the simulator on the test's.

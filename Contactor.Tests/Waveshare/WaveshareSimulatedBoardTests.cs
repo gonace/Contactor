@@ -65,6 +65,26 @@ public sealed class WaveshareSimulatedBoardTests
         Assert.Equal(0, time.PendingTimers);
     }
 
+    [Fact]
+    public async Task Should_StartAFlashAgain_WhenTheRelayIsFlashedDuringIt()
+    {
+        var time = new Web.ManualTimeProvider();
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8) { TimeProvider = time };
+        simulator.Start();
+        var flash = WaveshareModbus.Hex(WaveshareModbus.FlashOn(1, 1, TimeSpan.FromSeconds(1)).Frame);
+
+        Assert.Equal(flash, await AskAsync(simulator, flash));
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        Assert.Equal(flash, await AskAsync(simulator, flash));
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        Assert.Equal(0b1UL, simulator.Relays);
+        Assert.Equal(1, time.PendingTimers);
+        time.Advance(TimeSpan.FromMilliseconds(500));
+
+        Assert.Equal(0UL, simulator.Relays);
+        Assert.Equal(0, time.PendingTimers);
+    }
+
     [Theory]
     [InlineData("01 05 02 08 00 07 0C 72", "01 85 02 C3 51")]
     [InlineData("01 05 02 00 00 00 CC 72", "01 85 03 02 91")]
