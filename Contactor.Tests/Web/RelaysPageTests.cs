@@ -212,5 +212,4 @@ public sealed class RelaysPageTests
 
         return count;
     }
-
 }

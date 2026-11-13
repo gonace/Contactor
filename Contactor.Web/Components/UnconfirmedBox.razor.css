@@ -35,3 +35,9 @@
     background: var(--card);
     color: var(--ink);
 }
+
+/* As the pages' own buttons: "Try again" while the board is offline or another press is under way. */
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}

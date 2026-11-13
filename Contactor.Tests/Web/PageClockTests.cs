@@ -33,7 +33,11 @@ public sealed partial class PageClockTests
     [InlineData("await Task.Delay(1000);", true)]
     [InlineData("var now = DateTime.UtcNow;", true)]
     [InlineData("_tick = Time.CreateTimer(_ => Refresh(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));", false)]
+    [InlineData("await Task.Delay(2000, _cts.Token);", true)]
+    [InlineData("await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);", true)]
+    [InlineData("await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(0, ms)));", true)]
     [InlineData("await Task.Delay(TimeSpan.FromSeconds(1), Time);", false)]
+    [InlineData("await Task.Delay(TimeSpan.FromSeconds(1), Time, _cts.Token);", false)]
     [InlineData("private ITimer? _tick;", false)]
     public void Should_FindTheMachinesClock(string line, bool found)
     {
@@ -41,7 +45,7 @@ public sealed partial class PageClockTests
     }
 
     // A timer or a time of the machine's own: Timer, PeriodicTimer, a target-typed "Timer x = new(", DateTime.Now or
-    // UtcNow, or Task.Delay without a TimeProvider (its second argument).
-    [GeneratedRegex(@"\bnew\s+(System\.(Threading|Timers)\.)?Timer\s*\(|System\.(Threading|Timers)\.Timer\b|\bPeriodicTimer\b|\bTimer\??\s+\w+\s*=\s*new\s*\(|\bDateTime(Offset)?\.(Utc)?Now\b|\bTask\.Delay\([^,()]*(\([^()]*\))?[^,()]*\)")]
+    // UtcNow, or a Task.Delay that doesn't pass the page's TimeProvider (named Time, or a TimeProvider) on its line.
+    [GeneratedRegex(@"\bnew\s+(System\.(Threading|Timers)\.)?Timer\s*\(|System\.(Threading|Timers)\.Timer\b|\bPeriodicTimer\b|\bTimer\??\s+\w+\s*=\s*new\s*\(|\bDateTime(Offset)?\.(Utc)?Now\b|\bTask\.Delay\((?![^;]*\b(Time|TimeProvider)\b)")]
     private static partial Regex MachineClock();
 }
