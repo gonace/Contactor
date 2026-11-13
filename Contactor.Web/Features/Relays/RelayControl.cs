@@ -109,7 +109,8 @@ public sealed class RelayControl
 
             // A relay the board refused (a board that switches a relay per request can refuse some) didn't go off: it
             // isn't logged, its run stays, and whatever it does later is its own change.
-            _expected.Forget(refused, on: false);
+            // Only the expectations this command added: a relay that was off before isn't this command's.
+            _expected.Forget(wasOn & refused, on: false);
         }
 
         var now = _clock.UtcNow;
