@@ -1,6 +1,7 @@
 using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
+using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Setup;
 
@@ -32,17 +33,29 @@ public sealed class SetupSignInHandler
     private readonly SignInChoice _signIn;
     private readonly CloudflareSettings _cloudflare;
     private readonly CloudflareTunnel _tunnel;
+    private readonly bool _developmentUser;
 
-    public SetupSignInHandler(AccessChoice access, SignInChoice signIn, CloudflareSettings cloudflare, CloudflareTunnel tunnel)
+    public SetupSignInHandler(
+        AccessChoice access,
+        SignInChoice signIn,
+        CloudflareSettings cloudflare,
+        CloudflareTunnel tunnel,
+        IOptions<CloudflareAccessOptions> accessOptions)
     {
+        ArgumentNullException.ThrowIfNull(accessOptions);
+        _developmentUser = accessOptions.Value.UsesDevUser;
         _access = access;
         _signIn = signIn;
         _cloudflare = cloudflare;
         _tunnel = tunnel;
     }
 
-    /// <summary>Where Part 1 goes on: a new installation starts at the way in; one whose sign-in was reset at the sign-in.</summary>
-    public SetupPart1Step Step => _access.Current is null ? SetupPart1Step.WayIn
+    /// <summary>
+    /// Where Part 1 goes on: a new installation starts at the way in; one whose sign-in was reset at the sign-in. With
+    /// the development user (Development only) everyone is signed in already, so Part 1 is left out.
+    /// </summary>
+    public SetupPart1Step Step => _developmentUser ? SetupPart1Step.Done
+        : _access.Current is null ? SetupPart1Step.WayIn
         : _signIn.Current is null ? SetupPart1Step.SignIn
         : SetupPart1Step.Done;
 

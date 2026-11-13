@@ -151,12 +151,91 @@ public sealed partial class SetupCodeTests
 
         using var guide = await http.GetAsync("/setup", Cancel);
         Assert.Equal(HttpStatusCode.OK, guide.StatusCode);
+        Assert.Contains("How do people reach the app?", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
 
         // Only the guide: the rest of the app, and what isn't a page, stay closed.
         using var settings = await http.GetAsync("/settings", Cancel);
         Assert.Equal("/setup", settings.Headers.Location?.OriginalString);
         using var backup = await http.GetAsync("/settings/backup", Cancel);
         Assert.Equal("/setup", backup.Headers.Location?.OriginalString);
+    }
+
+    // reset-sign-in forgets the sign-in of an installation in use, and tells the running app: a new code, and the
+    // guide opens again at the sign-in, not sent back to the relays (that went round in circles).
+    [Fact]
+    public async Task Should_OpenTheSignInStep_AfterTheSignInIsReset()
+    {
+        var logs = new LogCapture();
+        await using var app = new TestWebApp("Production", AccessTokens.Settings, services => services.AddSingleton<ILoggerProvider>(logs));
+        using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using (var before = await http.GetAsync("/", Cancel))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, before.StatusCode);
+        }
+
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            await db.Installations.ExecuteUpdateAsync(set => set.SetProperty(i => i.SignInType, (string?)null), Cancel);
+        }
+
+        var codesBefore = CodePattern().Count(logs.Text);
+        using (var reload = await http.PostAsync(SetupEndpoints.ReloadPath, content: null, Cancel))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, reload.StatusCode);
+        }
+
+        // Asked again, it makes no new code: that would end the installer's cookie, and reset the wrong codes.
+        var code = LoggedCode(logs);
+        using (var again = await http.PostAsync(SetupEndpoints.ReloadPath, content: null, Cancel))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, again.StatusCode);
+        }
+
+        Assert.Equal(codesBefore + 1, CodePattern().Count(logs.Text));
+        using (var right = await SubmitAsync(http, code))
+        {
+            Assert.Equal(HttpStatusCode.Redirect, right.StatusCode);
+        }
+
+        using var guide = await http.GetAsync("/setup", Cancel);
+        Assert.Equal(HttpStatusCode.OK, guide.StatusCode);
+        Assert.Contains("How do people sign in?", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_ReloadOnlyForThisMachine()
+    {
+        await using var app = new TestWebApp("Production", AccessTokens.Settings) { RemoteAddress = IPAddress.Parse("192.168.1.20") };
+        using var http = app.CreateClient();
+
+        using var reload = await http.PostAsync(SetupEndpoints.ReloadPath, content: null, Cancel);
+
+        Assert.Equal(HttpStatusCode.NotFound, reload.StatusCode);
+    }
+
+    [Fact]
+    public async Task Should_ForgetTheSignIn_WithTheCommand()
+    {
+        await using var database = TestDatabase.Create();
+        var args = new[] { SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}" };
+        Assert.Equal(1, SignInReset.Run(args));
+
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.Installations.Add(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        // The app isn't running here: the code comes at its next start.
+        Assert.Equal(0, SignInReset.Run(args));
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var installation = await db.Installations.SingleAsync(Cancel);
+            Assert.Equal(("cloudflare", null), (installation.AccessType, installation.SignInType));
+        }
+
+        Assert.Equal(0, SignInReset.Run(args));
     }
 
     // As an installation in use starts: its choice is in the database before the app starts, so the sign-in holds from

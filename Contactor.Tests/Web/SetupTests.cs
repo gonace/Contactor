@@ -39,8 +39,10 @@ public sealed class SetupTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
-        Assert.Contains("Welcome to Contactor", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
+        // The development user is signed in already: the guide opens on "About you", the last step of Part 1.
+        Assert.Contains("About you", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("PART 1 OF 2", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Skip for now", html, StringComparison.Ordinal);
         Assert.Contains("value=\"John\"", html, StringComparison.Ordinal);
     }
@@ -55,7 +57,7 @@ public sealed class SetupTests
         var guide = WebUtility.HtmlDecode(await http.GetStringAsync("/setup", Cancel));
 
         Assert.Contains("Hi John", list, StringComparison.Ordinal);
-        Assert.DoesNotContain("Welcome to Contactor", guide, StringComparison.Ordinal);
+        Assert.DoesNotContain("About you", guide, StringComparison.Ordinal);
         Assert.Contains("Hi John", guide, StringComparison.Ordinal);
     }
 
@@ -73,11 +75,11 @@ public sealed class SetupTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync(page, Cancel));
 
-        Assert.Contains("Welcome to Contactor", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
+        Assert.Contains("About you", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
     }
 
-    // The guide always starts at the beginning: the board is chosen on step 2 before anything after it.
+    // The guide always starts where it stands: the board is chosen before anything after it.
     [Fact]
     public async Task Should_OpenOnTheFirstStep_WhateverTheAddress()
     {
@@ -86,7 +88,7 @@ public sealed class SetupTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup?step=3", Cancel));
 
-        Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
     }
 
     [Fact]
