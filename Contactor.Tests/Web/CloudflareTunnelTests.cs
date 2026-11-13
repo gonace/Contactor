@@ -4,6 +4,7 @@ using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Web;
@@ -142,6 +143,7 @@ public sealed class CloudflareTunnelTests
     {
         var database = TestDatabase.Create((services, configuration) =>
         {
+            services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Production });
             services.AddCloudflare(configuration);
             services.AddAccess(configuration);
             services.Configure<TunnelOptions>(o =>

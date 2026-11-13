@@ -57,6 +57,20 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
 
     public string DatabasePath => Path.Combine(_folder, "contactor.db");
 
+    /// <summary>
+    /// Saves <paramref name="installation"/> in a database made before the app starts, as an installation in use has
+    /// it when the app starts. Use with <c>setUp: false</c>, before the first request.
+    /// </summary>
+    public void SaveBeforeStart(Installation installation)
+    {
+        Directory.CreateDirectory(_folder);
+        var options = new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite($"Data Source={DatabasePath}").Options;
+        using var db = new ContactorDbContext(options);
+        db.Database.Migrate();
+        db.Installations.Add(installation);
+        db.SaveChanges();
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(_environment);

@@ -166,14 +166,7 @@ public sealed partial class SetupCodeTests
     {
         var logs = new LogCapture();
         await using var app = NewInstallation(logs);
-        Directory.CreateDirectory(Path.GetDirectoryName(app.DatabasePath)!);
-        var options = new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite($"Data Source={app.DatabasePath}").Options;
-        await using (var db = new ContactorDbContext(options))
-        {
-            await db.Database.MigrateAsync(Cancel);
-            db.Installations.Add(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
-            await db.SaveChangesAsync(Cancel);
-        }
+        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
 
         using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         using var response = await http.GetAsync("/", Cancel);

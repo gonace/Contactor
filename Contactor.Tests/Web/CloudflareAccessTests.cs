@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -152,9 +153,24 @@ public sealed class CloudflareAccessTests : IDisposable
     [InlineData("CloudflareAccess:TeamDomain", "https://team.example.com")]
     public async Task Should_RefuseToStart_WhenAccessIsNotConfigured(string key, string value)
     {
-        await using var app = CreateApp(new Dictionary<string, string?> { [key] = value });
+        var settings = new Dictionary<string, string?>(AccessTokens.Settings) { [key] = value };
+        await using var app = new TestWebApp("Production", settings, setUp: false);
+        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
 
-        Assert.Throws<OptionsValidationException>(() => app.CreateClient());
+        var error = Assert.Throws<InvalidOperationException>(() => app.CreateClient());
+        Assert.Contains("Cloudflare Access is the sign-in", error.Message, StringComparison.Ordinal);
+    }
+
+    // A new installation chooses its sign-in in the setup guide: it starts without Access's settings.
+    [Fact]
+    public async Task Should_Start_WithoutAccessSettings_OnANewInstallation()
+    {
+        await using var app = new TestWebApp("Production", setUp: false);
+        using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        using var response = await http.GetAsync("/", Cancel);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
     }
 
     [Fact]
