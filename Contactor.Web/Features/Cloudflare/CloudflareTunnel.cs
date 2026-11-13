@@ -20,6 +20,7 @@ public sealed partial class CloudflareTunnel : IAccessMethod
 
     private readonly TunnelOptions _options;
     private readonly CloudflareSettings _settings;
+    private volatile bool _connected;
     private readonly ICloudflaredProcess _process;
     private readonly TimeProvider _time;
     private readonly ILogger<CloudflareTunnel> _logger;
@@ -33,6 +34,12 @@ public sealed partial class CloudflareTunnel : IAccessMethod
         _time = time;
         _logger = logger;
     }
+
+    /// <summary>Whether cloudflared has reported a connection to Cloudflare since it last started, for the setup guide.</summary>
+    public bool Connected => _connected;
+
+    /// <summary><see cref="Connected"/> changed.</summary>
+    public event EventHandler? ConnectedChanged;
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -97,15 +104,18 @@ public sealed partial class CloudflareTunnel : IAccessMethod
             {
                 LogStarting();
                 exitCode = await _process.RunAsync(_options.Path, token, LogOutput, cancellationToken);
+                SetConnected(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                SetConnected(false);
                 return;
             }
 #pragma warning disable CA1031 // cloudflared missing or failing to start must not stop the app; it's logged and tried again.
             catch (Exception ex)
 #pragma warning restore CA1031
             {
+                SetConnected(false);
                 failure = ex;
             }
 
@@ -141,6 +151,12 @@ public sealed partial class CloudflareTunnel : IAccessMethod
     // token.
     private void LogOutput(string line)
     {
+        // How cloudflared says a connection to Cloudflare's edge is up.
+        if (line.Contains("Registered tunnel connection", StringComparison.Ordinal))
+        {
+            SetConnected(true);
+        }
+
         if (line.Contains(" ERR ", StringComparison.Ordinal))
         {
             LogCloudflaredError(line);
@@ -148,6 +164,15 @@ public sealed partial class CloudflareTunnel : IAccessMethod
         else
         {
             LogCloudflared(line);
+        }
+    }
+
+    private void SetConnected(bool connected)
+    {
+        if (_connected != connected)
+        {
+            _connected = connected;
+            ConnectedChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 

@@ -9,6 +9,7 @@ public static class SetupServiceCollectionExtensions
         services.AddSingleton<SetupHandler>();
         services.AddSingleton<SetupCode>();
         services.AddSingleton<SetupMode>();
+        services.AddSingleton<SetupSignInHandler>();
         return services;
     }
 }
