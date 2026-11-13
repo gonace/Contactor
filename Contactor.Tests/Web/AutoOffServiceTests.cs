@@ -1,4 +1,9 @@
+using Contactor.Web.Features.Groups;
+using Contactor.Web;
+using Contactor.Tests.Boards;
+using Contactor.Boards;
 using Contactor.Boards.Vm201;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -133,6 +138,115 @@ public sealed class AutoOffServiceTests
         Assert.Empty(await rig.EventsAsync());
         await using var check = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         Assert.Null((await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).AutoOffAtUtc);
+    }
+
+    // A relay the board shows off keeps no run, also one with no auto-off due (or none at all): e.g. it went off while
+    // the app was down, or the recorder's "off outside the app" gave way to another writer. Nothing is sent or logged.
+    [Theory]
+    [InlineData(null)]
+    [InlineData(60)]
+    public async Task Should_EndTheRunOfARelayThatIsOff(int? autoOffInMinutes)
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await SaveRunAsync(rig, relayId: 2, autoOffInMinutes);
+
+        Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
+
+        var run = await RuntimeAsync(rig, 2);
+        Assert.Equal(((DateTime?)null, (string?)null, (DateTime?)null), (run.OnSinceUtc, run.TurnedOnBy, run.AutoOffAtUtc));
+        Assert.DoesNotContain(rig.Simulator.ReceivedCommands, p => p.Command == Vm201Command.Off);
+        Assert.Empty(await rig.EventsAsync());
+    }
+
+    // A person's or a schedule's run is saved before the board shows the relay on: while its ON is on its way, it stays.
+    [Fact]
+    public async Task Should_KeepTheRun_WhileItsOnIsOnItsWay()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await SaveRunAsync(rig, relayId: 2, autoOffInMinutes: null);
+        rig.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(2), on: true);
+
+        Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
+
+        Assert.Equal(Jane, (await RuntimeAsync(rig, 2)).TurnedOnBy);
+    }
+
+    // The check's state is from its start: a person's ON the board confirmed meanwhile (so it is no longer pending)
+    // keeps its run.
+    [Fact]
+    public async Task Should_KeepARun_WhoseOnTheBoardConfirmedDuringTheCheck()
+    {
+        var fake = new FakeRelayBoard(relayCount: 4);
+        var board = new StaleOnceBoard(fake, BoardState.Initial with { IsConnected = true, LastContactUtc = DateTimeOffset.UnixEpoch });
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddSingleton<IRelayBoard>(board);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel);
+        await fake.TurnOnAsync(ChannelMask.Of(2), Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await RelayRuns.StartAsync(db, 2, Jane, BoardTestRig.Start, BoardTestRig.Start.AddHours(2), Cancel);
+            await RelayRuns.SaveAsync(db, Cancel);
+        }
+
+        await database.Services.GetRequiredService<AutoOffService>().CheckAsync(Cancel);
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(Jane, (await check.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel)).TurnedOnBy);
+    }
+
+    /// <summary>A board whose first state read is an older one, as when the check read it before the board changed.</summary>
+    private sealed class StaleOnceBoard : IRelayBoard
+    {
+        private readonly IRelayBoard _inner;
+        private BoardState? _stale;
+
+        public StaleOnceBoard(IRelayBoard inner, BoardState stale)
+        {
+            _inner = inner;
+            _stale = stale;
+        }
+
+        public event EventHandler<BoardState>? StateChanged
+        {
+            add => _inner.StateChanged += value;
+            remove => _inner.StateChanged -= value;
+        }
+
+        public BoardCapabilities Capabilities => _inner.Capabilities;
+
+        public BoardState State => Interlocked.Exchange(ref _stale, null) ?? _inner.State;
+
+        public Task TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+        {
+            return _inner.TurnOnAsync(relays, cancellationToken);
+        }
+
+        public Task TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+        {
+            return _inner.TurnOffAsync(relays, cancellationToken);
+        }
+
+        public Task RefreshAsync(CancellationToken cancellationToken = default)
+        {
+            return _inner.RefreshAsync(cancellationToken);
+        }
+    }
+
+    private static async Task SaveRunAsync(BoardTestRig rig, int relayId, int? autoOffInMinutes)
+    {
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        var run = await db.RelayRuntimes.SingleAsync(r => r.RelayId == relayId, Cancel);
+        run.OnSinceUtc = BoardTestRig.Start.AddHours(-3);
+        run.AutoOffAtUtc = autoOffInMinutes is { } minutes ? BoardTestRig.Start.AddMinutes(minutes) : null;
+        run.TurnedOnBy = Jane;
+        await db.SaveChangesAsync(Cancel);
     }
 
     [Fact]
