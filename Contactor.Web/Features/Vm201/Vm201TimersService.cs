@@ -8,9 +8,10 @@ using Microsoft.Extensions.Options;
 namespace Contactor.Web.Features.Vm201;
 
 /// <summary>
-/// On the first successful connection after start, disables the VM201's own timer programs
+/// On the board's first successful connection, disables the VM201's own timer programs
 /// (<c>Vm201:DisableBoardTimers</c>), so they can't fight the app's schedules, and logs that as Actor <c>system</c>. A new
-/// address may be another VM201, so its timers are disabled again at its first answer.
+/// address may be another VM201, so its timers are disabled again at its first answer. Runs only while the VM201 is the
+/// chosen board: <see cref="Boards.BoardSwitch"/> starts it before the board's connection and stops it with it.
 /// </summary>
 public sealed partial class Vm201TimersService : BackgroundService
 {
@@ -38,8 +39,8 @@ public sealed partial class Vm201TimersService : BackgroundService
         _logger = logger;
     }
 
-    // Subscribes here rather than in ExecuteAsync, which .NET runs on a background thread: BoardHostedService could
-    // connect, and the board send its first status, before this listens.
+    // Subscribes here rather than in ExecuteAsync, which .NET runs on a background thread: the board's connection could
+    // start, and the board send its first status, before this listens.
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _client.StateChanged += OnStateChanged;
@@ -51,7 +52,7 @@ public sealed partial class Vm201TimersService : BackgroundService
         _stoppingToken = stoppingToken;
         try
         {
-            // Listens until the app stops; BoardHostedService runs the connection itself.
+            // Listens until the board stops being the chosen one, or the app stops; the switch runs the connection.
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

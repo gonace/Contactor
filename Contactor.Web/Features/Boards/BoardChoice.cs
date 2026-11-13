@@ -76,10 +76,26 @@ public sealed partial class BoardChoice : IDisposable
     }
 
     /// <summary>
-    /// Runs <paramref name="model"/> from now on, unless it already is the board, and adds the rows for its relays and
-    /// inputs. Doesn't save the choice: the setup guide does.
+    /// The setup guide's choice: runs <paramref name="model"/> from now on, as <see cref="UseAsync"/>, then saves it, so
+    /// the next start runs it too. Saved only once it runs, so a board the app can't build (e.g. its settings are
+    /// wrong) is never saved for the next start to fail on; one choice at a time, so the board saved is the one that
+    /// runs.
     /// </summary>
-    public async Task UseAsync(BoardModel model, CancellationToken cancellationToken)
+    public Task ChooseAsync(BoardModel model, CancellationToken cancellationToken)
+    {
+        return UseAsync(model, save: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="model"/> from now on, unless it already is the board, and adds the rows for its relays and
+    /// inputs. Doesn't save the choice (<see cref="ChooseAsync"/> does).
+    /// </summary>
+    public Task UseAsync(BoardModel model, CancellationToken cancellationToken)
+    {
+        return UseAsync(model, save: false, cancellationToken);
+    }
+
+    private async Task UseAsync(BoardModel model, bool save, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(model);
         var registration = BoardCatalogue.Find(model.Id)
@@ -92,6 +108,20 @@ public sealed partial class BoardChoice : IDisposable
             if (_switch.Model?.Id != model.Id)
             {
                 await _switch.SwitchToAsync(registration.Create(registration.Model, _app, _configuration));
+            }
+
+            if (save)
+            {
+                await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+                var installation = await db.Installations.SingleOrDefaultAsync(cancellationToken);
+                if (installation is null)
+                {
+                    installation = new Installation();
+                    db.Installations.Add(installation);
+                }
+
+                installation.BoardType = model.Id;
+                await db.SaveChangesAsync(cancellationToken);
             }
         }
         finally

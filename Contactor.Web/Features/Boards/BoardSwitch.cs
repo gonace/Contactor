@@ -19,6 +19,10 @@ public sealed partial class BoardSwitch : IRelayBoard, IBoardConnection, IBoardT
     private static readonly BoardEndpoint NoEndpoint = new("", 0);
 
     private readonly Lock _lock = new();
+
+    // Held while a board's state is checked and passed on, and while the new board's state is raised at a switch: a
+    // state the old board was in the middle of passing on can't come after the new board's.
+    private readonly Lock _stateLock = new();
     private readonly ILogger<BoardSwitch> _logger;
     private TaskCompletionSource _switched = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Slot? _current;
@@ -180,7 +184,11 @@ public sealed partial class BoardSwitch : IRelayBoard, IBoardConnection, IBoardT
         // Outside the lock: cancelling runs the old connection's callbacks.
         old?.Retire();
         switched.TrySetResult();
-        Raise(board.Board.State);
+        lock (_stateLock)
+        {
+            Raise(board.Board.State);
+        }
+
         if (disposeOld)
         {
             await old!.DisposeAsync();
@@ -264,12 +272,17 @@ public sealed partial class BoardSwitch : IRelayBoard, IBoardConnection, IBoardT
     // Only the chosen board's: one switched away from may still be in the middle of telling.
     private void OnStateChanged(object? sender, BoardState state)
     {
-        if (ReferenceEquals(sender, Current?.Board))
+        lock (_stateLock)
         {
-            Raise(state);
+            if (ReferenceEquals(sender, Current?.Board))
+            {
+                Raise(state);
+            }
         }
     }
 
+    // A step the old board was already passing on may still come just after a switch: it did happen, and the Debug
+    // screen only lists it.
     private void OnTraced(object? sender, BoardTraceEntry entry)
     {
         if (ReferenceEquals(sender, Current?.Traffic))

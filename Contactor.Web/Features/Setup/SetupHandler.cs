@@ -101,13 +101,7 @@ public sealed class SetupHandler
             throw new InvalidOperationException("The setup guide is done; the board's model is no longer chosen there.");
         }
 
-        // Switched first, then saved: a board the app can't build (e.g. its settings are wrong) fails here, and is
-        // never saved for the next start to fail on.
-        await _choice.UseAsync(model, cancellationToken);
-        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var installation = await GetAsync(db, cancellationToken);
-        installation.BoardType = model.Id;
-        await db.SaveChangesAsync(cancellationToken);
+        await _choice.ChooseAsync(model, cancellationToken);
     }
 
     /// <summary>Every relay the board has, in order, with its name and group.</summary>

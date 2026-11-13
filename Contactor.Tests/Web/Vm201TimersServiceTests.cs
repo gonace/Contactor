@@ -106,6 +106,50 @@ public sealed class Vm201TimersServiceTests
         }
     }
 
+    // Switching boards while the app runs: the VM201's connection and timers stop with it, and a VM201 chosen again
+    // is a new board, whose timers are disabled again.
+    [Fact]
+    public async Task Should_StopWithItsBoard_AndDisableTheTimersAgain_WhenTheVm201IsChosenAgain()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x0F);
+        await using var database = CreateDatabase(simulator, disableBoardTimers: true);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var first = await database.Services.UseBoardAsync("vm201");
+        var services = StartOrder(database);
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
+        try
+        {
+            await WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 1);
+            var timers = Assert.IsType<Vm201TimersService>(Assert.Single(first.Extras));
+
+            await database.Services.UseBoardAsync("vm204");
+            await WaitUntilAsync(() => simulator.State.Clients.Count == 0);
+            Assert.NotNull(timers.ExecuteTask);
+            await timers.ExecuteTask.WaitAsync(WaitTimeout, Cancel);
+
+            await simulator.SetTimerMaskAsync(0x0F);
+            var again = await database.Services.UseBoardAsync("vm201");
+            Assert.NotSame(first, again);
+            await WaitUntilAsync(() => simulator.TimerMask == 0);
+            await WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 2);
+        }
+        finally
+        {
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
+        }
+
+        Assert.Equal(2, simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.TimerDisable));
+    }
+
     [Fact]
     public async Task Should_LeaveBoardTimersAlone_WhenTurnedOffInSettings()
     {
