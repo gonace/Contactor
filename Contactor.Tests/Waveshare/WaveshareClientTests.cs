@@ -147,6 +147,35 @@ public sealed class WaveshareClientTests
     }
 
     [Fact]
+    public async Task Should_NeverReportARelayOn_ThatOnlyItsEchoShowed()
+    {
+        // The board echoes the ON but doesn't switch (as in linkage mode), and the read after it is unreadable.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request =>
+        {
+            if (request[1] == WaveshareApi.WriteSingleCoil)
+            {
+                return request;
+            }
+
+            return Interlocked.Increment(ref reads) == 2
+                ? WaveshareModbusTests.Bytes("01 01 01 01 90 49")
+                : WaveshareModbusTests.Bytes("01 01 01 00 51 88");
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+
+        await run.Client.TurnOnAsync(0b0001, Cancel);
+
+        // The read at once, not in a minute, shows the truth: still off.
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.PendingTimers == 1);
+        Assert.DoesNotContain(run.Changes, s => s.IsOn(1));
+        Assert.False(run.Client.State.IsOn(1));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Contains(run.Traces, t => t.Text == "Unreadable answer: The answer's CRC is wrong." && t.IsError);
+    }
+
+    [Fact]
     public async Task Should_Throw_AndReadTheBoard_WhenNoRelayIsTaken()
     {
         await using var simulator = Started(WaveshareModels.Relay8);

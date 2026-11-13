@@ -292,10 +292,11 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
         catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException)
         {
-            // The relays it confirmed are taken as switched for now, and a read at once confirms them.
-            var before = _poller.State.Reading ?? new WaveshareStatus(0, 0);
+            // Never a state the board didn't read: an echo of FC 05 doesn't show that the relay switched (a relay in
+            // linkage mode echoes and stays as it is), and a group would take a made-up "on" as confirmation. The last
+            // state read stays, and a read at once shows the truth.
             _poller.PollNow();
-            return before with { Relays = turnOn ? before.Relays | taken : before.Relays & ~taken };
+            return _poller.State.Reading ?? throw new BoardNotConnectedException("The Waveshare board's state after the command couldn't be read.");
         }
     }
 

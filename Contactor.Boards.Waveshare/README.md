@@ -86,6 +86,8 @@ A command switches the relays in the mask one at a time with function 05:
   carried out."
 - After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
   new state.
+- When that read gets an unreadable answer, the client keeps the last state it read and reads again at once. The echo
+  of function 05 is not proof that a relay switched: a relay in linkage mode echoes and stays as it is.
 
 `WaveshareBoard`, `WaveshareConnection` and `WaveshareTraffic` are the adapters for the app.
 `Features/Waveshare` in `Contactor.Web` registers them. `WaveshareTraceText` puts each frame in plain words. The polls

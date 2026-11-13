@@ -63,6 +63,7 @@ Contactor.Tests/          # The only test project
   Vm201/                    # Codec + client against the simulator
   Vm204/                    # JSON, login, trace words + client against the simulator
   Vm208/                    # JSON, trace words, connection + client against the simulator
+  Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
   compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
@@ -170,8 +171,8 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
 - **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, name, capabilities, default port, login length and an optional login hint in plain words) and how to register it. The model chosen in the setup guide (`Installation.BoardType`, read before the services are built: `ReadSavedBoardType`) wins; until one is saved, `Board:Type` chooses (default `vm201`). The app refuses to start on a model the catalogue doesn't have. A model is never switched on its own afterwards: replacing the board is issue #32. `AddBoards` registers the chosen model and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the connection open.
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, an `Add<Model>` in `Features/<Model>` for what only it has, and one line in the catalogue. Nothing else in the app changes.
-- `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`).
-- What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`).
+- `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`, `WaveshareSimulator`).
+- What only one board has stays in its own project and its `Features/<Board>` folder: today the VM201's own timers (`Vm201TimersService`) and the Waveshare (B) and (C) relay modes (`Features/Waveshare/WaveshareRelayModesService`).
 - The Waveshare Modbus PoE ETH relays (five models, `Contactor.Boards.Waveshare`) are described in `Contactor.Boards.Waveshare/README.md`: the protocol, the models, the reset of the relay modes, the simulator and what to check on a real board.
 - The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
 
@@ -259,7 +260,8 @@ EventLog
   Action          text           "on" | "off" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
-                                 "board-timers-disabled" | "board-address-changed" | "board-login-changed"
+                                 "board-timers-disabled" | "board-relay-modes-reset" | "board-address-changed" |
+                                 "board-login-changed"
   GroupId         int?           the group it concerns; not a foreign key, events outlive a deleted group
                                  Group actions: "group-on" | "group-off" | "group-start-failed" | "run-on-start" |
                                  "run-on-end" | "interlock-trip" | "group-create" | "group-edit" | "group-delete"
