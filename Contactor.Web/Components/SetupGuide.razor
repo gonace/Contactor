@@ -107,16 +107,19 @@
             {
                 <label for="no-login" class="check">
                     <input id="no-login" type="checkbox" @bind="_noLogin" />
-                    <span>The board has no login</span>
+                    <span>@(Model.PasswordOnly ? "The board has no password" : "The board has no login")</span>
                 </label>
                 @if (!_noLogin)
                 {
                     <div class="fields">
-                        <div class="field">
-                            <label for="username">User name</label>
-                            <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-                                   maxlength="@Model.LoginMaxLength" @bind="_username" @bind:event="oninput" />
-                        </div>
+                        @if (!Model.PasswordOnly)
+                        {
+                            <div class="field">
+                                <label for="username">User name</label>
+                                <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                                       maxlength="@Model.LoginMaxLength" @bind="_username" @bind:event="oninput" />
+                            </div>
+                        }
                         <div class="field">
                             <label for="password">Password</label>
                             <input id="password" type="password" autocomplete="new-password"
@@ -124,7 +127,7 @@
                                    @bind="_newPassword" @bind:event="oninput" />
                         </div>
                     </div>
-                    <p class="hint">The same as on the board's own web page. @(Model.LoginHint ?? $"At most {Model.LoginMaxLength} characters.")</p>
+                    <p class="hint">@(Model.PasswordOnly ? Model.LoginHint : $"The same as on the board's own web page. {Model.LoginHint ?? $"At most {Model.LoginMaxLength} characters."}")</p>
                 }
             }
 

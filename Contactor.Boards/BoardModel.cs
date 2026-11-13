@@ -10,7 +10,17 @@ namespace Contactor.Boards;
 /// What its user name and password may contain, in plain words for the Settings screen, e.g. "At most 8 characters:
 /// letters a–z, digits and plain symbols."; null when the length is the only rule.
 /// </param>
-public sealed record BoardModel(string Id, string Name, BoardCapabilities Capabilities, int DefaultPort, int LoginMaxLength, string? LoginHint = null)
+/// <param name="PasswordOnly">
+/// Whether its login is a password alone, without a user name: the screens then ask for the password only.
+/// </param>
+public sealed record BoardModel(
+    string Id,
+    string Name,
+    BoardCapabilities Capabilities,
+    int DefaultPort,
+    int LoginMaxLength,
+    string? LoginHint = null,
+    bool PasswordOnly = false)
 {
     /// <summary>Whether the board can have a login.</summary>
     public bool HasLogin => LoginMaxLength > 0;

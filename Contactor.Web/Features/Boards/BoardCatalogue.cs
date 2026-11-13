@@ -1,8 +1,10 @@
 using Contactor.Boards;
+using Contactor.Boards.Devantech;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
 using Contactor.Boards.Waveshare;
+using Contactor.Web.Features.Devantech;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Features.Vm204;
 using Contactor.Web.Features.Vm208;
@@ -34,6 +36,10 @@ public static class BoardCatalogue
         new(WaveshareModels.Relay8C, WaveshareBoards.Create),
         new(WaveshareModels.Relay16, WaveshareBoards.Create),
         new(WaveshareModels.Relay30, WaveshareBoards.Create),
+        new(DevantechModels.Eth002, DevantechBoards.Create),
+        new(DevantechModels.Eth008, DevantechBoards.Create),
+        new(DevantechModels.Eth484, DevantechBoards.Create),
+        new(DevantechModels.Eth8020, DevantechBoards.Create),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>

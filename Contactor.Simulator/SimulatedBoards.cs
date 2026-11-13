@@ -47,7 +47,9 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
     /// </summary>
     public string? Add(string? type, int port, string? username, string? password)
     {
-        return string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password)
+        // A model whose login is a password alone takes a password without a user name.
+        var passwordOnly = SimulatorCatalogue.Find(type)?.Model.PasswordOnly == true;
+        return string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password) && !passwordOnly
             ? "Write the user name too, or leave both empty."
             : Add(type, port, username, password, fromSettings: false);
     }
