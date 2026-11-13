@@ -10,6 +10,24 @@ public sealed class Vm208SimulatedBoardTests
 {
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
+    // Busy for as many statuses as asked, a relay request switching all the same; then as usual. 0 or less: none.
+    [Fact]
+    public async Task Should_AnswerBusy_ForTheNextStatuses()
+    {
+        await using var board = new Vm208Simulator();
+        board.Start();
+        board.BusyNext = 2;
+
+        Assert.EndsWith("{\"Channels\":[]}", await SendAsync(board.Port, "GET /status?interface=-1&socket=0"), StringComparison.Ordinal);
+        Assert.EndsWith("{\"Channels\":[]}", await SendAsync(board.Port, "POST /relay", "index=2&state=1&interface=-1&socket=0"), StringComparison.Ordinal);
+        Assert.Equal(0b0010, board.Relays);
+        Assert.EndsWith(Vm208Json.WriteStatus(new Vm208Status(0b0010, false, 0)), await SendAsync(board.Port, "GET /status?interface=-1&socket=0"), StringComparison.Ordinal);
+
+        board.BusyNext = -5;
+        Assert.EndsWith(Vm208Json.WriteStatus(new Vm208Status(0b0010, false, 0)), await SendAsync(board.Port, "GET /status?interface=-1&socket=0"), StringComparison.Ordinal);
+        Assert.Equal(-5, board.BusyNext);
+    }
+
     [Fact]
     public async Task Should_AnswerAsTheFirmware()
     {

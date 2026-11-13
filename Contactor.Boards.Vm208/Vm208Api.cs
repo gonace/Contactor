@@ -38,6 +38,16 @@ public static class Vm208Api
 
     public const int RelayCount = 4;
 
+    /// <summary>
+    /// How many times a request is sent again when the board answered busy (<c>{"Channels":[]}</c>: it couldn't take its
+    /// I/O lock within 1 s), and how long it waits before each. A relay request sets a state, never toggles it, so
+    /// sending it again is harmless.
+    /// </summary>
+    public const int BusyRetries = 2;
+
+    /// <inheritdoc cref="BusyRetries"/>
+    public static readonly TimeSpan BusyWait = TimeSpan.FromMilliseconds(250);
+
     /// <summary>The one digital input, <c>getUserInputState()</c> (pin P06 of the card's TCA6424A).</summary>
     public const int InputCount = 1;
 

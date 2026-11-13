@@ -428,6 +428,15 @@ internal sealed class ManualTimeProvider : TimeProvider
         }
     }
 
+    /// <summary>Whether a timer waits that is due this long from now, among any others.</summary>
+    public bool Waits(TimeSpan dueIn)
+    {
+        lock (_lock)
+        {
+            return _timers.Any(t => t.DueAt == _now + dueIn);
+        }
+    }
+
     /// <summary>
     /// Whether exactly one timer waits, due this long from now: e.g. a poller's wait for its next poll, and not a
     /// request's timeout that is still running.

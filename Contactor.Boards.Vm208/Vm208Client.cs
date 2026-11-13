@@ -146,11 +146,54 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         return Task.CompletedTask;
     }
 
-    async Task<Vm208Status> IPolledBoard<Vm208Status>.ReadAsync(CancellationToken cancellationToken)
+    Task<Vm208Status> IPolledBoard<Vm208Status>.ReadAsync(CancellationToken cancellationToken)
     {
-        var answer = await SendAsync(HttpMethod.Get, $"{Vm208Api.StatusPath}?{Vm208Api.StatusQuery}", form: null, routine: true, cancellationToken)
-            .ConfigureAwait(false);
-        return ReadStatusAnswer(answer);
+        return ExchangeStatusAsync(HttpMethod.Get, $"{Vm208Api.StatusPath}?{Vm208Api.StatusQuery}", form: null, routine: true, Endpoint, command: false, cancellationToken);
+    }
+
+    /// <summary>
+    /// A request whose answer is the board's status. A busy answer is sent again, up to <see cref="Vm208Api.BusyRetries"/>
+    /// times, <see cref="Vm208Api.BusyWait"/> apart; only then does it count, as any status the app can't read. Never
+    /// sent again to another board: not after the address moved from <paramref name="target"/>, and for a
+    /// <paramref name="command"/> not once the board counts as lost (<see cref="EnsureSameBoard"/>).
+    /// </summary>
+    private async Task<Vm208Status> ExchangeStatusAsync(
+        HttpMethod method,
+        string pathAndQuery,
+        string? form,
+        bool routine,
+        BoardEndpoint target,
+        bool command,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var answer = await SendAsync(method, pathAndQuery, form, routine, cancellationToken).ConfigureAwait(false);
+            var willRetry = attempt < Vm208Api.BusyRetries;
+            try
+            {
+                return ReadStatusAnswer(answer, willRetryBusy: willRetry);
+            }
+            catch (Vm208ProtocolException ex) when (ex.IsBusy && willRetry)
+            {
+                Trace(BoardTraceDirection.None, string.Create(CultureInfo.InvariantCulture, $"Busy: asking again ({attempt + 1} of {Vm208Api.BusyRetries})"), null);
+                await Task.Delay(Vm208Api.BusyWait, _timeProvider, cancellationToken).ConfigureAwait(false);
+                EnsureSameBoard(target, command);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Throws <see cref="BoardNotConnectedException"/> when the address moved from <paramref name="target"/> (another
+    /// board may be there now), or, for a <paramref name="command"/>, when the board counts as lost: nothing more is sent
+    /// then. A poll may still be connecting, so for a poll only the address counts.
+    /// </summary>
+    private void EnsureSameBoard(BoardEndpoint target, bool command)
+    {
+        if (Endpoint != target || (command && !_poller.State.IsConnected))
+        {
+            throw new BoardNotConnectedException("The VM208's address changed, or it was lost: nothing more was sent.");
+        }
     }
 
     void IPolledBoard<Vm208Status>.OnStateChanged(PolledState<Vm208Status> state)
@@ -255,6 +298,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
     {
         Vm208Status? status = null;
         string? refusal = null;
+        var target = Endpoint;
         for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
         {
             if ((mask & (1 << (relay - 1))) == 0)
@@ -262,12 +306,14 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
                 continue;
             }
 
+            // The rest of the mask goes only to the board the command began with, while it counts as connected.
+            EnsureSameBoard(target, command: true);
+
             // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
             try
             {
-                var answer = await SendAsync(HttpMethod.Post, Vm208Api.RelayPath, Vm208Api.RelayForm(relay, turnOn), routine: false, cancellationToken)
+                status = await ExchangeStatusAsync(HttpMethod.Post, Vm208Api.RelayPath, Vm208Api.RelayForm(relay, turnOn), routine: false, target, command: true, cancellationToken)
                     .ConfigureAwait(false);
-                status = ReadStatusAnswer(answer);
                 taken.Value |= (byte)(1 << (relay - 1));
             }
             catch (Vm208ProtocolException ex)
@@ -308,7 +354,8 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         return exception is TimeoutException or HttpRequestException or IOException;
     }
 
-    private Vm208Status ReadStatusAnswer(Answer answer)
+    // A busy answer that will be asked again isn't an error yet: it is traced plainly.
+    private Vm208Status ReadStatusAnswer(Answer answer, bool willRetryBusy = false)
     {
         if (answer.StatusCode != HttpStatusCode.OK)
         {
@@ -324,7 +371,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         }
         catch (Vm208ProtocolException ex)
         {
-            Trace(BoardTraceDirection.Received, ex.Message, answer.Text, isError: true);
+            Trace(BoardTraceDirection.Received, ex.Message, answer.Text, isError: !(ex.IsBusy && willRetryBusy));
             throw;
         }
 

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Numerics;
 using System.Text;
 using Contactor.Boards;
 using Contactor.Boards.Vm208;
@@ -35,6 +36,87 @@ public sealed class Vm208ClientTests
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
         Assert.Equal(StatusRequest, simulator.ReceivedRequests[0]);
         Assert.Contains(run.Changes, s => s.IsConnected && s.Relays == 0b0010);
+    }
+
+    // A poll the board answers busy is asked again, 250 ms later, and doesn't count toward losing the board.
+    [Fact]
+    public async Task Should_AskAgain_WhenAPollIsBusy_AndNotCountIt()
+    {
+        await using var simulator = new Vm208Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        await simulator.SwitchRelayAsync(3, true);
+
+        // Three polls in a row busy twice each: three failures without the retries, so the board would be lost.
+        for (var poll = 0; poll < 3; poll++)
+        {
+            simulator.BusyNext = 2;
+            var answered = simulator.RequestCount;
+            run.Time.Advance(run.PollInterval);
+            for (var retry = 0; retry < Vm208Api.BusyRetries; retry++)
+            {
+                await Wait.UntilAsync(() => run.Time.Waits(Vm208Api.BusyWait));
+                run.Time.Advance(Vm208Api.BusyWait);
+            }
+
+            await Wait.UntilAsync(() => simulator.RequestCount == answered + 3 && run.Time.WaitsOnly(run.PollInterval));
+        }
+
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(0b0100, run.Client.State.Relays);
+        Assert.Equal(6, run.Traces.Count(t => t.Text.StartsWith("Busy: asking again (", StringComparison.Ordinal)));
+
+        // A busy answer that is asked again isn't an error yet.
+        Assert.DoesNotContain(run.Traces, t => t.Text == "The VM208 was busy and sent no relays." && t.IsError);
+    }
+
+    // A poll that stays busy, also when asked again, fails: three in a row lose the board, as before.
+    [Fact]
+    public async Task Should_LoseABoardThatStaysBusy()
+    {
+        await using var simulator = new Vm208Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.BusyNext = int.MaxValue;
+
+        while (run.Client.State.IsConnected)
+        {
+            if (run.Time.Waits(Vm208Api.BusyWait))
+            {
+                run.Time.Advance(Vm208Api.BusyWait);
+            }
+            else if (run.Time.WaitsOnly(run.PollInterval))
+            {
+                run.Time.Advance(run.PollInterval);
+            }
+            else
+            {
+                await Task.Delay(5, Cancel);
+            }
+        }
+
+        // Three polls, each asked three times.
+        Assert.Equal(1 + (3 * (1 + Vm208Api.BusyRetries)), simulator.RequestCount);
+    }
+
+    // A command the board answers busy is sent again: it sets a state, so a relay that switched already stays so.
+    [Fact]
+    public async Task Should_SendACommandAgain_WhenTheBoardIsBusy()
+    {
+        await using var simulator = new Vm208Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.BusyNext = 1;
+
+        Assert.Equal(0b0010, await PastBusyWaitsAsync(run, run.Client.TurnOnAsync(0b0010, Cancel)));
+
+        Assert.Equal(0b0010, simulator.Relays);
+        Assert.Equal(0b0010, run.Client.State.Relays);
+        Assert.Equal(2, simulator.ReceivedRequests.Count(r => r.StartsWith("POST /relay index=2&state=1", StringComparison.Ordinal)));
+        Assert.True(run.Client.State.IsConnected);
     }
 
     [Fact]
@@ -210,7 +292,18 @@ public sealed class Vm208ClientTests
         await using var server = CannedBoard.Start(Encoding.UTF8.GetBytes(body), contentLength: true);
         await using var run = ClientRun.Start(server.Port);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Direction == BoardTraceDirection.Received && t.IsError && t.Text.StartsWith("The VM208", StringComparison.Ordinal)));
+        // A busy answer is asked again first: the clock moves past those waits.
+        while (!run.Traces.Any(t => t.Direction == BoardTraceDirection.Received && t.IsError && t.Text.StartsWith("The VM208", StringComparison.Ordinal)))
+        {
+            if (run.Time.Waits(Vm208Api.BusyWait))
+            {
+                run.Time.Advance(Vm208Api.BusyWait);
+            }
+            else
+            {
+                await Task.Delay(5, Cancel);
+            }
+        }
 
         Assert.False(run.Client.State.IsConnected);
         Assert.Null(run.Client.State.Status);
@@ -290,8 +383,9 @@ public sealed class Vm208ClientTests
         board.BadAnswerFor = 0b0010;
         board.BadAnswer = (code, body);
 
-        // Relay 2's answer couldn't be read: it may or may not have switched, so it isn't among those taken.
-        Assert.Equal(0b1101, await run.Client.TurnOnAsync(0b1111, Cancel));
+        // Relay 2's answer couldn't be read: it may or may not have switched, so it isn't among those taken. A busy one
+        // is asked again first, and stays busy.
+        Assert.Equal(0b1101, await PastBusyWaitsAsync(run, run.Client.TurnOnAsync(0b1111, Cancel)));
 
         // Relays 3 and 4 still went, the last good answer is the state, and a poll comes at once, not in a minute.
         Assert.Equal(0b1111, board.Switched);
@@ -313,11 +407,14 @@ public sealed class Vm208ClientTests
         board.BadAnswerFor = refused;
         board.BadAnswer = (200, "{\"Channels\":[]}");
 
-        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync((byte)mask, Cancel));
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => PastBusyWaitsAsync(run, run.Client.TurnOnAsync((byte)mask, Cancel)));
 
         // Nothing counts as switched; one read at once, not in a minute, shows that the board did switch them.
         Assert.Equal("The VM208 didn't take the command: The VM208 was busy and sent no relays.", error.Message);
         Assert.Equal(mask, board.Switched);
+
+        // Each busy relay asked three times.
+        Assert.Equal(3 * BitOperations.PopCount((uint)mask), board.Requests.Count(r => r.StartsWith("POST /relay", StringComparison.Ordinal)));
         await Wait.UntilAsync(() => run.Client.State.Relays == mask && run.Time.WaitsOnly(run.PollInterval));
         Assert.Equal(2, board.Requests.Count(r => r.StartsWith(StatusRequest, StringComparison.Ordinal)));
         Assert.True(run.Client.State.IsConnected);
@@ -330,19 +427,37 @@ public sealed class Vm208ClientTests
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        // Every relay and every read answers "busy". That is no refusal: each command counts, as would an answer the
-        // app can't read (retrying on busy is issue #128).
+        // Every relay and every read answers "busy", also when asked again. That is no refusal: each command counts, as
+        // would an answer the app can't read.
         board.BadAnswerFor = 0b0011;
         board.BadAnswer = (200, "{\"Channels\":[]}");
         board.BadStatus = true;
 
         for (var command = 0; command < 3; command++)
         {
-            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => PastBusyWaitsAsync(run, run.Client.TurnOnAsync(0b0011, Cancel)));
         }
 
         await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal) && t.IsError);
+    }
+
+    // Moves the clock past each wait before a busy answer is asked again, until the command ends.
+    private static async Task<T> PastBusyWaitsAsync<T>(ClientRun run, Task<T> command)
+    {
+        while (!command.IsCompleted)
+        {
+            if (run.Time.Waits(Vm208Api.BusyWait))
+            {
+                run.Time.Advance(Vm208Api.BusyWait);
+            }
+            else
+            {
+                await Task.Delay(5, Cancel);
+            }
+        }
+
+        return await command;
     }
 
     [Fact]
@@ -416,6 +531,51 @@ public sealed class Vm208ClientTests
         Assert.Contains(run.Traces, t => t.Text == "Connection lost: The VM208 did not answer within 5 s." && t.IsError);
         Assert.Contains(run.Changes, s => !s.IsConnected);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+    }
+
+    // The address changes while a command waits to ask a busy board again: nothing goes to the board at the new address,
+    // which the person never chose to switch.
+    [Fact]
+    public async Task Should_SendNothingToANewAddress_WhileACommandWaitsOnABusyBoard()
+    {
+        await using var first = new Vm208Simulator();
+        await using var second = new Vm208Simulator();
+        first.Start();
+        second.Start();
+        await using var run = ClientRun.Start(first.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        first.BusyNext = 1;
+
+        var command = run.Client.TurnOnAsync(0b0110, Cancel);
+        await Wait.UntilAsync(() => run.Time.Waits(Vm208Api.BusyWait));
+        run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+        run.Time.Advance(Vm208Api.BusyWait);
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => command);
+        Assert.DoesNotContain(second.ReceivedRequests, r => r.StartsWith("POST", StringComparison.Ordinal));
+        Assert.Equal(1, first.ReceivedRequests.Count(r => r.StartsWith("POST", StringComparison.Ordinal)));
+    }
+
+    // A command cancelled while it waits to ask a busy board again sends nothing more, and doesn't count against the
+    // board.
+    [Fact]
+    public async Task Should_SendNothingMore_WhenACommandIsCancelledWhileTheBoardIsBusy()
+    {
+        await using var simulator = new Vm208Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.BusyNext = 1;
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+
+        var command = run.Client.TurnOnAsync(0b0010, cancel.Token);
+        await Wait.UntilAsync(() => run.Time.Waits(Vm208Api.BusyWait));
+        await cancel.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => command);
+        Assert.Equal(1, simulator.ReceivedRequests.Count(r => r.StartsWith("POST", StringComparison.Ordinal)));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Connection lost", StringComparison.Ordinal));
     }
 
     [Fact]
