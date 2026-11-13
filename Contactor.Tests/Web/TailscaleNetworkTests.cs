@@ -116,12 +116,12 @@ public sealed class TailscaleNetworkTests
         var tailscale = new FakeTailscale { DaemonExitCode = 1 };
         await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
 
-        await WaitUntilAsync(() => tailscale.DaemonRuns == 1 && time.PendingTimers == 1);
+        // Stopped: offline, and only the wait before the next start is left.
+        await WaitUntilAsync(() => network.Logger.Lines.Contains("tailscaled stopped with exit code 1; starting it again in 1 s") && time.PendingTimers == 1);
         Assert.False(network.Network.Status.Online);
         time.Advance(TimeSpan.FromSeconds(1));
 
         await WaitUntilAsync(() => tailscale.DaemonRuns == 2);
-        Assert.Contains("tailscaled stopped with exit code 1; starting it again in 1 s", network.Logger.Lines);
     }
 
     [Fact]
