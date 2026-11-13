@@ -169,6 +169,64 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
+    public async Task Should_LoseTheBoard_WhenOneRelayIsRefusedAndAnothersAnswerCantBeRead()
+    {
+        // Relay 1 is refused, relay 2's answer can't be read, and relay 3 is refused again: the last answer is a
+        // refusal, but one answer couldn't be read, so each command counts. Reads as in the test above.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [19, 2, 28],
+            [0x7A] => [0xFF],
+            [0x20, 2, 0] => [0x05],
+            [0x20, _, 0] => [0x01],
+            _ when Interlocked.Increment(ref reads) == 1 => [0],
+            _ => null,
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+
+        for (var command = 0; command < 3; command++)
+        {
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0111, Cancel));
+        }
+
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_KeepTheLastState_AndReadAtOnce_WhenTheReadAfterTheSwitchesFails(bool wrongModel)
+    {
+        // Relay 2's answer can't be read, so the read after the switches opens a new connection. There 10 answers
+        // another model, or 7A a value it can't have. The board's relays stay off.
+        var checks = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] when wrongModel && Interlocked.Increment(ref checks) == 2 => [DevantechModels.Layout(DevantechModels.Eth484).ModuleId, 2, 28],
+            [0x10] => [19, 2, 28],
+            [0x7A] when !wrongModel && Interlocked.Increment(ref checks) == 3 => [0x40],
+            [0x7A] => [0xFF],
+            [0x20, 2, 0] => [0x05],
+            [0x20, _, 0] => [0x00],
+            _ => [0],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+
+        await run.Client.TurnOnAsync(0b0011, Cancel);
+
+        // Relay 1 was taken, but only a read shows it on. The read comes at once, not in a minute, on a third connection.
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 2 && run.Time.PendingTimers == 1);
+        Assert.Equal(3, board.Connections);
+        Assert.DoesNotContain(run.Changes, s => s.Relays != 0);
+        Assert.Equal(0UL, run.Client.State.Relays);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
     public async Task Should_SendTheRestOfTheMask_OnANewConnection_AfterAnUnreadableAnswer()
     {
         // Relay 2's answer is a value a relay command can't have: the connection may be out of step, so relay 3 goes
