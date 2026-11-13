@@ -160,12 +160,13 @@ public sealed class BoardPoller<TReading> : IDisposable
     /// waits only for it to stop, never for the next one. Throws <see cref="BoardNotConnectedException"/> when the
     /// board is not connected, decided under the same lock as the poller's. What the command returns is the board's
     /// state right after it, taken as a poll's answer, so the change shows without asking again. A command fails as a
-    /// poll would: whatever it throws (no answer, a refusal, an answer it can't read) counts as one failed poll, so a
-    /// board that is gone or broken is lost even while commands keep coming. Two things don't count: a cancelled
-    /// <paramref name="cancellationToken"/>, and <see cref="BoardNotConnectedException"/>, with which the command says
-    /// it sent nothing (e.g. the board is logging in again). After a failed command, unless
-    /// <paramref name="cancellationToken"/> was cancelled, the board's state is read at once, as by
-    /// <see cref="PollNow"/>, and the exception is passed on.
+    /// poll would: whatever it throws (no answer, an answer it can't read) counts as one failed poll, so a board that
+    /// is gone or broken is lost even while commands keep coming. Three things don't count: a cancelled
+    /// <paramref name="cancellationToken"/>; <see cref="BoardNotConnectedException"/>, with which the command says it
+    /// sent nothing (e.g. the board is logging in again); and <see cref="BoardRefusedException"/>, with which it says
+    /// the board answered but refused the command. A refusal starts the count over, as an answered poll does: the
+    /// board answered. After a failed command, unless <paramref name="cancellationToken"/> was cancelled, the board's
+    /// state is read at once, as by <see cref="PollNow"/>, and the exception is passed on.
     /// </summary>
     public async Task RunCommandAsync(Func<CancellationToken, Task<TReading>> command, CancellationToken cancellationToken = default)
     {
@@ -193,8 +194,13 @@ public sealed class BoardPoller<TReading> : IDisposable
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 // The same rule as a poll's, counted once, here; the read that follows is an ordinary poll and counts
-                // on its own if it fails too.
-                if (ex is not BoardNotConnectedException)
+                // on its own if it fails too. A refusal is an answer: the board is there. Quick commands
+                // cancel the reads between them, so counting refusals would lose a board that answers every time.
+                if (ex is BoardRefusedException)
+                {
+                    _failures = 0;
+                }
+                else if (ex is not BoardNotConnectedException)
                 {
                     CountFailure(ex.Message);
                 }

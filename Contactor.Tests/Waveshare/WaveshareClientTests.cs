@@ -191,6 +191,35 @@ public sealed class WaveshareClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_KeepABoardThatRefusesEveryRelay_AndLoseOneWhoseAnswersCantBeRead(bool refused)
+    {
+        // The first read answers; every read after it can't be read and counts. Each relay is refused with an exception
+        // answer, or echoed with a broken CRC.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.WriteSingleCoil when refused => WaveshareModbus.WithCrc([1, WaveshareApi.WriteSingleCoil | 0x80, 4]),
+            WaveshareApi.WriteSingleCoil => [.. request[..6], 0, 0],
+            _ when Interlocked.Increment(ref reads) == 1 => WaveshareModbus.WithCrc([1, 1, 1, 0]),
+            _ => [1, 1, 1, 0, 0, 0],
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.PendingTimers == 1);
+
+        for (var command = 0; command < 3; command++)
+        {
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
+        }
+
+        // Refused: each refusal starts the count over, so the failed reads between them never reach 3.
+        await Wait.UntilAsync(() => (refused ? Volatile.Read(ref reads) >= 2 : !run.Client.State.IsConnected) && run.Time.PendingTimers == 1);
+        Assert.Equal(refused, run.Client.State.IsConnected);
+        Assert.Equal(!refused, run.Traces.Any(t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public async Task Should_SeeChangesMadeAtTheBoard_OnTheNextPoll_AndReportOnlyThose()
     {

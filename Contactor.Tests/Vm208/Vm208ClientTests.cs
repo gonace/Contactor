@@ -303,6 +303,28 @@ public sealed class Vm208ClientTests
     }
 
     [Fact]
+    public async Task Should_LoseABoardThatIsBusyForEveryRelay_AfterThreeCommands()
+    {
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        // Every relay and every read answers "busy". That is no refusal: each command counts, as would an answer the
+        // app can't read (retrying on busy is issue #128).
+        board.BadAnswerFor = 0b0011;
+        board.BadAnswer = (200, "{\"Channels\":[]}");
+        board.BadStatus = true;
+
+        for (var command = 0; command < 3; command++)
+        {
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
+        }
+
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal) && t.IsError);
+    }
+
+    [Fact]
     public async Task Should_LoseABoardThatAnswersBrokenJson_CountingCommandsAsPolls()
     {
         await using var board = ScriptedBoard.Start();

@@ -87,7 +87,9 @@ A command switches the relays in the mask one at a time with function 05:
 - When the board takes no relay, the command throws "The Waveshare board didn't take the command: …".
 - When a request gets no answer, the command throws "The Waveshare board didn't answer; the command may not have been
   carried out."
-- The poller counts each of these two failures as a failed poll and reads the board at once.
+- The poller reads the board at once after each of these two failures. It counts a request with no answer as a failed
+  poll, and also a command with an answer that cannot be read. When the board refused every relay with an exception
+  answer, the board answered: the command is a refusal (`BoardRefusedException`), which does not count.
 - After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
   new state.
 - When that read gets an unreadable answer, the client keeps the last state it read and reads again at once. The echo
