@@ -426,7 +426,11 @@ public sealed partial class BoardEventRecorder : BackgroundService
             return;
         }
 
-        foreach (var relayId in on)
+        var withRun = await db.RelayRuntimes.AsNoTracking()
+            .Where(r => on.Contains(r.RelayId) && r.OnSinceUtc != null)
+            .Select(r => r.RelayId)
+            .ToListAsync(cancellationToken);
+        foreach (var relayId in on.Except(withRun))
         {
             if (await OwnAutoOffAtAsync(db, relayId, now, cancellationToken) is { } own)
             {

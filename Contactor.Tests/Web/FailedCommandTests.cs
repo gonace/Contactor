@@ -189,8 +189,31 @@ public sealed class FailedCommandTests : IAsyncLifetime
         Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
     }
 
-    // The board confirms a schedule's ON before the scheduler has saved its run, and auto-off's check sees the relay on
-    // with nobody's run in between: the schedule's run wins, with no auto-off, so it isn't turned off mid-window.
+    // The schedule turns a relay off at its OffTime, and someone turns it on again before the scheduler saves: their
+    // new run stays.
+    [Fact]
+    public async Task Should_KeepANewRun_WhenTheScheduleEndsTheOldOneMeanwhile()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OffTime;
+        _board.AfterSwitch = async () =>
+        {
+            _board.AfterSwitch = null;
+            _time.Now += TimeSpan.FromSeconds(1);
+            await Control.TurnOnAsync(2, Jane, Cancel);
+        };
+
+        await Scheduler.TickAsync(Cancel);
+
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+        Assert.Equal((Jane, (DateTime?)_time.Now.UtcDateTime), (runtime.TurnedOnBy, runtime.OnSinceUtc));
+        Assert.True(_board.State.IsOn(2));
+    }
+
     // Auto-off turns a relay off, and someone turns it on again before auto-off saves: their new run stays.
     [Fact]
     public async Task Should_KeepANewRun_WhenAutoOffEndsTheOldOneMeanwhile()
@@ -212,6 +235,8 @@ public sealed class FailedCommandTests : IAsyncLifetime
         Assert.True(_board.State.IsOn(3));
     }
 
+    // The board confirms a schedule's ON before the scheduler has saved its run, and auto-off's check sees the relay on
+    // with nobody's run in between: the schedule's run wins, with no auto-off, so it isn't turned off mid-window.
     [Fact]
     public async Task Should_KeepAScheduleRunFree_OfAnAutoOffGivenMeanwhile()
     {

@@ -106,7 +106,7 @@ public sealed class RelayControl
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        foreach (var relayId in await db.RelayRuntimes.Select(r => r.RelayId).ToListAsync(cancellationToken))
+        foreach (var relayId in await db.RelayRuntimes.Where(r => r.OnSinceUtc != null).Select(r => r.RelayId).ToListAsync(cancellationToken))
         {
             await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
         }

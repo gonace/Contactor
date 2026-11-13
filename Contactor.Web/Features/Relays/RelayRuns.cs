@@ -140,13 +140,14 @@ public static class RelayRuns
 
     /// <summary>
     /// Moves the auto-off of the run that began at <paramref name="forRunSince"/> to <paramref name="autoOffAt"/>, or
-    /// none. Only while that run is still on.
+    /// none. Only while that run is still on, and never for a run the schedule has (taken over meanwhile, too): the
+    /// schedule's OffTime is its end.
     /// </summary>
     public static Task SetAutoOffAsync(ContactorDbContext db, int relayId, DateTime forRunSince, DateTime? autoOffAt, CancellationToken cancellationToken)
     {
         void Write(RelayRuntime run)
         {
-            if (run.OnSinceUtc == forRunSince)
+            if (run.OnSinceUtc == forRunSince && run.TurnedOnBy != EventActors.Schedule)
             {
                 run.AutoOffAtUtc = autoOffAt;
             }

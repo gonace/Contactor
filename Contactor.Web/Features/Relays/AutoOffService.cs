@@ -70,9 +70,9 @@ public sealed partial class AutoOffService : BackgroundService
         List<int> turnedOff = [];
         foreach (var runtime in due)
         {
-            var sent = _clock.UtcNow;
             if (state.IsOn(runtime.RelayId))
             {
+                var sent = _clock.UtcNow;
                 var mask = _board.Capabilities.Relay(runtime.RelayId);
                 _expected.Expect(mask, on: false);
                 try
@@ -97,11 +97,15 @@ public sealed partial class AutoOffService : BackgroundService
                     Details = minutes is null ? null : JsonSerializer.Serialize(new { afterMinutes = minutes }),
                 });
                 turnedOff.Add(runtime.RelayId);
+
+                // Its run ends; one begun after the OFF went out (someone turned it on again meanwhile) stays.
+                await RelayRuns.EndAsync(db, runtime.RelayId, sent, cancellationToken);
+                continue;
             }
 
-            // Its run ends: turned off just now, or off already some other way (nothing to send, but the plan is
-            // stale). One that began after this check (someone turned it on again meanwhile) stays.
-            await RelayRuns.EndAsync(db, runtime.RelayId, sent, cancellationToken);
+            // Off already, turned off some other way: nothing to send, but the plan is stale. Only the run as read
+            // ends; one saved meanwhile (someone turned it on again) stays.
+            await RelayRuns.EndOutsideAsync(db, runtime.RelayId, cancellationToken);
         }
 
         if (db.ChangeTracker.HasChanges())

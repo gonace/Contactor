@@ -151,7 +151,8 @@ public sealed partial class SchedulerService : BackgroundService
                             break;
                         }
 
-                        await RelayRuns.StartAsync(db, relayId, Actor, now, autoOffAt: null, cancellationToken);
+                        // Since the ON went out, not the minute: a person's OFF is told apart from it by time (RelayRuns.End).
+                        await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, cancellationToken);
                         Log(db, now, relayId, EventActions.On, running.ScheduleId);
                         changed = true;
                     }

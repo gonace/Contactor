@@ -155,6 +155,21 @@ public sealed class RelayRunsTests : IAsyncLifetime
         Assert.Equal((John, (DateTime?)T.AddHours(1)), ((await RunAsync(1)).TurnedOnBy, (await RunAsync(1)).AutoOffAtUtc));
     }
 
+    // A new "Turn off automatically after" saved while the schedule takes the run over never gives the schedule's run
+    // an auto-off: its OffTime is its end.
+    [Fact]
+    public async Task Should_NotGiveAScheduleRunAnAutoOff_WhenItTookTheRunOverMeanwhile()
+    {
+        await SaveAsync(db => RelayRuns.StartOutsideAsync(db, 1, T, T.AddHours(2), Cancel));
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        await RelayRuns.SetAutoOffAsync(db, 1, T, T.AddHours(1), Cancel);
+        await SaveAsync(other => RelayRuns.TakeOverForScheduleAsync(other, 1, Cancel));
+
+        await RelayRuns.SaveAsync(db, Cancel);
+
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), ((await RunAsync(1)).TurnedOnBy, (await RunAsync(1)).AutoOffAtUtc));
+    }
+
     // A relay that joins a group has no run of its own, whatever was saved meanwhile.
     [Fact]
     public async Task Should_Clear_OverAChangeSavedMeanwhile()
@@ -174,7 +189,9 @@ public sealed class RelayRunsTests : IAsyncLifetime
     public void Should_WriteARunOnlyThroughRelayRuns()
     {
         var root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Contactor.Web");
-        var write = new System.Text.RegularExpressions.Regex(@"\.(OnSinceUtc|AutoOffAtUtc|TurnedOnBy)\s*=[^=>]|SetProperty\(\w+ => \w+\.(OnSinceUtc|AutoOffAtUtc|TurnedOnBy)");
+        // An assignment or an initializer ("TurnedOnBy = x"), a bulk update's SetProperty, or a value set on the entry.
+        var write = new System.Text.RegularExpressions.Regex(
+            @"\b(OnSinceUtc|AutoOffAtUtc|TurnedOnBy)\s*=[^=>]|SetProperty\(\s*\w+\s*=>\s*\w+\.(OnSinceUtc|AutoOffAtUtc|TurnedOnBy)|Property\(\s*\w+\s*=>\s*\w+\.(OnSinceUtc|AutoOffAtUtc|TurnedOnBy)\s*\)\s*\.CurrentValue\s*=");
         List<string> found = [];
         foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".razor", StringComparison.Ordinal))
