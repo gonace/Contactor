@@ -4,9 +4,10 @@ using Microsoft.Extensions.Options;
 namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>
-/// Cloudflare as the way in: keeps the Cloudflare tunnel running while it is the chosen way in, when
-/// <c>Tunnel:Token</c> is set. Starts cloudflared, and starts it again after a growing wait (1 s, doubling to at most
-/// 1 min) whenever it stops. Without a token it does nothing. The image has no shell or process manager, so the app
+/// Cloudflare as the way in: keeps the Cloudflare tunnel running while it is the chosen way in, with the token
+/// <see cref="CloudflareSettings"/> has (saved in the setup guide, or <c>Tunnel:Token</c>). Starts cloudflared, and
+/// starts it again after a growing wait (1 s, doubling to at most 1 min) whenever it stops, and at once with a new
+/// token. Without a token it waits for one. The image has no shell or process manager, so the app
 /// looks after cloudflared itself.
 /// </summary>
 public sealed partial class CloudflareTunnel : IAccessMethod
@@ -18,14 +19,16 @@ public sealed partial class CloudflareTunnel : IAccessMethod
     private static readonly TimeSpan RanLongEnough = TimeSpan.FromMinutes(5);
 
     private readonly TunnelOptions _options;
+    private readonly CloudflareSettings _settings;
     private readonly ICloudflaredProcess _process;
     private readonly TimeProvider _time;
     private readonly ILogger<CloudflareTunnel> _logger;
 
-    public CloudflareTunnel(IOptions<TunnelOptions> options, ICloudflaredProcess process, TimeProvider time, ILogger<CloudflareTunnel> logger)
+    public CloudflareTunnel(IOptions<TunnelOptions> options, CloudflareSettings settings, ICloudflaredProcess process, TimeProvider time, ILogger<CloudflareTunnel> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value;
+        _settings = settings;
         _process = process;
         _time = time;
         _logger = logger;
@@ -33,9 +36,54 @@ public sealed partial class CloudflareTunnel : IAccessMethod
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_options.Token))
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            // A token saved meanwhile ends this run, and the next starts at once with it.
+            using var changed = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            void OnChanged(object? sender, EventArgs e)
+            {
+                try
+                {
+                    changed.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // That run is over already.
+                }
+            }
+
+            _settings.TunnelChanged += OnChanged;
+            try
+            {
+                await RunWithTokenAsync(_settings.Tunnel.Token, changed.Token);
+            }
+            finally
+            {
+                _settings.TunnelChanged -= OnChanged;
+            }
+
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                LogTokenChanged();
+            }
+        }
+    }
+
+    // Keeps cloudflared running with this token until cancelled; without one, waits.
+    private async Task RunWithTokenAsync(string token, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(token))
         {
             LogNoTunnel();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, _time, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Stopping, or a token was saved.
+            }
+
             return;
         }
 
@@ -48,7 +96,7 @@ public sealed partial class CloudflareTunnel : IAccessMethod
             try
             {
                 LogStarting();
-                exitCode = await _process.RunAsync(_options.Path, _options.Token.Trim(), LogOutput, cancellationToken);
+                exitCode = await _process.RunAsync(_options.Path, token, LogOutput, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -102,6 +150,9 @@ public sealed partial class CloudflareTunnel : IAccessMethod
             LogCloudflared(line);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "The tunnel's token changed: starting cloudflared again with it")]
+    private partial void LogTokenChanged();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No tunnel token (Tunnel__Token): cloudflared isn't started")]
     private partial void LogNoTunnel();

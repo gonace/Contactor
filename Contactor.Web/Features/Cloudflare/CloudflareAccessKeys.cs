@@ -1,11 +1,11 @@
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Contactor.Web.Features.Cloudflare;
 
 /// <summary>
 /// The keys Cloudflare Access signs its tokens with, fetched from the team's certs endpoint and kept for an hour.
-/// A token signed with a key we don't have triggers a refetch (Access rotates keys), at most once a minute.
+/// A token signed with a key we don't have triggers a refetch (Access rotates keys), at most once a minute. A new team
+/// domain (<see cref="CloudflareSettings"/>) starts over: the old team's keys are dropped and the new team's fetched.
 /// </summary>
 public sealed partial class CloudflareAccessKeys : IDisposable
 {
@@ -18,22 +18,24 @@ public sealed partial class CloudflareAccessKeys : IDisposable
     private const int MaxResponseBytes = 64 * 1024;
 
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly CloudflareAccessOptions _options;
+    private readonly CloudflareSettings _settings;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<CloudflareAccessKeys> _logger;
     private readonly SemaphoreSlim _fetchGate = new(1, 1);
     private IReadOnlyList<SecurityKey> _keys = [];
     private DateTimeOffset? _fetchedAt;
 
+    // The team the keys are for; only read and written under the fetch gate or by a reader that checks it.
+    private string? _fetchedFor;
+
     public CloudflareAccessKeys(
         IHttpClientFactory httpClientFactory,
-        IOptions<CloudflareAccessOptions> options,
+        CloudflareSettings settings,
         TimeProvider timeProvider,
         ILogger<CloudflareAccessKeys> logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
         _httpClientFactory = httpClientFactory;
-        _options = options.Value;
+        _settings = settings;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -44,7 +46,8 @@ public sealed partial class CloudflareAccessKeys : IDisposable
     /// </summary>
     public async Task<IReadOnlyList<SecurityKey>> GetAsync(bool refresh, CancellationToken cancellationToken)
     {
-        if (!NeedsFetch(refresh))
+        var access = _settings.Access;
+        if (!NeedsFetch(access, refresh))
         {
             return Volatile.Read(ref _keys);
         }
@@ -55,9 +58,9 @@ public sealed partial class CloudflareAccessKeys : IDisposable
             // Another request may have fetched them while this one waited.
             // Not on the visitor's request: if their phone drops it, the fetch must still finish, or everyone is
             // denied until the next one is allowed a minute later. The HTTP client's own timeout bounds it.
-            if (NeedsFetch(refresh))
+            if (NeedsFetch(access, refresh))
             {
-                await FetchAsync(CancellationToken.None);
+                await FetchAsync(access, CancellationToken.None);
             }
 
             return Volatile.Read(ref _keys);
@@ -73,10 +76,10 @@ public sealed partial class CloudflareAccessKeys : IDisposable
         _fetchGate.Dispose();
     }
 
-    private bool NeedsFetch(bool refresh)
+    private bool NeedsFetch(CloudflareAccessSettings access, bool refresh)
     {
         var fetchedAt = _fetchedAt;
-        if (fetchedAt is null)
+        if (fetchedAt is null || !string.Equals(Volatile.Read(ref _fetchedFor), access.TeamDomain, StringComparison.Ordinal))
         {
             return true;
         }
@@ -85,14 +88,21 @@ public sealed partial class CloudflareAccessKeys : IDisposable
         return age >= CacheDuration || (refresh && age >= MinRefreshInterval);
     }
 
-    private async Task FetchAsync(CancellationToken cancellationToken)
+    private async Task FetchAsync(CloudflareAccessSettings access, CancellationToken cancellationToken)
     {
+        // Another team's keys are no use: they go, whether or not the new team's come.
+        if (!string.Equals(_fetchedFor, access.TeamDomain, StringComparison.Ordinal))
+        {
+            Volatile.Write(ref _keys, []);
+            Volatile.Write(ref _fetchedFor, access.TeamDomain);
+        }
+
         // Counts as a fetch even when it fails, so a Cloudflare outage doesn't get a request per page view.
         _fetchedAt = _timeProvider.GetUtcNow();
         try
         {
             using var http = _httpClientFactory.CreateClient(HttpClientName);
-            using var response = await http.GetAsync(_options.CertificatesUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await http.GetAsync(access.CertificatesUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
             if (response.Content.Headers.ContentLength > MaxResponseBytes)
             {

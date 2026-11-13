@@ -67,6 +67,35 @@ namespace Contactor.Web.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Contactor.Web.Persistence.CloudflareSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(253)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Audience")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TeamDomain")
+                        .HasMaxLength(253)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TunnelToken")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CloudflareSetting", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CloudflareSetting_Id", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.EventLogEntry", b =>
                 {
                     b.Property<int>("Id")

@@ -53,6 +53,7 @@ public sealed partial class Program
         app.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<SignInChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
+        app.Services.ApplyCloudflareSettingsAsync(CancellationToken.None).GetAwaiter().GetResult();
         if (app.Services.GetRequiredService<SignInChoice>().Current is null)
         {
             app.Services.GetRequiredService<SetupCode>().Renew();
