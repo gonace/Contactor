@@ -466,11 +466,15 @@ public sealed partial class RelayChannelTests
         try
         {
             await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.Action == EventActions.InputChanged) == 3);
-            await Task.Delay(100, Cancel);
+
+            // A second status, handled after the first: any extra event of the first would come before its change.
+            board.SetInput(2, on: false);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.Action == EventActions.InputChanged) >= 4);
 
             var changes = Events(database).Where(e => e.Action == EventActions.InputChanged).ToList();
-            Assert.Equal(3, changes.Count);
+            Assert.Equal(4, changes.Count);
             Assert.Equal(((int?)Input(1), """{"on":true,"noticed":true}"""), (changes[2].InputId, changes[2].Details));
+            Assert.Equal(((int?)Input(2), """{"on":false}"""), (changes[3].InputId, changes[3].Details));
         }
         finally
         {

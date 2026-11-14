@@ -31,6 +31,12 @@ public sealed class Input
     /// <summary>For later: notify people when it closes.</summary>
     public bool NotifyOnClose { get; set; }
 
+    /// <summary>
+    /// How the events name an input whose row is gone, e.g. one of a removed board. Its id is not the number the
+    /// screens show, and its channel is gone with its row.
+    /// </summary>
+    public const string Unknown = "An input";
+
     /// <summary>The name an input is seeded with, until someone gives it one: "Input 2", after its channel.</summary>
     public static string DefaultName(int channel)
     {
