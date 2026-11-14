@@ -58,7 +58,7 @@ public sealed class Vm208BoardTests
         Assert.Equal(ChannelMask.Of([2, 3]), await board.TurnOnAsync(ChannelMask.Of([2, 3]), Cancel));
         Assert.Equal(ChannelMask.Of([2, 3]), Volatile.Read(ref reported)?.Relays);
         await simulator.SetInputAsync(1, true);
-        await Wait.UntilAsync(() => time.PendingTimers == 1);
+        await Wait.UntilAsync(() => time.WaitsOnly(TimeSpan.FromSeconds(options.Value.PollSeconds)));
         await board.RefreshAsync(Cancel);
         await Wait.UntilAsync(() => board.State.Inputs == ChannelMask.Of(1));
 

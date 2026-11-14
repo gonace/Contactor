@@ -99,7 +99,7 @@ public sealed class BoardPollerTests
         int[] waits = [1, 2, 4, 8, 16, 30, 30];
         foreach (var wait in waits)
         {
-            await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Waiting) == board.Connects && time.PendingTimers == 1);
+            await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Waiting) == board.Connects && time.WaitsOnly(TimeSpan.FromSeconds(wait)));
             Assert.Equal((BoardPollStep.Waiting, wait.ToString(System.Globalization.CultureInfo.InvariantCulture)), board.Steps[^1]);
             board.FailConnect = board.Connects < waits.Length;
             time.Advance(TimeSpan.FromSeconds(wait));
@@ -193,7 +193,7 @@ public sealed class BoardPollerTests
         Assert.True(hanging.IsCancelled);
         Assert.Equal(new PolledState<int>(true, 5, time.GetUtcNow()), poller.State);
         Assert.Equal(5, board.Changes[^1].Reading);
-        await WaitUntilAsync(() => time.PendingTimers == 1);
+        await WaitUntilAsync(() => time.WaitsOnly(Interval));
         Assert.Equal(2, board.Reads);
         Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Lost);
 
@@ -263,9 +263,9 @@ public sealed class BoardPollerTests
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
-        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")) && time.PendingTimers == 1);
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")) && time.WaitsOnly(TimeSpan.FromSeconds(1)));
         time.Advance(TimeSpan.FromSeconds(1));
-        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "2")) && time.PendingTimers == 1);
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "2")) && time.WaitsOnly(TimeSpan.FromSeconds(2)));
 
         board.FailConnect = false;
         poller.Restart();
@@ -306,14 +306,14 @@ public sealed class BoardPollerTests
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
-        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")) && time.PendingTimers == 1);
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")) && time.WaitsOnly(TimeSpan.FromSeconds(1)));
 
         poller.PollNow();
         board.FailConnect = false;
         time.Advance(TimeSpan.FromSeconds(1));
         await WaitForPollAsync(board, time, reads: 1);
         time.Advance(Interval);
-        await WaitUntilAsync(() => board.Reads >= 2 && time.PendingTimers == 1);
+        await WaitUntilAsync(() => board.Reads >= 2 && time.WaitsOnly(Interval));
 
         // The second poll came when it was due, not straight after the first.
         var reads = board.ReadTimes;
@@ -622,7 +622,7 @@ public sealed class BoardPollerTests
     // Until the board answered this many polls and the poller waits for the next one.
     private static Task WaitForPollAsync(FakePolledBoard board, ManualTimeProvider time, int reads)
     {
-        return WaitUntilAsync(() => board.Reads == reads && time.PendingTimers == 1);
+        return WaitUntilAsync(() => board.Reads == reads && time.WaitsOnly(Interval));
     }
 
     // Waits for the poller's own thread to get there; never asserts on how long that takes.

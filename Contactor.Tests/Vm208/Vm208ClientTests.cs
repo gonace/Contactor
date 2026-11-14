@@ -29,7 +29,8 @@ public sealed class Vm208ClientTests
         await simulator.SetInputAsync(1, true);
         await using var run = ClientRun.Start(simulator.Port);
 
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        // Connected, and the first answer reported: the client waits for the next poll.
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         Assert.Equal(new Vm208Status(0b0010, true, 0), run.Client.State.Status);
         Assert.True(run.Client.State.IsOn(2));
@@ -168,7 +169,9 @@ public sealed class Vm208ClientTests
         await using var simulator = new Vm208Simulator();
         simulator.Start();
         await using var run = ClientRun.Start(simulator.Port);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // Counted once the first answer was reported, when the client waits for the next poll.
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         var reported = run.Changes.Count;
 
         await run.PollAsync(simulator);
