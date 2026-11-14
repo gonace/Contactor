@@ -157,7 +157,7 @@ public sealed class PersistenceTests
         var relays = await check.Relays.OrderBy(r => r.Channel).ToListAsync(Cancel);
         Assert.Equal(["1:102:Fan", "2:101:Heat", "3:Relay 3", "4:Relay 4"], relays.Select(r => r.Channel <= 2 ? $"{r.Channel}:{r.Id}:{r.Name}" : $"{r.Channel}:{r.Name}"));
         Assert.Equal(4, relays.Select(r => r.Id).Distinct().Count());
-        Assert.All(relays.Skip(2), r => Assert.DoesNotContain(r.Id, new[] { 101, 102 }));
+        Assert.All(relays.Skip(2), r => Assert.True(r.Id is not 101 and not 102));
         Assert.Equal(relays.Select(r => r.Id).Order(), await check.RelayRuntimes.Select(r => r.RelayId).OrderBy(r => r).ToListAsync(Cancel));
         var inputs = await check.Inputs.OrderBy(i => i.Channel).ToListAsync(Cancel);
         Assert.Equal(["1:Door", "2:Input 2"], inputs.Select(i => $"{i.Channel}:{i.Name}"));

@@ -86,6 +86,19 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         db.SaveChanges();
     }
 
+    /// <summary>
+    /// Adds the board's relays and inputs in <paramref name="layout"/> to a database made before the app starts, so the
+    /// app's seeding finds them. Before the first request.
+    /// </summary>
+    public void UseLayoutBeforeStart(RelayLayout layout, int relayCount = 8, int inputCount = 1)
+    {
+        Directory.CreateDirectory(_folder);
+        var options = new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite($"Data Source={DatabasePath}").Options;
+        using var db = new ContactorDbContext(options);
+        db.Database.Migrate();
+        RelayLayouts.SeedAsync(db, layout, relayCount, inputCount).GetAwaiter().GetResult();
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(_environment);

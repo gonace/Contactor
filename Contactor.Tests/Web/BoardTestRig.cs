@@ -24,12 +24,16 @@ internal sealed class BoardTestRig : IAsyncDisposable
 
     private readonly List<IHostedService> _started = [];
 
-    private BoardTestRig(Vm201Simulator simulator, TestDatabase database, FixedTimeProvider time)
+    private BoardTestRig(Vm201Simulator simulator, TestDatabase database, FixedTimeProvider time, RelayLayout layout)
     {
         Simulator = simulator;
         Database = database;
         Time = time;
+        Layout = layout;
     }
+
+    /// <summary>How the database numbers the relays and inputs.</summary>
+    public RelayLayout Layout { get; }
 
     public Vm201Simulator Simulator { get; }
 
@@ -47,7 +51,19 @@ internal sealed class BoardTestRig : IAsyncDisposable
 
     public GroupsHandler GroupSetup => Database.Services.GetRequiredService<GroupsHandler>();
 
-    public static async Task<BoardTestRig> StartAsync(Func<Vm201Simulator, Task>? prepare = null, ILoggerProvider? logs = null)
+    /// <summary>The id of the relay on this channel of the simulated board.</summary>
+    public int RelayId(int channel)
+    {
+        return RelayLayouts.RelayId(Layout, channel, Simulator.Model.Capabilities.RelayCount);
+    }
+
+    /// <summary>The id of the input on this channel of the simulated board.</summary>
+    public int InputId(int channel)
+    {
+        return RelayLayouts.InputId(Layout, channel, Simulator.Model.Capabilities.InputCount);
+    }
+
+    public static async Task<BoardTestRig> StartAsync(Func<Vm201Simulator, Task>? prepare = null, ILoggerProvider? logs = null, RelayLayout layout = RelayLayout.Same)
     {
         var simulator = new Vm201Simulator();
         simulator.Start();
@@ -78,8 +94,9 @@ internal sealed class BoardTestRig : IAsyncDisposable
                 ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Vm201:DisableBoardTimers"] = "false",
             });
-        var rig = new BoardTestRig(simulator, database, time);
+        var rig = new BoardTestRig(simulator, database, time, layout);
         await database.Services.InitializeDatabaseAsync(TestContext.Current.CancellationToken);
+        await RelayLayouts.SeedAsync(database.Services, layout, simulator.Model.Capabilities.RelayCount, simulator.Model.Capabilities.InputCount);
         await database.Services.UseBoardAsync("vm201");
 
         // The recorder first, so it sees the first status.
