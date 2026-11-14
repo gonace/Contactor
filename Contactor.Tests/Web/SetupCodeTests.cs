@@ -291,7 +291,7 @@ public sealed partial class SetupCodeTests
 
         // Nothing to forget: the app isn't told again.
         var again = Reset(args, app.Url);
-        Assert.Equal(0, again.ExitCode);
+        Assert.Equal((0, ""), (again.ExitCode, again.Error));
         Assert.StartsWith("No sign-in is chosen", again.Output, StringComparison.Ordinal);
         Assert.Equal(1, app.Requests);
     }
@@ -319,7 +319,7 @@ public sealed partial class SetupCodeTests
         listener.Stop();
 
         var result = Reset([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], new Uri($"http://127.0.0.1:{port}/setup/reload"));
-        Assert.Equal(0, result.ExitCode);
+        Assert.Equal((0, ""), (result.ExitCode, result.Error));
         Assert.Contains("The app isn't running", result.Output, StringComparison.Ordinal);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Null((await db.Installations.SingleAsync(Cancel)).SignInType);
