@@ -232,14 +232,29 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
         return _boards.RunAsync(stoppingToken);
     }
 
-    // One board's loop: a check every 15 s, so a board that is slow or failing holds up only its own.
-    private async Task RunAsync(LiveBoard board, CancellationToken stoppingToken)
+    // One board's loop: a check every 15 s, so a board that is slow or failing holds up only its own. Each check runs
+    // under the part's gate, so the part's end waits for it.
+    private async Task RunAsync(BoardAutoOff part, CancellationToken stoppingToken)
     {
+        var board = part.Board;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await CheckAsync(board, stoppingToken);
+                await part.Gate.WaitAsync(stoppingToken);
+                try
+                {
+                    if (part.Ended)
+                    {
+                        return;
+                    }
+
+                    await CheckAsync(board, stoppingToken);
+                }
+                finally
+                {
+                    part.Gate.Release();
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -264,12 +279,14 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
     }
 
     // A board's part of auto-off: its loop, ended with its board's watch. It listens to nothing: it reads the board's
-    // state at each check.
+    // state at each check. A check under way finishes before the watch ends, so nothing is sent to a board being
+    // disposed.
     private sealed class BoardAutoOff : IBoardPart, IAsyncDisposable
     {
         private readonly AutoOffService _service;
         private readonly LiveBoard _board;
         private readonly CancellationTokenSource _ended = new();
+        private int _disposed;
 
         public BoardAutoOff(AutoOffService service, LiveBoard board)
         {
@@ -281,15 +298,26 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
 
         public LiveBoard Board => _board;
 
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+
+        public bool Ended => Volatile.Read(ref _disposed) == 1;
+
         public async Task RunAsync(CancellationToken cancellationToken)
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _ended.Token);
-            await _service.RunAsync(_board, linked.Token);
+            await _service.RunAsync(this, linked.Token);
         }
 
         public async ValueTask DisposeAsync()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
+
             _service._boards.Remove(this);
+            await Gate.WaitAsync(CancellationToken.None);
+            Gate.Release();
             await _ended.CancelAsync();
         }
     }

@@ -196,6 +196,17 @@ internal sealed class BoardTestRig : IAsyncDisposable
         return [.. db.EventLog.OrderBy(e => e.Id)];
     }
 
+    /// <summary>
+    /// The next item the reader gets, e.g. an input's change handed on once it is logged; fails when none comes in
+    /// time.
+    /// </summary>
+    public static async Task<T> NextAsync<T>(System.Threading.Channels.ChannelReader<T> reader)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(WaitTimeout);
+        return await reader.ReadAsync(timeout.Token);
+    }
+
     public static async Task WaitUntilAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + WaitTimeout;

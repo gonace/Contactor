@@ -523,9 +523,8 @@ public sealed partial class RelayChannelTests
         try
         {
             board.SetInput(2, on: true);
-            await BoardTestRig.WaitUntilAsync(() => Events(database).Any(e => e.Action == EventActions.InputChanged));
-
-            Assert.True(feed.Reader.TryRead(out var change));
+            // Handed on once it is logged.
+            var change = await BoardTestRig.NextAsync(feed.Reader);
             Assert.Equal(new InputChanged(input, Closed: true), change);
             await hosted.OfType<InputActionService>().Single().RunAsync(change, Cancel);
 

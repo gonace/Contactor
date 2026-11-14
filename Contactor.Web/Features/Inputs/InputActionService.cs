@@ -36,40 +36,80 @@ public sealed class InputChangeFeed
 /// contact that closes and opens quickly still turns it back. A group decides itself whether there is anything to
 /// stop; one that is fully on and not mid-sequence isn't started again. An input only acts on the relays and groups
 /// of its own board (across boards is issue #204): one on another board is skipped. Without the board nothing is sent
-/// or queued for later; a relay that has joined a group is skipped.
+/// or queued for later; a relay that has joined a group is skipped. Each board has its own queue and loop
+/// (<see cref="IBoardWatcher"/>): a board whose command doesn't finish holds up only its own inputs' actions.
 /// </summary>
-public sealed partial class InputActionService : BackgroundService
+public sealed partial class InputActionService : BackgroundService, IBoardWatcher
 {
     private readonly InputChangeFeed _queue;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly BoardRegistry _registry;
-    private readonly RelayControl _relays;
+    private readonly IServiceProvider _services;
     private readonly GroupSequencer _groups;
     private readonly ILogger<InputActionService> _logger;
+    private readonly BoardParts<BoardInputActions> _boards;
+    private RelayControl? _relays;
 
+    // RelayControl is reached through the services when first needed: it needs the board registry, which needs every
+    // board watcher, this one among them.
     public InputActionService(
         InputChangeFeed queue,
         IDbContextFactory<ContactorDbContext> dbFactory,
-        BoardRegistry registry,
-        RelayControl relays,
+        IServiceProvider services,
         GroupSequencer groups,
         ILogger<InputActionService> logger)
     {
         _queue = queue;
         _dbFactory = dbFactory;
-        _registry = registry;
-        _relays = relays;
+        _services = services;
         _groups = groups;
         _logger = logger;
+        _boards = new BoardParts<BoardInputActions>(logger);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    private RelayControl Relays => _relays ??= _services.GetRequiredService<RelayControl>();
+
+    /// <inheritdoc/>
+    public IAsyncDisposable Watch(LiveBoard board)
+    {
+        ArgumentNullException.ThrowIfNull(board);
+        var part = new BoardInputActions(this, board);
+        _boards.Add(part);
+        return part;
+    }
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        return Task.WhenAll(DispatchAsync(stoppingToken), _boards.RunAsync(stoppingToken));
+    }
+
+    // Hands each change to its input's own board's queue: quick, and never waits for a board.
+    private async Task DispatchAsync(CancellationToken stoppingToken)
     {
         try
         {
             await foreach (var change in _queue.Reader.ReadAllAsync(stoppingToken))
             {
-                await RunAsync(change, stoppingToken);
+                int? boardId;
+                try
+                {
+                    await using var db = await _dbFactory.CreateDbContextAsync(stoppingToken);
+                    boardId = await db.Inputs.Where(i => i.Id == change.InputId).Select(i => (int?)i.BoardId).SingleOrDefaultAsync(stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    LogFailed(ex, change.InputId);
+                    continue;
+                }
+
+                if (boardId is { } id && _boards.Find(id) is { } part)
+                {
+                    part.Enqueue(change);
+                }
+                else if (boardId is not null)
+                {
+                    // Its board isn't run: nothing to act on, and nothing queued.
+                    LogNoBoard(change.InputId);
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -95,7 +135,7 @@ public sealed partial class InputActionService : BackgroundService
                 return;
             }
 
-            board = _registry.Find(boardId);
+            board = _boards.Find(boardId)?.Board;
 
             // Only what is on the input's own board: a relay on another board isn't in its channels, and a group on
             // another board isn't among its groups.
@@ -192,11 +232,11 @@ public sealed partial class InputActionService : BackgroundService
         {
             if (on)
             {
-                await _relays.TurnOnAsync(relayId, actor, cancellationToken);
+                await Relays.TurnOnAsync(relayId, actor, cancellationToken);
             }
             else
             {
-                await _relays.TurnOffAsync(relayId, actor, cancellationToken);
+                await Relays.TurnOffAsync(relayId, actor, cancellationToken);
             }
         }
     }
@@ -213,6 +253,76 @@ public sealed partial class InputActionService : BackgroundService
     {
         return groupRelays.All(board.State.Relays.Contains)
             && (runtime is null || (runtime.Phase == GroupPhases.Idle && runtime.PendingPosition is null));
+    }
+
+    // One board's inputs' actions: its own queue and loop, ended with its board's watch. An action under way finishes
+    // before the watch ends, so nothing is sent to a board being disposed; what is still queued then is dropped.
+    private sealed class BoardInputActions : IBoardPart, IAsyncDisposable
+    {
+        private readonly InputActionService _service;
+        private readonly Channel<InputChanged> _changes = Channel.CreateUnbounded<InputChanged>(new UnboundedChannelOptions { SingleReader = true });
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        private readonly CancellationTokenSource _ended = new();
+        private int _disposed;
+
+        public BoardInputActions(InputActionService service, LiveBoard board)
+        {
+            _service = service;
+            Board = board;
+        }
+
+        public LiveBoard Board { get; }
+
+        public int BoardId => Board.BoardId;
+
+        public void Enqueue(InputChanged change)
+        {
+            _changes.Writer.TryWrite(change);
+        }
+
+        public async Task RunAsync(CancellationToken cancellationToken)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _ended.Token);
+            var token = linked.Token;
+            try
+            {
+                await foreach (var change in _changes.Reader.ReadAllAsync(token))
+                {
+                    await _gate.WaitAsync(token);
+                    try
+                    {
+                        if (Volatile.Read(ref _disposed) == 1)
+                        {
+                            return;
+                        }
+
+                        await _service.RunAsync(change, token);
+                    }
+                    finally
+                    {
+                        _gate.Release();
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Stopping, or the board's watch ended.
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
+
+            _service._boards.Remove(this);
+            _changes.Writer.TryComplete();
+            await _gate.WaitAsync(CancellationToken.None);
+            _gate.Release();
+            await _ended.CancelAsync();
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Input {InputId} changed, but the board isn't connected: its actions were not carried out")]

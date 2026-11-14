@@ -293,9 +293,10 @@ public sealed class InputActionsTests
             Assert.False(rig.Feed.Reader.TryRead(out _));
 
             rig.Board.SetInput(1, on: false);
-            await BoardTestRig.WaitUntilAsync(() => rig.InputEvents() == 3);
 
-            Assert.True(rig.Feed.Reader.TryRead(out var change));
+            // Handed on once it is logged.
+            var change = await BoardTestRig.NextAsync(rig.Feed.Reader);
+            Assert.Equal(3, rig.InputEvents());
             Assert.Equal(new InputChanged(1, Closed: false), change);
         }
         finally

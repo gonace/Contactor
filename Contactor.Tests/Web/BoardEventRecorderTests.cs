@@ -401,11 +401,7 @@ public sealed class BoardEventRecorderTests
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
         Assert.Equal(["""{"on":true}""", """{"on":false}"""], InputEvents(setup.Database).Select(e => e.Details));
         var feed = setup.Database.Services.GetRequiredService<InputChangeFeed>().Reader;
-        List<InputChanged> handedOn = [];
-        while (feed.TryRead(out var change))
-        {
-            handedOn.Add(change);
-        }
+        List<InputChanged> handedOn = [await BoardTestRig.NextAsync(feed), await BoardTestRig.NextAsync(feed)];
 
         Assert.Equal([new InputChanged(1, true), new InputChanged(1, false)], handedOn);
     }

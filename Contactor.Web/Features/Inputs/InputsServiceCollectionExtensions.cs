@@ -1,3 +1,5 @@
+using Contactor.Web.Features.Boards;
+
 namespace Contactor.Web.Features.Inputs;
 
 public static class InputsServiceCollectionExtensions
@@ -9,7 +11,9 @@ public static class InputsServiceCollectionExtensions
         services.AddSingleton<InputsHandler>();
         services.AddSingleton<InputActionsHandler>();
         services.AddSingleton<InputChangeFeed>();
-        services.AddHostedService<InputActionService>();
+        services.AddSingleton<InputActionService>();
+        services.AddSingleton<IBoardWatcher>(sp => sp.GetRequiredService<InputActionService>());
+        services.AddHostedService(sp => sp.GetRequiredService<InputActionService>());
         return services;
     }
 }

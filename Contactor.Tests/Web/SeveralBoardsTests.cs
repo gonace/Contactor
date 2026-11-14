@@ -113,8 +113,9 @@ public sealed class SeveralBoardsTests
     }
 
     // The interlock is checked first on every status: each board's sequencer listens before anything else does, so it
-    // is subscribed first on every board, before its event recorder and its scheduler. Auto-off watches each board too,
-    // but listens to no status: it reads the board's state at each check.
+    // is subscribed first on every board, before its event recorder and its scheduler. Auto-off and the input actions
+    // watch each board too, but listen to no status: auto-off reads the board's state at each check, and the input
+    // actions get their changes from the recorder.
     [Fact]
     public async Task Should_WatchEachBoard_WithItsGroupsFirst()
     {
@@ -122,48 +123,128 @@ public sealed class SeveralBoardsTests
 
         var watchers = app.Services.GetServices<IBoardWatcher>().Select(w => w.GetType()).ToList();
 
-        Assert.Equal([typeof(AutoOffService), typeof(GroupSequencer), typeof(BoardEventRecorder), typeof(SchedulerService)], watchers);
+        Assert.Equal([typeof(AutoOffService), typeof(GroupSequencer), typeof(BoardEventRecorder), typeof(InputActionService), typeof(SchedulerService)], watchers);
     }
 
-    // The boards' connections start once every service that watches them has started: the first changes after start
-    // are seen as they happen. The input's action runs, and the relay switched at the board is logged as external.
+    // The boards' connections start only once every hosted service has started. An input that closes while the app is
+    // still starting (here: while the last service is starting) happened before the app watched: the board's first
+    // answer shows it closed, so it is logged as noticed and its action doesn't run. Were the board to connect before,
+    // the close would be seen as a change and its action run late, once the app runs. The first change after start is
+    // seen as it happens, and its action runs.
     [Fact]
-    public async Task Should_RecordTheFirstChangesAfterStart_AsSeenLive()
+    public async Task Should_ConnectTheBoards_OnlyOnceTheAppHasStarted()
     {
         await using var simulator = new Contactor.Boards.Vm201.Vm201Simulator();
         simulator.Start();
-        await using var app = new TestWebApp(settings: new Dictionary<string, string?> { ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        HeldStart? held = null;
+        await using var app = new TestWebApp(
+            settings: new Dictionary<string, string?> { ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+            configureServices: services => services.AddHostedService(sp => held = new HeldStart(sp, simulator)),
+            setUp: false);
+        app.SaveBeforeStart(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = "local", SignInType = "none" }, boardType: "vm201");
         var registry = app.Services.GetRequiredService<BoardRegistry>();
         var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
-        int relay3;
-        int relay4;
-        await using (var db = await factory.CreateDbContextAsync(Cancel))
+        Assert.NotNull(held);
+        Assert.True(held.Ran);
+
+        await BoardTestRig.WaitUntilAsync(() => InputChanges(factory).Count == 2);
+        Assert.Equal("""{"on":true,"noticed":true}""", InputChanges(factory)[1]);
+
+        // Live: the input opens, and its action turns relay 5 on. Relay 4, the close's, never came on.
+        await simulator.SetInputAsync(false);
+        await BoardTestRig.WaitUntilAsync(() => (simulator.Outputs & 0b10000) != 0);
+        Assert.Equal(0b10000, simulator.Outputs);
+        Assert.Equal(["""{"on":false}""", """{"on":true,"noticed":true}""", """{"on":false}"""], InputChanges(factory));
+        Assert.True(registry.All[0].State.IsConnected);
+    }
+
+    private static List<string?> InputChanges(IDbContextFactory<ContactorDbContext> factory)
+    {
+        using var db = factory.CreateDbContext();
+        return [.. db.EventLog.Where(e => e.Action == EventActions.InputChanged).OrderBy(e => e.Id).Select(e => e.Details)];
+    }
+
+    // The last service to start: gives input 1 its actions (closed: relay 4 on; opened: relay 5 on) and logs it open,
+    // as the app last saw it, then closes the
+    // input at the board while the app is still starting. Were the board connected by then, it waits for the board to
+    // report the close, so the app would have seen it happen.
+    private sealed class HeldStart : IHostedService
+    {
+        private readonly IServiceProvider _services;
+        private readonly Contactor.Boards.Vm201.Vm201Simulator _simulator;
+
+        public HeldStart(IServiceProvider services, Contactor.Boards.Vm201.Vm201Simulator simulator)
         {
-            relay3 = await db.Relays.Where(r => r.Channel == 3).Select(r => r.Id).SingleAsync(Cancel);
-            relay4 = await db.Relays.Where(r => r.Channel == 4).Select(r => r.Id).SingleAsync(Cancel);
+            _services = services;
+            _simulator = simulator;
         }
 
-        Assert.Null(await app.Services.GetRequiredService<InputActionsHandler>().SaveAsync(
-            1,
-            [new InputActionRow(new InputActionTarget(relay4, 4, null, "Relay 4"), true, null)],
-            Cancel));
-        await BoardTestRig.WaitUntilAsync(() => registry.All is [{ State.IsConnected: true }]);
+        public bool Ran { get; private set; }
 
-        await simulator.SwitchRelayAsync(3, turnOn: true);
-        await simulator.SetInputAsync(true);
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            var board = _services.GetRequiredService<BoardRegistry>().All[0];
+            await using (var db = await _services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(cancellationToken))
+            {
+                var input = await db.Inputs.SingleAsync(i => i.Channel == 1, cancellationToken);
+                var relay4 = await db.Relays.SingleAsync(r => r.Channel == 4, cancellationToken);
+                var relay5 = await db.Relays.SingleAsync(r => r.Channel == 5, cancellationToken);
+                db.InputActions.Add(new InputAction { InputId = input.Id, RelayId = relay4.Id, WhenClosed = true });
+                db.InputActions.Add(new InputAction { InputId = input.Id, RelayId = relay5.Id, WhenOpened = true });
 
-        await BoardTestRig.WaitUntilAsync(() => simulator.Outputs == 0b1100);
-        await BoardTestRig.WaitUntilAsync(() =>
-        {
-            using var db = factory.CreateDbContext();
-            return db.EventLog.Any(e => e.RelayId == relay4 && e.Actor == EventActors.ForInput(1) && e.Action == EventActions.On);
-        });
-        await using (var db = await factory.CreateDbContextAsync(Cancel))
-        {
-            var events = await db.EventLog.AsNoTracking().OrderBy(e => e.Id).ToListAsync(Cancel);
-            Assert.Contains(events, e => e.RelayId == relay3 && e.Actor == EventActors.External && e.Action == EventActions.On);
-            Assert.Contains(events, e => e.InputId == 1 && e.Action == EventActions.InputChanged && e.Details == """{"on":true}""");
+                // As the app last saw it: open.
+                db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow.AddHours(-1), InputId = input.Id, Actor = EventActors.External, Action = EventActions.InputChanged, Details = """{"on":false}""" });
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            // A board connected this early answers within a moment; one that waits for the app never does.
+            await WaitAsync(() => board.State.IsConnected, cancellationToken);
+            await _simulator.SetInputAsync(true);
+            if (board.State.IsConnected)
+            {
+                await WaitAsync(() => board.State.Inputs.Contains(1), cancellationToken);
+            }
+
+            Ran = true;
         }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        private static async Task WaitAsync(Func<bool> condition, CancellationToken cancellationToken)
+        {
+            for (var i = 0; i < 100 && !condition(); i++)
+            {
+                await Task.Delay(20, cancellationToken);
+            }
+        }
+    }
+
+    // Each board's inputs' actions run on their own queue: a command board B doesn't finish holds up only B's.
+    [Fact]
+    public async Task Should_RunEachBoardsInputActions_WhileAnotherBoardIsSlow()
+    {
+        await using var boards = await StuckBoardsAsync();
+        var handler = boards.Database.Services.GetRequiredService<InputActionsHandler>();
+        int InputOf(bool onB)
+        {
+            using var db = boards.Database.Factory.CreateDbContext();
+            return db.Inputs.Single(i => (i.BoardId == boards.BoardB) == onB && i.Channel == 1).Id;
+        }
+
+        Assert.Null(await handler.SaveAsync(InputOf(onB: true), [new InputActionRow(new InputActionTarget(boards.RelayOfB(2), 2, null, "Relay 2"), true, null)], Cancel));
+        Assert.Null(await handler.SaveAsync(InputOf(onB: false), [new InputActionRow(new InputActionTarget(boards.RelayOfA(3), 3, null, "Relay 3"), true, null)], Cancel));
+        await boards.StartAsync<InputActionService>();
+        var feed = boards.Database.Services.GetRequiredService<InputChangeFeed>();
+
+        // B's input: its relay switches and B never finishes the command.
+        feed.Enqueue(InputOf(onB: true), closed: true);
+        await BoardTestRig.WaitUntilAsync(() => boards.B.State.IsOn(2));
+
+        feed.Enqueue(InputOf(onB: false), closed: true);
+        await BoardTestRig.WaitUntilAsync(() => boards.A.State.IsOn(3));
     }
 
     // Each board's schedules run on their own loop: a command board B doesn't finish holds up only B's minutes. Board
@@ -511,6 +592,7 @@ public sealed class SeveralBoardsTests
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddEvents(configuration);
+            services.AddInputs(configuration);
             services.AddSchedules(configuration);
         });
         var boards = new StuckBoards(database, time);
