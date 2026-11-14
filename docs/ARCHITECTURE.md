@@ -61,7 +61,8 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, a `<Model>Boards.Create` in `Features/<Model>` that builds it with what only it has, one line in the catalogue, and a `README.md` that describes the board. Nothing else in the app changes.
 - `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. A simulator with a pulse carries it out on its own `TimeProvider` (`SimulatedPulses`): the relay goes back with no further command from the app, a later pulse of the relay starts it again, and switching the relay ends it. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`, `WaveshareSimulator`, `DevantechSimulator`).
 - What only one board has stays in its own project and its `Features/<Board>` folder, and runs only while that board is the chosen one (`ActiveBoard.Extras`, started before its connection and stopped with it): today the VM201's own timers (`Vm201TimersService`) and the Waveshare (B) and (C) relay modes (`Features/Waveshare/WaveshareRelayModesService`).
-- The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start and when a board is chosen. Rows above the count, left from a board that had more, are kept but not shown, offered or switched.
+- The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start and when a board is chosen, each found by its channel. Rows whose channel is above the count, left from a board that had more, are kept but not shown, offered or switched.
+- **A relay's id is not its channel.** `Id` is only the database's key (links, events, runs, schedules, groups); `Channel` is where it is on the board. Every command, every look at `BoardState` and `ExpectedChanges`, and every number on a screen goes by the channel: from the row where it is already loaded (a group's members come with their relays), or through `BoardChannels` (`Features/Boards`), which reads relay id ↔ channel and input id ↔ channel for the board from the database where it is needed, so it never goes stale.
 
 ## The simulator (`Contactor.Simulator`)
 
@@ -107,10 +108,13 @@ BoardRuntime            (internal, one row per board)
                                  {"noticed":true} and its time is unknown.
 
 Relay
-  Id              int PK         the relay's own number, in links (relay/3) and events; for now the same as its
-                                 Channel (1 to 64). Seeded at start, never deleted
+  Id              int PK         the database's key, in links (relay/12) and events; given by the database, not its
+                                 channel (rows from before RelayIdApartFromChannel keep Id = Channel). Seeded at
+                                 start, never deleted
   BoardId         int FK         the board it is on
-  Channel         int            1 to the board's relay count (at most 64); UNIQUE with BoardId
+  Channel         int            1 to the board's relay count (at most 64); UNIQUE with BoardId. Everything that talks
+                                 to the board or reads its state goes by it, and the screens show it ("RELAY 3",
+                                 "Relay 3" as the name it is seeded with)
   Name            text           e.g. "Fan heater – Lathe" (max 40 characters)
   IsActive        bool           false = hidden from the list by default
   MaxOnMinutes    int?           auto-off after a manual on, or after it came on outside the app; null = never. Default 120.
@@ -219,9 +223,10 @@ TailscaleSetting        (one row; Tailscale's settings saved in the setup guide)
   HostName        text           the app's name on the Tailscale network, "contactor" to begin with: one DNS label
 
 Input                   (one per digital input on the board, seeded at start like relays, never deleted)
-  Id              int PK         the input's own number, in links and events; for now the same as its Channel
+  Id              int PK         the database's key, in links and events; given by the database, not its channel
   BoardId         int FK         the board it is on
-  Channel         int            1 to the board's input count (at most 64); UNIQUE with BoardId
+  Channel         int            1 to the board's input count (at most 64); UNIQUE with BoardId. The board's state
+                                 goes by it, and the screens show it ("INPUT 2")
   Name            text           e.g. "Door" (max 40); "Input n" to begin with. Its state is always "Closed"
                                  (the board reads it as on) or "Open": an input is an electrical contact
   IsActive        bool           false = hidden from the list by default
