@@ -1,4 +1,5 @@
 @page "/group/new"
+@using System.Globalization
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
@@ -255,10 +256,10 @@
     private string? BoardLabel => Several && _wizard.BoardId is { } id && Registry.Find(id) is { } board ? board.Name.ToUpperInvariant() : null;
     private IReadOnlyList<GroupCandidate> _candidates = [];
 
-    // A relay's channel on the board, the number shown; the wizard only offers the candidates.
-    private int ChannelOf(int relayId)
+    // A relay's channel on the board, the number shown; the wizard only offers the candidates, so "?" never shows.
+    private string ChannelOf(int relayId)
     {
-        return _candidates.FirstOrDefault(c => c.RelayId == relayId)?.Channel ?? 0;
+        return _candidates.FirstOrDefault(c => c.RelayId == relayId)?.Channel.ToString(CultureInfo.InvariantCulture) ?? "?";
     }
     private ElementReference _heading;
     private SignedInUser? _user;

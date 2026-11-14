@@ -116,15 +116,16 @@ public sealed class EventTextTests
         Assert.Equal(("Door:", "Open", unknown), (view.Who, view.What, view.TimeUnknown));
     }
 
-    // An input no longer on the board has no name to show.
+    // An input no longer on the board has no name to show, and its id is not the number the screens show.
     [Fact]
-    public void Should_NameAnInputByItsNumber_WithoutItsName()
+    public void Should_NameAnInputPlainly_WithoutItsName()
     {
         var entry = Entry(EventActors.External, EventActions.InputChanged, """{"on":true}""", relayId: null);
+        entry.InputId = 201;
 
-        Assert.Equal(new EventView(false, "I", "Input 1:", "Closed", null), EventText.For(entry, relayName: null, personName: null));
-        entry.InputId = 3;
-        Assert.Equal("Input 3:", EventText.For(entry, relayName: null, personName: null).Who);
+        Assert.Equal(new EventView(false, "I", "An input:", "Closed", null), EventText.For(entry, relayName: null, personName: null));
+        var on = Entry(EventActors.ForInput(201), EventActions.On, details: null, relayId: 4);
+        Assert.Equal(("An input", "An input"), (EventText.For(on, "Lighting", personName: null).Who, EventText.ShortWho(on.Actor, personName: null)));
     }
 
     [Theory]
