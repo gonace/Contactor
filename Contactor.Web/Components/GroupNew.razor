@@ -1,9 +1,11 @@
 @page "/group/new"
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Persistence
 @inject GroupsHandler Groups
+@inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject ILogger<GroupNew> Log
@@ -58,37 +60,50 @@
         {
             <div class="options">
                 <p class="count" role="status">@SelectedText</p>
-                @foreach (var relay in _candidates)
+                @if (Several)
                 {
-                    var order = _wizard.OrderOf(relay.RelayId);
-                    <button type="button"
-                            role="checkbox"
-                            class="option"
-                            aria-checked="@(order > 0 ? "true" : "false")"
-                            disabled="@(!relay.IsFree || (order == 0 && !_wizard.FitsBoard(relay.BoardId)))"
-                            @onclick="() => Pick(relay)">
-                        <span class="box" aria-hidden="true">
-                            @if (order > 0)
-                            {
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"></path></svg>
-                            }
-                        </span>
-                        <span class="option-text">
-                            <span class="label">RELAY @relay.Channel</span>
-                            <span class="name">@relay.Name</span>
-                            <span class="note">@relay.Note</span>
-                        </span>
-                        @if (order > 0)
+                    @* With two or more boards: a section per board, in the boards' order, under its name. A group's relays
+                       are all on one board, so once one is picked the other boards' relays wait. *@
+                    @foreach (var board in Registry.All)
+                    {
+                        var relays = _candidates.Where(c => c.BoardId == board.BoardId).ToList();
+                        if (relays.Count == 0)
                         {
-                            <span class="order-number">#@order</span>
+                            continue;
                         }
-                    </button>
+
+                        <section class="board-options" aria-labelledby="@($"board-{board.BoardId}")" @key="board.BoardId">
+                            <div class="board-head">
+                                <h2 class="board-name" id="@($"board-{board.BoardId}")">@board.Name</h2>
+                                <span class="model">@(board.Model?.Name ?? "")</span>
+                            </div>
+                            @if (!_wizard.FitsBoard(board.BoardId))
+                            {
+                                <p class="other-board">@GroupsHandler.OneBoardText</p>
+                            }
+                            @foreach (var relay in relays)
+                            {
+                                @Option(relay)
+                            }
+                        </section>
+                    }
+                }
+                else
+                {
+                    @foreach (var relay in _candidates)
+                    {
+                        @Option(relay)
+                    }
                 }
             </div>
         }
         else if (_wizard.Step == 3)
         {
             var members = _wizard.Members;
+            @if (BoardLabel is { } onBoard)
+            {
+                <p class="on-board label">ON @onBoard</p>
+            }
             <ol class="steps">
                 @for (var i = 0; i < members.Count; i++)
                 {
@@ -147,7 +162,7 @@
             <div class="preview">
                 <span class="icon" aria-hidden="true"><GroupIcon Icon="@draft.Icon" /></span>
                 <span class="preview-text">
-                    <span class="label">GROUP · RELAY @string.Join(" → ", draft.Members.Select(m => ChannelOf(m.RelayId)))</span>
+                    <span class="label">GROUP · @(BoardLabel ?? "RELAY") @string.Join(" → ", draft.Members.Select(m => ChannelOf(m.RelayId)))</span>
                     <span class="name">@draft.Name.Trim()</span>
                     <span class="note">Off</span>
                 </span>
@@ -203,6 +218,41 @@
     ];
 
     private readonly GroupWizard _wizard = new();
+
+    // A relay to pick on "Which relays?".
+    private RenderFragment Option(GroupCandidate relay) => __builder =>
+    {
+        var order = _wizard.OrderOf(relay.RelayId);
+        <button type="button"
+                id="@($"pick-{relay.RelayId}")"
+                role="checkbox"
+                class="option"
+                aria-checked="@(order > 0 ? "true" : "false")"
+                disabled="@(!relay.IsFree || (order == 0 && !_wizard.FitsBoard(relay.BoardId)))"
+                @onclick="() => Pick(relay)">
+            <span class="box" aria-hidden="true">
+                @if (order > 0)
+                {
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"></path></svg>
+                }
+            </span>
+            <span class="option-text">
+                <span class="label">RELAY @relay.Channel</span>
+                <span class="name">@relay.Name</span>
+                <span class="note">@relay.Note</span>
+            </span>
+            @if (order > 0)
+            {
+                <span class="order-number">#@order</span>
+            }
+        </button>
+    };
+
+    // Two or more boards: "Which relays?" is grouped by board, and the group's board is named.
+    private bool Several => Registry.All.Count > 1;
+
+    // The picked relays' board, in capitals, for "GROUP · WORKSHOP 1 → 2"; null with one board.
+    private string? BoardLabel => Several && _wizard.BoardId is { } id && Registry.Find(id) is { } board ? board.Name.ToUpperInvariant() : null;
     private IReadOnlyList<GroupCandidate> _candidates = [];
 
     // A relay's channel on the board, the number shown; the wizard only offers the candidates.

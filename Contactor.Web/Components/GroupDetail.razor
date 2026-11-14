@@ -83,7 +83,7 @@
                 <section class="members">
                     <div class="section-text">
                         <h2>Relays in start order</h2>
-                        <p class="hint">Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</p>
+                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? $"On {board.Name}. " : "")Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</p>
                     </div>
                     <ol class="steps">
                         @for (var i = 0; i < _members.Count; i++)

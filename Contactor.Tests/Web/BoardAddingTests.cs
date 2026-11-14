@@ -366,6 +366,93 @@ public sealed class BoardAddingTests
         Assert.False(await db.Relays.AnyAsync(r => r.BoardId == made.BoardId, Cancel));
     }
 
+    // New group's "Which relays?" with two boards: a section per board under its name; once a relay is picked, the
+    // other board's relays wait, with a line saying why; unpicking it frees them again. The order step and the review
+    // name the board.
+    [Fact]
+    public async Task Should_GroupWhichRelays_ByBoard_WithTwoBoards()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var firstName = boards.App.Services.GetRequiredService<BoardRegistry>().Find(1)!.Name;
+        using var page = await PageRenderer.StartAsync<GroupNew>(boards.App.Services, John, "John");
+        await page.TypeAsync(PageRenderer.With("id", "name"), "Fan heater");
+        await page.ClickAsync(Button("Next"));
+
+        Assert.True(await page.HasAsync(attributes => attributes.GetValueOrDefault("class")?.ToString() == "board-name" && PageRenderer.WithText(firstName)(attributes)));
+        Assert.True(await page.HasAsync(attributes => attributes.GetValueOrDefault("class")?.ToString() == "board-name" && PageRenderer.WithText("Barn")(attributes)));
+        Assert.DoesNotContain(GroupsHandler.OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
+        var barnLight = Pick(await RelayIdAsync(boards, boards.BarnId, 1));
+        var barnRelay2 = Pick(await RelayIdAsync(boards, boards.BarnId, 2));
+        var firstRelay = Pick(await RelayIdAsync(boards, 1, 1));
+        Assert.False(await DisabledAsync(page, firstRelay));
+
+        await page.ClickAsync(barnLight);
+        Assert.Contains(GroupsHandler.OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await DisabledAsync(page, firstRelay));
+        Assert.False(await DisabledAsync(page, barnRelay2));
+
+        await page.ClickAsync(barnLight);
+        Assert.DoesNotContain(GroupsHandler.OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await DisabledAsync(page, firstRelay));
+
+        await page.ClickAsync(barnLight);
+        await page.ClickAsync(barnRelay2);
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("ON BARN", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("GROUP · BARN 1 → 2", await page.TextAsync(), StringComparison.Ordinal);
+    }
+
+    // With one board "Which relays?" is as before: one list, no board's name.
+    [Fact]
+    public async Task Should_KeepWhichRelays_AsItWas_WithOneBoard()
+    {
+        await using var app = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
+        using var http = app.CreateClient();
+        await http.GetAsync("/", Cancel);
+        using var page = await PageRenderer.StartAsync<GroupNew>(app.Services, John, "John");
+        await page.TypeAsync(PageRenderer.With("id", "name"), "Fan heater");
+        await page.ClickAsync(Button("Next"));
+
+        Assert.False(await page.HasAsync(PageRenderer.With("class", "board-name")));
+        await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
+        var relays = await db.Relays.OrderBy(r => r.Channel).Select(r => r.Id).Take(2).ToListAsync(Cancel);
+        await page.ClickAsync(Pick(relays[0]));
+        await page.ClickAsync(Pick(relays[1]));
+        await page.ClickAsync(Button("Next"));
+        Assert.DoesNotContain("on-board", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.With("class", "on-board label")));
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("GROUP · RELAY 1 → 2", await page.TextAsync(), StringComparison.Ordinal);
+    }
+
+    // With two boards the desktop's side menu lists them on every page: on a page without the filter (Settings, a
+    // relay's page) each board posts the Relays screen's own form with that board alone, which goes to Relays showing
+    // it; "+ Add a board" ends the list. Relays keeps its filter, and one board has no list.
+    [Fact]
+    public async Task Should_ListTheBoards_InTheSideMenu_OnEveryPage()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var http = boards.App.CreateClient();
+        var relayId = await RelayIdAsync(boards, 1, 1);
+        foreach (var path in new[] { "/settings", $"/relay/{relayId}", "/group/new", "/board/new", $"/board/{boards.BarnId}" })
+        {
+            var html = WebUtility.HtmlDecode(await http.GetStringAsync(path, Cancel));
+            Assert.Matches("<form id=\"board-go\" method=\"post\" action=\"relays/boards\"", html);
+            Assert.Matches($"(?s)class=\"side-boards\".*form=\"board-go\" name=\"show\" value=\"{boards.BarnId}\".*href=\"board/new\" class=\"side-add\"", html);
+            Assert.DoesNotContain("aria-pressed", html[html.IndexOf("side-boards", StringComparison.Ordinal)..], StringComparison.Ordinal);
+            Assert.DoesNotContain("class=\"chips-row\"", html, StringComparison.Ordinal);
+        }
+
+        var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+        Assert.DoesNotContain("board-go", relays, StringComparison.Ordinal);
+        Assert.Contains("form=\"board-filter\"", relays, StringComparison.Ordinal);
+
+        await using var one = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
+        using var client = one.CreateClient();
+        Assert.DoesNotContain("side-boards", WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel)), StringComparison.Ordinal);
+    }
+
     // The setup guide's board steps, now shared with "Add a board", still set up the first board as before: its model,
     // install.sh's address for it, its relays' names, and "All set".
     [Fact]
@@ -419,6 +506,17 @@ public sealed class BoardAddingTests
     private static List<Exception> Errors(PageRenderer page)
     {
         return [.. page.Errors.Where(e => !e.ToString().Contains("ElementReference has not been configured correctly", StringComparison.Ordinal))];
+    }
+
+    // A relay to pick on "Which relays?", by its id.
+    private static Func<IReadOnlyDictionary<string, object?>, bool> Pick(int relayId)
+    {
+        return PageRenderer.With("id", $"pick-{relayId}");
+    }
+
+    private static Task<bool> DisabledAsync(PageRenderer page, Func<IReadOnlyDictionary<string, object?>, bool> option)
+    {
+        return page.HasAsync(attributes => option(attributes) && attributes.GetValueOrDefault("disabled") is true);
     }
 
     // A button by its words: only buttons have a type.

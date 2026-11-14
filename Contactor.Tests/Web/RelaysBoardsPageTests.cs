@@ -230,7 +230,8 @@ public sealed partial class RelaysBoardsPageTests
             await PageRenderer.StartAsync<Contactor.Web.Components.InputDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = inputId }),
             await PageRenderer.StartAsync<Contactor.Web.Components.GroupDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await AddFirstBoardGroupAsync(boards) }),
         };
-        Assert.Equal(before + pages.Count, Listeners(registry));
+        // Each page, and its side menu's list of the boards (a page without the filter of its own).
+        Assert.Equal(before + (2 * pages.Count), Listeners(registry));
         var renders = pages.Select(p => p.Renders).ToList();
 
         // A status from Barn first, then from the pages' own board: each page draws once, for its own board only. A

@@ -137,6 +137,51 @@ input[type="text"] {
     gap: 8px;
 }
 
+/* Two or more boards: a section per board under its name, its model muted on the right, a thin line between. */
+.board-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.board-options + .board-options {
+    margin-top: 10px;
+    padding-top: 14px;
+    border-top: 1.5px solid var(--line);
+}
+
+.board-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.board-name {
+    margin: 0;
+    min-width: 0;
+    font-size: 20px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.board-head .model {
+    flex-shrink: 0;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.other-board {
+    margin: 0 0 4px;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.on-board {
+    margin: 0;
+}
+
 .count {
     margin: 0 0 4px;
     font-size: 15px;

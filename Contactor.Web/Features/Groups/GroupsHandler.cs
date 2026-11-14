@@ -44,6 +44,11 @@ public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool 
 /// </summary>
 public sealed class GroupsHandler
 {
+    /// <summary>
+    /// What "Which relays?" says under the other boards once a relay is picked: their relays can't join the group.
+    /// </summary>
+    public const string OneBoardText = "A group's relays are all on one board.";
+
     /// <summary>The run-on times the screens offer, in seconds: none, 1, 3, 5, 10 and 15 min.</summary>
     public static readonly IReadOnlyList<int> RunOnChoices = [0, 60, 180, 300, 600, 900];
 

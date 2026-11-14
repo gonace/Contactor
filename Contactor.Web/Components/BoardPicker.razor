@@ -9,9 +9,15 @@
 @if (Side)
 {
     var all = CountOf(Boards);
+    var form = Go ? GoFormId : FormId;
+    @if (Go)
+    {
+        @* Its own form: no chips on this page. Each board goes to Relays filtered to it. *@
+        <form id="@GoFormId" method="post" action="@BoardFilterScreen.Relays.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
+    }
     <div class="list-label" id="boards-label">BOARDS</div>
     <div class="side-boards" role="group" aria-labelledby="boards-label">
-        <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="side-board all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">
+        <button type="submit" form="@form" name="show" value="@BoardFilter.AllValue" class="side-board all @(!Go && Filter.IsAll ? "picked" : null)" aria-pressed="@(Go ? null : Filter.IsAll ? "true" : "false")">
             <span class="line"><span class="name">All boards</span></span>
             <span class="hint">@(AnyAnswered ? $"{all.On} of {all.Active} on · " : "")@Boards.Count boards</span>
         </button>
@@ -19,8 +25,8 @@
         {
             var state = board.State;
             var count = Counts.Of(board.BoardId, state);
-            var picked = !Filter.IsAll && Filter.Shows(board.BoardId);
-            <button type="submit" form="@FormId" name="show" value="@ToggleValue(board.BoardId)" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(picked ? "true" : "false")" @key="board.BoardId">
+            var picked = !Go && !Filter.IsAll && Filter.Shows(board.BoardId);
+            <button type="submit" form="@form" name="show" value="@(Go ? OnlyValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
                 <span class="line"><span class="name">@board.Name</span><span class="dot @(state.IsConnected ? null : "off")" aria-hidden="true"></span></span>
                 <span class="hint">
                     @(state.HasAnswered ? $"{count.On} of {count.Active} on" : "")
@@ -86,6 +92,16 @@ else
     /// <summary>The form's id, which every board's button posts.</summary>
     public const string FormId = "board-filter";
 
+    /// <summary>The form's id on a page without the filter (<see cref="Go"/>).</summary>
+    public const string GoFormId = "board-go";
+
+    /// <summary>
+    /// The side menu's list on a page without a board filter (Settings, a relay's page …): a tap goes to Relays showing
+    /// that board ("All boards": every board), through the Relays screen's own form. Nothing shows as picked.
+    /// </summary>
+    [Parameter]
+    public bool Go { get; set; }
+
     /// <summary>The screen whose filter this is: where it is posted, and so which cookie keeps it.</summary>
     [Parameter]
     [EditorRequired]
@@ -126,6 +142,12 @@ else
     {
         var counts = boards.Select(b => Counts.Of(b.BoardId, b.State)).ToList();
         return (counts.Sum(c => c.On), counts.Sum(c => c.Active));
+    }
+
+    // What a tap on the board posts on a page without the filter: that board alone.
+    private static string OnlyValue(int boardId)
+    {
+        return boardId.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // What a tap on the board posts: the filter as it would be after it.
