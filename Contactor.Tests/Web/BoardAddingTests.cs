@@ -467,27 +467,35 @@ public sealed class BoardAddingTests
     }
 
     // The side menu's list redraws only for a change it shows: a status from Barn that changes nothing doesn't redraw
-    // a page of the first board's relay (its own board's status draws it once); a relay switched or contact lost does.
+    // a page of the first board's relay (its own board's status, right after, draws it once); a relay switched or
+    // contact lost shows in the list.
     [Fact]
     public async Task Should_RedrawTheSideMenu_OnlyForAChangeItShows()
     {
         await using var boards = await TwoBoards.StartAsync();
         using var page = await PageRenderer.StartAsync<RelayDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await RelayIdAsync(boards, 1, 3) });
-        var renders = page.Renders;
 
-        // In order: Barn's status first, then the first board's. Only the page's own draws.
-        boards.Barn.SetRelay(3, false);
-        boards.First.SetRelay(4, false);
-        await BoardTestRig.WaitUntilAsync(() => page.Renders > renders);
-        Assert.Equal(renders + 1, page.Renders);
+        // In order: Barn's status first, then the first board's. A redraw for Barn would make it two. Something else
+        // the app does meanwhile (an event logged at start) can draw it too, so a few tries; a redraw for Barn would
+        // make every one of them two.
+        var once = false;
+        for (var attempt = 0; attempt < 5 && !once; attempt++)
+        {
+            var renders = page.Renders;
+            boards.Barn.SetRelay(3, false);
+            boards.First.SetRelay(4, false);
+            await BoardTestRig.WaitUntilAsync(() => page.Renders > renders);
+            once = page.Renders == renders + 1;
+        }
 
-        renders = page.Renders;
+        Assert.True(once);
+        Assert.False(await page.HasAsync(PageRenderer.With("class", "lamp on")));
+
         boards.Barn.SetRelay(3, true);
-        await BoardTestRig.WaitUntilAsync(() => page.Renders > renders);
+        await BoardTestRig.WaitUntilAsync(() => page.HasAsync(PageRenderer.With("class", "lamp on")).GetAwaiter().GetResult());
 
-        renders = page.Renders;
         boards.Barn.SetConnected(false);
-        await BoardTestRig.WaitUntilAsync(() => page.Renders > renders);
+        await BoardTestRig.WaitUntilAsync(() => page.HasAsync(attributes => attributes.GetValueOrDefault("class")?.ToString()?.Contains("lost", StringComparison.Ordinal) == true).GetAwaiter().GetResult());
         Assert.Empty(Errors(page));
     }
 
