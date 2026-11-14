@@ -169,9 +169,26 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
             .ToListAsync(cancellationToken);
         foreach (var run in stale.Where(r => channels.RelayChannel(r.RelayId) is { } c && !expected.IsPending(c, on: true) && !board.State.IsOn(c)))
         {
+            // A pulse's run ends here as a rule: the board turned the relay off by itself, as it should.
+            var pulse = IsPulse(run);
             await RelayRuns.EndOutsideAsync(db, run.RelayId, cancellationToken);
-            LogStaleRun(run.RelayId);
+            if (pulse)
+            {
+                LogPulseOver(run.RelayId);
+            }
+            else
+            {
+                LogStaleRun(run.RelayId);
+            }
         }
+    }
+
+    // A pulse's run has its auto-off just after the pulse (RelayControl.PulseAsync), far sooner than any relay's limit.
+    private static bool IsPulse(RelayRuntime run)
+    {
+        return run.OnSinceUtc is { } since
+            && run.AutoOffAtUtc is { } autoOff
+            && autoOff - since <= RelayControl.MaxPulse + RelayControl.PulseBackstop;
     }
 
     // A relay can be on with nobody's run without the app seeing it come on, e.g. after an OFF the board was sent but
@@ -330,4 +347,7 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is off but has a run: ending it")]
     private partial void LogStaleRun(int relayId);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Relay {RelayId}'s pulse is over: its run ends")]
+    private partial void LogPulseOver(int relayId);
 }

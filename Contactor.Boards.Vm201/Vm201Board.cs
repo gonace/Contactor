@@ -43,8 +43,8 @@ public sealed class Vm201Board : IRelayBoard
 
     /// <summary>
     /// Pulses the relays, all at once, as <see cref="TurnOnAsync"/>. Only a length the board can send exactly
-    /// (<see cref="Vm201Pulse.TryEncode"/>): any other gets <see cref="ArgumentOutOfRangeException"/>, even one
-    /// <see cref="PulseAbility.CanDo"/> allows, such as 100 s.
+    /// (<see cref="Vm201Pulse.TryEncode"/>): any other, such as 100 s, gets <see cref="ArgumentOutOfRangeException"/>.
+    /// The board's <see cref="PulseAbility.CanDo"/> says no to those lengths too (<see cref="Vm201Pulse.Ability"/>).
     /// </summary>
     public async Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
     {
