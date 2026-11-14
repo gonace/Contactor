@@ -2,7 +2,6 @@ using System.Net.Sockets;
 using System.Text;
 using Contactor.Boards;
 using Contactor.Boards.Vm204;
-using Contactor.Tests.Vm208;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 

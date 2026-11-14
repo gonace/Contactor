@@ -1,7 +1,6 @@
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
-using Contactor.Tests.Vm208;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 

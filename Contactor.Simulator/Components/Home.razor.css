@@ -160,6 +160,8 @@ h1 {
 .add .row {
     display: flex;
     gap: 8px;
+    /* Not a trace row: no line under it. */
+    border-bottom: 0;
 }
 
 .field {
