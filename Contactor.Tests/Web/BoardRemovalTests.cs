@@ -294,14 +294,17 @@ public sealed class BoardRemovalTests
         var on = boards.App.Services.GetRequiredService<RelayControl>().TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 1), John, Cancel);
         await held.Task;
 
+        var barn = boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId)!;
         var removing = boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
-        await Task.Delay(300, Cancel);
-        Assert.False(removing.IsCompleted);
-        Assert.True(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId)!.IsClosed);
+        await Wait.UntilAsync(() => barn.IsClosed);
 
         hold.SetResult();
         await on;
         Assert.Null(await removing);
+
+        // The held ON reached the board before the removal's first OFF, which then turned it off.
+        var sent = boards.Barn.Sent;
+        Assert.True(sent.ToList().FindIndex(s => s.On && s.Relays.Contains(1)) < sent.ToList().FindIndex(s => !s.On));
         Assert.Equal(ChannelMask.None, boards.Barn.State.Relays);
         Assert.Null(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId));
     }

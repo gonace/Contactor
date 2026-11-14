@@ -310,7 +310,7 @@ public sealed class InputActionsTests
     [Fact]
     public async Task Should_DoARefusedOn_OnceTheBoardOpensAgain_IfTheInputIsStillSo()
     {
-        await using var rig = await RigAsync();
+        await using var rig = await RigAsync(inputCount: 2);
         await rig.Board.TurnOnAsync(ChannelMask.Of(2), Cancel);
         await rig.SaveAsync(new InputActionRow(Relay(1), WhenClosed: true, WhenOpened: false), new InputActionRow(Relay(2), false, true));
         var service = rig.Database.Services.GetServices<IHostedService>().OfType<InputActionService>().Single();
@@ -333,7 +333,11 @@ public sealed class InputActionsTests
             await rig.RunAsync(closed: true);
             rig.Board.SetInput(1, on: false);
             live.Reopen();
-            await Task.Delay(300, Cancel);
+
+            // A change queued after it, of an input whose action can be seen: once that is done, so is the retry.
+            await rig.SaveAsync(2, new InputActionRow(Relay(3), WhenClosed: true, WhenOpened: null));
+            rig.Feed.Enqueue(2, closed: true);
+            await BoardTestRig.WaitUntilAsync(() => rig.Board.State.Relays.Contains(3));
             Assert.False(rig.Board.State.Relays.Contains(1));
         }
         finally
@@ -394,9 +398,9 @@ public sealed class InputActionsTests
         return new GroupDraft("Heater", GroupIcons.All[0], 120, [.. relays.Select(r => new GroupMemberDraft(r, null))]);
     }
 
-    private static async Task<Rig> RigAsync(bool inputOn = false)
+    private static async Task<Rig> RigAsync(bool inputOn = false, int inputCount = 1)
     {
-        var board = new FakeRelayBoard(relayCount: 4, inputCount: 1);
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: inputCount);
         if (inputOn)
         {
             board.SetInput(1, on: true);
@@ -411,7 +415,7 @@ public sealed class InputActionsTests
             services.AddGroups(configuration);
             services.AddInputs(configuration);
         });
-        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: inputCount, Cancel);
         await database.Services.UseFakeBoardAsync(board);
         return new Rig(board, database);
     }
@@ -440,7 +444,12 @@ public sealed class InputActionsTests
 
         public async Task SaveAsync(params InputActionRow[] rows)
         {
-            Assert.Null(await Handler.SaveAsync(1, rows, Cancel));
+            await SaveAsync(1, rows);
+        }
+
+        public async Task SaveAsync(int inputId, params InputActionRow[] rows)
+        {
+            Assert.Null(await Handler.SaveAsync(inputId, rows, Cancel));
         }
 
         public async Task RunAsync(bool closed)

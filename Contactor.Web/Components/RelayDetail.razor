@@ -85,6 +85,10 @@
                         {
                             <p class="error" role="alert">@RelayInGroupException.Text</p>
                         }
+                        else if (_beingRemoved)
+                        {
+                            <p class="error" role="alert">@LiveBoard.BeingRemoved</p>
+                        }
                         else
                         {
                             @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
@@ -204,6 +208,9 @@
     // What the last press asked for, so "Try again" repeats it.
     private bool _wanted;
     private bool _inGroup;
+
+    // The press was refused because the relay's board is being removed (LiveBoard.BeingRemoved).
+    private bool _beingRemoved;
     private string? _saveError;
     private string _name = "";
     private bool _isActive;
@@ -335,15 +342,23 @@
                 await Control.TurnOffAsync(Id, _user.Email, CancellationToken.None);
             }
         }
+        catch (BoardClosedException)
+        {
+            _toggleFailed = true;
+            _inGroup = false;
+            _beingRemoved = true;
+        }
         catch (BoardNotConnectedException)
         {
             _toggleFailed = true;
             _inGroup = false;
+            _beingRemoved = false;
         }
         catch (RelayInGroupException)
         {
             _toggleFailed = true;
             _inGroup = true;
+            _beingRemoved = false;
         }
         finally
         {

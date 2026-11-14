@@ -252,6 +252,9 @@
     private UnconfirmedPress? _unconfirmed;
     private bool _inGroup;
 
+    // The press was refused because its board is being removed (LiveBoard.BeingRemoved).
+    private bool _beingRemoved;
+
     /// <summary>The boards this browser picked to show (<see cref="BoardFilter"/>), as the page was opened.</summary>
     [CascadingParameter]
     public BoardFilters? PickedBoards { get; set; }
@@ -450,6 +453,10 @@
                 {
                     <span class="error" role="alert">@RelayInGroupException.Text</span>
                 }
+                else if (_failedRelayId == relay.Id && _beingRemoved)
+                {
+                    <span class="error" role="alert">@LiveBoard.BeingRemoved</span>
+                }
             </a>
             @if (state.HasAnswered)
             {
@@ -620,7 +627,7 @@
                 ? Control.TurnOnAsync(press.RelayId, _user!.Email, CancellationToken.None)
                 : Control.TurnOffAsync(press.RelayId, _user!.Email, CancellationToken.None),
             failedRelayId: press.RelayId);
-        if (_failedRelayId == press.RelayId && !_inGroup)
+        if (_failedRelayId == press.RelayId && !_inGroup && !_beingRemoved)
         {
             _unconfirmed = press;
             _failedRelayId = null;
@@ -651,6 +658,11 @@
             {
                 await Sequencer.StartGroupAsync(groupId, _user.Email, CancellationToken.None);
             }
+        }
+        catch (BoardClosedException)
+        {
+            _failedGroupId = groupId;
+            _groupError = LiveBoard.BeingRemoved;
         }
         catch (BoardNotConnectedException)
         {
@@ -724,9 +736,16 @@
         _allOffFailedBoardId = null;
         _allBoardsMessage = null;
         _inGroup = false;
+        _beingRemoved = false;
         try
         {
             await command();
+        }
+        catch (BoardClosedException)
+        {
+            // Not a board that doesn't answer: one being removed, which turns nothing on any more.
+            _failedRelayId = failedRelayId;
+            _beingRemoved = true;
         }
         catch (BoardNotConnectedException)
         {

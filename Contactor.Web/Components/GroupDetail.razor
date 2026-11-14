@@ -541,6 +541,10 @@
                 await Sequencer.StartGroupAsync(Id, _user.Email, CancellationToken.None);
             }
         }
+        catch (BoardClosedException)
+        {
+            _toggleError = LiveBoard.BeingRemoved;
+        }
         catch (BoardNotConnectedException)
         {
             _toggleError = "The board isn't responding. Try again.";
@@ -572,6 +576,10 @@
             {
                 _memberError = (relayId, refusal);
             }
+        }
+        catch (BoardClosedException)
+        {
+            _memberError = (relayId, LiveBoard.BeingRemoved);
         }
         catch (BoardNotConnectedException)
         {

@@ -949,6 +949,10 @@
         {
             await Setup.TryAsync(relay.Id, _user.Email, CancellationToken.None);
         }
+        catch (BoardClosedException)
+        {
+            relay.Error = LiveBoard.BeingRemoved;
+        }
         catch (BoardNotConnectedException)
         {
             relay.Error = "No contact with the relay board. Try again in a moment.";

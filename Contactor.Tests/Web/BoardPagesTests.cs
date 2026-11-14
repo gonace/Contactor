@@ -132,6 +132,23 @@ public sealed class BoardPagesTests
         Assert.Equal("http://localhost/settings", navigation.Location);
     }
 
+    // A tap on a relay of a board being removed says so, not that the board doesn't answer.
+    [Fact]
+    public async Task Should_SayTheBoardIsBeingRemoved_WhenATapIsRefused()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<Relays>(boards.App.Services, John, "John");
+        await boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId)!.CloseAsync();
+
+        await page.ClickAsync(PageRenderer.With("aria-label", "Turn on Barn light"));
+
+        var text = await page.TextAsync();
+        Assert.Contains(LiveBoard.BeingRemoved, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("The board didn't answer", text, StringComparison.Ordinal);
+        Assert.False(boards.Barn.State.IsOn(1));
+        Assert.Empty(page.Errors);
+    }
+
     // Whatever goes wrong while removing, the page stays and says so: nothing was removed, and the board runs again.
     [Fact]
     public async Task Should_SayNothingWasRemoved_WhenRemovingFails()
