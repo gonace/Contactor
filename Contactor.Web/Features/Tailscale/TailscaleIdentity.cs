@@ -1,8 +1,6 @@
 using System.Globalization;
-using System.Net.Sockets;
 using System.Text;
 using Contactor.Web.Features.Identity;
-using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Tailscale;
@@ -10,8 +8,8 @@ namespace Contactor.Web.Features.Tailscale;
 /// <summary>
 /// Tailscale identity as the sign-in: the person is who Tailscale Serve says (<c>Tailscale-User-Login</c>). Serve removes
 /// any copy of that header a client sends itself, and sends none for tagged devices or Funnel. The header is believed
-/// only on a request that came in on the app's socket for Serve (<see cref="TailscaleOptions.AppSocket"/>), which only
-/// the machine itself can reach. Not on one from 127.0.0.1: tailscaled passes connections from the Tailscale network
+/// only on a request that came in on the app's address for Serve (<see cref="TailscaleOptions.ServeAddress"/>), which
+/// only the container itself can reach. Not on 127.0.0.1: tailscaled passes connections from the Tailscale network
 /// there, past Serve, and so could anyone on that network with a header of their own.
 /// </summary>
 public sealed class TailscaleIdentity : ISignInMethod
@@ -41,13 +39,13 @@ public sealed class TailscaleIdentity : ISignInMethod
         return Task.FromResult<string?>(IdentityRules.NormalizeEmail(login));
     }
 
-    // Whether the request came in on the app's socket for Serve. Kestrel gives the connection's socket, not its end
-    // points, to a request.
+    // Whether the request came in on the app's address for Serve: the connection's own end, not the client's.
     private bool CameThroughServe(HttpContext context)
     {
-        return !string.IsNullOrWhiteSpace(_options.AppSocket)
-            && context.Features.Get<IConnectionSocketFeature>()?.Socket.LocalEndPoint is UnixDomainSocketEndPoint socket
-            && string.Equals(Path.GetFullPath(socket.ToString()), Path.GetFullPath(_options.AppSocket), StringComparison.Ordinal);
+        return _options.ServeEndPoint is { } serve
+            && context.Connection.LocalPort == serve.Port
+            && context.Connection.LocalIpAddress is { } local
+            && (local.IsIPv4MappedToIPv6 ? local.MapToIPv4() : local).Equals(serve.Address);
     }
 
     /// <summary>

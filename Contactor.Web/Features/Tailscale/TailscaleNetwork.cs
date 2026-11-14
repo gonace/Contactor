@@ -357,7 +357,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         var link = EnableLink().Match(result.Output);
         if (link.Success)
         {
-            return $"Turn on HTTPS for your Tailscale network: open {link.Value} and turn it on. Contactor goes on by itself.";
+            return $"Turn on HTTPS for your Tailscale network: open {link.Value} and turn on HTTPS, with Funnel left off. Contactor goes on by itself.";
         }
 
         return result.TimedOut

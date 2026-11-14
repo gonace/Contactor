@@ -1,8 +1,6 @@
 using System.Net;
-using System.Net.Sockets;
 using Contactor.Web.Features.Tailscale;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -10,35 +8,18 @@ using Microsoft.Extensions.Options;
 namespace Contactor.Tests.Web;
 
 /// <summary>Who Tailscale identity says a request is from: the person Tailscale Serve names, and only through Serve.</summary>
-public sealed class TailscaleIdentityTests : IDisposable
+public sealed class TailscaleIdentityTests
 {
-    // Serve's socket, and another, bound in a folder of their own as Kestrel binds the app's.
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "ct-" + Guid.NewGuid().ToString("N")[..8]);
-    private readonly Socket _appSocket;
-    private readonly Socket _otherSocket;
+    private const string ServeAddress = "127.0.0.2:8081";
 
-    public TailscaleIdentityTests()
-    {
-        Directory.CreateDirectory(_folder);
-        _appSocket = Bind(Path.Combine(_folder, "app.sock"));
-        _otherSocket = Bind(Path.Combine(_folder, "other.sock"));
-    }
-
-    private string AppSocketPath => Path.Combine(_folder, "app.sock");
-
-    public void Dispose()
-    {
-        _appSocket.Dispose();
-        _otherSocket.Dispose();
-        Directory.Delete(_folder, recursive: true);
-    }
+    private static readonly IPEndPoint Serve = IPEndPoint.Parse(ServeAddress);
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Should_LetInThePersonTailscaleServeNames_OnTheAppsSocket()
+    public async Task Should_LetInThePersonTailscaleServeNames_OnServesAddress()
     {
-        var context = Request(_appSocket, "Alice@Example.com");
+        var context = Request(Serve, "Alice@Example.com");
 
         Assert.Equal("alice@example.com", await Identity().AuthenticateAsync(context));
     }
@@ -48,68 +29,60 @@ public sealed class TailscaleIdentityTests : IDisposable
     {
         // tailscaled passes connections from the Tailscale network to 127.0.0.1, past Serve: anyone there could
         // write the header.
-        var context = Request(socket: null, "alice@example.com");
+        var context = Request(new IPEndPoint(IPAddress.Loopback, Serve.Port), "alice@example.com");
         context.Connection.RemoteIpAddress = IPAddress.Loopback;
-        context.Connection.LocalIpAddress = IPAddress.Loopback;
 
         Assert.Null(await Identity().AuthenticateAsync(context));
     }
 
-    [Fact]
-    public async Task Should_NotBelieveTheHeader_OnAnotherSocket()
+    [Theory]
+    [InlineData("127.0.0.2", 8080)]
+    [InlineData("127.0.0.1", 8081)]
+    [InlineData("::ffff:127.0.0.1", 8081)]
+    [InlineData("::1", 8081)]
+    public async Task Should_NotBelieveTheHeader_OnAnotherAddress(string address, int port)
     {
-        Assert.Null(await Identity().AuthenticateAsync(Request(_otherSocket, "alice@example.com")));
+        Assert.Null(await Identity().AuthenticateAsync(Request(new IPEndPoint(IPAddress.Parse(address), port), "alice@example.com")));
     }
 
     [Fact]
-    public async Task Should_LetNobodyIn_WithoutTheAppsSocketSet()
+    public async Task Should_BelieveTheHeader_OnServesAddressAsIPv6MappedToIPv4()
     {
-        Assert.Null(await Identity(appSocket: "").AuthenticateAsync(Request(_appSocket, "alice@example.com")));
+        var mapped = new IPEndPoint(Serve.Address.MapToIPv6(), Serve.Port);
+
+        Assert.Equal("alice@example.com", await Identity().AuthenticateAsync(Request(mapped, "alice@example.com")));
     }
 
-    // Kestrel as the app runs it: the TCP port and Serve's socket. Only the socket's requests are believed.
-    [Fact]
-    public async Task Should_BelieveOnlyTheSocket_InKestrel()
+    [Theory]
+    [InlineData("")]
+    [InlineData("127.0.0.1:8081")]
+    public async Task Should_LetNobodyIn_WithoutAServeAddressOnlyServeReaches(string serveAddress)
     {
-        var folder = Path.Combine(Path.GetTempPath(), "ct-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(folder);
-        var socket = Path.Combine(folder, "app.sock");
-        try
-        {
-            var builder = WebApplication.CreateSlimBuilder();
-            // Listen calls, not URLs: in a URL, the colon after a Windows drive letter would end the socket's path.
-            builder.WebHost.ConfigureKestrel(kestrel =>
-            {
-                kestrel.Listen(IPAddress.Loopback, 0);
-                kestrel.ListenUnixSocket(socket);
-            });
-            await using var app = builder.Build();
-            var identity = Identity(socket);
-            app.MapGet("/", async (HttpContext context) => await identity.AuthenticateAsync(context) ?? "denied");
-            await app.StartAsync(Cancel);
-            var tcp = app.Urls.Single(u => u.StartsWith("http://127.0.0.1", StringComparison.Ordinal));
+        var local = IPEndPoint.Parse(serveAddress.Length > 0 ? serveAddress : ServeAddress);
 
-            using var overTcp = new HttpClient();
-            using var overSocket = new HttpClient(new SocketsHttpHandler
-            {
-                ConnectCallback = async (_, cancellationToken) =>
-                {
-                    var unix = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-                    await unix.ConnectAsync(new UnixDomainSocketEndPoint(socket), cancellationToken);
-                    return new NetworkStream(unix, ownsSocket: true);
-                },
-            });
+        Assert.Null(await Identity(serveAddress).AuthenticateAsync(Request(local, "alice@example.com")));
+    }
 
-            Assert.Equal("alice@example.com", await Get(overSocket, "http://relays.tail1234.ts.net/"));
-            Assert.Equal("denied", await Get(overTcp, tcp + "/"));
-            await app.StopAsync(Cancel);
-        }
-        finally
-        {
-            Directory.Delete(folder, recursive: true);
-        }
+    // Kestrel as the app runs it: its port, and Serve's address. Only requests on Serve's address are believed.
+    [Fact]
+    public async Task Should_BelieveOnlyServesAddress_InKestrel()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0", "http://127.0.0.2:0");
+        await using var app = builder.Build();
+        TailscaleIdentity? identity = null;
+        app.MapGet("/", async (HttpContext context) => await identity!.AuthenticateAsync(context) ?? "denied");
+        await app.StartAsync(Cancel);
+        var serve = app.Urls.Single(u => u.StartsWith("http://127.0.0.2", StringComparison.Ordinal));
+        var other = app.Urls.Single(u => u.StartsWith("http://127.0.0.1", StringComparison.Ordinal));
+        identity = Identity(new Uri(serve).Authority);
 
-        static async Task<string> Get(HttpClient client, string url)
+        using var client = new HttpClient();
+        Assert.Equal("alice@example.com", await GetAsync(client, serve + "/"));
+        Assert.Equal("denied", await GetAsync(client, other + "/"));
+        await app.StopAsync(Cancel);
+
+        static async Task<string> GetAsync(HttpClient client, string url)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Add(TailscaleIdentity.HeaderName, "alice@example.com");
@@ -122,13 +95,13 @@ public sealed class TailscaleIdentityTests : IDisposable
     public async Task Should_LetNobodyIn_WithoutTheHeader()
     {
         // Tagged devices and Funnel: Serve sends no person.
-        Assert.Null(await Identity().AuthenticateAsync(Request(_appSocket, login: null)));
+        Assert.Null(await Identity().AuthenticateAsync(Request(Serve, login: null)));
     }
 
     [Fact]
     public async Task Should_LetNobodyIn_WithTheHeaderTwice()
     {
-        var context = Request(_appSocket, "alice@example.com");
+        var context = Request(Serve, "alice@example.com");
         context.Request.Headers.Append(TailscaleIdentity.HeaderName, "bob@example.com");
 
         Assert.Null(await Identity().AuthenticateAsync(context));
@@ -140,13 +113,13 @@ public sealed class TailscaleIdentityTests : IDisposable
     [InlineData("   ")]
     public async Task Should_LetNobodyIn_WithALoginThatIsNoAddress(string login)
     {
-        Assert.Null(await Identity().AuthenticateAsync(Request(_appSocket, login)));
+        Assert.Null(await Identity().AuthenticateAsync(Request(Serve, login)));
     }
 
     [Fact]
     public async Task Should_TakeAGitHubLogin_AsTailscaleWritesIt()
     {
-        Assert.Equal("alice@github", await Identity().AuthenticateAsync(Request(_appSocket, "alice@github")));
+        Assert.Equal("alice@github", await Identity().AuthenticateAsync(Request(Serve, "alice@github")));
     }
 
     [Theory]
@@ -176,40 +149,20 @@ public sealed class TailscaleIdentityTests : IDisposable
         Assert.Null(TailscaleIdentity.Decode(header));
     }
 
-    private TailscaleIdentity Identity(string? appSocket = null) =>
-        new(Options.Create(new TailscaleOptions { AppSocket = appSocket ?? AppSocketPath }));
+    private static TailscaleIdentity Identity(string? serveAddress = null) =>
+        new(Options.Create(new TailscaleOptions { ServeAddress = serveAddress ?? ServeAddress }));
 
-    private static Socket Bind(string path)
-    {
-        var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-        socket.Bind(new UnixDomainSocketEndPoint(path));
-        return socket;
-    }
-
-    // A request as Kestrel gives it: on a socket, or (null) on a TCP port.
-    private static DefaultHttpContext Request(Socket? socket, string? login)
+    // A request as Kestrel gives it, on the connection's own end.
+    private static DefaultHttpContext Request(IPEndPoint local, string? login)
     {
         var context = new DefaultHttpContext();
-        if (socket is not null)
-        {
-            context.Features.Set<IConnectionSocketFeature>(new ConnectionSocket(socket));
-        }
-
+        context.Connection.LocalIpAddress = local.Address;
+        context.Connection.LocalPort = local.Port;
         if (login is not null)
         {
             context.Request.Headers[TailscaleIdentity.HeaderName] = login;
         }
 
         return context;
-    }
-
-    private sealed class ConnectionSocket : IConnectionSocketFeature
-    {
-        public ConnectionSocket(Socket socket)
-        {
-            Socket = socket;
-        }
-
-        public Socket Socket { get; }
     }
 }

@@ -158,7 +158,7 @@ public sealed class SetupSignInHandlerTests
         await using var database = await CreateAsync(services =>
         {
             services.AddSingleton<ITailscaleProcess>(new OnTheNetwork());
-            services.Configure<TailscaleOptions>(o => o.AppSocket = "/data/tailscale/contactor.sock");
+            services.Configure<TailscaleOptions>(o => o.ServeAddress = "127.0.0.2:8081");
         });
         var handler = database.Services.GetRequiredService<SetupSignInHandler>();
 
@@ -254,7 +254,7 @@ public sealed class SetupSignInHandlerTests
             return Task.FromResult(new TailscaleCommandResult(0, arguments switch
             {
                 ["status", ..] => "{\"BackendState\":\"Running\",\"Self\":{\"DNSName\":\"relays.tail1234.ts.net.\"}}",
-                ["serve", "status", ..] => "{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"unix:/data/tailscale/contactor.sock\"}}}}}",
+                ["serve", "status", ..] => "{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"http://127.0.0.2:8081\"}}}}}",
                 _ => "",
             }));
         }
