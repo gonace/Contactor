@@ -150,6 +150,12 @@ public sealed class BoardPoller<TReading> : IDisposable
         {
             _generation++;
             var state = new PolledState<TReading>(false, default, null);
+            if (Equals(_state, state))
+            {
+                // Already nothing known, e.g. the saved address set at start: no change to report.
+                return;
+            }
+
             Volatile.Write(ref _state, state);
             _board.OnStateChanged(state);
         }

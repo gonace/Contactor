@@ -90,8 +90,9 @@ public sealed class Vm201Client
     }
 
     /// <summary>
-    /// Moves the client to another board address: the current connection (or attempt, or wait before the next
-    /// one) ends at once and the client connects to the new address. Nothing happens if the address is the same.
+    /// Moves the client to another board address: the board's state is forgotten (another board may be there), the
+    /// current connection (or attempt, or wait before the next one) ends at once and the client connects to the new
+    /// address. Nothing happens if the address is the same.
     /// </summary>
     public void SetEndpoint(BoardEndpoint endpoint)
     {
@@ -104,8 +105,13 @@ public sealed class Vm201Client
         _logger.EndpointChanged(endpoint.Host, endpoint.Port);
 
         // Another board may be at the new address: nothing is known about it until it answers, and a status from the
-        // old one still on its way is dropped (ApplyStatus).
-        SetState(Vm201State.Initial);
+        // old one still on its way is dropped (ApplyStatus). A state that already says so isn't raised again, e.g.
+        // when the saved address is set at start.
+        if (!Equals(State, Vm201State.Initial))
+        {
+            SetState(Vm201State.Initial);
+        }
+
         Reconnect();
     }
 
