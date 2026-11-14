@@ -191,7 +191,7 @@ public sealed class ContactorDbContext : DbContext
         entry.HasOne<Board>().WithMany().HasForeignKey(e => e.BoardId).OnDelete(DeleteBehavior.Cascade);
         entry.HasIndex(e => new { e.BoardId, e.TimestampUtc });
 
-        // Not foreign keys: relays are never deleted, and an event outlives any change to its relay.
+        // Not foreign keys: an event outlives any change to its relay; a relay is deleted only with its board, whose events go with it.
         entry.HasIndex(e => e.TimestampUtc);
         entry.HasIndex(e => new { e.RelayId, e.TimestampUtc });
         entry.HasIndex(e => new { e.GroupId, e.TimestampUtc });

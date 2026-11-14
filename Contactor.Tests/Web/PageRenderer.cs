@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.RenderTree;
+using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -45,6 +46,13 @@ internal sealed class PageRenderer : Renderer
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Email, email), new Claim(ClaimTypes.Name, name)], "Test"));
         ((IHostEnvironmentAuthenticationStateProvider)scope.ServiceProvider.GetRequiredService<AuthenticationStateProvider>())
             .SetAuthenticationState(Task.FromResult(new AuthenticationState(principal)));
+        // As a circuit starts it: where the app is and the page that was opened. Without a browser, a page that goes
+        // elsewhere throws NavigationException, which the test sees in Errors.
+        if (scope.ServiceProvider.GetRequiredService<NavigationManager>() is IHostEnvironmentNavigationManager navigation)
+        {
+            navigation.Initialize("http://localhost/", "http://localhost/");
+        }
+
         var renderer = new PageRenderer(scope);
         await renderer.Dispatcher.InvokeAsync(async () =>
         {

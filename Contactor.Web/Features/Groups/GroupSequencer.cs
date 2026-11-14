@@ -99,6 +99,15 @@ public sealed class GroupSequencer : BackgroundService, IBoardWatcher
         await Of(boardId).StopAllAsync(actor, cancellationToken);
     }
 
+    /// <summary>
+    /// Ends the run-on times of the board's stopping groups (see <see cref="BoardSequencer.EndRunOnsAsync"/>). Throws
+    /// <see cref="BoardNotConnectedException"/> without its board.
+    /// </summary>
+    public async Task EndRunOnsAsync(int boardId, CancellationToken cancellationToken)
+    {
+        await Of(boardId).EndRunOnsAsync(cancellationToken);
+    }
+
     /// <summary>The channels of the board's relays that are in a group; none for a board the app doesn't run.</summary>
     public async Task<ChannelMask> MemberMaskAsync(int boardId, CancellationToken cancellationToken)
     {

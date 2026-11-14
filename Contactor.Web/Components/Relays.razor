@@ -80,6 +80,13 @@
             }
         </div>
     }
+    else if (Boards.Count == 0)
+    {
+        @* Every board removed: nothing to show or switch. *@
+        <div class="connection">
+            <p class="no-board" role="status">There's no relay board in Contactor.</p>
+        </div>
+    }
     else
     {
         <div class="connection">

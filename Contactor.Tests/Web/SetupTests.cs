@@ -339,7 +339,9 @@ public sealed class SetupTests
     {
         await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = type });
         await database.Services.InitializeDatabaseAsync(Cancel);
-        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now });
+
+        // As the migration MoveToBoards left it: the board's row, without a model.
+        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now }, boardType: "");
 
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
@@ -348,6 +350,22 @@ public sealed class SetupTests
         var board = await db.Boards.SingleAsync(Cancel);
         Assert.Equal(expected, board.Type);
         Assert.Equal(BoardCatalogue.Find(expected)!.Model.Name, board.Name);
+    }
+
+    // An installation in use whose last board was removed has no board, as a new one: Board:Type doesn't bring one back.
+    [Fact]
+    public async Task Should_RunNoBoard_AfterTheLastBoardWasRemoved()
+    {
+        await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm204" });
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now });
+
+        await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
+
+        Assert.Empty(database.Services.GetRequiredService<BoardRegistry>().All);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.Boards.AnyAsync(Cancel));
+        Assert.False(await db.Relays.AnyAsync(Cancel));
     }
 
     // A new installation has no board until the guide chooses one: then it gets its row, named after the model.
@@ -425,7 +443,7 @@ public sealed class SetupTests
     {
         await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm209" });
         await database.Services.InitializeDatabaseAsync(Cancel);
-        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now });
+        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now }, boardType: "");
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));

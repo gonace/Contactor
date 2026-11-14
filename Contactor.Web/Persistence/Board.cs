@@ -1,7 +1,7 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// A relay board the app runs: its model, where it is and its login. One for now; several at once is issue #4. Its
+/// A relay board the app runs: its model, where it is and its login. Removed with everything about it by BoardRemoval. Its
 /// relays and inputs are rows of their own (<see cref="Relay.BoardId"/>, <see cref="Input.BoardId"/>), and what the app
 /// keeps about it while it runs is in <see cref="BoardRuntime"/>.
 /// </summary>

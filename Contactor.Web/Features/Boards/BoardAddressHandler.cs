@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Boards;
 
 /// <summary>
-/// A relay board's address and login, set on the Settings screen so they can change without touching the
+/// A relay board's name, address and login, set on the Settings screen so they can change without touching the
 /// Raspberry Pi. Saved on the board's row (<see cref="Board"/>); until someone saves them, the board's own settings
 /// apply: for the first board those in its model's section (e.g. <c>Vm201:Host</c>, <c>Port</c>, <c>Username</c> and
 /// <c>Password</c>), for any other the model's default port and no address. Each by the board's row id.
@@ -35,6 +35,52 @@ public sealed class BoardAddressHandler
         _registry = registry;
         _clock = clock;
         _changes = changes;
+    }
+
+    /// <summary>The board's name, or null when there is no such board.</summary>
+    public async Task<string?> GetNameAsync(int boardId, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Boards.Where(b => b.Id == boardId).Select(b => b.Name).SingleOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Saves the board's name (trimmed, at most <see cref="Board.NameMaxLength"/> characters), which the screens show at
+    /// once. Returns null when saved (or unchanged), otherwise the message to show.
+    /// </summary>
+    public async Task<string?> RenameAsync(int boardId, string? name, CancellationToken cancellationToken)
+    {
+        name = name?.Trim() ?? "";
+        if (name.Length == 0)
+        {
+            return "Enter a name.";
+        }
+
+        if (name.Length > Board.NameMaxLength)
+        {
+            return $"The name can be at most {Board.NameMaxLength} characters.";
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        if (await RowAsync(db, boardId, cancellationToken) is not { } board)
+        {
+            return NoBoardMessage;
+        }
+
+        if (board.Name == name)
+        {
+            return null;
+        }
+
+        board.Name = name;
+        await db.SaveChangesAsync(cancellationToken);
+        if (_registry.Find(boardId) is { } live)
+        {
+            live.Name = name;
+        }
+
+        _changes.Notify();
+        return null;
     }
 
     /// <summary>The board's address in use: the saved one, or the settings' when none is saved.</summary>

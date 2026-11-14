@@ -2,7 +2,7 @@ namespace Contactor.Web.Features.Boards;
 
 /// <summary>
 /// Listens to every board's Debug trace (<see cref="LiveBoard.Trace"/>) for a page: the Debug screen and the tab bar's
-/// toasts. A board added while it listens is listened to as well. Disposing it lets go of every trace and of the
+/// toasts. A board added while it listens is listened to as well, and a board removed is let go. Disposing it lets go of every trace and of the
 /// registry. The callbacks come on a board's connection loop, a timer or the registry's caller: they must be quick.
 /// </summary>
 public sealed class BoardTraceWatch : IDisposable
@@ -17,7 +17,7 @@ public sealed class BoardTraceWatch : IDisposable
     /// <param name="registry">The boards.</param>
     /// <param name="added">A new item in a board's trace, with its board.</param>
     /// <param name="changed">
-    /// Anything a board's trace list shows changed: a new item, the routine count, a Clear, or a board added. Null to
+    /// Anything a board's trace list shows changed: a new item, the routine count, a Clear, or a board added or removed. Null to
     /// hear only <paramref name="added"/>.
     /// </param>
     public BoardTraceWatch(BoardRegistry registry, Action<LiveBoard, BoardTraceItem>? added, Action? changed = null)
@@ -60,7 +60,14 @@ public sealed class BoardTraceWatch : IDisposable
                 return;
             }
 
-            foreach (var board in _registry.All)
+            var boards = _registry.All;
+            foreach (var gone in _listeners.Keys.Where(id => !boards.Any(b => b.BoardId == id)).ToList())
+            {
+                _listeners[gone].Dispose();
+                _listeners.Remove(gone);
+            }
+
+            foreach (var board in boards)
             {
                 if (!_listeners.ContainsKey(board.BoardId))
                 {

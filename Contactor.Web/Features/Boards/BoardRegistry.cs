@@ -65,8 +65,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     public event EventHandler<BoardStateChange>? StateChanged;
 
     /// <summary>
-    /// Raised when a board is added to <see cref="All"/>, while the boards are being changed: handlers must not change
-    /// them in turn.
+    /// Raised when a board is added to <see cref="All"/> or removed from it, while the boards are being changed:
+    /// handlers must not change them in turn.
     /// </summary>
     public event EventHandler? BoardsChanged;
 
@@ -206,6 +206,41 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         {
             await board.DisposeAsync();
             throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Takes the board on this row out of the app, before its rows are deleted (<c>BoardRemoval</c>): out of
+    /// <see cref="All"/> first, so nothing new is sent to it, then disposed (a step under way finishes, its watches end,
+    /// then its connection), and <see cref="BoardsChanged"/> is raised. Its run ends quietly. Returns false when the app
+    /// runs no board there. Doesn't touch the database: <see cref="LoadAsync"/> makes it again for a row still there.
+    /// </summary>
+    public async Task<bool> RemoveAsync(int boardId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            LiveBoard? live;
+            lock (_lock)
+            {
+                live = _boards.FirstOrDefault(b => b.BoardId == boardId);
+                if (live is null || _disposed)
+                {
+                    return false;
+                }
+
+                Volatile.Write(ref _boards, [.. _boards.Where(b => !ReferenceEquals(b, live))]);
+            }
+
+            live.StateChanged -= OnStateChanged;
+            await live.DisposeAsync();
+            LogRemoved(boardId);
+            RaiseBoardsChanged();
+            return true;
         }
         finally
         {
@@ -372,7 +407,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         _ = run.ContinueWith(
             t =>
             {
-                if (token.IsCancellationRequested)
+                // Stopping, or a board taken out of the app (RemoveAsync): its run ending is no failure.
+                if (token.IsCancellationRequested || !All.Contains(board))
                 {
                     return;
                 }
@@ -432,6 +468,9 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Relay board {BoardId} added")]
     private partial void LogAdded(int boardId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Relay board {BoardId} removed")]
+    private partial void LogRemoved(int boardId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A listener to relay board {BoardId}'s state failed")]
     private partial void LogSubscriberFailed(Exception exception, int boardId);

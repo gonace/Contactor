@@ -1,7 +1,7 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// One of a board's relays. Seeded at start and never deleted. Its on/off state is not stored: the board is the
+/// One of a board's relays. Seeded at start, deleted only with its board. Its on/off state is not stored: the board is the
 /// source of truth.
 /// </summary>
 public sealed class Relay

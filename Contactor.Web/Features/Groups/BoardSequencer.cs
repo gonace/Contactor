@@ -178,6 +178,27 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     }
 
     /// <summary>
+    /// Lets every group of the board that is stopping take its next step now instead of after its run-on time, still
+    /// from the bottom and each once the one below is confirmed off: for a board being removed (<c>BoardRemoval</c>),
+    /// whose relays must be off before the app lets go of it. Throws <see cref="BoardNotConnectedException"/> without
+    /// the board.
+    /// </summary>
+    public async Task EndRunOnsAsync(CancellationToken cancellationToken)
+    {
+        await RunAsync(
+            (group, members, state, runtime, now, commands) =>
+            {
+                if (runtime.Phase == GroupPhases.Stopping && runtime.NextStepAtUtc > now)
+                {
+                    runtime.NextStepAtUtc = now;
+                }
+
+                return null;
+            },
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Turns one relay of a group on or off, within the interlock. Returns why it can't, or null when
     /// done. Throws <see cref="BoardNotConnectedException"/> without the board.
     /// </summary>

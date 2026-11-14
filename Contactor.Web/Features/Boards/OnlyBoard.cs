@@ -4,7 +4,7 @@ namespace Contactor.Web.Features.Boards;
 
 /// <summary>
 /// Until the screens show every board (Issue #4): one board. The temporary bridge for the screens that still show one
-/// board only, Settings and the setup guide (the safety services, handlers and other screens each take every board on
+/// board only, the setup guide (the safety services, handlers and other screens each take every board on
 /// its own): the <see cref="IRelayBoard"/> of the app's one board, with its address, the same object for the app's lifetime, so a listener stays when
 /// the board's row is made in the setup guide or its model is replaced. Before the app has a board it has no relays and never answers, as a board before its model is chosen:
 /// commands throw <see cref="BoardNotConnectedException"/>, and nothing connects. With more than one board it throws:

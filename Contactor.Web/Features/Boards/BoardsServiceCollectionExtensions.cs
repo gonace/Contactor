@@ -7,8 +7,8 @@ public static class BoardsServiceCollectionExtensions
     /// <summary>
     /// The boards, through <see cref="BoardRegistry"/>: one <see cref="LiveBoard"/> per board's row, none until the
     /// setup guide chooses one (<see cref="BoardChoice"/>), their connections kept open by
-    /// <see cref="BoardHostedService"/>, and what every board has in the app: its address and login, and the
-    /// Debugging setting.
+    /// <see cref="BoardHostedService"/>, and what every board has in the app: its name, address and login, removing it
+    /// (<see cref="BoardRemoval"/>), and the Debugging setting.
     /// </summary>
     public static IServiceCollection AddBoards(this IServiceCollection services, IConfiguration configuration)
     {
@@ -17,6 +17,7 @@ public static class BoardsServiceCollectionExtensions
         services.AddSingleton<BoardRegistry>();
         services.AddSingleton<BoardChoice>();
         services.AddSingleton<BoardAddressHandler>();
+        services.AddSingleton<BoardRemoval>();
         services.AddSingleton<BoardTrafficSetting>();
         services.AddHostedService<BoardHostedService>();
         return services;

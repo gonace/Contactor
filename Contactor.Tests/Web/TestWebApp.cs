@@ -151,6 +151,13 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
                 AccessType = CloudflareMethods.TunnelId,
                 SignInType = CloudflareMethods.AccessId,
             });
+
+            // The board's row as the migration MoveToBoards left it for an installation in use: no model saved yet.
+            if (!db.Boards.Any())
+            {
+                db.Boards.Add(new Board { SortOrder = 1 });
+            }
+
             db.SaveChanges();
 
             // As at the start after an upgrade: an installation in use runs Board:Type's board, or the VM201, behind

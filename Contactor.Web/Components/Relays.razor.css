@@ -490,6 +490,15 @@ button:disabled {
     margin: 0;
 }
 
+.no-board {
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    color: var(--muted);
+}
+
 /* "Turn off all boards" asks first: a box over the page. */
 .backdrop {
     position: fixed;

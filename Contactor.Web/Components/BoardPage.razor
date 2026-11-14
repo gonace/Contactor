@@ -1,0 +1,198 @@
+@page "/board/{Id:int}"
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Identity
+@inject BoardRegistry Registry
+@inject BoardAddressHandler Handler
+@inject BoardRemoval Removal
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+
+<PageTitle>@(_name ?? "Relay board") · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <a href="settings" class="back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+            Settings
+        </a>
+        @if (_name is not null)
+        {
+            <h1>@_name</h1>
+        }
+    </header>
+
+    <main class="content">
+        @if (_loaded && (_name is null || Live is null))
+        {
+            <p class="missing">This relay board isn't in Contactor.</p>
+        }
+        else if (_name is not null)
+        {
+            <BoardForm BoardId="Id" Title="Board" WithName="true" NameSaved="OnNameSaved" />
+
+            <section class="card remove-card">
+                <h2>Remove board</h2>
+                <p class="hint">Takes the board out of Contactor. Its relays, groups, schedules, input actions and events are deleted. The board itself isn't changed.</p>
+                @if (_error is not null)
+                {
+                    <p class="error" role="alert">@_error</p>
+                }
+                <button type="button" class="remove" disabled="@_busy" @onclick="AskAsync">Remove @_name</button>
+            </section>
+        }
+    </main>
+
+    @if (_preview is { } preview)
+    {
+        var hasContact = HasContact;
+        <div class="backdrop">
+            <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title">
+                <h2 id="remove-title">Remove @preview.Name?</h2>
+                <p>This deletes, and can't be undone:</p>
+                <ul>
+                    <li>@Count(preview.Relays, "relay", "relays")</li>
+                    @if (preview.Groups > 0)
+                    {
+                        <li>@Count(preview.Groups, "group", "groups")</li>
+                    }
+                    @if (preview.Schedules > 0)
+                    {
+                        <li>@Count(preview.Schedules, "schedule", "schedules")</li>
+                    }
+                    @if (preview.InputActions > 0)
+                    {
+                        <li>@Count(preview.InputActions, "input action", "input actions")</li>
+                    }
+                    <li>All of @preview.Name's events</li>
+                </ul>
+                @if (hasContact)
+                {
+                    <p>Its relays are turned off first.</p>
+                }
+                else
+                {
+                    <p class="warning" role="status">@preview.Name has no contact. Any relay that's on stays on, and Contactor can't turn it off.</p>
+                }
+                <div class="dialog-buttons">
+                    <button type="button" class="cancel" disabled="@_busy" @onclick="Cancel">Cancel</button>
+                    <button type="button" class="confirm" disabled="@_busy" @onclick="() => RemoveAsync(hasContact)">@(_busy ? "Removing…" : "Remove")</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <TabBar Current="TabBar.Tab.Settings" />
+</div>
+
+@code {
+    private string? _name;
+    private bool _loaded;
+    private BoardRemovalPreview? _preview;
+    private string? _error;
+    private bool _busy;
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private LiveBoard? Live => Registry.Find(Id);
+
+    private bool HasContact => Live?.State.IsConnected == true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _name = await Handler.GetNameAsync(Id, CancellationToken.None);
+        _loaded = true;
+    }
+
+    protected override void OnInitialized()
+    {
+        Registry.StateChanged += OnBoardChanged;
+        Registry.BoardsChanged += OnBoardsChanged;
+    }
+
+    public void Dispose()
+    {
+        Registry.StateChanged -= OnBoardChanged;
+        Registry.BoardsChanged -= OnBoardsChanged;
+    }
+
+    private static string Count(int count, string one, string many)
+    {
+        return $"{count} {(count == 1 ? one : many)}";
+    }
+
+    private void OnNameSaved(string name)
+    {
+        _name = name;
+    }
+
+    // "Remove …" only asks: the dialog lists what goes with the board.
+    private async Task AskAsync()
+    {
+        _error = null;
+        _preview = await Removal.PreviewAsync(Id, CancellationToken.None);
+        if (_preview is null)
+        {
+            _name = null;
+        }
+    }
+
+    private void Cancel()
+    {
+        _preview = null;
+    }
+
+    // hasContact: what the dialog said when the person pressed Remove.
+    private async Task RemoveAsync(bool hasContact)
+    {
+        if (_busy || await CurrentUser.GetAsync() is not { } user)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _error = await Removal.RemoveAsync(Id, turnOffFirst: hasContact, user.Email, CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        _preview = null;
+        if (_error is null)
+        {
+            Navigation.NavigateTo("settings");
+        }
+    }
+
+    // From a board's read loop: this board's contact, which the dialog tells.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == Id && _preview is not null)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    // A board removed, e.g. this one from another phone.
+    private void OnBoardsChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

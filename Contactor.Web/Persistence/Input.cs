@@ -2,7 +2,7 @@ namespace Contactor.Web.Persistence;
 
 /// <summary>
 /// One of the board's digital inputs, e.g. a door contact or a thermostat. Seeded at start, one per input on the board,
-/// and never deleted. Its state is not stored: the board is the source of truth. "Closed" is the board reading it as on.
+/// and deleted only with its board. Its state is not stored: the board is the source of truth. "Closed" is the board reading it as on.
 /// </summary>
 public sealed class Input
 {

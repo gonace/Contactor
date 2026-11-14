@@ -37,8 +37,9 @@ public sealed partial class BoardChoice : IDisposable
     /// <summary>
     /// At start: runs every board's row with its saved model, if any (<see cref="BoardRegistry.LoadAsync"/>), after
     /// adding the first board's rows for its relays and inputs. An installation in use from before the setup guide
-    /// chose the model (the guide is done, no model saved) gets the one <c>Board:Type</c> names, or the VM201 it ran
-    /// before, saved once so it keeps it. Throws for a saved model the catalogue doesn't have. A board without a name
+    /// chose the model (the guide is done, and its board's row has no model) gets the one <c>Board:Type</c> names, or
+    /// the VM201 it ran before, saved once so it keeps it. One without a board (its last board removed) gets none, as a
+    /// new installation before the guide chooses one. Throws for a saved model the catalogue doesn't have. A board without a name
     /// gets its model's.
     /// </summary>
     public async Task ApplySavedAsync(CancellationToken cancellationToken)
@@ -54,13 +55,12 @@ public sealed partial class BoardChoice : IDisposable
                     ?? throw new InvalidOperationException(
                         $"The relay board chosen in the setup guide is \"{saved}\", which isn't a board this version of the app knows. Use one of: {BoardCatalogue.Ids}.");
             }
-            else if (await db.Installations.AnyAsync(i => i.SetupDoneUtc != null, cancellationToken))
+            else if (board is not null && await db.Installations.AnyAsync(i => i.SetupDoneUtc != null, cancellationToken))
             {
                 var type = _configuration.GetSection(BoardOptions.SectionName).Get<BoardOptions>()?.Type ?? BoardCatalogue.EarlierDefaultType;
                 model = BoardCatalogue.Find(type)?.Model
                     ?? throw new InvalidOperationException(
                         $"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: {BoardCatalogue.Ids}.");
-                board ??= AddBoard(db);
                 board.Type = model.Id;
                 LogEarlierModelSaved(model.Name);
             }
@@ -154,14 +154,6 @@ public sealed partial class BoardChoice : IDisposable
         {
             _gate.Release();
         }
-    }
-
-    // At start, before the board's rows are seeded; its runtime row comes with them.
-    private static Board AddBoard(ContactorDbContext db)
-    {
-        var board = new Board { SortOrder = 1 };
-        db.Boards.Add(board);
-        return board;
     }
 
     public void Dispose()
