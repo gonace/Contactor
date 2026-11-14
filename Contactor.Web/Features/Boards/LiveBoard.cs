@@ -24,7 +24,8 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     /// <summary>How often a board without an address looks for one saved since.</summary>
     public static readonly TimeSpan AddressCheck = TimeSpan.FromSeconds(1);
 
-    private const string NotChosen = "No relay board has been chosen yet.";
+    /// <summary>What a board says, and saving its settings, before its model is chosen or when there is no such board.</summary>
+    public const string NotChosen = "No relay board has been chosen yet.";
 
     /// <summary>What a command to turn a relay on says while the board is being removed (<see cref="CloseAsync"/>).</summary>
     public const string BeingRemoved = "The relay board is being removed.";
