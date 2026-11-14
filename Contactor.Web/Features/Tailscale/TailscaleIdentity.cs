@@ -28,7 +28,7 @@ public sealed class TailscaleIdentity : ISignInMethod
     public Task<string?> AuthenticateAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (!CameThroughServe(context)
+        if (!_options.CameThroughServe(context.Connection)
             || context.Request.Headers[HeaderName] is not [{ } value]
             || Decode(value) is not { } login
             || !IdentityRules.IsValidEmail(login))
@@ -37,15 +37,6 @@ public sealed class TailscaleIdentity : ISignInMethod
         }
 
         return Task.FromResult<string?>(IdentityRules.NormalizeEmail(login));
-    }
-
-    // Whether the request came in on the app's address for Serve: the connection's own end, not the client's.
-    private bool CameThroughServe(HttpContext context)
-    {
-        return _options.ServeEndPoint is { } serve
-            && context.Connection.LocalPort == serve.Port
-            && context.Connection.LocalIpAddress is { } local
-            && (local.IsIPv4MappedToIPv6 ? local.MapToIPv4() : local).Equals(serve.Address);
     }
 
     /// <summary>
