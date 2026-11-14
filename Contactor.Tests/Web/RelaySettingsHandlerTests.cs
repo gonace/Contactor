@@ -24,17 +24,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        _database = TestDatabase.Create((services, configuration) =>
-        {
-            services.AddLocalClock(configuration);
-            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
-            services.AddEvents(configuration);
-            services.AddBoards(configuration);
-            services.AddRelays(configuration);
-            services.AddGroups(configuration);
-        });
-        await _database.Services.InitializeDatabaseAsync(Cancel);
-        await _database.Services.UseFakeBoardAsync(new FakeRelayBoard());
+        _database = await CreateDatabaseAsync(RelayLayout.Same);
     }
 
     public async ValueTask DisposeAsync()
@@ -155,6 +145,38 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
 
         Assert.Null((await RuntimeAsync(2)).AutoOffAtUtc);
         Assert.Equal(60, (await Handler.GetAsync(2, Cancel))!.MaxOnMinutes);
+    }
+
+    [Fact]
+    public async Task Should_ReadTheRelaysBoardAndChannel_WhenItsIdIsNotItsChannel()
+    {
+        await using var database = await CreateDatabaseAsync(RelayLayout.Apart);
+        var handler = database.Services.GetRequiredService<RelaySettingsHandler>();
+        var relayId = RelayLayouts.RelayId(RelayLayout.Apart, 3, 8);
+
+        var settings = await handler.GetAsync(relayId, Cancel);
+
+        Assert.NotNull(settings);
+        Assert.NotEqual(3, relayId);
+        Assert.Equal((relayId, await database.Services.FirstBoardIdAsync(), 3), (settings.Id, settings.BoardId, settings.Channel));
+    }
+
+    private static async Task<TestDatabase> CreateDatabaseAsync(RelayLayout layout)
+    {
+        var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
+            services.AddEvents(configuration);
+            services.AddBoards(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+        });
+        var board = new FakeRelayBoard();
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await RelayLayouts.SeedAsync(database.Services, layout, board.Capabilities.RelayCount, board.Capabilities.InputCount);
+        await database.Services.UseFakeBoardAsync(board);
+        return database;
     }
 
     private async Task<List<EventLogEntry>> EventsAsync()
