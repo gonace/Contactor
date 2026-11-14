@@ -155,6 +155,23 @@ public sealed partial class RelaysBoardsPageTests
         AssertBackToThePage(valid, cookie: "1");
     }
 
+    // A form over ASP.NET Core's limits goes back to the page, as a wrong token does, rather than an error.
+    [Fact]
+    public async Task Should_GoBackToThePage_ForAFormOverTheLimits()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var http = NoRedirects(boards.App);
+        var token = TokenPattern().Match(await PageAsync(http)).Groups[1].Value;
+        var fields = Enumerable.Range(0, 2000).Select(i => new KeyValuePair<string, string>($"x{i}", "1")).ToList();
+        fields.Add(new("show", "1"));
+        fields.Add(new("__RequestVerificationToken", token));
+        using var form = new FormUrlEncodedContent(fields);
+
+        using var response = await http.PostAsync(RelaysEndpoints.BoardsPath, form, Cancel);
+
+        AssertBackToThePage(response, cookie: null);
+    }
+
     [Fact]
     public async Task Should_RefuseTheFilter_WithoutASignIn()
     {

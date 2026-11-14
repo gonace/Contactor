@@ -35,12 +35,23 @@ public static class RelaysEndpoints
     private static async Task<RedirectHttpResult> ShowBoardsAsync(HttpContext context, IAntiforgery antiforgery, BoardFilterScreen screen)
     {
         var back = "~" + screen.PagePath;
-        if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
+        IFormCollection form;
+        try
         {
+            if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
+            {
+                return TypedResults.LocalRedirect(back);
+            }
+
+            form = await context.Request.ReadFormAsync(context.RequestAborted);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or AntiforgeryValidationException)
+        {
+            // A form over ASP.NET Core's limits (e.g. too many values), which the token check reads first: no filter of
+            // ours, so back to the page.
             return TypedResults.LocalRedirect(back);
         }
 
-        var form = await context.Request.ReadFormAsync(context.RequestAborted);
         var filter = BoardFilter.Parse(form["show"].Count == 1 ? form["show"][0] : null);
         if (filter.IsAll)
         {
