@@ -181,10 +181,10 @@ public sealed class GroupsHandler
             boardId = await db.Relays.Where(r => r.Id == first.RelayId).Select(r => (int?)r.BoardId).SingleOrDefaultAsync(cancellationToken);
         }
 
-        // Without a first relay that exists, or one whose board the app runs, the draft is refused before anything else.
-        if (boardId is not { } id || _sequencer.For(id) is null)
+        // Without a first relay that exists the draft is refused before anything else.
+        if (boardId is not { } id)
         {
-            return await CreateCoreAsync(draft, userEmail, boardId, cancellationToken);
+            return await CreateCoreAsync(draft, userEmail, boardId: null, cancellationToken);
         }
 
         return await _sequencer.ExclusiveAsync(id, () => CreateCoreAsync(draft, userEmail, id, cancellationToken), cancellationToken);

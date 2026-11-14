@@ -65,7 +65,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
     /// <summary>
     /// Stops listening and ends the loop. A step or request under way finishes first, so nothing is left half sent and
-    /// unsaved; one that comes after throws <see cref="BoardNotConnectedException"/>.
+    /// unsaved; a request that comes after throws <see cref="BoardNotConnectedException"/>, and a step does nothing.
     /// </summary>
     public async ValueTask DisposeAsync()
     {
@@ -75,9 +75,11 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         }
 
         _board.StateChanged -= OnStateChanged;
-        await _ended.CancelAsync();
+
+        // The step or request under way first, while the board's connection still runs; then the loop ends.
         await _gate.WaitAsync(CancellationToken.None);
         _gate.Release();
+        await _ended.CancelAsync();
 
         // The semaphores and the token source are left to the collector: a request may still be waiting on the gate.
     }

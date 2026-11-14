@@ -51,6 +51,18 @@ public sealed class BoardParts<T>
     /// <summary>Every board's part, in the order the boards were made.</summary>
     public IReadOnlyList<T> All => Volatile.Read(ref _parts);
 
+    /// <summary>How many parts' loops run now: none is left once a part's watch ended or the service stopped.</summary>
+    public int RunningLoops
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _loops.Count;
+            }
+        }
+    }
+
     /// <summary>The board's part, or null when the board has none (no such board, or its watch ended).</summary>
     public T? Find(int boardId)
     {

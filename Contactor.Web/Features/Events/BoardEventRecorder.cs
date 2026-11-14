@@ -60,6 +60,9 @@ public sealed class BoardEventRecorder : BackgroundService, IBoardWatcher
         _boards = new BoardParts<BoardRecorder>(loggerFactory.CreateLogger<BoardEventRecorder>());
     }
 
+    /// <summary>How many boards' loops run now (see <see cref="BoardParts{T}.RunningLoops"/>).</summary>
+    public int RunningLoops => _boards.RunningLoops;
+
     /// <summary>The board's recorder, or null for a board the app doesn't run.</summary>
     public BoardRecorder? For(int boardId)
     {

@@ -42,6 +42,9 @@ public sealed class GroupSequencer : BackgroundService, IBoardWatcher
     /// <summary>Every board's sequencer.</summary>
     public IReadOnlyList<BoardSequencer> Boards => _boards.All;
 
+    /// <summary>How many boards' loops run now (see <see cref="BoardParts{T}.RunningLoops"/>).</summary>
+    public int RunningLoops => _boards.RunningLoops;
+
     /// <summary>The board's sequencer, or null for a board the app doesn't run.</summary>
     public BoardSequencer? For(int boardId)
     {
@@ -117,12 +120,13 @@ public sealed class GroupSequencer : BackgroundService, IBoardWatcher
 
     /// <summary>
     /// Runs a change to the board's groups themselves (create, save, delete) under the same lock as that board's
-    /// sequence, so a check like "the group is off" still holds when the change is saved. Throws
-    /// <see cref="BoardNotConnectedException"/> for a board the app doesn't run.
+    /// sequence, so a check like "the group is off" still holds when the change is saved. For a board the app doesn't
+    /// run, nothing runs its groups: the change runs at once (and finds no contact with the board where it asks).
     /// </summary>
     public Task<T> ExclusiveAsync<T>(int boardId, Func<Task<T>> change, CancellationToken cancellationToken)
     {
-        return Of(boardId).ExclusiveAsync(change, cancellationToken);
+        ArgumentNullException.ThrowIfNull(change);
+        return _boards.Find(boardId) is { } sequencer ? sequencer.ExclusiveAsync(change, cancellationToken) : change();
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)

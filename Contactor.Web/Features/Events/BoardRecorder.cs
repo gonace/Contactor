@@ -92,7 +92,7 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
     /// <inheritdoc/>
     public int BoardId => _board.BoardId;
 
-    /// <summary>Stops listening and ends the loop; a status being recorded is finished first.</summary>
+    /// <summary>Stops listening and ends the loop; a status still queued isn't recorded.</summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)

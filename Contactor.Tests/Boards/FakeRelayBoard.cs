@@ -255,12 +255,31 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
+    /// <summary>Every command that reached the board while it was connected: its relays and whether ON, in order.</summary>
+    public IReadOnlyList<(ChannelMask Relays, bool On)> Sent
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _sent];
+            }
+        }
+    }
+
+    private readonly List<(ChannelMask Relays, bool On)> _sent = [];
+
     private async Task<ChannelMask> SwitchAsync(ChannelMask relays, bool on)
     {
         EnsureConnected();
         if (!Capabilities.AllRelays.ContainsAll(relays))
         {
             throw new ArgumentOutOfRangeException(nameof(relays), relays, $"The board has relays 1–{Capabilities.RelayCount}.");
+        }
+
+        lock (_lock)
+        {
+            _sent.Add((relays, on));
         }
 
         // Refused relays stay as they are: a command with only these fails before it switches anything.
