@@ -1,7 +1,7 @@
-/* A developer tool for a desktop browser: the whole window, the boards on the left, the traffic filling the rest. */
+/* A developer tool. From 1024 px: the whole window, the boards on the left, the traffic filling the rest. Narrower (at
+   the end): one column that scrolls, the boards a row of cards, "Add a board" and the traffic folded away. */
 .screen {
     height: 100vh;
-    min-width: 1000px;
     display: flex;
     flex-direction: column;
 }
@@ -110,7 +110,9 @@ h1 {
 }
 
 .board .name {
+    min-width: 0;
     font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 .dot {
@@ -264,6 +266,7 @@ h2 {
     margin: 0;
     font-size: 22px;
     font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 .connection {
@@ -298,6 +301,7 @@ h2 {
 
 .relays {
     display: grid;
+    grid-template-columns: repeat(var(--columns, 8), minmax(0, 1fr));
     gap: 8px;
 }
 
@@ -426,4 +430,180 @@ h3 {
 
 .none {
     padding: 24px;
+}
+
+/* The folds' buttons, shown only below 1024 px. */
+.fold {
+    display: none;
+}
+
+@media (max-width: 1023.98px) {
+    .screen {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .top {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        padding: 14px 16px;
+    }
+
+    .top .title {
+        flex-wrap: wrap;
+        gap: 4px 16px;
+    }
+
+    .top .mono {
+        overflow-wrap: anywhere;
+    }
+
+    .body {
+        flex-direction: column;
+    }
+
+    .side {
+        width: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+    }
+
+    /* The boards: a row of cards that scrolls sideways on its own, never the page. */
+    .boards {
+        flex: none;
+        flex-direction: row;
+        gap: 8px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0 16px 4px;
+    }
+
+    /* As wide as its name; the lamps wrap below it rather than widen the card. */
+    .board {
+        width: auto;
+        border-color: var(--line);
+    }
+
+    .board .lamps {
+        width: 0;
+        min-width: 100%;
+    }
+
+    .board .line {
+        gap: 12px;
+    }
+
+    .board .name {
+        white-space: nowrap;
+    }
+
+    .fold {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+        height: auto;
+        font-weight: 600;
+    }
+
+    .add-fold {
+        justify-content: center;
+        margin: 12px 16px 16px;
+        border: 1px dashed var(--line-strong);
+    }
+
+    .add-fold[aria-expanded="true"] {
+        margin-bottom: 0;
+    }
+
+    .add {
+        display: none;
+        border-top: none;
+    }
+
+    .add.open {
+        display: flex;
+    }
+
+    .main {
+        padding: 16px;
+    }
+
+    .head {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .actions {
+        flex-wrap: wrap;
+    }
+
+    .split {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+    }
+
+    .relays {
+        grid-template-columns: repeat(var(--narrow-columns, 4), minmax(0, 1fr));
+    }
+
+    .relay .mono {
+        white-space: nowrap;
+    }
+
+    .check {
+        min-height: 44px;
+    }
+
+    select,
+    input:not([type="checkbox"]),
+    button {
+        height: 44px;
+    }
+
+    .traffic-fold {
+        padding: 0 20px;
+        border-radius: 14px;
+        background: var(--card);
+        color: var(--muted);
+    }
+
+    /* The traffic: below its fold, as long as it is; the page scrolls, not the card. */
+    .traffic {
+        display: none;
+        flex: none;
+    }
+
+    .traffic.open {
+        display: flex;
+    }
+
+    .traffic-head {
+        padding: 12px 16px;
+    }
+
+    .traffic-head .title {
+        flex-wrap: wrap;
+    }
+
+    .rows {
+        overflow: visible;
+    }
+
+    /* One row: time and direction on a line, what and its bytes below. */
+    .header-row {
+        display: none;
+    }
+
+    .grid {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 4px 12px;
+        padding: 10px 16px;
+    }
+
+    .row > span:nth-child(n + 3) {
+        grid-column: 1 / -1;
+        overflow-wrap: anywhere;
+    }
 }

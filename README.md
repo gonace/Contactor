@@ -84,7 +84,8 @@ Run everything locally with Aspire (the dashboard opens on http://localhost:1528
 dotnet run --project Contactor.AppHost
 ```
 
-It needs Docker Desktop. The AppHost starts a VM201 simulator on port 9760, and the app as its image, built from the
+It needs Docker Desktop. The AppHost starts a VM201 simulator on port 9760, which the app reaches at
+`host.docker.internal`, and the app as its image, built from the
 `Dockerfile` with cloudflared and Tailscale inside, as on a real installation, on http://localhost:8080; Docker Desktop
 shows its container under `contactor`. What the app keeps is in the Docker volume `contactor-dev`; delete it to start
 over. A new database starts with the setup guide,

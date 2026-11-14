@@ -72,11 +72,13 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 
 ## The simulator (`Contactor.Simulator`)
 
-A small Blazor web app for development, laid out for a desktop browser and filling the window; not for phones. English, like the app.
+A small Blazor web app for development, filling the window from 1024 px and one column that scrolls on a phone or tablet. English, like the app.
 - `Simulator:Boards` lists the boards that start with it (`Type`, `Port`, optional `Username` and `Password`); none listed: one VM201 on 9760. Boards added on the page last until it stops. Each board listens on its own port on 127.0.0.1, so several run at once.
+- `Simulator:AppAddress`: the address the app reaches the boards at, only shown on the page (the boards still listen on 127.0.0.1); empty: 127.0.0.1. The Aspire run sets `host.docker.internal`, where the app's container reaches this computer.
 - `SimulatorCatalogue`: the models it can simulate, each with its `ISimulatedBoard`. A new model is one line there.
 - `SimulatedBoards` runs them; `RunningBoard` keeps each board's latest 100 traffic lines in memory, with the keep-alive left out and counted, and logs what is done on the page as "at the board".
-- The page: the boards on the left with "Add a board"; the selected board's relays (a click switches one as the board's own button would), input, own timers, "Drop connection" and "Remove"; its traffic as a table below (time, direction, what, bytes; errors red).
+- The page: the boards on the left with "Add a board"; the selected board's relays (a click switches one as the board's own button would), input, own timers, "Drop connection" and "Remove"; its traffic as a table below (time, direction, what, bytes; errors red). Each board and the header show where the app reaches it (`Simulator:AppAddress` and its port).
+- Below 1024 px: the header stacks, the boards are a row of cards that scrolls sideways, "Add a board" and the traffic fold away behind a button each (no JavaScript; the page's own state), the relays four per row, and 44 px tap targets. The page itself never scrolls sideways.
 
 ---
 
