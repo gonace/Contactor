@@ -6,12 +6,14 @@ namespace Contactor.Tests.Web;
 /// <summary>"New group" between its steps: one start order, and taps that arrive after the page moved on.</summary>
 public sealed class GroupWizardTests
 {
+    private const int Board = 1;
+
     [Fact]
     public void Should_KeepStepTwosNumbers_InTheOrderStepThreeChose()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(3, "Relay 3");
-        wizard.Toggle(1, "Relay 1");
+        wizard.Toggle(3, "Relay 3", Board);
+        wizard.Toggle(1, "Relay 1", Board);
         Assert.True(wizard.GoOn(2));
 
         wizard.Move(1, -1);
@@ -25,14 +27,14 @@ public sealed class GroupWizardTests
     public void Should_PutARelayPickedAgainLast_KeepingItsNameAndWaits()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(3, "Relay 3");
-        wizard.Toggle(1, "Relay 1");
-        wizard.Toggle(5, "Relay 5");
+        wizard.Toggle(3, "Relay 3", Board);
+        wizard.Toggle(1, "Relay 1", Board);
+        wizard.Toggle(5, "Relay 5", Board);
         wizard.Members[0].RoleName = "Fan";
         wizard.Members[0].RunOnSec = 300;
 
-        wizard.Toggle(3, "Relay 3");
-        wizard.Toggle(3, "Relay 3");
+        wizard.Toggle(3, "Relay 3", Board);
+        wizard.Toggle(3, "Relay 3", Board);
 
         Assert.Equal([1, 5, 3], wizard.Members.Select(m => m.RelayId));
         Assert.Equal(3, wizard.OrderOf(3));
@@ -43,8 +45,8 @@ public sealed class GroupWizardTests
     public void Should_IgnoreASecondTap_ThatArrivesAfterThePageMovedOn()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(1, "Relay 1");
-        wizard.Toggle(2, "Relay 2");
+        wizard.Toggle(1, "Relay 1", Board);
+        wizard.Toggle(2, "Relay 2", Board);
 
         Assert.True(wizard.Back(2));
         Assert.False(wizard.Back(2));
@@ -67,9 +69,9 @@ public sealed class GroupWizardTests
         wizard.Name = "Fan heater";
         Assert.True(wizard.GoOn(1));
 
-        wizard.Toggle(1, "Relay 1");
+        wizard.Toggle(1, "Relay 1", Board);
         Assert.False(wizard.GoOn(2));
-        wizard.Toggle(2, "Relay 2");
+        wizard.Toggle(2, "Relay 2", Board);
         Assert.True(wizard.GoOn(2));
 
         wizard.Members[1].RoleName = " ";
@@ -86,8 +88,8 @@ public sealed class GroupWizardTests
     public void Should_IgnoreMovesOutsideTheList()
     {
         var wizard = AtStepTwo();
-        wizard.Toggle(1, "Relay 1");
-        wizard.Toggle(2, "Relay 2");
+        wizard.Toggle(1, "Relay 1", Board);
+        wizard.Toggle(2, "Relay 2", Board);
 
         wizard.Move(0, -1);
         wizard.Move(1, 1);
@@ -102,7 +104,7 @@ public sealed class GroupWizardTests
     {
         var wizard = AtStepTwo();
 
-        wizard.Toggle(1, new string('Å', 60));
+        wizard.Toggle(1, new string('Å', 60), Board);
 
         Assert.Equal(RelayGroupMember.RoleNameMaxLength, wizard.Members[0].RoleName.Length);
     }
