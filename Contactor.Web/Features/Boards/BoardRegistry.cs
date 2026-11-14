@@ -28,7 +28,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     private readonly IReadOnlyList<IBoardWatcher> _watchers;
     private readonly Lock _lock = new();
 
-    // One change to the boards at a time: loading, a new model.
+    // One change to the boards at a time: loading, a new model, adding, removing and restoring a board.
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     // In the list's order (SortOrder, then id); replaced as a whole, so a reader never sees it change.
@@ -303,7 +303,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 await db.SaveChangesAsync(cancellationToken);
             }
 
-            // A new row may get the id of a board removed before: it is a board of its own.
+            // A safeguard: the ids are never used again (AUTOINCREMENT), but a new row is a board of its own whatever
+            // was removed before.
             _removed.Remove(row.Id);
             LiveBoard? live = null;
             try
@@ -335,6 +336,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 throw;
             }
 
+            // Told once more now that it has its model: a screen that reloaded when it was added saw it without relays.
+            RaiseBoardsChanged();
             LogBoardAdded(row.Id, model.Id);
             return live;
         }

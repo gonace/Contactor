@@ -75,7 +75,7 @@
         }
         else if (_step == StepBoard)
         {
-            <BoardModelPicker @ref="_picker" @bind-Type="_type" Busy="_busy" OpenChanged="open => _sheetOpen = open" />
+            <BoardModelPicker @ref="_picker" @bind-Type="_type" Busy="Busy" OpenChanged="OnListOpened" />
         }
         else if (Chosen is not { Model: not null } chosen)
         {
@@ -84,7 +84,7 @@
         }
         else if (_step == StepWhere)
         {
-            <BoardWhereStep @ref="_where" Board="chosen" Values="_whereFields" UserEmail="@_user?.Email" Busy="_busy"
+            <BoardWhereStep @ref="_where" Board="chosen" Values="_whereFields" UserEmail="@_user?.Email" Busy="Busy"
                             BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" />
         }
         else if (_step == StepRelays)
@@ -481,6 +481,16 @@
                 StepRelays when _relaysStep is not null => _relaysStep.FocusAsync(),
                 _ => _heading.FocusAsync(),
             });
+        }
+    }
+
+    // A list of "Which relay board?" opened or closed: the rest is inert meanwhile, and an earlier message goes.
+    private void OnListOpened(bool open)
+    {
+        _sheetOpen = open;
+        if (open)
+        {
+            _error = null;
         }
     }
 

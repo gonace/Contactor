@@ -282,6 +282,90 @@ public sealed class BoardAddingTests
         Assert.False(await db.EventLog.AnyAsync(e => e.BoardId != null && e.BoardId != 1 && e.BoardId != boards.BarnId, Cancel));
     }
 
+    // An open Relays page shows a board added while it is open, with its relays: it is told again once the board has
+    // its model.
+    [Fact]
+    public async Task Should_ShowABoardAddedWhileRelaysIsOpen()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<Relays>(boards.App.Services, John, "John");
+        var before = Occurrences(await page.TextAsync(), "RELAY 4");
+        var parts = new FakeBoardParts(new FakeRelayBoard(relayCount: 4, inputCount: 0));
+        var model = parts.FakeModel;
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        var told = new List<int>();
+        registry.BoardsChanged += (_, _) => told.Add(registry.All[^1].Capabilities.RelayCount);
+
+        await registry.AddBoardAsync(model, "Shed", setup => parts.Build(setup.BoardId, model), Cancel);
+
+        // The last word the screens get is the board with its model, so a page that reloads then sees its relays.
+        Assert.Equal(4, told[^1]);
+
+        await BoardTestRig.WaitUntilAsync(() =>
+        {
+            var text = page.TextAsync().GetAwaiter().GetResult();
+            return text.Contains("Shed", StringComparison.Ordinal) && Occurrences(text, "RELAY 4") == before + 1;
+        });
+    }
+
+    // Back on the first step with the same model, a new name renames the board made, and an empty one gives it the
+    // model's name again: no new board either time.
+    [Fact]
+    public async Task Should_RenameTheBoardMade_WhenBackWithTheSameModel()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Velleman", "vm204");
+        await page.TypeAsync(PageRenderer.With("id", "board-name"), "Garage");
+        await page.ClickAsync(Button("Next"));
+        var made = registry.All[^1];
+        Assert.Equal("Garage", made.Name);
+
+        await page.ClickAsync(PageRenderer.With("class", "back"));
+        await page.TypeAsync(PageRenderer.With("id", "board-name"), "Garage north");
+        await page.ClickAsync(Button("Next"));
+        Assert.Equal(("Garage north", 3), (made.Name, registry.All.Count));
+        Assert.Same(made, registry.All[^1]);
+
+        await page.ClickAsync(PageRenderer.With("class", "back"));
+        await page.TypeAsync(PageRenderer.With("id", "board-name"), "");
+        await page.ClickAsync(Button("Next"));
+        Assert.Equal(("Velleman VM204", 3), (made.Name, registry.All.Count));
+        Assert.Contains("Where is the board?", await page.TextAsync(), StringComparison.Ordinal);
+    }
+
+    // Cancel while the board answers and a relay was left on ("Try", or at the board): the relay is turned off first,
+    // then the board is removed.
+    [Fact]
+    public async Task Should_TurnTheRelaysOff_AndRemoveTheBoard_OnCancel_WhileItAnswers()
+    {
+        await using var simulator = new Contactor.Boards.Vm201.Vm201Simulator();
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Velleman", "vm201");
+        await page.ClickAsync(Button("Next"));
+        var made = registry.All[^1];
+        await page.TypeAsync(PageRenderer.With("id", "host"), "127.0.0.1");
+        await page.TypeAsync(PageRenderer.With("id", "port"), simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        await simulator.SwitchRelayAsync(3, turnOn: true);
+        await BoardTestRig.WaitUntilAsync(() => made.State.IsOn(3));
+
+        await page.ClickAsync(Button("Cancel"));
+
+        Assert.Equal(0, simulator.Outputs);
+        Assert.Null(registry.Find(made.BoardId));
+        var navigation = Assert.IsType<NavigationException>(Assert.Single(Errors(page)));
+        Assert.Equal("http://localhost/settings", navigation.Location);
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.Boards.AnyAsync(b => b.Id == made.BoardId, Cancel));
+        Assert.False(await db.Relays.AnyAsync(r => r.BoardId == made.BoardId, Cancel));
+    }
+
     // The setup guide's board steps, now shared with "Add a board", still set up the first board as before: its model,
     // install.sh's address for it, its relays' names, and "All set".
     [Fact]
@@ -318,6 +402,17 @@ public sealed class BoardAddingTests
         Assert.Contains("All set", text, StringComparison.Ordinal);
         Assert.Contains("8 in use", text, StringComparison.Ordinal);
         Assert.Empty(Errors(page));
+    }
+
+    private static int Occurrences(string text, string part)
+    {
+        var count = 0;
+        for (var at = text.IndexOf(part, StringComparison.Ordinal); at >= 0; at = text.IndexOf(part, at + part.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     // What went wrong on the page, but for moving the focus to a new step's heading, which needs a browser.

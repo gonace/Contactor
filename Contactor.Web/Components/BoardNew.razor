@@ -55,7 +55,7 @@
     <main class="content">
         @if (_step == StepBoard)
         {
-            <BoardModelPicker @ref="_picker" @bind-Type="_type" Busy="Busy" OpenChanged="open => _sheetOpen = open">
+            <BoardModelPicker @ref="_picker" @bind-Type="_type" Busy="Busy" OpenChanged="OnListOpened">
                 <div class="field">
                     <label for="board-name">Name</label>
                     <input id="board-name" type="text" maxlength="@Board.NameMaxLength" autocomplete="off" placeholder="@DefaultName" @bind="_name" @bind:event="oninput" />
@@ -69,7 +69,7 @@
         }
         else if (_step == StepWhere)
         {
-            <BoardWhereStep @ref="_where" Board="board" Values="_whereFields" UserEmail="@_user?.Email" Busy="_busy"
+            <BoardWhereStep @ref="_where" Board="board" Values="_whereFields" UserEmail="@_user?.Email" Busy="Busy"
                             BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" />
         }
         else
@@ -167,6 +167,16 @@
         }
     }
 
+    // A list of "Which relay board?" opened or closed: the rest is inert meanwhile, and an earlier message goes.
+    private void OnListOpened(bool open)
+    {
+        _sheetOpen = open;
+        if (open)
+        {
+            _error = null;
+        }
+    }
+
     private void Back(int fromStep)
     {
         if (!Busy && _step == fromStep && _step > StepBoard)
@@ -231,7 +241,9 @@
 
         if (Chosen is { } made && made.Model?.Id == model.Id)
         {
-            if (name.Length > 0 && (_error = await Address.RenameAsync(made.BoardId, name, CancellationToken.None)) is not null)
+            // An empty name is the model's, made unique, as when it was made.
+            var newName = name.Length > 0 ? name : DefaultName;
+            if ((_error = await Address.RenameAsync(made.BoardId, newName, CancellationToken.None)) is not null)
             {
                 return;
             }
