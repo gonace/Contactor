@@ -25,6 +25,7 @@
     --on-ink: #FFFFFF;          /* text on an --ink background (selected pills, Save) */
     --on-accent: #FFFFFF;       /* text on an --accent background (ON) */
     --danger-solid: #7A1A10;    /* a destructive button's background ("Delete") */
+    --on-danger: #FFFFFF;       /* text on a --danger-solid background */
     --row-line: #EEEAE3;        /* between rows in a list */
     --line-dashed: #A39C90;     /* dashed borders: automatic badges, "Show inactive" */
     --inactive-bg: #EFEBE4;
@@ -55,6 +56,7 @@
         --danger-ink: #FFB3A7;
         --on-ink: #16140F;
         --danger-solid: #C2352A;
+        --on-danger: #FFFFFF;
         --row-line: #2A2621;
         --line-dashed: #6B6358;
         --inactive-bg: #1B1915;

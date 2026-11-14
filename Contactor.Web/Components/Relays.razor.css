@@ -759,7 +759,7 @@ button:disabled {
 .confirm {
     border: none;
     background: var(--danger-solid);
-    color: #FFFFFF;
+    color: var(--on-danger);
 }
 
 /* A tablet: the relays in two columns, the groups one per row. */

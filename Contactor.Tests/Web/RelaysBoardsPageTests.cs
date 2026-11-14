@@ -118,17 +118,139 @@ public sealed partial class RelaysBoardsPageTests
     }
 
     [Fact]
-    public async Task Should_RefuseTheFilter_WithoutTheFormsToken()
+    public async Task Should_ChangeNothing_WithoutTheFormsToken()
     {
         await using var boards = await TwoBoards.StartAsync();
-        using var http = boards.App.CreateClient();
+        using var http = NoRedirects(boards.App);
         await PageAsync(http);
         using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["show"] = "1" });
 
         using var response = await http.PostAsync(RelaysEndpoints.BoardsPath, form, Cancel);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        AssertBackToThePage(response, cookie: null);
         Assert.Contains($"id=\"board-{boards.BarnId}\"", await PageAsync(http), StringComparison.Ordinal);
+    }
+
+    // The token covers the person's name: renamed while the page was open, a tap goes back to the page (with a fresh
+    // token) and changes nothing, rather than a bare error.
+    [Fact]
+    public async Task Should_GoBackToThePage_WhenThePersonWasRenamedMeanwhile()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var http = NoRedirects(boards.App);
+        var token = TokenPattern().Match(await PageAsync(http)).Groups[1].Value;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Users.Where(u => u.Email == John).ExecuteUpdateAsync(u => u.SetProperty(x => x.DisplayName, "Johnny"), Cancel);
+        }
+
+        using (var stale = await PostAsync(http, "1", token))
+        {
+            AssertBackToThePage(stale, cookie: null);
+        }
+
+        // The page again, with a token for the new name: now it is taken.
+        var fresh = TokenPattern().Match(await PageAsync(http)).Groups[1].Value;
+        using var valid = await PostAsync(http, "1", fresh);
+        AssertBackToThePage(valid, cookie: "1");
+    }
+
+    [Fact]
+    public async Task Should_RefuseTheFilter_WithoutASignIn()
+    {
+        await using var app = new TestWebApp("Production", AccessTokens.Settings);
+        using var http = NoRedirects(app);
+
+        using var response = await PostAsync(http, "1", "token");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+    }
+
+    [Fact]
+    public async Task Should_RefuseTheFilter_WhileTheAppIsBeingSetUp()
+    {
+        await using var app = new TestWebApp(setUp: false);
+        using var http = NoRedirects(app);
+
+        using var response = await PostAsync(http, "1", "token");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+    }
+
+    // The page's own buttons, pressed live: a board's "All off" turns off that board only; "Turn off all boards" only
+    // asks, and acts once the person says "Turn off".
+    [Fact]
+    public async Task Should_TurnOffTheBoardsTheButtonsSay_AndAskFirstForEveryBoard()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var control = boards.App.Services.GetRequiredService<RelayControl>();
+        await control.TurnOnAsync(await RelayIdAsync(boards, 1, 3), John, Cancel);
+        await control.TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 2), John, Cancel);
+        using var page = await PageRenderer.StartAsync<Contactor.Web.Components.Relays>(boards.App.Services, John, "John");
+
+        await page.ClickAsync(PageRenderer.With("aria-label", "All off on Barn"));
+        Assert.Equal(ChannelMask.None, boards.Barn.State.Relays);
+        Assert.True(boards.First.State.IsOn(3));
+
+        await control.TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 2), John, Cancel);
+        await page.ClickAsync(PageRenderer.With("class", "all-boards-off"));
+        Assert.True(boards.First.State.IsOn(3));
+        Assert.True(boards.Barn.State.IsOn(2));
+        Assert.True(await page.HasAsync(PageRenderer.With("role", "alertdialog")));
+
+        // "Cancel" changes nothing; "Turn off" turns off every board.
+        await page.ClickAsync(PageRenderer.With("class", "cancel"));
+        Assert.False(await page.HasAsync(PageRenderer.With("role", "alertdialog")));
+        Assert.True(boards.First.State.IsOn(3));
+        await page.ClickAsync(PageRenderer.With("class", "all-boards-off"));
+        await page.ClickAsync(PageRenderer.With("class", "confirm"));
+
+        Assert.False(boards.First.State.IsOn(3));
+        Assert.Equal(ChannelMask.None, boards.Barn.State.Relays);
+        Assert.Empty(page.Errors);
+    }
+
+    [Fact]
+    public async Task Should_RedrawADetailPage_OnlyForItsOwnBoard_AndLetGoOnDispose()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        var before = Listeners(registry);
+        int inputId;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            inputId = await db.Inputs.Where(i => i.BoardId == 1).Select(i => i.Id).FirstAsync(Cancel);
+        }
+
+        var pages = new List<PageRenderer>
+        {
+            await PageRenderer.StartAsync<Contactor.Web.Components.RelayDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await RelayIdAsync(boards, 1, 3) }),
+            await PageRenderer.StartAsync<Contactor.Web.Components.InputDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = inputId }),
+            await PageRenderer.StartAsync<Contactor.Web.Components.GroupDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await AddFirstBoardGroupAsync(boards) }),
+        };
+        Assert.Equal(before + pages.Count, Listeners(registry));
+        var renders = pages.Select(p => p.Renders).ToList();
+
+        // A status from Barn first, then from the pages' own board: each page draws once, for its own board only. A
+        // redraw for Barn would come first, as the statuses come in order. Statuses that change nothing, so nothing is
+        // logged and nothing else redraws the pages.
+        boards.Barn.SetRelay(3, false);
+        boards.First.SetRelay(4, false);
+        foreach (var (page, i) in pages.Select((p, i) => (p, i)))
+        {
+            await BoardTestRig.WaitUntilAsync(() => page.Renders > renders[i]);
+            Assert.Equal(renders[i] + 1, page.Renders);
+            Assert.Empty(page.Errors);
+        }
+
+        foreach (var page in pages)
+        {
+            page.Close();
+        }
+
+        Assert.Equal(before, Listeners(registry));
     }
 
     [Fact]
@@ -308,6 +430,61 @@ public sealed partial class RelaysBoardsPageTests
         response.EnsureSuccessStatusCode();
         Assert.Equal("/", response.RequestMessage!.RequestUri!.AbsolutePath);
         return WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Cancel));
+    }
+
+    // A client that shows a redirect rather than following it, with its cookies.
+    private static HttpClient NoRedirects(TestWebApp app)
+    {
+        return app.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+    }
+
+    private static async Task<HttpResponseMessage> PostAsync(HttpClient http, string show, string token)
+    {
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["show"] = show,
+            ["__RequestVerificationToken"] = token,
+        });
+        return await http.PostAsync(RelaysEndpoints.BoardsPath, form, Cancel);
+    }
+
+    // Back to the Relays screen, with the filter's cookie set to this, or not set at all.
+    private static void AssertBackToThePage(HttpResponseMessage response, string? cookie)
+    {
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        var set = response.Headers.TryGetValues("Set-Cookie", out var values)
+            ? values.Where(v => v.StartsWith(BoardFilter.CookieName + "=", StringComparison.Ordinal)).ToList()
+            : [];
+        if (cookie is null)
+        {
+            Assert.Empty(set);
+        }
+        else
+        {
+            Assert.StartsWith($"{BoardFilter.CookieName}={cookie};", Assert.Single(set), StringComparison.Ordinal);
+        }
+    }
+
+    // How many listen to the boards' states.
+    private static int Listeners(BoardRegistry registry)
+    {
+        var field = typeof(BoardRegistry).GetField(nameof(BoardRegistry.StateChanged), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        return (field.GetValue(registry) as Delegate)?.GetInvocationList().Length ?? 0;
+    }
+
+    // The first board's relays 1 and 2 as a group.
+    private static async Task<int> AddFirstBoardGroupAsync(TwoBoards boards)
+    {
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
+        group.Members.Add(new RelayGroupMember { RelayId = await RelayIdAsync(boards, 1, 1), Position = 1, RoleName = "Fan" });
+        group.Members.Add(new RelayGroupMember { RelayId = await RelayIdAsync(boards, 1, 2), Position = 2, RoleName = "Heat" });
+        db.RelayGroups.Add(group);
+        await db.SaveChangesAsync(Cancel);
+        db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
+        await db.SaveChangesAsync(Cancel);
+        return group.Id;
     }
 
     // One board's section of the page.

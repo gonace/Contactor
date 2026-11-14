@@ -1,5 +1,5 @@
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Contactor.Web.Features.Relays;
 
@@ -16,16 +16,25 @@ public static class RelaysEndpoints
     /// the page's own form (a tap on a board), kept in a cookie, then back to the Relays screen, which reads it while
     /// it is made. A form post rather than script, so the page needs no JavaScript and never shows every board first.
     /// Behind the sign-in like every page, and with the form's antiforgery token. Only a view: it switches nothing.
+    /// A token that no longer fits (e.g. the person renamed themselves while the page was open: the token covers their
+    /// name) changes nothing and goes back to the page, which comes with a fresh token, rather than a bare error.
     /// </summary>
     public static IEndpointRouteBuilder MapRelaysGroup(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(BoardsPath, ShowBoards).WithTags("Relays").ExcludeFromDescription();
+        // The token is checked in the handler, so a stale one leads back to the page instead of a 400.
+        endpoints.MapPost(BoardsPath, ShowBoardsAsync).WithTags("Relays").ExcludeFromDescription().DisableAntiforgery();
         return endpoints;
     }
 
-    private static RedirectHttpResult ShowBoards(HttpContext context, [FromForm(Name = "show")] string? show)
+    private static async Task<RedirectHttpResult> ShowBoardsAsync(HttpContext context, IAntiforgery antiforgery)
     {
-        var filter = BoardFilter.Parse(show);
+        if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
+        {
+            return TypedResults.LocalRedirect("~/");
+        }
+
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var filter = BoardFilter.Parse(form["show"].Count == 1 ? form["show"][0] : null);
         if (filter.IsAll)
         {
             context.Response.Cookies.Delete(BoardFilter.CookieName);
