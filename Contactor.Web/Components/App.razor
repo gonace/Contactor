@@ -1,3 +1,4 @@
+@using Contactor.Web.Features.Relays
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,7 +22,8 @@
     <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 <body>
-    <Routes @rendermode="PageRenderMode" />
+    @* The board filter's cookie goes in as a parameter: the live connection has no request to read it from. *@
+    <Routes @rendermode="PageRenderMode" RelaysBoards="@HttpContext.Request.Cookies[BoardFilter.CookieName]" />
     @* Blazor shows this when the page's live connection breaks on an error it can't recover from. *@
     <div id="blazor-error-ui" role="alert">
         Something went wrong. <a href="" class="reload">Reload the page</a>

@@ -18,6 +18,9 @@ public sealed record InputChange(DateTime TimestampUtc, bool On, bool Known = tr
 /// <param name="Channel">Its input on the board: what the board's state goes by, and the number the screens show.</param>
 public sealed record InputView(int Id, int Channel, string Name, bool IsActive, InputChange? LastChange)
 {
+    /// <summary>The input's board.</summary>
+    public int BoardId { get; init; }
+
     /// <summary>"Closed" when the board reads the input as on, otherwise "Open".</summary>
     public static string StateText(bool on)
     {
@@ -96,7 +99,7 @@ public sealed class InputsHandler
 
     private static InputView View(Input input, InputChange? lastChange)
     {
-        return new InputView(input.Id, input.Channel, input.Name, input.IsActive, lastChange);
+        return new InputView(input.Id, input.Channel, input.Name, input.IsActive, lastChange) { BoardId = input.BoardId };
     }
 
     // The latest change of each input, from its newest "input-changed" event; its time is known unless its own board

@@ -66,7 +66,7 @@
                 }
                 else
                 {
-                @if (!Board.State.HasAnswered)
+                @if (!State.HasAnswered)
                 {
                     @* Before the board's first answer: unknown, all grey. *@
                     <section class="status unknown">
@@ -78,7 +78,7 @@
                 {
                 <section class="status @(IsOn ? "on" : "")">
                     <p>@StatusSentence</p>
-                    <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!Board.State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "TURN OFF" : "TURN ON")</button>
+                    <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "TURN OFF" : "TURN ON")</button>
                     @if (_toggleFailed)
                     {
                         @if (_inGroup)
@@ -88,7 +88,7 @@
                         else
                         {
                             @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
-                            <UnconfirmedBox CanTryAgain="@(Board.State.IsConnected && !_busy)" OnTryAgain="() => SwitchAsync(_wanted)" OnLeave="() => _toggleFailed = false" />
+                            <UnconfirmedBox CanTryAgain="@(State.IsConnected && !_busy)" OnTryAgain="() => SwitchAsync(_wanted)" OnLeave="() => _toggleFailed = false" />
                         }
                     }
                 </section>
@@ -178,8 +178,14 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
-    // Until the screens show every board (Issue #4): one board.
-    private IRelayBoard Board => Registry.Only;
+    // The relay's own board: its state and relays. Unknown (never answered, no relays) until the relay is loaded.
+    private int? BoardId { get; set; }
+
+    private LiveBoard? Board => BoardId is { } id ? Registry.Find(id) : null;
+
+    private BoardState State => Board?.State ?? BoardState.Initial;
+
+    private BoardCapabilities Capabilities => Board?.Capabilities ?? LiveBoard.NoBoard;
 
     private const int EventCount = 4;
 
@@ -209,7 +215,7 @@
     // Its channel on the board: the board's state goes by it, and it is the number shown. 0 until the relay is loaded.
     private int _channel;
 
-    private bool IsOn => _channel >= 1 && _channel <= Board.Capabilities.RelayCount && Board.State.IsOn(_channel);
+    private bool IsOn => _channel >= 1 && _channel <= Capabilities.RelayCount && State.IsOn(_channel);
 
     private string StatusSentence
     {
@@ -227,11 +233,13 @@
         _user = await CurrentUser.GetAsync();
         _relay = await Settings.GetAsync(Id, CancellationToken.None);
         _channel = 0;
+        BoardId = null;
         if (_relay is not null)
         {
             await using (var db = await DbFactory.CreateDbContextAsync())
             {
-                _channel = await db.Relays.AsNoTracking().Where(r => r.Id == Id).Select(r => r.Channel).SingleAsync();
+                var place = await db.Relays.AsNoTracking().Where(r => r.Id == Id).Select(r => new { r.BoardId, r.Channel }).SingleAsync();
+                (BoardId, _channel) = (place.BoardId, place.Channel);
             }
 
             _name = _relay.Name;
@@ -245,13 +253,13 @@
 
     protected override void OnInitialized()
     {
-        Board.StateChanged += OnBoardChanged;
+        Registry.StateChanged += OnBoardChanged;
         Changes.Changed += OnRelaysChanged;
     }
 
     public void Dispose()
     {
-        Board.StateChanged -= OnBoardChanged;
+        Registry.StateChanged -= OnBoardChanged;
         Changes.Changed -= OnRelaysChanged;
     }
 
@@ -385,8 +393,14 @@
         }
     }
 
-    private void OnBoardChanged(object? sender, BoardState state)
+    // Any board's new state: only the page's own board's is redrawn.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
     {
+        if (change.BoardId != BoardId)
+        {
+            return;
+        }
+
         _ = RefreshAsync(reload: false);
     }
 
@@ -407,7 +421,7 @@
                 }
 
                 // The board shows the relay as the person wanted it: nothing left to decide.
-                if (_toggleFailed && !_inGroup && new UnconfirmedPress(Id, _channel, _wanted).IsSettledBy(Board.State))
+                if (_toggleFailed && !_inGroup && new UnconfirmedPress(Id, _channel, _wanted).IsSettledBy(State))
                 {
                     _toggleFailed = false;
                 }

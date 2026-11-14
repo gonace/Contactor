@@ -25,7 +25,7 @@
         </div>
     }
 
-    <nav class="tabs" aria-label="Main menu">
+    <nav class="tabs @(SideList is null ? null : "has-list")" aria-label="Main menu">
         <a href="" aria-current="@(Current == Tab.Relays ? "page" : null)">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"></path><path d="M6.4 6.4a8 8 0 1 0 11.2 0"></path></svg>
             Relays
@@ -44,6 +44,11 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"></path><path d="M12 19h8"></path></svg>
                 Debug
             </a>
+        }
+        @if (SideList is not null)
+        {
+            @* Only in the desktop's side menu, under the tabs; it scrolls on its own while the tabs and the version stay. *@
+            <div class="side-list">@SideList</div>
         }
         @* Only in the desktop's side menu; on a phone and a tablet the version is at the bottom of Settings. *@
         @* The commit on a line of its own, so the narrow menu never cuts it off. *@
@@ -70,7 +75,8 @@
     private readonly Lock _lock = new();
 
     // Until the screens show every board (Issue #4): one board. Pages with the tab bar only open once the setup guide is done, and a board is
-    // always chosen by then. The one listened to, so the same one is let go.
+    // always chosen by then. The one listened to, so the same one is let go. With several boards there are no toasts yet: the bridge
+    // can't tell them apart.
     private BoardTrace? _trace;
     private string? _email;
     private bool _debugging;
@@ -85,6 +91,10 @@
     /// </summary>
     [Parameter]
     public bool SideMenuOnly { get; set; }
+
+    /// <summary>What a page shows in the desktop's side menu under the tabs, e.g. the Relays screen's boards.</summary>
+    [Parameter]
+    public RenderFragment? SideList { get; set; }
 
     // A copy: the timers change the list off the render thread.
     private Toast[] ToastsNow
@@ -107,8 +117,12 @@
         }
 
         Debugging.Changed += OnDebuggingChanged;
-        _trace = Registry.Only.Trace;
-        _trace.Added += OnTraced;
+        _trace = Registry.All.Count <= 1 ? Registry.Only.Trace : null;
+        if (_trace is not null)
+        {
+            _trace.Added += OnTraced;
+        }
+
         _debugging = await Debugging.IsOnAsync(_email, CancellationToken.None);
     }
 

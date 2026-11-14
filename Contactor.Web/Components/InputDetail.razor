@@ -49,21 +49,21 @@
                 </div>
 
                 @* What the board reads now; the app can't switch an input. *@
-                <section class="status @(!Board.State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
+                <section class="status @(!State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
                     <div class="now-row">
                         <div>
                             <p class="label">NOW</p>
                             <p class="now">
-                                @(Board.State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
-                                @if (Board.State.HasAnswered && Status.SinceUnknown)
+                                @(State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
+                                @if (State.HasAnswered && Status.SinceUnknown)
                                 {
                                     <WhyUnknown Label="Why is the time unknown?" For="Id" />
                                 }
                             </p>
                         </div>
-                        <InputStateBadge Closed="IsClosed" Unknown="!Board.State.HasAnswered" />
+                        <InputStateBadge Closed="IsClosed" Unknown="!State.HasAnswered" />
                     </div>
-                    @if (Board.State.HasAnswered && !Board.State.IsConnected)
+                    @if (State.HasAnswered && !State.IsConnected)
                     {
                         <p class="hint">No contact with the relay board: this may be out of date.</p>
                     }
@@ -145,8 +145,10 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
-    // Until the screens show every board (Issue #4): one board.
-    private IRelayBoard Board => Registry.Only;
+    // The input's own board: its state. Unknown (never answered) until the input is loaded.
+    private int? BoardId => _input?.BoardId;
+
+    private BoardState State => BoardId is { } id && Registry.Find(id) is { } board ? board.State : BoardState.Initial;
 
     private const int EventCount = 4;
 
@@ -165,7 +167,7 @@
     private IReadOnlyList<InputActionTarget> _targets = [];
     private bool _adding;
 
-    private bool IsClosed => _input is not null && Board.State.Inputs.Contains(_input.Channel);
+    private bool IsClosed => _input is not null && State.Inputs.Contains(_input.Channel);
 
     // What can still be added: what the input doesn't control yet.
     private List<InputActionTarget> Available => [.. _targets.Where(t => !_actions.Any(a => a.Target.IsSame(t)))];
@@ -206,7 +208,7 @@
         _actions.Remove(row);
     }
 
-    private InputStatus Status => InputStatusText.For(_input!, IsClosed, Board.State.IsConnected, Clock.Now, Clock.ToLocal);
+    private InputStatus Status => InputStatusText.For(_input!, IsClosed, State.IsConnected, Clock.Now, Clock.ToLocal);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -224,13 +226,13 @@
 
     protected override void OnInitialized()
     {
-        Board.StateChanged += OnBoardChanged;
+        Registry.StateChanged += OnBoardChanged;
         Changes.Changed += OnChanged;
     }
 
     public void Dispose()
     {
-        Board.StateChanged -= OnBoardChanged;
+        Registry.StateChanged -= OnBoardChanged;
         Changes.Changed -= OnChanged;
     }
 
@@ -260,9 +262,14 @@
         }
     }
 
-    // The board's state: a redraw is enough.
-    private void OnBoardChanged(object? sender, BoardState state)
+    // The input's own board's state: a redraw is enough.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
     {
+        if (change.BoardId != BoardId)
+        {
+            return;
+        }
+
         _ = RefreshAsync(reload: false);
     }
 

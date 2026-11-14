@@ -1,7 +1,26 @@
-<Router AppAssembly="typeof(Program).Assembly">
-    <Found Context="routeData">
-        <SetupGate PageType="routeData.PageType">
-            <RouteView RouteData="routeData" />
-        </SetupGate>
-    </Found>
-</Router>
+@using Contactor.Web.Features.Relays
+
+@* The Relays screen's board filter, as this browser's cookie had it when the page was opened: every page of the live
+   connection is made from it, and changing it reloads the page (RelaysEndpoints). *@
+<CascadingValue Value="_boardFilter" IsFixed="true">
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <SetupGate PageType="routeData.PageType">
+                <RouteView RouteData="routeData" />
+            </SetupGate>
+        </Found>
+    </Router>
+</CascadingValue>
+
+@code {
+    private BoardFilter _boardFilter = BoardFilter.All;
+
+    /// <summary>The board filter's cookie (<see cref="BoardFilter.CookieName"/>) on the request that opened the page.</summary>
+    [Parameter]
+    public string? RelaysBoards { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        _boardFilter = BoardFilter.Parse(RelaysBoards);
+    }
+}

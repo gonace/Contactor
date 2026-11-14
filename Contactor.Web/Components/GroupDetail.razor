@@ -166,7 +166,7 @@
                     {
                         <p class="hint">Turn the group off to change its relays or their order.</p>
                     }
-                    else if (_members.Count < Board.Capabilities.RelayCount && AddableRelays.Any())
+                    else if (_members.Count < Capabilities.RelayCount && AddableRelays.Any())
                     {
                         <div class="add">
                             <label for="add-relay" class="visually-hidden">Relay to add</label>
@@ -290,8 +290,12 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
-    // Until the screens show every board (Issue #4): one board.
-    private IRelayBoard Board => Registry.Only;
+    // The group's own board: its state and relays. Unknown (never answered, no relays) until the group is loaded.
+    private int? BoardId => _group?.BoardId;
+
+    private LiveBoard? Board => BoardId is { } id ? Registry.Find(id) : null;
+
+    private BoardCapabilities Capabilities => Board?.Capabilities ?? LiveBoard.NoBoard;
 
     private const int EventCount = 4;
 
@@ -322,11 +326,11 @@
     [Parameter]
     public int Id { get; set; }
 
-    private BoardState State => Board.State;
+    private BoardState State => Board?.State ?? BoardState.Initial;
 
     private bool GroupOn => _group is not null && _group.IsOn(State);
 
-    private int? Missing => _group?.MissingRelay(Board.Capabilities.RelayCount);
+    private int? Missing => _group?.MissingRelay(Capabilities.RelayCount);
 
     // Which relays and their order only change while the whole group is off and still.
     private bool CanChangeMembers => _group is not null
@@ -367,7 +371,7 @@
 
     protected override void OnInitialized()
     {
-        Board.StateChanged += OnBoardChanged;
+        Registry.StateChanged += OnBoardChanged;
         Changes.Changed += OnRelaysChanged;
 
         // A start or stop counts down in seconds; nothing else re-renders the page that often.
@@ -382,7 +386,7 @@
 
     public void Dispose()
     {
-        Board.StateChanged -= OnBoardChanged;
+        Registry.StateChanged -= OnBoardChanged;
         Changes.Changed -= OnRelaysChanged;
         _tick?.Dispose();
     }
@@ -670,8 +674,14 @@
         }
     }
 
-    private void OnBoardChanged(object? sender, BoardState state)
+    // Any board's new state: only the page's own board's is redrawn.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
     {
+        if (change.BoardId != BoardId)
+        {
+            return;
+        }
+
         _ = RefreshAsync(reload: false);
     }
 
