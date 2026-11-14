@@ -132,6 +132,26 @@ public sealed class BoardPagesTests
         Assert.Equal("http://localhost/settings", navigation.Location);
     }
 
+    // Whatever goes wrong while removing, the page stays and says so: nothing was removed, and the board runs again.
+    [Fact]
+    public async Task Should_SayNothingWasRemoved_WhenRemovingFails()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER keep_board BEFORE DELETE ON \"Board\" BEGIN SELECT RAISE(ABORT, 'kept'); END;", Cancel);
+        }
+
+        using var page = await PageRenderer.StartAsync<BoardPage>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = boards.BarnId });
+        await page.ClickAsync(PageRenderer.With("class", "remove"));
+        await page.ClickAsync(PageRenderer.With("class", "confirm"));
+
+        Assert.Empty(page.Errors);
+        Assert.Contains("Couldn't remove Barn. Nothing was removed.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.With("role", "alertdialog")));
+        Assert.NotNull(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId));
+    }
+
     [Fact]
     public async Task Should_WarnThatRelaysStayOn_WhenTheBoardHasNoContact()
     {

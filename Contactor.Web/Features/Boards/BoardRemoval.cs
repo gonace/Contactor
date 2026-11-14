@@ -1,3 +1,4 @@
+using System.Globalization;
 using Contactor.Boards;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -17,29 +18,38 @@ namespace Contactor.Web.Features.Boards;
 public sealed record BoardRemovalPreview(int BoardId, string Name, int Relays, int Groups, int Schedules, int InputActions, bool HasContact);
 
 /// <summary>
-/// Takes a board out of the app, on its page in Settings. A board that answers has its relays turned off first: "All
-/// off" for that board (<see cref="RelayControl.TurnAllOffAsync"/>), its groups from the bottom without waiting out
-/// their run-on times, until the board shows every relay off. A board without contact is removed as it is: whatever is
-/// on stays on. Then its live board is stopped and let go (<see cref="BoardRegistry.RemoveAsync"/>), so nothing acts on
-/// it any more, and everything about it is deleted in one transaction, its events included. The board itself isn't
-/// changed. The last board can be removed too: the app then has no board, as a new installation before the setup guide
-/// chooses one.
+/// Takes a board out of the app, on its page in Settings, one removal at a time. From the person's confirm the board is
+/// closed to every new ON (<see cref="LiveBoard.Close"/>): no tap, schedule, input action or group step can turn a relay
+/// on. A board that answers then has its relays turned off: "All off" for that board
+/// (<see cref="RelayControl.TurnAllOffAsync"/>), its groups stopping in their order with their run-on times. Once the
+/// board shows every relay off, within <see cref="OffWait"/>, its live board is stopped and let go
+/// (<see cref="BoardRegistry.RemoveAsync"/>) and everything about it is deleted in one transaction, its events included.
+/// A group still running on stops it: nothing is removed, the board is opened again, and the person is told when the
+/// run-on ends. A board without contact is removed as it is: whatever is on stays on. The board itself isn't changed.
+/// Until a board can be added in Settings (Issue #4), the only board can't be removed.
 /// </summary>
-public sealed partial class BoardRemoval
+public sealed partial class BoardRemoval : IDisposable
 {
     /// <summary>How long the board has to show every relay off before removing it is given up.</summary>
-    public static readonly TimeSpan OffWait = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan OffWait = TimeSpan.FromSeconds(10);
 
     /// <summary>How often the board's relays are looked at meanwhile.</summary>
     public static readonly TimeSpan OffCheck = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>What removing says when someone else removed the board first.</summary>
+    public const string AlreadyRemoved = "This relay board was removed already.";
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardRegistry _registry;
     private readonly RelayControl _control;
     private readonly GroupSequencer _groups;
     private readonly RelayChanges _changes;
+    private readonly LocalClock _clock;
     private readonly TimeProvider _time;
     private readonly ILogger<BoardRemoval> _logger;
+
+    // One removal at a time: a failed one's restore can't meet another's.
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     public BoardRemoval(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -47,6 +57,7 @@ public sealed partial class BoardRemoval
         RelayControl control,
         GroupSequencer groups,
         RelayChanges changes,
+        LocalClock clock,
         TimeProvider time,
         ILogger<BoardRemoval> logger)
     {
@@ -55,8 +66,14 @@ public sealed partial class BoardRemoval
         _control = control;
         _groups = groups;
         _changes = changes;
+        _clock = clock;
         _time = time;
         _logger = logger;
+    }
+
+    public void Dispose()
+    {
+        _gate.Dispose();
     }
 
     /// <summary>What removing the board would delete, or null when there is no such board.</summary>
@@ -82,66 +99,101 @@ public sealed partial class BoardRemoval
 
     /// <summary>
     /// Removes the board. <paramref name="turnOffFirst"/> is what the person was told: true when its relays would be
-    /// turned off first, so a board that has lost contact since isn't removed then. A board that answers always has
-    /// its relays turned off first. Returns null when removed (or gone already), otherwise the message to show; nothing
-    /// is removed then.
+    /// turned off first, so a board that has lost contact since isn't removed then. A board that answers always has its
+    /// relays turned off first. Returns null when removed, otherwise the message to show; nothing is removed then, and
+    /// the board works as before.
     /// </summary>
     public async Task<string?> RemoveAsync(int boardId, bool turnOffFirst, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        string? name;
-        await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
-        {
-            name = await db.Boards.Where(b => b.Id == boardId).Select(b => b.Name).SingleOrDefaultAsync(cancellationToken);
-        }
-
-        if (name is null)
-        {
-            // Someone else removed it meanwhile.
-            await _registry.RemoveAsync(boardId, cancellationToken);
-            return null;
-        }
-
-        var live = _registry.Find(boardId);
-        if (live is not null && live.State.IsConnected)
-        {
-            var (error, lost) = await TurnOffAsync(live, name, userEmail, cancellationToken);
-            if (error is not null && (turnOffFirst || !lost))
-            {
-                return error;
-            }
-        }
-        else if (turnOffFirst)
-        {
-            return LostText(name);
-        }
-
-        // Nothing acts on the board from here on: its watches end, then its connection.
-        await _registry.RemoveAsync(boardId, cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            await DeleteAsync(boardId, cancellationToken);
-        }
-        catch
-        {
-            // Nothing was deleted: the board runs again, as at start.
+            string? name;
+            int boards;
+            await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+            {
+                name = await db.Boards.Where(b => b.Id == boardId).Select(b => b.Name).SingleOrDefaultAsync(cancellationToken);
+                boards = await db.Boards.CountAsync(cancellationToken);
+            }
+
+            if (name is null)
+            {
+                return AlreadyRemoved;
+            }
+
+            // Until a board can be added in Settings (Issue #4): the app keeps one.
+            if (boards <= 1)
+            {
+                return OnlyBoardText(name);
+            }
+
+            var live = _registry.Find(boardId);
+            live?.Close();
+            var removed = false;
             try
             {
-                await _registry.LoadAsync(CancellationToken.None);
-            }
+                if (live is not null && live.State.IsConnected)
+                {
+                    var (error, lost) = await TurnOffAsync(live, name, userEmail, cancellationToken);
+                    if (error is not null && (turnOffFirst || !lost))
+                    {
+                        return error;
+                    }
+                }
+                else if (turnOffFirst)
+                {
+                    return LostText(name);
+                }
+
+                // Nothing acts on the board from here on: its watches end, then its connection.
+                await _registry.RemoveAsync(boardId, cancellationToken);
+                removed = true;
+                try
+                {
+                    await DeleteAsync(boardId, cancellationToken);
+                }
+                catch
+                {
+                    // Nothing was deleted: the board runs again, in its place.
+                    try
+                    {
+                        await _registry.RestoreAsync(boardId, CancellationToken.None);
+                    }
 #pragma warning disable CA1031 // The failure to delete is the one thrown; this one is logged.
-            catch (Exception ex)
+                    catch (Exception ex)
 #pragma warning restore CA1031
+                    {
+                        LogNotRestored(ex, boardId);
+                    }
+
+                    throw;
+                }
+
+                await _registry.ForgetRemovedAsync(boardId, CancellationToken.None);
+            }
+            finally
             {
-                LogNotRestored(ex, boardId);
+                if (!removed)
+                {
+                    live?.Reopen();
+                }
             }
 
-            throw;
+            LogRemoved(boardId);
+            _changes.Notify();
+            return null;
         }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
-        LogRemoved(boardId);
-        _changes.Notify();
-        return null;
+    /// <summary>What the board's page says when the board is the only one: it can't be removed yet.</summary>
+    public static string OnlyBoardText(string name)
+    {
+        return $"{name} is the only relay board, so it can't be removed.";
     }
 
     private static string LostText(string name)
@@ -149,17 +201,17 @@ public sealed partial class BoardRemoval
         return $"{name} has lost contact, so its relays couldn't be turned off. Nothing was removed.";
     }
 
-    // "All off" for the board, then its groups' run-on times cut short, until the board shows every relay off. Returns
-    // why not, and whether that was a lost contact.
+    // "All off" for the board, its groups stopping in their order with their run-on times, until the board shows every
+    // relay off. The board is closed meanwhile, so nothing turns one on again; a relay that is on again all the same
+    // (a command already on its way) gets "All off" once more. Returns why not, and whether that was a lost contact.
     private async Task<(string? Error, bool Lost)> TurnOffAsync(LiveBoard live, string name, string userEmail, CancellationToken cancellationToken)
     {
         var boardId = live.BoardId;
         try
         {
             var all = live.Capabilities.AllRelays;
-            var single = all.Except(await _groups.MemberMaskAsync(boardId, cancellationToken));
             await _control.TurnAllOffAsync(boardId, userEmail, cancellationToken);
-            var deadline = _time.GetUtcNow() + OffWait;
+            var deadline = _clock.UtcNow + OffWait;
             while (true)
             {
                 var state = live.State;
@@ -173,29 +225,40 @@ public sealed partial class BoardRemoval
                     return (null, false);
                 }
 
-                if (_time.GetUtcNow() >= deadline)
+                // A run-on that ends after the wait: no need to wait for it.
+                if (await RunningOnAsync(boardId, deadline, cancellationToken) is { } runOn)
+                {
+                    return ($"{runOn.Name} runs on until {_clock.ToLocal(runOn.Until).ToString("HH:mm", CultureInfo.InvariantCulture)}. Remove {name} when it's done.", false);
+                }
+
+                if (_clock.UtcNow >= deadline)
                 {
                     return ($"Some of {name}'s relays didn't turn off. Nothing was removed. Try again.", false);
                 }
 
-                // A relay outside a group that is on again (a schedule, an input) gets "All off" once more; the groups
-                // go on stopping from the bottom, each relay once the one below is confirmed off.
-                if (!(state.Relays & single).IsEmpty)
+                await Task.Delay(OffCheck, _time, cancellationToken);
+                if (!(live.State.Relays & all).IsEmpty)
                 {
+                    // Once more for what is still on: a group that is already stopping carries on as it was.
                     await _control.TurnAllOffAsync(boardId, userEmail, cancellationToken);
                 }
-                else
-                {
-                    await _groups.EndRunOnsAsync(boardId, cancellationToken);
-                }
-
-                await Task.Delay(OffCheck, _time, cancellationToken);
             }
         }
         catch (BoardNotConnectedException)
         {
             return (LostText(name), true);
         }
+    }
+
+    // The board's group still running on longest, when that ends after the wait.
+    private async Task<(string Name, DateTime Until)?> RunningOnAsync(int boardId, DateTime deadline, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var running = await db.GroupRuntimes
+            .Where(r => r.Phase == GroupPhases.Stopping && r.NextStepAtUtc != null && r.NextStepAtUtc > deadline)
+            .Join(db.RelayGroups.Where(g => g.BoardId == boardId), r => r.GroupId, g => g.Id, (r, g) => new { g.Name, Until = r.NextStepAtUtc!.Value })
+            .ToListAsync(cancellationToken);
+        return running.OrderByDescending(r => r.Until).Select(r => ((string, DateTime)?)(r.Name, r.Until)).FirstOrDefault();
     }
 
     // Everything about the board, in one transaction, children before what they point to: the foreign keys from an
@@ -223,8 +286,8 @@ public sealed partial class BoardRemoval
 
     // Only the first board takes the address and login in its model's settings (install.sh's), which are the removed
     // board's. The board that becomes first keeps what it has: with none saved, it is saved as "no address and no
-    // login", so it never takes the removed board's at the next start.
-    private async Task KeepNextBoardsAddressAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
+    // login", also without a model, so it never takes the removed board's at the next start.
+    private static async Task KeepNextBoardsAddressAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
     {
         if (await db.FirstBoardIdAsync(cancellationToken) != boardId)
         {
@@ -237,10 +300,12 @@ public sealed partial class BoardRemoval
             return;
         }
 
-        if (next.Host is null && _registry.Find(next.Id)?.DefaultEndpoint is { Port: > 0 } running)
+        if (next.Host is null)
         {
+            // Its model's default port, as it runs now; a board without a model yet gets the one it would be given at
+            // start (BoardChoice: the VM201). Only a placeholder: without an address nothing connects.
             next.Host = "";
-            next.Port = running.Port;
+            next.Port = (BoardCatalogue.Find(next.Type) ?? BoardCatalogue.Find(BoardCatalogue.EarlierDefaultType))!.Model.DefaultPort;
         }
 
         if (next.Username is null)

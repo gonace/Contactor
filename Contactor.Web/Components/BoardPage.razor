@@ -8,6 +8,7 @@
 @inject BoardRemoval Removal
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
+@inject ILogger<BoardPage> Log
 
 <PageTitle>@(_name ?? "Relay board") · Contactor</PageTitle>
 
@@ -26,7 +27,7 @@
     <main class="content">
         @if (_loaded && (_name is null || Live is null))
         {
-            <p class="missing">This relay board isn't in Contactor.</p>
+            <p class="missing">@(_error ?? "This relay board isn't in Contactor.")</p>
         }
         else if (_name is not null)
         {
@@ -39,7 +40,15 @@
                 {
                     <p class="error" role="alert">@_error</p>
                 }
-                <button type="button" class="remove" disabled="@_busy" @onclick="AskAsync">Remove @_name</button>
+                @if (Registry.All.Count > 1)
+                {
+                    <button type="button" class="remove" disabled="@_busy" @onclick="AskAsync">Remove @_name</button>
+                }
+                else
+                {
+                    @* Until a board can be added in Settings (Issue #4), the app keeps one. *@
+                    <p class="only">@BoardRemoval.OnlyBoardText(_name)</p>
+                }
             </section>
         }
     </main>
@@ -69,7 +78,7 @@
                 </ul>
                 @if (hasContact)
                 {
-                    <p>Its relays are turned off first.</p>
+                    <p>Its relays are turned off first. If a group is running on, you can remove it once that's done.</p>
                 }
                 else
                 {
@@ -156,6 +165,13 @@
         try
         {
             _error = await Removal.RemoveAsync(Id, turnOffFirst: hasContact, user.Email, CancellationToken.None);
+        }
+#pragma warning disable CA1031 // Whatever went wrong, the page stays and says so: nothing was removed.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            Log.LogError(ex, "Relay board {BoardId} couldn't be removed", Id);
+            _error = $"Couldn't remove {_name}. Nothing was removed.";
         }
         finally
         {

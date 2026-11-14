@@ -39,6 +39,9 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     private TaskCompletionSource _runFailed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _disposed;
 
+    // Boards taken out by RemoveAsync whose rows may still be there: LoadAsync doesn't make them again. Under the gate.
+    private readonly HashSet<int> _removed = [];
+
     public BoardRegistry(
         IDbContextFactory<ContactorDbContext> dbFactory,
         IServiceProvider app,
@@ -118,25 +121,63 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             for (var i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
-                if (Find(row.Id) is not null)
+                if (Find(row.Id) is not null || _removed.Contains(row.Id))
                 {
                     continue;
                 }
 
-                BoardRegistration? registration = null;
-                if (row.Type.Length > 0)
-                {
-                    registration = BoardCatalogue.Find(row.Type)
-                        ?? throw new InvalidOperationException(
-                            $"Relay board \"{row.Name}\" is a \"{row.Type}\", which isn't a board this version of the app knows. Use one of: {BoardCatalogue.Ids}.");
-                }
-
-                var live = await AddAsync(row);
-                if (registration is not null)
-                {
-                    await live.ReplaceAsync(Build(registration, BoardSetup.From(row, isFirst: i == 0)));
-                }
+                await LoadRowAsync(row, isFirst: i == 0);
             }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Makes the board on this row run again after <see cref="RemoveAsync"/>, when removing it didn't go ahead (its rows
+    /// are still there): in its place in the list, with its saved model. Does nothing when it runs or has no row.
+    /// </summary>
+    public async Task RestoreAsync(int boardId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            _removed.Remove(boardId);
+            if (Find(boardId) is not null)
+            {
+                return;
+            }
+
+            Board? row;
+            bool isFirst;
+            await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+            {
+                row = await db.Boards.AsNoTracking().SingleOrDefaultAsync(b => b.Id == boardId, cancellationToken);
+                isFirst = await db.FirstBoardIdAsync(cancellationToken) == boardId;
+            }
+
+            if (row is not null)
+            {
+                await LoadRowAsync(row, isFirst);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Forgets that the board on this row was removed, once its rows are gone: a new board may get its id again.
+    /// </summary>
+    public async Task ForgetRemovedAsync(int boardId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            _removed.Remove(boardId);
         }
         finally
         {
@@ -217,7 +258,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     /// Takes the board on this row out of the app, before its rows are deleted (<c>BoardRemoval</c>): out of
     /// <see cref="All"/> first, so nothing new is sent to it, then disposed (a step under way finishes, its watches end,
     /// then its connection), and <see cref="BoardsChanged"/> is raised. Its run ends quietly. Returns false when the app
-    /// runs no board there. Doesn't touch the database: <see cref="LoadAsync"/> makes it again for a row still there.
+    /// runs no board there. Doesn't touch the database; <see cref="LoadAsync"/> leaves it out until
+    /// <see cref="RestoreAsync"/> makes it again (removing it didn't go ahead) or <see cref="ForgetRemovedAsync"/> (its rows are gone).
     /// </summary>
     public async Task<bool> RemoveAsync(int boardId, CancellationToken cancellationToken)
     {
@@ -232,6 +274,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 {
                     return false;
                 }
+
+                _removed.Add(boardId);
 
                 Volatile.Write(ref _boards, [.. _boards.Where(b => !ReferenceEquals(b, live))]);
             }
@@ -346,6 +390,25 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         return (row, await db.FirstBoardIdAsync(cancellationToken) == boardId);
     }
 
+    // Only under the gate: the row's live board, with its saved model, if any. Throws for a saved model the catalogue
+    // doesn't have.
+    private async Task LoadRowAsync(Board row, bool isFirst)
+    {
+        BoardRegistration? registration = null;
+        if (row.Type.Length > 0)
+        {
+            registration = BoardCatalogue.Find(row.Type)
+                ?? throw new InvalidOperationException(
+                    $"Relay board \"{row.Name}\" is a \"{row.Type}\", which isn't a board this version of the app knows. Use one of: {BoardCatalogue.Ids}.");
+        }
+
+        var live = await AddAsync(row);
+        if (registration is not null)
+        {
+            await live.ReplaceAsync(Build(registration, BoardSetup.From(row, isFirst)));
+        }
+    }
+
     private ActiveBoard Build(BoardRegistration registration, BoardSetup setup)
     {
         return registration.Create(registration.Model, setup, _app, _configuration);
@@ -355,7 +418,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     // its connection starts: its first state reaches them all.
     private async Task<LiveBoard> AddAsync(Board row)
     {
-        var live = new LiveBoard(row.Id, row.Name, _dbFactory, _time, _loggerFactory);
+        var live = new LiveBoard(row.Id, row.Name, _dbFactory, _time, _loggerFactory) { SortOrder = row.SortOrder };
         try
         {
             foreach (var watcher in _watchers)
@@ -380,8 +443,9 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 throw new ObjectDisposedException(nameof(BoardRegistry));
             }
 
-            // In the list's order: a new row is last, as it is added with the highest sort order.
-            Volatile.Write(ref _boards, [.. _boards, live]);
+            // In the list's order: a new row is last, as it is added with the highest sort order; one made again
+            // (RestoreAsync) goes back to its place.
+            Volatile.Write(ref _boards, [.. _boards.Append(live).OrderBy(b => b.SortOrder).ThenBy(b => b.BoardId)]);
             if (_runToken is not null)
             {
                 StartRun(live);

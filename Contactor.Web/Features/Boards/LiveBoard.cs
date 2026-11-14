@@ -26,6 +26,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
     private const string NotChosen = "No relay board has been chosen yet.";
 
+    /// <summary>What a command to turn a relay on says while the board is being removed (<see cref="Close"/>).</summary>
+    public const string BeingRemoved = "The relay board is being removed.";
+
     private static readonly BoardEndpoint NoEndpoint = new("", 0);
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
@@ -40,6 +43,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     private Slot? _current;
     private string _name;
     private bool _disposed;
+    private volatile bool _closed;
 
     // What watches this board (its safety services' parts), ended first when it is disposed.
     private readonly List<IAsyncDisposable> _watches = [];
@@ -75,6 +79,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         internal set => Volatile.Write(ref _name, value);
     }
 
+    /// <summary>Where it is in the list (<see cref="Board.SortOrder"/>), as of when it was loaded.</summary>
+    public int SortOrder { get; init; }
+
     /// <summary>The board's model as it runs now, or null before one is chosen.</summary>
     public ActiveBoard? Active => Volatile.Read(ref _current)?.Board;
 
@@ -105,14 +112,38 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
     public BoardLogin Login => Active?.Connection.Login ?? BoardLogin.None;
 
+    /// <summary>
+    /// Whether the board is closed to every new ON while it is being removed (<see cref="Close"/>): a person's tap, a
+    /// schedule, an input's action and a group's step all go through here.
+    /// </summary>
+    public bool IsClosed => _closed;
+
+    /// <summary>Throws <see cref="BoardNotConnectedException"/> while the board is closed (<see cref="Close"/>).</summary>
     public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
-        return Chosen().Board.TurnOnAsync(relays, cancellationToken);
+        return Open().Board.TurnOnAsync(relays, cancellationToken);
     }
 
+    /// <summary>Throws <see cref="BoardNotConnectedException"/> while the board is closed (<see cref="Close"/>).</summary>
     public Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
     {
-        return Chosen().Board.PulseAsync(relays, length, cancellationToken);
+        return Open().Board.PulseAsync(relays, length, cancellationToken);
+    }
+
+    /// <summary>
+    /// Closes the board to every new ON, from now until it is disposed or opened again (<see cref="Reopen"/>), while it
+    /// is being removed: its relays are turned off and nothing may turn one on again. OFFs still go through. A command
+    /// already on its way when it closes isn't stopped; what it did shows in the board's state.
+    /// </summary>
+    public void Close()
+    {
+        _closed = true;
+    }
+
+    /// <summary>Opens the board again after a removal that didn't go ahead: it works as usual.</summary>
+    public void Reopen()
+    {
+        _closed = false;
     }
 
     public Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
@@ -370,6 +401,11 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     private ActiveBoard Chosen()
     {
         return Active ?? throw new BoardNotConnectedException(NotChosen);
+    }
+
+    private ActiveBoard Open()
+    {
+        return _closed ? throw new BoardNotConnectedException(BeingRemoved) : Chosen();
     }
 
     private async Task RunOneAsync(Slot slot, CancellationToken cancellationToken)

@@ -51,10 +51,11 @@ public sealed class RelayControl
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var maxOnMinutes = await db.Relays.Where(r => r.Id == relayId).Select(r => r.MaxOnMinutes).SingleAsync(cancellationToken);
+        var maxOnMinutes = (await db.Relays.Where(r => r.Id == relayId).Select(r => new { r.MaxOnMinutes }).SingleOrDefaultAsync(cancellationToken)
+            ?? throw new BoardNotConnectedException(BoardRemoved)).MaxOnMinutes;
         await RelayRuns.StartAsync(db, relayId, actor, now, maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null, cancellationToken);
         db.EventLog.Add(new EventLogEntry { TimestampUtc = now, BoardId = board.BoardId, RelayId = relayId, Actor = actor, Action = EventActions.On });
-        await RelayRuns.SaveAsync(db, cancellationToken);
+        await SaveAsync(db, board.BoardId, cancellationToken);
         _changes.Notify();
     }
 
@@ -110,7 +111,7 @@ public sealed class RelayControl
             Action = EventActions.Pulse,
             Details = JsonSerializer.Serialize(new { milliseconds = (int)length.TotalMilliseconds }),
         });
-        await RelayRuns.SaveAsync(db, cancellationToken);
+        await SaveAsync(db, board.BoardId, cancellationToken);
         _changes.Notify();
     }
 
@@ -139,7 +140,7 @@ public sealed class RelayControl
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
         db.EventLog.Add(new EventLogEntry { TimestampUtc = now, BoardId = board.BoardId, RelayId = relayId, Actor = actor, Action = EventActions.Off });
-        await RelayRuns.SaveAsync(db, cancellationToken);
+        await SaveAsync(db, board.BoardId, cancellationToken);
         _changes.Notify();
     }
 
@@ -212,7 +213,7 @@ public sealed class RelayControl
             });
         }
 
-        await RelayRuns.SaveAsync(db, cancellationToken);
+        await SaveAsync(db, board.BoardId, cancellationToken);
         _changes.Notify();
         await _groups.StopAllAsync(boardId, userEmail, cancellationToken);
     }
@@ -274,6 +275,22 @@ public sealed class RelayControl
         {
             board.Expected.Forget(mask, on);
             throw;
+        }
+    }
+
+    private const string BoardRemoved = "The relay board was removed.";
+
+    // What a command saves once it went out. The board may have been removed meanwhile, its rows with it: that fails as
+    // a board the app doesn't run, not as a broken database.
+    private async Task SaveAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RelayRuns.SaveAsync(db, cancellationToken);
+        }
+        catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException && _registry.Find(boardId) is null)
+        {
+            throw new BoardNotConnectedException(BoardRemoved, ex);
         }
     }
 
