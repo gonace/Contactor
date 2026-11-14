@@ -66,6 +66,27 @@ public sealed class TailscaleNetworkTests
         Assert.Null(network.Network.Status.Link);
     }
 
+    // Another problem after the HTTPS hint takes its link away: the guide never shows it under the wrong words.
+    [Fact]
+    public async Task Should_DropTheLink_WhenAnotherProblemFollows()
+    {
+        var time = new ManualTimeProvider();
+        var tailscale = new FakeTailscale
+        {
+            State = "Running",
+            Serve = new TailscaleCommandResult(0, "To enable, visit:\n\n         https://login.tailscale.com/f/serve?node=nExample\n"),
+        };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
+        await WaitUntilAsync(() => network.Network.Status.Link is not null);
+
+        tailscale.State = "Stopped";
+        await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
+        await WaitUntilAsync(() => network.Network.Status.Problem != HttpsHint);
+
+        Assert.Equal("Tailscale is stopped on this machine.", network.Network.Status.Problem);
+        Assert.Null(network.Network.Status.Link);
+    }
+
     [Fact]
     public async Task Should_SayTheAuthKeyWasRefused_WithoutTheKey_AndNotTryItAgain()
     {

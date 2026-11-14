@@ -457,7 +457,9 @@ input[type="password"] {
 /* Where to fix what stops it, e.g. Tailscale's page to turn on HTTPS: big enough to tap. */
 .status-text a {
     align-self: flex-start;
-    padding: 6px 0;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
     font-size: 14px;
     font-weight: 600;
 }
