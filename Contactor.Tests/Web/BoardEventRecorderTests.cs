@@ -216,11 +216,10 @@ public sealed class BoardEventRecorderTests
     [Fact]
     public async Task Should_LogAnInputThatChangedWhileDown_AsNoticed()
     {
-        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-2));
+        // The board's inputs as it reads them at its first answer after start.
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-2), inputsOn: [1, 2]);
         setup.Log(1, on: false);
         setup.Log(2, on: true);
-        setup.Board.SetInput(1, on: true);
-        setup.Board.SetInput(2, on: true);
 
         await setup.StartAsync();
 
@@ -626,12 +625,17 @@ public sealed class BoardEventRecorderTests
         return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];
     }
 
-    private static async Task<InputRig> InputRigAsync(DateTime lastContact, int[]? relaysOn = null, DateTime? longGapEnded = null)
+    private static async Task<InputRig> InputRigAsync(DateTime lastContact, int[]? relaysOn = null, DateTime? longGapEnded = null, int[]? inputsOn = null)
     {
         var board = new FakeRelayBoard(relayCount: 4, inputCount: 2);
         foreach (var relay in relaysOn ?? [])
         {
             await board.TurnOnAsync(ChannelMask.Of(relay), Cancel);
+        }
+
+        foreach (var input in inputsOn ?? [])
+        {
+            board.SetInput(input, on: true);
         }
 
         var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));

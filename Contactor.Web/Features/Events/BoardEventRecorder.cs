@@ -78,18 +78,6 @@ public sealed class BoardEventRecorder : BackgroundService, IBoardWatcher
         return new Watching(_boards, recorder);
     }
 
-    // Each board's statuses from before the recorder started count as one, as the board stood then; read at once, so
-    // a status that comes after this is a change the app saw.
-    public override Task StartAsync(CancellationToken cancellationToken)
-    {
-        foreach (var recorder in _boards.All)
-        {
-            recorder.Begin();
-        }
-
-        return base.StartAsync(cancellationToken);
-    }
-
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         return _boards.RunAsync(stoppingToken);

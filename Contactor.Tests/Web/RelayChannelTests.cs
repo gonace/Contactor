@@ -447,6 +447,10 @@ public sealed partial class RelayChannelTests
         await database.Services.InitializeDatabaseAsync(relayCount: 0, inputCount: 0, Cancel);
         await RelayLayouts.SeedAsync(database.Services, layout, relayCount: 4, inputCount: 2);
         await database.Services.SeedBoardAsync(relayCount: 4, inputCount: 2, Cancel);
+
+        // The board's inputs as it reads them at its first answer after start.
+        board.SetInput(1, on: true);
+        board.SetInput(2, on: true);
         await database.Services.UseFakeBoardAsync(board);
         int Input(int channel) => RelayLayouts.InputId(layout, channel, 2);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
@@ -457,8 +461,6 @@ public sealed partial class RelayChannelTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        board.SetInput(1, on: true);
-        board.SetInput(2, on: true);
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try

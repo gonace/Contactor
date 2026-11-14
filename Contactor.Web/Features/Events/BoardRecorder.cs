@@ -28,8 +28,6 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
     private readonly CancellationTokenSource _ended = new();
     private int _disposed;
 
-    // The latest status from before the recorder started, handled first by its loop (see Begin).
-    private BoardState? _startStatus;
 
     // The last status the board reported while connected; null until the first one after start.
     private BoardState? _known;
@@ -105,25 +103,6 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
         await _ended.CancelAsync();
     }
 
-    /// <summary>
-    /// When the recorder starts (the app starting), before the loop runs: the statuses that came before count as one, the
-    /// latest, as the board stood then. What it showed before the app watched isn't a change the app saw. A board made
-    /// while the recorder runs needs none of this: its every status is seen.
-    /// </summary>
-    internal void Begin()
-    {
-        BoardState? latest = null;
-        while (_states.Reader.TryRead(out var queued))
-        {
-            latest = queued;
-        }
-
-        if (latest is not null)
-        {
-            Volatile.Write(ref _startStatus, latest);
-        }
-    }
-
     /// <summary>The board's loop: records each status, and checks for a lasting disconnect every second.</summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -131,12 +110,6 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
         var stoppingToken = linked.Token;
         try
         {
-            // The status the board stood at when the recorder started, first.
-            if (Interlocked.Exchange(ref _startStatus, null) is { } start)
-            {
-                await HandleSafelyAsync(() => HandleAsync(start, stoppingToken));
-            }
-
             while (!stoppingToken.IsCancellationRequested)
             {
                 using var wait = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);

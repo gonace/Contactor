@@ -1,3 +1,5 @@
+using Contactor.Web.Features.Boards;
+
 namespace Contactor.Web.Features.Relays;
 
 public static class RelaysServiceCollectionExtensions
@@ -9,6 +11,7 @@ public static class RelaysServiceCollectionExtensions
         services.AddSingleton<RelayControl>();
         services.AddSingleton<RelaySettingsHandler>();
         services.AddSingleton<AutoOffService>();
+        services.AddSingleton<IBoardWatcher>(sp => sp.GetRequiredService<AutoOffService>());
         services.AddHostedService(sp => sp.GetRequiredService<AutoOffService>());
         return services;
     }

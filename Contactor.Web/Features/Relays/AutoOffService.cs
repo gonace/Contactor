@@ -15,34 +15,37 @@ namespace Contactor.Web.Features.Relays;
 /// board shows off loses a run left on it (ended here, at every check). Each board is checked on its own, with its own
 /// state, expected changes and relays, and the OFF goes to the relay's own board: while a board is disconnected nothing
 /// happens to its relays, and a time that passed meanwhile (also before a restart) is handled at the first check after
-/// its connection is back; another board's relays are checked as usual.
+/// its connection is back; another board's relays are checked as usual. Each board has its own loop
+/// (<see cref="IBoardWatcher"/>), so a board that is slow or failing never holds up another's checks.
 /// </summary>
-public sealed partial class AutoOffService : BackgroundService
+public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
 {
     public static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(15);
 
-    private readonly BoardRegistry _registry;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AutoOffService> _logger;
+    private readonly BoardParts<BoardAutoOff> _boards;
 
     public AutoOffService(
-        BoardRegistry registry,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         RelayChanges changes,
         TimeProvider timeProvider,
         ILogger<AutoOffService> logger)
     {
-        _registry = registry;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
         _timeProvider = timeProvider;
         _logger = logger;
+        _boards = new BoardParts<BoardAutoOff>(logger);
     }
+
+    /// <summary>How many boards' loops run now (see <see cref="BoardParts{T}.RunningLoops"/>).</summary>
+    public int RunningLoops => _boards.RunningLoops;
 
     /// <summary>
     /// On every board, each on its own: gives every relay that is on with nobody's run its own auto-off, handles every
@@ -52,7 +55,7 @@ public sealed partial class AutoOffService : BackgroundService
     /// </summary>
     public async Task<IReadOnlyList<int>> CheckAsync(CancellationToken cancellationToken)
     {
-        var turnedOff = await Task.WhenAll(_registry.All.Select(b => CheckAsync(b, cancellationToken)));
+        var turnedOff = await Task.WhenAll(_boards.All.Select(b => CheckAsync(b.Board, cancellationToken)));
         return [.. turnedOff.SelectMany(t => t)];
     }
 
@@ -215,14 +218,28 @@ public sealed partial class AutoOffService : BackgroundService
         return channels.RelayChannel(relayId) is { } channel && channel <= board.Capabilities.RelayCount ? channel : null;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <inheritdoc/>
+    public IAsyncDisposable Watch(LiveBoard board)
+    {
+        ArgumentNullException.ThrowIfNull(board);
+        var part = new BoardAutoOff(this, board);
+        _boards.Add(part);
+        return part;
+    }
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        return _boards.RunAsync(stoppingToken);
+    }
+
+    // One board's loop: a check every 15 s, so a board that is slow or failing holds up only its own.
+    private async Task RunAsync(LiveBoard board, CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await CheckAsync(stoppingToken);
-                await Task.Delay(CheckInterval, _timeProvider, stoppingToken);
+                await CheckAsync(board, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -232,14 +249,53 @@ public sealed partial class AutoOffService : BackgroundService
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                LogCheckFailed(ex);
+                LogCheckFailed(ex, board.BoardId);
+            }
+
+            try
+            {
                 await Task.Delay(CheckInterval, _timeProvider, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
             }
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off check failed")]
-    private partial void LogCheckFailed(Exception exception);
+    // A board's part of auto-off: its loop, ended with its board's watch. It listens to nothing: it reads the board's
+    // state at each check.
+    private sealed class BoardAutoOff : IBoardPart, IAsyncDisposable
+    {
+        private readonly AutoOffService _service;
+        private readonly LiveBoard _board;
+        private readonly CancellationTokenSource _ended = new();
+
+        public BoardAutoOff(AutoOffService service, LiveBoard board)
+        {
+            _service = service;
+            _board = board;
+        }
+
+        public int BoardId => _board.BoardId;
+
+        public LiveBoard Board => _board;
+
+        public async Task RunAsync(CancellationToken cancellationToken)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _ended.Token);
+            await _service.RunAsync(_board, linked.Token);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _service._boards.Remove(this);
+            await _ended.CancelAsync();
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off check of relay board {BoardId} failed")]
+    private partial void LogCheckFailed(Exception exception, int boardId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is on with nobody's run: it gets its own auto-off")]
     private partial void LogOwnerless(int relayId);

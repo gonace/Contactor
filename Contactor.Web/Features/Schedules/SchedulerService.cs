@@ -31,11 +31,11 @@ namespace Contactor.Web.Features.Schedules;
 /// </para>
 /// <para>
 /// Each board has its own part (<see cref="BoardScheduler"/>), with its own progress, made with its live board
-/// (<see cref="IBoardWatcher"/>): every minute each board's part ticks on its own, and a board that is lost holds back
-/// only its own catch-up. A board that comes back wakes the scheduler at once.
+/// (<see cref="IBoardWatcher"/>) and its own loop: every minute each board ticks on its own, a board that comes back
+/// wakes only its own loop at once, and a board that is lost, slow or failing holds back only its own minutes.
 /// </para>
 /// </summary>
-public sealed partial class SchedulerService : BackgroundService, IBoardWatcher
+public sealed class SchedulerService : BackgroundService, IBoardWatcher
 {
     public const string Actor = EventActors.Schedule;
 
@@ -50,12 +50,7 @@ public sealed partial class SchedulerService : BackgroundService, IBoardWatcher
     private readonly RelayChanges _changes;
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ILogger<SchedulerService> _logger;
-    private readonly SemaphoreSlim _wake = new(0, 1);
-    private readonly Lock _lock = new();
-
-    // Replaced as a whole, so a reader never sees it change.
-    private IReadOnlyList<BoardScheduler> _boards = [];
+    private readonly BoardParts<BoardScheduler> _boards;
 
     public SchedulerService(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -72,42 +67,35 @@ public sealed partial class SchedulerService : BackgroundService, IBoardWatcher
         _changes = changes;
         _timeProvider = timeProvider;
         _loggerFactory = loggerFactory;
-        _logger = loggerFactory.CreateLogger<SchedulerService>();
+        _boards = new BoardParts<BoardScheduler>(loggerFactory.CreateLogger<SchedulerService>());
     }
+
+    /// <summary>How many boards' loops run now (see <see cref="BoardParts{T}.RunningLoops"/>).</summary>
+    public int RunningLoops => _boards.RunningLoops;
 
     /// <summary>The board's part, or null for a board the app doesn't run.</summary>
     public BoardScheduler? For(int boardId)
     {
-        return Volatile.Read(ref _boards).FirstOrDefault(b => b.BoardId == boardId);
+        return _boards.Find(boardId);
     }
 
     /// <inheritdoc/>
     public IAsyncDisposable Watch(LiveBoard board)
     {
         ArgumentNullException.ThrowIfNull(board);
-        var scheduler = new BoardScheduler(board, _dbFactory, _clock, _groups, _changes, _loggerFactory.CreateLogger<BoardScheduler>(), Wake);
-        lock (_lock)
-        {
-            Volatile.Write(ref _boards, [.. _boards, scheduler]);
-        }
-
-        return new Watching(this, scheduler);
-    }
-
-    public override void Dispose()
-    {
-        _wake.Dispose();
-        base.Dispose();
+        var scheduler = new BoardScheduler(board, _dbFactory, _clock, _groups, _changes, _timeProvider, _loggerFactory.CreateLogger<BoardScheduler>());
+        _boards.Add(scheduler);
+        return new Watching(_boards, scheduler);
     }
 
     /// <summary>
-    /// Handles everything due up to the current minute on every board, each on its own: a board that is disconnected
-    /// does nothing, so the minutes it misses are caught up once it is back, and one that fails or is slow doesn't keep
-    /// the others from their minute. Throws the first failure once all have ticked.
+    /// Handles everything due up to the current minute on every board at once, each on its own (as each board's loop
+    /// does every minute): a board that is disconnected does nothing, so the minutes it misses are caught up once it is
+    /// back. Throws the first failure once all have ticked.
     /// </summary>
     public async Task TickAsync(CancellationToken cancellationToken)
     {
-        await Task.WhenAll(Volatile.Read(ref _boards).Select(b => b.TickAsync(cancellationToken)));
+        await Task.WhenAll(_boards.All.Select(b => b.TickAsync(cancellationToken)));
     }
 
     /// <summary>
@@ -143,92 +131,26 @@ public sealed partial class SchedulerService : BackgroundService, IBoardWatcher
         return turnedOnBySchedule || retry == false || (ended is not null && now - ended.OffUtc <= OnTimeTolerance) ? false : null;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await TickAsync(stoppingToken);
-                await WaitForNextMinuteAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-#pragma warning disable CA1031 // One failed tick must not stop the schedules for good; it is logged and retried.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                LogTickFailed(ex);
-                await WaitForNextMinuteAsync(stoppingToken);
-            }
-        }
+        return _boards.RunAsync(stoppingToken);
     }
-
-    // Wakes just after the next minute starts, or at once when the board comes back.
-    private async Task WaitForNextMinuteAsync(CancellationToken cancellationToken)
-    {
-        var now = _timeProvider.GetUtcNow();
-        var next = new DateTimeOffset(BoardScheduler.FloorToMinute(now.UtcDateTime), TimeSpan.Zero).AddMinutes(1).AddMilliseconds(500);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(next - now);
-        try
-        {
-            await _wake.WaitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            // The minute came.
-        }
-    }
-
-    // A board that comes back: the next tick at once.
-    private void Wake()
-    {
-        try
-        {
-            if (_wake.CurrentCount == 0)
-            {
-                _wake.Release();
-            }
-        }
-        catch (SemaphoreFullException)
-        {
-            // Already woken.
-        }
-        catch (ObjectDisposedException)
-        {
-            // Stopped.
-        }
-    }
-
-    private void Remove(BoardScheduler scheduler)
-    {
-        lock (_lock)
-        {
-            Volatile.Write(ref _boards, [.. _boards.Where(b => !ReferenceEquals(b, scheduler))]);
-        }
-    }
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "Scheduler tick failed")]
-    private partial void LogTickFailed(Exception exception);
 
     // Ends one board's watch: its part leaves the list, then stops.
     private sealed class Watching : IAsyncDisposable
     {
-        private readonly SchedulerService _service;
+        private readonly BoardParts<BoardScheduler> _boards;
         private readonly BoardScheduler _scheduler;
 
-        public Watching(SchedulerService service, BoardScheduler scheduler)
+        public Watching(BoardParts<BoardScheduler> boards, BoardScheduler scheduler)
         {
-            _service = service;
+            _boards = boards;
             _scheduler = scheduler;
         }
 
         public ValueTask DisposeAsync()
         {
-            _service.Remove(_scheduler);
+            _boards.Remove(_scheduler);
             return _scheduler.DisposeAsync();
         }
     }

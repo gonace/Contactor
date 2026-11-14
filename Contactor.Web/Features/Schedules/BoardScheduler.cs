@@ -12,10 +12,11 @@ namespace Contactor.Web.Features.Schedules;
 /// <summary>
 /// The schedules of one board's relays and groups (see <see cref="SchedulerService"/> for the rules): its own progress
 /// (its <see cref="BoardRuntime.LastTickUtc"/>), its own connect generation and its own start or reconnect
-/// reconciliation, so a board that is lost holds back only its own catch-up, never another board's. Made for each live
-/// board, subscribed before its connection starts.
+/// reconciliation, and its own loop (every minute, on the minute, and at once when the board comes back), so a board
+/// that is lost, slow or failing holds back only its own minutes, never another board's. Made for each live board,
+/// subscribed before its connection starts.
 /// </summary>
-public sealed partial class BoardScheduler : IAsyncDisposable
+public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
 {
     private const string Actor = SchedulerService.Actor;
 
@@ -28,9 +29,11 @@ public sealed partial class BoardScheduler : IAsyncDisposable
     private readonly GroupSequencer _groups;
     private readonly ExpectedChanges _expected;
     private readonly RelayChanges _changes;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<BoardScheduler> _logger;
-    private readonly Action _wake;
+    private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly SemaphoreSlim _tickGate = new(1, 1);
+    private readonly CancellationTokenSource _ended = new();
 
     // Every (re)connect bumps the generation; a tick reconciles when it hasn't handled the current one. A counter, not a
     // flag, so a reconnect during a tick isn't wiped out when that tick finishes.
@@ -49,8 +52,8 @@ public sealed partial class BoardScheduler : IAsyncDisposable
         LocalClock clock,
         GroupSequencer groups,
         RelayChanges changes,
-        ILogger<BoardScheduler> logger,
-        Action wake)
+        TimeProvider timeProvider,
+        ILogger<BoardScheduler> logger)
     {
         _board = board;
         _dbFactory = dbFactory;
@@ -58,8 +61,8 @@ public sealed partial class BoardScheduler : IAsyncDisposable
         _groups = groups;
         _expected = board.Expected;
         _changes = changes;
+        _timeProvider = timeProvider;
         _logger = logger;
-        _wake = wake;
 
         // From its making, before the board's connection starts: a reconnect must never go unnoticed.
         _board.StateChanged += OnStateChanged;
@@ -68,7 +71,7 @@ public sealed partial class BoardScheduler : IAsyncDisposable
     /// <summary>The board's row.</summary>
     public int BoardId => _board.BoardId;
 
-    /// <summary>Stops listening; a tick under way finishes first, and none runs after.</summary>
+    /// <summary>Stops listening and ends the loop; a tick under way finishes first, and none runs after.</summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)
@@ -79,6 +82,61 @@ public sealed partial class BoardScheduler : IAsyncDisposable
         _board.StateChanged -= OnStateChanged;
         await _tickGate.WaitAsync(CancellationToken.None);
         _tickGate.Release();
+        await _ended.CancelAsync();
+    }
+
+    /// <summary>The board's loop: a tick every minute, on the minute, and at once when the board comes back.</summary>
+    public async Task RunAsync(CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _ended.Token);
+        var stoppingToken = linked.Token;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await TickAsync(stoppingToken);
+                await WaitForNextMinuteAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // One failed tick must not stop the board's schedules for good; it is logged and retried.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                LogTickFailed(ex, BoardId);
+                try
+                {
+                    await WaitForNextMinuteAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
+    // Wakes just after the next minute starts, or at once when the board comes back.
+    private async Task WaitForNextMinuteAsync(CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var next = new DateTimeOffset(FloorToMinute(now.UtcDateTime), TimeSpan.Zero).AddMinutes(1).AddMilliseconds(500);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delay = Task.Delay(next - now, _timeProvider, timeout.Token);
+        var woken = _wake.WaitAsync(timeout.Token);
+        await Task.WhenAny(delay, woken);
+        await timeout.CancelAsync();
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await Task.WhenAll(delay, woken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The other one came first.
+        }
     }
 
     /// <summary>
@@ -308,7 +366,17 @@ public sealed partial class BoardScheduler : IAsyncDisposable
         if (state.IsConnected && !_wasConnected)
         {
             Interlocked.Increment(ref _connectGeneration);
-            _wake();
+            if (_wake.CurrentCount == 0)
+            {
+                try
+                {
+                    _wake.Release();
+                }
+                catch (SemaphoreFullException)
+                {
+                    // Already woken.
+                }
+            }
         }
 
         _wasConnected = state.IsConnected;
@@ -355,7 +423,7 @@ public sealed partial class BoardScheduler : IAsyncDisposable
         });
     }
 
-    internal static DateTime FloorToMinute(DateTime utc)
+    private static DateTime FloorToMinute(DateTime utc)
     {
         return new DateTime(utc.Ticks - (utc.Ticks % TimeSpan.TicksPerMinute), DateTimeKind.Utc);
     }
@@ -367,4 +435,7 @@ public sealed partial class BoardScheduler : IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Scheduler could not start or stop group {GroupId}")]
     private partial void LogGroupFailed(Exception exception, int groupId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Scheduler tick on relay board {BoardId} failed")]
+    private partial void LogTickFailed(Exception exception, int boardId);
 }

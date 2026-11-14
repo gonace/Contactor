@@ -282,9 +282,9 @@ public sealed class InputActionsTests
     [Fact]
     public async Task Should_HandOnOnlyChanges_SeenAsTheyHappen()
     {
-        await using var rig = await RigAsync();
+        // The board reads the input closed at its first answer after start.
+        await using var rig = await RigAsync(inputOn: true);
         await rig.LogInputAsync(on: false);
-        rig.Board.SetInput(1, on: true);
         var recorder = rig.Database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -356,9 +356,13 @@ public sealed class InputActionsTests
         return new GroupDraft("Heater", GroupIcons.All[0], 120, [.. relays.Select(r => new GroupMemberDraft(r, null))]);
     }
 
-    private static async Task<Rig> RigAsync()
+    private static async Task<Rig> RigAsync(bool inputOn = false)
     {
         var board = new FakeRelayBoard(relayCount: 4, inputCount: 1);
+        if (inputOn)
+        {
+            board.SetInput(1, on: true);
+        }
         var database = TestDatabase.Create((services, configuration) =>
         {
             services.AddLocalClock(configuration);

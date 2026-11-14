@@ -1,4 +1,6 @@
 using Contactor.Boards;
+using Contactor.Tests.Boards;
+using Contactor.Web;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -67,6 +69,8 @@ public sealed class SeveralBoardsTests
         var second = rig.Second!;
         var shop = await CreateGroupAsync(rig, FanHeater(rig.RelayId(1), rig.RelayId(2)));
         var barn = await CreateGroupAsync(rig, FanHeater(rig.SecondRelayId(1), rig.SecondRelayId(2)));
+        await rig.Control.TurnOnAsync(rig.RelayId(3), Jane, Cancel);
+        await BoardTestRig.WaitUntilAsync(() => rig.Simulator.Outputs == 0b100);
         await StartFullyAsync(rig, barn);
         Assert.Equal(ChannelMask.Of([1, 2]), second.State.Relays);
 
@@ -78,10 +82,12 @@ public sealed class SeveralBoardsTests
         var trip = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.InterlockTrip);
         Assert.Equal((rig.SecondBoardId, barn), (trip.BoardId!.Value, trip.GroupId!.Value));
 
-        // Board A, connected all along, is untouched: its group is idle and nothing was sent to it.
-        Assert.Equal(0, rig.Simulator.Outputs);
+        // Board A, connected all along, is untouched: its relay outside the group stays on, its group is idle, and
+        // nothing more was sent to it.
+        Assert.Equal(0b100, rig.Simulator.Outputs);
+        Assert.True(rig.Client.State.IsOn(3));
         Assert.DoesNotContain(await rig.EventsAsync(), e => e.GroupId == shop && e.Action != EventActions.GroupCreate);
-        Assert.DoesNotContain(await rig.EventsAsync(), e => e.BoardId == rig.Live.BoardId && e.Action != EventActions.GroupCreate);
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.BoardId == rig.Live.BoardId && e.Action is not EventActions.GroupCreate and not EventActions.On);
     }
 
     // Each board's sequencer listens to its own board: a status from board B that breaks the interlock trips it there,
@@ -92,6 +98,8 @@ public sealed class SeveralBoardsTests
         await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
         var second = rig.Second!;
         var barn = await CreateGroupAsync(rig, FanHeater(rig.SecondRelayId(1), rig.SecondRelayId(2)));
+        await rig.Control.TurnOnAsync(rig.RelayId(3), Jane, Cancel);
+        await BoardTestRig.WaitUntilAsync(() => rig.Simulator.Outputs == 0b100);
         await StartFullyAsync(rig, barn);
         var sequencer = await rig.StartServiceAsync<GroupSequencer>();
         await BoardTestRig.WaitUntilAsync(() => sequencer.RunningLoops == 2);
@@ -100,11 +108,13 @@ public sealed class SeveralBoardsTests
 
         await BoardTestRig.WaitUntilAsync(() => second.State.Relays == ChannelMask.Of(1));
         await rig.WaitForEventsAsync(events => events.Any(e => e.Action == EventActions.InterlockTrip && e.BoardId == rig.SecondBoardId));
-        Assert.Equal(0, rig.Simulator.Outputs);
+        Assert.Equal(0b100, rig.Simulator.Outputs);
+        Assert.True(rig.Client.State.IsOn(3));
     }
 
     // The interlock is checked first on every status: each board's sequencer listens before anything else does, so it
-    // is subscribed first on every board, before its event recorder and its scheduler.
+    // is subscribed first on every board, before its event recorder and its scheduler. Auto-off watches each board too,
+    // but listens to no status: it reads the board's state at each check.
     [Fact]
     public async Task Should_WatchEachBoard_WithItsGroupsFirst()
     {
@@ -112,7 +122,92 @@ public sealed class SeveralBoardsTests
 
         var watchers = app.Services.GetServices<IBoardWatcher>().Select(w => w.GetType()).ToList();
 
-        Assert.Equal([typeof(GroupSequencer), typeof(BoardEventRecorder), typeof(SchedulerService)], watchers);
+        Assert.Equal([typeof(AutoOffService), typeof(GroupSequencer), typeof(BoardEventRecorder), typeof(SchedulerService)], watchers);
+    }
+
+    // The boards' connections start once every service that watches them has started: the first changes after start
+    // are seen as they happen. The input's action runs, and the relay switched at the board is logged as external.
+    [Fact]
+    public async Task Should_RecordTheFirstChangesAfterStart_AsSeenLive()
+    {
+        await using var simulator = new Contactor.Boards.Vm201.Vm201Simulator();
+        simulator.Start();
+        await using var app = new TestWebApp(settings: new Dictionary<string, string?> { ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        var registry = app.Services.GetRequiredService<BoardRegistry>();
+        var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+        int relay3;
+        int relay4;
+        await using (var db = await factory.CreateDbContextAsync(Cancel))
+        {
+            relay3 = await db.Relays.Where(r => r.Channel == 3).Select(r => r.Id).SingleAsync(Cancel);
+            relay4 = await db.Relays.Where(r => r.Channel == 4).Select(r => r.Id).SingleAsync(Cancel);
+        }
+
+        Assert.Null(await app.Services.GetRequiredService<InputActionsHandler>().SaveAsync(
+            1,
+            [new InputActionRow(new InputActionTarget(relay4, 4, null, "Relay 4"), true, null)],
+            Cancel));
+        await BoardTestRig.WaitUntilAsync(() => registry.All is [{ State.IsConnected: true }]);
+
+        await simulator.SwitchRelayAsync(3, turnOn: true);
+        await simulator.SetInputAsync(true);
+
+        await BoardTestRig.WaitUntilAsync(() => simulator.Outputs == 0b1100);
+        await BoardTestRig.WaitUntilAsync(() =>
+        {
+            using var db = factory.CreateDbContext();
+            return db.EventLog.Any(e => e.RelayId == relay4 && e.Actor == EventActors.ForInput(1) && e.Action == EventActions.On);
+        });
+        await using (var db = await factory.CreateDbContextAsync(Cancel))
+        {
+            var events = await db.EventLog.AsNoTracking().OrderBy(e => e.Id).ToListAsync(Cancel);
+            Assert.Contains(events, e => e.RelayId == relay3 && e.Actor == EventActors.External && e.Action == EventActions.On);
+            Assert.Contains(events, e => e.InputId == 1 && e.Action == EventActions.InputChanged && e.Details == """{"on":true}""");
+        }
+    }
+
+    // Each board's schedules run on their own loop: a command board B doesn't finish holds up only B's minutes. Board
+    // A's run starts and ends on time, its live OffTime within the minute.
+    [Fact]
+    public async Task Should_RunEachBoardsSchedulesOnTime_WhileAnotherBoardIsSlow()
+    {
+        await using var boards = await StuckBoardsAsync();
+        await boards.AddScheduleAsync(boards.RelayOfA(1), new TimeOnly(11, 2), new TimeOnly(11, 3));
+        await boards.AddScheduleAsync(boards.RelayOfB(1), new TimeOnly(11, 1), new TimeOnly(11, 30));
+        var scheduler = await boards.StartAsync<SchedulerService>();
+        await BoardTestRig.WaitUntilAsync(() => scheduler.RunningLoops == 2 && boards.Time.PendingTimers == 2);
+
+        // 11:01 local: B's ON goes out and B never finishes it.
+        boards.Time.Advance(TimeSpan.FromSeconds(61));
+        await BoardTestRig.WaitUntilAsync(() => boards.B.State.IsOn(1) && boards.Time.PendingTimers == 1);
+
+        boards.Time.Advance(TimeSpan.FromMinutes(1));
+        await BoardTestRig.WaitUntilAsync(() => boards.A.State.IsOn(1) && boards.Time.PendingTimers == 1);
+        boards.Time.Advance(TimeSpan.FromMinutes(1));
+        await BoardTestRig.WaitUntilAsync(() => !boards.A.State.IsOn(1));
+        Assert.Equal([(ChannelMask.Of(1), true), (ChannelMask.Of(1), false)], boards.A.Sent);
+    }
+
+    // Each board's auto-off runs on its own loop: an OFF board B doesn't finish holds up only B's checks.
+    [Fact]
+    public async Task Should_TurnOffEachBoardsRelaysOnTime_WhileAnotherBoardIsSlow()
+    {
+        await using var boards = await StuckBoardsAsync(stuck: false);
+        var control = boards.Database.Services.GetRequiredService<RelayControl>();
+        await control.TurnOnAsync(boards.RelayOfB(2), Jane, Cancel);
+        boards.Time.Advance(TimeSpan.FromMinutes(10));
+        await control.TurnOnAsync(boards.RelayOfA(3), Jane, Cancel);
+        boards.Stick();
+        var autoOff = await boards.StartAsync<AutoOffService>();
+        await BoardTestRig.WaitUntilAsync(() => autoOff.RunningLoops == 2 && boards.Time.PendingTimers == 2);
+
+        // B's auto-off is due first: its OFF goes out and B never finishes it.
+        boards.Time.Advance(TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes - 9));
+        await BoardTestRig.WaitUntilAsync(() => !boards.B.State.IsOn(2) && boards.Time.PendingTimers == 1);
+        Assert.True(boards.A.State.IsOn(3));
+
+        boards.Time.Advance(TimeSpan.FromMinutes(10));
+        await BoardTestRig.WaitUntilAsync(() => !boards.A.State.IsOn(3));
     }
 
     [Fact]
@@ -236,7 +331,9 @@ public sealed class SeveralBoardsTests
         second.SetConnected(false);
         rig.Time.Now += BoardEventRecorder.ConnectionLostAfter * 2;
         await rig.WaitForEventsAsync(events => events.Any(e => e.Action == EventActions.ConnectionLost));
-        await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
+
+        // Board A kept its contact throughout, so its recorder has no loss to log, however long it runs.
+        Assert.True(rig.Live.State.IsConnected);
         var lost = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.ConnectionLost);
         Assert.Equal(rig.SecondBoardId, lost.BoardId);
     }
@@ -399,6 +496,109 @@ public sealed class SeveralBoardsTests
         Assert.NotNull(sequencer.For(rig.Live.BoardId));
         await rig.Control.TurnOnAsync(rig.RelayId(1), Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Simulator.Outputs == 0b1);
+    }
+
+    // Two boards in memory on a clock whose timers only fire when the test moves it; board B's commands switch its
+    // relays and then never finish, until the test lets them (on dispose).
+    private static async Task<StuckBoards> StuckBoardsAsync(bool stuck = true)
+    {
+        var time = new ManualTimeProvider();
+        var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(time);
+            services.AddBoards(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+            services.AddEvents(configuration);
+            services.AddSchedules(configuration);
+        });
+        var boards = new StuckBoards(database, time);
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.UseFakeBoardAsync(boards.A);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var row = new Board { Name = "Barn", SortOrder = 2 };
+            db.Boards.Add(row);
+            await db.SaveChangesAsync(Cancel);
+            boards.BoardB = row.Id;
+        }
+
+        await database.Services.SeedBoardAsync(boards.BoardB, relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.GetRequiredService<BoardRegistry>().ReplaceAsync(new FakeBoardParts(boards.B).Build(boards.BoardB), Cancel);
+        if (stuck)
+        {
+            boards.Stick();
+        }
+
+        return boards;
+    }
+
+    private sealed class StuckBoards : IAsyncDisposable
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<IHostedService> _started = [];
+
+        public StuckBoards(TestDatabase database, ManualTimeProvider time)
+        {
+            Database = database;
+            Time = time;
+        }
+
+        public TestDatabase Database { get; }
+
+        public ManualTimeProvider Time { get; }
+
+        public FakeRelayBoard A { get; } = new(relayCount: 4);
+
+        public FakeRelayBoard B { get; } = new(relayCount: 4);
+
+        public int BoardB { get; set; }
+
+        // From now on, B's commands switch its relays and then wait.
+        public void Stick()
+        {
+            B.AfterSwitch = () => _release.Task;
+        }
+
+        public int RelayOfA(int channel)
+        {
+            using var db = Database.Factory.CreateDbContext();
+            return db.Relays.Single(r => r.BoardId != BoardB && r.Channel == channel).Id;
+        }
+
+        public int RelayOfB(int channel)
+        {
+            using var db = Database.Factory.CreateDbContext();
+            return db.Relays.Single(r => r.BoardId == BoardB && r.Channel == channel).Id;
+        }
+
+        public async Task AddScheduleAsync(int relayId, TimeOnly on, TimeOnly off)
+        {
+            await using var db = await Database.Factory.CreateDbContextAsync(Cancel);
+            db.Schedules.Add(new Schedule { RelayId = relayId, Days = ScheduleDays.All, OnTime = on, OffTime = off, IsEnabled = true, CreatedBy = Jane });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        public async Task<T> StartAsync<T>()
+            where T : IHostedService
+        {
+            var service = Database.Services.GetServices<IHostedService>().OfType<T>().Single();
+            await service.StartAsync(Cancel);
+            _started.Add(service);
+            return service;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _release.TrySetResult();
+            foreach (var service in Enumerable.Reverse(_started))
+            {
+                await service.StopAsync(CancellationToken.None);
+            }
+
+            await Database.DisposeAsync();
+        }
     }
 
     private static async Task<int> CreateGroupAsync(BoardTestRig rig, GroupDraft draft)
