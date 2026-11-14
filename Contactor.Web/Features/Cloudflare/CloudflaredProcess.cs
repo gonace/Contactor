@@ -16,6 +16,14 @@ public interface ICloudflaredProcess
 /// <summary>cloudflared as a child process of the app.</summary>
 public sealed class CloudflaredProcess : ICloudflaredProcess
 {
+    private readonly TimeProvider _time;
+
+    public CloudflaredProcess(TimeProvider time)
+    {
+        ArgumentNullException.ThrowIfNull(time);
+        _time = time;
+    }
+
     public Task<int> RunAsync(string path, string token, Action<string> output, CancellationToken cancellationToken)
     {
         var start = new ProcessStartInfo(path);
@@ -27,6 +35,6 @@ public sealed class CloudflaredProcess : ICloudflaredProcess
 
         // Through the environment, so the token never shows in a process list.
         start.Environment["TUNNEL_TOKEN"] = token;
-        return ChildProcess.RunAsync(start, output, cancellationToken);
+        return ChildProcess.RunAsync(start, output, _time, cancellationToken);
     }
 }
