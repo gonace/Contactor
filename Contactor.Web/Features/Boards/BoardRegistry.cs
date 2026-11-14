@@ -73,6 +73,18 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     /// </summary>
     public event EventHandler? BoardsChanged;
 
+    /// <summary>Whether the boards run (<see cref="RunAsync"/>): before, no board connects.</summary>
+    public bool IsRunning
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _runToken is not null;
+            }
+        }
+    }
+
     /// <summary>Every board, in the list's order.</summary>
     public IReadOnlyList<LiveBoard> All => Volatile.Read(ref _boards);
 

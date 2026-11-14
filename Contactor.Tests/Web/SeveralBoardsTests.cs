@@ -197,8 +197,13 @@ public sealed class SeveralBoardsTests
                 await db.SaveChangesAsync(cancellationToken);
             }
 
-            // A board connected this early answers within a moment; one that waits for the app never does.
-            await WaitAsync(() => board.State.IsConnected, cancellationToken);
+            // A board connected this early answers within a moment; one that waits for the app never does. While the
+            // boards don't run yet, none can connect: no need to wait then.
+            if (_services.GetRequiredService<BoardRegistry>().IsRunning)
+            {
+                await WaitAsync(() => board.State.IsConnected, cancellationToken);
+            }
+
             await _simulator.SetInputAsync(true);
             if (board.State.IsConnected)
             {
