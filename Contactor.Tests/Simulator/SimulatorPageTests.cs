@@ -114,6 +114,29 @@ public sealed class SimulatorPageTests
             .ToList();
         Assert.Equal([".fold"], hiddenWide.Select(selector => Regex.Replace(selector, @"\[b-[a-z0-9]+\]", "")));
         Assert.DoesNotContain("min-width: 1000px", css, StringComparison.Ordinal);
+
+        // Below 1024 px, "Add a board" and the traffic are hidden until their fold is opened.
+        var narrowCss = Regex.Replace(css[narrow..], @"\[b-[a-z0-9]+\]", "");
+        Assert.Matches(@"\s\.add\s*\{[^{}]*display:\s*none", narrowCss);
+        Assert.Matches(@"\s\.add\.open\s*\{[^{}]*display:\s*flex", narrowCss);
+        Assert.Matches(@"\s\.traffic\s*\{[^{}]*display:\s*none", narrowCss);
+        Assert.Matches(@"\s\.traffic\.open\s*\{[^{}]*display:\s*flex", narrowCss);
+    }
+
+    [Fact]
+    public async Task Should_WrapALongAddress_AtEveryWidth()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        await using var app = CreateApp(port);
+        using var http = app.CreateClient();
+
+        var css = Regex.Replace(
+            await http.GetStringAsync("/Contactor.Simulator.styles.css", TestContext.Current.CancellationToken), @"/\*.*?\*/", "", RegexOptions.Singleline);
+        var wide = Regex.Replace(css[..css.IndexOf("@media (max-width: 1023.98px)", StringComparison.Ordinal)], @"\[b-[a-z0-9]+\]", "");
+
+        // The board's title and its name in the list hold the address, which may be a long host name.
+        Assert.Matches(@"(^|\})\s*h2\s*\{[^{}]*overflow-wrap:\s*anywhere", wide);
+        Assert.Matches(@"\.board \.name\s*\{[^{}]*overflow-wrap:\s*anywhere", wide);
     }
 
     private static WebApplicationFactory<Contactor.Simulator.Program> CreateApp(int port, string? appAddress = null)

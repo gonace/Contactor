@@ -110,7 +110,9 @@ h1 {
 }
 
 .board .name {
+    min-width: 0;
     font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 .dot {
@@ -264,6 +266,7 @@ h2 {
     margin: 0;
     font-size: 22px;
     font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 .connection {
@@ -529,10 +532,6 @@ h3 {
     .head {
         flex-direction: column;
         align-items: flex-start;
-    }
-
-    h2 {
-        overflow-wrap: anywhere;
     }
 
     .actions {
