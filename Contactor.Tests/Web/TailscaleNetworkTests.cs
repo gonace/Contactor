@@ -190,6 +190,21 @@ public sealed class TailscaleNetworkTests
         await WaitUntilAsync(() => network.Network.Status.Online);
     }
 
+    // tailscale serve status --json indents its output; another port of the same address isn't the app.
+    [Theory]
+    [InlineData("{\n  \"Web\": {\n    \"relays.tail1234.ts.net:443\": {\n      \"Handlers\": {\n        \"/\": {\n          \"Proxy\": \"http://127.0.0.2:8081\"\n        }\n      }\n    }\n  }\n}", true)]
+    [InlineData("{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"http://127.0.0.2:80810\"}}}}}", false)]
+    [InlineData("{}", false)]
+    public async Task Should_CountServeAsWorking_OnlyWhenItsStatusShowsTheApp(string serveStatus, bool online)
+    {
+        var tailscale = new FakeTailscale { State = "Running", ServeStatus = new(0, serveStatus) };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays");
+
+        await WaitUntilAsync(() => network.Network.Status.Online || network.Network.Status.Problem is not null);
+
+        Assert.Equal(online, network.Network.Status.Online);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("127.0.0.1:8081")]
