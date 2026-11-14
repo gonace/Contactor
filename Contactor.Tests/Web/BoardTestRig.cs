@@ -43,6 +43,9 @@ internal sealed class BoardTestRig : IAsyncDisposable
 
     public Vm201Client Client => Database.Services.BoardService<Vm201Client>();
 
+    /// <summary>The app's one board.</summary>
+    public LiveBoard Live => Database.Services.Live();
+
     public RelayControl Control => Database.Services.GetRequiredService<RelayControl>();
 
     public SchedulerService Scheduler => Database.Services.GetRequiredService<SchedulerService>();

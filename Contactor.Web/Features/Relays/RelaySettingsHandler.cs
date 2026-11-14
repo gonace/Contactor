@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -18,13 +19,14 @@ public sealed class RelaySettingsHandler
     public static readonly IReadOnlyList<int?> Limits = [60, 120, 240, null];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
-    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, IRelayBoard board, LocalClock clock, RelayChanges changes)
+    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
     {
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;

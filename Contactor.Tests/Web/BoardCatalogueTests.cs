@@ -167,6 +167,6 @@ public sealed class BoardCatalogueTests
             .AddDbContextFactory<ContactorDbContext>(options => options.UseSqlite("Data Source=unused.db"))
             .BuildServiceProvider();
         var registration = BoardCatalogue.Find(type) ?? throw new ArgumentException($"No board \"{type}\".", nameof(type));
-        return registration.Create(registration.Model, app, configuration);
+        return registration.Create(registration.Model, new BoardSetup(BoardId: 1, IsFirst: true, Endpoint: null, Login: null), app, configuration);
     }
 }

@@ -34,7 +34,7 @@ public sealed class SetupHandler
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardChoice _choice;
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly RelayControl _control;
     private readonly RelaySettingsHandler _relays;
     private readonly LocalClock _clock;
@@ -47,7 +47,7 @@ public sealed class SetupHandler
     public SetupHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
         BoardChoice choice,
-        IRelayBoard board,
+        BoardRegistry registry,
         RelayControl control,
         RelaySettingsHandler relays,
         LocalClock clock,
@@ -56,7 +56,8 @@ public sealed class SetupHandler
     {
         _dbFactory = dbFactory;
         _choice = choice;
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _control = control;
         _relays = relays;
         _clock = clock;

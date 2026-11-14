@@ -41,7 +41,7 @@ public sealed partial class InputActionService : BackgroundService
 {
     private readonly InputChangeFeed _queue;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly RelayControl _relays;
     private readonly GroupSequencer _groups;
     private readonly ExpectedChanges _expected;
@@ -50,7 +50,7 @@ public sealed partial class InputActionService : BackgroundService
     public InputActionService(
         InputChangeFeed queue,
         IDbContextFactory<ContactorDbContext> dbFactory,
-        IRelayBoard board,
+        BoardRegistry registry,
         RelayControl relays,
         GroupSequencer groups,
         ExpectedChanges expected,
@@ -58,7 +58,8 @@ public sealed partial class InputActionService : BackgroundService
     {
         _queue = queue;
         _dbFactory = dbFactory;
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _relays = relays;
         _groups = groups;
         _expected = expected;

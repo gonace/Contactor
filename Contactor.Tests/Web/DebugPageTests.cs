@@ -76,7 +76,7 @@ public sealed class DebugPageTests
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
         using var http = app.CreateClient();
         await http.GetStringAsync("/", Cancel);
-        var trace = app.Services.GetRequiredService<BoardTrace>();
+        var trace = app.Services.Live().Trace;
 
         // Nothing listens on the test board's port, so the client's own attempts show up.
         await WaitUntilAsync(() => trace.Items.Any(i => i.Text.StartsWith("Connection lost", StringComparison.Ordinal)));

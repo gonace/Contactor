@@ -7,57 +7,48 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Boards;
 
 /// <summary>
-/// The relay board's address and login, set on the Settings screen so they can change without touching the
+/// A relay board's address and login, set on the Settings screen so they can change without touching the
 /// Raspberry Pi. Saved on the board's row (<see cref="Board"/>); until someone saves them, the board's own settings
-/// apply (e.g. <c>Vm201:Host</c>, <c>Port</c>, <c>Username</c> and <c>Password</c>).
+/// apply: for the first board those in its model's section (e.g. <c>Vm201:Host</c>, <c>Port</c>, <c>Username</c> and
+/// <c>Password</c>), for any other the model's default port and no address. Each by the board's row id.
 /// </summary>
 public sealed class BoardAddressHandler
 {
     /// <summary>What saving says before a board is chosen: there is nothing to save it for.</summary>
     public const string NoBoardMessage = "No relay board has been chosen yet.";
 
+    // Before the app runs a board on the row: none.
+    private static readonly BoardEndpoint NoEndpoint = new("", 0);
+
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IBoardConnection _connection;
+    private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
-        IBoardConnection connection,
+        BoardRegistry registry,
         LocalClock clock,
         RelayChanges changes)
     {
         _dbFactory = dbFactory;
-        _connection = connection;
+        _registry = registry;
         _clock = clock;
         _changes = changes;
     }
 
-    /// <summary>The address in use: the saved one, or the settings' when none is saved.</summary>
-    public async Task<BoardEndpoint> GetAsync(CancellationToken cancellationToken)
+    /// <summary>The board's address in use: the saved one, or the settings' when none is saved.</summary>
+    public async Task<BoardEndpoint> GetAsync(int boardId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        return SavedEndpoint(await db.FirstBoardAsync(cancellationToken)) ?? _connection.DefaultEndpoint;
-    }
-
-    // The address saved in the app, or null while the board's own settings apply.
-    private static BoardEndpoint? SavedEndpoint(Board? board)
-    {
-        return board is { Host: { } host, Port: { } port } ? new BoardEndpoint(host, port) : null;
+        return BoardSetup.SavedEndpoint(await RowAsync(db, boardId, cancellationToken)) ?? _registry.Find(boardId)?.DefaultEndpoint ?? NoEndpoint;
     }
 
     /// <summary>The board's login in use: the saved one, or the settings' when none is saved. Shown without its password.</summary>
-    public async Task<BoardLoginView> GetLoginAsync(CancellationToken cancellationToken)
+    public async Task<BoardLoginView> GetLoginAsync(int boardId, CancellationToken cancellationToken)
     {
-        var login = await LoginInUseAsync(cancellationToken);
+        var login = await LoginInUseAsync(boardId, cancellationToken);
         return new BoardLoginView(login.Username, login.Password.Length > 0);
-    }
-
-    /// <summary>Points the client at the saved address and login, if any. Called before the first connection.</summary>
-    public async Task ApplySavedAsync(CancellationToken cancellationToken)
-    {
-        _connection.SetEndpoint(await GetAsync(cancellationToken));
-        _connection.SetLogin(await LoginInUseAsync(cancellationToken));
     }
 
     /// <summary>
@@ -65,27 +56,32 @@ public sealed class BoardAddressHandler
     /// password there is (the screen never shows it); <paramref name="none"/> saves a board without a login. Logs
     /// that it changed, never what to. Returns null when saved (or unchanged), otherwise the message to show.
     /// </summary>
-    public async Task<string?> SaveLoginAsync(string? username, string? newPassword, bool none, string userEmail, CancellationToken cancellationToken)
+    public async Task<string?> SaveLoginAsync(int boardId, string? username, string? newPassword, bool none, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        var current = await LoginInUseAsync(cancellationToken);
+        if (_registry.Find(boardId) is not { } connection)
+        {
+            return NoBoardMessage;
+        }
+
+        var current = await LoginInUseAsync(boardId, cancellationToken);
         var password = none ? "" : string.IsNullOrEmpty(newPassword) ? current.Password : newPassword;
         var login = new BoardLogin(none ? "" : username?.Trim() ?? "", password);
-        if (_connection.CheckLogin(login) is { } error)
+        if (connection.CheckLogin(login) is { } error)
         {
             return error;
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        if (await db.FirstBoardAsync(cancellationToken) is not { } board)
+        if (await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
             return NoBoardMessage;
         }
 
-        if (SavedEndpoint(board) is null)
+        if (BoardSetup.SavedEndpoint(board) is null)
         {
             // A login saved in the app keeps the address in use with it, as the settings' address and login go together.
-            var endpoint = _connection.Endpoint;
+            var endpoint = connection.Endpoint;
             board.Host = endpoint.Host;
             board.Port = endpoint.Port;
         }
@@ -108,27 +104,32 @@ public sealed class BoardAddressHandler
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        _connection.SetLogin(login);
+        connection.SetLogin(login);
         _changes.Notify();
         return null;
     }
 
-    private async Task<BoardLogin> LoginInUseAsync(CancellationToken cancellationToken)
+    private async Task<BoardLogin> LoginInUseAsync(int boardId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var saved = await db.FirstBoardAsync(cancellationToken);
-        var login = saved?.Username is not null ? new BoardLogin(saved.Username, saved.Password ?? "") : _connection.DefaultLogin;
+        var saved = BoardSetup.SavedLogin(await RowAsync(db, boardId, cancellationToken));
 
         // The database only holds what the board accepted, and the settings are checked at start; a login saved for
         // another model of board that this one can't take falls back to none.
-        return _connection.CheckLogin(login) is null ? login : BoardLogin.None;
+        return _registry.Find(boardId)?.Active is { } active ? active.LoginFor(saved) : BoardLogin.None;
+    }
+
+    // The board's row, or null when there is none.
+    private static Task<Board?> RowAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
+    {
+        return db.Boards.SingleOrDefaultAsync(b => b.Id == boardId, cancellationToken);
     }
 
     /// <summary>
     /// Saves a new address, logs who changed it from what, and moves the client there at once.
     /// Returns null when saved (or unchanged), otherwise the message to show.
     /// </summary>
-    public async Task<string?> SaveAsync(string? host, int port, string userEmail, CancellationToken cancellationToken)
+    public async Task<string?> SaveAsync(int boardId, string? host, int port, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         if (BoardEndpoint.TryCreate(host, port, out var error) is not { } endpoint)
@@ -137,13 +138,13 @@ public sealed class BoardAddressHandler
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        if (await db.FirstBoardAsync(cancellationToken) is not { } board)
+        if (_registry.Find(boardId) is not { } connection || await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
             return NoBoardMessage;
         }
 
-        var saved = SavedEndpoint(board);
-        var current = saved ?? _connection.DefaultEndpoint;
+        var saved = BoardSetup.SavedEndpoint(board);
+        var current = saved ?? connection.DefaultEndpoint;
         if (saved is not null && current == endpoint)
         {
             return null;
@@ -167,7 +168,7 @@ public sealed class BoardAddressHandler
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        _connection.SetEndpoint(endpoint);
+        connection.SetEndpoint(endpoint);
         _changes.Notify();
         return null;
     }

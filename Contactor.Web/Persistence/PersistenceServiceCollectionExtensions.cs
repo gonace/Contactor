@@ -68,15 +68,12 @@ public static class PersistenceServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Brings the database up to date and seeds what must always exist: a row for each of the board's relays and
-    /// inputs. Runs before the app starts serving, so every other part can rely on them. Before a board is chosen there
-    /// is nothing to seed; <c>BoardChoice</c> seeds the board's rows once one is.
+    /// Brings the database up to date. Runs before the app starts serving. The boards' rows for their relays and inputs
+    /// come with the boards: <c>BoardChoice</c> seeds them at start and when the setup guide chooses a board.
     /// </summary>
     public static Task InitializeDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        var board = services.GetRequiredService<IRelayBoard>();
-        return services.InitializeDatabaseAsync(board.Capabilities.RelayCount, board.Capabilities.InputCount, cancellationToken);
+        return services.InitializeDatabaseAsync(relayCount: 0, inputCount: 0, cancellationToken);
     }
 
     /// <summary>As the overload below, for a board with one input.</summary>

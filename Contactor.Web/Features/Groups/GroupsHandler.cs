@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -48,20 +49,21 @@ public sealed class GroupsHandler
     public static readonly IReadOnlyList<int> StartDelayChoices = [1, 3, 10, 30, 60];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
 
     public GroupsHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
-        IRelayBoard board,
+        BoardRegistry registry,
         LocalClock clock,
         RelayChanges changes,
         GroupSequencer sequencer)
     {
         _dbFactory = dbFactory;
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _clock = clock;
         _changes = changes;
         _sequencer = sequencer;

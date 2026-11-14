@@ -2,6 +2,7 @@ using System.Net;
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Inputs;
@@ -362,13 +363,14 @@ public sealed class InputActionsTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddInputs(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         return new Rig(board, database);
     }
 

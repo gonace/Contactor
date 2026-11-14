@@ -1,7 +1,7 @@
 @page "/"
 @implements IDisposable
 @using Contactor.Boards
-@using Microsoft.EntityFrameworkCore
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
@@ -9,7 +9,8 @@
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
-@inject IRelayBoard Board
+@using Microsoft.EntityFrameworkCore
+@inject BoardRegistry Registry
 @inject RelayControl Control
 @inject RelayChanges Changes
 @inject CurrentUser CurrentUser
@@ -237,6 +238,9 @@
 </div>
 
 @code {
+    // Until PR 4 (Issue #4): one board.
+    private IRelayBoard Board => Registry.Only;
+
     private List<Relay> _relays = [];
     private IReadOnlyList<GroupView> _groups = [];
     private IReadOnlyList<InputView> _inputs = [];

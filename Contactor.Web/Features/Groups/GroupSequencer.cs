@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -18,7 +19,7 @@ public sealed partial class GroupSequencer : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
 
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly ExpectedChanges _expected;
@@ -35,7 +36,7 @@ public sealed partial class GroupSequencer : BackgroundService
     private readonly HashSet<int> _shutOffLogged = [];
 
     public GroupSequencer(
-        IRelayBoard board,
+        BoardRegistry registry,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         ExpectedChanges expected,
@@ -43,7 +44,8 @@ public sealed partial class GroupSequencer : BackgroundService
         TimeProvider timeProvider,
         ILogger<GroupSequencer> logger)
     {
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _dbFactory = dbFactory;
         _clock = clock;
         _expected = expected;

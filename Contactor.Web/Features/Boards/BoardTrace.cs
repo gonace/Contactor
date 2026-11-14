@@ -23,9 +23,9 @@ public sealed record BoardTraceItem(long Id, BoardTraceEntry Entry)
 
 /// <summary>
 /// The latest steps on the board connection, in memory only (nothing is stored, and a restart empties it), for the
-/// Debug screen. It listens from the moment it is created, which <see cref="BoardHostedService"/> makes happen before
-/// the first connection. Routine steps (a keep-alive, a poll that changes nothing) are only counted, so they never
-/// push the steps worth reading out of the list, however often a board sends them.
+/// Debug screen, one per board (<see cref="LiveBoard.Trace"/>). It listens from the moment it is created, with its
+/// board, before the board's first connection. Routine steps (a keep-alive, a poll that changes nothing) are only
+/// counted, so they never push the steps worth reading out of the list, however often a board sends them.
 /// </summary>
 public sealed partial class BoardTrace : IDisposable
 {

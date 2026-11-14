@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -38,7 +39,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
     {
         _database = TestDatabase.Create((services, configuration) =>
         {
-            services.AddSingleton<IRelayBoard>(_board);
+            services.AddBoards(configuration);
             services.AddSingleton<TimeProvider>(_time);
             services.AddLocalClock(configuration);
             services.AddEvents(configuration);
@@ -47,6 +48,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
             services.AddSchedules(configuration);
         });
         await _database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel);
+        await _database.Services.UseFakeBoardAsync(_board);
         _recorder = _database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await _recorder.StartAsync(Cancel);
     }

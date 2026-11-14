@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -31,12 +32,13 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
             services.AddEvents(configuration);
-            services.AddSingleton<IRelayBoard>(new FakeRelayBoard());
+            services.AddBoards(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddSchedules(configuration);
         });
         await _database.Services.InitializeDatabaseAsync(Cancel);
+        await _database.Services.UseFakeBoardAsync(new FakeRelayBoard());
     }
 
     public async ValueTask DisposeAsync()

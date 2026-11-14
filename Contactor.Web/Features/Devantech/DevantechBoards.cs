@@ -11,17 +11,18 @@ public static class DevantechBoards
     /// <see cref="DevantechClient"/> behind the app's board interfaces (it reads the model), with its settings from
     /// <c>Devantech</c>. It has nothing of its own in the app.
     /// </summary>
-    public static ActiveBoard Create(BoardModel model, IServiceProvider app, IConfiguration configuration)
+    public static ActiveBoard Create(BoardModel model, BoardSetup setup, IServiceProvider app, IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(configuration);
         var services = ActiveBoard.NewServices(model, app);
         services.AddOptions<DevantechOptions>()
-            .Bind(configuration.GetSection(DevantechOptions.SectionName))
+            .Bind(setup.Settings(configuration.GetSection(DevantechOptions.SectionName)))
             .ValidateDataAnnotations();
         services.AddSingleton<DevantechClient>();
         services.AddSingleton<DevantechBoard>();
         services.AddSingleton<DevantechConnection>();
         services.AddSingleton<DevantechTraffic>();
-        return ActiveBoard.Build<DevantechBoard, DevantechConnection, DevantechTraffic>(model, services);
+        return ActiveBoard.Build<DevantechBoard, DevantechConnection, DevantechTraffic>(model, setup, services);
     }
 }

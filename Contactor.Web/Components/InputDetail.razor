@@ -1,11 +1,12 @@
 @page "/input/{Id:int}"
 @implements IDisposable
 @using Contactor.Boards
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Inputs
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Persistence
-@inject IRelayBoard Board
+@inject BoardRegistry Registry
 @inject InputsHandler Inputs
 @inject InputActionsHandler Actions
 @inject EventsHandler Events
@@ -144,6 +145,9 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
+    // Until PR 4 (Issue #4): one board.
+    private IRelayBoard Board => Registry.Only;
+
     private const int EventCount = 4;
 
     private InputView? _input;

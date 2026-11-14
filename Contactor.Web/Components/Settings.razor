@@ -9,9 +9,7 @@
 @inject BoardAddressHandler Board
 @inject UsersHandler Users
 @inject BackupService Backup
-@inject IRelayBoard Relays
-@inject IBoardConnection Connection
-@inject BoardSwitch Boards
+@inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
 @inject LocalClock Clock
 @inject BoardTrafficSetting Debugging
@@ -70,15 +68,15 @@
 
             @if (Relays.State.IsConnected)
             {
-                <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Connection.Endpoint</p>
+                <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Relays.Endpoint</p>
             }
-            else if (!Connection.Endpoint.HasHost)
+            else if (!Relays.Endpoint.HasHost)
             {
                 <p class="status offline" role="status">The relay board has no address yet</p>
             }
             else
             {
-                <p class="status offline" role="status">No contact with the relay board at @Connection.Endpoint</p>
+                <p class="status offline" role="status">No contact with the relay board at @Relays.Endpoint</p>
             }
 
             @if (_boardMessage is not null)
@@ -153,8 +151,13 @@
 </div>
 
 @code {
-    // Settings only opens once the setup guide is done, and a board is always chosen by then.
-    private BoardModel Model => Boards.Model!;
+    // Until PR 4 (Issue #4): one board. Settings only opens once the setup guide is done, and a board is always chosen
+    // by then.
+    private OnlyBoard Relays => Registry.Only;
+
+    private int BoardId => Relays.Board!.BoardId;
+
+    private BoardModel Model => Relays.Model!;
 
     private static readonly string VersionText = AppBuild.Current.Text;
 
@@ -177,7 +180,7 @@
     protected override async Task OnInitializedAsync()
     {
         _user = await CurrentUser.GetAsync();
-        var endpoint = await Board.GetAsync(CancellationToken.None);
+        var endpoint = await Board.GetAsync(BoardId, CancellationToken.None);
         _host = endpoint.Host;
         _port = endpoint.Port.ToString(CultureInfo.InvariantCulture);
         await LoadLoginAsync();
@@ -194,7 +197,7 @@
 
     private async Task LoadLoginAsync()
     {
-        var login = await Board.GetLoginAsync(CancellationToken.None);
+        var login = await Board.GetLoginAsync(BoardId, CancellationToken.None);
         _username = login.Username;
         _hasPassword = login.HasPassword;
         _noLogin = login.Username.Length == 0 && !login.HasPassword;
@@ -223,8 +226,8 @@
         _busy = true;
         try
         {
-            var error = await Board.SaveAsync(_host, port, _user.Email, CancellationToken.None)
-                ?? (Model.HasLogin ? await Board.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None) : null);
+            var error = await Board.SaveAsync(BoardId, _host, port, _user.Email, CancellationToken.None)
+                ?? (Model.HasLogin ? await Board.SaveLoginAsync(BoardId, _username, _newPassword, _noLogin, _user.Email, CancellationToken.None) : null);
             (_boardMessage, _boardSaved) = error is null ? ("Saved. The app reconnects to the board.", true) : (error, false);
             if (error is null)
             {

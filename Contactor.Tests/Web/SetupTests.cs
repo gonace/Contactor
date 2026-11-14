@@ -111,9 +111,10 @@ public sealed class SetupTests
         using var http = app.CreateClient();
         await http.GetStringAsync("/", Cancel);
 
-        var boards = app.Services.GetRequiredService<BoardSwitch>();
-        Assert.Null(boards.Model);
-        Assert.Equal(0, app.Services.GetRequiredService<IRelayBoard>().Capabilities.RelayCount);
+        var boards = app.Services.GetRequiredService<BoardRegistry>();
+        Assert.Empty(boards.All);
+        Assert.Null(boards.Only.Model);
+        Assert.Equal(0, boards.Only.Capabilities.RelayCount);
         await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
         Assert.False(await db.Relays.AnyAsync(Cancel));
     }
@@ -186,7 +187,7 @@ public sealed class SetupTests
             new Dictionary<string, string?> { ["Vm201:DisableBoardTimers"] = "false" });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");
-        var connection = database.Services.GetRequiredService<IBoardConnection>();
+        var connection = database.Services.Live();
         var client = database.Services.BoardService<Vm201Client>();
         var service = database.Services.GetServices<IHostedService>().OfType<BoardHostedService>().Single();
 
@@ -232,7 +233,7 @@ public sealed class SetupTests
             Assert.Empty(await EventsAsync(database));
 
             // Nothing listens there: from now on the board doesn't answer, and that counts.
-            database.Services.GetRequiredService<IBoardConnection>().SetEndpoint(new BoardEndpoint("127.0.0.1", 1));
+            database.Services.Live().SetEndpoint(new BoardEndpoint("127.0.0.1", 1));
             await Task.Delay(BoardEventRecorder.CheckInterval * 2, Cancel);
             time.Now += BoardEventRecorder.ConnectionLostAfter;
 
@@ -292,7 +293,7 @@ public sealed class SetupTests
     {
         await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm204" });
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var boards = database.Services.GetRequiredService<BoardSwitch>();
+        var boards = database.Services.GetRequiredService<BoardRegistry>().Only;
 
         // A new installation, and one part of the way through the guide: Board:Type doesn't choose for it.
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
@@ -301,11 +302,13 @@ public sealed class SetupTests
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
         Assert.Null(boards.Model);
-        Assert.Same(BoardSwitch.NoBoard, boards.Capabilities);
+        Assert.Null(boards.Board);
+        Assert.Same(LiveBoard.NoBoard, boards.Capabilities);
         Assert.False(boards.State.HasAnswered);
+        Assert.False(boards.Endpoint.HasHost);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => boards.TurnOnAsync(ChannelMask.Of(1), Cancel));
-        Assert.Throws<InvalidOperationException>(() => boards.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760)));
-        Assert.Equal("No relay board has been chosen yet.", boards.CheckLogin(BoardLogin.None));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => boards.RefreshAsync(Cancel));
+        Assert.Empty(database.Services.GetRequiredService<BoardRegistry>().All);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.False(await db.Relays.AnyAsync(Cancel));
         Assert.False(await db.Inputs.AnyAsync(Cancel));
@@ -320,8 +323,8 @@ public sealed class SetupTests
 
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
-        Assert.Equal("waveshare-16", database.Services.GetRequiredService<BoardSwitch>().Model?.Id);
-        Assert.Equal(16, database.Services.GetRequiredService<IRelayBoard>().Capabilities.RelayCount);
+        Assert.Equal("waveshare-16", database.Services.Live().Model?.Id);
+        Assert.Equal(16, database.Services.Live().Capabilities.RelayCount);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(16, await db.Relays.CountAsync(Cancel));
         Assert.Equal(16, await db.RelayRuntimes.CountAsync(Cancel));
@@ -340,7 +343,7 @@ public sealed class SetupTests
 
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
-        Assert.Equal(expected, database.Services.GetRequiredService<BoardSwitch>().Model?.Id);
+        Assert.Equal(expected, database.Services.Live().Model?.Id);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         var board = await db.Boards.SingleAsync(Cancel);
         Assert.Equal(expected, board.Type);
@@ -381,7 +384,7 @@ public sealed class SetupTests
 
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
-        Assert.Equal("vm201", database.Services.GetRequiredService<BoardSwitch>().Model?.Id);
+        Assert.Equal("vm201", database.Services.Live().Model?.Id);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         var board = await db.Boards.SingleAsync(Cancel);
         Assert.Equal(("vm201", "Velleman VM201"), (board.Type, board.Name));
@@ -433,15 +436,16 @@ public sealed class SetupTests
     public async Task Should_SwitchToTheChosenModel_WhileTheAppRuns()
     {
         await using var rig = await Rig.StartAsync();
-        var boards = rig.Database.Services.GetRequiredService<BoardSwitch>();
+        var live = rig.Database.Services.Live();
 
         await rig.Setup.ChooseBoardAsync("vm201", Cancel);
-        var vm201 = boards.Current;
+        var vm201 = live.Active;
         await rig.Setup.ChooseBoardAsync(" VM204 ", Cancel);
         await Assert.ThrowsAsync<ArgumentException>(() => rig.Setup.ChooseBoardAsync("vm999", Cancel));
 
-        Assert.Equal("vm204", boards.Model?.Id);
-        Assert.NotSame(vm201, boards.Current);
+        Assert.Equal("vm204", live.Model?.Id);
+        Assert.Same(live, rig.Database.Services.Live());
+        Assert.NotSame(vm201, live.Active);
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var board = await db.Boards.SingleAsync(Cancel);
         Assert.Equal(("vm204", "Velleman VM204"), (board.Type, board.Name));
@@ -780,7 +784,7 @@ public sealed class SetupTests
             new Dictionary<string, string?> { ["Vm201:Host"] = "127.0.0.1" });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");
-        var connection = database.Services.GetRequiredService<IBoardConnection>();
+        var connection = database.Services.Live();
         var (endpoint, login) = (connection.Endpoint, connection.Login);
 
         connection.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760));
@@ -985,12 +989,12 @@ public sealed class SetupTests
                 services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
                 services.AddBoards(configuration);
                 services.AddEvents(configuration);
-                services.AddSingleton<IRelayBoard>(board);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
                 services.AddSetup(configuration);
             });
             await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+            await database.Services.UseFakeBoardAsync(board);
             var rig = new Rig(database, board);
             if (startRecorder)
             {

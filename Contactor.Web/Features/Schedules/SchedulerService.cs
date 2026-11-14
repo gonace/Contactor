@@ -39,7 +39,7 @@ public sealed partial class SchedulerService : BackgroundService
     // An OFF this late is a catch-up, not the minute's own work.
     private static readonly TimeSpan OnTimeTolerance = TimeSpan.FromMinutes(1);
 
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly GroupSequencer _groups;
@@ -61,7 +61,7 @@ public sealed partial class SchedulerService : BackgroundService
     private readonly Dictionary<int, bool> _retryGroups = [];
 
     public SchedulerService(
-        IRelayBoard board,
+        BoardRegistry registry,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         GroupSequencer groups,
@@ -70,7 +70,8 @@ public sealed partial class SchedulerService : BackgroundService
         TimeProvider timeProvider,
         ILogger<SchedulerService> logger)
     {
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _dbFactory = dbFactory;
         _clock = clock;
         _groups = groups;

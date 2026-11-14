@@ -436,7 +436,7 @@ public sealed partial class RelayChannelTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
@@ -445,6 +445,7 @@ public sealed partial class RelayChannelTests
         await database.Services.InitializeDatabaseAsync(relayCount: 0, inputCount: 0, Cancel);
         await RelayLayouts.SeedAsync(database.Services, layout, relayCount: 4, inputCount: 2);
         await database.Services.SeedBoardAsync(relayCount: 4, inputCount: 2, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         int Input(int channel) => RelayLayouts.InputId(layout, channel, 2);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
@@ -484,7 +485,7 @@ public sealed partial class RelayChannelTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
@@ -493,6 +494,7 @@ public sealed partial class RelayChannelTests
         await database.Services.InitializeDatabaseAsync(relayCount: 0, inputCount: 0, Cancel);
         await RelayLayouts.SeedAsync(database.Services, layout, relayCount: 4, inputCount: 2);
         await database.Services.SeedBoardAsync(relayCount: 4, inputCount: 2, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         int Relay(int channel) => RelayLayouts.RelayId(layout, channel, 4);
         var input = RelayLayouts.InputId(layout, 2, 2);
         var (groupId, error) = await database.Services.GetRequiredService<GroupsHandler>().CreateAsync(
@@ -553,7 +555,7 @@ public sealed partial class RelayChannelTests
         await using var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
-            services => services.AddSingleton<IRelayBoard>(board));
+            TestWebApp.WithBoard(board));
         app.UseLayoutBeforeStart(layout, relayCount: 8, inputCount: 2);
         int Relay(int channel) => RelayLayouts.RelayId(layout, channel, 8);
         int Input(int channel) => RelayLayouts.InputId(layout, channel, 2);
@@ -677,9 +679,9 @@ public sealed partial class RelayChannelTests
     }
 
     // The board as the app sees it.
-    private static IRelayBoard Board(BoardTestRig rig)
+    private static LiveBoard Board(BoardTestRig rig)
     {
-        return rig.Database.Services.GetRequiredService<IRelayBoard>();
+        return rig.Database.Services.Live();
     }
 
     private static async Task AddGroupScheduleAsync(BoardTestRig rig, int groupId, int onHour, int onMinute, int offHour, int offMinute)

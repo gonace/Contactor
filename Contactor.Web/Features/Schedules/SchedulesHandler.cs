@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -19,13 +20,14 @@ public sealed record ScheduleModel(int Id, int? RelayId, ScheduleDays Days, Time
 public sealed class SchedulesHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
-    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, IRelayBoard board, LocalClock clock, RelayChanges changes)
+    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
     {
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;

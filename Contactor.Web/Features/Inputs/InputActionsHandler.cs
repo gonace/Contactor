@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -40,13 +41,14 @@ public sealed record InputActionRow(InputActionTarget Target, bool? WhenClosed, 
 public sealed class InputActionsHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly RelayChanges _changes;
 
-    public InputActionsHandler(IDbContextFactory<ContactorDbContext> dbFactory, IRelayBoard board, RelayChanges changes)
+    public InputActionsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes)
     {
         _dbFactory = dbFactory;
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _changes = changes;
     }
 

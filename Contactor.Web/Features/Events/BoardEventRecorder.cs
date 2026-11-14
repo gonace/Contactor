@@ -39,7 +39,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
     /// </summary>
     public static readonly TimeSpan ContactSaveInterval = TimeSpan.FromMinutes(5);
 
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly ExpectedChanges _expected;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
@@ -61,7 +61,6 @@ public sealed partial class BoardEventRecorder : BackgroundService
     private (bool Watching, DateTime? DisconnectedSinceUtc, bool LossLogged) _retryContext;
     private DateTime _retryAtUtc;
     private DateTime? _disconnectedSinceUtc;
-    private readonly IBoardConnection? _connection;
     private readonly InputChangeFeed? _inputChanges;
 
     // The inputs' changes in the status in hand that the app saw happen, handed on once they are saved.
@@ -76,17 +75,16 @@ public sealed partial class BoardEventRecorder : BackgroundService
     private bool _lossLogged;
 
     public BoardEventRecorder(
-        IRelayBoard board,
+        BoardRegistry registry,
         ExpectedChanges expected,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         RelayChanges changes,
         ILogger<BoardEventRecorder> logger,
-        IBoardConnection? connection = null,
         InputChangeFeed? inputChanges = null)
     {
-        _board = board;
-        _connection = connection;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _inputChanges = inputChanges;
         _expected = expected;
         _dbFactory = dbFactory;
@@ -531,7 +529,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
     {
         // A new installation has no address for its board until someone enters one: nothing is lost before that, so
         // the count starts once there is an address.
-        if (_disconnectedSinceUtc is not null && _connection is { Endpoint.HasHost: false })
+        if (_disconnectedSinceUtc is not null && !_board.Endpoint.HasHost)
         {
             _disconnectedSinceUtc = _clock.UtcNow;
             return;

@@ -20,7 +20,7 @@ public sealed class BoardAddressHandlerTests
     {
         await using var rig = await BoardTestRig.StartAsync();
 
-        var endpoint = await Handler(rig).GetAsync(Cancel);
+        var endpoint = await Handler(rig).GetAsync(rig.Live.BoardId, Cancel);
 
         Assert.Equal(new BoardEndpoint("127.0.0.1", rig.Simulator.Port), endpoint);
     }
@@ -33,10 +33,10 @@ public sealed class BoardAddressHandlerTests
         other.Start();
         var from = $"127.0.0.1:{rig.Simulator.Port}";
 
-        Assert.Null(await Handler(rig).SaveAsync(" 127.0.0.1 ", other.Port, John, Cancel));
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, " 127.0.0.1 ", other.Port, John, Cancel));
 
         await BoardTestRig.WaitUntilAsync(() => other.ConnectionCount == 1 && rig.Client.State.IsConnected);
-        Assert.Equal(new BoardEndpoint("127.0.0.1", other.Port), await Handler(rig).GetAsync(Cancel));
+        Assert.Equal(new BoardEndpoint("127.0.0.1", other.Port), await Handler(rig).GetAsync(rig.Live.BoardId, Cancel));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardAddressChanged);
         Assert.Equal(John, entry.Actor);
         Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
@@ -58,7 +58,7 @@ public sealed class BoardAddressHandlerTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        Assert.Null(await Handler(rig).SaveAsync("127.0.0.1", other.Port, John, Cancel));
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, "127.0.0.1", other.Port, John, Cancel));
 
         await using var check = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var after = await check.RelayRuntimes.AsNoTracking().SingleAsync(r => r.RelayId == 3, Cancel);
@@ -70,8 +70,8 @@ public sealed class BoardAddressHandlerTests
     {
         await using var rig = await BoardTestRig.StartAsync();
 
-        Assert.Null(await Handler(rig).SaveAsync("127.0.0.1", rig.Simulator.Port, John, Cancel));
-        Assert.Null(await Handler(rig).SaveAsync("127.0.0.1", rig.Simulator.Port, John, Cancel));
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, "127.0.0.1", rig.Simulator.Port, John, Cancel));
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, "127.0.0.1", rig.Simulator.Port, John, Cancel));
 
         Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action == EventActions.BoardAddressChanged);
         Assert.Equal(1, rig.Simulator.ConnectionCount);
@@ -85,7 +85,7 @@ public sealed class BoardAddressHandlerTests
     {
         await using var rig = await BoardTestRig.StartAsync();
 
-        Assert.NotNull(await Handler(rig).SaveAsync(host, port, John, Cancel));
+        Assert.NotNull(await Handler(rig).SaveAsync(rig.Live.BoardId, host, port, John, Cancel));
 
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         Assert.Null((await db.Boards.SingleAsync(Cancel)).Host);
@@ -103,7 +103,7 @@ public sealed class BoardAddressHandlerTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        await Handler(rig).ApplySavedAsync(Cancel);
+        await rig.Live.ApplySavedAsync(Cancel);
 
         Assert.Equal(new BoardEndpoint("192.168.1.51", 9761), rig.Client.Endpoint);
     }
@@ -119,15 +119,15 @@ public sealed class BoardAddressHandlerTests
         await using var other = new Vm201Simulator();
         other.Start();
 
-        Assert.Null(await Handler(rig).SaveAsync("127.0.0.1", other.Port, John, Cancel));
-        Assert.Null(await Handler(rig).SaveLoginAsync("admin", Password, none: false, John, Cancel));
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, "127.0.0.1", other.Port, John, Cancel));
+        Assert.Null(await Handler(rig).SaveLoginAsync(rig.Live.BoardId, "admin", Password, none: false, John, Cancel));
         rig.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", rig.Simulator.Port));
         rig.Client.SetLogin(Vm201Login.None);
-        await Handler(rig).ApplySavedAsync(Cancel);
+        await rig.Live.ApplySavedAsync(Cancel);
 
         Assert.Equal(new BoardEndpoint("127.0.0.1", other.Port), rig.Client.Endpoint);
         Assert.Equal(("admin", Password), (rig.Client.Login.Username, rig.Client.Login.Password));
-        Assert.Equal(new BoardLoginView("admin", true), await Handler(rig).GetLoginAsync(Cancel));
+        Assert.Equal(new BoardLoginView("admin", true), await Handler(rig).GetLoginAsync(rig.Live.BoardId, Cancel));
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var board = await db.Boards.AsNoTracking().SingleAsync(Cancel);
         Assert.Equal(("127.0.0.1", (int?)other.Port, "admin", Password), (board.Host, board.Port, board.Username, board.Password));

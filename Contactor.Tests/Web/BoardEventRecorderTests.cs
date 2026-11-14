@@ -1,10 +1,11 @@
-using Contactor.Web.Features.Inputs;
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -132,12 +133,13 @@ public sealed class BoardEventRecorderTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -168,12 +170,13 @@ public sealed class BoardEventRecorderTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 4, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -638,13 +641,14 @@ public sealed class BoardEventRecorderTests
             services.AddSingleton<ILoggerProvider>(errors);
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(time);
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddSingleton<InputChangeFeed>();
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             var runtime = await db.BoardRuntimes.SingleAsync(Cancel);

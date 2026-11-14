@@ -14,9 +14,7 @@
 @inject SetupSignInHandler SignIns
 @inject BoardAddressHandler Address
 @inject UsersHandler Users
-@inject IRelayBoard Board
-@inject IBoardConnection Connection
-@inject BoardSwitch Boards
+@inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
 @inject TimeProvider Time
 @inject LocalClock Clock
@@ -179,23 +177,23 @@
             {
                 <div class="board-status" role="status">
                     <span class="dot waiting" aria-hidden="true"></span>
-                    <span class="status-text"><strong>Looking for the board</strong><span>at @Connection.Endpoint</span></span>
+                    <span class="status-text"><strong>Looking for the board</strong><span>at @Board.Endpoint</span></span>
                 </div>
             }
             else if (_notFound)
             {
                 <div class="not-found" role="alert">
-                    <span>No answer from @Connection.Endpoint. Check that the board has power and a network cable, and that the address is right.</span>
+                    <span>No answer from @Board.Endpoint. Check that the board has power and a network cable, and that the address is right.</span>
                     <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
                 </div>
             }
-            else if (Board.State.IsConnected && Connection.Endpoint.HasHost)
+            else if (Board.State.IsConnected && Board.Endpoint.HasHost)
             {
                 <div class="board-status" role="status">
                     <span class="dot" aria-hidden="true"></span>
                     <span class="status-text">
                         <strong>Board online</strong>
-                        <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Connection.Endpoint@(_checkedAt is { } at ? $" · checked {at.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}" : "")</span>
+                        <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Board.Endpoint@(_checkedAt is { } at ? $" · checked {at.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}" : "")</span>
                     </span>
                     <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
                 </div>
@@ -255,7 +253,7 @@
             <dl class="summary">
                 <div>
                     <dt class="label">BOARD</dt>
-                    <dd>@(Connection.Endpoint.HasHost ? $"{Model.Name} at {Connection.Endpoint.Host}" : $"{Model.Name}, no address yet")</dd>
+                    <dd>@(Board.Endpoint.HasHost ? $"{Model.Name} at {Board.Endpoint.Host}" : $"{Model.Name}, no address yet")</dd>
                 </div>
                 <div>
                     <dt class="label">RELAYS</dt>
@@ -554,8 +552,14 @@
     // When the last check found the board, for "checked 14:02:05".
     private DateTime? _checkedAt;
 
+    // Until PR 4 (Issue #4): one board. The same object before and after the board is chosen here, so the guide keeps
+    // listening to it.
+    private OnlyBoard Board => Registry.Only;
+
     // The steps after "Which relay board?" only come once a board is chosen there.
-    private BoardModel Model => Boards.Model!;
+    private BoardModel Model => Board.Model!;
+
+    private LiveBoard Chosen => Board.Board!;
 
     protected override async Task OnInitializedAsync()
     {
@@ -598,9 +602,9 @@
         SignIns.TailscaleChanged += OnTunnelChanged;
 
         _name = _user?.DisplayName ?? "";
-        _type = Boards.Model?.Id ?? "";
-        _brand = Boards.Model?.Brand;
-        if (Boards.Model is not null)
+        _type = Board.Model?.Id ?? "";
+        _brand = Board.Model?.Brand;
+        if (Board.Model is not null)
         {
             await LoadBoardAsync();
         }
@@ -611,10 +615,10 @@
     // The chosen board's address, login and relays, for steps 3 to 5.
     private async Task LoadBoardAsync()
     {
-        var endpoint = await Address.GetAsync(CancellationToken.None);
+        var endpoint = await Address.GetAsync(Chosen.BoardId, CancellationToken.None);
         _host = endpoint.Host;
         _port = endpoint.Port == Model.DefaultPort ? "" : endpoint.Port.ToString(CultureInfo.InvariantCulture);
-        var login = await Address.GetLoginAsync(CancellationToken.None);
+        var login = await Address.GetLoginAsync(Chosen.BoardId, CancellationToken.None);
         _username = login.Username;
         _hasPassword = login.HasPassword;
         _noLogin = login.Username.Length == 0 && !login.HasPassword;
@@ -815,7 +819,7 @@
         }
 
         // The app switches to the board while it runs, and the guide goes straight on.
-        var before = Boards.Model;
+        var before = Board.Model;
         await Setup.ChooseBoardAsync(_type, CancellationToken.None);
         if (before?.Id != chosen.Model.Id)
         {
@@ -846,7 +850,7 @@
         try
         {
             // Watching from before the save: the board may be back at its new address before the save returns.
-            using var contact = BoardContact.Watch(Board);
+            using var contact = BoardContact.Watch(Chosen);
             if (!await SaveAddressAsync())
             {
                 return;
@@ -856,7 +860,7 @@
             StateHasChanged();
             // "Check again" with nothing changed asks the board itself, so the check is a real one.
             var found = !goOn && !_moving && Board.State.IsConnected
-                ? await BoardContact.AskAsync(Board, BoardContact.Timeout, Time, CancellationToken.None)
+                ? await BoardContact.AskAsync(Chosen, BoardContact.Timeout, Time, CancellationToken.None)
                 : await contact.WaitAsync(_moving, BoardContact.Timeout, Time, CancellationToken.None);
             _checkedAt = found ? Clock.Now : null;
             _checking = false;
@@ -891,16 +895,16 @@
             return false;
         }
 
-        var (endpoint, login) = (Connection.Endpoint, Connection.Login);
-        _error = await Address.SaveAsync(_host, port, _user.Email, CancellationToken.None)
-            ?? (Model.HasLogin ? await Address.SaveLoginAsync(_username, _newPassword, _noLogin, _user.Email, CancellationToken.None) : null);
+        var (endpoint, login) = (Chosen.Endpoint, Chosen.Login);
+        _error = await Address.SaveAsync(Chosen.BoardId, _host, port, _user.Email, CancellationToken.None)
+            ?? (Model.HasLogin ? await Address.SaveLoginAsync(Chosen.BoardId, _username, _newPassword, _noLogin, _user.Email, CancellationToken.None) : null);
         if (_error is not null)
         {
             return false;
         }
 
-        _moving = BoardContact.HasMoved(Connection, endpoint, login);
-        _hasPassword = (await Address.GetLoginAsync(CancellationToken.None)).HasPassword;
+        _moving = BoardContact.HasMoved(Chosen, endpoint, login);
+        _hasPassword = (await Address.GetLoginAsync(Chosen.BoardId, CancellationToken.None)).HasPassword;
         _newPassword = "";
         return true;
     }

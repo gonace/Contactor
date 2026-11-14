@@ -24,10 +24,10 @@ public sealed class SettingsHandlersTests
         await using var rig = await BoardTestRig.StartAsync();
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
 
-        Assert.Equal(new BoardLoginView("", false), await board.GetLoginAsync(Cancel));
-        Assert.Null(await board.SaveLoginAsync("admin", "secret", none: false, John, Cancel));
+        Assert.Equal(new BoardLoginView("", false), await board.GetLoginAsync(rig.Live.BoardId, Cancel));
+        Assert.Null(await board.SaveLoginAsync(rig.Live.BoardId, "admin", "secret", none: false, John, Cancel));
 
-        Assert.Equal(new BoardLoginView("admin", true), await board.GetLoginAsync(Cancel));
+        Assert.Equal(new BoardLoginView("admin", true), await board.GetLoginAsync(rig.Live.BoardId, Cancel));
         Assert.Equal(("admin", "secret"), (rig.Client.Login.Username, rig.Client.Login.Password));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardLoginChanged);
         Assert.Null(entry.Details);
@@ -39,9 +39,9 @@ public sealed class SettingsHandlersTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
-        await board.SaveLoginAsync("admin", "secret", none: false, John, Cancel);
+        await board.SaveLoginAsync(rig.Live.BoardId, "admin", "secret", none: false, John, Cancel);
 
-        Assert.Null(await board.SaveLoginAsync("boss", "", none: false, John, Cancel));
+        Assert.Null(await board.SaveLoginAsync(rig.Live.BoardId, "boss", "", none: false, John, Cancel));
 
         Assert.Equal(("boss", "secret"), (rig.Client.Login.Username, rig.Client.Login.Password));
     }
@@ -51,12 +51,12 @@ public sealed class SettingsHandlersTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
-        await board.SaveLoginAsync("admin", "secret", none: false, John, Cancel);
+        await board.SaveLoginAsync(rig.Live.BoardId, "admin", "secret", none: false, John, Cancel);
 
-        Assert.Null(await board.SaveLoginAsync("admin", "ignored", none: true, John, Cancel));
+        Assert.Null(await board.SaveLoginAsync(rig.Live.BoardId, "admin", "ignored", none: true, John, Cancel));
 
         Assert.True(rig.Client.Login.IsNone);
-        Assert.Equal(new BoardLoginView("", false), await board.GetLoginAsync(Cancel));
+        Assert.Equal(new BoardLoginView("", false), await board.GetLoginAsync(rig.Live.BoardId, Cancel));
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class SettingsHandlersTests
         await using var rig = await BoardTestRig.StartAsync();
         var board = rig.Database.Services.GetRequiredService<BoardAddressHandler>();
 
-        Assert.NotNull(await board.SaveLoginAsync("admin", "far too long", none: false, John, Cancel));
+        Assert.NotNull(await board.SaveLoginAsync(rig.Live.BoardId, "admin", "far too long", none: false, John, Cancel));
 
         Assert.True(rig.Client.Login.IsNone);
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
@@ -83,7 +83,7 @@ public sealed class SettingsHandlersTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        await rig.Database.Services.GetRequiredService<BoardAddressHandler>().ApplySavedAsync(Cancel);
+        await rig.Live.ApplySavedAsync(Cancel);
 
         Assert.Equal(("admin", "secret"), (rig.Client.Login.Username, rig.Client.Login.Password));
     }

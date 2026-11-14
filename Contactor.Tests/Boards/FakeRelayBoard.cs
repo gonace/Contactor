@@ -30,6 +30,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     public event EventHandler<BoardState>? StateChanged;
 
+    /// <summary>Whether anything listens to its state, e.g. to tell a subscription that was let go.</summary>
+    public bool HasListeners => StateChanged is not null;
+
     /// <summary>
     /// When set, every status the board reports while connected carries this clock's time as its contact time, as a
     /// real board's does; otherwise it keeps the time it started with.

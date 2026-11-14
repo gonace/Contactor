@@ -14,9 +14,11 @@ namespace Contactor.Web.Features.Boards;
 
 /// <summary>
 /// A model of board the app supports, and how to build it while the app runs: its <see cref="IRelayBoard"/>,
-/// <see cref="IBoardConnection"/> and <see cref="IBoardTraffic"/>, and anything only it has.
+/// <see cref="IBoardConnection"/> and <see cref="IBoardTraffic"/>, and anything only it has, for one board's row
+/// (<see cref="BoardSetup"/>: its id, and its saved address and login; only the first board takes the address and login
+/// in the model's settings section).
 /// </summary>
-public sealed record BoardRegistration(BoardModel Model, Func<BoardModel, IServiceProvider, IConfiguration, ActiveBoard> Create);
+public sealed record BoardRegistration(BoardModel Model, Func<BoardModel, BoardSetup, IServiceProvider, IConfiguration, ActiveBoard> Create);
 
 /// <summary>A brand of board and its models, as the setup guide lists them.</summary>
 public sealed record BoardBrand(string Name, IReadOnlyList<BoardModel> Models);

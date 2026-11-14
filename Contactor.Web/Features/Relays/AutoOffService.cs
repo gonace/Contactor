@@ -20,7 +20,7 @@ public sealed partial class AutoOffService : BackgroundService
 {
     public static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(15);
 
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly ExpectedChanges _expected;
@@ -29,7 +29,7 @@ public sealed partial class AutoOffService : BackgroundService
     private readonly ILogger<AutoOffService> _logger;
 
     public AutoOffService(
-        IRelayBoard board,
+        BoardRegistry registry,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         ExpectedChanges expected,
@@ -37,7 +37,8 @@ public sealed partial class AutoOffService : BackgroundService
         TimeProvider timeProvider,
         ILogger<AutoOffService> logger)
     {
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _dbFactory = dbFactory;
         _clock = clock;
         _expected = expected;

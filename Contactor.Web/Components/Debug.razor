@@ -3,8 +3,7 @@
 @using System.Globalization
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
-@inject BoardTrace Trace
-@inject IBoardConnection Connection
+@inject BoardRegistry Registry
 @inject LocalClock Clock
 
 <PageTitle>Debug · Contactor</PageTitle>
@@ -14,7 +13,7 @@
         <h1>Debug</h1>
         <p class="hint">
             Everything sent to and from the relay board since the app started, newest first. At most @BoardTrace.Capacity
-            lines; nothing is stored. Board: <span class="mono">@Connection.Endpoint</span>
+            lines; nothing is stored. Board: <span class="mono">@Registry.Only.Endpoint</span>
         </p>
         @if (_routineLeftOut > 0)
         {
@@ -49,28 +48,32 @@
 </div>
 
 @code {
+    // Until PR 4 (Issue #4): one board. Debug only opens once the setup guide is done, and a board is always chosen by
+    // then, so the board doesn't change while the page is open.
+    private BoardTrace _trace = null!;
     private IReadOnlyList<BoardTraceItem> _items = [];
     private long _routineLeftOut;
 
     protected override void OnInitialized()
     {
-        _items = Trace.Items;
-        _routineLeftOut = Trace.RoutineLeftOut;
-        Trace.Added += OnChanged;
-        Trace.RoutineCounted += OnChanged;
-        Trace.Cleared += OnChanged;
+        _trace = Registry.Only.Trace;
+        _items = _trace.Items;
+        _routineLeftOut = _trace.RoutineLeftOut;
+        _trace.Added += OnChanged;
+        _trace.RoutineCounted += OnChanged;
+        _trace.Cleared += OnChanged;
     }
 
     public void Dispose()
     {
-        Trace.Added -= OnChanged;
-        Trace.RoutineCounted -= OnChanged;
-        Trace.Cleared -= OnChanged;
+        _trace.Added -= OnChanged;
+        _trace.RoutineCounted -= OnChanged;
+        _trace.Cleared -= OnChanged;
     }
 
     private void Clear()
     {
-        Trace.Clear();
+        _trace.Clear();
     }
 
     private static string Arrow(BoardTraceItem item)
@@ -105,8 +108,8 @@
         {
             await InvokeAsync(() =>
             {
-                _items = Trace.Items;
-                _routineLeftOut = Trace.RoutineLeftOut;
+                _items = _trace.Items;
+                _routineLeftOut = _trace.RoutineLeftOut;
                 StateHasChanged();
             });
         }

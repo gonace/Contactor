@@ -4,7 +4,7 @@
 @using Contactor.Web.Features.Boards
 @inject CurrentUser CurrentUser
 @inject BoardTrafficSetting Debugging
-@inject BoardTrace Trace
+@inject BoardRegistry Registry
 @inject TimeProvider TimeProvider
 
 <div class="bottom @(SideMenuOnly ? "side-only" : null)">
@@ -68,6 +68,10 @@
 
     private readonly List<Toast> _toasts = [];
     private readonly Lock _lock = new();
+
+    // Until PR 4 (Issue #4): one board. Pages with the tab bar only open once the setup guide is done, and a board is
+    // always chosen by then. The one listened to, so the same one is let go.
+    private BoardTrace? _trace;
     private string? _email;
     private bool _debugging;
     private bool _disposed;
@@ -103,14 +107,19 @@
         }
 
         Debugging.Changed += OnDebuggingChanged;
-        Trace.Added += OnTraced;
+        _trace = Registry.Only.Trace;
+        _trace.Added += OnTraced;
         _debugging = await Debugging.IsOnAsync(_email, CancellationToken.None);
     }
 
     public void Dispose()
     {
         Debugging.Changed -= OnDebuggingChanged;
-        Trace.Added -= OnTraced;
+        if (_trace is not null)
+        {
+            _trace.Added -= OnTraced;
+        }
+
         lock (_lock)
         {
             _disposed = true;

@@ -16,7 +16,7 @@ namespace Contactor.Web.Features.Relays;
 /// </summary>
 public sealed class RelayControl
 {
-    private readonly IRelayBoard _board;
+    private readonly OnlyBoard _board;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
@@ -24,14 +24,15 @@ public sealed class RelayControl
     private readonly GroupSequencer _groups;
 
     public RelayControl(
-        IRelayBoard board,
+        BoardRegistry registry,
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         RelayChanges changes,
         ExpectedChanges expected,
         GroupSequencer groups)
     {
-        _board = board;
+        // Until PR 4 (Issue #4): one board.
+        _board = registry.Only;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
