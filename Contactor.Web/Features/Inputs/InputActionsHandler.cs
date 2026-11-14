@@ -36,35 +36,34 @@ public sealed record InputActionRow(InputActionTarget Target, bool? WhenClosed, 
 /// <summary>
 /// The relays and groups an input controls, on the Input screen. A relay in a group is only controlled through its
 /// group, and a relay an input controls can't join a group (<see cref="Groups.GroupsHandler"/>), as with a relay's
-/// own schedules.
+/// own schedules. An input only controls relays and groups on its own board (across boards is issue #204).
 /// </summary>
 public sealed class InputActionsHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly OnlyBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly RelayChanges _changes;
 
     public InputActionsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes)
     {
         _dbFactory = dbFactory;
-        // Until PR 4 (Issue #4): one board.
-        _board = registry.Only;
+        _registry = registry;
         _changes = changes;
     }
 
     /// <summary>
-    /// What the input controls: its groups first, then its relays, as on the Relays screen. A relay above the board's
-    /// count, left from a board that had more, is kept but not shown.
+    /// What the input controls: its groups first, then its relays, as on the Relays screen. A relay its board doesn't
+    /// have (above its count, left from a board that had more) is kept but not shown.
     /// </summary>
     public async Task<IReadOnlyList<InputActionRow>> ListAsync(int inputId, CancellationToken cancellationToken)
     {
-        var count = _board.Capabilities.RelayCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var actions = await db.InputActions.AsNoTracking()
-            .Where(a => a.InputId == inputId && (a.RelayId == null || a.Relay!.Channel <= count))
+        var actions = (await db.InputActions.AsNoTracking()
+            .Where(a => a.InputId == inputId)
             .Select(a => new
             {
                 a.RelayId,
+                RelayBoardId = a.Relay == null ? (int?)null : a.Relay.BoardId,
                 Channel = a.Relay == null ? (int?)null : a.Relay.Channel,
                 a.GroupId,
                 RelayName = a.Relay == null ? null : a.Relay.Name,
@@ -73,7 +72,8 @@ public sealed class InputActionsHandler
                 a.WhenClosed,
                 a.WhenOpened,
             })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .Where(a => a.RelayId is null || _registry.HasRelay(a.RelayBoardId!.Value, a.Channel!.Value));
         return [.. actions
             .OrderBy(a => a.GroupId is null)
             .ThenBy(a => a.GroupOrder)
@@ -85,11 +85,16 @@ public sealed class InputActionsHandler
                 a.WhenOpened))];
     }
 
-    /// <summary>Every group, then every relay on the board that is in no group: what an input may control.</summary>
-    public async Task<IReadOnlyList<InputActionTarget>> TargetsAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Every group of the input's board, then every relay on its board that is in no group: what the input may control.
+    /// None for an input that doesn't exist.
+    /// </summary>
+    public async Task<IReadOnlyList<InputActionTarget>> TargetsAsync(int inputId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        return await TargetsAsync(db, cancellationToken);
+        return await db.Inputs.Where(i => i.Id == inputId).Select(i => (int?)i.BoardId).SingleOrDefaultAsync(cancellationToken) is { } boardId
+            ? await TargetsAsync(db, boardId, cancellationToken)
+            : [];
     }
 
     /// <summary>
@@ -109,11 +114,12 @@ public sealed class InputActionsHandler
             return error;
         }
 
-        // What isn't shown, a relay above the board's count, stays.
-        var count = _board.Capabilities.RelayCount;
-        db.InputActions.RemoveRange(await db.InputActions
-            .Where(a => a.InputId == inputId && (a.RelayId == null || a.Relay!.Channel <= count))
-            .ToListAsync(cancellationToken));
+        // What isn't shown, a relay its board doesn't have, stays.
+        db.InputActions.RemoveRange((await db.InputActions
+            .Include(a => a.Relay)
+            .Where(a => a.InputId == inputId)
+            .ToListAsync(cancellationToken))
+            .Where(a => a.Relay is null || _registry.HasRelay(a.Relay.BoardId, a.Relay.Channel)));
         db.InputActions.AddRange(rows.Select(r => new InputAction
         {
             InputId = inputId,
@@ -141,29 +147,22 @@ public sealed class InputActionsHandler
 
     private async Task<string?> CheckAsync(ContactorDbContext db, int inputId, IReadOnlyList<InputActionRow> rows, CancellationToken cancellationToken)
     {
-        var inputCount = _board.Capabilities.InputCount;
-        if (!await db.Inputs.AnyAsync(i => i.Id == inputId && i.Channel <= inputCount, cancellationToken))
+        var input = await db.Inputs.AsNoTracking().Where(i => i.Id == inputId).Select(i => new { i.BoardId, i.Channel }).SingleOrDefaultAsync(cancellationToken);
+        if (input is null || !_registry.HasInput(input.BoardId, input.Channel))
         {
             return "The input doesn't exist.";
         }
 
-        // Checked against the database, not the page: a relay may have joined a group since the page was opened.
-        var targets = await TargetsAsync(db, cancellationToken);
+        // Checked against the database, not the page: a relay may have joined a group since the page was opened. Only
+        // the input's own board's.
+        var targets = await TargetsAsync(db, input.BoardId, cancellationToken);
         var seen = new List<InputActionTarget>();
         foreach (var row in rows)
         {
             ArgumentNullException.ThrowIfNull(row?.Target);
             if (!targets.Any(t => t.IsSame(row.Target)))
             {
-                // By the relay's channel, as the screens number it.
-                var count = _board.Capabilities.RelayCount;
-                var channel = row.Target.RelayId is { } relayId
-                    ? await db.Relays.Where(r => r.Id == relayId && r.Channel <= count).Select(r => (int?)r.Channel).SingleOrDefaultAsync(cancellationToken)
-                    : null;
-                return row.Target.GroupId is not null ? "That group no longer exists."
-                    : channel is not null ? $"Relay {channel} is in a group now: add the group instead."
-                    : row.Target.Channel is { } shown ? $"The board has no relay {shown}."
-                    : "The board has no such relay.";
+                return await WhyNotAsync(db, input.BoardId, row.Target, cancellationToken);
             }
 
             if (seen.Any(t => t.IsSame(row.Target)))
@@ -177,19 +176,43 @@ public sealed class InputActionsHandler
         return null;
     }
 
-    private async Task<IReadOnlyList<InputActionTarget>> TargetsAsync(ContactorDbContext db, CancellationToken cancellationToken)
+    // Why a relay or group isn't one the input may control. By the relay's channel, as the screens number it.
+    private async Task<string> WhyNotAsync(ContactorDbContext db, int boardId, InputActionTarget target, CancellationToken cancellationToken)
     {
-        var count = _board.Capabilities.RelayCount;
+        if (target.GroupId is { } groupId)
+        {
+            var groupBoard = await db.RelayGroups.Where(g => g.Id == groupId).Select(g => (int?)g.BoardId).SingleOrDefaultAsync(cancellationToken);
+            return groupBoard is { } other && other != boardId ? "That group is on another board: an input only controls its own board's." : "That group no longer exists.";
+        }
+
+        var relay = target.RelayId is { } relayId
+            ? await db.Relays.AsNoTracking().Where(r => r.Id == relayId).Select(r => new { r.BoardId, r.Channel }).SingleOrDefaultAsync(cancellationToken)
+            : null;
+        if (relay is not null && relay.BoardId != boardId)
+        {
+            return "That relay is on another board: an input only controls its own board's.";
+        }
+
+        return relay is not null && _registry.HasRelay(relay.BoardId, relay.Channel) ? $"Relay {relay.Channel} is in a group now: add the group instead."
+            : target.Channel is { } shown ? $"The board has no relay {shown}."
+            : "The board has no such relay.";
+    }
+
+    // The board's groups, then its relays in no group that it has (by their channels).
+    private async Task<IReadOnlyList<InputActionTarget>> TargetsAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
+    {
         var groups = await db.RelayGroups.AsNoTracking()
+            .Where(g => g.BoardId == boardId)
             .OrderBy(g => g.SortOrder).ThenBy(g => g.Id)
             .Select(g => new InputActionTarget(null, null, g.Id, g.Name))
             .ToListAsync(cancellationToken);
         var members = db.RelayGroupMembers.Select(m => m.RelayId);
-        var relays = await db.Relays.AsNoTracking()
-            .Where(r => r.Channel <= count && !members.Contains(r.Id))
+        var relays = (await db.Relays.AsNoTracking()
+            .Where(r => r.BoardId == boardId && !members.Contains(r.Id))
             .OrderBy(r => r.Channel)
-            .Select(r => new InputActionTarget(r.Id, r.Channel, null, r.Name))
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .Where(r => _registry.HasRelay(boardId, r.Channel))
+            .Select(r => new InputActionTarget(r.Id, r.Channel, null, r.Name));
         return [.. groups, .. relays];
     }
 }

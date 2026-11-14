@@ -290,7 +290,7 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
-    // Until PR 4 (Issue #4): one board.
+    // Until the screens show every board (Issue #4): one board.
     private IRelayBoard Board => Registry.Only;
 
     private const int EventCount = 4;
@@ -418,7 +418,8 @@
             }
         }
 
-        _free = [.. (await Groups.FreeRelaysAsync(CancellationToken.None))];
+        // Only the group's own board's: a group's relays are all on one board.
+        _free = [.. (await Groups.FreeRelaysAsync(_group?.BoardId, CancellationToken.None))];
         await using var db = await DbFactory.CreateDbContextAsync();
         _names = await ActorNames.LoadAsync(db, CancellationToken.None);
         _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, groupId: Id)];

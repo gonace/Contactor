@@ -34,17 +34,17 @@ public sealed class InputChangeFeed
 /// with its run-on and auto-off). Logged with the input as the actor. A relay already in that state is left alone, so
 /// a relay its schedule turned on stays the schedule's; one with the opposite command still on its way isn't, so a
 /// contact that closes and opens quickly still turns it back. A group decides itself whether there is anything to
-/// stop; one that is fully on and not mid-sequence isn't started again. Without the board nothing is sent
+/// stop; one that is fully on and not mid-sequence isn't started again. An input only acts on the relays and groups
+/// of its own board (across boards is issue #204): one on another board is skipped. Without the board nothing is sent
 /// or queued for later; a relay that has joined a group is skipped.
 /// </summary>
 public sealed partial class InputActionService : BackgroundService
 {
     private readonly InputChangeFeed _queue;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly OnlyBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly RelayControl _relays;
     private readonly GroupSequencer _groups;
-    private readonly ExpectedChanges _expected;
     private readonly ILogger<InputActionService> _logger;
 
     public InputActionService(
@@ -53,16 +53,13 @@ public sealed partial class InputActionService : BackgroundService
         BoardRegistry registry,
         RelayControl relays,
         GroupSequencer groups,
-        ExpectedChanges expected,
         ILogger<InputActionService> logger)
     {
         _queue = queue;
         _dbFactory = dbFactory;
-        // Until PR 4 (Issue #4): one board.
-        _board = registry.Only;
+        _registry = registry;
         _relays = relays;
         _groups = groups;
-        _expected = expected;
         _logger = logger;
     }
 
@@ -89,23 +86,44 @@ public sealed partial class InputActionService : BackgroundService
         Dictionary<int, List<int>> members;
         Dictionary<int, GroupRuntime> runtimes;
         BoardChannels channels;
+        LiveBoard? board;
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+            if (await db.Inputs.Where(i => i.Id == change.InputId).Select(i => (int?)i.BoardId).SingleOrDefaultAsync(cancellationToken) is not { } boardId)
+            {
+                return;
+            }
+
+            board = _registry.Find(boardId);
+
+            // Only what is on the input's own board: a relay on another board isn't in its channels, and a group on
+            // another board isn't among its groups.
             actions = await db.InputActions.AsNoTracking()
                 .Where(a => a.InputId == change.InputId)
+                .Where(a => (a.RelayId != null && a.Relay!.BoardId == boardId) || (a.GroupId != null && a.Group!.BoardId == boardId))
                 .OrderBy(a => a.GroupId == null).ThenBy(a => a.GroupId).ThenBy(a => a.RelayId)
                 .ToListAsync(cancellationToken);
-            // The groups' relays by channel, as the board's state goes.
-            members = (await db.RelayGroupMembers.AsNoTracking().Select(m => new { m.GroupId, m.Relay!.Channel }).ToListAsync(cancellationToken))
+            // The groups' relays by channel, as the board's state goes; only the board's own.
+            members = (await db.RelayGroupMembers.AsNoTracking()
+                    .Where(m => m.Group!.BoardId == boardId && m.Relay!.BoardId == boardId)
+                    .Select(m => new { m.GroupId, m.Relay!.Channel })
+                    .ToListAsync(cancellationToken))
                 .GroupBy(m => m.GroupId)
                 .ToDictionary(g => g.Key, g => g.Select(m => m.Channel).ToList());
-            channels = await BoardChannels.LoadAsync(db, cancellationToken);
+            channels = await BoardChannels.LoadAsync(db, boardId, cancellationToken);
             runtimes = await db.GroupRuntimes.AsNoTracking().ToDictionaryAsync(r => r.GroupId, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LogFailed(ex, change.InputId);
+            return;
+        }
+
+        if (board is null)
+        {
+            // Its board isn't run: nothing to act on, and nothing queued.
+            LogNoBoard(change.InputId);
             return;
         }
 
@@ -119,7 +137,7 @@ public sealed partial class InputActionService : BackgroundService
 
             try
             {
-                await RunAsync(action, on, actor, members, runtimes, channels, cancellationToken);
+                await RunAsync(board, action, on, actor, members, runtimes, channels, cancellationToken);
             }
             catch (BoardNotConnectedException)
             {
@@ -140,6 +158,7 @@ public sealed partial class InputActionService : BackgroundService
     }
 
     private async Task RunAsync(
+        LiveBoard board,
         InputAction action,
         bool on,
         string actor,
@@ -161,15 +180,15 @@ public sealed partial class InputActionService : BackgroundService
                 // The sequencer knows best what is running or on its way (an ON not confirmed yet is overtaken).
                 await _groups.StopGroupAsync(groupId, actor, cancellationToken);
             }
-            else if (!IsFullyOn(groupRelays, runtimes.GetValueOrDefault(groupId)))
+            else if (!IsFullyOn(board, groupRelays, runtimes.GetValueOrDefault(groupId)))
             {
                 await _groups.StartGroupAsync(groupId, actor, cancellationToken);
             }
         }
         else if (action.RelayId is { } relayId
             && channels.RelayChannel(relayId) is { } channel
-            && channel <= _board.Capabilities.RelayCount
-            && !IsAlready(channel, on))
+            && channel <= board.Capabilities.RelayCount
+            && !IsAlready(board, channel, on))
         {
             if (on)
             {
@@ -183,16 +202,16 @@ public sealed partial class InputActionService : BackgroundService
     }
 
     // The board shows the relay (its channel) in that state, and no command to change it is on its way.
-    private bool IsAlready(int channel, bool on)
+    private static bool IsAlready(LiveBoard board, int channel, bool on)
     {
-        return _board.State.Relays.Contains(channel) == on && !_expected.IsPending(channel, !on);
+        return board.State.Relays.Contains(channel) == on && !board.Expected.IsPending(channel, !on);
     }
 
     // Every relay (by channel) on, nothing on its way and no sequence under way: starting it again would only log a
     // second start.
-    private bool IsFullyOn(List<int> groupRelays, GroupRuntime? runtime)
+    private static bool IsFullyOn(LiveBoard board, List<int> groupRelays, GroupRuntime? runtime)
     {
-        return groupRelays.All(_board.State.Relays.Contains)
+        return groupRelays.All(board.State.Relays.Contains)
             && (runtime is null || (runtime.Phase == GroupPhases.Idle && runtime.PendingPosition is null));
     }
 

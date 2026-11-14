@@ -31,6 +31,8 @@ public sealed class FailedCommandTests : IAsyncLifetime
 
     private RelayControl Control => _database.Services.GetRequiredService<RelayControl>();
 
+    private int BoardId => _database.Services.Live().BoardId;
+
     private AutoOffService AutoOff => _database.Services.GetRequiredService<AutoOffService>();
 
     private SchedulerService Scheduler => _database.Services.GetRequiredService<SchedulerService>();
@@ -99,7 +101,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await WaitForEventsAsync(1);
 
         _board.SwitchSilentlyThenFail = true;
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnAllOffAsync(Jane, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnAllOffAsync(BoardId, Jane, Cancel));
         await _board.RefreshAsync(Cancel);
 
         var events = await WaitForEventsAsync(2);
@@ -116,7 +118,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await WaitForEventsAsync(2);
 
         _board.Refuse = ChannelMask.Of(3);
-        await Control.TurnAllOffAsync(Jane, Cancel);
+        await Control.TurnAllOffAsync(BoardId, Jane, Cancel);
         await _board.RefreshAsync(Cancel);
 
         var events = await WaitForEventsAsync(3);
@@ -143,7 +145,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await WaitForEventsAsync(2);
 
         _board.Unconfirmed = ChannelMask.Of(3);
-        await Control.TurnAllOffAsync(Jane, Cancel);
+        await Control.TurnAllOffAsync(BoardId, Jane, Cancel);
         await _board.RefreshAsync(Cancel);
 
         var events = await WaitForEventsAsync(4);
@@ -197,7 +199,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
 
         _board.Refuse = ChannelMask.Of(4);
-        await sequencer.StopAllAsync(Jane, Cancel);
+        await sequencer.StopAllAsync(BoardId, Jane, Cancel);
         Assert.Equal((false, true), (_board.State.IsOn(2), _board.State.IsOn(4)));
         _board.Refuse = ChannelMask.None;
         _board.SetRelay(4, on: false);
@@ -223,7 +225,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
 
         _board.Unconfirmed = ChannelMask.Of(4);
-        await sequencer.StopAllAsync(Jane, Cancel);
+        await sequencer.StopAllAsync(BoardId, Jane, Cancel);
         Assert.Equal((false, false), (_board.State.IsOn(2), _board.State.IsOn(4)));
         await _board.RefreshAsync(Cancel);
 

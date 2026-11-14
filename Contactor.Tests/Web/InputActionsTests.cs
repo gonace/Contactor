@@ -196,7 +196,7 @@ public sealed class InputActionsTests
         await rig.SaveAsync(new InputActionRow(Relay(4), false, true), new InputActionRow(Group(groupId), true, false));
 
         var rows = await rig.Handler.ListAsync(1, Cancel);
-        var targets = await rig.Handler.TargetsAsync(Cancel);
+        var targets = await rig.Handler.TargetsAsync(1, Cancel);
 
         Assert.Equal(["Group: Heater", "Relay 4: Relay 4"], rows.Select(r => r.Target.Label));
         Assert.Equal((false, true), (rows[1].WhenClosed, rows[1].WhenOpened));

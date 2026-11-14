@@ -238,8 +238,8 @@
 </div>
 
 @code {
-    // Until PR 4 (Issue #4): one board.
-    private IRelayBoard Board => Registry.Only;
+    // Until the screens show every board (Issue #4): one board.
+    private OnlyBoard Board => Registry.Only;
 
     private List<Relay> _relays = [];
     private IReadOnlyList<GroupView> _groups = [];
@@ -320,7 +320,9 @@
         _groups = await Groups.ListAsync(CancellationToken.None);
         _inputs = await Inputs.ListAsync(CancellationToken.None);
         var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
-        _relays = (await db.Relays.AsNoTracking().Where(r => r.Channel <= Board.Capabilities.RelayCount).OrderBy(r => r.SortOrder).ThenBy(r => r.Channel).ToListAsync()).Where(r => !members.Contains(r.Id)).ToList();
+        _relays = (await db.Relays.AsNoTracking().OrderBy(r => r.SortOrder).ThenBy(r => r.Channel).ToListAsync())
+            .Where(r => Registry.HasRelay(r.BoardId, r.Channel) && !members.Contains(r.Id))
+            .ToList();
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
         _names = await ActorNames.LoadAsync(db, CancellationToken.None);
 
@@ -457,7 +459,13 @@
 
     private async Task TurnAllOffAsync()
     {
-        await RunAsync(() => Control.TurnAllOffAsync(_user!.Email, CancellationToken.None), failedRelayId: null);
+        // "All off" for the one board the screen shows (PR 5 adds one per board and one for every board).
+        if (Board.BoardId is not { } boardId)
+        {
+            return;
+        }
+
+        await RunAsync(() => Control.TurnAllOffAsync(boardId, _user!.Email, CancellationToken.None), failedRelayId: null);
     }
 
     private async Task RunAsync(Func<Task> command, int? failedRelayId)

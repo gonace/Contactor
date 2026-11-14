@@ -69,7 +69,7 @@
     private readonly List<Toast> _toasts = [];
     private readonly Lock _lock = new();
 
-    // Until PR 4 (Issue #4): one board. Pages with the tab bar only open once the setup guide is done, and a board is
+    // Until the screens show every board (Issue #4): one board. Pages with the tab bar only open once the setup guide is done, and a board is
     // always chosen by then. The one listened to, so the same one is let go.
     private BoardTrace? _trace;
     private string? _email;

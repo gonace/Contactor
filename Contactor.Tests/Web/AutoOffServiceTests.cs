@@ -165,7 +165,7 @@ public sealed class AutoOffServiceTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         await SaveRunAsync(rig, relayId: 2, autoOffInMinutes: null);
-        rig.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(2), on: true);
+        rig.Database.Services.Live().Expected.Expect(ChannelMask.Of(2), on: true);
 
         Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
 

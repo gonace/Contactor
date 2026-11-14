@@ -19,28 +19,26 @@ public sealed class RelaySettingsHandler
     public static readonly IReadOnlyList<int?> Limits = [60, 120, 240, null];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly OnlyBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
     public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
     {
-        // Until PR 4 (Issue #4): one board.
-        _board = registry.Only;
+        _registry = registry;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
     }
 
-    /// <summary>The relay's settings, or null for a relay the board doesn't have (by its channel).</summary>
+    /// <summary>The relay's settings, or null for a relay its own board doesn't have (by its channel).</summary>
     public async Task<RelaySettings?> GetAsync(int relayId, CancellationToken cancellationToken)
     {
-        var count = _board.Capabilities.RelayCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        return await db.Relays.AsNoTracking()
-            .Where(r => r.Id == relayId && r.Channel <= count)
-            .Select(r => new RelaySettings(r.Id, r.Name, r.IsActive, r.MaxOnMinutes))
-            .SingleOrDefaultAsync(cancellationToken);
+        var relay = await db.Relays.AsNoTracking().SingleOrDefaultAsync(r => r.Id == relayId, cancellationToken);
+        return relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel)
+            ? null
+            : new RelaySettings(relay.Id, relay.Name, relay.IsActive, relay.MaxOnMinutes);
     }
 
     /// <summary>
@@ -70,10 +68,9 @@ public sealed class RelaySettingsHandler
             return $"The name can be at most {Relay.NameMaxLength} characters.";
         }
 
-        var count = _board.Capabilities.RelayCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var relay = await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id && r.Channel <= count, cancellationToken);
-        if (relay is null)
+        var relay = await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
+        if (relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel))
         {
             return "The relay doesn't exist.";
         }

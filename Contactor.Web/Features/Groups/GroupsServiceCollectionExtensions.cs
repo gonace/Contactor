@@ -1,3 +1,5 @@
+using Contactor.Web.Features.Boards;
+
 namespace Contactor.Web.Features.Groups;
 
 public static class GroupsServiceCollectionExtensions
@@ -8,6 +10,7 @@ public static class GroupsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         services.AddSingleton<GroupsHandler>();
         services.AddSingleton<GroupSequencer>();
+        services.AddSingleton<IBoardWatcher>(sp => sp.GetRequiredService<GroupSequencer>());
         services.AddHostedService(sp => sp.GetRequiredService<GroupSequencer>());
         return services;
     }

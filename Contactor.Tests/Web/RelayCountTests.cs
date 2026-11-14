@@ -184,7 +184,7 @@ public sealed class RelayCountTests
         await control.TurnOnAsync(12, John, Cancel);
 
         Assert.True(board.State.IsOn(12));
-        await control.TurnAllOffAsync(John, Cancel);
+        await control.TurnAllOffAsync(database.Services.Live().BoardId, John, Cancel);
         Assert.True(board.State.Relays.IsEmpty);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => control.TurnOnAsync(17, John, Cancel));
     }

@@ -24,6 +24,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     private readonly TimeProvider _time;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<BoardRegistry> _logger;
+    private readonly IReadOnlyList<IBoardWatcher> _watchers;
     private readonly Lock _lock = new();
 
     // One change to the boards at a time: loading, a new model.
@@ -43,9 +44,11 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         IServiceProvider app,
         IConfiguration configuration,
         TimeProvider time,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IEnumerable<IBoardWatcher>? watchers = null)
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
+        _watchers = [.. watchers ?? []];
         _dbFactory = dbFactory;
         _app = app;
         _configuration = configuration;
@@ -71,8 +74,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     public IReadOnlyList<LiveBoard> All => Volatile.Read(ref _boards);
 
     /// <summary>
-    /// The one board, for what still runs one board only: see <see cref="OnlyBoard"/>.
-    /// Until PR 4 (Issue #4): one board.
+    /// The one board, for the screens that still show one board only: see <see cref="OnlyBoard"/>.
+    /// Until the screens show every board (Issue #4): one board.
     /// </summary>
     public OnlyBoard Only { get; }
 
@@ -80,6 +83,21 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     public LiveBoard? Find(int boardId)
     {
         return All.FirstOrDefault(b => b.BoardId == boardId);
+    }
+
+    /// <summary>
+    /// Whether the relay on this board and channel is one the board has: its board runs and has that many relays. A
+    /// row above the count, left from a board that had more, isn't shown, offered or switched.
+    /// </summary>
+    public bool HasRelay(int boardId, int channel)
+    {
+        return channel >= 1 && Find(boardId) is { } board && channel <= board.Capabilities.RelayCount;
+    }
+
+    /// <summary>Whether the input on this board and channel is one the board has, as <see cref="HasRelay"/>.</summary>
+    public bool HasInput(int boardId, int channel)
+    {
+        return channel >= 1 && Find(boardId) is { } board && channel <= board.Capabilities.InputCount;
     }
 
     /// <summary>
@@ -113,7 +131,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                             $"Relay board \"{row.Name}\" is a \"{row.Type}\", which isn't a board this version of the app knows. Use one of: {BoardCatalogue.Ids}.");
                 }
 
-                var live = Add(row);
+                var live = await AddAsync(row);
                 if (registration is not null)
                 {
                     await live.ReplaceAsync(Build(registration, BoardSetup.From(row, isFirst: i == 0)));
@@ -149,7 +167,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             var built = Build(registration, BoardSetup.From(row, isFirst));
             try
             {
-                live ??= Add(row);
+                live ??= await AddAsync(row);
             }
             catch
             {
@@ -180,7 +198,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         try
         {
             var (row, _) = await RowAsync(board.BoardId, cancellationToken);
-            var live = Find(board.BoardId) ?? Add(row);
+            var live = Find(board.BoardId) ?? await AddAsync(row);
             await live.ReplaceAsync(board);
             return live;
         }
@@ -298,10 +316,25 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         return registration.Create(registration.Model, setup, _app, _configuration);
     }
 
-    // Only under the gate. Subscribed before it gets a model, so its first state reaches the listeners.
-    private LiveBoard Add(Board row)
+    // Only under the gate. Watched by the safety services first, then subscribed, both before it gets a model and before
+    // its connection starts: its first state reaches them all.
+    private async Task<LiveBoard> AddAsync(Board row)
     {
         var live = new LiveBoard(row.Id, row.Name, _dbFactory, _time, _loggerFactory);
+        try
+        {
+            foreach (var watcher in _watchers)
+            {
+                await live.OwnAsync(watcher.Watch(live));
+            }
+        }
+        catch
+        {
+            // The watches taken so far end with it.
+            await live.DisposeAsync();
+            throw;
+        }
+
         live.StateChanged += OnStateChanged;
         lock (_lock)
         {

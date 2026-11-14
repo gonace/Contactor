@@ -22,7 +22,8 @@ public sealed record GroupMemberDraft(
 /// <param name="HasSchedules">It has schedules of its own, so it can't join a group.</param>
 /// <param name="InputName">An input that controls it, so it can't join a group; null when none does.</param>
 /// <param name="Channel">Its channel on the board, the number the screens show.</param>
-public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null)
+/// <param name="BoardId">Its board: a group's relays are all on one board.</param>
+public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null, int BoardId = 0)
 {
     public bool IsFree => GroupName is null && !HasSchedules && InputName is null;
 
@@ -35,7 +36,8 @@ public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool 
 }
 
 /// <summary>
-/// Creates, changes and deletes relay groups, with the rules a group must keep: 2 relays up to the board's count, each in at most one group,
+/// Creates, changes and deletes relay groups, with the rules a group must keep: 2 relays up to the board's count, all on
+/// one board (the group's: a new group takes its first relay's; across boards is issue #204), each in at most one group,
 /// none with schedules of its own, and the waits within their limits. Which relays are in it and their order only
 /// change while the whole group is off, so no running sequence is pulled apart; the same goes for creating and
 /// deleting. Every change is logged.
@@ -49,7 +51,7 @@ public sealed class GroupsHandler
     public static readonly IReadOnlyList<int> StartDelayChoices = [1, 3, 10, 30, 60];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly OnlyBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
@@ -62,8 +64,7 @@ public sealed class GroupsHandler
         GroupSequencer sequencer)
     {
         _dbFactory = dbFactory;
-        // Until PR 4 (Issue #4): one board.
-        _board = registry.Only;
+        _registry = registry;
         _clock = clock;
         _changes = changes;
         _sequencer = sequencer;
@@ -93,16 +94,27 @@ public sealed class GroupsHandler
     }
 
     /// <summary>The relays that can join a group: in none, without schedules of their own, and controlled by no input.</summary>
-    public async Task<IReadOnlyList<Relay>> FreeRelaysAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<Relay>> FreeRelaysAsync(CancellationToken cancellationToken)
+    {
+        return FreeRelaysAsync(null, cancellationToken);
+    }
+
+    /// <summary>
+    /// As <see cref="FreeRelaysAsync(CancellationToken)"/>; with <paramref name="boardId"/>, only that board's (a group's
+    /// relays are all on its board).
+    /// </summary>
+    public async Task<IReadOnlyList<Relay>> FreeRelaysAsync(int? boardId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var taken = await db.RelayGroupMembers.Select(m => m.RelayId).ToListAsync(cancellationToken);
         var scheduled = await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken);
         var controlled = await db.InputActions.Where(a => a.RelayId != null).Select(a => a.RelayId).Distinct().ToListAsync(cancellationToken);
-        return await RelaysOnBoard(db)
-            .Where(r => !taken.Contains(r.Id) && !scheduled.Contains(r.Id) && !controlled.Contains(r.Id))
-            .OrderBy(r => r.SortOrder).ThenBy(r => r.Channel)
-            .ToListAsync(cancellationToken);
+        return [.. (await db.Relays.AsNoTracking()
+                .Where(r => boardId == null || r.BoardId == boardId)
+                .Where(r => !taken.Contains(r.Id) && !scheduled.Contains(r.Id) && !controlled.Contains(r.Id))
+                .OrderBy(r => r.SortOrder).ThenBy(r => r.Channel)
+                .ToListAsync(cancellationToken))
+            .Where(IsOnBoard)];
     }
 
     /// <summary>Every relay, and whether it can join a new group, for "New group".</summary>
@@ -114,9 +126,9 @@ public sealed class GroupsHandler
             .ToDictionaryAsync(m => m.RelayId, m => m.Name, cancellationToken);
         var scheduled = (await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
         var inputs = await ControllingInputsAsync(db, cancellationToken);
-        var relays = await RelaysOnBoard(db).OrderBy(r => r.Channel).ToListAsync(cancellationToken);
-        return [.. relays.Select(r => new GroupCandidate(
-            r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id)))];
+        var relays = await RelaysOnBoardsAsync(db, cancellationToken);
+        return [.. relays.Values.OrderBy(r => r.BoardId).ThenBy(r => r.Channel).Select(r => new GroupCandidate(
+            r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id), r.BoardId))];
     }
 
     // The name of an input that controls each relay; the first by number (its channel) when several do.
@@ -129,12 +141,16 @@ public sealed class GroupsHandler
         return actions.GroupBy(a => a.RelayId).ToDictionary(g => g.Key, g => g.OrderBy(a => a.Channel).First().Name);
     }
 
-    // The board's relays, by their channels: a database can hold more, kept from a board that had more, and those
+    // Every relay its own board has, by its id: a database can hold more, kept from a board that had more, and those
     // aren't offered.
-    private IQueryable<Relay> RelaysOnBoard(ContactorDbContext db)
+    private async Task<Dictionary<int, Relay>> RelaysOnBoardsAsync(ContactorDbContext db, CancellationToken cancellationToken)
     {
-        var count = _board.Capabilities.RelayCount;
-        return db.Relays.AsNoTracking().Where(r => r.Channel <= count);
+        return (await db.Relays.AsNoTracking().ToListAsync(cancellationToken)).Where(IsOnBoard).ToDictionary(r => r.Id);
+    }
+
+    private bool IsOnBoard(Relay relay)
+    {
+        return _registry.HasRelay(relay.BoardId, relay.Channel);
     }
 
     private static GroupView ToView(RelayGroup group, GroupRuntime? runtime)
@@ -145,27 +161,45 @@ public sealed class GroupsHandler
             group.Icon,
             group.MaxOnMinutes,
             [.. group.Members.OrderBy(m => m.Position).Select(m => new GroupMemberView(m.RelayId, m.Relay!.Channel, m.Position, m.RoleName, m.StartDelaySec, m.RunOnSec))],
-            runtime ?? new GroupRuntime { GroupId = group.Id });
+            runtime ?? new GroupRuntime { GroupId = group.Id })
+        {
+            BoardId = group.BoardId,
+        };
     }
 
-    /// <summary>Creates a group. Returns its id, or the message to show.</summary>
-    public Task<(int? Id, string? Error)> CreateAsync(GroupDraft draft, string userEmail, CancellationToken cancellationToken)
+    /// <summary>
+    /// Creates a group on its first relay's board, under that board's lock. Returns its id, or the message to show.
+    /// </summary>
+    public async Task<(int? Id, string? Error)> CreateAsync(GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        return _sequencer.ExclusiveAsync(() => CreateCoreAsync(draft, userEmail, cancellationToken), cancellationToken);
+        int? boardId = null;
+        if (draft.Members is [var first, ..])
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+            boardId = await db.Relays.Where(r => r.Id == first.RelayId).Select(r => (int?)r.BoardId).SingleOrDefaultAsync(cancellationToken);
+        }
+
+        // Without a first relay that exists, or one whose board the app runs, the draft is refused before anything else.
+        if (boardId is not { } id || _sequencer.For(id) is null)
+        {
+            return await CreateCoreAsync(draft, userEmail, boardId, cancellationToken);
+        }
+
+        return await _sequencer.ExclusiveAsync(id, () => CreateCoreAsync(draft, userEmail, id, cancellationToken), cancellationToken);
     }
 
-    private async Task<(int? Id, string? Error)> CreateCoreAsync(GroupDraft draft, string userEmail, CancellationToken cancellationToken)
+    private async Task<(int? Id, string? Error)> CreateCoreAsync(GroupDraft draft, string userEmail, int? boardId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Checked inside the transaction, so an input saved at the same moment (InputActionsHandler) can't take one of
         // its relays between the check and the save.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
-        var error = await ValidateAsync(db, draft, relays, groupId: null, cancellationToken)
-            ?? AllOff(draft.Members.Select(m => m.RelayId), relays);
+        var relays = await RelaysOnBoardsAsync(db, cancellationToken);
+        var error = await ValidateAsync(db, draft, relays, groupId: null, boardId, cancellationToken)
+            ?? AllOff(boardId, draft.Members.Select(m => m.RelayId), relays);
         if (error is not null)
         {
             return (null, error);
@@ -173,7 +207,7 @@ public sealed class GroupsHandler
 
         var group = new RelayGroup
         {
-            BoardId = await db.FirstBoardIdAsync(cancellationToken) ?? throw new InvalidOperationException("A group needs a board."),
+            BoardId = boardId ?? throw new InvalidOperationException("A group needs a board."),
             Name = draft.Name.Trim(),
             Icon = draft.Icon,
             MaxOnMinutes = draft.MaxOnMinutes,
@@ -196,11 +230,23 @@ public sealed class GroupsHandler
     /// Saves a group. The name, icon, auto-off, role names and waits can change any time; which relays and their order
     /// only while the whole group is off. Returns null when saved, otherwise the message to show.
     /// </summary>
-    public Task<string?> SaveAsync(int groupId, GroupDraft draft, string userEmail, CancellationToken cancellationToken)
+    public async Task<string?> SaveAsync(int groupId, GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        return _sequencer.ExclusiveAsync(() => SaveCoreAsync(groupId, draft, userEmail, cancellationToken), cancellationToken);
+        if (await BoardOfAsync(groupId, cancellationToken) is not { } boardId)
+        {
+            return "The group no longer exists.";
+        }
+
+        return await _sequencer.ExclusiveAsync(boardId, () => SaveCoreAsync(groupId, draft, userEmail, cancellationToken), cancellationToken);
+    }
+
+    // The group's board, or null when the group doesn't exist. A group's board never changes.
+    private async Task<int?> BoardOfAsync(int groupId, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        return await db.RelayGroups.Where(g => g.Id == groupId).Select(g => (int?)g.BoardId).SingleOrDefaultAsync(cancellationToken);
     }
 
     private async Task<string?> SaveCoreAsync(int groupId, GroupDraft draft, string userEmail, CancellationToken cancellationToken)
@@ -214,8 +260,8 @@ public sealed class GroupsHandler
 
         // Checked inside the transaction, as when creating one.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
-        var error = await ValidateAsync(db, draft, relays, groupId, cancellationToken);
+        var relays = await RelaysOnBoardsAsync(db, cancellationToken);
+        var error = await ValidateAsync(db, draft, relays, groupId, group.BoardId, cancellationToken);
         if (error is not null)
         {
             return error;
@@ -226,7 +272,7 @@ public sealed class GroupsHandler
         if (!before.SequenceEqual(after))
         {
             var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
-            if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(before.Concat(after), relays) is not null)
+            if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.BoardId, before.Concat(after), relays) is not null)
             {
                 return "Turn off the group, and the relays you add, before you change its relays or their order.";
             }
@@ -262,10 +308,15 @@ public sealed class GroupsHandler
     /// Deletes a group while it is off; its relays are ordinary relays again. Returns null when deleted, otherwise the
     /// message to show.
     /// </summary>
-    public Task<string?> DeleteAsync(int groupId, string userEmail, CancellationToken cancellationToken)
+    public async Task<string?> DeleteAsync(int groupId, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        return _sequencer.ExclusiveAsync(() => DeleteCoreAsync(groupId, userEmail, cancellationToken), cancellationToken);
+        if (await BoardOfAsync(groupId, cancellationToken) is not { } boardId)
+        {
+            return null;
+        }
+
+        return await _sequencer.ExclusiveAsync(boardId, () => DeleteCoreAsync(groupId, userEmail, cancellationToken), cancellationToken);
     }
 
     private async Task<string?> DeleteCoreAsync(int groupId, string userEmail, CancellationToken cancellationToken)
@@ -277,9 +328,9 @@ public sealed class GroupsHandler
             return null;
         }
 
-        var relays = await RelaysOnBoard(db).ToDictionaryAsync(r => r.Id, cancellationToken);
+        var relays = await RelaysOnBoardsAsync(db, cancellationToken);
         var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
-        if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.Members.Select(m => m.RelayId), relays) is not null)
+        if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.BoardId, group.Members.Select(m => m.RelayId), relays) is not null)
         {
             return "Turn off the group before deleting it.";
         }
@@ -296,6 +347,7 @@ public sealed class GroupsHandler
         GroupDraft draft,
         Dictionary<int, Relay> relays,
         int? groupId,
+        int? boardId,
         CancellationToken cancellationToken)
     {
         var name = draft.Name?.Trim() ?? "";
@@ -337,6 +389,13 @@ public sealed class GroupsHandler
                 return $"Relay {member.RelayId} doesn't exist.";
             }
 
+            // One board: the group's order and interlock are checked on each of its board's statuses, and the board
+            // switches them; relays on two boards can't be kept in order (across boards is issue #204).
+            if (relay.BoardId != boardId)
+            {
+                return "All the relays of a group must be on one board.";
+            }
+
             if ((member.RoleName?.Trim().Length ?? 0) > RelayGroupMember.RoleNameMaxLength)
             {
                 return $"The name in the group can be at most {RelayGroupMember.RoleNameMaxLength} characters.";
@@ -375,17 +434,17 @@ public sealed class GroupsHandler
         return taken is null ? null : $"{relays[taken.RelayId].Name} is already in {taken.Group}.";
     }
 
-    // The board must say each relay is off: a group never starts with a relay running outside its order.
-    private string? AllOff(IEnumerable<int> relayIds, Dictionary<int, Relay> relays)
+    // The group's board must say each relay is off: a group never starts with a relay running outside its order.
+    private string? AllOff(int? boardId, IEnumerable<int> relayIds, Dictionary<int, Relay> relays)
     {
-        var state = _board.State;
-        if (!state.IsConnected)
+        var state = boardId is { } id ? _registry.Find(id)?.State : null;
+        if (state is not { IsConnected: true })
         {
             return "No contact with the relay board. It's needed to see that the relays are off.";
         }
 
-        // By channel; a relay the board doesn't have can't be on.
-        var on = relayIds.Distinct().Select(relays.GetValueOrDefault).FirstOrDefault(r => r is not null && state.IsOn(r.Channel));
+        // By channel on the group's board; a relay the board doesn't have can't be on, and the relays are all on it.
+        var on = relayIds.Distinct().Select(relays.GetValueOrDefault).FirstOrDefault(r => r is not null && r.BoardId == boardId && state.IsOn(r.Channel));
         return on is null ? null : $"Turn off {on.Name} first.";
     }
 

@@ -46,34 +46,32 @@ public sealed class ContactorDbContext : DbContext
     public DbSet<TailscaleSetting> TailscaleSettings => Set<TailscaleSetting>();
 
     /// <summary>
-    /// The board, while the app runs one (several at once is issue #4): the first in the list, or null before one is
-    /// chosen.
+    /// The first board in the list, the one the setup guide chooses, or null before one is chosen.
     /// </summary>
     public Task<Board?> FirstBoardAsync(CancellationToken cancellationToken)
     {
         return Boards.OrderBy(b => b.SortOrder).ThenBy(b => b.Id).FirstOrDefaultAsync(cancellationToken);
     }
 
-    /// <summary>The id of <see cref="FirstBoardAsync"/>'s board, e.g. for an event about it; null before one is chosen.</summary>
+    /// <summary>The id of <see cref="FirstBoardAsync"/>'s board; null before one is chosen.</summary>
     public Task<int?> FirstBoardIdAsync(CancellationToken cancellationToken)
     {
         return Boards.OrderBy(b => b.SortOrder).ThenBy(b => b.Id).Select(b => (int?)b.Id).FirstOrDefaultAsync(cancellationToken);
     }
 
     /// <summary>
-    /// The runtime row of <see cref="FirstBoardAsync"/>'s board, tracked, added when it has none yet; null before a board
-    /// is chosen.
+    /// The runtime row of the board on this row, tracked, added when it has none yet; null when there is no such board.
     /// </summary>
-    public async Task<BoardRuntime?> FirstBoardRuntimeAsync(CancellationToken cancellationToken)
+    public async Task<BoardRuntime?> BoardRuntimeAsync(int boardId, CancellationToken cancellationToken)
     {
-        if (await FirstBoardIdAsync(cancellationToken) is not { } boardId)
-        {
-            return null;
-        }
-
         var runtime = await BoardRuntimes.SingleOrDefaultAsync(r => r.BoardId == boardId, cancellationToken);
         if (runtime is null)
         {
+            if (!await Boards.AnyAsync(b => b.Id == boardId, cancellationToken))
+            {
+                return null;
+            }
+
             runtime = new BoardRuntime { BoardId = boardId };
             BoardRuntimes.Add(runtime);
         }

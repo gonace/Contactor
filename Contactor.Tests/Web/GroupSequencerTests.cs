@@ -95,7 +95,7 @@ public sealed class GroupSequencerTests
         await rig.Simulator.SetOutputsAsync(0b0000_0111);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0000_0111);
 
-        await rig.Control.TurnAllOffAsync(John, Cancel);
+        await rig.Control.TurnAllOffAsync(rig.Live.BoardId, John, Cancel);
 
         // Relay 3 and the heat at once; the fan keeps running for its run-on.
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0000_0001);

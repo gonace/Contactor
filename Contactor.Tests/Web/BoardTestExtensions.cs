@@ -42,6 +42,13 @@ internal static class BoardTestExtensions
         return parts;
     }
 
+    /// <summary>The id of the first board's row; throws when there is none.</summary>
+    public static async Task<int> FirstBoardIdAsync(this IServiceProvider services)
+    {
+        await using var db = await services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(TestContext.Current.CancellationToken);
+        return await db.FirstBoardIdAsync(TestContext.Current.CancellationToken) ?? throw new InvalidOperationException("No board's row.");
+    }
+
     /// <summary>The app's one board.</summary>
     public static LiveBoard Live(this IServiceProvider services)
     {

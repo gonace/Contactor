@@ -52,7 +52,7 @@ public sealed class BoardEventRecorderTests
 
         await rig.Control.TurnOnAsync(2, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(2));
-        await rig.Control.TurnAllOffAsync(Jane, Cancel);
+        await rig.Control.TurnAllOffAsync(rig.Live.BoardId, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0);
         await rig.Client.RequestStatusAsync(Cancel);
         await Task.Delay(200, Cancel);
@@ -321,7 +321,7 @@ public sealed class BoardEventRecorderTests
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        setup.Database.Services.Live().Expected.Expect(ChannelMask.Of(1), on: true);
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
@@ -341,7 +341,7 @@ public sealed class BoardEventRecorderTests
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        setup.Database.Services.Live().Expected.Expect(ChannelMask.Of(1), on: true);
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
@@ -420,7 +420,7 @@ public sealed class BoardEventRecorderTests
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         setup.Board.Time = setup.Time;
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        setup.Database.Services.Live().Expected.Expect(ChannelMask.Of(1), on: true);
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
         await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
@@ -691,7 +691,7 @@ public sealed class BoardEventRecorderTests
             if (IsEnabled(logLevel))
             {
                 Interlocked.Increment(ref _count);
-                if (formatter(state, exception) == "Could not record a board event")
+                if (formatter(state, exception).StartsWith("Could not record an event of relay board", StringComparison.Ordinal))
                 {
                     Interlocked.Increment(ref _recorderFailures);
                 }

@@ -3,13 +3,13 @@ using Contactor.Boards;
 namespace Contactor.Web.Features.Boards;
 
 /// <summary>
-/// Until PR 4 (Issue #4): one board. The temporary bridge for what still runs one board only (the safety services,
-/// handlers and pages): the <see cref="IRelayBoard"/> of the app's one board, with its address and Debug trace, the
-/// same object for the app's lifetime, so a listener stays when the board's row is made in the setup guide or its model
-/// is replaced. Before the app has a board it has no relays and never answers, as a board before its model is chosen:
+/// Until the screens show every board (Issue #4): one board. The temporary bridge for the screens that still show one
+/// board only (the safety services and handlers each run every board on its own): the <see cref="IRelayBoard"/> of the
+/// app's one board, with its address and Debug trace, the same object for the app's lifetime, so a listener stays when
+/// the board's row is made in the setup guide or its model is replaced. Before the app has a board it has no relays and never answers, as a board before its model is chosen:
 /// commands throw <see cref="BoardNotConnectedException"/>, and nothing connects. With more than one board it throws:
 /// what uses it can't tell them apart yet. Reached through <see cref="BoardRegistry.Only"/>; every use is marked
-/// "Until PR 4 (Issue #4): one board." so PR 4 finds them.
+/// "Until the screens show every board (Issue #4): one board." so the screens' PRs find them.
 /// </summary>
 public sealed partial class OnlyBoard : IRelayBoard, IDisposable
 {

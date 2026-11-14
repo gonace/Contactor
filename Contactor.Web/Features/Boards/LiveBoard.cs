@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,9 @@ namespace Contactor.Web.Features.Boards;
 /// board's whole life, so a listener stays with it when its model is replaced (<see cref="ReplaceAsync"/>).
 /// Before it has a model it has no relays and never answers: commands throw <see cref="BoardNotConnectedException"/>,
 /// and nothing connects. A new model's state, unknown until it answers, is reported at once, as for a new address.
-/// <see cref="BoardRegistry"/> makes one per board's row and owns it.
+/// <see cref="BoardRegistry"/> makes one per board's row and owns it, with what the app runs for the board beside its
+/// connection (<see cref="IBoardWatcher"/>), which it disposes first. The changes the app itself just asked this board
+/// for are its own (<see cref="Expected"/>).
 /// </summary>
 public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTraffic, IAsyncDisposable
 {
@@ -38,6 +41,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     private string _name;
     private bool _disposed;
 
+    // What watches this board (its safety services' parts), ended first when it is disposed.
+    private readonly List<IAsyncDisposable> _watches = [];
+
     public LiveBoard(int boardId, string name, IDbContextFactory<ContactorDbContext> dbFactory, TimeProvider time, ILoggerFactory loggerFactory)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -50,6 +56,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
         // Listening from now on, before the first connection.
         Trace = new BoardTrace(this, time, loggerFactory.CreateLogger<BoardTrace>());
+        Expected = new ExpectedChanges(time);
     }
 
     /// <inheritdoc/>
@@ -73,6 +80,12 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
     /// <summary>The board's model, or null before one is chosen.</summary>
     public BoardModel? Model => Active?.Model;
+
+    /// <summary>
+    /// The changes the app itself just asked this board for, by channel: what its status then shows of them isn't a
+    /// change outside the app. Only this board's: a channel means a relay on this board.
+    /// </summary>
+    public ExpectedChanges Expected { get; }
 
     /// <summary>
     /// The latest steps on this board's connection, for the Debug screen: kept when its model is replaced, and in
@@ -147,6 +160,25 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         }
 
         active.UseSaved(BoardSetup.SavedEndpoint(row), BoardSetup.SavedLogin(row));
+    }
+
+    /// <summary>
+    /// Takes a watch of this board (<see cref="IBoardWatcher.Watch"/>), ended when the board is disposed, before its
+    /// model; in the reverse order they were taken. Once disposed, ends it at once.
+    /// </summary>
+    internal async Task OwnAsync(IAsyncDisposable watch)
+    {
+        ArgumentNullException.ThrowIfNull(watch);
+        lock (_lock)
+        {
+            if (!_disposed)
+            {
+                _watches.Add(watch);
+                return;
+            }
+        }
+
+        await watch.DisposeAsync();
     }
 
     /// <summary>
@@ -278,6 +310,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     {
         Slot? slot;
         bool dispose;
+        IAsyncDisposable[] watches;
         lock (_lock)
         {
             if (_disposed)
@@ -286,6 +319,8 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
             }
 
             _disposed = true;
+            watches = [.. Enumerable.Reverse(_watches)];
+            _watches.Clear();
             slot = _current;
             Volatile.Write(ref _current, null);
 
@@ -301,6 +336,21 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
                 slot.Board.Traffic.Traced -= OnTraced;
                 slot.Retired = true;
                 dispose = !slot.Running;
+            }
+        }
+
+        // What watches the board first: nothing acts on it once its connection ends.
+        foreach (var watch in watches)
+        {
+            try
+            {
+                await watch.DisposeAsync();
+            }
+#pragma warning disable CA1031 // One watch that fails to end must not keep the others or the connection going.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                LogWatchNotEnded(ex, BoardId);
             }
         }
 
@@ -416,6 +466,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Service} of relay board {BoardId} didn't stop cleanly")]
     private partial void LogExtraNotStopped(Exception exception, string service, int boardId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "A watch of relay board {BoardId} didn't end cleanly")]
+    private partial void LogWatchNotEnded(Exception exception, int boardId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A listener to relay board {BoardId}'s state failed")]
     private partial void LogSubscriberFailed(Exception exception, int boardId);

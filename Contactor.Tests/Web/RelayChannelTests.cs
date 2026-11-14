@@ -85,7 +85,7 @@ public sealed partial class RelayChannelTests
         await rig.Control.TurnOnAsync(rig.RelayId(6), Jane, Cancel);
         await WaitForChannelsAsync(rig, 2, 6);
 
-        await rig.Control.TurnAllOffAsync(Jane, Cancel);
+        await rig.Control.TurnAllOffAsync(rig.Live.BoardId, Jane, Cancel);
 
         await WaitForChannelsAsync(rig);
         var off = (await rig.EventsAsync()).Where(e => e.Action == EventActions.Off).ToList();
@@ -278,7 +278,7 @@ public sealed partial class RelayChannelTests
         await rig.Simulator.SetOutputsAsync(0b0000_0111);
         await WaitForChannelsAsync(rig, 1, 2, 3);
 
-        await rig.Control.TurnAllOffAsync(Jane, Cancel);
+        await rig.Control.TurnAllOffAsync(rig.Live.BoardId, Jane, Cancel);
 
         await WaitForChannelsAsync(rig, 1);
         await rig.Groups.StepAsync(Cancel);
@@ -505,7 +505,7 @@ public sealed partial class RelayChannelTests
             Cancel);
         Assert.Null(error);
         var handler = database.Services.GetRequiredService<InputActionsHandler>();
-        var targets = await handler.TargetsAsync(Cancel);
+        var targets = await handler.TargetsAsync(input, Cancel);
         Assert.Equal(["Group: Heater", "Relay 3: Relay 3", "Relay 4: Relay 4"], targets.Select(t => t.Label));
         Assert.Null(await handler.SaveAsync(
             input,
@@ -591,7 +591,7 @@ public sealed partial class RelayChannelTests
         await RelayLayouts.SeedAsync(database.Services, layout, relayCount: 4, inputCount: 2);
         await database.Services.SeedBoardAsync(relayCount: 4, inputCount: 2, Cancel);
 
-        var channels = await BoardChannels.LoadAsync(database.Factory, Cancel);
+        var channels = await BoardChannels.LoadAsync(database.Factory, await database.Services.FirstBoardIdAsync(), Cancel);
 
         for (var channel = 1; channel <= 4; channel++)
         {

@@ -3,7 +3,8 @@ using Contactor.Boards;
 namespace Contactor.Web.Features.Events;
 
 /// <summary>
-/// The relay changes the app itself just asked the board for, by channel. When the board's status then shows such a change it
+/// The relay changes the app itself just asked one board for, by channel: each live board has its own
+/// (<c>LiveBoard.Expected</c>). When the board's status then shows such a change it
 /// is the app's own, not an external one. An expectation lasts 5 s (the OFF at a pulse's end its length plus
 /// <c>RelayControl.PulseOffWait</c>): the board answers in well under a second, and a
 /// command that changed nothing gets no status at all, so its expectation must not linger and hide a later
@@ -17,13 +18,20 @@ public sealed class ExpectedChanges
     // Only a safety limit, e.g. for commands while no status is handled at all: far more than the app ever has waiting.
     private const int MaxExpected = 256;
 
-    private readonly LocalClock _clock;
+    private readonly Func<DateTime> _utcNow;
     private readonly Lock _lock = new();
     private readonly List<(int Channel, bool On, DateTime ExpiresUtc)> _expected = [];
 
     public ExpectedChanges(LocalClock clock)
     {
-        _clock = clock;
+        ArgumentNullException.ThrowIfNull(clock);
+        _utcNow = () => clock.UtcNow;
+    }
+
+    public ExpectedChanges(TimeProvider time)
+    {
+        ArgumentNullException.ThrowIfNull(time);
+        _utcNow = () => time.GetUtcNow().UtcDateTime;
     }
 
     /// <summary>
@@ -32,7 +40,7 @@ public sealed class ExpectedChanges
     /// </summary>
     public void Expect(ChannelMask mask, bool on, TimeSpan? lifetime = null)
     {
-        var expires = _clock.UtcNow + (lifetime ?? Lifetime);
+        var expires = _utcNow() + (lifetime ?? Lifetime);
         lock (_lock)
         {
             foreach (var channel in mask.Channels)
@@ -78,7 +86,7 @@ public sealed class ExpectedChanges
     /// </summary>
     public bool IsPending(int channel, bool on)
     {
-        var now = _clock.UtcNow;
+        var now = _utcNow();
         lock (_lock)
         {
             return _expected.Exists(e => e.Channel == channel && e.On == on && e.ExpiresUtc > now);

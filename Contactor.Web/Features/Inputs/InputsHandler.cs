@@ -30,39 +30,40 @@ public sealed record InputSettings(int Id, string Name, bool IsActive);
 
 /// <summary>
 /// The board's digital inputs: their names, and when each last changed. Their state
-/// itself comes from the board. Inputs above the board's count, left from a board that had more, are left out.
+/// itself comes from its board. Inputs above their board's count, left from a board that had more, are left out.
 /// </summary>
 public sealed class InputsHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly OnlyBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly RelayChanges _changes;
 
     public InputsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes)
     {
         _dbFactory = dbFactory;
-        // Until PR 4 (Issue #4): one board.
-        _board = registry.Only;
+        _registry = registry;
         _changes = changes;
     }
 
-    /// <summary>Every input on the board, in order.</summary>
+    /// <summary>Every input its board has, in order: by board, then channel.</summary>
     public async Task<IReadOnlyList<InputView>> ListAsync(CancellationToken cancellationToken)
     {
-        var count = _board.Capabilities.InputCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var inputs = await db.Inputs.AsNoTracking().Where(i => i.Channel <= count).OrderBy(i => i.Channel).ToListAsync(cancellationToken);
+        var inputs = (await db.Inputs.AsNoTracking().OrderBy(i => i.BoardId).ThenBy(i => i.Channel).ToListAsync(cancellationToken))
+            .Where(i => _registry.HasInput(i.BoardId, i.Channel))
+            .ToList();
         var changes = await LastChangesAsync(db, cancellationToken);
         return [.. inputs.Select(i => View(i, changes.GetValueOrDefault(i.Id)))];
     }
 
-    /// <summary>One input, or null for one the board doesn't have.</summary>
+    /// <summary>One input, or null for one its board doesn't have.</summary>
     public async Task<InputView?> GetAsync(int inputId, CancellationToken cancellationToken)
     {
-        var count = _board.Capabilities.InputCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var input = await db.Inputs.AsNoTracking().SingleOrDefaultAsync(i => i.Id == inputId && i.Channel <= count, cancellationToken);
-        return input is null ? null : View(input, (await LastChangesAsync(db, cancellationToken)).GetValueOrDefault(inputId));
+        var input = await db.Inputs.AsNoTracking().SingleOrDefaultAsync(i => i.Id == inputId, cancellationToken);
+        return input is null || !_registry.HasInput(input.BoardId, input.Channel)
+            ? null
+            : View(input, (await LastChangesAsync(db, cancellationToken)).GetValueOrDefault(inputId));
     }
 
     /// <summary>Saves an input's name and "Active". Not logged. Returns null when saved, otherwise the message to show.</summary>
@@ -80,10 +81,9 @@ public sealed class InputsHandler
             return $"The name can be at most {Input.NameMaxLength} characters.";
         }
 
-        var count = _board.Capabilities.InputCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var input = await db.Inputs.SingleOrDefaultAsync(i => i.Id == settings.Id && i.Channel <= count, cancellationToken);
-        if (input is null)
+        var input = await db.Inputs.SingleOrDefaultAsync(i => i.Id == settings.Id, cancellationToken);
+        if (input is null || !_registry.HasInput(input.BoardId, input.Channel))
         {
             return "The input doesn't exist.";
         }
@@ -99,7 +99,8 @@ public sealed class InputsHandler
         return new InputView(input.Id, input.Channel, input.Name, input.IsActive, lastChange);
     }
 
-    // The latest change of each input, from its newest "input-changed" event.
+    // The latest change of each input, from its newest "input-changed" event; its time is known unless its own board
+    // came back after a long gap since.
     private static async Task<Dictionary<int, InputChange>> LastChangesAsync(ContactorDbContext db, CancellationToken cancellationToken)
     {
         var lastIds = db.EventLog
@@ -108,13 +109,10 @@ public sealed class InputsHandler
             .Select(g => g.Max(e => e.Id));
         var last = await db.EventLog.AsNoTracking()
             .Where(e => lastIds.Contains(e.Id))
-            .Select(e => new { InputId = e.InputId!.Value, e.TimestampUtc, e.Details })
+            .Join(db.Inputs, e => e.InputId, i => i.Id, (e, i) => new { InputId = i.Id, i.BoardId, e.TimestampUtc, e.Details })
             .ToListAsync(cancellationToken);
-        var boardId = await db.FirstBoardIdAsync(cancellationToken);
-        var longGapEnded = await db.BoardRuntimes.AsNoTracking()
-            .Where(r => r.BoardId == boardId)
-            .Select(r => r.LongGapEndedUtc)
-            .SingleOrDefaultAsync(cancellationToken);
+        var longGapsEnded = await db.BoardRuntimes.AsNoTracking()
+            .ToDictionaryAsync(r => r.BoardId, r => r.LongGapEndedUtc, cancellationToken);
         return last
             .Where(e => EventText.InputOn(e.Details) is not null)
             .ToDictionary(
@@ -122,7 +120,7 @@ public sealed class InputsHandler
                 e => new InputChange(
                     e.TimestampUtc,
                     EventText.InputOn(e.Details)!.Value,
-                    !EventText.InputNoticed(e.Details) && (longGapEnded is not { } gap || e.TimestampUtc > gap)));
+                    !EventText.InputNoticed(e.Details) && (longGapsEnded.GetValueOrDefault(e.BoardId) is not { } gap || e.TimestampUtc > gap)));
     }
 }
 

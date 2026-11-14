@@ -124,16 +124,42 @@ public static class PersistenceServiceCollectionExtensions
             return;
         }
 
+        int boardId;
+        var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+        await using (var db = await factory.CreateDbContextAsync(cancellationToken))
+        {
+            var board = await db.FirstBoardAsync(cancellationToken);
+            if (board is null)
+            {
+                // Its model and name come with the choice (BoardChoice); the rows need the board first.
+                board = new Board { SortOrder = 1 };
+                db.Boards.Add(board);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            boardId = board.Id;
+        }
+
+        await services.SeedBoardAsync(boardId, relayCount, inputCount, cancellationToken);
+    }
+
+    /// <summary>
+    /// As <see cref="SeedBoardAsync(IServiceProvider, int, int, CancellationToken)"/>, for the board on this row, which
+    /// must exist: its runtime row, and a relay, its runtime row and an input for each channel from 1.
+    /// </summary>
+    public static async Task SeedBoardAsync(this IServiceProvider services, int boardId, int relayCount, int inputCount, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        CheckCounts(relayCount, inputCount);
+        if (relayCount == 0 && inputCount == 0)
+        {
+            return;
+        }
+
         var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var board = await db.FirstBoardAsync(cancellationToken);
-        if (board is null)
-        {
-            // Its model and name come with the choice (BoardChoice); the rows need the board first.
-            board = new Board { SortOrder = 1 };
-            db.Boards.Add(board);
-            await db.SaveChangesAsync(cancellationToken);
-        }
+        var board = await db.Boards.SingleOrDefaultAsync(b => b.Id == boardId, cancellationToken)
+            ?? throw new InvalidOperationException($"There is no relay board {boardId}.");
 
         // The relays first, for their ids, then their runtime rows: all or nothing.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);

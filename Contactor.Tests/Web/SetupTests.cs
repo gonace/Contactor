@@ -518,7 +518,7 @@ public sealed class SetupTests
 
         // The board's own end of the pulse, with nothing from the app: at once, or on a polled board after a slow poll,
         // well past the 5 s an ordinary expectation lasts.
-        var expected = rig.Database.Services.GetRequiredService<ExpectedChanges>();
+        var expected = rig.Database.Services.Live().Expected;
         await WaitUntilAsync(() => !expected.IsPending(3, on: true));
         time.Now += TimeSpan.FromSeconds(secondsUntilTheOffShows);
         await rig.Board.EndPulsesAsync();
@@ -551,7 +551,7 @@ public sealed class SetupTests
 
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
 
-        var expected = rig.Database.Services.GetRequiredService<ExpectedChanges>();
+        var expected = rig.Database.Services.Live().Expected;
         Assert.False(expected.IsPending(3, on: true) || expected.IsPending(3, on: false));
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         Assert.False(await db.EventLog.AnyAsync(Cancel));

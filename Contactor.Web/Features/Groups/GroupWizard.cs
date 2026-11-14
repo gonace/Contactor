@@ -42,8 +42,29 @@ public sealed class GroupWizard
         return _members.FindIndex(m => m.RelayId == relayId) + 1;
     }
 
+    /// <summary>
+    /// The board of the picked relays: the first picked relay's, or null before one is picked. A group's relays are all
+    /// on one board, so only that board's relays can be picked next.
+    /// </summary>
+    public int? BoardId => _members.Count > 0 ? _members[0].BoardId : null;
+
+    /// <summary>Whether a relay on this board can be picked next: none is picked yet, or the picked ones are on it.</summary>
+    public bool FitsBoard(int boardId)
+    {
+        return BoardId is not { } picked || picked == boardId;
+    }
+
     /// <summary>Picks a relay last in the order, or unpicks it. A relay picked again keeps its name and waits.</summary>
     public void Toggle(int relayId, string relayName)
+    {
+        Toggle(relayId, relayName, boardId: 0);
+    }
+
+    /// <summary>
+    /// As <see cref="Toggle(int, string)"/>, for a relay on this board; one on another board than the picked relays'
+    /// isn't picked.
+    /// </summary>
+    public void Toggle(int relayId, string relayName, int boardId)
     {
         ArgumentNullException.ThrowIfNull(relayName);
         var index = _members.FindIndex(m => m.RelayId == relayId);
@@ -54,6 +75,11 @@ public sealed class GroupWizard
             return;
         }
 
+        if (!FitsBoard(boardId))
+        {
+            return;
+        }
+
         if (_unpicked.Remove(relayId, out var earlier))
         {
             _members.Add(earlier);
@@ -61,7 +87,7 @@ public sealed class GroupWizard
         }
 
         var role = relayName.Length > RelayGroupMember.RoleNameMaxLength ? relayName[..RelayGroupMember.RoleNameMaxLength] : relayName;
-        _members.Add(new WizardMember(relayId, role));
+        _members.Add(new WizardMember(relayId, role) { BoardId = boardId });
     }
 
     public void Move(int index, int step)
@@ -110,6 +136,9 @@ public sealed class WizardMember
     }
 
     public int RelayId { get; }
+
+    /// <summary>The relay's board.</summary>
+    public int BoardId { get; init; }
 
     public string RoleName { get; set; }
 

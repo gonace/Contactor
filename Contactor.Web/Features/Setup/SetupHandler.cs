@@ -34,7 +34,7 @@ public sealed class SetupHandler
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardChoice _choice;
-    private readonly OnlyBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly RelayControl _control;
     private readonly RelaySettingsHandler _relays;
     private readonly LocalClock _clock;
@@ -56,8 +56,7 @@ public sealed class SetupHandler
     {
         _dbFactory = dbFactory;
         _choice = choice;
-        // Until PR 4 (Issue #4): one board.
-        _board = registry.Only;
+        _registry = registry;
         _control = control;
         _relays = relays;
         _clock = clock;
@@ -105,18 +104,17 @@ public sealed class SetupHandler
         await _choice.ChooseAsync(model, cancellationToken);
     }
 
-    /// <summary>Every relay the board has, in order, with its name and group.</summary>
+    /// <summary>Every relay its board has, in order, with its name and group.</summary>
     public async Task<IReadOnlyList<SetupRelay>> RelaysAsync(CancellationToken cancellationToken)
     {
-        var count = _board.Capabilities.RelayCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var groups = await db.RelayGroupMembers.AsNoTracking()
             .Select(m => new { m.RelayId, m.Group!.Name })
             .ToDictionaryAsync(m => m.RelayId, m => m.Name, cancellationToken);
-        var relays = await db.Relays.AsNoTracking()
-            .Where(r => r.Channel <= count)
-            .OrderBy(r => r.Channel)
-            .ToListAsync(cancellationToken);
+        var relays = (await db.Relays.AsNoTracking()
+            .OrderBy(r => r.BoardId).ThenBy(r => r.Channel)
+            .ToListAsync(cancellationToken))
+            .Where(r => _registry.HasRelay(r.BoardId, r.Channel));
         return [.. relays.Select(r => new SetupRelay(r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id)))];
     }
 
@@ -127,10 +125,9 @@ public sealed class SetupHandler
     public async Task<string?> SaveRelaysAsync(IEnumerable<SetupRelayChoice> choices, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(choices);
-        var channels = await BoardChannels.LoadAsync(_dbFactory, cancellationToken);
         foreach (var choice in choices)
         {
-            if (await _relays.GetAsync(choice.Id, cancellationToken) is not { } current || channels.RelayChannel(choice.Id) is not { } channel)
+            if (await _relays.GetAsync(choice.Id, cancellationToken) is not { } current || (await RelayAsync(choice.Id, cancellationToken))?.Channel is not { } channel)
             {
                 continue;
             }
@@ -158,7 +155,9 @@ public sealed class SetupHandler
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
-        if (_board.Capabilities.Pulse?.CanDo(TryLength) == true && TryLength <= RelayControl.MaxPulse)
+        // The relay's own board decides whether it can pulse.
+        var board = (await RelayAsync(relayId, cancellationToken))?.Board;
+        if (board?.Capabilities.Pulse?.CanDo(TryLength) == true && TryLength <= RelayControl.MaxPulse)
         {
             await _control.PulseAsync(relayId, TryLength, userEmail, cancellationToken);
             return;
@@ -194,8 +193,7 @@ public sealed class SetupHandler
         try
         {
             await Task.Delay(TryLength, _time);
-            var channels = await BoardChannels.LoadAsync(_dbFactory, CancellationToken.None);
-            if (channels.RelayChannel(relayId) is not { } channel || !_board.State.IsOn(channel))
+            if (await RelayAsync(relayId, CancellationToken.None) is not { Board: { } board } relay || !board.State.IsOn(relay.Channel))
             {
                 _logger.TryNotOn(relayId);
                 return;
@@ -222,6 +220,14 @@ public sealed class SetupHandler
             // Not switched off here: its auto-off, set a little later, ends it at the next check.
             _logger.TryNotEnded(ex, relayId);
         }
+    }
+
+    // The relay's own board, if the app runs it, and its channel there; null for a relay that doesn't exist.
+    private async Task<(LiveBoard? Board, int Channel)?> RelayAsync(int relayId, CancellationToken cancellationToken)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var relay = await db.Relays.AsNoTracking().Where(r => r.Id == relayId).Select(r => new { r.BoardId, r.Channel }).SingleOrDefaultAsync(cancellationToken);
+        return relay is null ? null : (_registry.Find(relay.BoardId), relay.Channel);
     }
 
     private static async Task<Installation> GetAsync(ContactorDbContext db, CancellationToken cancellationToken)

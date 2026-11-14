@@ -145,7 +145,7 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
-    // Until PR 4 (Issue #4): one board.
+    // Until the screens show every board (Issue #4): one board.
     private IRelayBoard Board => Registry.Only;
 
     private const int EventCount = 4;
@@ -216,7 +216,7 @@
             (_name, _isActive) = (_input.Name, _input.IsActive);
             _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
             _actions = [.. await Actions.ListAsync(Id, CancellationToken.None)];
-            _targets = await Actions.TargetsAsync(CancellationToken.None);
+            _targets = await Actions.TargetsAsync(Id, CancellationToken.None);
         }
 
         _loaded = true;
@@ -282,7 +282,7 @@
                 {
                     _input = fresh;
                     _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
-                    _targets = await Actions.TargetsAsync(CancellationToken.None);
+                    _targets = await Actions.TargetsAsync(Id, CancellationToken.None);
                 }
 
                 StateHasChanged();

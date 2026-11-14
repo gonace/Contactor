@@ -65,7 +65,7 @@
                             role="checkbox"
                             class="option"
                             aria-checked="@(order > 0 ? "true" : "false")"
-                            disabled="@(!relay.IsFree)"
+                            disabled="@(!relay.IsFree || (order == 0 && !_wizard.FitsBoard(relay.BoardId)))"
                             @onclick="() => Pick(relay)">
                         <span class="box" aria-hidden="true">
                             @if (order > 0)
@@ -246,9 +246,9 @@
 
     private void Pick(GroupCandidate relay)
     {
-        if (relay.IsFree || _wizard.OrderOf(relay.RelayId) > 0)
+        if ((relay.IsFree && _wizard.FitsBoard(relay.BoardId)) || _wizard.OrderOf(relay.RelayId) > 0)
         {
-            _wizard.Toggle(relay.RelayId, relay.Name);
+            _wizard.Toggle(relay.RelayId, relay.Name, relay.BoardId);
         }
     }
 

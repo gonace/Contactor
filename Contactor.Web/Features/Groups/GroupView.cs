@@ -21,6 +21,9 @@ public sealed record GroupView(
     IReadOnlyList<GroupMemberView> Members,
     GroupRuntime Runtime)
 {
+    /// <summary>The group's board: all its relays are on it.</summary>
+    public int BoardId { get; init; }
+
     /// <summary>The members as the planner sees them.</summary>
     public IReadOnlyList<GroupMemberInfo> Infos =>
         [.. Members.Select(m => new GroupMemberInfo(m.Position, m.RelayId, m.Channel, m.RoleName, m.StartDelaySec, m.RunOnSec))];

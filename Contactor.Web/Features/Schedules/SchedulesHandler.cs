@@ -20,14 +20,13 @@ public sealed record ScheduleModel(int Id, int? RelayId, ScheduleDays Days, Time
 public sealed class SchedulesHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly OnlyBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
     public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
     {
-        // Until PR 4 (Issue #4): one board.
-        _board = registry.Only;
+        _registry = registry;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
@@ -105,8 +104,9 @@ public sealed class SchedulesHandler
             }
             else
             {
-                var count = _board.Capabilities.RelayCount;
-                if (!await db.Relays.AnyAsync(r => r.Id == model.RelayId && r.Channel <= count, cancellationToken))
+                // By the relay's channel on its own board: one its board doesn't have isn't offered.
+                var relay = await db.Relays.AsNoTracking().Where(r => r.Id == model.RelayId).Select(r => new { r.BoardId, r.Channel }).SingleOrDefaultAsync(cancellationToken);
+                if (relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel))
                 {
                     return "The relay doesn't exist.";
                 }
@@ -188,10 +188,14 @@ public sealed class SchedulesHandler
 
     private async Task LogAsync(ContactorDbContext db, Schedule schedule, string userEmail, string action, bool? enabled, CancellationToken cancellationToken)
     {
+        // The board of the relay or group it is for: the event is about that board.
+        var boardId = schedule.RelayId is { } relayId
+            ? await db.Relays.Where(r => r.Id == relayId).Select(r => (int?)r.BoardId).SingleOrDefaultAsync(cancellationToken)
+            : await db.RelayGroups.Where(g => g.Id == schedule.GroupId).Select(g => (int?)g.BoardId).SingleOrDefaultAsync(cancellationToken);
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = _clock.UtcNow,
-            BoardId = await db.FirstBoardIdAsync(cancellationToken),
+            BoardId = boardId,
             RelayId = schedule.RelayId,
             GroupId = schedule.GroupId,
             Actor = userEmail,
