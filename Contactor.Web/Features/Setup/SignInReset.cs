@@ -21,14 +21,19 @@ public static class SignInReset
 
     public static int Run(string[] args)
     {
-        return Run(args, new Uri(DefaultUrl));
+        return Run(args, new Uri(DefaultUrl), Console.Out, Console.Error);
     }
 
-    /// <summary>As <see cref="Run(string[])"/>, telling the app at <paramref name="reloadUrl"/>.</summary>
-    public static int Run(string[] args, Uri reloadUrl)
+    /// <summary>
+    /// As <see cref="Run(string[])"/>, telling the app at <paramref name="reloadUrl"/> and writing what it says to
+    /// <paramref name="output"/> and its errors to <paramref name="error"/>.
+    /// </summary>
+    public static int Run(string[] args, Uri reloadUrl, TextWriter output, TextWriter error)
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(reloadUrl);
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(error);
         var builder = WebApplication.CreateBuilder(args.Where(a => a != Command).ToArray());
         var services = new ServiceCollection();
         services.AddLogging();
@@ -37,7 +42,7 @@ public static class SignInReset
         var location = provider.GetRequiredService<DatabaseLocation>();
         if (!File.Exists(location.Path))
         {
-            Console.Error.WriteLine($"reset-sign-in: there is no database at {location.Path}.");
+            error.WriteLine($"reset-sign-in: there is no database at {location.Path}.");
             return 1;
         }
 
@@ -51,33 +56,33 @@ public static class SignInReset
         }
         catch (SqliteException ex)
         {
-            Console.Error.WriteLine($"reset-sign-in: the database can't be changed yet ({ex.Message}). Start the app once, then try again.");
+            error.WriteLine($"reset-sign-in: the database can't be changed yet ({ex.Message}). Start the app once, then try again.");
             return 1;
         }
 
         if (changed == 0)
         {
-            Console.WriteLine("No sign-in is chosen: the setup guide already opens behind the setup code in the app's log.");
+            output.WriteLine("No sign-in is chosen: the setup guide already opens behind the setup code in the app's log.");
             return 0;
         }
 
-        Console.WriteLine("The sign-in is forgotten: the setup guide opens again, behind a new setup code.");
+        output.WriteLine("The sign-in is forgotten: the setup guide opens again, behind a new setup code.");
         try
         {
             using var http = new HttpClient { Timeout = Timeout };
             using var response = http.PostAsync(reloadUrl, content: null).GetAwaiter().GetResult();
             if (response.IsSuccessStatusCode)
             {
-                Console.WriteLine("The app wrote the new setup code to its log, e.g. docker logs contactor.");
+                output.WriteLine("The app wrote the new setup code to its log, e.g. docker logs contactor.");
                 return 0;
             }
 
-            Console.Error.WriteLine($"reset-sign-in: the app answered {(int)response.StatusCode}. Restart it: it writes a new setup code to its log when it starts.");
+            error.WriteLine($"reset-sign-in: the app answered {(int)response.StatusCode}. Restart it: it writes a new setup code to its log when it starts.");
             return 1;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Console.WriteLine("The app isn't running: it writes the setup code to its log when it starts.");
+            output.WriteLine("The app isn't running: it writes the setup code to its log when it starts.");
             return 0;
         }
     }

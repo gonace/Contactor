@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Simulator;
 
@@ -13,6 +14,7 @@ public sealed class SimulatorPageTests
         var port = SimulatedBoardsTests.FreePort();
         await using var app = new WebApplicationFactory<Contactor.Simulator.Program>().WithWebHostBuilder(builder =>
         {
+            builder.ConfigureLogging(logging => logging.ClearProviders());
             builder.UseSetting("Simulator:Boards:0:Type", "vm201");
             builder.UseSetting("Simulator:Boards:0:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
             builder.UseSetting("Simulator:Boards:0:Username", "john");

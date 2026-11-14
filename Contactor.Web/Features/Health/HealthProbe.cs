@@ -14,9 +14,16 @@ public static class HealthProbe
 
     public static int Run(string url)
     {
+        return Run(url, Console.Error);
+    }
+
+    /// <summary>As <see cref="Run(string)"/>, writing what went wrong to <paramref name="error"/>.</summary>
+    public static int Run(string url, TextWriter error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback)
         {
-            Console.Error.WriteLine($"healthcheck: {url} is not an http address on this machine.");
+            error.WriteLine($"healthcheck: {url} is not an http address on this machine.");
             return 1;
         }
 
@@ -28,7 +35,7 @@ public static class HealthProbe
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Console.Error.WriteLine($"healthcheck: {ex.Message}");
+            error.WriteLine($"healthcheck: {ex.Message}");
             return 1;
         }
     }

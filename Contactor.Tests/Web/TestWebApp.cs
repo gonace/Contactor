@@ -9,6 +9,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Contactor.Web;
 using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Boards;
@@ -91,6 +92,9 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
             builder.UseSetting(key, value);
         }
 
+        // The app's log goes nowhere, so the test run prints only its own lines. A test that reads the log adds its own
+        // provider below.
+        builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<IStartupFilter>(new RemoteAddressStartupFilter(this));
