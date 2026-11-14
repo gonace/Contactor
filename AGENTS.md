@@ -52,6 +52,7 @@ Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
 Contactor.Simulator/      # Development: simulated boards, each on its own port, with a page to drive them and see their traffic
+Contactor.Demo/           # The public demo: a proxy that gives each visitor their own app and simulator, each a process on 127.0.0.1
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
