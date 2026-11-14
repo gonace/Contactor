@@ -100,7 +100,7 @@ public sealed class BoardAddressHandlerTests
 
         Assert.Equal(LiveBoard.NotChosen, await Handler(rig).SaveAsync(missing, "127.0.0.1", 9760, John, Cancel));
         Assert.Equal(LiveBoard.NotChosen, await Handler(rig).SaveLoginAsync(missing, "admin", "pw", none: false, John, Cancel));
-        Assert.Equal(LiveBoard.NotChosen, await Handler(rig).RenameAsync(missing, "Workshop", Cancel));
+        Assert.Equal(LiveBoard.NotChosen, await Handler(rig).RenameAsync(missing, "Workshop", John, Cancel));
 
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var board = await db.Boards.AsNoTracking().SingleAsync(Cancel);
