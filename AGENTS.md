@@ -31,14 +31,14 @@ The relays drive real machines. Each rule is told in full in its section of `doc
 
 - .NET 10 (LTS), C#, Blazor Server (interactive server rendering), EF Core + `Microsoft.EntityFrameworkCore.Sqlite`
 - No JavaScript framework. No external CSS framework; one small stylesheet of our own, following the design tokens in `docs/ARCHITECTURE.md`.
-- Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi.
-- Local development with Aspire 13.5.4, pinned on purpose: later releases hang at startup on Windows. Its dashboard's advisories GHSA-f7vh-h5g3-7jrh (its cookie reaching a container opened from it) and GHSA-4g86-54fm-h9h8 (anyone who reaches it can delete its telemetry) are suppressed in the AppHost only, which runs no containers and serves the dashboard on localhost; the dashboard isn't in the image. Raise the version once a release starts on Windows (issue #18). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the web app against it, with the cloudflared the image has: the same version, downloaded once to `Contactor.AppHost/.tools/` and checked against its SHA-256.
+- Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` and Tailscale (`tailscaled`, `tailscale`) copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi.
+- Local development with Aspire 13.5.4, pinned on purpose: later releases hang at startup on Windows. Its dashboard's advisories GHSA-f7vh-h5g3-7jrh (its cookie reaching a container opened from it) and GHSA-4g86-54fm-h9h8 (anyone who reaches it can delete its telemetry) are suppressed in the AppHost only, which runs no container but our own app's image and serves the dashboard on localhost; the dashboard isn't in the image. Raise the version once a release starts on Windows (issue #18). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the app as its image against it, as on a real installation, on http://localhost:8080 with `/data` in the Docker volume `contactor-dev`; it needs Docker Desktop. `dotnet run --project Contactor.Web` runs the app on its own, on this computer only, against `dotnet run --project Contactor.Simulator`.
 
 No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Vm201/`, `Web/` …). Don't create more test projects.
 
 ```
 Contactor.slnx
-Dockerfile                  # The image: the app and cloudflared, for linux/arm64 and linux/amd64
+Dockerfile                  # The image: the app, cloudflared and Tailscale, for linux/arm64 and linux/amd64
 global.json                 # SDK version and test runner (Microsoft.Testing.Platform)
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
@@ -57,7 +57,6 @@ Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resi
 Contactor.Tests/          # The only test project
   Boards/                   # ChannelMask, BoardPoller, board adapters
   Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
-  AppHost/                  # The cloudflared download for the Aspire run
   Simulator/                # The simulator's boards and page
   Vm201/                    # Codec + client against the simulator
   Vm204/                    # JSON, login, trace words + client against the simulator

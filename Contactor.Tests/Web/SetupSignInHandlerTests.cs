@@ -2,6 +2,7 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Setup;
+using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,7 +49,7 @@ public sealed class SetupSignInHandlerTests
         await using var database = await CreateAsync();
         var handler = database.Services.GetRequiredService<SetupSignInHandler>();
 
-        Assert.Null(await handler.ChooseWayInAsync(AccessCatalogue.LocalId, token: null, address: null, Cancel));
+        Assert.Null(await handler.ChooseWayInAsync(AccessCatalogue.LocalId, new WayInFields(), Cancel));
         Assert.Equal(SetupPart1Step.SignIn, handler.Step);
         var options = handler.SignIns();
         Assert.Equal((SignInCatalogue.NoneId, true, false), (options[0].Method.Id, options[0].Allowed, options[0].Recommended));
@@ -71,7 +72,7 @@ public sealed class SetupSignInHandlerTests
         var handler = database.Services.GetRequiredService<SetupSignInHandler>();
         Assert.NotNull(await handler.ChooseNoSignInAsync(Cancel));
 
-        Assert.Null(await handler.ChooseWayInAsync(CloudflareMethods.TunnelId, "tunnel-token", "relays.example.com", Cancel));
+        Assert.Null(await handler.ChooseWayInAsync(CloudflareMethods.TunnelId, new WayInFields("tunnel-token", "relays.example.com"), Cancel));
         Assert.Equal(CloudflareMethods.TunnelId, handler.WayIn?.Id);
 
         Assert.NotNull(await handler.ChooseSignInAsync(SignInCatalogue.NoneId, null, null, Cancel));
@@ -151,19 +152,116 @@ public sealed class SetupSignInHandlerTests
         Assert.Null(await handler.ChooseCloudflareAccessAsync("myteam.cloudflareaccess.com", "aud", Cancel));
     }
 
-    private static async Task<TestDatabase> CreateAsync()
+    [Fact]
+    public async Task Should_GoThroughPart1_WithTailscale()
+    {
+        await using var database = await CreateAsync(services =>
+        {
+            services.AddSingleton<ITailscaleProcess>(new OnTheNetwork());
+            services.Configure<TailscaleOptions>(o => o.ServeAddress = "127.0.0.2:8081");
+        });
+        var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+
+        Assert.Null(await handler.ChooseWayInAsync(TailscaleMethods.NetworkId, new WayInFields(AuthKey: "tskey-auth-kExample-1", HostName: "Relays"), Cancel));
+        Assert.Equal(SetupPart1Step.SignIn, handler.Step);
+        Assert.Equal(new TailscaleNetworkSettings("tskey-auth-kExample-1", "relays"), database.Services.GetRequiredService<TailscaleSettings>().Current);
+        var options = handler.SignIns();
+        Assert.Equal((TailscaleMethods.IdentityId, true, true), (options[0].Method.Id, options[0].Allowed, options[0].Recommended));
+        Assert.Equal("Only with Cloudflare.", Assert.Single(options, o => o.Method.Id == CloudflareMethods.AccessId).Reason);
+
+        // Never without a sign-in, and not before the app is on the Tailscale network: the guide sends people there.
+        Assert.NotNull(await handler.ChooseNoSignInAsync(Cancel));
+        Assert.Equal("Wait until Contactor is on your Tailscale network: people open it there.", await handler.ChooseTailscaleIdentityAsync(Cancel));
+
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var network = database.Services.GetRequiredService<TailscaleNetwork>();
+        var running = network.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => network.Status.Online);
+        Assert.Null(await handler.ChooseSignInAsync(TailscaleMethods.IdentityId, null, null, Cancel));
+        await stop.CancelAsync();
+        await running;
+
+        Assert.Equal(SetupPart1Step.Done, handler.Step);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var installation = await db.Installations.SingleAsync(Cancel);
+        Assert.Equal((TailscaleMethods.NetworkId, TailscaleMethods.IdentityId), (installation.AccessType, installation.SignInType));
+    }
+
+    [Fact]
+    public async Task Should_RefuseTailscaleIdentity_WithAnotherWayIn()
+    {
+        await using var database = await CreateAsync();
+        var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+        await handler.ChooseCloudflareAsync("tunnel-token", "relays.example.com", Cancel);
+
+        Assert.Equal("Tailscale identity only works when people reach the app through Tailscale.", await handler.ChooseTailscaleIdentityAsync(Cancel));
+        Assert.Equal("Only with Tailscale.", Assert.Single(handler.SignIns(), o => o.Method.Id == TailscaleMethods.IdentityId).Reason);
+    }
+
+    // Back on the way-in step, the auth key field is empty: the saved key stays, and a new name is taken.
+    [Fact]
+    public async Task Should_KeepTheSavedAuthKey_WhenGoingBack()
+    {
+        await using var database = await CreateAsync();
+        var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+        Assert.Null(await handler.ChooseTailscaleAsync("tskey-auth-kExample-1", "relays", Cancel));
+
+        Assert.Null(await handler.ChooseTailscaleAsync("", "workshop", Cancel));
+
+        Assert.Equal(new TailscaleNetworkSettings("tskey-auth-kExample-1", "workshop"), database.Services.GetRequiredService<TailscaleSettings>().Current);
+    }
+
+    // A first choice of Tailscale needs an auth key.
+    [Fact]
+    public async Task Should_AskForAnAuthKey_TheFirstTime()
+    {
+        await using var database = await CreateAsync();
+        var handler = database.Services.GetRequiredService<SetupSignInHandler>();
+
+        Assert.NotNull(await handler.ChooseTailscaleAsync("", "relays", Cancel));
+        Assert.Equal(SetupPart1Step.WayIn, handler.Step);
+    }
+
+    private static async Task<TestDatabase> CreateAsync(Action<IServiceCollection>? configure = null)
     {
         var database = TestDatabase.Create((services, configuration) =>
         {
             services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Production });
             services.AddCloudflare(configuration);
+            services.AddTailscale(configuration);
             services.AddAccess(configuration);
             services.AddSignIn(configuration);
             services.AddSingleton<SetupSignInHandler>();
+            configure?.Invoke(services);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await database.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(Cancel);
         await database.Services.GetRequiredService<SignInChoice>().ApplySavedAsync(Cancel);
         return database;
+    }
+
+    // tailscaled with the app on the Tailscale network already, and Tailscale Serve working.
+    private sealed class OnTheNetwork : ITailscaleProcess
+    {
+        public async Task<int> RunDaemonAsync(Action<string> output, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public Task<TailscaleCommandResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new TailscaleCommandResult(0, arguments switch
+            {
+                ["status", ..] => "{\"BackendState\":\"Running\",\"Self\":{\"DNSName\":\"relays.tail1234.ts.net.\"}}",
+                ["serve", "status", ..] => "{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"http://127.0.0.2:8081\"}}}}}",
+                _ => "",
+            }));
+        }
+
+        public Task<TailscaleCommandResult> LogInAsync(string authKey, string hostName, bool force, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new TailscaleCommandResult(0, ""));
+        }
     }
 }

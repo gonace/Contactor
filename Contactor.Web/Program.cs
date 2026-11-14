@@ -12,6 +12,7 @@ using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Features.Setup;
+using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Web;
@@ -32,12 +33,14 @@ public sealed partial class Program
         }
 
         var builder = WebApplication.CreateBuilder(args);
+        builder.WebHost.ListenForTailscaleServe(builder.Configuration);
         builder.AddServiceDefaults();
         builder.Services.AddLocalClock(builder.Configuration);
         builder.Services.AddPersistence(builder.Configuration);
         builder.Services.AddBoards(builder.Configuration);
         builder.Services.AddSignIn(builder.Configuration);
         builder.Services.AddCloudflare(builder.Configuration);
+        builder.Services.AddTailscale(builder.Configuration);
         builder.Services.AddRelays(builder.Configuration);
         builder.Services.AddGroups(builder.Configuration);
         builder.Services.AddEvents(builder.Configuration);
@@ -60,6 +63,7 @@ public sealed partial class Program
         app.Services.GetRequiredService<SignInChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.CheckSignInFitsWayIn();
         app.Services.ApplyCloudflareSettingsAsync(CancellationToken.None).GetAwaiter().GetResult();
+        app.Services.ApplyTailscaleSettingsAsync(CancellationToken.None).GetAwaiter().GetResult();
         if (app.Services.GetRequiredService<SignInChoice>().Current is null)
         {
             app.Services.GetRequiredService<SetupCode>().Renew();

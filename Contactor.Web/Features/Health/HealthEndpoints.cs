@@ -1,5 +1,5 @@
-using System.Net;
 using Contactor.Boards;
+using Contactor.Web.Features.Access;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Contactor.Web.Features.Health;
@@ -13,7 +13,8 @@ public static class HealthEndpoints
 
     /// <summary>
     /// <c>/healthz</c>: 200 with the board connection status, for the container health check and the Pi itself. Only
-    /// answers requests from this machine; anything else, including a request whose address is unknown, gets 404.
+    /// answers requests from this machine (<see cref="ThisMachine"/>); anything else, including a request whose address is
+    /// unknown or that came through Tailscale Serve, gets 404.
     /// </summary>
     public static IEndpointRouteBuilder MapHealthGroup(this IEndpointRouteBuilder endpoints)
     {
@@ -23,8 +24,7 @@ public static class HealthEndpoints
 
     private static Results<Ok<HealthResponse>, NotFound> GetHealth(HttpContext context, IRelayBoard board)
     {
-        var remote = context.Connection.RemoteIpAddress;
-        if (remote is null || !IPAddress.IsLoopback(remote))
+        if (!ThisMachine.Asked(context))
         {
             return TypedResults.NotFound();
         }

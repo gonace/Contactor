@@ -250,6 +250,18 @@ public sealed partial class SetupCodeTests
     }
 
     [Fact]
+    public async Task Should_NotReload_ThroughTailscaleServe()
+    {
+        var settings = new Dictionary<string, string?>(AccessTokens.Settings) { ["Tailscale:ServeAddress"] = "127.0.0.2:8081" };
+        await using var app = new TestWebApp("Production", settings) { LocalEndPoint = IPEndPoint.Parse("127.0.0.2:8081") };
+        using var http = app.CreateClient();
+
+        using var reload = await http.PostAsync(SetupEndpoints.ReloadPath, content: null, Cancel);
+
+        Assert.Equal(HttpStatusCode.NotFound, reload.StatusCode);
+    }
+
+    [Fact]
     public async Task Should_ForgetTheSignIn_WithTheCommand()
     {
         await using var database = TestDatabase.Create();

@@ -7,17 +7,10 @@ namespace Contactor.Web.Features.Cloudflare;
 /// Cloudflare as the way in: keeps the Cloudflare tunnel running while it is the chosen way in, with the token
 /// <see cref="CloudflareSettings"/> has (saved in the setup guide, or <c>Tunnel:Token</c>). Starts cloudflared, and
 /// starts it again after a growing wait (1 s, doubling to at most 1 min) whenever it stops, and at once with a new
-/// token. Without a token it waits for one. The image has no shell or process manager, so the app
-/// looks after cloudflared itself.
+/// token (<see cref="KeepRunning"/>). Without a token it waits for one.
 /// </summary>
 public sealed partial class CloudflareTunnel : IAccessMethod
 {
-    public static readonly TimeSpan FirstWait = TimeSpan.FromSeconds(1);
-    public static readonly TimeSpan LongestWait = TimeSpan.FromMinutes(1);
-
-    // cloudflared that ran this long counts as having worked: the next wait starts from the first again.
-    private static readonly TimeSpan RanLongEnough = TimeSpan.FromMinutes(5);
-
     private readonly TunnelOptions _options;
     private readonly CloudflareSettings _settings;
     private volatile bool _connected;
@@ -94,57 +87,32 @@ public sealed partial class CloudflareTunnel : IAccessMethod
             return;
         }
 
-        var wait = FirstWait;
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var started = _time.GetUtcNow();
-            int? exitCode = null;
-            Exception? failure = null;
-            try
+        await KeepRunning.RunAsync(
+            async run =>
             {
-                LogStarting();
-                exitCode = await _process.RunAsync(_options.Path, token, LogOutput, cancellationToken);
-                SetConnected(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                try
+                {
+                    LogStarting();
+                    return await _process.RunAsync(_options.Path, token, LogOutput, run);
+                }
+                finally
+                {
+                    SetConnected(false);
+                }
+            },
+            _time,
+            (exitCode, failure, wait) =>
             {
-                SetConnected(false);
-                return;
-            }
-#pragma warning disable CA1031 // cloudflared missing or failing to start must not stop the app; it's logged and tried again.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                SetConnected(false);
-                failure = ex;
-            }
-
-            // A run that worked for a while starts the waits over.
-            if (_time.GetUtcNow() - started >= RanLongEnough)
-            {
-                wait = FirstWait;
-            }
-
-            if (failure is not null)
-            {
-                LogFailed(failure, wait.TotalSeconds);
-            }
-            else
-            {
-                LogStopped(exitCode ?? -1, wait.TotalSeconds);
-            }
-
-            try
-            {
-                await Task.Delay(wait, _time, cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-
-            wait = TimeSpan.FromTicks(Math.Min(wait.Ticks * 2, LongestWait.Ticks));
-        }
+                if (failure is not null)
+                {
+                    LogFailed(failure, wait.TotalSeconds);
+                }
+                else
+                {
+                    LogStopped(exitCode ?? -1, wait.TotalSeconds);
+                }
+            },
+            cancellationToken);
     }
 
     // cloudflared's own lines: they say whether the tunnel is up. Its errors (" ERR ") as warnings. It never writes the

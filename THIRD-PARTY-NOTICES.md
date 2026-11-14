@@ -27,6 +27,15 @@ following works of others, each under its own licence. The licence texts are in 
   libraries listed in its `go.mod`, under their own licences (mostly BSD-3-Clause and MIT); see the cloudflared source
   for the version in the `Dockerfile`.
 
+## Tailscale
+
+- The Tailscale client, `tailscaled` and `tailscale`, copied unchanged into the image (`/usr/local/bin/`) from
+  Tailscale's `tailscale/tailscale` image.
+- Copyright (c) 2020 Tailscale Inc & contributors (https://github.com/tailscale/tailscale).
+- Licensed under the BSD 3-Clause License: `Tailscale-BSD-3-Clause.txt`. The binaries also contain the Go libraries
+  listed in its `go.mod`, under their own licences (mostly BSD-3-Clause and MIT); see the Tailscale source for the
+  version in the `Dockerfile`.
+
 ## Packages in the published app
 
 - **OpenTelemetry .NET** (`OpenTelemetry.*`): Copyright The OpenTelemetry Authors. Apache License 2.0:

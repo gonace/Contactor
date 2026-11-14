@@ -52,6 +52,9 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
 
     public IPAddress? RemoteAddress { get; set; } = IPAddress.Loopback;
 
+    /// <summary>The connection's own end, as the address and port a request came in on; unset when null.</summary>
+    public IPEndPoint? LocalEndPoint { get; set; }
+
     /// <summary>
     /// The services for a board that answered once and has lost contact since, so the screens show its last known
     /// state with a warning; without it the board never answers and every state is unknown.
@@ -168,6 +171,12 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
                 builder.Use((HttpContext context, RequestDelegate nextMiddleware) =>
                 {
                     context.Connection.RemoteIpAddress = _app.RemoteAddress;
+                    if (_app.LocalEndPoint is { } local)
+                    {
+                        context.Connection.LocalIpAddress = local.Address;
+                        context.Connection.LocalPort = local.Port;
+                    }
+
                     return nextMiddleware(context);
                 });
                 next(builder);

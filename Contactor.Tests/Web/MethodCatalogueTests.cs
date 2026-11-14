@@ -2,6 +2,7 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
+using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -96,6 +97,7 @@ public sealed class MethodCatalogueTests
                 services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Production });
                 services.AddBoards(configuration);
                 services.AddCloudflare(configuration);
+                services.AddTailscale(configuration);
                 services.AddAccess(configuration);
                 services.AddSignIn(configuration);
             },

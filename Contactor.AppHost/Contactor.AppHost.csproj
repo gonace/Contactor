@@ -1,7 +1,7 @@
 <!-- Pinned to 13.5.4 on purpose: later releases hang at startup on Windows. 13.5.4 has two advisories for its dashboard,
      both fixed in 13.6.5 (see issue #18):
      - GHSA-f7vh-h5g3-7jrh: the dashboard's login cookie can reach a container the developer opens from the dashboard.
-       This AppHost runs no containers, only our own projects.
+       This AppHost's only container is our own app's image, which isn't attacker-controlled and logs no cookies.
      - GHSA-4g86-54fm-h9h8: anyone who can reach the dashboard can delete its telemetry (a standalone dashboard can also
        leak its token; ours isn't standalone). Ours listens on localhost only (Properties/launchSettings.json), so only
        the developer's own machine can reach it, and at worst it loses development telemetry.
@@ -33,7 +33,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contactor.Simulator\Contactor.Simulator.csproj" />
-    <ProjectReference Include="..\Contactor.Web\Contactor.Web.csproj" />
   </ItemGroup>
 
 </Project>

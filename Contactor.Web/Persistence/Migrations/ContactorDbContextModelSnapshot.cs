@@ -458,6 +458,28 @@ namespace Contactor.Web.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Contactor.Web.Persistence.TailscaleSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AuthKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HostName")
+                        .IsRequired()
+                        .HasMaxLength(63)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TailscaleSetting", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TailscaleSetting_Id", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.User", b =>
                 {
                     b.Property<string>("Email")
