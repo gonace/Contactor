@@ -58,6 +58,7 @@ public sealed class TailscaleNetworkTests
         Assert.False(network.Network.Status.Online);
         Assert.Equal(HttpsHint, network.Network.Status.Problem);
         Assert.Equal(new Uri("https://login.tailscale.com/f/serve?node=nExample"), network.Network.Status.Link);
+        Assert.Contains($"Tailscale: {HttpsHint} https://login.tailscale.com/f/serve?node=nExample", network.Logger.Lines);
 
         tailscale.Serve = new TailscaleCommandResult(0, "");
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
@@ -219,6 +220,7 @@ public sealed class TailscaleNetworkTests
     [InlineData("To enable, visit:\n https://login.tailscale.com/f/serve?node=nExample\n", "https://login.tailscale.com/f/serve?node=nExample")]
     [InlineData("https://login.tailscale.com/f/serve?node=n1\"<script>", "https://login.tailscale.com/f/serve?node=n1")]
     [InlineData("http://login.tailscale.com/f/serve", null)]
+    // The pattern already refuses these two; HttpsLink's own checks on the host and port stay as a second guard.
     [InlineData("https://login.tailscale.com.evil.example/f/serve", null)]
     [InlineData("https://login.tailscale.com:8443/f/serve", null)]
     [InlineData("https://login.tailscale.com", null)]
