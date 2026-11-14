@@ -9,7 +9,11 @@ namespace Contactor.Web.Features.Tailscale;
 /// <param name="Online">Whether the app is on the Tailscale network, and Tailscale Serve answers for it.</param>
 /// <param name="Address">Its address there, e.g. <c>contactor.tail1234.ts.net</c>, once Tailscale knows it.</param>
 /// <param name="Problem">What stops it, in plain words, or null.</param>
-public sealed record TailscaleStatus(bool Online, string? Address, string? Problem)
+/// <param name="Link">
+/// Where to fix the problem, for the guide to show as a link: only Tailscale's page to turn on HTTPS, on
+/// <c>https://login.tailscale.com</c>. Null for every other problem.
+/// </param>
+public sealed record TailscaleStatus(bool Online, string? Address, string? Problem, Uri? Link = null)
 {
     public static readonly TailscaleStatus Offline = new(false, null, null);
 }
@@ -179,7 +183,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
                 watch.Problem = CheckFailed;
             }
 
-            SetStatus(new TailscaleStatus(watch.Served && state is { BackendState: "Running" }, state?.Address, watch.Problem));
+            SetStatus(new TailscaleStatus(watch.Served && state is { BackendState: "Running" }, state?.Address, watch.Problem, watch.Link));
             try
             {
                 await Task.Delay(CheckEvery, _time, cancellationToken);
@@ -247,7 +251,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
 
         if (!watch.Served)
         {
-            watch.Problem = await ServeAsync(settings, cancellationToken);
+            (watch.Problem, watch.Link) = await ServeAsync(settings, cancellationToken);
             watch.Served = watch.Problem is null;
             if (!watch.Served)
             {
@@ -258,13 +262,14 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         return false;
     }
 
-    // Has Tailscale Serve pass HTTPS requests to the app's address for it. Null when it does, else what stops it. tailscale
-    // can exit 0 without serving (HTTPS not turned on), so Serve's own status is the proof.
-    private async Task<string?> ServeAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
+    // Has Tailscale Serve pass HTTPS requests to the app's address for it. Null when it does, else what stops it, with
+    // Tailscale's page to fix it when there is one. tailscale can exit 0 without serving (HTTPS not turned on), so Serve's
+    // own status is the proof.
+    private async Task<(string? Problem, Uri? Link)> ServeAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
     {
         if (_options.ServeEndPoint is null)
         {
-            return "Contactor has no address for Tailscale Serve (Tailscale:ServeAddress).";
+            return ("Contactor has no address for Tailscale Serve (Tailscale:ServeAddress).", null);
         }
 
         var result = await _process.RunAsync(["serve", "--bg", "--https=443", _options.Target], CommandTimeout, cancellationToken);
@@ -275,8 +280,8 @@ public sealed partial class TailscaleNetwork : IAccessMethod
 
         var status = await _process.RunAsync(["serve", "status", "--json"], CommandTimeout, cancellationToken);
         return status.Succeeded && Regex.IsMatch(status.Output, $"\"Proxy\"\\s*:\\s*\"{Regex.Escape(_options.Target)}\"")
-            ? null
-            : "Tailscale Serve didn't take the app. Contactor tries again.";
+            ? (null, null)
+            : ("Tailscale Serve didn't take the app. Contactor tries again.", null);
     }
 
     // How far the watch got while this tailscaled runs.
@@ -295,7 +300,19 @@ public sealed partial class TailscaleNetwork : IAccessMethod
 
         public bool Served { get; set; }
 
-        public string? Problem { get; set; }
+        // A new problem drops the link of the one before.
+        public string? Problem
+        {
+            get;
+            set
+            {
+                field = value;
+                Link = null;
+            }
+        }
+
+        // Set after the problem it belongs to.
+        public Uri? Link { get; set; }
     }
 
     // tailscaled's state and the app's address, or null while it doesn't answer (e.g. still starting).
@@ -351,18 +368,37 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         }
     }
 
-    // Tailscale Serve over HTTPS needs HTTPS turned on for the Tailscale network; tailscale then gives a link to do so.
-    private static string ServeProblem(TailscaleCommandResult result, TailscaleNetworkSettings settings)
+    // Tailscale Serve over HTTPS needs HTTPS turned on for the Tailscale network; tailscale then gives a link to do so,
+    // which the guide shows as a link of its own.
+    private static (string Problem, Uri? Link) ServeProblem(TailscaleCommandResult result, TailscaleNetworkSettings settings)
     {
-        var link = EnableLink().Match(result.Output);
-        if (link.Success)
+        if (EnableLink().IsMatch(result.Output))
         {
-            return $"Turn on HTTPS for your Tailscale network: open {link.Value} and turn on HTTPS, with Funnel left off. Contactor goes on by itself.";
+            return ("Turn on HTTPS for your Tailscale network, with Funnel left off. Contactor goes on by itself.", HttpsLink(result.Output));
         }
 
         return result.TimedOut
-            ? "Tailscale Serve didn't answer. Contactor tries again."
-            : $"Tailscale Serve didn't start: {FirstLine(result, settings)}";
+            ? ("Tailscale Serve didn't answer. Contactor tries again.", null)
+            : ($"Tailscale Serve didn't start: {FirstLine(result, settings)}", null);
+    }
+
+    /// <summary>
+    /// The link tailscale gives to turn on HTTPS for the Tailscale network, or null when its output has none. Only an
+    /// https address on login.tailscale.com, on its own port, is taken, since the guide links to it.
+    /// </summary>
+    public static Uri? HttpsLink(string output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        var match = EnableLink().Match(output);
+        return match.Success
+            && Uri.TryCreate(match.Value, UriKind.Absolute, out var link)
+            && link.Scheme == Uri.UriSchemeHttps
+            && link.IsDefaultPort
+            && link.UserInfo.Length == 0
+            && string.Equals(link.Host, "login.tailscale.com", StringComparison.OrdinalIgnoreCase)
+            ? link
+            : null;
     }
 
     // The first line tailscale wrote, short, and never with the auth key in it.

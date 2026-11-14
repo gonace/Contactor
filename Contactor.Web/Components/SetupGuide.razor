@@ -495,6 +495,10 @@
                 <span class="status-text">
                     <b>@(tailscale.Online ? "On your Tailscale network" : "Joining your Tailscale network")</b>
                     <span>@(tailscale.Problem ?? (tailscale.Online && tailscale.Address is not null ? $"Contactor answers at https://{tailscale.Address}." : "It can take a minute."))</span>
+                    @if (tailscale.Problem is not null && tailscale.Link is not null)
+                    {
+                        <a href="@tailscale.Link.AbsoluteUri" target="_blank" rel="noopener noreferrer">Open Tailscale to turn on HTTPS</a>
+                    }
                 </span>
             </div>
             <p class="hint">In Tailscale's admin console, under Machines, turn off key expiry for @(SignIns.TailscaleHostName), or it leaves the network after a few months. Under Access controls, let devices reach it only on port 443.</p>

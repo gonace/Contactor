@@ -12,6 +12,7 @@ public sealed class TailscaleNetworkTests
     private const string AuthKey = "tskey-auth-kExample-SECRET1234";
     private const string Address = "relays.tail1234.ts.net";
     private const string ServeAddress = "127.0.0.2:8081";
+    private const string HttpsHint = "Turn on HTTPS for your Tailscale network, with Funnel left off. Contactor goes on by itself.";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -55,12 +56,35 @@ public sealed class TailscaleNetworkTests
 
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
         Assert.False(network.Network.Status.Online);
-        Assert.Contains("https://login.tailscale.com/f/serve?node=nExample", network.Network.Status.Problem, StringComparison.Ordinal);
+        Assert.Equal(HttpsHint, network.Network.Status.Problem);
+        Assert.Equal(new Uri("https://login.tailscale.com/f/serve?node=nExample"), network.Network.Status.Link);
 
         tailscale.Serve = new TailscaleCommandResult(0, "");
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
         await WaitUntilAsync(() => network.Network.Status.Online);
         Assert.Null(network.Network.Status.Problem);
+        Assert.Null(network.Network.Status.Link);
+    }
+
+    // Another problem after the HTTPS hint takes its link away: the guide never shows it under the wrong words.
+    [Fact]
+    public async Task Should_DropTheLink_WhenAnotherProblemFollows()
+    {
+        var time = new ManualTimeProvider();
+        var tailscale = new FakeTailscale
+        {
+            State = "Running",
+            Serve = new TailscaleCommandResult(0, "To enable, visit:\n\n         https://login.tailscale.com/f/serve?node=nExample\n"),
+        };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
+        await WaitUntilAsync(() => network.Network.Status.Link is not null);
+
+        tailscale.State = "Stopped";
+        await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
+        await WaitUntilAsync(() => network.Network.Status.Problem != HttpsHint);
+
+        Assert.Equal("Tailscale is stopped on this machine.", network.Network.Status.Problem);
+        Assert.Null(network.Network.Status.Link);
     }
 
     [Fact]
@@ -172,7 +196,36 @@ public sealed class TailscaleNetworkTests
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
 
         Assert.False(network.Network.Status.Online);
-        Assert.Contains("https://login.tailscale.com/f/serve?node=nExample", network.Network.Status.Problem, StringComparison.Ordinal);
+        Assert.Equal(new TailscaleStatus(false, Address, HttpsHint, new Uri("https://login.tailscale.com/f/serve?node=nExample")), network.Network.Status);
+    }
+
+    // Only Tailscale's own page over https is a link; anything else is no link, and serving failed as it says.
+    [Theory]
+    [InlineData("To enable, visit:\n\n         http://login.tailscale.com/f/serve?node=nExample\n")]
+    [InlineData("To enable, visit:\n\n         https://login.tailscale.example/f/serve?node=nExample\n")]
+    [InlineData("To enable, visit:\n\n         https://evil.example/login.tailscale.com/f/serve\n")]
+    public async Task Should_GiveNoLink_ForAnythingButTailscalesPageOverHttps(string output)
+    {
+        var tailscale = new FakeTailscale { State = "Running", Serve = new TailscaleCommandResult(1, output) };
+        await using var network = await StartAsync(tailscale, AuthKey, "relays");
+
+        await WaitUntilAsync(() => network.Network.Status.Problem is not null);
+
+        Assert.Equal("Tailscale Serve didn't start: To enable, visit:", network.Network.Status.Problem);
+        Assert.Null(network.Network.Status.Link);
+    }
+
+    [Theory]
+    [InlineData("To enable, visit:\n https://login.tailscale.com/f/serve?node=nExample\n", "https://login.tailscale.com/f/serve?node=nExample")]
+    [InlineData("https://login.tailscale.com/f/serve?node=n1\"<script>", "https://login.tailscale.com/f/serve?node=n1")]
+    [InlineData("http://login.tailscale.com/f/serve", null)]
+    [InlineData("https://login.tailscale.com.evil.example/f/serve", null)]
+    [InlineData("https://login.tailscale.com:8443/f/serve", null)]
+    [InlineData("https://login.tailscale.com", null)]
+    [InlineData("", null)]
+    public void Should_TakeOnlyTailscalesHttpsPage_AsTheLink(string output, string? expected)
+    {
+        Assert.Equal(expected, TailscaleNetwork.HttpsLink(output)?.AbsoluteUri);
     }
 
     [Fact]
