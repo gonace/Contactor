@@ -305,6 +305,174 @@ public sealed partial class RelayChannelTests
         Assert.Equal(Enumerable.Range(1, 8).Select(rig.RelayId), candidates.Select(c => c.RelayId));
     }
 
+    // A group's schedule counts the group as on by its members' channels: it starts it in order at the OnTime and stops
+    // it with its run-on at the OffTime.
+    [Theory]
+    [InlineData(RelayLayout.Same)]
+    [InlineData(RelayLayout.Apart)]
+    public async Task Should_RunAGroupsSchedule_ByItsChannels(RelayLayout layout)
+    {
+        await using var rig = await BoardTestRig.StartAsync(layout: layout);
+        var groupId = await CreateGroupAsync(rig);
+        await AddGroupScheduleAsync(rig, groupId, 14, 5, 14, 10);
+        await rig.Scheduler.TickAsync(Cancel);
+
+        await TickAtAsync(rig, 14, 5);
+        await WaitForChannelsAsync(rig, 1);
+        await rig.Groups.StepAsync(Cancel);
+        rig.Time.Now += TimeSpan.FromSeconds(3);
+        await rig.Groups.StepAsync(Cancel);
+        await WaitForChannelsAsync(rig, 1, 2);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(EventActors.Schedule, (await GroupRuntimeAsync(rig, groupId)).TurnedOnBy);
+
+        await TickAtAsync(rig, 14, 10);
+        await WaitForChannelsAsync(rig, 1);
+        await rig.Groups.StepAsync(Cancel);
+        rig.Time.Now = new DateTimeOffset(2026, 11, 4, 13, 15, 1, TimeSpan.Zero);
+        await rig.Groups.StepAsync(Cancel);
+        await WaitForChannelsAsync(rig);
+
+        var events = (await rig.EventsAsync()).Where(e => e.GroupId == groupId).ToList();
+        Assert.Contains(events, e => e is { Action: EventActions.GroupOn, Actor: EventActors.Schedule });
+        Assert.Contains(events, e => e is { Action: EventActions.GroupOff, Actor: EventActors.Schedule });
+        Assert.Equal((int?)rig.RelayId(1), Assert.Single(events, e => e.Action == EventActions.RunOnStart).RelayId);
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Actor == EventActors.External);
+    }
+
+    // The fan switched on at the board just before the window: once the window runs, the group is the schedule's.
+    [Theory]
+    [InlineData(RelayLayout.Same)]
+    [InlineData(RelayLayout.Apart)]
+    public async Task Should_LetAGroupsSchedule_TakeOverTheGroupOnOutsideTheApp(RelayLayout layout)
+    {
+        await using var rig = await BoardTestRig.StartAsync(layout: layout);
+        var groupId = await CreateGroupAsync(rig);
+        await AddGroupScheduleAsync(rig, groupId, 14, 5, 18, 0);
+        await rig.Scheduler.TickAsync(Cancel);
+        await TickAtAsync(rig, 14, 4);
+
+        await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(1));
+        await WaitForChannelsAsync(rig, 1);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(EventActors.External, (await GroupRuntimeAsync(rig, groupId)).TurnedOnBy);
+
+        await TickAtAsync(rig, 14, 5);
+
+        var runtime = await GroupRuntimeAsync(rig, groupId);
+        Assert.Equal((EventActors.Schedule, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+
+        // Taken over as it is, the fan alone, as a person left it: not started again.
+        Assert.Equal(GroupPhases.Idle, runtime.Phase);
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action == EventActions.GroupOn);
+        await rig.Groups.StepAsync(Cancel);
+        await WaitForChannelsAsync(rig, 1);
+    }
+
+    // The screens' view of a group: its members' channels, the chain they show, and on or off by the board's channels.
+    [Theory]
+    [InlineData(RelayLayout.Same)]
+    [InlineData(RelayLayout.Apart)]
+    public async Task Should_ShowAGroupsMembers_ByTheirChannels(RelayLayout layout)
+    {
+        await using var rig = await BoardTestRig.StartAsync(layout: layout);
+        var groupId = await CreateGroupAsync(rig);
+        await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(1));
+        await WaitForChannelsAsync(rig, 1);
+
+        var group = await rig.GroupSetup.GetAsync(groupId, Cancel);
+        var listed = Assert.Single(await rig.GroupSetup.ListAsync(Cancel));
+
+        foreach (var view in new[] { group!, listed })
+        {
+            Assert.Equal([(rig.RelayId(1), 1), (rig.RelayId(2), 2)], view.Members.Select(m => (m.RelayId, m.Channel)));
+            Assert.Equal("RELAY 1 → 2", view.Chain);
+            Assert.Equal(ChannelMask.Of([1, 2]), view.Mask);
+            Assert.Null(view.MissingRelay(rig.Simulator.Model.Capabilities.RelayCount));
+            Assert.True(view.IsOn(Board(rig).State));
+            Assert.Equal(1, GroupPlanner.Level(view.Infos, Board(rig).State));
+        }
+    }
+
+    // A trip had sent the fan's ON for its run-on, lost with the connection: after the reconnect it goes once more, to
+    // the fan's channel.
+    [Theory]
+    [InlineData(RelayLayout.Same)]
+    [InlineData(RelayLayout.Apart)]
+    public async Task Should_SendTheFanOnceMore_WhenATripsOnWasLostInAReconnect(RelayLayout layout)
+    {
+        await using var rig = await BoardTestRig.StartAsync(layout: layout);
+        var groupId = await CreateGroupAsync(rig);
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.GroupRuntimes.SingleAsync(r => r.GroupId == groupId, Cancel);
+            (runtime.Phase, runtime.TargetLevel, runtime.PendingPosition, runtime.PendingOn, runtime.PendingSinceUtc) =
+                (GroupPhases.Stopping, 0, 1, true, BoardTestRig.Start);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        _ = rig.Groups;
+        rig.Simulator.DropConnections();
+        await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsConnected);
+        rig.Time.Now += TimeSpan.FromMinutes(1);
+        await rig.Groups.StepAsync(Cancel);
+
+        await WaitForChannelsAsync(rig, 1);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Contains(await rig.EventsAsync(), e => e.Action == EventActions.RunOnStart && e.RelayId == rig.RelayId(1));
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action == EventActions.GroupStartFailed);
+    }
+
+    // At start each input is compared with what the log last says about that input, found by its channel: one that
+    // changed while the app was down is logged as noticed; one that reads the same logs nothing.
+    [Theory]
+    [InlineData(RelayLayout.Same)]
+    [InlineData(RelayLayout.Apart)]
+    public async Task Should_LogAnInputThatChangedWhileDown_AsNoticed(RelayLayout layout)
+    {
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: 2);
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddSingleton<IRelayBoard>(board);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+            services.AddSingleton<InputChangeFeed>();
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 0, inputCount: 0, Cancel);
+        await RelayLayouts.SeedAsync(database.Services, layout, relayCount: 4, inputCount: 2);
+        await database.Services.SeedBoardAsync(relayCount: 4, inputCount: 2, Cancel);
+        int Input(int channel) => RelayLayouts.InputId(layout, channel, 2);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            (await db.BoardRuntimes.SingleAsync(Cancel)).LastContactUtc = BoardTestRig.Start.AddMinutes(-2);
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = BoardTestRig.Start.AddHours(-1), InputId = Input(1), Actor = EventActors.External, Action = EventActions.InputChanged, Details = """{"on":false}""" });
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = BoardTestRig.Start.AddHours(-1), InputId = Input(2), Actor = EventActors.External, Action = EventActions.InputChanged, Details = """{"on":true}""" });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        board.SetInput(1, on: true);
+        board.SetInput(2, on: true);
+        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.Action == EventActions.InputChanged) == 3);
+            await Task.Delay(100, Cancel);
+
+            var changes = Events(database).Where(e => e.Action == EventActions.InputChanged).ToList();
+            Assert.Equal(3, changes.Count);
+            Assert.Equal(((int?)Input(1), """{"on":true,"noticed":true}"""), (changes[2].InputId, changes[2].Details));
+        }
+        finally
+        {
+            await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
     // From the board's input on its channel, through the recorder and the input's actions, to the relay on its channel.
     [Theory]
     [InlineData(RelayLayout.Same)]
@@ -506,6 +674,33 @@ public sealed partial class RelayChannelTests
             CreatedBy = Jane,
         });
         await db.SaveChangesAsync(Cancel);
+    }
+
+    // The board as the app sees it.
+    private static IRelayBoard Board(BoardTestRig rig)
+    {
+        return rig.Database.Services.GetRequiredService<IRelayBoard>();
+    }
+
+    private static async Task AddGroupScheduleAsync(BoardTestRig rig, int groupId, int onHour, int onMinute, int offHour, int offMinute)
+    {
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        db.Schedules.Add(new Schedule
+        {
+            GroupId = groupId,
+            Days = ScheduleDays.All,
+            OnTime = new TimeOnly(onHour, onMinute),
+            OffTime = new TimeOnly(offHour, offMinute),
+            IsEnabled = true,
+            CreatedBy = Jane,
+        });
+        await db.SaveChangesAsync(Cancel);
+    }
+
+    private static async Task<GroupRuntime> GroupRuntimeAsync(BoardTestRig rig, int groupId)
+    {
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        return await db.GroupRuntimes.AsNoTracking().SingleAsync(r => r.GroupId == groupId, Cancel);
     }
 
     // 14:00 local is 13:00 UTC on the rig's day.

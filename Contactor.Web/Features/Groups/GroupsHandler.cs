@@ -117,14 +117,14 @@ public sealed class GroupsHandler
             r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id)))];
     }
 
-    // The name of an input that controls each relay; the first by number when several do.
+    // The name of an input that controls each relay; the first by number (its channel) when several do.
     private static async Task<Dictionary<int, string>> ControllingInputsAsync(ContactorDbContext db, CancellationToken cancellationToken)
     {
         var actions = await db.InputActions.AsNoTracking()
             .Where(a => a.RelayId != null)
-            .Join(db.Inputs, a => a.InputId, i => i.Id, (a, i) => new { RelayId = a.RelayId!.Value, i.Id, i.Name })
+            .Join(db.Inputs, a => a.InputId, i => i.Id, (a, i) => new { RelayId = a.RelayId!.Value, i.Channel, i.Name })
             .ToListAsync(cancellationToken);
-        return actions.GroupBy(a => a.RelayId).ToDictionary(g => g.Key, g => g.OrderBy(a => a.Id).First().Name);
+        return actions.GroupBy(a => a.RelayId).ToDictionary(g => g.Key, g => g.OrderBy(a => a.Channel).First().Name);
     }
 
     // The board's relays, by their channels: a database can hold more, kept from a board that had more, and those
