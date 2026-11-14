@@ -10,7 +10,7 @@ public static class Program
     // board that loses power would.
     private const int Vm201Port = 9760;
 
-    // The port the image listens on, and the one the app's page has on this computer.
+    // The port the image listens on, published as the same port on this computer.
     private const int AppPort = 8080;
 
     public static void Main(string[] args)
@@ -24,13 +24,15 @@ public static class Program
             .WithHttpHealthCheck("/health");
 
         // The image, run as on a real installation: Production, everything it keeps in /data (a Docker volume, so the
-        // database and Tailscale's state survive a restart; delete the volume to start over). The simulator listens on
-        // this computer only; Docker Desktop passes host.docker.internal there.
+        // database and Tailscale's state survive a restart; delete the volume to start over). Aspire gives it the
+        // simulator's address as a container reaches it, and sends its telemetry to the dashboard.
+        var board = simulator.GetEndpoint("vm201");
         builder.AddDockerfile("web", Path.Combine(builder.AppHostDirectory, ".."))
             .WithHttpEndpoint(port: AppPort, targetPort: AppPort, name: "http", isProxied: false)
             .WithVolume("contactor-dev", "/data")
-            .WithEnvironment("Vm201__Host", "host.docker.internal")
-            .WithEnvironment("Vm201__Port", Vm201Port.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .WithEnvironment("Vm201__Host", board.Property(EndpointProperty.Host))
+            .WithEnvironment("Vm201__Port", board.Property(EndpointProperty.Port))
+            .WithOtlpExporter()
             .WaitFor(simulator);
 
         builder.Build().Run();

@@ -495,3 +495,6 @@ Contactor.Web/backups/
 
 # Test results (TRX) from dotnet test --results-directory
 TestResults/
+
+# cloudflared, which the AppHost used to download; delete Contactor.AppHost/.tools/ if it is still there
+.tools/
