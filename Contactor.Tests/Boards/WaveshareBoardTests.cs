@@ -22,7 +22,8 @@ public sealed class WaveshareBoardTests
         var model = Assert.Single(WaveshareModels.All, m => m.Id == id);
 
         Assert.Equal(name, model.Name);
-        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false), model.Capabilities);
+        var pulse = new PulseAbility(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(3_276_700), TimeSpan.FromMilliseconds(100));
+        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: pulse), model.Capabilities);
         Assert.Equal(4196, model.DefaultPort);
         Assert.False(model.HasLogin);
         Assert.Equal(inputs > 0, WaveshareModels.HasRelayModes(model));
@@ -52,6 +53,48 @@ public sealed class WaveshareBoardTests
         Assert.Equal(16, board.Capabilities.RelayCount);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOnAsync(ChannelMask.Of(17), Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOnAsync(ChannelMask.Of(16), Cancel));
+    }
+
+    [Fact]
+    public async Task Should_RefuseAPulse_ItCantDo_BeforeAnythingIsSent()
+    {
+        using var client = new WaveshareClient(
+            Options.Create(new WaveshareOptions { Host = "127.0.0.1" }),
+            WaveshareModels.Relay16,
+            new ManualTimeProvider(),
+            NullLogger<WaveshareClient>.Instance);
+        var board = new WaveshareBoard(client, NullLogger<WaveshareBoard>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromMilliseconds(3_276_800), Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromMilliseconds(250), Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(17), TimeSpan.FromSeconds(1), Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.PulseAsync(ChannelMask.Of(16), TimeSpan.FromSeconds(1), Cancel));
+    }
+
+    [Fact]
+    public async Task Should_Pulse_AndReturnOnlyTheRelaysTheBoardTook()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8) { TimeProvider = boardTime, FailRelays = 0b0100 };
+        simulator.Start();
+        using var client = new WaveshareClient(
+            Options.Create(new WaveshareOptions { Host = "127.0.0.1", Port = simulator.Port }),
+            WaveshareModels.Relay8,
+            new ManualTimeProvider(),
+            NullLogger<WaveshareClient>.Instance);
+        var board = new WaveshareBoard(client, NullLogger<WaveshareBoard>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => board.State.IsConnected);
+
+        Assert.Equal(ChannelMask.Of([2, 4]), await board.PulseAsync(ChannelMask.Of([2, 3, 4]), TimeSpan.FromSeconds(2.5), Cancel));
+
+        Assert.Equal(ChannelMask.Of([2, 4]), board.State.Relays);
+        Assert.Contains("01 05 02 01 00 19 5C 78", simulator.ReceivedRequests);
+        boardTime.Advance(TimeSpan.FromSeconds(2.5));
+        Assert.Equal(0UL, simulator.Relays);
+        await stop.CancelAsync();
+        await run.WaitAsync(Cancel);
     }
 
     [Fact]

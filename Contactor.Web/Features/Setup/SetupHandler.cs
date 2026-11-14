@@ -145,7 +145,9 @@ public sealed class SetupHandler
 
     /// <summary>
     /// "Try": turns the relay on for <see cref="TryLength"/>, so the person can hear which one it is, through
-    /// <see cref="RelayControl"/> (so a relay in a group is refused, and both steps are logged). Returns once it is
+    /// <see cref="RelayControl"/> (so a relay in a group is refused). On a board with a pulse that can do it, the board
+    /// turns the relay off again by itself, also when the app stops meanwhile, and it is logged as one event.
+    /// Otherwise, as below: the app turns it on and off, both steps logged. Returns once it is
     /// on; it is turned off again even if the page is closed. Its auto-off is set a little later, so
     /// <see cref="AutoOffService"/> turns it off should the app stop or the board drop before that. Throws
     /// <see cref="BoardNotConnectedException"/> without a board, and <see cref="RelayInGroupException"/> for a relay in
@@ -154,6 +156,12 @@ public sealed class SetupHandler
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
     {
+        if (_board.Capabilities.Pulse?.CanDo(TryLength) == true && TryLength <= RelayControl.MaxPulse)
+        {
+            await _control.PulseAsync(relayId, TryLength, userEmail, cancellationToken);
+            return;
+        }
+
         try
         {
             await _control.TurnOnAsync(relayId, userEmail, cancellationToken);

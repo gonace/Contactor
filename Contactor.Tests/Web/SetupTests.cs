@@ -426,6 +426,141 @@ public sealed class SetupTests
         await WaitUntilAsync(() => !rig.Board.State.IsOn(3));
     }
 
+    // A board's pulse as the Devantech boards have it.
+    private static readonly PulseAbility TenthsUpTo25s = new(TimeSpan.FromSeconds(0.1), TimeSpan.FromSeconds(25.5), TimeSpan.FromSeconds(0.1));
+
+    // On a board with a pulse, "Try" uses it: the board turns the relay off by itself, also when the app has stopped
+    // meanwhile, and the try is one event, the person's. The board's own OFF isn't taken for a change outside the app.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(20)]
+    public async Task Should_TryWithTheBoardsPulse_WhenItHasOne(int secondsUntilTheOffShows)
+    {
+        await using var rig = await Rig.StartAsync(startRecorder: true, pulse: TenthsUpTo25s);
+        var time = (FixedTimeProvider)rig.Database.Services.GetRequiredService<TimeProvider>();
+        rig.Board.Time = time;
+
+        await rig.Setup.TryAsync(3, JohnEmail, Cancel);
+
+        Assert.Equal([(ChannelMask.Of(3), SetupHandler.TryLength)], rig.Board.Pulses);
+        Assert.True(rig.Board.State.IsOn(3));
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
+            Assert.Equal((JohnEmail, Now + SetupHandler.TryLength + RelayControl.PulseBackstop), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+        }
+
+        // The board's own end of the pulse, with nothing from the app: at once, or on a polled board after a slow poll,
+        // well past the 5 s an ordinary expectation lasts.
+        var expected = rig.Database.Services.GetRequiredService<ExpectedChanges>();
+        await WaitUntilAsync(() => !expected.IsPending(3, on: true));
+        time.Now += TimeSpan.FromSeconds(secondsUntilTheOffShows);
+        await rig.Board.EndPulsesAsync();
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && !expected.IsPending(3, on: false));
+
+        await using var check = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        var events = await check.EventLog.Where(e => e.RelayId == 3).ToListAsync(Cancel);
+        var entry = Assert.Single(events);
+        Assert.Equal((JohnEmail, EventActions.Pulse, """{"milliseconds":2000}"""), (entry.Actor, entry.Action, entry.Details));
+    }
+
+    // A board whose pulse can't do 2 s: "Try" turns the relay on and off itself, as on a board without one.
+    [Fact]
+    public async Task Should_TryWithOnAndOff_WhenThePulseCantDoTheTry()
+    {
+        await using var rig = await Rig.StartAsync(pulse: new PulseAbility(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(1)));
+
+        await rig.Setup.TryAsync(3, JohnEmail, Cancel);
+
+        Assert.Empty(rig.Board.Pulses);
+        await WaitUntilAsync(() => !rig.Board.State.IsOn(3) && OffLogged(rig, JohnEmail));
+    }
+
+    // Without the board, a try with a pulse records nothing and expects nothing.
+    [Fact]
+    public async Task Should_NotTryWithAPulse_WithoutTheBoard()
+    {
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s);
+        rig.Board.SetConnected(false);
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+
+        var expected = rig.Database.Services.GetRequiredService<ExpectedChanges>();
+        Assert.False(expected.IsPending(3, on: true) || expected.IsPending(3, on: false));
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.EventLog.AnyAsync(Cancel));
+        Assert.Null((await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel)).OnSinceUtc);
+    }
+
+    // Only lengths the board can do, and only short ones, for "Try", until longer pulses are designed.
+    [Theory]
+    [InlineData(0.05)]
+    [InlineData(2.05)]
+    [InlineData(25.6)]
+    public async Task Should_RefuseAPulse_ThatTheBoardCantDo(double seconds)
+    {
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s);
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => control.PulseAsync(3, TimeSpan.FromSeconds(seconds), JohnEmail, Cancel));
+        Assert.Empty(rig.Board.Pulses);
+    }
+
+    [Fact]
+    public async Task Should_RefuseAPulse_LongerThanATry()
+    {
+        await using var rig = await Rig.StartAsync(pulse: new PulseAbility(TimeSpan.FromSeconds(1), TimeSpan.FromHours(99), TimeSpan.FromSeconds(1)));
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => control.PulseAsync(3, RelayControl.MaxPulse + TimeSpan.FromSeconds(1), JohnEmail, Cancel));
+        await control.PulseAsync(3, RelayControl.MaxPulse, JohnEmail, Cancel);
+        Assert.Equal([(ChannelMask.Of(3), RelayControl.MaxPulse)], rig.Board.Pulses);
+    }
+
+    [Fact]
+    public async Task Should_RefuseToPulseARelayInAGroup_OrOnABoardWithoutAPulse()
+    {
+        await using (var rig = await Rig.StartAsync(pulse: TenthsUpTo25s))
+        {
+            await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+            {
+                var group = new RelayGroup { Name = "Fan heater" };
+                group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan", StartDelaySec = 3 });
+                group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat", StartDelaySec = 3 });
+                db.RelayGroups.Add(group);
+                await db.SaveChangesAsync(Cancel);
+            }
+
+            await Assert.ThrowsAsync<RelayInGroupException>(() => rig.Setup.TryAsync(2, JohnEmail, Cancel));
+            Assert.Empty(rig.Board.Pulses);
+        }
+
+        await using var plain = await Rig.StartAsync();
+        var control = plain.Database.Services.GetRequiredService<RelayControl>();
+        await Assert.ThrowsAsync<NotSupportedException>(() => control.PulseAsync(3, SetupHandler.TryLength, JohnEmail, Cancel));
+        Assert.False(plain.Board.State.IsOn(3));
+    }
+
+    // A pulse that failed after the board switched: nothing is logged for the person, and what the board did shows as
+    // a change outside the app.
+    [Fact]
+    public async Task Should_LogExternal_WhenAPulseSwitchedButFailed()
+    {
+        await using var rig = await Rig.StartAsync(startRecorder: true, pulse: TenthsUpTo25s);
+        rig.Board.SwitchSilentlyThenFail = true;
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => rig.Setup.TryAsync(3, JohnEmail, Cancel));
+        await rig.Board.RefreshAsync(Cancel);
+
+        await WaitUntilAsync(() =>
+        {
+            using var db = rig.Database.Factory.CreateDbContext();
+            return db.EventLog.Any(e => e.RelayId == 3 && e.Actor == EventActors.External && e.Action == EventActions.On);
+        });
+        await using var check = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await check.EventLog.AnyAsync(e => e.Actor == JohnEmail, Cancel));
+    }
+
     [Fact]
     public async Task Should_BeDone_OnceMarked()
     {
@@ -769,9 +904,9 @@ public sealed class SetupTests
 
         public SetupHandler Setup => Database.Services.GetRequiredService<SetupHandler>();
 
-        public static async Task<Rig> StartAsync(ILoggerProvider? logs = null, bool startRecorder = false)
+        public static async Task<Rig> StartAsync(ILoggerProvider? logs = null, bool startRecorder = false, PulseAbility? pulse = null)
         {
-            var board = new FakeRelayBoard();
+            var board = new FakeRelayBoard(pulse: pulse);
             var database = TestDatabase.Create((services, configuration) =>
             {
                 if (logs is not null)

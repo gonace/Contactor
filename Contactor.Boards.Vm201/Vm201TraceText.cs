@@ -32,6 +32,7 @@ public static class Vm201TraceText
         {
             Vm201Command.On when data.Length == 1 => $"Turn on {Relays(data[0])}",
             Vm201Command.Off when data.Length == 1 => $"Turn off {Relays(data[0])}",
+            Vm201Command.Pulse when data.Length == 3 => $"Pulse {Relays(data[0])} for {Vm201Pulse.Describe(data[1], data[2])}",
             Vm201Command.StatusRequest => "Ask for status",
             Vm201Command.TimerDisable when data.Length == 1 => $"Turn off the board's own timers for {Relays(data[0])}",
             Vm201Command.Username => "User name (hidden)",

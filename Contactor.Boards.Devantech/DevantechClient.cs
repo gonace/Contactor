@@ -150,13 +150,29 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     /// <summary>Turns on the relays in <paramref name="mask"/> (bit 0 = relay 1), one command each.</summary>
     public Task<ulong> TurnOnAsync(ulong mask, CancellationToken cancellationToken = default)
     {
-        return CommandAsync(mask, turnOn: true, cancellationToken);
+        return CommandAsync(mask, relay => DevantechProtocol.Switch(relay, on: true), cancellationToken);
     }
 
     /// <summary>Turns off the relays in <paramref name="mask"/> (bit 0 = relay 1), one command each.</summary>
     public Task<ulong> TurnOffAsync(ulong mask, CancellationToken cancellationToken = default)
     {
-        return CommandAsync(mask, turnOn: false, cancellationToken);
+        return CommandAsync(mask, relay => DevantechProtocol.Switch(relay, on: false), cancellationToken);
+    }
+
+    /// <summary>
+    /// Pulses the relays in <paramref name="mask"/> (bit 0 = relay 1), one command each (0x20 with a pulse time), as
+    /// <see cref="TurnOnAsync"/>: the board turns each on, and off again by itself after <paramref name="length"/>.
+    /// Throws <see cref="ArgumentOutOfRangeException"/>, before anything is sent, for a length
+    /// <see cref="DevantechModels.Pulse"/> can't do.
+    /// </summary>
+    public Task<ulong> PulseAsync(ulong mask, TimeSpan length, CancellationToken cancellationToken = default)
+    {
+        if (!DevantechModels.Pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "A Devantech board pulses for 0.1 s to 25.5 s, in steps of 0.1 s.");
+        }
+
+        return CommandAsync(mask, relay => DevantechProtocol.Pulse(relay, length), cancellationToken);
     }
 
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
@@ -244,7 +260,8 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         }
     }
 
-    private async Task<ulong> CommandAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
+    // Sends request(relay) for every relay in the mask: an ON, an OFF or a pulse.
+    private async Task<ulong> CommandAsync(ulong mask, Func<int, DevantechRequest> request, CancellationToken cancellationToken)
     {
         if (!_model.Capabilities.AllRelays.ContainsAll(new ChannelMask(mask)))
         {
@@ -267,7 +284,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         try
         {
             var taken = new StrongBox<ulong>();
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, taken, token), cancellationToken).ConfigureAwait(false);
+            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
             return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
@@ -285,7 +302,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
     // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's, and
     // puts the relays the board took in <paramref name="taken"/>.
-    private async Task<DevantechStatus> SwitchEachAsync(ulong mask, bool turnOn, StrongBox<ulong> taken, CancellationToken cancellationToken)
+    private async Task<DevantechStatus> SwitchEachAsync(ulong mask, Func<int, DevantechRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         // The board locks again after 30 s without a command, so a command checks first. A board it can't unlock
         // switches nothing: that throws before any relay is sent.
@@ -298,7 +315,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
             try
             {
-                var request = DevantechProtocol.Switch(relay, turnOn);
+                var request = requestFor(relay);
                 var answer = (await ExchangeAsync(request, routine: false, cancellationToken).ConfigureAwait(false))[0];
                 if (answer is not (DevantechApi.Success or DevantechApi.Failure))
                 {

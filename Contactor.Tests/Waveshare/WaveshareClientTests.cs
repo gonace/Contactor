@@ -97,6 +97,68 @@ public sealed class WaveshareClientTests
     }
 
     [Fact]
+    public async Task Should_PulseOneRelayPerRequest_AndTheBoardTurnsThemOffByItself()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8) { TimeProvider = boardTime };
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0b0101UL, await run.Client.PulseAsync(0b0101, TimeSpan.FromMilliseconds(500), Cancel));
+
+        Assert.Equal(0b0101UL, run.Client.State.Relays);
+        Assert.Equal([ReadEightRelays, "01 05 02 00 00 05 0C 71", "01 05 02 02 00 05 AD B1", ReadEightRelays], simulator.ReceivedRequests);
+        Assert.Contains(run.Traces, t => t.Text == "Pulse relay 3 for 0.5 s" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 3 turned on for 0.5 s" && t.Direction == BoardTraceDirection.Received);
+
+        // The board's own clock ends it; the app only polls.
+        boardTime.Advance(TimeSpan.FromMilliseconds(500));
+        Assert.Equal(0UL, simulator.Relays);
+        await run.PollAsync();
+        Assert.Equal(0UL, run.Client.State.Relays);
+        Assert.All(simulator.ReceivedRequests.Skip(4), r => Assert.Equal(ReadEightRelays, r));
+    }
+
+    [Fact]
+    public async Task Should_PulseTheWholeMask_WhenTheBoardRefusesOneRelay()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8) { TimeProvider = boardTime, FailRelays = 0b0010 };
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0b0101UL, await run.Client.PulseAsync(0b0111, TimeSpan.FromSeconds(1), Cancel));
+
+        Assert.Equal(0b0101UL, simulator.Relays);
+        Assert.Equal(ChannelMask.Of([1, 3]), simulator.Pulsing);
+        Assert.Contains(run.Traces, t => t.Text == "Refused: it failed (code 4)" && t.IsError);
+        Assert.True(run.Client.State.IsConnected);
+
+        simulator.FailRelays = 0b0111;
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.PulseAsync(0b0011, TimeSpan.FromSeconds(1), Cancel));
+        Assert.StartsWith("The Waveshare board didn't take the command: ", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    [InlineData(150)]
+    [InlineData(3_276_800)]
+    public async Task Should_RefuseAPulseLength_BeforeAnythingIsSent(int milliseconds)
+    {
+        await using var simulator = Started(WaveshareModels.Relay8);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.PulseAsync(0b0001, TimeSpan.FromMilliseconds(milliseconds), Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.PulseAsync(1UL << 8, TimeSpan.FromSeconds(1), Cancel));
+
+        Assert.Equal([ReadEightRelays], simulator.ReceivedRequests);
+    }
+
+    [Fact]
     public async Task Should_RefuseRelaysTheBoardHasNot_AndSendNothingForNone()
     {
         await using var simulator = Started(WaveshareModels.Relay8);

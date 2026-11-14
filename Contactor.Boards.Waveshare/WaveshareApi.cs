@@ -45,6 +45,23 @@ public static class WaveshareApi
     /// <summary>Flips the relay. The app never sends it; the simulator takes it as the board does.</summary>
     public const ushort CoilToggle = 0x5500;
 
+    /// <summary>
+    /// "Flash on" with FC 05: relay n's address is this + n − 1, and the value is a time in <see cref="FlashUnit"/>s,
+    /// 1 to <see cref="MaxFlashTime"/>. The board turns the relay on, and off again by itself after the time, and echoes
+    /// the request. From Waveshare's development protocol pages, which disagree a little per model: to check on a real
+    /// board.
+    /// </summary>
+    public const ushort FlashOnAddress = 0x0200;
+
+    /// <summary>How many flash-on addresses there are: the range up to "flash off" at 0x0400.</summary>
+    public const int FlashOnAddressCount = 0x0200;
+
+    /// <summary>The longest flash time: 0x7FFF × 100 ms, 3276.7 s.</summary>
+    public const ushort MaxFlashTime = 0x7FFF;
+
+    /// <summary>The unit of a flash time: 100 ms.</summary>
+    public static readonly TimeSpan FlashUnit = TimeSpan.FromMilliseconds(100);
+
     /// <summary>The first relay control mode register ((B) and (C)): relay n's is this + n − 1.</summary>
     public const ushort RelayModeRegister = 0x1000;
 

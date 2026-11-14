@@ -13,9 +13,10 @@ public sealed class Vm201BoardTests
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
-    public void Should_HaveEightRelaysAndOneInput()
+    public void Should_HaveEightRelaysAndOneInput_AndAPulse()
     {
-        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true), Vm201Board.Vm201Capabilities);
+        var pulse = new PulseAbility(TimeSpan.FromSeconds(1), TimeSpan.FromHours(99), TimeSpan.FromSeconds(1));
+        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true, Pulse: pulse), Vm201Board.Vm201Capabilities);
         Assert.Equal(ChannelMask.FirstN(8), Vm201Board.Vm201Capabilities.AllRelays);
     }
 
@@ -63,6 +64,47 @@ public sealed class Vm201BoardTests
     }
 
     [Fact]
+    public async Task Should_PulseTheWholeMaskAtOnce()
+    {
+        await using var simulator = new Vm201Simulator { TimeProvider = new Web.ManualTimeProvider() };
+        simulator.Start();
+        var client = CreateClient(simulator.Port);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.State.IsConnected);
+
+        Assert.Equal(ChannelMask.Of([1, 8]), await board.PulseAsync(ChannelMask.Of([1, 8]), TimeSpan.FromMinutes(3), Cancel));
+
+        await WaitUntilAsync(() => board.State.Relays == ChannelMask.Of([1, 8]));
+        var pulse = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.Pulse);
+        Assert.Equal(new byte[] { 0b1000_0001, 3, (byte)'m' }, pulse.Data.ToArray());
+        await stop.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(100)] // CanDo allows it.
+    [InlineData(90.5)]
+    [InlineData(360_000)]
+    public async Task Should_RefuseALengthTheBoardCantSendExactly_EvenWhenCanDoAllowsIt(double seconds)
+    {
+        var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromSeconds(seconds), Cancel));
+    }
+
+    [Fact]
+    public async Task Should_RefuseAPulseOfARelayTheBoardDoesntHave()
+    {
+        var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.PulseAsync(ChannelMask.Of(9), TimeSpan.FromSeconds(2), Cancel));
+    }
+
+    [Fact]
     public async Task Should_GiveEverySubscriberTheState_WhenOneFails()
     {
         await using var simulator = new Vm201Simulator();
@@ -96,6 +138,7 @@ public sealed class Vm201BoardTests
 
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOnAsync(ChannelMask.Of(1), Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.RefreshAsync(Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromSeconds(2), Cancel));
     }
 
     private static Vm201Client CreateClient(int port)

@@ -37,6 +37,18 @@ public sealed class WaveshareBoard : IRelayBoard
         return new ChannelMask(await _client.TurnOffAsync(ToMask(relays), cancellationToken).ConfigureAwait(false));
     }
 
+    // A relay per request, as ON: only the relays the board took. The length is checked before the relays, so
+    // anything wrong throws before a request goes out.
+    public async Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
+    {
+        if (!WaveshareModels.Pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "A Waveshare board pulses for 0.1 s to 3276.7 s, in steps of 0.1 s.");
+        }
+
+        return new ChannelMask(await _client.PulseAsync(ToMask(relays), length, cancellationToken).ConfigureAwait(false));
+    }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         _client.Refresh();

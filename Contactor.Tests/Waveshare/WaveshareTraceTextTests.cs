@@ -12,7 +12,9 @@ public sealed class WaveshareTraceTextTests
     [InlineData("01 05 00 02 FF 00 2D FA", "Turn on relay 3")]
     [InlineData("01 05 00 00 00 00 CD CA", "Turn off relay 1")]
     [InlineData("01 05 00 00 55 00 F2 9A", "Flip relay 1")]
-    [InlineData("01 05 02 00 00 07 8D B0", "Write coil 513 with 0007")]
+    [InlineData("01 05 02 00 00 07 8D B0", "Pulse relay 1 for 0.7 s")]
+    [InlineData("01 05 02 1D 7F FF 3C 04", "Pulse relay 30 for 3276.7 s")]
+    [InlineData("01 05 04 00 00 07 8D 38", "Write coil 1025 with 0007")]
     [InlineData("01 03 80 00 00 01 AD CA", "Function 03 at 8000")]
     [InlineData("01 05", "A frame too short to be a request")]
     public void Should_SayWhatARequestAsks(string frame, string text)

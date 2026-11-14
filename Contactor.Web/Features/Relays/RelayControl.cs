@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -56,6 +57,72 @@ public sealed class RelayControl
         await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
     }
+
+    /// <summary>
+    /// Pulses a relay for a person: the board turns it on, and off again by itself after <paramref name="length"/>, also
+    /// when the app stops in between. Only on a board with a pulse that can do that length
+    /// (<see cref="BoardCapabilities.Pulse"/>), at most <see cref="MaxPulse"/>, and never for a relay in a group, whose
+    /// interlock the board's own OFF would ignore. Throws <see cref="NotSupportedException"/> without a pulse, and
+    /// <see cref="ArgumentOutOfRangeException"/> for a length it can't do. Logged as one event. The relay's run is the person's, with an auto-off a little after the pulse as
+    /// a backstop; the board's own OFF is expected, so it isn't taken for a change outside the app.
+    /// </summary>
+    public async Task PulseAsync(int relayId, TimeSpan length, string actor, CancellationToken cancellationToken)
+    {
+        var mask = _board.Capabilities.Relay(relayId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        if (_board.Capabilities.Pulse is not { } pulse)
+        {
+            throw new NotSupportedException("This board can't pulse a relay.");
+        }
+
+        if (length > MaxPulse || !pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "The board can't pulse for that long, or it is longer than a try.");
+        }
+
+        await EnsureNotInGroupAsync(mask, cancellationToken);
+        _expected.Expect(mask, on: true);
+
+        // The board's own OFF comes after the pulse, and on a board the app polls up to a poll or two later.
+        _expected.Expect(mask, on: false, length + PulseOffWait);
+        try
+        {
+            await _board.PulseAsync(mask, length, cancellationToken);
+        }
+        catch
+        {
+            // As for ON: a failed or cancelled pulse logs nothing, and whatever the board did shows as an external change.
+            _expected.Forget(mask, on: true);
+            _expected.Forget(mask, on: false);
+            throw;
+        }
+
+        var now = _clock.UtcNow;
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await RelayRuns.StartAsync(db, relayId, actor, now, now + length + PulseBackstop, cancellationToken);
+        db.EventLog.Add(new EventLogEntry
+        {
+            TimestampUtc = now,
+            RelayId = relayId,
+            Actor = actor,
+            Action = EventActions.Pulse,
+            Details = JsonSerializer.Serialize(new { milliseconds = (int)length.TotalMilliseconds }),
+        });
+        await RelayRuns.SaveAsync(db, cancellationToken);
+        _changes.Notify();
+    }
+
+    /// <summary>How long after a pulse's end its auto-off comes, should the board not have turned the relay off.</summary>
+    public static readonly TimeSpan PulseBackstop = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// The longest pulse: only short ones, for "Try", until longer ones are designed. A long one could end by itself
+    /// after the relay joined a group, below members still on.
+    /// </summary>
+    public static readonly TimeSpan MaxPulse = TimeSpan.FromSeconds(30);
+
+    /// <summary>How long after a pulse's end its OFF is still expected: a slow or failed poll or two on a polled board.</summary>
+    public static readonly TimeSpan PulseOffWait = TimeSpan.FromSeconds(30);
 
     /// <summary>Turns a relay off for a person or an input, as a press of its button.</summary>
     public async Task TurnOffAsync(int relayId, string actor, CancellationToken cancellationToken)

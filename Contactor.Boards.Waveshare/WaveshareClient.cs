@@ -129,13 +129,29 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     /// <summary>Turns on the relays in <paramref name="mask"/> (bit 0 = relay 1), one request each.</summary>
     public Task<ulong> TurnOnAsync(ulong mask, CancellationToken cancellationToken = default)
     {
-        return CommandAsync(mask, turnOn: true, cancellationToken);
+        return CommandAsync(mask, relay => WaveshareModbus.WriteSingleCoil(WaveshareApi.UnitId, (ushort)(relay - 1), on: true), cancellationToken);
     }
 
     /// <summary>Turns off the relays in <paramref name="mask"/> (bit 0 = relay 1), one request each.</summary>
     public Task<ulong> TurnOffAsync(ulong mask, CancellationToken cancellationToken = default)
     {
-        return CommandAsync(mask, turnOn: false, cancellationToken);
+        return CommandAsync(mask, relay => WaveshareModbus.WriteSingleCoil(WaveshareApi.UnitId, (ushort)(relay - 1), on: false), cancellationToken);
+    }
+
+    /// <summary>
+    /// Pulses the relays in <paramref name="mask"/> (bit 0 = relay 1), one "flash on" request each, as
+    /// <see cref="TurnOnAsync"/>: the board turns each on, and off again by itself after <paramref name="length"/>.
+    /// Throws <see cref="ArgumentOutOfRangeException"/>, before anything is sent, for a length
+    /// <see cref="WaveshareModels.Pulse"/> can't do.
+    /// </summary>
+    public Task<ulong> PulseAsync(ulong mask, TimeSpan length, CancellationToken cancellationToken = default)
+    {
+        if (!WaveshareModels.Pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "A Waveshare board pulses for 0.1 s to 3276.7 s, in steps of 0.1 s.");
+        }
+
+        return CommandAsync(mask, relay => WaveshareModbus.FlashOn(WaveshareApi.UnitId, relay, length), cancellationToken);
     }
 
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
@@ -227,7 +243,8 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
     }
 
-    private async Task<ulong> CommandAsync(ulong mask, bool turnOn, CancellationToken cancellationToken)
+    // Sends request(relay) for every relay in the mask: an ON, an OFF or a pulse.
+    private async Task<ulong> CommandAsync(ulong mask, Func<int, WaveshareRequest> request, CancellationToken cancellationToken)
     {
         if (!_model.Capabilities.AllRelays.ContainsAll(new ChannelMask(mask)))
         {
@@ -250,7 +267,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         try
         {
             var taken = new StrongBox<ulong>();
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, turnOn, taken, token), cancellationToken).ConfigureAwait(false);
+            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
             return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
@@ -268,7 +285,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
     // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's, and
     // puts the relays the board took in <paramref name="taken"/>.
-    private async Task<WaveshareStatus> SwitchEachAsync(ulong mask, bool turnOn, StrongBox<ulong> taken, CancellationToken cancellationToken)
+    private async Task<WaveshareStatus> SwitchEachAsync(ulong mask, Func<int, WaveshareRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
         var unreadable = false;
@@ -277,7 +294,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
             // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
             try
             {
-                var request = WaveshareModbus.WriteSingleCoil(WaveshareApi.UnitId, (ushort)(relay - 1), turnOn);
+                var request = requestFor(relay);
                 var echo = await ExchangeAsync(request, routine: false, cancellationToken).ConfigureAwait(false);
                 Trace(BoardTraceDirection.Received, WaveshareTraceText.Confirmed(echo), WaveshareModbus.Hex(echo));
                 taken.Value |= 1UL << (relay - 1);

@@ -4,7 +4,8 @@ namespace Contactor.Web.Features.Events;
 
 /// <summary>
 /// The relay changes the app itself just asked the board for. When the board's status then shows such a change it
-/// is the app's own, not an external one. An expectation lasts 5 s: the board answers in well under a second, and a
+/// is the app's own, not an external one. An expectation lasts 5 s (the OFF at a pulse's end its length plus
+/// <c>RelayControl.PulseOffWait</c>): the board answers in well under a second, and a
 /// command that changed nothing gets no status at all, so its expectation must not linger and hide a later
 /// external change. Expiry is judged by when statuses arrived, not by the clock when one is handled: the recorder may
 /// still be behind, and an expectation it hasn't reached yet must not be thrown away by a newer command.
@@ -25,10 +26,13 @@ public sealed class ExpectedChanges
         _clock = clock;
     }
 
-    /// <summary>Expects every relay in <paramref name="mask"/> to become <paramref name="on"/>.</summary>
-    public void Expect(ChannelMask mask, bool on)
+    /// <summary>
+    /// Expects every relay in <paramref name="mask"/> to become <paramref name="on"/>, for <see cref="Lifetime"/>, or
+    /// <paramref name="lifetime"/> for a change the board makes later by itself, e.g. the end of a pulse.
+    /// </summary>
+    public void Expect(ChannelMask mask, bool on, TimeSpan? lifetime = null)
     {
-        var expires = _clock.UtcNow + Lifetime;
+        var expires = _clock.UtcNow + (lifetime ?? Lifetime);
         lock (_lock)
         {
             foreach (var relayId in mask.Channels)

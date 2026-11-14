@@ -43,6 +43,50 @@ public sealed class WaveshareModbusTests
         Assert.Equal("01 03 40 00 00 01 91 CA", WaveshareModbus.Hex(WaveshareModbus.ReadHoldingRegisters(1, 0x4000, 1).Frame));
     }
 
+    [Theory]
+    [InlineData(1, 700, "01 05 02 00 00 07 8D B0")]
+    [InlineData(3, 500, "01 05 02 02 00 05 AD B1")]
+    [InlineData(1, 100, "01 05 02 00 00 01 0D B2")]
+    [InlineData(1, 3_276_700, "01 05 02 00 7F FF AC 02")]
+    public void Should_BuildAFlashOn_InTenthsOfASecond(int relay, int milliseconds, string frame)
+    {
+        var request = WaveshareModbus.FlashOn(1, relay, TimeSpan.FromMilliseconds(milliseconds));
+
+        Assert.Equal(frame, WaveshareModbus.Hex(request.Frame));
+        Assert.Equal(WaveshareApi.WriteSingleCoil, request.Function);
+        Assert.False(request.IsRead);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    [InlineData(50)]
+    [InlineData(150)]
+    [InlineData(3_276_800)]
+    [InlineData(int.MaxValue)]
+    public void Should_RefuseAFlashLengthTheBoardCantDo(int milliseconds)
+    {
+        Assert.False(WaveshareModels.Pulse.CanDo(TimeSpan.FromMilliseconds(milliseconds)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WaveshareModbus.FlashOn(1, 1, TimeSpan.FromMilliseconds(milliseconds)));
+    }
+
+    [Fact]
+    public void Should_RefuseAFlashOfPartsOfATenth_AndRelaysItCantAddress()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => WaveshareModbus.FlashOn(1, 1, TimeSpan.FromMilliseconds(100) + TimeSpan.FromTicks(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WaveshareModbus.FlashOn(1, 0, TimeSpan.FromSeconds(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WaveshareModbus.FlashOn(1, 65, TimeSpan.FromSeconds(1)));
+    }
+
+    [Fact]
+    public async Task Should_ReadTheEchoOfAFlashOn()
+    {
+        var request = WaveshareModbus.FlashOn(1, 1, TimeSpan.FromMilliseconds(700));
+        using var stream = new MemoryStream(request.Frame);
+
+        Assert.Equal(request.Frame, await WaveshareModbus.ReadAnswerAsync(stream, request, Cancel));
+    }
+
     [Fact]
     public void Should_WriteAllEightModes_InOneFrame()
     {

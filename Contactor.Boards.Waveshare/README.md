@@ -47,8 +47,18 @@ has an MBAP header and port 502.
 | Read the relays | 01 | 0 | quantity = relay count | byte count, then a bit per relay, bit 0 = relay 1 |
 | Read the inputs, (B) and (C) only | 02 | 0 | quantity = 8 | byte count, then a bit per input |
 | Switch one relay | 05 | relay − 1 | FF00 on, 0000 off | the request, echoed |
+| Pulse one relay ("flash on") | 05 | 0x0200 + relay − 1 | the time in 100 ms, 0001 to 7FFF | the request, echoed |
 | Read the relay modes, (B) and (C) only | 03 | 0x1000 | quantity = 8 | 16 bytes, a register per relay |
 | Write the relay modes, (B) and (C) only | 10 | 0x1000 | 8 registers | address and quantity |
+
+A pulse turns the relay on, and the board turns it off again by itself after the time, also when the app stops in
+between. So all five models pulse for 0.1 s to 3276.7 s, in steps of 0.1 s (`WaveshareModels.Pulse`). The board also
+has "flash off" at 0x0400 + relay − 1, which the app does not use. Sources for the pulse: Waveshare's development
+protocol pages for the Modbus POE ETH IO 8CH
+(https://docs.waveshare.com/RS232-RS485-CAN-DALI2/Modbus_POE_ETH_IO_8CH/Development-Protocol), the Modbus RTU Module (A)
+(https://docs.waveshare.com/Modbus_RTU_Module_A/Development-Protocol) and the Modbus RTU Relay 16CH
+(https://waveshare.com/wiki/Modbus_RTU_Relay_16CH). They disagree a little on the address ranges per model, so the
+addresses are to check on a real board.
 
 A refused request gets an exception answer: the function code with 0x80 added, then an exception code.
 `WaveshareRefusedException` has the code. The board also takes 5500 (toggle) at function 05, and address 0x00FF for
@@ -62,6 +72,7 @@ Frames from the wiki, unit 1:
 | `01 01 01 41 91 B8` | Answer: relays 1 and 7 on |
 | `01 05 00 00 FF 00 8C 3A` | Turn on relay 1 (the answer is the same frame) |
 | `01 05 00 00 00 00 CD CA` | Turn off relay 1 |
+| `01 05 02 00 00 07 8D B0` | Pulse relay 1 for 0.7 s (the answer is the same frame) |
 | `01 02 00 00 00 08 79 CC` | Read 8 inputs |
 | `01 02 01 00 A1 88` | Answer: all inputs off |
 | `01 85 03 02 91` | Exception answer to function 05, code 3 |
@@ -80,7 +91,7 @@ Frames from the wiki, unit 1:
 - Bytes that wait before a request were not asked for. The client drops them and shows them on the Debug screen.
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the VM204 and the VM208.
 
-A command switches the relays in the mask one at a time with function 05:
+A command (ON, OFF or a pulse) switches the relays in the mask one at a time with function 05:
 
 - The client sends a request for every relay in the mask, also when the board refuses one.
 - A request with no answer stops the rest of the mask.
@@ -95,6 +106,9 @@ A command switches the relays in the mask one at a time with function 05:
   new state.
 - When that read gets an unreadable answer, the client keeps the last state it read and reads again at once. The echo
   of function 05 is not proof that a relay switched: a relay in linkage mode echoes and stays as it is.
+
+`WaveshareClient.PulseAsync` and `WaveshareBoard.PulseAsync` throw `ArgumentOutOfRangeException` for a length outside
+0.1 s to 3276.7 s, or not in steps of 0.1 s, before anything is sent.
 
 `WaveshareBoard`, `WaveshareConnection` and `WaveshareTraffic` are the adapters for the app.
 `Features/Waveshare` in `Contactor.Web` registers them. `WaveshareTraceText` puts each frame in plain words. The polls
@@ -154,6 +168,9 @@ When `Host` is empty, the setup guide asks for the address.
 `WaveshareSimulator` simulates each of the five models on a local port. `Contactor.Simulator` offers port 4196.
 
 - It answers functions 01, 02, 03, 05, 06 and 10 as described above.
+- A pulse ("flash on") turns the relay off again after its time, on the simulator's `TimeProvider`. The next poll shows
+  it. A later function 05 for the relay ends its pulse; a later pulse starts it again. A relay in linkage mode doesn't
+  pulse.
 - It gives an exception answer for a function it does not know (code 1), an address it does not have (code 2), or a
   value or quantity it does not take (code 3).
 - It gives no answer to a frame with a bad CRC or for another unit, as on a serial Modbus line.
@@ -173,3 +190,6 @@ When `Host` is empty, the setup guide asks for the address.
 - If the mode registers stay after a power cut, and how a relay in linkage mode answers function 05.
 - That the 16CH has no inputs, and that the 16CH and the 30CH answer as above.
 - How the board handles a poll every 2 s for days.
+- The pulse ("flash on"): its address on each model (0x0200 + relay − 1), the longest time (0x7FFF), that the board
+  echoes the request, what a function 05 or a second pulse for the relay does to a pulse that runs, and what a relay in
+  linkage mode does with it.

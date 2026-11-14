@@ -20,6 +20,33 @@ public sealed class EventTextTests
         Assert.Equal(new EventView(true, "J", "Jane", what, Relay), view);
     }
 
+    // A pulse: one event, with how long.
+    [Theory]
+    [InlineData("""{"milliseconds":2000}""", "tried for 2 s")]
+    [InlineData("""{"milliseconds":500}""", "tried for 0.5 s")]
+    [InlineData("""{"milliseconds":90000}""", "tried for 1 min 30 s")]
+    [InlineData(null, "tried for a moment")]
+    public void Should_SayHowLongAPulseWas(string? details, string what)
+    {
+        var entry = Entry("jane@example.com", EventActions.Pulse);
+        entry.Details = details;
+
+        Assert.Equal(new EventView(true, "J", "Jane", what, Relay), EventText.For(entry, Relay, "Jane"));
+    }
+
+    // "Off since" after a pulse: when the board turned the relay off, at the pulse's end.
+    [Fact]
+    public void Should_EndAPulse_AfterItsLength()
+    {
+        var at = new DateTime(2026, 11, 13, 12, 0, 0, DateTimeKind.Utc);
+        var entry = Entry("jane@example.com", EventActions.Pulse, """{"milliseconds":2000}""");
+        entry.TimestampUtc = at;
+
+        Assert.Equal(at.AddSeconds(2), EventText.PulseEndUtc(entry));
+        entry.Details = null;
+        Assert.Equal(at, EventText.PulseEndUtc(entry));
+    }
+
     [Fact]
     public void Should_FallBackToTheAddress_WhenThePersonIsUnknown()
     {

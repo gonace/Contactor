@@ -192,6 +192,7 @@ public static class EventText
             EventActions.On => ("turned on", relayName),
             EventActions.Off when entry.Actor == EventActors.AutoOff => ($"turned off after {Duration(Number(entry.Details, "afterMinutes"))}", relayName),
             EventActions.Off => ("turned off", relayName),
+            EventActions.Pulse => ($"tried for {PulseLength(Number(entry.Details, "milliseconds"))}", relayName),
             EventActions.Rename => ($"renamed {Text(entry.Details, "from") ?? relayName} to", Text(entry.Details, "to") ?? relayName),
             EventActions.Activate => ("made the relay active", relayName),
             EventActions.Deactivate => ("made the relay inactive", relayName),
@@ -237,6 +238,26 @@ public static class EventText
             null or <= 0 => "a while",
             _ when minutes % 60 == 0 => $"{minutes / 60} h",
             _ => $"{minutes} min",
+        };
+    }
+
+    /// <summary>When a "pulse" event's pulse ended: the board turned the relay off by itself then.</summary>
+    public static DateTime PulseEndUtc(EventLogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return Number(entry.Details, "milliseconds") is > 0 and var milliseconds
+            ? entry.TimestampUtc.AddMilliseconds(milliseconds)
+            : entry.TimestampUtc;
+    }
+
+    // As Seconds, and "0.5 s" for a pulse that isn't whole seconds.
+    private static string PulseLength(int? milliseconds)
+    {
+        return milliseconds switch
+        {
+            null or <= 0 => "a moment",
+            _ when milliseconds % 1000 == 0 => Seconds(milliseconds / 1000),
+            _ => string.Create(CultureInfo.InvariantCulture, $"{milliseconds.Value / 1000.0:0.#} s"),
         };
     }
 

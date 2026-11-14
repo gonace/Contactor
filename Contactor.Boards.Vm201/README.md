@@ -44,6 +44,10 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 
 **Channel mask:** bit 0 = channel 1 … bit 7 = channel 8.
 
+**CMD_PULSE data:** the channel mask, then the time as a number 1–99, then its unit as an ASCII letter: `'s'` seconds,
+`'m'` minutes or `'h'` hours. The board turns the channels on, and off again by itself after the time. Example: pulse
+relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
+
 **CMD_STATUS data:** byte 1 = outputs (one bit per channel, 1 = ON), byte 2 = the board's timers (1 = active), byte 3 = input (bit 0, 1 = ON).
 
 ### Session flow
@@ -66,6 +70,11 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 - How many TCP clients the board allows at once. Assume **one**: the app holds exactly one connection.
 - Whether the board closes idle connections. That is why `CMD_STATUS_REQ` is sent every 15 seconds as a keep-alive.
 - Whether the physical relay state survives a power cut, and if so in which state.
+- CMD_PULSE: that the time is a binary number (not ASCII digits), and the units lower case. Velleman's description gives
+  only "pulse time: 1...99" and the units; the reference implementation doesn't send it.
+- CMD_PULSE: whether the board pushes `CMD_STATUS` both when the pulse starts and when it ends, what an ON or OFF of the
+  relay during a pulse does to it (the simulator ends the pulse), what a second pulse does (the simulator starts it
+  again), and what a time of 0 or above 99 does (the simulator ignores the packet).
 
 ## The client
 
@@ -73,11 +82,12 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 - `Vm201Client`:
   - Holds one persistent connection. On failure: reconnect with exponential backoff (1 s → max 30 s).
   - Exposes `Vm201State` (Outputs byte, TimerMask, Input, `IsConnected`, `LastContactUtc`) and an event or `IObservable` when the status changes.
-  - Commands (`TurnOnAsync(mask)`, `TurnOffAsync(mask)`, `RequestStatusAsync()`, `DisableBoardTimersAsync(mask)`) are serialized through a `Channel<T>`, so only one writer is used at a time.
+  - Commands (`TurnOnAsync(mask)`, `TurnOffAsync(mask)`, `PulseAsync(mask, length)`, `RequestStatusAsync()`, `DisableBoardTimersAsync(mask)`) are serialized through a `Channel<T>`, so only one writer is used at a time.
+  - `PulseAsync` sends the whole mask in one CMD_PULSE. A length goes out exactly or not at all (`Vm201Pulse`): whole seconds up to 99 s, else whole minutes up to 99 min, else whole hours up to 99 h. Any other length, such as 100 s or 90.5 s, throws `ArgumentOutOfRangeException` before anything is sent.
   - Timeouts: connect 5 s, login 5 s.
   - `SetEndpoint` and `SetLogin` change the address and login while it runs: the current connection, attempt or wait ends at once. The web app applies the saved `BoardSetting` before the first connection. `Vm201Login` is a class, not a record, so its password can't leak through a generated `ToString`.
   - `Vm201:LogPackets` (off by default) logs every packet in and out as hex with its command letter (`Vm201PacketTrace`); user name and password packets only as their command and length. The board keeps no log of its own, so this is how to see what a real board does.
   - The `Traced` event reports every packet in and out and every connection step (connecting, lost and why, the wait before the next attempt, skipped bytes) as a `Vm201TraceEntry`. User name and password packets come cut to their first three bytes. The web app keeps the latest 100 in memory (`BoardTrace`) for the Debug screen; the keep-alive and the channel names are routine, so it only counts them.
-- `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes); it translates `Vm201State` and refuses relays above 8.
+- `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes, a pulse of 1 s to 99 h in steps of 1 s); it translates `Vm201State` and refuses relays above 8. Its `PulseAsync` refuses a length the board can't send exactly with `ArgumentOutOfRangeException`, even one that `PulseAbility.CanDo` allows: `CanDo(100 s)` is true, but the board can't send 100 s.
 - `Vm201Connection` and `Vm201Traffic`: the client as an `IBoardConnection` and an `IBoardTraffic` (`Vm201TraceText` puts each packet in plain words). `Vm201Model` is its catalogue entry.
-- `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
+- `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change, a pulse that ends by itself on its `TimeProvider` and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.

@@ -94,6 +94,68 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
+    public async Task Should_PulseOneRelayPerCommand_AndTheBoardTurnsThemOffByItself()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: boardTime);
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0b0101UL, await run.Client.PulseAsync(0b0101, TimeSpan.FromMilliseconds(500), Cancel));
+
+        Assert.Equal(0b0101UL, run.Client.State.Relays);
+        Assert.Equal(["10", "7A", "24", "7A", "20 01 05", "20 03 05", "24"], simulator.ReceivedRequests);
+        Assert.Contains(run.Traces, t => t.Text == "Turn on relay 3 for 0.5 s" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 3 turned on for 0.5 s" && t.Direction == BoardTraceDirection.Received);
+
+        // The board's own clock ends it; the app only polls.
+        boardTime.Advance(TimeSpan.FromMilliseconds(500));
+        Assert.Equal(0UL, simulator.Relays);
+        await run.PollAsync();
+        Assert.Equal(0UL, run.Client.State.Relays);
+        Assert.All(simulator.ReceivedRequests.Skip(7), r => Assert.Equal("24", r));
+    }
+
+    [Fact]
+    public async Task Should_PulseTheWholeMask_WhenTheBoardRefusesOneRelay()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: boardTime);
+        simulator.FailRelays = 0b0010;
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0b0101UL, await run.Client.PulseAsync(0b0111, TimeSpan.FromSeconds(1), Cancel));
+
+        Assert.Equal(0b0101UL, simulator.Relays);
+        Assert.Equal(ChannelMask.Of([1, 3]), simulator.Pulsing);
+        Assert.Contains(run.Traces, t => t.Text == "Refused: relay 2" && t.IsError);
+        Assert.True(run.Client.State.IsConnected);
+
+        simulator.FailRelays = 0b0111;
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.PulseAsync(0b0011, TimeSpan.FromSeconds(1), Cancel));
+        Assert.Equal("The Devantech board didn't take the command: The board refused relay 1.", error.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    [InlineData(150)]
+    [InlineData(25_600)]
+    public async Task Should_RefuseAPulseLength_BeforeAnythingIsSent(int milliseconds)
+    {
+        await using var simulator = Started(DevantechModels.Eth008);
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var sent = simulator.ReceivedRequests.Count;
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.PulseAsync(0b0001, TimeSpan.FromMilliseconds(milliseconds), Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.PulseAsync(1UL << 8, TimeSpan.FromSeconds(1), Cancel));
+
+        Assert.Equal(sent, simulator.ReceivedRequests.Count);
+    }
+
+    [Fact]
     public async Task Should_RefuseRelaysTheBoardHasNot_AndSendNothingForNone()
     {
         await using var simulator = Started(DevantechModels.Eth002);

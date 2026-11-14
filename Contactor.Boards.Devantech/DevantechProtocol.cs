@@ -49,6 +49,22 @@ public static class DevantechProtocol
         return new([on ? DevantechApi.DigitalActive : DevantechApi.DigitalInactive, (byte)relay, DevantechApi.Permanent], 1);
     }
 
+    /// <summary>
+    /// 0x20 with a pulse time: one relay on, and off again by the board after <paramref name="length"/>, 1 byte answer.
+    /// Only a length <see cref="DevantechModels.Pulse"/> can do.
+    /// </summary>
+    public static DevantechRequest Pulse(int relay, TimeSpan length)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, 255);
+        if (!DevantechModels.Pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "A Devantech board pulses for 0.1 s to 25.5 s, in steps of 0.1 s.");
+        }
+
+        return new([DevantechApi.DigitalActive, (byte)relay, (byte)(length.Ticks / DevantechApi.PulseUnit.Ticks)], 1);
+    }
+
     /// <summary>0x7A: the seconds until the board locks again, 1 byte.</summary>
     public static DevantechRequest GetUnlockTime()
     {

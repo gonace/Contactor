@@ -11,9 +11,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     private readonly Lock _lock = new();
     private BoardState _state;
 
-    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1)
+    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null)
     {
-        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true);
+        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true, Pulse: pulse);
         _state = new BoardState(connected, ChannelMask.None, ChannelMask.None, connected ? DateTimeOffset.UnixEpoch : null);
     }
 
@@ -120,6 +120,57 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
 
         return SwitchAsync(relays, on: false);
+    }
+
+    /// <summary>The pulses sent: the relays and how long, in order.</summary>
+    public IReadOnlyList<(ChannelMask Relays, TimeSpan Length)> Pulses
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _pulses];
+            }
+        }
+    }
+
+    private readonly List<(ChannelMask Relays, TimeSpan Length)> _pulses = [];
+
+    /// <summary>
+    /// Turns the relays on, as a board's pulse does; <see cref="EndPulsesAsync"/> turns them off again, as the board does
+    /// by itself once the time is up. Only on a board made with a pulse.
+    /// </summary>
+    public async Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
+    {
+        if (Capabilities.Pulse is not { } pulse)
+        {
+            throw new NotSupportedException("This board can't pulse a relay.");
+        }
+
+        if (!pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "The board can't pulse for that long.");
+        }
+
+        var taken = await SwitchAsync(relays, on: true);
+        lock (_lock)
+        {
+            _pulses.Add((taken, length));
+        }
+
+        return taken;
+    }
+
+    /// <summary>The board's own end of every pulse sent: their relays go off, and the board reports it.</summary>
+    public async Task EndPulsesAsync()
+    {
+        ChannelMask relays;
+        lock (_lock)
+        {
+            relays = _pulses.Aggregate(ChannelMask.None, (all, p) => all | p.Relays);
+        }
+
+        await SwitchAsync(relays, on: false);
     }
 
     /// <summary>When set, status requests go out but the board never answers them.</summary>

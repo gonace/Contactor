@@ -86,14 +86,17 @@ public static class DevantechTraceText
         };
     }
 
-    /// <summary>What the answer to a relay command says: "Relay 3 turned on", "Refused: relay 3".</summary>
+    /// <summary>
+    /// What the answer to a relay command says: "Relay 3 turned on", "Relay 3 turned on for 0.5 s", "Refused: relay 3".
+    /// </summary>
     public static string Switched(ReadOnlySpan<byte> command, byte answer)
     {
         var relay = command.Length >= 2 ? Number(command[1]) : "?";
         var on = !command.IsEmpty && command[0] == DevantechApi.DigitalActive;
+        var pulse = command.Length >= 3 && command[2] != DevantechApi.Permanent ? $" for {Seconds(command[2])}" : "";
         return answer switch
         {
-            DevantechApi.Success => $"Relay {relay} turned {(on ? "on" : "off")}",
+            DevantechApi.Success => $"Relay {relay} turned {(on ? "on" : "off")}{pulse}",
             DevantechApi.Failure => $"Refused: relay {relay}",
             _ => $"Unknown answer {answer:X2} for relay {relay}",
         };
@@ -103,7 +106,13 @@ public static class DevantechTraceText
     {
         return pulse == DevantechApi.Permanent
             ? $"{what} relay {Number(relay)}"
-            : string.Create(CultureInfo.InvariantCulture, $"{what} relay {relay} for {pulse / 10.0:0.0} s");
+            : $"{what} relay {Number(relay)} for {Seconds(pulse)}";
+    }
+
+    // A pulse time in 100 ms units: "0.5 s", "25.5 s".
+    private static string Seconds(byte pulse)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{pulse / 10.0:0.0} s");
     }
 
     // "all off", "1 and 3 on", "all on".

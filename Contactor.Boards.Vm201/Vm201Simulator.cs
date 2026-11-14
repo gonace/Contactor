@@ -9,7 +9,9 @@ namespace Contactor.Boards.Vm201;
 
 /// <summary>
 /// A fake VM201 on a local TCP port, implementing the whole protocol: optional login, channel names, status pushed
-/// on every change and no reply to a command that changes nothing (as the real board). Used by the tests and, in
+/// on every change and no reply to a command that changes nothing (as the real board). A pulse turns its relays on, and
+/// off again by itself after its time on <see cref="TimeProvider"/>, with a status at each change; switching a relay
+/// ends its pulse, and a new pulse of it starts again. Used by the tests and, in
 /// development, by Contactor.Simulator (started by the Aspire AppHost). It listens on the loopback interface only.
 /// </summary>
 public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
@@ -29,6 +31,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
     // One gate for the board state and for every write, so status packets always go out in the order of the changes.
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private SimulatedPulses? _pulses;
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private byte _outputs;
@@ -63,8 +66,26 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
     public BoardModel Model => Vm201Model.Model;
 
-    /// <summary>The clock for the traffic's times.</summary>
+    /// <summary>The clock for the traffic's times and the end of a pulse.</summary>
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
+    /// <summary>The relays whose pulse is still running.</summary>
+    public ChannelMask Pulsing => new(Pulses.Running);
+
+    // Made on first use, so it takes the TimeProvider set by the initializer.
+    private SimulatedPulses Pulses
+    {
+        get
+        {
+            if (Volatile.Read(ref _pulses) is { } pulses)
+            {
+                return pulses;
+            }
+
+            var created = new SimulatedPulses(TimeProvider);
+            return Interlocked.CompareExchange(ref _pulses, created, null) ?? created;
+        }
+    }
 
     /// <summary>The port it listens on, after <see cref="Start"/>.</summary>
     public int Port { get; private set; }
@@ -119,7 +140,11 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     /// <summary>Changes the outputs as the board's web page, buttons or timers would, and pushes the status.</summary>
     public Task SetOutputsAsync(byte outputs)
     {
-        return ChangeAsync(() => _outputs = outputs);
+        return ChangeAsync(() =>
+        {
+            Pulses.Cancel(Vm201Channel.All);
+            _outputs = outputs;
+        });
     }
 
     public Task SetTimerMaskAsync(byte timerMask)
@@ -135,7 +160,11 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
         var mask = (byte)Model.Capabilities.Relay(relay).Bits;
-        return turnOn ? ChangeAsync(() => _outputs |= mask) : ChangeAsync(() => _outputs &= (byte)~mask);
+        return ChangeAsync(() =>
+        {
+            Pulses.Cancel(mask);
+            _outputs = turnOn ? (byte)(_outputs | mask) : (byte)(_outputs & ~mask);
+        });
     }
 
     public Task SetInputAsync(int input, bool closed)
@@ -165,6 +194,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
     public async ValueTask DisposeAsync()
     {
+        Pulses.Dispose();
         await _stopping.CancelAsync().ConfigureAwait(false);
         _listener?.Stop();
         DropConnections();
@@ -339,6 +369,12 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             return;
         }
 
+        if (packet.Command == Vm201Command.Pulse)
+        {
+            await PulseAsync(packet).ConfigureAwait(false);
+            return;
+        }
+
         if (packet.Data.Length != 1)
         {
             _logger.IgnoredPacket((char)packet.Command);
@@ -364,7 +400,40 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             return;
         }
 
-        await ChangeAsync(change).ConfigureAwait(false);
+        // A relay switched for good ends its pulse, in the same change, under the gate (see SimulatedPulses).
+        var ends = packet.Command switch
+        {
+            Vm201Command.On or Vm201Command.Off or Vm201Command.Toggle => mask,
+            Vm201Command.Update => Vm201Channel.All,
+            _ => (byte)0,
+        };
+
+        await ChangeAsync(() =>
+        {
+            Pulses.Cancel(ends);
+            change();
+        }).ConfigureAwait(false);
+    }
+
+    // The relays on now, and off again after the time, each with a status. A time or unit the board can't take does
+    // nothing; what the real board does then is to check on it.
+    private async Task PulseAsync(Vm201Packet packet)
+    {
+        var data = packet.Data.Span;
+        if (data.Length != 3 || Vm201Pulse.Decode(data[1], data[2]) is not { } length)
+        {
+            _logger.IgnoredPacket((char)packet.Command);
+            return;
+        }
+
+        // The end takes its relays under the gate, so a command that came first wins (see SimulatedPulses).
+        var mask = data[0];
+        await ChangeAsync(() =>
+        {
+            Pulses.Cancel(mask);
+            _outputs |= mask;
+            Pulses.Start(mask, length, take => _ = ChangeAsync(() => _outputs &= (byte)~take()));
+        }).ConfigureAwait(false);
     }
 
     /// <summary>
