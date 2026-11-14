@@ -274,7 +274,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         }
 
         var status = await _process.RunAsync(["serve", "status", "--json"], CommandTimeout, cancellationToken);
-        return status.Succeeded && status.Output.Contains(_options.Target, StringComparison.Ordinal)
+        return status.Succeeded && status.Output.Contains($"\"Proxy\":\"{_options.Target}\"", StringComparison.Ordinal)
             ? null
             : "Tailscale Serve didn't take the app. Contactor tries again.";
     }

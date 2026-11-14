@@ -33,6 +33,19 @@ public sealed class TailscaleOptions
     /// </summary>
     public IPEndPoint? ServeEndPoint => ParseServeAddress(ServeAddress);
 
+    /// <summary>
+    /// Whether <paramref name="connection"/> came in on <see cref="ServeAddress"/>: through Tailscale Serve, whose proxy
+    /// connects from 127.0.0.1 like a program on this machine. False when there is no such address.
+    /// </summary>
+    public bool CameThroughServe(ConnectionInfo connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        return ServeEndPoint is { } serve
+            && connection.LocalPort == serve.Port
+            && connection.LocalIpAddress is { } local
+            && (local.IsIPv4MappedToIPv6 ? local.MapToIPv4() : local).Equals(serve.Address);
+    }
+
     /// <summary>See <see cref="ServeEndPoint"/>.</summary>
     public static IPEndPoint? ParseServeAddress(string? address) =>
         IPEndPoint.TryParse(address ?? "", out var endPoint)
