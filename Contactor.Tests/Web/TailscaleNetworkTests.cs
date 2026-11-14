@@ -11,7 +11,7 @@ public sealed class TailscaleNetworkTests
 {
     private const string AuthKey = "tskey-auth-kExample-SECRET1234";
     private const string Address = "relays.tail1234.ts.net";
-    private const string Socket = "/data/tailscale/contactor.sock";
+    private const string ServeAddress = "127.0.0.2:8081";
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -25,7 +25,7 @@ public sealed class TailscaleNetworkTests
 
         Assert.Equal(new TailscaleStatus(true, Address, null), network.Network.Status);
         Assert.Equal([(AuthKey, "relays")], tailscale.LogIns);
-        Assert.Contains($"serve --bg --https=443 unix:{Socket}", tailscale.Commands);
+        Assert.Contains($"serve --bg --https=443 http://{ServeAddress}", tailscale.Commands);
         Assert.DoesNotContain(tailscale.Commands, c => c.Contains(AuthKey, StringComparison.Ordinal));
         Assert.DoesNotContain(network.Logger.Lines, l => l.Contains(AuthKey, StringComparison.Ordinal));
     }
@@ -190,15 +190,17 @@ public sealed class TailscaleNetworkTests
         await WaitUntilAsync(() => network.Network.Status.Online);
     }
 
-    [Fact]
-    public async Task Should_NotServe_WithoutTheAppsSocket()
+    [Theory]
+    [InlineData("")]
+    [InlineData("127.0.0.1:8081")]
+    public async Task Should_NotServe_WithoutAnAddressOnlyServeReaches(string serveAddress)
     {
         var tailscale = new FakeTailscale { State = "Running" };
-        await using var network = await StartAsync(tailscale, AuthKey, "relays", appSocket: "");
+        await using var network = await StartAsync(tailscale, AuthKey, "relays", serveAddress: serveAddress);
 
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
 
-        Assert.Contains("Tailscale:AppSocket", network.Network.Status.Problem, StringComparison.Ordinal);
+        Assert.Contains("Tailscale:ServeAddress", network.Network.Status.Problem, StringComparison.Ordinal);
         Assert.DoesNotContain(tailscale.Commands, c => c.StartsWith("serve --bg", StringComparison.Ordinal));
     }
 
@@ -287,7 +289,7 @@ public sealed class TailscaleNetworkTests
         time.Advance(by);
     }
 
-    private static async Task<RunningNetwork> StartAsync(FakeTailscale tailscale, string authKey, string hostName, ManualTimeProvider? time = null, string appSocket = Socket)
+    private static async Task<RunningNetwork> StartAsync(FakeTailscale tailscale, string authKey, string hostName, ManualTimeProvider? time = null, string serveAddress = ServeAddress)
     {
         var logger = new ListLogger();
         var database = TestDatabase.Create((services, configuration) =>
@@ -296,7 +298,7 @@ public sealed class TailscaleNetworkTests
             services.AddSingleton<TimeProvider>(time ?? new ManualTimeProvider());
             services.AddSingleton<ITailscaleProcess>(tailscale);
             services.AddSingleton<ILogger<TailscaleNetwork>>(logger);
-            services.Configure<TailscaleOptions>(o => o.AppSocket = appSocket);
+            services.Configure<TailscaleOptions>(o => o.ServeAddress = serveAddress);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         var settings = database.Services.GetRequiredService<TailscaleSettings>();
@@ -376,7 +378,7 @@ public sealed class TailscaleNetworkTests
         public IReadOnlyList<bool> Forced => [.. _forced];
 
         public static TailscaleCommandResult WorkingServeStatus =>
-            new(0, "{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"unix:" + Socket + "\"}}}}}");
+            new(0, "{\"Web\":{\"relays.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"http://" + ServeAddress + "\"}}}}}");
 
         public int? DaemonExitCode { get; init; }
 

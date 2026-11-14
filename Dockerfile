@@ -9,6 +9,8 @@
 # together with the version Aspire downloads for development (Contactor.AppHost/Cloudflared.cs).
 
 FROM cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba AS cloudflared
+# Raising Tailscale: check that tailscaled still passes connections from the Tailscale network only to 127.0.0.1
+# (wgengine/netstack), never to Serve's 127.0.0.2:8081 (Tailscale identity relies on it).
 FROM tailscale/tailscale:v1.104.7@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4 AS tailscale
 
 # Built on the machine's own platform and cross-compiled for the target: no emulation needed.
@@ -42,9 +44,10 @@ COPY licenses/ /licenses/
 COPY --from=build --chown=1654:1654 /data /data
 VOLUME /data
 WORKDIR /app
-# The .NET image listens on 8080 (ASPNETCORE_HTTP_PORTS) as its user "app" (1654). Also on a socket file for Tailscale
-# Serve only, which no other device can reach: Tailscale identity believes only requests that come in there.
-ENV Tailscale__AppSocket=/data/tailscale/contactor.sock
+# The .NET image listens on 8080 (ASPNETCORE_HTTP_PORTS) as its user "app" (1654). Also on 127.0.0.2:8081 for Tailscale
+# Serve only: Tailscale identity believes only requests that come in there. tailscaled passes connections from the
+# Tailscale network only to 127.0.0.1, so they never reach it past Serve.
+ENV Tailscale__ServeAddress=127.0.0.2:8081
 EXPOSE 8080
 # No shell or curl in the image: the app asks its own /healthz.
 HEALTHCHECK --interval=1m --timeout=10s --start-period=1m --start-interval=5s --retries=3 \

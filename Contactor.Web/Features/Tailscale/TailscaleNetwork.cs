@@ -258,13 +258,13 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         return false;
     }
 
-    // Has Tailscale Serve pass HTTPS requests to the app's socket. Null when it does, else what stops it. tailscale
+    // Has Tailscale Serve pass HTTPS requests to the app's address for it. Null when it does, else what stops it. tailscale
     // can exit 0 without serving (HTTPS not turned on), so Serve's own status is the proof.
     private async Task<string?> ServeAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_options.AppSocket))
+        if (_options.ServeEndPoint is null)
         {
-            return "Contactor has no socket for Tailscale Serve (Tailscale:AppSocket).";
+            return "Contactor has no address for Tailscale Serve (Tailscale:ServeAddress).";
         }
 
         var result = await _process.RunAsync(["serve", "--bg", "--https=443", _options.Target], CommandTimeout, cancellationToken);
@@ -274,7 +274,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         }
 
         var status = await _process.RunAsync(["serve", "status", "--json"], CommandTimeout, cancellationToken);
-        return status.Succeeded && status.Output.Contains(_options.AppSocket, StringComparison.Ordinal)
+        return status.Succeeded && status.Output.Contains(_options.Target, StringComparison.Ordinal)
             ? null
             : "Tailscale Serve didn't take the app. Contactor tries again.";
     }

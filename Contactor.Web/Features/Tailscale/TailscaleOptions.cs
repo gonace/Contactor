@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Contactor.Web.Features.Tailscale;
 
 /// <summary>The <c>Tailscale</c> configuration section: where Tailscale is, and what it serves. The image's are the defaults.</summary>
@@ -15,13 +17,29 @@ public sealed class TailscaleOptions
     public string StateDirectory { get; set; } = "/data/tailscale";
 
     /// <summary>
-    /// The socket file the app also listens on, for Tailscale Serve only: the image sets
-    /// <c>/data/tailscale/contactor.sock</c>. Tailscale identity believes only requests that come in there. Not a TCP
-    /// port: tailscaled passes connections from the Tailscale network to any port on 127.0.0.1, past Serve. Empty: no
-    /// socket, and Tailscale can't serve the app.
+    /// The address the app also listens on, for Tailscale Serve only: the image sets <c>127.0.0.2:8081</c>. Tailscale
+    /// identity believes only requests that come in there. Never on 127.0.0.1: tailscaled passes connections from the
+    /// Tailscale network to any port there, past Serve. Serve can't use a socket file, which needs root. Empty: Tailscale
+    /// can't serve the app.
     /// </summary>
-    public string AppSocket { get; set; } = "";
+    public string ServeAddress { get; set; } = "";
 
-    /// <summary>Where Tailscale Serve passes requests to: the app's socket.</summary>
-    public string Target => $"unix:{AppSocket}";
+    /// <summary>Where Tailscale Serve passes requests to; only used once <see cref="ServeEndPoint"/> holds.</summary>
+    public string Target => $"http://{ServeEndPoint}";
+
+    /// <summary>
+    /// <see cref="ServeAddress"/> as an address and port, or null when it isn't one only Serve can reach: an IPv4
+    /// loopback address other than 127.0.0.1, with a port.
+    /// </summary>
+    public IPEndPoint? ServeEndPoint => ParseServeAddress(ServeAddress);
+
+    /// <summary>See <see cref="ServeEndPoint"/>.</summary>
+    public static IPEndPoint? ParseServeAddress(string? address) =>
+        IPEndPoint.TryParse(address ?? "", out var endPoint)
+        && endPoint.Port > 0
+        && endPoint.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+        && IPAddress.IsLoopback(endPoint.Address)
+        && !endPoint.Address.Equals(IPAddress.Loopback)
+            ? endPoint
+            : null;
 }

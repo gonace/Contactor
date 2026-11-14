@@ -1,5 +1,6 @@
 using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -118,8 +119,36 @@ public sealed class TailscaleSettingsTests
         var options = new TailscaleOptions();
 
         Assert.Equal(("/usr/local/bin/tailscaled", "/usr/local/bin/tailscale", "/data/tailscale", ""),
-            (options.DaemonPath, options.CliPath, options.StateDirectory, options.AppSocket));
-        Assert.Equal("unix:/data/tailscale/contactor.sock", new TailscaleOptions { AppSocket = "/data/tailscale/contactor.sock" }.Target);
+            (options.DaemonPath, options.CliPath, options.StateDirectory, options.ServeAddress));
+        Assert.Equal("http://127.0.0.2:8081", new TailscaleOptions { ServeAddress = "127.0.0.2:8081" }.Target);
+    }
+
+    // Only an address tailscaled never passes connections from the Tailscale network to: never 127.0.0.1.
+    [Theory]
+    [InlineData("127.0.0.2:8081", true)]
+    [InlineData("127.1.2.3:9000", true)]
+    [InlineData("127.0.0.1:8081", false)]
+    [InlineData("127.0.0.2", false)]
+    [InlineData("127.0.0.2:0", false)]
+    [InlineData("0.0.0.0:8081", false)]
+    [InlineData("192.168.1.10:8081", false)]
+    [InlineData("[::1]:8081", false)]
+    [InlineData("localhost:8081", false)]
+    [InlineData("", false)]
+    public void Should_TakeOnlyALoopbackAddressOtherThan127001_ForServe(string address, bool taken)
+    {
+        Assert.Equal(taken, TailscaleOptions.ParseServeAddress(address) is not null);
+    }
+
+    [Fact]
+    public void Should_RefuseToStart_OnAServeAddressOthersCanReach()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Tailscale:ServeAddress"] = "127.0.0.1:8081" })
+            .Build();
+        var builder = WebApplication.CreateSlimBuilder();
+
+        Assert.Throws<InvalidOperationException>(() => builder.WebHost.ListenForTailscaleServe(configuration));
     }
 
     [Fact]

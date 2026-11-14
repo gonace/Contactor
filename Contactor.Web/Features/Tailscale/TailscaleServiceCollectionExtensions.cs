@@ -18,26 +18,27 @@ public static class TailscaleServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Has the app also listen on Tailscale's socket (<see cref="TailscaleOptions.AppSocket"/>) when one is set, next to
-    /// the addresses it has anyway (<c>ASPNETCORE_URLS</c>, else <c>ASPNETCORE_HTTP_PORTS</c> and
-    /// <c>ASPNETCORE_HTTPS_PORTS</c>, else Kestrel's default). A socket file left by the last run is replaced.
+    /// Has the app also listen on Tailscale Serve's address (<see cref="TailscaleOptions.ServeAddress"/>) when one is
+    /// set, next to the addresses it has anyway (<c>ASPNETCORE_URLS</c>, else <c>ASPNETCORE_HTTP_PORTS</c> and
+    /// <c>ASPNETCORE_HTTPS_PORTS</c>, else Kestrel's default). One only Serve couldn't be alone on stops the app.
     /// </summary>
-    public static IWebHostBuilder ListenOnTailscaleSocket(this IWebHostBuilder webHost, IConfiguration configuration)
+    public static IWebHostBuilder ListenForTailscaleServe(this IWebHostBuilder webHost, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(webHost);
         ArgumentNullException.ThrowIfNull(configuration);
-        var socket = configuration[$"{TailscaleOptions.SectionName}:{nameof(TailscaleOptions.AppSocket)}"];
-        if (string.IsNullOrWhiteSpace(socket))
+        var address = configuration[$"{TailscaleOptions.SectionName}:{nameof(TailscaleOptions.ServeAddress)}"];
+        if (string.IsNullOrWhiteSpace(address))
         {
             return webHost;
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(socket))!);
-        File.Delete(socket);
-        return webHost.UseUrls([.. Addresses(configuration), $"http://unix:{socket}"]);
+        var endPoint = TailscaleOptions.ParseServeAddress(address)
+            ?? throw new InvalidOperationException(
+                $"Tailscale:ServeAddress \"{address}\" must be an IPv4 loopback address other than 127.0.0.1, with a port, e.g. 127.0.0.2:8081.");
+        return webHost.UseUrls([.. Addresses(configuration), $"http://{endPoint}"]);
     }
 
-    // The addresses Kestrel would listen on without the socket: setting any replaces them, so they are set too.
+    // The addresses Kestrel would listen on without Serve's: setting any replaces them, so they are set too.
     public static IReadOnlyList<string> Addresses(IConfiguration configuration)
     {
         static IEnumerable<string> Split(string? value) =>
