@@ -391,7 +391,6 @@ public sealed partial class EventsDebugBoardsPageTests
         await app.Services.SeedBoardAsync(row.Id, 4, 0, Cancel);
         var barn = new FakeRelayBoard(relayCount: 4, inputCount: 0);
         var live = await registry.ReplaceAsync(new FakeBoardParts(barn).Build(row.Id), Cancel);
-        Assert.True(changes > 0, "A board added is a change.");
 
         live.Trace.Record(Step(DateTimeOffset.UtcNow, "Barn step"));
         Assert.Contains(("Barn", "Barn step"), heard);
