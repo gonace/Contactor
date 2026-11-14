@@ -81,9 +81,9 @@ public sealed class BoardPagesTests
             first = await db.Boards.AsNoTracking().SingleAsync(b => b.Id == 1, Cancel);
         }
 
-        Assert.Equal("Enter a name.", await handler.RenameAsync(boards.BarnId, "  ", Cancel));
-        Assert.Equal("The name can be at most 40 characters.", await handler.RenameAsync(boards.BarnId, new string('x', 41), Cancel));
-        Assert.Null(await handler.RenameAsync(boards.BarnId, "  Garage ", Cancel));
+        Assert.Equal("Enter a name.", await handler.RenameAsync(boards.BarnId, "  ", John, Cancel));
+        Assert.Equal("The name can be at most 40 characters.", await handler.RenameAsync(boards.BarnId, new string('x', 41), John, Cancel));
+        Assert.Null(await handler.RenameAsync(boards.BarnId, "  Garage ", John, Cancel));
         Assert.Null(await handler.SaveAsync(boards.BarnId, "192.168.1.71", 503, John, Cancel));
         Assert.Null(await handler.SaveLoginAsync(boards.BarnId, "", "", none: true, John, Cancel));
 
@@ -93,6 +93,24 @@ public sealed class BoardPagesTests
         Assert.Equal("Garage", boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId)!.Name);
         var firstNow = await check.Boards.AsNoTracking().SingleAsync(b => b.Id == 1, Cancel);
         Assert.Equal((first.Name, first.Host, first.Port, first.Username, first.Password), (firstNow.Name, firstNow.Host, firstNow.Port, firstNow.Username, firstNow.Password));
+    }
+
+    // A board's new name is logged like a relay's: who renamed it, from what, to what. The same name again logs
+    // nothing.
+    [Fact]
+    public async Task Should_LogABoardsRename_OnceForEachNewName()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var handler = boards.App.Services.GetRequiredService<BoardAddressHandler>();
+
+        Assert.Null(await handler.RenameAsync(boards.BarnId, "Garage", John, Cancel));
+        Assert.Null(await handler.RenameAsync(boards.BarnId, " Garage ", John, Cancel));
+        Assert.Equal("Enter a name.", await handler.RenameAsync(boards.BarnId, "", John, Cancel));
+
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        var entry = Assert.Single(await db.EventLog.AsNoTracking().Where(e => e.Action == EventActions.BoardRenamed).ToListAsync(Cancel));
+        Assert.Equal((boards.BarnId, (int?)null, John), (entry.BoardId!.Value, entry.RelayId, entry.Actor));
+        Assert.Equal("renamed the relay board from Barn to Garage", Contactor.Web.Features.Events.EventText.For(entry, null, "John").What);
     }
 
     // "Remove Barn" only asks, listing what goes; Cancel changes nothing; "Remove" turns its relays off, removes it and

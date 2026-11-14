@@ -461,7 +461,7 @@ public sealed class BoardAddingTests
         using var page = await PageRenderer.StartAsync<RelayDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await RelayIdAsync(boards, 1, 3) });
         Assert.Contains("Barn", await page.TextAsync(), StringComparison.Ordinal);
 
-        Assert.Null(await boards.App.Services.GetRequiredService<BoardAddressHandler>().RenameAsync(boards.BarnId, "Barn north", Cancel));
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardAddressHandler>().RenameAsync(boards.BarnId, "Barn north", John, Cancel));
 
         await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Barn north", StringComparison.Ordinal));
     }

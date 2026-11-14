@@ -223,6 +223,9 @@ public static class EventText
             EventActions.BoardRelayModesReset => ("had its relays set to normal mode, so its inputs don't switch them", null),
             EventActions.BoardRelayModesNotReset => ("couldn't have its relays set to normal mode, so its inputs may switch them", null),
             EventActions.BoardLoginChanged => ("changed the relay board's login", null),
+            EventActions.BoardRenamed => Text(entry.Details, "from") is { } oldName
+                ? ($"renamed the relay board from {oldName} to {Text(entry.Details, "to") ?? "?"}", null)
+                : ($"renamed the relay board to {Text(entry.Details, "to") ?? "?"}", null),
             EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from
                 ? ($"changed the relay board's address from {from} to {Text(entry.Details, "to") ?? "?"}", null)
                 : ($"set the relay board's address to {Text(entry.Details, "to") ?? "?"}", null),

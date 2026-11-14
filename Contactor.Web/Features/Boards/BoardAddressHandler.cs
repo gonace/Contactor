@@ -46,10 +46,11 @@ public sealed class BoardAddressHandler
 
     /// <summary>
     /// Saves the board's name (trimmed, at most <see cref="Board.NameMaxLength"/> characters), which the screens show at
-    /// once. Returns null when saved (or unchanged), otherwise the message to show.
+    /// once, and logs who renamed it from what. Returns null when saved (or unchanged), otherwise the message to show.
     /// </summary>
-    public async Task<string?> RenameAsync(int boardId, string? name, CancellationToken cancellationToken)
+    public async Task<string?> RenameAsync(int boardId, string? name, string userEmail, CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         name = name?.Trim() ?? "";
         if (name.Length == 0)
         {
@@ -72,6 +73,14 @@ public sealed class BoardAddressHandler
             return null;
         }
 
+        db.EventLog.Add(new EventLogEntry
+        {
+            TimestampUtc = _clock.UtcNow,
+            BoardId = board.Id,
+            Actor = userEmail,
+            Action = EventActions.BoardRenamed,
+            Details = JsonSerializer.Serialize(new { from = board.Name, to = name }),
+        });
         board.Name = name;
         await db.SaveChangesAsync(cancellationToken);
         if (_registry.Find(boardId) is { } live)
