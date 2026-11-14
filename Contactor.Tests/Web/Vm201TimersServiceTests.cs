@@ -164,7 +164,7 @@ public sealed class Vm201TimersServiceTests
         var saving = new HeldDbContextFactory(database.Factory);
         var options = Options.Create(new Vm201Options { Host = "127.0.0.1", Port = simulator.Port, DisableBoardTimers = true });
         var client = new Vm201Client(options, TimeProvider.System, NullLogger<Vm201Client>.Instance);
-        using var service = new Vm201TimersService(client, options, saving, TimeProvider.System, NullLogger<Vm201TimersService>.Instance);
+        using var service = new Vm201TimersService(client, options, boardId: 1, saving, TimeProvider.System, NullLogger<Vm201TimersService>.Instance);
         using var running = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         await service.StartAsync(Cancel);
         var connection = client.RunAsync(running.Token);
@@ -231,7 +231,7 @@ public sealed class Vm201TimersServiceTests
 
         Assert.IsType<Vm201Board>(board.Board);
         Assert.IsType<Vm201TimersService>(Assert.Single(board.Extras));
-        Assert.Same(database.Services.GetRequiredService<BoardSwitch>(), database.Services.GetRequiredService<IRelayBoard>());
+        Assert.Same(board, database.Services.Live().Active);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(Enumerable.Range(1, 8), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
     }

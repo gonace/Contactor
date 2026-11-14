@@ -2,13 +2,14 @@
 @implements IDisposable
 @using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
-@inject IRelayBoard Board
+@inject BoardRegistry Registry
 @inject GroupsHandler Groups
 @inject GroupSequencer Sequencer
 @inject EventsHandler Events
@@ -82,20 +83,20 @@
                 <section class="members">
                     <div class="section-text">
                         <h2>Relays in start order</h2>
-                        <p class="hint">Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</p>
+                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? $"On {board.Name}. " : "")Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</p>
                     </div>
                     <ol class="steps">
                         @for (var i = 0; i < _members.Count; i++)
                         {
                             var index = i;
                             var member = _members[index];
-                            var on = State.IsOn(member.RelayId);
+                            var on = State.IsOn(member.Channel);
                             var blockedBy = BlockedBy(index);
                             <li class="step @(on ? "on" : "") @(State.HasAnswered ? "" : "unknown")" @key="member.RelayId">
                                 <div class="step-row">
                                     <span class="number" aria-hidden="true">@(index + 1)</span>
                                     <div class="step-text">
-                                        <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.RelayId</label>
+                                        <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.Channel</label>
                                         <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                                         <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : RelayStatusText.Waiting)</span>
                                     </div>
@@ -165,14 +166,14 @@
                     {
                         <p class="hint">Turn the group off to change its relays or their order.</p>
                     }
-                    else if (_members.Count < Board.Capabilities.RelayCount && AddableRelays.Any())
+                    else if (_members.Count < Capabilities.RelayCount && AddableRelays.Any())
                     {
                         <div class="add">
                             <label for="add-relay" class="visually-hidden">Relay to add</label>
                             <select id="add-relay" @bind="_addRelayId">
                                 @foreach (var relay in AddableRelays)
                                 {
-                                    <option value="@relay.Id">Relay @relay.Id · @relay.Name</option>
+                                    <option value="@relay.Id">Relay @relay.Channel · @relay.Name</option>
                                 }
                             </select>
                             <button type="button" @onclick="AddRelay">
@@ -289,6 +290,13 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
+    // The group's own board: its state and relays. Unknown (never answered, no relays) until the group is loaded.
+    private int? BoardId => _group?.BoardId;
+
+    private LiveBoard? Board => BoardId is { } id ? Registry.Find(id) : null;
+
+    private BoardCapabilities Capabilities => Board?.Capabilities ?? LiveBoard.NoBoard;
+
     private const int EventCount = 4;
 
     private GroupView? _group;
@@ -318,27 +326,27 @@
     [Parameter]
     public int Id { get; set; }
 
-    private BoardState State => Board.State;
+    private BoardState State => Board?.State ?? BoardState.Initial;
 
     private bool GroupOn => _group is not null && _group.IsOn(State);
 
-    private int? Missing => _group?.MissingRelay(Board.Capabilities.RelayCount);
+    private int? Missing => _group?.MissingRelay(Capabilities.RelayCount);
 
     // Which relays and their order only change while the whole group is off and still.
     private bool CanChangeMembers => _group is not null
         && _group.Runtime.Phase == GroupPhases.Idle
         && State.IsConnected
-        && !State.Relays.Overlaps(ChannelMask.Of(_group.Members.Select(m => m.RelayId).Concat(_members.Select(m => m.RelayId))));
+        && !State.Relays.Overlaps(ChannelMask.Of(_group.Members.Select(m => m.Channel).Concat(_members.Select(m => m.Channel))));
 
     // One relay at a time follows the saved order; after a change, save first.
     private bool OrderChanged => _group is not null && !_group.Members.Select(m => m.RelayId).SequenceEqual(_members.Select(m => m.RelayId));
 
     // Free relays, and the group's own that were taken out in the form and not saved yet.
-    private IEnumerable<(int Id, string Name)> AddableRelays => _free
-        .Select(r => (r.Id, r.Name))
-        .Concat(_removed.Select(m => (m.RelayId, m.RoleName)))
-        .Where(r => _members.All(m => m.RelayId != r.Item1) && !State.IsOn(r.Item1))
-        .OrderBy(r => r.Item1);
+    private IEnumerable<(int Id, int Channel, string Name)> AddableRelays => _free
+        .Select(r => (Id: r.Id, r.Channel, r.Name))
+        .Concat(_removed.Select(m => (Id: m.RelayId, m.Channel, Name: m.RoleName)))
+        .Where(r => _members.All(m => m.RelayId != r.Id) && !State.IsOn(r.Channel))
+        .OrderBy(r => r.Channel);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -363,7 +371,7 @@
 
     protected override void OnInitialized()
     {
-        Board.StateChanged += OnBoardChanged;
+        Registry.StateChanged += OnBoardChanged;
         Changes.Changed += OnRelaysChanged;
 
         // A start or stop counts down in seconds; nothing else re-renders the page that often.
@@ -378,7 +386,7 @@
 
     public void Dispose()
     {
-        Board.StateChanged -= OnBoardChanged;
+        Registry.StateChanged -= OnBoardChanged;
         Changes.Changed -= OnRelaysChanged;
         _tick?.Dispose();
     }
@@ -390,7 +398,7 @@
 
     private void SeedMembers(GroupView group)
     {
-        _members = [.. group.Members.Select(m => new EditMember(m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))];
+        _members = [.. group.Members.Select(m => new EditMember(m.RelayId, m.Channel, m.RoleName, m.StartDelaySec, m.RunOnSec))];
         _removed = [];
     }
 
@@ -414,7 +422,8 @@
             }
         }
 
-        _free = [.. (await Groups.FreeRelaysAsync(CancellationToken.None))];
+        // Only the group's own board's: a group's relays are all on one board.
+        _free = [.. (await Groups.FreeRelaysAsync(_group?.BoardId, CancellationToken.None))];
         await using var db = await DbFactory.CreateDbContextAsync();
         _names = await ActorNames.LoadAsync(db, CancellationToken.None);
         _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, groupId: Id)];
@@ -429,7 +438,7 @@
     // The relay above that must be on first, or null.
     private EditMember? BlockedBy(int index)
     {
-        return index > 0 && !State.IsOn(_members[index - 1].RelayId) ? _members[index - 1] : null;
+        return index > 0 && !State.IsOn(_members[index - 1].Channel) ? _members[index - 1] : null;
     }
 
     private string NoteFor(int index, bool on, EditMember? blockedBy)
@@ -485,7 +494,7 @@
         else
         {
             var relay = _free.First(r => r.Id == _addRelayId);
-            _members.Add(new EditMember(relay.Id, relay.Name, RelayGroupMember.DefaultStartDelaySec, RelayGroupMember.DefaultRunOnSec));
+            _members.Add(new EditMember(relay.Id, relay.Channel, relay.Name, RelayGroupMember.DefaultStartDelaySec, RelayGroupMember.DefaultRunOnSec));
         }
 
         _addRelayId = AddableRelays.FirstOrDefault().Id;
@@ -532,6 +541,10 @@
                 await Sequencer.StartGroupAsync(Id, _user.Email, CancellationToken.None);
             }
         }
+        catch (BoardClosedException)
+        {
+            _toggleError = LiveBoard.BeingRemoved;
+        }
         catch (BoardNotConnectedException)
         {
             _toggleError = "The board isn't responding. Try again.";
@@ -563,6 +576,10 @@
             {
                 _memberError = (relayId, refusal);
             }
+        }
+        catch (BoardClosedException)
+        {
+            _memberError = (relayId, LiveBoard.BeingRemoved);
         }
         catch (BoardNotConnectedException)
         {
@@ -665,8 +682,14 @@
         }
     }
 
-    private void OnBoardChanged(object? sender, BoardState state)
+    // Any board's new state: only the page's own board's is redrawn.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
     {
+        if (change.BoardId != BoardId)
+        {
+            return;
+        }
+
         _ = RefreshAsync(reload: false);
     }
 
@@ -695,18 +718,21 @@
         }
     }
 
-    // A member as the form edits it.
+    // A member as the form edits it; the board's state goes by its channel, which is also the number shown.
     private sealed class EditMember
     {
-        public EditMember(int relayId, string roleName, int startDelaySec, int runOnSec)
+        public EditMember(int relayId, int channel, string roleName, int startDelaySec, int runOnSec)
         {
             RelayId = relayId;
+            Channel = channel;
             RoleName = roleName;
             StartDelaySec = startDelaySec;
             RunOnSec = runOnSec;
         }
 
         public int RelayId { get; }
+
+        public int Channel { get; }
 
         public string RoleName { get; set; }
 

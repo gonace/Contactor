@@ -6,7 +6,9 @@ namespace Contactor.Web.Features.Groups;
 
 /// <summary>A relay in a group, as the planner sees it.</summary>
 /// <param name="Position">1 starts first and stops last.</param>
-public sealed record GroupMemberInfo(int Position, int RelayId, string RoleName, int StartDelaySec, int RunOnSec);
+/// <param name="RelayId">The relay, for the events.</param>
+/// <param name="Channel">Its channel on the board: what the board's state and the commands go by.</param>
+public sealed record GroupMemberInfo(int Position, int RelayId, int Channel, string RoleName, int StartDelaySec, int RunOnSec);
 
 /// <summary>An event the planner wants logged, with the group's id added by the caller.</summary>
 public sealed record GroupEvent(string Action, int? RelayId, string Actor, string? Details);
@@ -47,7 +49,7 @@ public static class GroupPlanner
         ArgumentNullException.ThrowIfNull(members);
         ArgumentNullException.ThrowIfNull(state);
         var level = 0;
-        while (level < members.Count && state.IsOn(members[level].RelayId))
+        while (level < members.Count && state.IsOn(members[level].Channel))
         {
             level++;
         }
@@ -60,7 +62,7 @@ public static class GroupPlanner
     {
         ArgumentNullException.ThrowIfNull(members);
         ArgumentNullException.ThrowIfNull(state);
-        return members.Any(m => state.IsOn(m.RelayId));
+        return members.Any(m => state.IsOn(m.Channel));
     }
 
     /// <summary>
@@ -100,8 +102,8 @@ public static class GroupPlanner
             return;
         }
 
-        bool On(int position) => state.IsOn(members[position - 1].RelayId);
-        ChannelMask Mask(int position) => ChannelMask.Of(members[position - 1].RelayId);
+        bool On(int position) => state.IsOn(members[position - 1].Channel);
+        ChannelMask Mask(int position) => ChannelMask.Of(members[position - 1].Channel);
         var level = Level(members, state);
 
         // 1. The interlock, before anything else.
@@ -310,7 +312,7 @@ public static class GroupPlanner
         ClearPending(runtime);
         if (overtaken is { } position)
         {
-            commands.On |= ChannelMask.Of(members[position - 1].RelayId);
+            commands.On |= ChannelMask.Of(members[position - 1].Channel);
             SetPending(runtime, position, on: true, now);
         }
 
@@ -358,7 +360,7 @@ public static class GroupPlanner
         commands.Events.Add(new GroupEvent(EventActions.GroupOff, null, actor, null));
         if (overtaken is { } position)
         {
-            commands.Off |= ChannelMask.Of(members[position - 1].RelayId);
+            commands.Off |= ChannelMask.Of(members[position - 1].Channel);
             SetPending(runtime, position, on: false, now);
             return true;
         }
@@ -388,12 +390,12 @@ public static class GroupPlanner
         ArgumentOutOfRangeException.ThrowIfLessThan(position, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(position, members.Count);
         var member = members[position - 1];
-        if (position > 1 && !state.IsOn(members[position - 2].RelayId))
+        if (position > 1 && !state.IsOn(members[position - 2].Channel))
         {
             return $"Needs {members[position - 2].RoleName} to be on.";
         }
 
-        if (state.IsOn(member.RelayId))
+        if (state.IsOn(member.Channel))
         {
             // E.g. the fan during its run-on: it stays on, and the stop is called off. A start going on is left alone.
             if (runtime.Phase != GroupPhases.Stopping)
@@ -408,7 +410,7 @@ public static class GroupPlanner
             return null;
         }
 
-        commands.On |= ChannelMask.Of(member.RelayId);
+        commands.On |= ChannelMask.Of(member.Channel);
         runtime.Phase = GroupPhases.Idle;
         runtime.TargetLevel = Math.Max(Level(members, state), position);
         runtime.NextStepAtUtc = null;
@@ -444,7 +446,7 @@ public static class GroupPlanner
         ArgumentOutOfRangeException.ThrowIfLessThan(position, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(position, members.Count);
         var member = members[position - 1];
-        if (!state.IsOn(member.RelayId))
+        if (!state.IsOn(member.Channel))
         {
             return;
         }
@@ -456,9 +458,9 @@ public static class GroupPlanner
         var below = ChannelMask.None;
         for (var p = position + 1; p <= members.Count; p++)
         {
-            if (state.IsOn(members[p - 1].RelayId))
+            if (state.IsOn(members[p - 1].Channel))
             {
-                below |= ChannelMask.Of(members[p - 1].RelayId);
+                below |= ChannelMask.Of(members[p - 1].Channel);
             }
         }
 

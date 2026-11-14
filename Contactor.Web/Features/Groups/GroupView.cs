@@ -8,7 +8,9 @@ using Contactor.Web.Persistence;
 namespace Contactor.Web.Features.Groups;
 
 /// <summary>A relay of a group, for the screens.</summary>
-public sealed record GroupMemberView(int RelayId, int Position, string RoleName, int StartDelaySec, int RunOnSec);
+/// <param name="RelayId">The relay, for links and the database.</param>
+/// <param name="Channel">Its channel on the board: what the board's state goes by, and the number the screens show.</param>
+public sealed record GroupMemberView(int RelayId, int Channel, int Position, string RoleName, int StartDelaySec, int RunOnSec);
 
 /// <summary>A group as the screens show it: its setup and where its sequence is. Whether relays are on comes from the board.</summary>
 public sealed record GroupView(
@@ -19,30 +21,33 @@ public sealed record GroupView(
     IReadOnlyList<GroupMemberView> Members,
     GroupRuntime Runtime)
 {
+    /// <summary>The group's board: all its relays are on it.</summary>
+    public int BoardId { get; init; }
+
     /// <summary>The members as the planner sees them.</summary>
     public IReadOnlyList<GroupMemberInfo> Infos =>
-        [.. Members.Select(m => new GroupMemberInfo(m.Position, m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))];
+        [.. Members.Select(m => new GroupMemberInfo(m.Position, m.RelayId, m.Channel, m.RoleName, m.StartDelaySec, m.RunOnSec))];
 
     /// <summary>
-    /// The first relay of the group the board doesn't have (left from a board with more relays), or null. Such a group
-    /// can't run: its relays are kept off until it is changed or deleted.
+    /// The channel of the first relay of the group the board doesn't have (left from a board with more relays), or
+    /// null. Such a group can't run: its relays are kept off until it is changed or deleted.
     /// </summary>
     public int? MissingRelay(int relayCount)
     {
-        return Members.Where(m => m.RelayId > relayCount).Select(m => (int?)m.RelayId).FirstOrDefault();
+        return Members.Where(m => m.Channel > relayCount).Select(m => (int?)m.Channel).FirstOrDefault();
     }
 
-    /// <summary>"Can't run: relay 5 isn't on the board".</summary>
-    public static string MissingRelayText(int relayId)
+    /// <summary>"Can't run: relay 5 isn't on the board", by the relay's channel.</summary>
+    public static string MissingRelayText(int channel)
     {
-        return $"Can't run: relay {relayId} isn't on the board";
+        return $"Can't run: relay {channel} isn't on the board";
     }
 
-    /// <summary>"RELAY 1 → 2".</summary>
-    public string Chain => "RELAY " + string.Join(" → ", Members.Select(m => m.RelayId));
+    /// <summary>"RELAY 1 → 2": the relays' channels.</summary>
+    public string Chain => "RELAY " + string.Join(" → ", Members.Select(m => m.Channel));
 
     /// <summary>The relays of the group, as a channel mask.</summary>
-    public ChannelMask Mask => ChannelMask.Of(Members.Select(m => m.RelayId));
+    public ChannelMask Mask => ChannelMask.Of(Members.Select(m => m.Channel));
 
     /// <summary>
     /// Whether the group counts as on: starting, or any relay on and not on its way down. The big button then reads

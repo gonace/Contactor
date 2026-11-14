@@ -76,6 +76,7 @@ public sealed partial class Program
         app.MapHealthGroup();
         app.MapSetupGroup();
         app.MapBackupGroup();
+        app.MapRelaysGroup();
         app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
         app.Run();
         return 0;

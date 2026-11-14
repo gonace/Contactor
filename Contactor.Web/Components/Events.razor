@@ -1,9 +1,14 @@
 @page "/events"
 @implements IDisposable
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Relays
+@using Contactor.Web.Persistence
+@using Microsoft.EntityFrameworkCore
 @inject EventsHandler Handler
 @inject RelayChanges Changes
+@inject BoardRegistry Registry
+@inject IDbContextFactory<ContactorDbContext> DbFactory
 
 <PageTitle>Events · Contactor</PageTitle>
 
@@ -16,6 +21,13 @@
                 <button type="button" aria-pressed="@(_filter == filter ? "true" : "false")" @onclick="() => SetFilterAsync(filter)">@label</button>
             }
         </div>
+        @if (Several)
+        {
+            @* Which boards' events show: this browser's, in its own cookie (RelaysEndpoints). Events about no board always show. *@
+            <div class="boards-bar">
+                <BoardPicker Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" Showing="@ShowingText" />
+            </div>
+        }
     </header>
 
     <main class="days">
@@ -36,9 +48,15 @@
                             <span class="badge @(row.View.IsPerson ? "person" : "automatic")" aria-hidden="true">@row.View.Badge</span>
                             <div class="text">
                                 <EventWhat Row="row" Wrap="true" />
-                                @if (row.View.Target is not null)
+                                @if (row.View.Target is not null || row.Board is not null)
                                 {
-                                    <span class="target">@row.View.Target</span>
+                                    <span class="target">
+                                        @if (row.Board is not null)
+                                        {
+                                            <span class="where">@row.Board</span>
+                                        }
+                                        @row.View.Target
+                                    </span>
                                 }
                             </div>
                         </div>
@@ -53,7 +71,7 @@
         }
     </main>
 
-    <TabBar Current="TabBar.Tab.Events" />
+    <TabBar Current="TabBar.Tab.Events" SideList="@(Several ? BoardList : null)" />
 </div>
 
 @code {
@@ -66,18 +84,60 @@
 
     private List<EventRow> _rows = [];
     private EventFilter _filter = EventFilter.All;
+    private BoardCounts _counts = BoardCounts.None;
     private bool _hasMore;
     private bool _loading;
+
+    /// <summary>The boards this browser picked to show (<see cref="BoardFilters.Events"/>), as the page was opened.</summary>
+    [CascadingParameter]
+    public BoardFilters? PickedBoards { get; set; }
+
+    private IReadOnlyList<LiveBoard> Boards => Registry.All;
+
+    // Two or more boards: the board filter, and each row names its board. One board looks as it always did.
+    private bool Several => Boards.Count > 1;
+
+    private BoardFilter BoardsFilter => (PickedBoards?.Events ?? BoardFilter.All).For([.. Boards.Select(b => b.BoardId)]);
+
+    // The boards whose events show; null for every board.
+    private IReadOnlyCollection<int>? ShownBoardIds => BoardsFilter.IsAll ? null : BoardsFilter.Picked;
+
+    // "Showing Workshop and Paint shop" while filtered.
+    private string? ShowingText => BoardsFilter.IsAll ? null
+        : BoardsText.Showing([.. Boards.Where(b => BoardsFilter.Shows(b.BoardId)).Select(b => b.Name)]);
 
     protected override async Task OnInitializedAsync()
     {
         await ReloadAsync(EventsHandler.PageSize);
+        await LoadCountsAsync();
         Changes.Changed += OnChanged;
+        Registry.StateChanged += OnBoardChanged;
+        Registry.BoardsChanged += OnChanged;
     }
 
     public void Dispose()
     {
         Changes.Changed -= OnChanged;
+        Registry.StateChanged -= OnBoardChanged;
+        Registry.BoardsChanged -= OnChanged;
+    }
+
+    // The desktop's side menu: every board, to pick which to show.
+    private RenderFragment BoardList => __builder =>
+    {
+        <BoardPicker Side="true" Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" />
+    };
+
+    // "3 of 8 on" for the board filter; only with several boards, which is when it shows.
+    private async Task LoadCountsAsync()
+    {
+        if (!Several)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _counts = await BoardCounts.LoadAsync(db, Registry, CancellationToken.None);
     }
 
     private async Task SetFilterAsync(EventFilter filter)
@@ -89,7 +149,7 @@
     // Reloads the newest events, as many as are shown (at least a page), so new ones appear on top.
     private async Task ReloadAsync(int count)
     {
-        var rows = await Handler.GetAsync(_filter, beforeId: null, count + 1, CancellationToken.None);
+        var rows = await Handler.GetAsync(_filter, beforeId: null, count + 1, CancellationToken.None, boards: ShownBoardIds);
         _hasMore = rows.Count > count;
         _rows = [.. rows.Take(count)];
     }
@@ -104,7 +164,7 @@
         _loading = true;
         try
         {
-            var rows = await Handler.GetAsync(_filter, _rows[^1].Id, EventsHandler.PageSize + 1, CancellationToken.None);
+            var rows = await Handler.GetAsync(_filter, _rows[^1].Id, EventsHandler.PageSize + 1, CancellationToken.None, boards: ShownBoardIds);
             _hasMore = rows.Count > EventsHandler.PageSize;
             _rows.AddRange(rows.Take(EventsHandler.PageSize));
         }
@@ -114,19 +174,33 @@
         }
     }
 
-    // From another person's circuit or the board's event recorder.
+    // From another person's circuit, a board's event recorder, or a board added.
     private void OnChanged(object? sender, EventArgs e)
     {
-        _ = RefreshAsync();
+        _ = RefreshAsync(reload: true);
     }
 
-    private async Task RefreshAsync()
+    // A board's new state: only the board filter's lamps and counts show it.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (Several)
+        {
+            _ = RefreshAsync(reload: false);
+        }
+    }
+
+    private async Task RefreshAsync(bool reload)
     {
         try
         {
             await InvokeAsync(async () =>
             {
-                await ReloadAsync(Math.Max(EventsHandler.PageSize, _rows.Count));
+                if (reload)
+                {
+                    await ReloadAsync(Math.Max(EventsHandler.PageSize, _rows.Count));
+                    await LoadCountsAsync();
+                }
+
                 StateHasChanged();
             });
         }

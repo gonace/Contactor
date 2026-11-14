@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -19,13 +20,13 @@ public sealed record ScheduleModel(int Id, int? RelayId, ScheduleDays Days, Time
 public sealed class SchedulesHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
-    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, IRelayBoard board, LocalClock clock, RelayChanges changes)
+    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
     {
-        _board = board;
+        _registry = registry;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
@@ -103,7 +104,9 @@ public sealed class SchedulesHandler
             }
             else
             {
-                if (model.RelayId > _board.Capabilities.RelayCount || !await db.Relays.AnyAsync(r => r.Id == model.RelayId, cancellationToken))
+                // By the relay's channel on its own board: one its board doesn't have isn't offered.
+                var relay = await db.Relays.AsNoTracking().Where(r => r.Id == model.RelayId).Select(r => new { r.BoardId, r.Channel }).SingleOrDefaultAsync(cancellationToken);
+                if (relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel))
                 {
                     return "The relay doesn't exist.";
                 }
@@ -139,7 +142,7 @@ public sealed class SchedulesHandler
         schedule.Days = model.Days;
         schedule.OnTime = onTime;
         schedule.OffTime = offTime;
-        Log(db, schedule, userEmail, action, enabled: null);
+        await LogAsync(db, schedule, userEmail, action, enabled: null, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
         return null;
@@ -159,7 +162,7 @@ public sealed class SchedulesHandler
         if (schedule.IsEnabled != isEnabled)
         {
             schedule.IsEnabled = isEnabled;
-            Log(db, schedule, userEmail, EventActions.ScheduleEdit, isEnabled);
+            await LogAsync(db, schedule, userEmail, EventActions.ScheduleEdit, isEnabled, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             _changes.Notify();
         }
@@ -178,16 +181,21 @@ public sealed class SchedulesHandler
         }
 
         db.Schedules.Remove(schedule);
-        Log(db, schedule, userEmail, EventActions.ScheduleDelete, enabled: null);
+        await LogAsync(db, schedule, userEmail, EventActions.ScheduleDelete, enabled: null, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
     }
 
-    private void Log(ContactorDbContext db, Schedule schedule, string userEmail, string action, bool? enabled)
+    private async Task LogAsync(ContactorDbContext db, Schedule schedule, string userEmail, string action, bool? enabled, CancellationToken cancellationToken)
     {
+        // The board of the relay or group it is for: the event is about that board.
+        var boardId = schedule.RelayId is { } relayId
+            ? await db.Relays.Where(r => r.Id == relayId).Select(r => (int?)r.BoardId).SingleOrDefaultAsync(cancellationToken)
+            : await db.RelayGroups.Where(g => g.Id == schedule.GroupId).Select(g => (int?)g.BoardId).SingleOrDefaultAsync(cancellationToken);
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = _clock.UtcNow,
+            BoardId = boardId,
             RelayId = schedule.RelayId,
             GroupId = schedule.GroupId,
             Actor = userEmail,

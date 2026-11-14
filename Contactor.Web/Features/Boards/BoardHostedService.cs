@@ -1,39 +1,42 @@
 namespace Contactor.Web.Features.Boards;
 
 /// <summary>
-/// Keeps the chosen board's connection open for the app's lifetime (<see cref="BoardSwitch.RunAsync(Func{ActiveBoard, CancellationToken, Task}?, CancellationToken)"/>),
-/// starting each board at the address and login saved on the Settings screen, if any. Before a board is chosen it
-/// waits; a board without an address yet (the setup guide asks for it) waits until one is saved, and tries nothing
-/// before.
+/// Keeps every board's connection open for the app's lifetime (<see cref="BoardRegistry.RunAsync"/>), each at the
+/// address and login saved on its row, if any. A board without a model waits for one; a board without an address yet
+/// (the setup guide asks for it) waits until one is saved, and tries nothing before. In a host, the connections start
+/// only once every hosted service has started (<see cref="IHostApplicationLifetime.ApplicationStarted"/>): what watches
+/// the boards (the group sequencer, the event recorder, the scheduler, auto-off) runs before the first status, which
+/// each sees in order.
 /// </summary>
 public sealed class BoardHostedService : BackgroundService
 {
-    private static readonly TimeSpan AddressCheck = TimeSpan.FromSeconds(1);
+    private readonly BoardRegistry _registry;
+    private readonly IHostApplicationLifetime? _lifetime;
 
-    private readonly BoardSwitch _switch;
-    private readonly BoardAddressHandler _address;
-    private readonly TimeProvider _time;
-
-    // BoardTrace is taken only so it exists, and listens, before the first connection.
-    public BoardHostedService(BoardSwitch boardSwitch, BoardAddressHandler address, BoardTrace trace, TimeProvider time)
+    public BoardHostedService(BoardRegistry registry, IHostApplicationLifetime? lifetime = null)
     {
-        ArgumentNullException.ThrowIfNull(trace);
-        _switch = boardSwitch;
-        _address = address;
-        _time = time;
+        _registry = registry;
+        _lifetime = lifetime;
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        return _switch.RunAsync(PrepareAsync, stoppingToken);
-    }
-
-    private async Task PrepareAsync(ActiveBoard board, CancellationToken cancellationToken)
-    {
-        await _address.ApplySavedAsync(cancellationToken);
-        while (!board.Connection.Endpoint.HasHost)
+        if (_lifetime is not null)
         {
-            await Task.Delay(AddressCheck, _time, cancellationToken);
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using (_lifetime.ApplicationStarted.Register(() => started.TrySetResult()))
+            {
+                try
+                {
+                    await started.Task.WaitAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
         }
+
+        await _registry.RunAsync(stoppingToken);
     }
 }

@@ -1,4 +1,3 @@
-using Contactor.Boards;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Contactor.Web.Features.Boards;
@@ -6,23 +5,19 @@ namespace Contactor.Web.Features.Boards;
 public static class BoardsServiceCollectionExtensions
 {
     /// <summary>
-    /// The board, through <see cref="BoardSwitch"/>: no board until one is chosen (<see cref="BoardChoice"/>), its
-    /// connection kept open by <see cref="BoardHostedService"/>, and what every board has in the app: its address and
-    /// login, and the traffic for the Debug screen.
+    /// The boards, through <see cref="BoardRegistry"/>: one <see cref="LiveBoard"/> per board's row, none until the
+    /// setup guide chooses one (<see cref="BoardChoice"/>), their connections kept open by
+    /// <see cref="BoardHostedService"/>, and what every board has in the app: its name, address and login, removing it
+    /// (<see cref="BoardRemoval"/>), and the Debugging setting.
     /// </summary>
     public static IServiceCollection AddBoards(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<BoardSwitch>();
-
-        // The rest of the app only knows the board through these.
-        services.AddSingleton<IRelayBoard>(provider => provider.GetRequiredService<BoardSwitch>());
-        services.AddSingleton<IBoardConnection>(provider => provider.GetRequiredService<BoardSwitch>());
-        services.AddSingleton<IBoardTraffic>(provider => provider.GetRequiredService<BoardSwitch>());
+        services.AddSingleton<BoardRegistry>();
         services.AddSingleton<BoardChoice>();
         services.AddSingleton<BoardAddressHandler>();
-        services.AddSingleton<BoardTrace>();
+        services.AddSingleton<BoardRemoval>();
         services.AddSingleton<BoardTrafficSetting>();
         services.AddHostedService<BoardHostedService>();
         return services;

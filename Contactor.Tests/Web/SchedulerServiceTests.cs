@@ -60,6 +60,35 @@ public sealed class SchedulerServiceTests
         Assert.Equal((SchedulerActor, (DateTime?)null), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
     }
 
+    // A schedule's ON at its window's start while the board is closed for its removal: refused, the tick goes on with
+    // the other relays, and once the board opens again (the removal didn't go ahead) only that relay comes on. Not a
+    // reconnect: a relay a person turned off during its window stays off.
+    [Fact]
+    public async Task Should_TryAgainOnlyTheRefusedOn_AfterTheBoardOpensAgain()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await AddScheduleAsync(rig, rig.RelayId(2), 14, 5, 15, 0);
+        await AddScheduleAsync(rig, rig.RelayId(3), 13, 0, 15, 0);
+        await AddScheduleAsync(rig, rig.RelayId(4), 13, 0, 14, 5);
+        await rig.Scheduler.TickAsync(Cancel);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(3) && rig.Client.State.IsOn(4));
+        await rig.Control.TurnOffAsync(rig.RelayId(3), Jane, Cancel);
+        await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsOn(3));
+
+        await rig.Live.CloseAsync();
+        await TickAtAsync(rig, 14, 5);
+
+        await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsOn(4));
+        Assert.False(rig.Client.State.IsOn(2));
+
+        rig.Live.Reopen();
+        await TickAtAsync(rig, 14, 6);
+
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(2));
+        Assert.False(rig.Client.State.IsOn(3));
+        Assert.False(rig.Client.State.IsOn(4));
+    }
+
     [Fact]
     public async Task Should_TurnOnARunningScheduleAtStart()
     {
@@ -389,6 +418,6 @@ public sealed class SchedulerServiceTests
     private static async Task<DateTime?> LastTickAsync(BoardTestRig rig)
     {
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        return (await db.SchedulerStates.SingleAsync(Cancel)).LastTickUtc;
+        return (await db.BoardRuntimes.SingleAsync(Cancel)).LastTickUtc;
     }
 }

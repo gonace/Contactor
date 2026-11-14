@@ -5,14 +5,14 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Boards;
 
 /// <summary>
-/// Which model of board the app runs, while it runs: the one saved in the setup guide (<see cref="Installation.BoardType"/>),
-/// or none until one is. Choosing one builds it, switches to it (<see cref="BoardSwitch"/>) and adds the rows for its
-/// relays and inputs, as at start.
+/// Which model the app's first board is, while the app runs: the one saved in the setup guide (<see cref="Board.Type"/>
+/// of the board), or none until one is. Choosing one adds the rows for its relays and inputs, as at start, then builds
+/// it and runs it on the board (<see cref="BoardRegistry.ReplaceModelAsync"/>).
 /// </summary>
 public sealed partial class BoardChoice : IDisposable
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly BoardSwitch _switch;
+    private readonly BoardRegistry _registry;
     private readonly IServiceProvider _app;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BoardChoice> _logger;
@@ -22,57 +22,74 @@ public sealed partial class BoardChoice : IDisposable
 
     public BoardChoice(
         IDbContextFactory<ContactorDbContext> dbFactory,
-        BoardSwitch boardSwitch,
+        BoardRegistry registry,
         IServiceProvider app,
         IConfiguration configuration,
         ILogger<BoardChoice> logger)
     {
         _dbFactory = dbFactory;
-        _switch = boardSwitch;
+        _registry = registry;
         _app = app;
         _configuration = configuration;
         _logger = logger;
     }
 
     /// <summary>
-    /// At start: runs the saved model, if any. An installation in use from before the setup guide chose the model (the
-    /// guide is done, no model saved) gets the one <c>Board:Type</c> names, or the VM201 it ran before, saved once so
-    /// it keeps it. Throws for a saved model the catalogue doesn't have.
+    /// At start: runs every board's row with its saved model, if any (<see cref="BoardRegistry.LoadAsync"/>), after
+    /// adding the first board's rows for its relays and inputs. An installation in use from before the setup guide
+    /// chose the model (the guide is done, and its board's row has no model) gets the one <c>Board:Type</c> names, or
+    /// the VM201 it ran before, saved once so it keeps it. One without a board (its last board removed) gets none, as a
+    /// new installation before the guide chooses one. Throws for a saved model the catalogue doesn't have. A board without a name
+    /// gets its model's.
     /// </summary>
     public async Task ApplySavedAsync(CancellationToken cancellationToken)
     {
-        BoardModel? model;
+        BoardModel? model = null;
         await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
         {
-            var installation = await db.Installations.SingleOrDefaultAsync(cancellationToken);
-            if (installation is null)
+            var board = await db.FirstBoardAsync(cancellationToken);
+            if (board is not null && board.Type.Length > 0)
             {
-                return;
-            }
-
-            if (installation.BoardType is { } saved)
-            {
+                var saved = board.Type;
                 model = BoardCatalogue.Find(saved)?.Model
                     ?? throw new InvalidOperationException(
                         $"The relay board chosen in the setup guide is \"{saved}\", which isn't a board this version of the app knows. Use one of: {BoardCatalogue.Ids}.");
             }
-            else if (installation.SetupDoneUtc is not null)
+            else if (board is not null && await db.Installations.AnyAsync(i => i.SetupDoneUtc != null, cancellationToken))
             {
                 var type = _configuration.GetSection(BoardOptions.SectionName).Get<BoardOptions>()?.Type ?? BoardCatalogue.EarlierDefaultType;
                 model = BoardCatalogue.Find(type)?.Model
                     ?? throw new InvalidOperationException(
                         $"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: {BoardCatalogue.Ids}.");
-                installation.BoardType = model.Id;
-                await db.SaveChangesAsync(cancellationToken);
+                board.Type = model.Id;
                 LogEarlierModelSaved(model.Name);
             }
-            else
+
+            if (model is not null)
             {
-                return;
+                if (board!.Name.Length == 0)
+                {
+                    board.Name = Board.DefaultName(model.Name);
+                }
+
+                await db.SaveChangesAsync(cancellationToken);
             }
         }
 
-        await UseAsync(model, cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (model is not null)
+            {
+                await _app.SeedBoardAsync(model.Capabilities.RelayCount, model.Capabilities.InputCount, cancellationToken);
+            }
+
+            await _registry.LoadAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>
@@ -81,21 +98,21 @@ public sealed partial class BoardChoice : IDisposable
     /// wrong) is never saved for the next start to fail on; one choice at a time, so the board saved is the one that
     /// runs.
     /// </summary>
-    public Task ChooseAsync(BoardModel model, CancellationToken cancellationToken)
+    public Task<LiveBoard> ChooseAsync(BoardModel model, CancellationToken cancellationToken)
     {
         return UseAsync(model, save: true, cancellationToken);
     }
 
     /// <summary>
     /// Runs <paramref name="model"/> from now on, unless it already is the board, and adds the rows for its relays and
-    /// inputs. Doesn't save the choice (<see cref="ChooseAsync"/> does).
+    /// inputs. Doesn't save the choice (<see cref="ChooseAsync"/> does). Returns the first board, which runs it now.
     /// </summary>
-    public Task UseAsync(BoardModel model, CancellationToken cancellationToken)
+    public Task<LiveBoard> UseAsync(BoardModel model, CancellationToken cancellationToken)
     {
         return UseAsync(model, save: false, cancellationToken);
     }
 
-    private async Task UseAsync(BoardModel model, bool save, CancellationToken cancellationToken)
+    private async Task<LiveBoard> UseAsync(BoardModel model, bool save, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(model);
         var registration = BoardCatalogue.Find(model.Id)
@@ -103,26 +120,34 @@ public sealed partial class BoardChoice : IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            // Rows first: from the switch on, the screens and services count on a row for every relay.
+            // Rows first: from the new model on, the screens and services count on a row for every relay. The board's
+            // row comes with them.
             await _app.SeedBoardAsync(model.Capabilities.RelayCount, model.Capabilities.InputCount, cancellationToken);
-            if (_switch.Model?.Id != model.Id)
+            int boardId;
+            await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
-                await _switch.SwitchToAsync(registration.Create(registration.Model, _app, _configuration));
+                boardId = await db.FirstBoardIdAsync(cancellationToken)
+                    ?? throw new InvalidOperationException("The board's row wasn't added with its relays.");
             }
 
+            var live = await _registry.ReplaceModelAsync(boardId, registration.Model, cancellationToken);
             if (save)
             {
                 await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-                var installation = await db.Installations.SingleOrDefaultAsync(cancellationToken);
-                if (installation is null)
+                var board = await db.Boards.SingleAsync(b => b.Id == boardId, cancellationToken);
+
+                // The name follows the model until someone gives it one of their own.
+                if (board.Name.Length == 0 || BoardCatalogue.Find(board.Type) is { } earlier && board.Name == Board.DefaultName(earlier.Model.Name))
                 {
-                    installation = new Installation();
-                    db.Installations.Add(installation);
+                    board.Name = Board.DefaultName(model.Name);
                 }
 
-                installation.BoardType = model.Id;
+                board.Type = model.Id;
                 await db.SaveChangesAsync(cancellationToken);
+                live.Name = board.Name;
             }
+
+            return live;
         }
         finally
         {

@@ -62,7 +62,16 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
     /// </summary>
     public static void WithLostBoard(IServiceCollection services)
     {
-        services.AddSingleton<IRelayBoard>(FakeRelayBoard.LostContact());
+        WithBoard(FakeRelayBoard.LostContact())(services);
+    }
+
+    /// <summary>
+    /// The services for an app whose board is <paramref name="board"/>, in place of the one it chose, once it is set
+    /// up.
+    /// </summary>
+    public static Action<IServiceCollection> WithBoard(IRelayBoard board)
+    {
+        return services => services.AddSingleton(new TestBoard(board));
     }
 
     public string DatabasePath => Path.Combine(_folder, "contactor.db");
@@ -71,14 +80,32 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
     /// Saves <paramref name="installation"/> in a database made before the app starts, as an installation in use has
     /// it when the app starts. Use with <c>setUp: false</c>, before the first request.
     /// </summary>
-    public void SaveBeforeStart(Installation installation)
+    public void SaveBeforeStart(Installation installation, string? boardType = null)
     {
         Directory.CreateDirectory(_folder);
         var options = new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite($"Data Source={DatabasePath}").Options;
         using var db = new ContactorDbContext(options);
         db.Database.Migrate();
         db.Installations.Add(installation);
+        if (boardType is not null)
+        {
+            db.Boards.Add(new Board { Type = boardType, SortOrder = 1 });
+        }
+
         db.SaveChanges();
+    }
+
+    /// <summary>
+    /// Adds the board's relays and inputs in <paramref name="layout"/> to a database made before the app starts, so the
+    /// app's seeding finds them. Before the first request.
+    /// </summary>
+    public void UseLayoutBeforeStart(RelayLayout layout, int relayCount = 8, int inputCount = 1)
+    {
+        Directory.CreateDirectory(_folder);
+        var options = new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite($"Data Source={DatabasePath}").Options;
+        using var db = new ContactorDbContext(options);
+        db.Database.Migrate();
+        RelayLayouts.SeedAsync(db, layout, relayCount, inputCount).GetAwaiter().GetResult();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -124,6 +151,13 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
                 AccessType = CloudflareMethods.TunnelId,
                 SignInType = CloudflareMethods.AccessId,
             });
+
+            // The board's row as the migration MoveToBoards left it for an installation in use: no model saved yet.
+            if (!db.Boards.Any())
+            {
+                db.Boards.Add(new Board { SortOrder = 1 });
+            }
+
             db.SaveChanges();
 
             // As at the start after an upgrade: an installation in use runs Board:Type's board, or the VM201, behind
@@ -131,6 +165,10 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
             host.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
             host.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
             host.Services.GetRequiredService<SignInChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
+            if (host.Services.GetService<TestBoard>() is { } test)
+            {
+                host.Services.UseFakeBoardAsync(test.Board).GetAwaiter().GetResult();
+            }
         }
 
         return host;
@@ -145,6 +183,9 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
             Directory.Delete(_folder, recursive: true);
         }
     }
+
+    // The board a test runs in the app's place (WithBoard).
+    private sealed record TestBoard(IRelayBoard Board);
 
     // Signs every request in as one person, in Cloudflare Access's place.
     private sealed class FixedSignIn : ISignInMethod

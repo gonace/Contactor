@@ -95,7 +95,7 @@ public sealed class GroupSequencerTests
         await rig.Simulator.SetOutputsAsync(0b0000_0111);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0000_0111);
 
-        await rig.Control.TurnAllOffAsync(John, Cancel);
+        await rig.Control.TurnAllOffAsync(rig.Live.BoardId, John, Cancel);
 
         // Relay 3 and the heat at once; the fan keeps running for its run-on.
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0000_0001);
@@ -364,7 +364,7 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         await CreateAsync(rig, FanHeater);
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        var other = new RelayGroup { Name = "Annan", Icon = GroupIcons.Bolt };
+        var other = new RelayGroup { BoardId = 1, Name = "Annan", Icon = GroupIcons.Bolt };
         other.Members.Add(new RelayGroupMember { RelayId = 2, Position = 1, RoleName = "A" });
         other.Members.Add(new RelayGroupMember { RelayId = 3, Position = 2, RoleName = "B" });
         db.RelayGroups.Add(other);

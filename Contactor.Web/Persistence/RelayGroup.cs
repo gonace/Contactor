@@ -13,6 +13,9 @@ public sealed class RelayGroup
 
     public int Id { get; set; }
 
+    /// <summary>The board its relays are on: a group's relays are all on one board.</summary>
+    public int BoardId { get; set; }
+
     public string Name { get; set; } = "";
 
     /// <summary>One of <see cref="GroupIcons"/>.</summary>

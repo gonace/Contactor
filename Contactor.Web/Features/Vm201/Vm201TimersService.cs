@@ -10,13 +10,15 @@ namespace Contactor.Web.Features.Vm201;
 /// <summary>
 /// On the board's first successful connection, disables the VM201's own timer programs
 /// (<c>Vm201:DisableBoardTimers</c>), so they can't fight the app's schedules, and logs that as Actor <c>system</c>. A new
-/// address may be another VM201, so its timers are disabled again at its first answer. Runs only while the VM201 is the
-/// chosen board: <see cref="Boards.BoardSwitch"/> starts it before the board's connection and stops it with it.
+/// address may be another VM201, so its timers are disabled again at its first answer. Runs only while the VM201 is its
+/// board's model: the board's <see cref="Boards.LiveBoard"/> starts it before the board's connection and stops it with
+/// it. The event is about that board.
 /// </summary>
 public sealed partial class Vm201TimersService : BackgroundService
 {
     private readonly Vm201Client _client;
     private readonly Vm201Options _options;
+    private readonly int _boardId;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<Vm201TimersService> _logger;
@@ -32,6 +34,7 @@ public sealed partial class Vm201TimersService : BackgroundService
     public Vm201TimersService(
         Vm201Client client,
         IOptions<Vm201Options> options,
+        int boardId,
         IDbContextFactory<ContactorDbContext> dbFactory,
         TimeProvider timeProvider,
         ILogger<Vm201TimersService> logger)
@@ -39,6 +42,7 @@ public sealed partial class Vm201TimersService : BackgroundService
         ArgumentNullException.ThrowIfNull(options);
         _client = client;
         _options = options.Value;
+        _boardId = boardId;
         _dbFactory = dbFactory;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -69,7 +73,7 @@ public sealed partial class Vm201TimersService : BackgroundService
     {
         try
         {
-            // Listens until the board stops being the chosen one, or the app stops; the switch runs the connection.
+            // Listens until the board gets another model, or the app stops; its live board runs the connection.
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -113,6 +117,7 @@ public sealed partial class Vm201TimersService : BackgroundService
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = _timeProvider.GetUtcNow().UtcDateTime,
+                BoardId = _boardId,
                 Actor = EventActors.System,
                 Action = EventActions.BoardTimersDisabled,
                 Details = JsonSerializer.Serialize(new { mask = Vm201Channel.All }),

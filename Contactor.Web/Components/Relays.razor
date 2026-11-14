@@ -1,7 +1,7 @@
 @page "/"
 @implements IDisposable
 @using Contactor.Boards
-@using Microsoft.EntityFrameworkCore
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
@@ -9,7 +9,9 @@
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
-@inject IRelayBoard Board
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@inject BoardRegistry Registry
 @inject RelayControl Control
 @inject RelayChanges Changes
 @inject CurrentUser CurrentUser
@@ -33,196 +35,178 @@
                 {
                     <text>Hi @_user.DisplayName</text>
                 }
-                @* Before the board's first answer nothing is known to be on. *@
-                @if (State.HasAnswered)
+                @* Before a board's first answer nothing is known to be on. *@
+                @if (AnyAnswered)
                 {
-                    @(_user is not null ? " · " : "")<strong>@OnCount of @ActiveCount on</strong>
+                    var all = CountOf(Boards);
+                    @(_user is not null ? " · " : "")<strong>@all.On of @all.Active on</strong>
                 }
             </p>
         </div>
         <div class="actions">
             @* On a desktop "New group" sits here, beside "All off"; on a phone or tablet it is under the cards. *@
-            <a href="group/new" class="new-group in-header">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                New group
-            </a>
-            <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="TurnAllOffAsync">All off</button>
+            @if (Boards.Count > 0)
+            {
+                <a href="group/new" class="new-group in-header">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    New group
+                </a>
+            }
+            @* No board: nothing to turn off, and "Add a board" is the way on. *@
+            @if (Several)
+            {
+                @* Every board at once, so it asks first; each board has its own "All off" in its section. *@
+                <button type="button" class="all-boards-off" disabled="@(!AnyConnected || _busy)" @onclick="() => _confirmAllBoards = true">Turn off all boards</button>
+            }
+            else if (Boards.Count == 1)
+            {
+                <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="() => TurnBoardOffAsync(OnlyBoardId)">All off</button>
+            }
         </div>
     </header>
 
-    <div class="connection">
-        @if (State.IsConnected)
-        {
-            <p class="online"><span class="dot" aria-hidden="true"></span>Board online · updated @UpdatedText</p>
-        }
-        else
-        {
-            <div class="offline" role="status">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
-                <div>
-                    @if (State.HasAnswered)
-                    {
-                        <strong>No contact with the relay board</strong>
-                        <span>@(State.LastContactUtc is { } last ? $"Since {RelayStatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)}. " : "")The states below may be wrong.</span>
-                    }
-                    else
-                    {
-                        <strong>No contact with the relay board yet</strong>
-                        <span>Waiting for its first answer.</span>
-                    }
-                </div>
-            </div>
-        }
-        @if (_allOffFailed)
-        {
-            <p class="error" role="alert">The board isn't responding. Try again.</p>
-        }
-    </div>
+    @if (Several)
+    {
+        <div class="boards-bar">
+            @if (_allBoardsMessage is not null)
+            {
+                <p class="error" role="alert">@_allBoardsMessage</p>
+            }
+            @* The board filter is this browser's: a tap posts the new choice, which comes back as a cookie (RelaysEndpoints). *@
+            <BoardPicker Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Counts="_counts" Showing="@ShowingText" />
+            @* A board out of contact is never out of sight: a line for each one the filter hides. *@
+            @foreach (var board in Boards.Where(b => !Filter.Shows(b.BoardId) && !b.State.IsConnected))
+            {
+                <p class="lost-line" role="status" @key="board.BoardId">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                    <span><strong>@board.Name:</strong> @NoContactSince(board.State)</span>
+                </p>
+            }
+        </div>
+    }
+    else if (Boards.Count == 0)
+    {
+        @* Every board removed: nothing to show or switch. *@
+        <div class="connection">
+            <p class="no-board" role="status">There's no relay board in Contactor. Add one to switch its relays here.</p>
+            <a href="board/new" class="add-board">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                Add a board
+            </a>
+        </div>
+    }
+    else
+    {
+        <div class="connection">
+            @ConnectionLine(State, null)
+            @if (_allOffFailedBoardId is not null)
+            {
+                <p class="error" role="alert">The board isn't responding. Try again.</p>
+            }
+        </div>
+    }
 
     <main class="relays">
         @* Groups first, then the relays, each in a grid of its own, so cards line up and Tab goes row by row. *@
-        @if (_groups.Count > 0)
+        @if (ShownGroups.Any())
         {
             <section class="section" aria-labelledby="groups-heading">
                 <h2 class="section-title" id="groups-heading">Groups</h2>
                 <div class="cards group-cards">
-                @foreach (var group in _groups)
-                {
-                    var groupOn = group.IsOn(State);
-                    var missing = group.MissingRelay(Board.Capabilities.RelayCount);
-                    var level = GroupPlanner.Level(group.Infos, State);
-                    var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && level > 0);
-                    <div class="card group @(lit && State.HasAnswered ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping && State.HasAnswered ? "stopping" : null) @(State.HasAnswered ? null : "unknown")" @key="@($"g{group.Id}")">
-                        <div class="top">
-                            <span class="icon" aria-hidden="true"><GroupIcon Icon="@group.Icon" /></span>
-                            <a class="text" href="group/@group.Id">
-                                <span class="label">GROUP · @group.Chain</span>
-                                <span class="name">@group.Name</span>
-                                <span class="status @(group.Runtime.Phase != GroupPhases.Idle && State.HasAnswered ? "busy" : null)">@(!State.HasAnswered ? RelayStatusText.Waiting : missing is { } m ? GroupView.MissingRelayText(m) : GroupStatusText.For(group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
-                                @if (_failedGroupId == group.Id)
-                                {
-                                    <span class="error" role="alert">@_groupError</span>
-                                }
-                            </a>
-                            @if (State.HasAnswered)
-                            {
-                                <button type="button"
-                                        data-vibrate
-                                        class="toggle"
-                                        aria-pressed="@(groupOn ? "true" : "false")"
-                                        aria-label="@((groupOn ? "Turn off " : "Turn on ") + group.Name)"
-                                        disabled="@(!State.IsConnected || _busy || missing is not null)"
-                                        @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "ON" : "OFF")</button>
-                            }
-                            else
-                            {
-                                <button type="button" class="toggle unknown" aria-label="@($"{group.Name}: {RelayStatusText.Waiting}")" disabled>–</button>
-                            }
-                        </div>
-                        <ol class="chips" aria-label="Relays in start order">
-                            @foreach (var member in group.Members)
-                            {
-                                var memberOn = State.IsOn(member.RelayId);
-                                <li>
-                                    @if (member.Position > 1)
-                                    {
-                                        <span class="arrow" aria-hidden="true">→</span>
-                                    }
-                                    <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@(!State.HasAnswered ? " (unknown)" : memberOn ? " (on)" : " (off)")</span></span>
-                                </li>
-                            }
-                        </ol>
+                    @foreach (var group in ShownGroups)
+                    {
+                        @GroupCard(group)
+                    }
+                </div>
+            </section>
+        }
+
+        @if (Several)
+        {
+            @* A section per board, in the boards' order: its name, its own connection and "All off", its relays and inputs. *@
+            @foreach (var board in ShownBoards)
+            {
+                var state = board.State;
+                var count = CountOf(board.BoardId);
+                var relays = VisibleRelaysOf(board.BoardId).ToList();
+                var inputs = VisibleInputsOf(board.BoardId).ToList();
+                <section class="section board" aria-labelledby="@($"board-{board.BoardId}")" @key="board.BoardId">
+                    <div class="board-head">
+                        <h2 class="board-name" id="@($"board-{board.BoardId}")">@board.Name</h2>
+                        <span class="model">@(board.Model?.Name ?? "No model chosen")@(state.HasAnswered ? $" · {count.On} of {count.Active} on" : "")</span>
+                        <button type="button" class="board-off" data-vibrate aria-label="@($"All off on {board.Name}")" disabled="@(!state.IsConnected || _busy)" @onclick="() => TurnBoardOffAsync(board.BoardId)">All off</button>
                     </div>
-                }
-                </div>
-            </section>
-        }
-
-        @* No relay card to show (all in groups, or the rest hidden as inactive): no empty section and no extra gap. *@
-        @if (VisibleRelays.Any())
-        {
-            <section class="section" aria-labelledby="@(ShowRelaysHeading ? "relays-heading" : null)">
-                @if (ShowRelaysHeading)
-                {
-                    <h2 class="section-title" id="relays-heading">Relays</h2>
-                }
-                <div class="cards relay-cards">
-                    @foreach (var relay in VisibleRelays)
+                    <div class="board-line">
+                        @ConnectionLine(state, board.Name)
+                        @if (_allOffFailedBoardId == board.BoardId)
+                        {
+                            <p class="error" role="alert">The board isn't responding. Try again.</p>
+                        }
+                    </div>
+                    @if (relays.Count > 0)
                     {
-                        var on = State.IsOn(relay.Id);
-                        <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive") @(State.HasAnswered ? "" : "unknown")" @key="relay.Id">
-                            <a class="text" href="relay/@relay.Id">
-                                <span class="label">RELAY @relay.Id</span>
-                                <span class="name">@relay.Name</span>
-                                <span class="status">@(State.HasAnswered ? StatusFor(relay, on) : RelayStatusText.Waiting)</span>
-                                @if (_failedRelayId == relay.Id && _inGroup)
-                                {
-                                    <span class="error" role="alert">@RelayInGroupException.Text</span>
-                                }
-                            </a>
-                            @if (State.HasAnswered)
+                        <h3 class="section-title">Relays</h3>
+                        <div class="cards relay-cards">
+                            @foreach (var relay in relays)
                             {
-                                <button type="button"
-                                        data-vibrate
-                                        class="toggle"
-                                        aria-pressed="@(on ? "true" : "false")"
-                                        aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
-                                        disabled="@(!State.IsConnected || _busy)"
-                                        @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "ON" : "OFF")</button>
-                            }
-                            else
-                            {
-                                <button type="button" class="toggle unknown" aria-label="@($"{relay.Name}: {RelayStatusText.Waiting}")" disabled>–</button>
-                            }
-                            @if (_unconfirmed is { } unconfirmed && unconfirmed.RelayId == relay.Id)
-                            {
-                                @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
-                                <div class="unconfirmed">
-                                    <UnconfirmedBox CanTryAgain="@(State.IsConnected && !_busy)" OnTryAgain="() => TryAgainAsync(unconfirmed)" OnLeave="() => _unconfirmed = null" />
-                                </div>
+                                @RelayCard(relay)
                             }
                         </div>
                     }
-                </div>
-            </section>
-        }
-
-        @* The board's inputs: what it reads, e.g. a door contact. No button: the app can't switch them. *@
-        @if (VisibleInputs.Any())
-        {
-            <section class="section" aria-labelledby="inputs-heading">
-                <h2 class="section-title" id="inputs-heading">Inputs</h2>
-                <div class="cards input-cards">
-                    @foreach (var input in VisibleInputs)
+                    @if (inputs.Count > 0)
                     {
-                        var closed = State.Inputs.Contains(input.Id);
-                        var status = InputStatusText.For(input, closed, State.IsConnected, Clock.Now, Clock.ToLocal);
-                        <div class="card input @(input.IsActive ? "" : "inactive") @(State.HasAnswered ? "" : "unknown")" @key="@($"i{input.Id}")">
-                            @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
-                            <div class="text">
-                                <a class="title" href="input/@input.Id">
-                                    <span class="label">INPUT @input.Id</span>
-                                    <span class="name">@input.Name</span>
-                                </a>
-                                <span class="status">
-                                    @(State.HasAnswered ? status.Text : RelayStatusText.Waiting)
-                                    @if (State.HasAnswered && status.SinceUnknown)
-                                    {
-                                        <WhyUnknown Label="@($"Why is the time unknown for {input.Name}?")" For="input.Id" />
-                                    }
-                                </span>
-                            </div>
-                            <InputStateBadge Closed="closed" Unknown="!State.HasAnswered" />
+                        <h3 class="section-title">Inputs</h3>
+                        <div class="cards input-cards">
+                            @foreach (var input in inputs)
+                            {
+                                @InputCard(input)
+                            }
                         </div>
                     }
-                </div>
-            </section>
+                </section>
+            }
+        }
+        else
+        {
+            @* No relay card to show (all in groups, or the rest hidden as inactive): no empty section and no extra gap. *@
+            @if (VisibleRelays.Any())
+            {
+                <section class="section" aria-labelledby="@(ShowRelaysHeading ? "relays-heading" : null)">
+                    @if (ShowRelaysHeading)
+                    {
+                        <h2 class="section-title" id="relays-heading">Relays</h2>
+                    }
+                    <div class="cards relay-cards">
+                        @foreach (var relay in VisibleRelays)
+                        {
+                            @RelayCard(relay)
+                        }
+                    </div>
+                </section>
+            }
+
+            @* The board's inputs: what it reads, e.g. a door contact. No button: the app can't switch them. *@
+            @if (VisibleInputs.Any())
+            {
+                <section class="section" aria-labelledby="inputs-heading">
+                    <h2 class="section-title" id="inputs-heading">Inputs</h2>
+                    <div class="cards input-cards">
+                        @foreach (var input in VisibleInputs)
+                        {
+                            @InputCard(input)
+                        }
+                    </div>
+                </section>
+            }
         }
 
-        <a href="group/new" class="new-group">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            New group
-        </a>
+        @if (Boards.Count > 0)
+        {
+            <a href="group/new" class="new-group">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                New group
+            </a>
+        }
 
         @if (InactiveCount > 0)
         {
@@ -233,11 +217,26 @@
         }
     </main>
 
-    <TabBar Current="TabBar.Tab.Relays" />
+    @if (_confirmAllBoards)
+    {
+        <div class="backdrop">
+            <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+                <h2 id="confirm-title">@BoardsText.ConfirmAllOff(RelaysOnNow, Boards.Count)</h2>
+                <p>Groups stop in their own order. A board without contact is left as it is.</p>
+                <div class="dialog-buttons">
+                    <button type="button" class="cancel" @onclick="() => _confirmAllBoards = false">Cancel</button>
+                    <button type="button" class="confirm" data-vibrate disabled="@(_busy || !AnyConnected)" @onclick="TurnOffAllBoardsAsync">Turn off</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <TabBar Current="TabBar.Tab.Relays" SideList="@(Several ? BoardList : null)" />
 </div>
 
 @code {
     private List<Relay> _relays = [];
+    private BoardCounts _counts = BoardCounts.None;
     private IReadOnlyList<GroupView> _groups = [];
     private IReadOnlyList<InputView> _inputs = [];
     private int? _failedGroupId;
@@ -251,39 +250,272 @@
     private SignedInUser? _user;
     private bool _showInactive;
     private bool _busy;
-    private bool _allOffFailed;
+
+    // The board whose "All off" found it without contact; its section (or, with one board, the connection line) says so.
+    private int? _allOffFailedBoardId;
     private int? _failedRelayId;
+
+    // "Turn off all boards": asking first, and then the boards it couldn't reach.
+    private bool _confirmAllBoards;
+    private string? _allBoardsMessage;
 
     // A press the board didn't confirm, shown under its relay until the person chooses.
     private UnconfirmedPress? _unconfirmed;
     private bool _inGroup;
 
-    private BoardState State => Board.State;
+    // The press was refused because its board is being removed (LiveBoard.BeingRemoved).
+    private bool _beingRemoved;
 
-    // A group counts as one, and its relays aren't listed on their own.
-    private int ActiveCount => _relays.Count(r => r.IsActive) + _groups.Count;
+    /// <summary>The boards this browser picked to show (<see cref="BoardFilter"/>), as the page was opened.</summary>
+    [CascadingParameter]
+    public BoardFilters? PickedBoards { get; set; }
 
-    private int OnCount => _relays.Count(r => r.IsActive && State.IsOn(r.Id)) + _groups.Count(g => State.Relays.Overlaps(g.Mask));
+    private IReadOnlyList<LiveBoard> Boards => Registry.All;
 
-    private int InactiveCount => _relays.Count(r => !r.IsActive) + _inputs.Count(i => !i.IsActive);
+    // Two or more boards: a section per board, the filter, and "Turn off all boards". One board looks as it always did.
+    private bool Several => Boards.Count > 1;
 
-    private IEnumerable<Relay> VisibleRelays => _relays.Where(r => r.IsActive || _showInactive);
+    // With one board: that board. Before the app has a board, none (no relays, never answers).
+    private LiveBoard? OnlyOne => Boards.Count == 1 ? Boards[0] : null;
 
-    private IEnumerable<InputView> VisibleInputs => _inputs.Where(i => i.IsActive || _showInactive);
+    private int? OnlyBoardId => OnlyOne?.BoardId;
+
+    // The one board's state; with several boards each card takes its own board's (StateOf).
+    private BoardState State => OnlyOne?.State ?? BoardState.Initial;
+
+    private BoardFilter Filter => (PickedBoards?.Relays ?? BoardFilter.All).For([.. Boards.Select(b => b.BoardId)]);
+
+    private IReadOnlyList<LiveBoard> ShownBoards => [.. Boards.Where(b => Filter.Shows(b.BoardId))];
+
+    private IEnumerable<GroupView> ShownGroups => _groups.Where(g => Filter.Shows(g.BoardId));
+
+    private bool AnyAnswered => Boards.Any(b => b.State.HasAnswered);
+
+    private bool AnyConnected => Boards.Any(b => b.State.IsConnected);
+
+    // What "Turn off all boards" asks about: the relays on now, on every board.
+    private int RelaysOnNow => Boards.Sum(b => b.State.Relays.Count);
+
+    private BoardState StateOf(int boardId)
+    {
+        return Registry.Find(boardId)?.State ?? BoardState.Initial;
+    }
+
+    private string BoardNameOf(int boardId)
+    {
+        return Registry.Find(boardId)?.Name ?? "";
+    }
+
+    // A group counts as one, and its relays aren't listed on their own. Only what the board has answered counts as on.
+    private (int On, int Active) CountOf(int boardId)
+    {
+        return _counts.Of(boardId, StateOf(boardId));
+    }
+
+    private (int On, int Active) CountOf(IEnumerable<LiveBoard> boards)
+    {
+        var counts = boards.Select(b => CountOf(b.BoardId)).ToList();
+        return (counts.Sum(c => c.On), counts.Sum(c => c.Active));
+    }
+
+    // "Showing 2 of 9 boards · 7 of 28 on" while filtered.
+    private string? ShowingText
+    {
+        get
+        {
+            if (Filter.IsAll)
+            {
+                return null;
+            }
+
+            var shown = CountOf(ShownBoards);
+            return BoardsText.Showing(ShownBoards.Count, Boards.Count, shown.On, shown.Active);
+        }
+    }
+
+    private string NoContactSince(BoardState state)
+    {
+        return !state.HasAnswered ? "no contact yet"
+            : state.LastContactUtc is { } last ? $"no contact since {RelayStatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)}"
+            : "no contact";
+    }
+
+    private IEnumerable<Relay> VisibleRelays => _relays.Where(r => (r.IsActive || _showInactive) && Filter.Shows(r.BoardId));
+
+    private IEnumerable<InputView> VisibleInputs => _inputs.Where(i => (i.IsActive || _showInactive) && Filter.Shows(i.BoardId));
+
+    private IEnumerable<Relay> VisibleRelaysOf(int boardId) => VisibleRelays.Where(r => r.BoardId == boardId);
+
+    private IEnumerable<InputView> VisibleInputsOf(int boardId) => VisibleInputs.Where(i => i.BoardId == boardId);
+
+    private int InactiveRelays => _relays.Count(r => !r.IsActive && Filter.Shows(r.BoardId));
+
+    private int InactiveInputs => _inputs.Count(i => !i.IsActive && Filter.Shows(i.BoardId));
+
+    private int InactiveCount => InactiveRelays + InactiveInputs;
 
     // "Relays" only sets the relays apart from the groups or the inputs (its section is only there over cards).
     private bool ShowRelaysHeading => _groups.Count > 0 || VisibleInputs.Any();
 
-    private string InactiveButtonText => InactiveText.For(_relays.Count(r => !r.IsActive), _inputs.Count(i => !i.IsActive), _showInactive);
+    private string InactiveButtonText => InactiveText.For(InactiveRelays, InactiveInputs, _showInactive);
 
-    private string UpdatedText
+    private string UpdatedText(BoardState state)
     {
-        get
-        {
-            var age = Clock.UtcNow - (State.LastContactUtc?.UtcDateTime ?? Clock.UtcNow);
-            return age < TimeSpan.FromMinutes(1) ? "just now" : $"{(int)age.TotalMinutes} min ago";
-        }
+        var age = Clock.UtcNow - (state.LastContactUtc?.UtcDateTime ?? Clock.UtcNow);
+        return age < TimeSpan.FromMinutes(1) ? "just now" : $"{(int)age.TotalMinutes} min ago";
     }
+
+    // A board's connection: online, or a red box. With one board it is "the relay board"; with several, the board's name.
+    private RenderFragment ConnectionLine(BoardState state, string? boardName) => __builder =>
+    {
+        if (state.IsConnected)
+        {
+            <p class="online"><span class="dot" aria-hidden="true"></span>@(boardName is null ? "Board online" : "Online") · updated @UpdatedText(state)</p>
+        }
+        else
+        {
+            var which = boardName ?? "the relay board";
+            <div class="offline" role="status">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                <div>
+                    @if (state.HasAnswered)
+                    {
+                        <strong>No contact with @which</strong>
+                        <span>@(state.LastContactUtc is { } last ? $"Since {RelayStatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)}. " : "")The states below may be wrong.</span>
+                    }
+                    else
+                    {
+                        <strong>No contact with @which yet</strong>
+                        <span>Waiting for its first answer.</span>
+                    }
+                </div>
+            </div>
+        }
+    };
+
+    // The desktop's side menu: every board, to pick which to show.
+    private RenderFragment BoardList => __builder =>
+    {
+        <BoardPicker Side="true" Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Counts="_counts" />
+    };
+
+    private RenderFragment GroupCard(GroupView group) => __builder =>
+    {
+        var state = StateOf(group.BoardId);
+        var groupOn = group.IsOn(state);
+        var missing = group.MissingRelay(Registry.Find(group.BoardId)?.Capabilities.RelayCount ?? 0);
+        var level = GroupPlanner.Level(group.Infos, state);
+        var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && level > 0);
+        @* With several boards the label names the group's board: "GROUP · WORKSHOP 1 → 2". *@
+        var chain = Several ? $"{BoardNameOf(group.BoardId).ToUpperInvariant()} {string.Join(" → ", group.Members.Select(m => m.Channel))}" : group.Chain;
+        <div class="card group @(lit && state.HasAnswered ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping && state.HasAnswered ? "stopping" : null) @(state.HasAnswered ? null : "unknown")" @key="@($"g{group.Id}")">
+            <div class="top">
+                <span class="icon" aria-hidden="true"><GroupIcon Icon="@group.Icon" /></span>
+                <a class="text" href="group/@group.Id">
+                    <span class="label">GROUP · @chain</span>
+                    <span class="name">@group.Name</span>
+                    <span class="status @(group.Runtime.Phase != GroupPhases.Idle && state.HasAnswered ? "busy" : null)">@(!state.HasAnswered ? RelayStatusText.Waiting : missing is { } m ? GroupView.MissingRelayText(m) : GroupStatusText.For(group, state, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
+                    @if (_failedGroupId == group.Id)
+                    {
+                        <span class="error" role="alert">@_groupError</span>
+                    }
+                </a>
+                @if (state.HasAnswered)
+                {
+                    <button type="button"
+                            data-vibrate
+                            class="toggle"
+                            aria-pressed="@(groupOn ? "true" : "false")"
+                            aria-label="@((groupOn ? "Turn off " : "Turn on ") + group.Name)"
+                            disabled="@(!state.IsConnected || _busy || missing is not null)"
+                            @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@(groupOn ? "ON" : "OFF")</button>
+                }
+                else
+                {
+                    <button type="button" class="toggle unknown" aria-label="@($"{group.Name}: {RelayStatusText.Waiting}")" disabled>–</button>
+                }
+            </div>
+            <ol class="chips" aria-label="Relays in start order">
+                @foreach (var member in group.Members)
+                {
+                    var memberOn = state.IsOn(member.Channel);
+                    <li>
+                        @if (member.Position > 1)
+                        {
+                            <span class="arrow" aria-hidden="true">→</span>
+                        }
+                        <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@(!state.HasAnswered ? " (unknown)" : memberOn ? " (on)" : " (off)")</span></span>
+                    </li>
+                }
+            </ol>
+        </div>
+    };
+
+    private RenderFragment RelayCard(Relay relay) => __builder =>
+    {
+        var state = StateOf(relay.BoardId);
+        var on = state.IsOn(relay.Channel);
+        <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive") @(state.HasAnswered ? "" : "unknown")" @key="relay.Id">
+            <a class="text" href="relay/@relay.Id">
+                <span class="label">RELAY @relay.Channel</span>
+                <span class="name">@relay.Name</span>
+                <span class="status">@(state.HasAnswered ? StatusFor(relay, on) : RelayStatusText.Waiting)</span>
+                @if (_failedRelayId == relay.Id && _inGroup)
+                {
+                    <span class="error" role="alert">@RelayInGroupException.Text</span>
+                }
+                else if (_failedRelayId == relay.Id && _beingRemoved)
+                {
+                    <span class="error" role="alert">@LiveBoard.BeingRemoved</span>
+                }
+            </a>
+            @if (state.HasAnswered)
+            {
+                <button type="button"
+                        data-vibrate
+                        class="toggle"
+                        aria-pressed="@(on ? "true" : "false")"
+                        aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
+                        disabled="@(!state.IsConnected || _busy)"
+                        @onclick="() => ToggleAsync(relay, on)">@(on ? "ON" : "OFF")</button>
+            }
+            else
+            {
+                <button type="button" class="toggle unknown" aria-label="@($"{relay.Name}: {RelayStatusText.Waiting}")" disabled>–</button>
+            }
+            @if (_unconfirmed is { } unconfirmed && unconfirmed.RelayId == relay.Id)
+            {
+                @* A press the board didn't confirm: nothing is guessed or queued; the person decides. *@
+                <div class="unconfirmed">
+                    <UnconfirmedBox CanTryAgain="@(state.IsConnected && !_busy)" OnTryAgain="() => TryAgainAsync(unconfirmed)" OnLeave="() => _unconfirmed = null" />
+                </div>
+            }
+        </div>
+    };
+
+    private RenderFragment InputCard(InputView input) => __builder =>
+    {
+        var state = StateOf(input.BoardId);
+        var closed = state.Inputs.Contains(input.Channel);
+        var status = InputStatusText.For(input, closed, state.IsConnected, Clock.Now, Clock.ToLocal);
+        <div class="card input @(input.IsActive ? "" : "inactive") @(state.HasAnswered ? "" : "unknown")" @key="@($"i{input.Id}")">
+            @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
+            <div class="text">
+                <a class="title" href="input/@input.Id">
+                    <span class="label">INPUT @input.Channel</span>
+                    <span class="name">@input.Name</span>
+                </a>
+                <span class="status">
+                    @(state.HasAnswered ? status.Text : RelayStatusText.Waiting)
+                    @if (state.HasAnswered && status.SinceUnknown)
+                    {
+                        <WhyUnknown Label="@($"Why is the time unknown for {input.Name}?")" For="input.Id" />
+                    }
+                </span>
+            </div>
+            <InputStateBadge Closed="closed" Unknown="!state.HasAnswered" />
+        </div>
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -299,13 +531,15 @@
 
         _user = await CurrentUser.GetAsync();
         await LoadAsync();
-        Board.StateChanged += OnBoardChanged;
+        Registry.StateChanged += OnBoardChanged;
+        Registry.BoardsChanged += OnBoardsChanged;
         Changes.Changed += OnRelaysChanged;
     }
 
     public void Dispose()
     {
-        Board.StateChanged -= OnBoardChanged;
+        Registry.StateChanged -= OnBoardChanged;
+        Registry.BoardsChanged -= OnBoardsChanged;
         Changes.Changed -= OnRelaysChanged;
         _tick?.Dispose();
     }
@@ -316,7 +550,10 @@
         _groups = await Groups.ListAsync(CancellationToken.None);
         _inputs = await Inputs.ListAsync(CancellationToken.None);
         var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
-        _relays = (await db.Relays.AsNoTracking().Where(r => r.Id <= Board.Capabilities.RelayCount).OrderBy(r => r.SortOrder).ThenBy(r => r.Id).ToListAsync()).Where(r => !members.Contains(r.Id)).ToList();
+        _relays = (await db.Relays.AsNoTracking().OrderBy(r => r.SortOrder).ThenBy(r => r.Channel).ToListAsync())
+            .Where(r => Registry.HasRelay(r.BoardId, r.Channel) && !members.Contains(r.Id))
+            .ToList();
+        _counts = new BoardCounts(_relays.Where(r => r.IsActive).Select(r => (r.BoardId, r.Channel)), _groups.Select(g => (g.BoardId, g.Mask)));
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
         _names = await ActorNames.LoadAsync(db, CancellationToken.None);
 
@@ -382,9 +619,9 @@
         return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
     }
 
-    private async Task ToggleAsync(int relayId, bool isOn)
+    private async Task ToggleAsync(Relay relay, bool isOn)
     {
-        await SwitchAsync(new UnconfirmedPress(relayId, !isOn));
+        await SwitchAsync(new UnconfirmedPress(relay.Id, relay.Channel, !isOn));
     }
 
     private Task TryAgainAsync(UnconfirmedPress press)
@@ -401,7 +638,7 @@
                 ? Control.TurnOnAsync(press.RelayId, _user!.Email, CancellationToken.None)
                 : Control.TurnOffAsync(press.RelayId, _user!.Email, CancellationToken.None),
             failedRelayId: press.RelayId);
-        if (_failedRelayId == press.RelayId && !_inGroup)
+        if (_failedRelayId == press.RelayId && !_inGroup && !_beingRemoved)
         {
             _unconfirmed = press;
             _failedRelayId = null;
@@ -433,6 +670,11 @@
                 await Sequencer.StartGroupAsync(groupId, _user.Email, CancellationToken.None);
             }
         }
+        catch (BoardClosedException)
+        {
+            _failedGroupId = groupId;
+            _groupError = LiveBoard.BeingRemoved;
+        }
         catch (BoardNotConnectedException)
         {
             _failedGroupId = groupId;
@@ -451,12 +693,49 @@
         }
     }
 
-    private async Task TurnAllOffAsync()
+    // "All off" for one board: its relays outside a group off at once, its groups stopping in their own order. No
+    // popup: it only ever turns things off, on the board the person sees.
+    private async Task TurnBoardOffAsync(int? boardId)
     {
-        await RunAsync(() => Control.TurnAllOffAsync(_user!.Email, CancellationToken.None), failedRelayId: null);
+        if (boardId is not { } id)
+        {
+            return;
+        }
+
+        await RunAsync(() => Control.TurnAllOffAsync(id, _user!.Email, CancellationToken.None), failedRelayId: null, allOffBoardId: id);
     }
 
-    private async Task RunAsync(Func<Task> command, int? failedRelayId)
+    // "Turn off all boards", once the person said yes: every board it can reach, and which it couldn't.
+    private async Task TurnOffAllBoardsAsync()
+    {
+        _confirmAllBoards = false;
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _allBoardsMessage = null;
+        _allOffFailedBoardId = null;
+        _failedRelayId = null;
+        try
+        {
+            var unreachable = await Control.TurnOffAllBoardsAsync(_user.Email, CancellationToken.None);
+            _allBoardsMessage = BoardsText.Unreachable([.. unreachable.Select(BoardNameOf)]);
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Turning off every board failed");
+            _allBoardsMessage = "Something went wrong. Try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RunAsync(Func<Task> command, int? failedRelayId, int? allOffBoardId = null)
     {
         if (_user is null || _busy)
         {
@@ -465,16 +744,24 @@
 
         _busy = true;
         _failedRelayId = null;
-        _allOffFailed = false;
+        _allOffFailedBoardId = null;
+        _allBoardsMessage = null;
         _inGroup = false;
+        _beingRemoved = false;
         try
         {
             await command();
         }
+        catch (BoardClosedException)
+        {
+            // Not a board that doesn't answer: one being removed, which turns nothing on any more.
+            _failedRelayId = failedRelayId;
+            _beingRemoved = true;
+        }
         catch (BoardNotConnectedException)
         {
             _failedRelayId = failedRelayId;
-            _allOffFailed = failedRelayId is null;
+            _allOffFailedBoardId = allOffBoardId;
         }
         catch (RelayInGroupException)
         {
@@ -487,10 +774,16 @@
         }
     }
 
-    // Both events come from other threads (the board's read loop, another person's circuit).
-    private void OnBoardChanged(object? sender, BoardState state)
+    // These events come from other threads (a board's read loop, another person's circuit).
+    private void OnBoardChanged(object? sender, BoardStateChange change)
     {
         _ = RefreshAsync(reload: false);
+    }
+
+    // A board was added: its relays, inputs and section.
+    private void OnBoardsChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync(reload: true);
     }
 
     private void OnRelaysChanged(object? sender, EventArgs e)
@@ -510,7 +803,7 @@
                 }
 
                 // The board shows the relay as the person wanted it: nothing left to decide.
-                if (_unconfirmed?.IsSettledBy(State) == true)
+                if (_unconfirmed is { } press && press.IsSettledBy(StateOf(_relays.FirstOrDefault(r => r.Id == press.RelayId)?.BoardId ?? 0)))
                 {
                     _unconfirmed = null;
                 }

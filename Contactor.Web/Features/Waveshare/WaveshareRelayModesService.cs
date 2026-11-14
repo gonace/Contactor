@@ -10,11 +10,13 @@ namespace Contactor.Web.Features.Waveshare;
 /// Logs each time <see cref="WaveshareClient"/> set the board's relays to normal mode on connecting
 /// (<c>Waveshare:ResetRelayModes</c>), as Actor <c>system</c>, with the modes it found (<c>"unknown"</c> when it couldn't
 /// read them); and, in red for everyone, each connection where the board didn't take it, so its inputs may switch
-/// relays past the app. The client does the reset itself, before its first poll; this only records it.
+/// relays past the app, about the board it runs for. The client does the reset itself, before its first poll; this only
+/// records it.
 /// </summary>
 public sealed partial class WaveshareRelayModesService : BackgroundService
 {
     private readonly WaveshareClient _client;
+    private readonly int _boardId;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<WaveshareRelayModesService> _logger;
@@ -24,11 +26,13 @@ public sealed partial class WaveshareRelayModesService : BackgroundService
 
     public WaveshareRelayModesService(
         WaveshareClient client,
+        int boardId,
         IDbContextFactory<ContactorDbContext> dbFactory,
         TimeProvider timeProvider,
         ILogger<WaveshareRelayModesService> logger)
     {
         _client = client;
+        _boardId = boardId;
         _dbFactory = dbFactory;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -89,6 +93,7 @@ public sealed partial class WaveshareRelayModesService : BackgroundService
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = _timeProvider.GetUtcNow().UtcDateTime,
+                BoardId = _boardId,
                 Actor = EventActors.System,
                 Action = action,
                 Details = details,

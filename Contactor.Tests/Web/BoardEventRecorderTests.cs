@@ -1,10 +1,11 @@
-using Contactor.Web.Features.Inputs;
 using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -51,7 +52,7 @@ public sealed class BoardEventRecorderTests
 
         await rig.Control.TurnOnAsync(2, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(2));
-        await rig.Control.TurnAllOffAsync(Jane, Cancel);
+        await rig.Control.TurnAllOffAsync(rig.Live.BoardId, Jane, Cancel);
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0);
         await rig.Client.RequestStatusAsync(Cancel);
         await Task.Delay(200, Cancel);
@@ -132,12 +133,13 @@ public sealed class BoardEventRecorderTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -168,12 +170,13 @@ public sealed class BoardEventRecorderTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 4, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -213,11 +216,10 @@ public sealed class BoardEventRecorderTests
     [Fact]
     public async Task Should_LogAnInputThatChangedWhileDown_AsNoticed()
     {
-        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-2));
+        // The board's inputs as it reads them at its first answer after start.
+        await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-2), inputsOn: [1, 2]);
         setup.Log(1, on: false);
         setup.Log(2, on: true);
-        setup.Board.SetInput(1, on: true);
-        setup.Board.SetInput(2, on: true);
 
         await setup.StartAsync();
 
@@ -318,7 +320,7 @@ public sealed class BoardEventRecorderTests
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        setup.Database.Services.Live().Expected.Expect(ChannelMask.Of(1), on: true);
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
@@ -338,7 +340,7 @@ public sealed class BoardEventRecorderTests
     {
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        setup.Database.Services.Live().Expected.Expect(ChannelMask.Of(1), on: true);
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
 
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
@@ -399,11 +401,7 @@ public sealed class BoardEventRecorderTests
         await BoardTestRig.WaitUntilAsync(() => InputEvents(setup.Database).Count == 2);
         Assert.Equal(["""{"on":true}""", """{"on":false}"""], InputEvents(setup.Database).Select(e => e.Details));
         var feed = setup.Database.Services.GetRequiredService<InputChangeFeed>().Reader;
-        List<InputChanged> handedOn = [];
-        while (feed.TryRead(out var change))
-        {
-            handedOn.Add(change);
-        }
+        List<InputChanged> handedOn = [await BoardTestRig.NextAsync(feed), await BoardTestRig.NextAsync(feed)];
 
         Assert.Equal([new InputChanged(1, true), new InputChanged(1, false)], handedOn);
     }
@@ -417,7 +415,7 @@ public sealed class BoardEventRecorderTests
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         setup.Board.Time = setup.Time;
         await setup.StartAsync();
-        setup.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(1), on: true);
+        setup.Database.Services.Live().Expected.Expect(ChannelMask.Of(1), on: true);
         await setup.ExecuteAsync("CREATE TRIGGER fail_once BEFORE INSERT ON \"EventLog\" BEGIN SELECT RAISE(ABORT, 'disk busy'); END;");
         setup.Board.SetRelayAndInput(relay: 1, input: 1, on: true);
         await BoardTestRig.WaitUntilAsync(() => setup.Errors.RecorderFailures == 1);
@@ -595,7 +593,7 @@ public sealed class BoardEventRecorderTests
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await using (var db = await setup.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan };
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan };
             group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
             group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
             db.RelayGroups.Add(group);
@@ -623,12 +621,17 @@ public sealed class BoardEventRecorderTests
         return [.. Events(database).Where(e => e.Action == EventActions.InputChanged)];
     }
 
-    private static async Task<InputRig> InputRigAsync(DateTime lastContact, int[]? relaysOn = null, DateTime? longGapEnded = null)
+    private static async Task<InputRig> InputRigAsync(DateTime lastContact, int[]? relaysOn = null, DateTime? longGapEnded = null, int[]? inputsOn = null)
     {
         var board = new FakeRelayBoard(relayCount: 4, inputCount: 2);
         foreach (var relay in relaysOn ?? [])
         {
             await board.TurnOnAsync(ChannelMask.Of(relay), Cancel);
+        }
+
+        foreach (var input in inputsOn ?? [])
+        {
+            board.SetInput(input, on: true);
         }
 
         var time = new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start));
@@ -638,16 +641,18 @@ public sealed class BoardEventRecorderTests
             services.AddSingleton<ILoggerProvider>(errors);
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(time);
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddSingleton<InputChangeFeed>();
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = lastContact, LongGapEndedUtc = longGapEnded });
+            var runtime = await db.BoardRuntimes.SingleAsync(Cancel);
+            (runtime.LastContactUtc, runtime.LongGapEndedUtc) = (lastContact, longGapEnded);
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -686,7 +691,7 @@ public sealed class BoardEventRecorderTests
             if (IsEnabled(logLevel))
             {
                 Interlocked.Increment(ref _count);
-                if (formatter(state, exception) == "Could not record a board event")
+                if (formatter(state, exception).StartsWith("Could not record an event of relay board", StringComparison.Ordinal))
                 {
                     Interlocked.Increment(ref _recorderFailures);
                 }
@@ -750,10 +755,10 @@ public sealed class BoardEventRecorderTests
             await db.Database.ExecuteSqlRawAsync(sql, Cancel);
         }
 
-        public BoardWatchState State()
+        public BoardRuntime State()
         {
             using var db = Database.Factory.CreateDbContext();
-            return db.BoardWatchStates.AsNoTracking().Single();
+            return db.BoardRuntimes.AsNoTracking().Single();
         }
 
         public async ValueTask DisposeAsync()

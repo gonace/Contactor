@@ -1,0 +1,403 @@
+@page "/board/new"
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Setup
+@using Contactor.Web.Persistence
+@inject BoardRegistry Registry
+@inject BoardAddressHandler Address
+@inject BoardRemoval Removal
+@inject SetupHandler Setup
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+@inject ILogger<BoardNew> Log
+
+<PageTitle>Add a board · Contactor</PageTitle>
+
+<div class="screen">
+    <header class="header" inert="@_sheetOpen">
+        @if (_step == StepBoard)
+        {
+            @if (_boardId is null)
+            {
+                <a href="settings" class="back">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+                    Cancel
+                </a>
+            }
+            else
+            {
+                <button type="button" class="back" disabled="@Busy" @onclick="CancelAsync">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+                    Cancel
+                </button>
+            }
+        }
+        else
+        {
+            var shown = _step;
+            <button type="button" class="back" disabled="@Busy" @onclick="() => Back(shown)">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+                Back
+            </button>
+        }
+        <span class="step-count">STEP @_step OF @StepCount</span>
+    </header>
+
+    <div class="progress" aria-hidden="true" inert="@_sheetOpen">
+        @for (var i = 1; i <= StepCount; i++)
+        {
+            <span class="@(i <= _step ? "done" : null)"></span>
+        }
+    </div>
+
+    <main class="content">
+        @if (_step == StepBoard)
+        {
+            <BoardModelPicker @ref="_picker" @bind-Type="_type" Busy="Busy" OpenChanged="OnListOpened">
+                <div class="field">
+                    <label for="board-name">Name</label>
+                    <input id="board-name" type="text" maxlength="@Board.NameMaxLength" autocomplete="off" placeholder="@DefaultName" @bind="_name" @bind:event="oninput" />
+                    <p class="hint">What you call it in Contactor, e.g. "Garage". You can change it later.</p>
+                </div>
+            </BoardModelPicker>
+        }
+        else if (Chosen is not { Model: not null } board)
+        {
+            <p class="missing">This relay board was removed meanwhile.</p>
+        }
+        else if (_step == StepWhere)
+        {
+            <BoardWhereStep @ref="_where" Board="board" Values="_whereFields" UserEmail="@_user?.Email" Busy="Busy"
+                            BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" />
+        }
+        else
+        {
+            <BoardRelaysStep @ref="_relaysStep" Board="board" Rows="_relays" UserEmail="@_user?.Email" />
+        }
+    </main>
+
+    <div class="next" inert="@_sheetOpen">
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+        @{
+            var step = _step;
+            var gone = step > StepBoard && Chosen is null;
+        }
+        @if (step < StepRelays)
+        {
+            <button type="button" disabled="@(Busy || gone || (step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(step)">Next</button>
+        }
+        else
+        {
+            <button type="button" class="finish" disabled="@(Busy || gone)" @onclick="FinishAsync">Done</button>
+        }
+        @if (step == StepWhere && !gone)
+        {
+            <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
+        }
+        @if (step > StepBoard)
+        {
+            <button type="button" class="link" disabled="@Busy" @onclick="CancelAsync">Cancel</button>
+        }
+    </div>
+</div>
+
+<TabBar Current="TabBar.Tab.Settings" SideMenuOnly="true" />
+
+@code {
+    private const int StepBoard = 1;
+    private const int StepWhere = 2;
+    private const int StepRelays = 3;
+    private const int StepCount = 3;
+
+    private int _step = StepBoard;
+    private string _type = "";
+    private string _name = "";
+    private SignedInUser? _user;
+    private bool _sheetOpen;
+    private bool _busy;
+    private bool _stepBusy;
+    private bool _moved;
+    private string? _error;
+    private BoardModelPicker? _picker;
+    private BoardWhereStep? _where;
+    private BoardRelaysStep? _relaysStep;
+    private BoardWhereStep.Fields _whereFields = new();
+    private List<BoardRelaysStep.Row> _relays = [];
+
+    // The board these steps made, from "Next" on the first step; null before. Cancel removes it again.
+    private int? _boardId;
+
+    private LiveBoard? Chosen => _boardId is { } id ? Registry.Find(id) : null;
+
+    private bool Busy => _busy || _stepBusy;
+
+    // The name an empty field gives the board: the model's, made unique among the other boards.
+    private string DefaultName => BoardCatalogue.Find(_type)?.Model is { } model
+        ? BoardRegistry.UniqueName(model, [.. Registry.All.Where(b => b.BoardId != _boardId).Select(b => b.Name)])
+        : "E.g. Garage";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await CurrentUser.GetAsync();
+        Registry.BoardsChanged += OnBoardsChanged;
+    }
+
+    public void Dispose()
+    {
+        Registry.BoardsChanged -= OnBoardsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_moved)
+        {
+            _moved = false;
+            await (_step switch
+            {
+                StepBoard when _picker is not null => _picker.FocusAsync(),
+                StepWhere when _where is not null => _where.FocusAsync(),
+                StepRelays when _relaysStep is not null => _relaysStep.FocusAsync(),
+                _ => ValueTask.CompletedTask,
+            });
+        }
+    }
+
+    // A list of "Which relay board?" opened or closed: the rest is inert meanwhile, and an earlier message goes.
+    private void OnListOpened(bool open)
+    {
+        _sheetOpen = open;
+        if (open)
+        {
+            _error = null;
+        }
+    }
+
+    private void Back(int fromStep)
+    {
+        if (!Busy && _step == fromStep && _step > StepBoard)
+        {
+            _step--;
+            _error = null;
+            _moved = true;
+        }
+    }
+
+    private async Task GoOnAsync(int fromStep)
+    {
+        if (Busy || _step != fromStep)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (_step == StepBoard)
+            {
+                await MakeBoardAsync();
+            }
+            else if (_step == StepWhere && _where is not null && await _where.GoOnAsync())
+            {
+                Move(StepRelays);
+            }
+        }
+        catch (Exception ex)
+        {
+            Fail(ex, "A step of adding a relay board failed");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // "Next" on the first step: the board is made now, so the next step can look for it. Back here, the same model
+    // keeps it (a new name renames it); another model takes it out again and makes a new one.
+    private async Task MakeBoardAsync()
+    {
+        if (_user is null)
+        {
+            return;
+        }
+
+        if (BoardCatalogue.Find(_type)?.Model is not { } model)
+        {
+            _error = "Choose your relay board.";
+            return;
+        }
+
+        var name = _name.Trim();
+        if (name.Length > Board.NameMaxLength)
+        {
+            _error = $"The name can be at most {Board.NameMaxLength} characters.";
+            return;
+        }
+
+        if (Chosen is { } made && made.Model?.Id == model.Id)
+        {
+            // An empty name is the model's, made unique, as when it was made.
+            var newName = name.Length > 0 ? name : DefaultName;
+            if ((_error = await Address.RenameAsync(made.BoardId, newName, CancellationToken.None)) is not null)
+            {
+                return;
+            }
+
+            Move(StepWhere);
+            return;
+        }
+
+        if (_boardId is { } earlier && !await TakeOutAsync(earlier))
+        {
+            return;
+        }
+
+        var board = await Registry.AddBoardAsync(model, name, CancellationToken.None);
+        _boardId = board.BoardId;
+        _whereFields = await BoardWhereStep.LoadAsync(Address, board, CancellationToken.None);
+        _relays = await BoardRelaysStep.LoadAsync(Setup, board.BoardId, CancellationToken.None);
+        Move(StepWhere);
+    }
+
+    private async Task GoOnWithoutConnectionAsync()
+    {
+        if (Busy || _step != StepWhere || _where is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (await _where.GoOnWithoutConnectionAsync())
+            {
+                Move(StepRelays);
+            }
+        }
+        catch (Exception ex)
+        {
+            Fail(ex, "Saving the relay board's address failed");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // "Done": the relays' names and "In use", then the relay list, where the new board is now.
+    private async Task FinishAsync()
+    {
+        if (Busy || _step != StepRelays || _user is null || Chosen is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            _error = await BoardRelaysStep.SaveAsync(Setup, _relays, _user.Email, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Fail(ex, "Saving the new relay board's relays failed");
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (_error is null)
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    // "Cancel": nothing is left behind. A board made here is removed again, as on its page in Settings (anything "Try"
+    // left on is turned off first), then back to Settings.
+    private async Task CancelAsync()
+    {
+        if (Busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        var gone = false;
+        try
+        {
+            gone = _boardId is not { } id || await TakeOutAsync(id);
+        }
+        catch (Exception ex)
+        {
+            Fail(ex, "Cancelling a new relay board failed");
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (gone)
+        {
+            Navigation.NavigateTo("settings");
+        }
+    }
+
+    // Removes the board made here; false, with the reason shown, when it couldn't be.
+    private async Task<bool> TakeOutAsync(int boardId)
+    {
+        if (_user is null)
+        {
+            return false;
+        }
+
+        var error = await Removal.RemoveAsync(boardId, turnOffFirst: false, _user.Email, CancellationToken.None);
+        if (error is not null && error != BoardRemoval.AlreadyRemoved)
+        {
+            _error = error;
+            return false;
+        }
+
+        _boardId = null;
+        return true;
+    }
+
+    private void Move(int step)
+    {
+        _step = step;
+        _sheetOpen = false;
+        _moved = true;
+    }
+
+    private void Fail(Exception ex, string what)
+    {
+        // An exception that leaves the handler would end the page's live connection.
+        Log.LogError(ex, "{What}", what);
+        _error = "Something went wrong. Try again.";
+    }
+
+    // A board added or removed elsewhere: the default name, or this board removed meanwhile.
+    private void OnBoardsChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed meanwhile.
+        }
+    }
+}

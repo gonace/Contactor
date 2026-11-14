@@ -1,0 +1,257 @@
+/* "Which relay board?": "Brand" and "Model" look like fields; each opens a list from the bottom of the screen on a
+   phone, and a dropdown under the field on a tablet or desktop. */
+.intro {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.intro p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.more {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.field-label {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.select {
+    width: 100%;
+    min-height: 60px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.select.open {
+    border: 2px solid var(--accent);
+    padding: 7px 13.5px;
+}
+
+.select:disabled {
+    background: transparent;
+    border-style: dashed;
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.select-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-wrap: anywhere;
+}
+
+.placeholder {
+    color: var(--muted);
+}
+
+.chevron {
+    flex-shrink: 0;
+    color: var(--muted);
+}
+
+.select.open .chevron {
+    color: var(--accent);
+    transform: rotate(180deg);
+}
+
+.sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: var(--backdrop);
+}
+
+.sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 11;
+    max-width: 560px;
+    max-height: 85vh;
+    max-height: 85dvh;
+    margin: 0 auto;
+    padding: 10px 0 max(16px, env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+    background: var(--card);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+}
+
+.sheet h2 {
+    margin: 0;
+    padding: 4px 20px 10px;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+/* The title takes the focus when a list opens, so a screen reader reads which list it is. */
+.sheet h2:focus {
+    outline: none;
+}
+
+.grab {
+    width: 40px;
+    height: 5px;
+    margin: 0 auto 10px;
+    border-radius: 3px;
+    background: var(--line-strong);
+    flex-shrink: 0;
+}
+
+.sheet-options {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+}
+
+.sheet-option {
+    min-height: 64px;
+    padding: 10px 20px;
+    border: none;
+    border-top: 1px solid var(--row-line);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+}
+
+.sheet-option.chosen {
+    background: var(--accent-tint);
+}
+
+.sheet-option.chosen .name {
+    color: var(--accent);
+}
+
+.sheet-option:focus-visible {
+    outline-offset: -3px;
+}
+
+.tick {
+    flex-shrink: 0;
+    color: var(--accent);
+}
+
+.option-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.name {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.note {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+@media (hover: hover) {
+    .select:not(:disabled):hover {
+        border-color: var(--muted);
+    }
+
+    .sheet-option:not(.chosen):hover {
+        background: var(--chip);
+    }
+}
+
+/* A tablet or a desktop: the list opens right under its field, as a dropdown; a click outside closes it, without
+   dimming the page. */
+@media (min-width: 768px) {
+    .field {
+        position: relative;
+    }
+
+    .sheet-backdrop {
+        background: transparent;
+    }
+
+    .sheet {
+        position: absolute;
+        top: calc(100% + 6px);
+        bottom: auto;
+        max-width: none;
+        max-height: 60vh;
+        padding: 6px 0;
+        border-radius: 12px;
+        border: 1.5px solid var(--line-strong);
+        box-shadow: 0 12px 32px var(--backdrop);
+    }
+
+    .grab {
+        display: none;
+    }
+
+    /* The field above already says which list it is; a screen reader still reads the title. */
+    .sheet h2 {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    .sheet-option:first-of-type {
+        border-top: none;
+    }
+}

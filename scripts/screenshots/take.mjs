@@ -66,6 +66,7 @@ function utc(minutesAgo) {
 
 function seed() {
     const db = new DatabaseSync(database);
+    // By channel: a relay's id is only the database's key.
     const relays = [
         [1, 'Fan – Lathe', 1],
         [2, 'Heat – Lathe', 1],
@@ -76,33 +77,36 @@ function seed() {
         [7, 'Relay 7', 0],
         [8, 'Relay 8', 0],
     ];
-    const rename = db.prepare('UPDATE "Relay" SET "Name" = ?, "IsActive" = ? WHERE "Id" = ?');
-    for (const [id, name, active] of relays) {
-        rename.run(name, active, id);
+    const rename = db.prepare('UPDATE "Relay" SET "Name" = ?, "IsActive" = ? WHERE "BoardId" = 1 AND "Channel" = ?');
+    for (const [channel, name, active] of relays) {
+        rename.run(name, active, channel);
     }
+
+    const relayAt = db.prepare('SELECT "Id" FROM "Relay" WHERE "BoardId" = 1 AND "Channel" = ?');
+    const relay = (channel) => relayAt.get(channel).Id;
 
     const user = db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (?, ?, 0)');
     user.run('jane@example.com', 'Jane');
     user.run('alex@example.com', 'Alex');
 
-    db.prepare('INSERT INTO "RelayGroup" ("Id", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, ?, \'fan\', 120, 1, 1)')
+    db.prepare('INSERT INTO "RelayGroup" ("Id", "BoardId", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, 1, ?, \'fan\', 120, 1, 1)')
         .run('Fan heater – Lathe');
     const member = db.prepare('INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "Position", "RoleName", "StartDelaySec", "RunOnSec") VALUES (1, ?, ?, ?, 3, ?)');
-    member.run(1, 1, 'Fan', 300);
-    member.run(2, 2, 'Heat', 0);
+    member.run(relay(1), 1, 'Fan', 300);
+    member.run(relay(2), 2, 'Heat', 0);
     db.prepare('INSERT INTO "GroupRuntime" ("GroupId", "Phase", "TargetLevel", "PendingOn") VALUES (1, \'idle\', 0, 0)').run();
 
     const schedule = db.prepare('INSERT INTO "Schedule" ("RelayId", "GroupId", "Days", "OnTime", "OffTime", "IsEnabled", "CreatedBy") VALUES (?, ?, ?, ?, ?, 1, ?)');
-    schedule.run(3, null, 31, '06:30', '08:00', 'jane@example.com');
+    schedule.run(relay(3), null, 31, '06:30', '08:00', 'jane@example.com');
     schedule.run(null, 1, 31, '06:00', '07:30', 'alex@example.com');
 
-    const event = db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "RelayId", "GroupId", "Actor", "Action", "Details") VALUES (?, ?, ?, ?, ?, ?)');
-    event.run(utc(26 * 60), 4, null, 'alex@example.com', 'off', null);
-    event.run(utc(25 * 60), 5, null, 'jane@example.com', 'on', null);
-    event.run(utc(24 * 60 + 30), 5, null, 'auto-off', 'off', '{"afterMinutes":120}');
-    event.run(utc(6 * 60), 3, null, 'schedule', 'on', null);
-    event.run(utc(4 * 60 + 30), 3, null, 'schedule', 'off', null);
-    event.run(utc(3 * 60), 4, null, 'jane@example.com', 'rename', '{"from":"Relay 4","to":"Ventilation – Paint shop"}');
+    const event = db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "BoardId", "RelayId", "GroupId", "Actor", "Action", "Details") VALUES (?, 1, ?, ?, ?, ?, ?)');
+    event.run(utc(26 * 60), relay(4), null, 'alex@example.com', 'off', null);
+    event.run(utc(25 * 60), relay(5), null, 'jane@example.com', 'on', null);
+    event.run(utc(24 * 60 + 30), relay(5), null, 'auto-off', 'off', '{"afterMinutes":120}');
+    event.run(utc(6 * 60), relay(3), null, 'schedule', 'on', null);
+    event.run(utc(4 * 60 + 30), relay(3), null, 'schedule', 'off', null);
+    event.run(utc(3 * 60), relay(4), null, 'jane@example.com', 'rename', '{"from":"Relay 4","to":"Ventilation – Paint shop"}');
     event.run(utc(90), null, 1, 'alex@example.com', 'group-create', '{"name":"Fan heater – Lathe","steps":["Fan","Heat"]}');
     db.close();
 }
@@ -111,7 +115,8 @@ function seed() {
 // next start and opens on the relays. The shared person is called John, so the screens greet someone by name.
 function setUp() {
     const db = new DatabaseSync(database);
-    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "BoardType", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, \'vm201\', ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
+    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
+    db.prepare('INSERT INTO "Board" ("Id", "Name", "Type", "SortOrder") VALUES (1, \'Velleman VM201\', \'vm201\', 1)').run();
     db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (\'someone@contactor.invalid\', \'John\', 0)').run();
     db.close();
 }

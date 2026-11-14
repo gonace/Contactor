@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -30,6 +31,8 @@ public sealed class FailedCommandTests : IAsyncLifetime
 
     private RelayControl Control => _database.Services.GetRequiredService<RelayControl>();
 
+    private int BoardId => _database.Services.Live().BoardId;
+
     private AutoOffService AutoOff => _database.Services.GetRequiredService<AutoOffService>();
 
     private SchedulerService Scheduler => _database.Services.GetRequiredService<SchedulerService>();
@@ -38,7 +41,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
     {
         _database = TestDatabase.Create((services, configuration) =>
         {
-            services.AddSingleton<IRelayBoard>(_board);
+            services.AddBoards(configuration);
             services.AddSingleton<TimeProvider>(_time);
             services.AddLocalClock(configuration);
             services.AddEvents(configuration);
@@ -47,6 +50,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
             services.AddSchedules(configuration);
         });
         await _database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel);
+        await _database.Services.UseFakeBoardAsync(_board);
         _recorder = _database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await _recorder.StartAsync(Cancel);
     }
@@ -97,7 +101,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await WaitForEventsAsync(1);
 
         _board.SwitchSilentlyThenFail = true;
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnAllOffAsync(Jane, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnAllOffAsync(BoardId, Jane, Cancel));
         await _board.RefreshAsync(Cancel);
 
         var events = await WaitForEventsAsync(2);
@@ -114,7 +118,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await WaitForEventsAsync(2);
 
         _board.Refuse = ChannelMask.Of(3);
-        await Control.TurnAllOffAsync(Jane, Cancel);
+        await Control.TurnAllOffAsync(BoardId, Jane, Cancel);
         await _board.RefreshAsync(Cancel);
 
         var events = await WaitForEventsAsync(3);
@@ -141,7 +145,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await WaitForEventsAsync(2);
 
         _board.Unconfirmed = ChannelMask.Of(3);
-        await Control.TurnAllOffAsync(Jane, Cancel);
+        await Control.TurnAllOffAsync(BoardId, Jane, Cancel);
         await _board.RefreshAsync(Cancel);
 
         var events = await WaitForEventsAsync(4);
@@ -195,7 +199,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
 
         _board.Refuse = ChannelMask.Of(4);
-        await sequencer.StopAllAsync(Jane, Cancel);
+        await sequencer.StopAllAsync(BoardId, Jane, Cancel);
         Assert.Equal((false, true), (_board.State.IsOn(2), _board.State.IsOn(4)));
         _board.Refuse = ChannelMask.None;
         _board.SetRelay(4, on: false);
@@ -221,7 +225,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
         var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
 
         _board.Unconfirmed = ChannelMask.Of(4);
-        await sequencer.StopAllAsync(Jane, Cancel);
+        await sequencer.StopAllAsync(BoardId, Jane, Cancel);
         Assert.Equal((false, false), (_board.State.IsOn(2), _board.State.IsOn(4)));
         await _board.RefreshAsync(Cancel);
 
@@ -478,7 +482,7 @@ public sealed class FailedCommandTests : IAsyncLifetime
     private async Task<int> AddGroupAsync(params (int RelayId, string Role)[] members)
     {
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
-        var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
+        var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
         for (var i = 0; i < members.Length; i++)
         {
             group.Members.Add(new RelayGroupMember { RelayId = members[i].RelayId, Position = i + 1, RoleName = members[i].Role, StartDelaySec = 3 });

@@ -30,6 +30,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     public event EventHandler<BoardState>? StateChanged;
 
+    /// <summary>Whether anything listens to its state, e.g. to tell a subscription that was let go.</summary>
+    public bool HasListeners => StateChanged is not null;
+
     /// <summary>
     /// When set, every status the board reports while connected carries this clock's time as its contact time, as a
     /// real board's does; otherwise it keeps the time it started with.
@@ -101,6 +104,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// the app does while the caller hasn't saved what it did yet.
     /// </summary>
     public Func<Task>? AfterSwitch { get; set; }
+
+    /// <summary>
+    /// Runs before an ON reaches the board, e.g. to hold it on its way (a slow request) while something else happens.
+    /// </summary>
+    public Func<Task>? BeforeOn { get; set; }
 
     /// <summary>
     /// When set, OFF commands are accepted but change nothing, like a relay that won't drop. They return the relays as
@@ -252,12 +260,36 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
+    /// <summary>Every command that reached the board while it was connected: its relays and whether ON, in order.</summary>
+    public IReadOnlyList<(ChannelMask Relays, bool On)> Sent
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _sent];
+            }
+        }
+    }
+
+    private readonly List<(ChannelMask Relays, bool On)> _sent = [];
+
     private async Task<ChannelMask> SwitchAsync(ChannelMask relays, bool on)
     {
+        if (on && BeforeOn is { } before)
+        {
+            await before();
+        }
+
         EnsureConnected();
         if (!Capabilities.AllRelays.ContainsAll(relays))
         {
             throw new ArgumentOutOfRangeException(nameof(relays), relays, $"The board has relays 1–{Capabilities.RelayCount}.");
+        }
+
+        lock (_lock)
+        {
+            _sent.Add((relays, on));
         }
 
         // Refused relays stay as they are: a command with only these fails before it switches anything.

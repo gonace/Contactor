@@ -1,0 +1,135 @@
+/* One board's card, as on Settings. */
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.fields {
+    display: grid;
+    grid-template-columns: 1fr 96px;
+    gap: 10px;
+}
+
+.fields.login {
+    grid-template-columns: 1fr 1fr;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    cursor: pointer;
+}
+
+.check input {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.field label {
+    font-weight: 600;
+}
+
+.field input {
+    min-height: 52px;
+    width: 100%;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 500;
+}
+
+/* A name is words, not an address. */
+.field input.name {
+    font-family: var(--font-sans);
+    font-weight: 600;
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.status {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+.status.online {
+    color: var(--muted);
+}
+
+.status.offline {
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+    border-radius: 5px;
+    background: var(--ok);
+}
+
+.saved {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ok);
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+.save {
+    height: 52px;
+    border-radius: 12px;
+    border: none;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.save:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}

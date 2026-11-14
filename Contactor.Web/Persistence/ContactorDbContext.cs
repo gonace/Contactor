@@ -27,9 +27,9 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<Input> Inputs => Set<Input>();
 
-    public DbSet<SchedulerState> SchedulerStates => Set<SchedulerState>();
+    public DbSet<Board> Boards => Set<Board>();
 
-    public DbSet<BoardSetting> BoardSettings => Set<BoardSetting>();
+    public DbSet<BoardRuntime> BoardRuntimes => Set<BoardRuntime>();
 
     public DbSet<RelayGroup> RelayGroups => Set<RelayGroup>();
 
@@ -39,13 +39,45 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<Installation> Installations => Set<Installation>();
 
-    public DbSet<BoardWatchState> BoardWatchStates => Set<BoardWatchState>();
-
     public DbSet<InputAction> InputActions => Set<InputAction>();
 
     public DbSet<CloudflareSetting> CloudflareSettings => Set<CloudflareSetting>();
 
     public DbSet<TailscaleSetting> TailscaleSettings => Set<TailscaleSetting>();
+
+    /// <summary>
+    /// The first board in the list, the one the setup guide chooses, or null before one is chosen.
+    /// </summary>
+    public Task<Board?> FirstBoardAsync(CancellationToken cancellationToken)
+    {
+        return Boards.OrderBy(b => b.SortOrder).ThenBy(b => b.Id).FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>The id of <see cref="FirstBoardAsync"/>'s board; null before one is chosen.</summary>
+    public Task<int?> FirstBoardIdAsync(CancellationToken cancellationToken)
+    {
+        return Boards.OrderBy(b => b.SortOrder).ThenBy(b => b.Id).Select(b => (int?)b.Id).FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The runtime row of the board on this row, tracked, added when it has none yet; null when there is no such board.
+    /// </summary>
+    public async Task<BoardRuntime?> BoardRuntimeAsync(int boardId, CancellationToken cancellationToken)
+    {
+        var runtime = await BoardRuntimes.SingleOrDefaultAsync(r => r.BoardId == boardId, cancellationToken);
+        if (runtime is null)
+        {
+            if (!await Boards.AnyAsync(b => b.Id == boardId, cancellationToken))
+            {
+                return null;
+            }
+
+            runtime = new BoardRuntime { BoardId = boardId };
+            BoardRuntimes.Add(runtime);
+        }
+
+        return runtime;
+    }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -66,13 +98,12 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<EventLogEntry>(ConfigureEventLog);
         modelBuilder.Entity<RelayRuntime>(ConfigureRelayRuntime);
         modelBuilder.Entity<Input>(ConfigureInput);
-        modelBuilder.Entity<SchedulerState>(ConfigureSchedulerState);
-        modelBuilder.Entity<BoardSetting>(ConfigureBoardSetting);
+        modelBuilder.Entity<Board>(ConfigureBoard);
+        modelBuilder.Entity<BoardRuntime>(ConfigureBoardRuntime);
         modelBuilder.Entity<RelayGroup>(ConfigureRelayGroup);
         modelBuilder.Entity<RelayGroupMember>(ConfigureRelayGroupMember);
         modelBuilder.Entity<GroupRuntime>(ConfigureGroupRuntime);
         modelBuilder.Entity<Installation>(ConfigureInstallation);
-        modelBuilder.Entity<BoardWatchState>(ConfigureBoardWatchState);
         modelBuilder.Entity<InputAction>(ConfigureInputAction);
         modelBuilder.Entity<CloudflareSetting>(ConfigureCloudflareSetting);
         modelBuilder.Entity<TailscaleSetting>(ConfigureTailscaleSetting);
@@ -83,6 +114,7 @@ public sealed class ContactorDbContext : DbContext
         group.ToTable("RelayGroup");
         group.Property(g => g.Name).HasMaxLength(RelayGroup.NameMaxLength);
         group.Property(g => g.Icon).HasMaxLength(GroupIcons.MaxLength);
+        group.HasOne<Board>().WithMany().HasForeignKey(g => g.BoardId).OnDelete(DeleteBehavior.Cascade);
         group.HasMany(g => g.Members).WithOne(m => m.Group).HasForeignKey(m => m.GroupId).OnDelete(DeleteBehavior.Cascade);
     }
 
@@ -102,7 +134,7 @@ public sealed class ContactorDbContext : DbContext
         // A relay is in at most one group, and a group has one relay per step.
         member.HasIndex(m => m.RelayId).IsUnique();
         member.HasIndex(m => new { m.GroupId, m.Position }).IsUnique();
-        member.HasOne<Relay>().WithMany().HasForeignKey(m => m.RelayId).OnDelete(DeleteBehavior.Restrict);
+        member.HasOne(m => m.Relay).WithMany().HasForeignKey(m => m.RelayId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureGroupRuntime(EntityTypeBuilder<GroupRuntime> runtime)
@@ -117,8 +149,9 @@ public sealed class ContactorDbContext : DbContext
 
     private static void ConfigureRelay(EntityTypeBuilder<Relay> relay)
     {
-        relay.ToTable("Relay", t => t.HasCheckConstraint("CK_Relay_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
-        relay.Property(r => r.Id).ValueGeneratedNever();
+        relay.ToTable("Relay", t => t.HasCheckConstraint("CK_Relay_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
+        relay.HasIndex(r => new { r.BoardId, r.Channel }).IsUnique();
+        relay.HasOne<Board>().WithMany().HasForeignKey(r => r.BoardId).OnDelete(DeleteBehavior.Cascade);
         relay.Property(r => r.Name).HasMaxLength(Relay.NameMaxLength);
         relay.HasMany(r => r.Schedules).WithOne(s => s.Relay).HasForeignKey(s => s.RelayId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -154,7 +187,11 @@ public sealed class ContactorDbContext : DbContext
         entry.Property(e => e.Actor).HasMaxLength(User.EmailMaxLength);
         entry.Property(e => e.Action).HasMaxLength(EventLogEntry.ActionMaxLength);
 
-        // Not a foreign key: relays are never deleted, and an event outlives any change to its relay.
+        // A board's events go with the board.
+        entry.HasOne<Board>().WithMany().HasForeignKey(e => e.BoardId).OnDelete(DeleteBehavior.Cascade);
+        entry.HasIndex(e => new { e.BoardId, e.TimestampUtc });
+
+        // Not foreign keys: an event outlives any change to its relay; a relay is deleted only with its board, whose events go with it.
         entry.HasIndex(e => e.TimestampUtc);
         entry.HasIndex(e => new { e.RelayId, e.TimestampUtc });
         entry.HasIndex(e => new { e.GroupId, e.TimestampUtc });
@@ -171,30 +208,34 @@ public sealed class ContactorDbContext : DbContext
         runtime.HasOne<Relay>().WithOne().HasForeignKey<RelayRuntime>(r => r.RelayId).OnDelete(DeleteBehavior.Restrict);
     }
 
-    private static void ConfigureSchedulerState(EntityTypeBuilder<SchedulerState> state)
+    private static void ConfigureBoard(EntityTypeBuilder<Board> board)
     {
-        state.ToTable("SchedulerState", t => t.HasCheckConstraint("CK_SchedulerState_Id", $"\"Id\" = {SchedulerState.SingletonId}"));
-        state.Property(s => s.Id).ValueGeneratedNever();
+        board.ToTable("Board", t =>
+        {
+            t.HasCheckConstraint("CK_Board_Port", "\"Port\" BETWEEN 1 AND 65535");
+
+            // An address set in the app has both; without one, the board's own settings give both.
+            t.HasCheckConstraint("CK_Board_Address", "(\"Host\" IS NULL) = (\"Port\" IS NULL)");
+        });
+        board.Property(b => b.Name).HasMaxLength(Board.NameMaxLength);
+        board.Property(b => b.Type).HasMaxLength(Board.TypeMaxLength);
+        board.Property(b => b.Host).HasMaxLength(Board.HostMaxLength);
+        board.Property(b => b.Username).HasMaxLength(BoardLogin.MaxLength);
+        board.Property(b => b.Password).HasMaxLength(BoardLogin.MaxLength);
     }
 
-    private static void ConfigureBoardSetting(EntityTypeBuilder<BoardSetting> setting)
+    private static void ConfigureBoardRuntime(EntityTypeBuilder<BoardRuntime> runtime)
     {
-        setting.ToTable("BoardSetting", t =>
-        {
-            t.HasCheckConstraint("CK_BoardSetting_Id", $"\"Id\" = {BoardSetting.SingletonId}");
-            t.HasCheckConstraint("CK_BoardSetting_Port", "\"Port\" BETWEEN 1 AND 65535");
-        });
-        setting.Property(s => s.Id).ValueGeneratedNever();
-        setting.Property(s => s.Host).HasMaxLength(BoardSetting.HostMaxLength);
-        setting.Property(s => s.Username).HasMaxLength(BoardLogin.MaxLength);
-        setting.Property(s => s.Password).HasMaxLength(BoardLogin.MaxLength);
+        runtime.ToTable("BoardRuntime");
+        runtime.HasKey(r => r.BoardId);
+        runtime.Property(r => r.BoardId).ValueGeneratedNever();
+        runtime.HasOne<Board>().WithOne().HasForeignKey<BoardRuntime>(r => r.BoardId).OnDelete(DeleteBehavior.Cascade);
     }
 
     private static void ConfigureInstallation(EntityTypeBuilder<Installation> installation)
     {
         installation.ToTable("Installation", t => t.HasCheckConstraint("CK_Installation_Id", $"\"Id\" = {Installation.SingletonId}"));
         installation.Property(i => i.Id).ValueGeneratedNever();
-        installation.Property(i => i.BoardType).HasMaxLength(Installation.BoardTypeMaxLength);
         installation.Property(i => i.AccessType).HasMaxLength(Installation.MethodTypeMaxLength);
         installation.Property(i => i.SignInType).HasMaxLength(Installation.MethodTypeMaxLength);
     }
@@ -217,16 +258,11 @@ public sealed class ContactorDbContext : DbContext
         setting.Property(s => s.HostName).HasMaxLength(TailscaleSetting.HostNameMaxLength);
     }
 
-    private static void ConfigureBoardWatchState(EntityTypeBuilder<BoardWatchState> state)
-    {
-        state.ToTable("BoardWatchState", t => t.HasCheckConstraint("CK_BoardWatchState_Id", $"\"Id\" = {BoardWatchState.SingletonId}"));
-        state.Property(s => s.Id).ValueGeneratedNever();
-    }
-
     private static void ConfigureInput(EntityTypeBuilder<Input> input)
     {
-        input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
-        input.Property(i => i.Id).ValueGeneratedNever();
+        input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
+        input.HasIndex(i => new { i.BoardId, i.Channel }).IsUnique();
+        input.HasOne<Board>().WithMany().HasForeignKey(i => i.BoardId).OnDelete(DeleteBehavior.Cascade);
         input.Property(i => i.Name).HasMaxLength(Input.NameMaxLength);
     }
 

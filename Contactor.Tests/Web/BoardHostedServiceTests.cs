@@ -5,6 +5,7 @@ using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -43,7 +44,8 @@ public sealed class BoardHostedServiceTests
         await database.Services.UseBoardAsync("vm201");
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.BoardSettings.Add(new BoardSetting { Host = "127.0.0.1", Port = saved.Port });
+            var board = await db.Boards.SingleAsync(Cancel);
+            (board.Host, board.Port) = ("127.0.0.1", saved.Port);
             await db.SaveChangesAsync(Cancel);
         }
 

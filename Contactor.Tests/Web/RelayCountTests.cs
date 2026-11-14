@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -26,9 +27,11 @@ public sealed class RelayCountTests
     [InlineData(16)]
     public async Task Should_SeedOneRelayPerChannelOfTheBoard(int count)
     {
-        await using var database = Create(new FakeRelayBoard(count));
+        var board = new FakeRelayBoard(count);
+        await using var database = Create();
 
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseFakeBoardAsync(board);
 
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(Enumerable.Range(1, count), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
@@ -39,9 +42,9 @@ public sealed class RelayCountTests
     public async Task Should_KeepRelaysABiggerBoardLeft_ButNotOfferThem()
     {
         // The database was a VM201's (8 relays); the board now has 4.
-        await using var database = Create(new FakeRelayBoard(4));
+        await using var database = Create();
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
-        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseFakeBoardAsync(new FakeRelayBoard(4));
 
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
@@ -67,8 +70,9 @@ public sealed class RelayCountTests
     {
         // Fan on relay 4, Heat on relay 5, and the board now has 4 relays: the group can't keep its order.
         var board = new FakeRelayBoard(4);
-        await using var database = Create(board);
+        await using var database = Create();
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         var groupId = await AddGroupAsync(database, (4, "Fan"), (5, "Heat"));
         var sequencer = database.Services.GetRequiredService<GroupSequencer>();
         var groups = database.Services.GetRequiredService<GroupsHandler>();
@@ -113,8 +117,9 @@ public sealed class RelayCountTests
     public async Task Should_LogTheShutOff_WhenItsFirstOffFailed()
     {
         var board = new FakeRelayBoard(4);
-        await using var database = Create(board);
+        await using var database = Create();
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         await AddGroupAsync(database, (4, "Fan"), (5, "Heat"));
         var sequencer = database.Services.GetRequiredService<GroupSequencer>();
         await board.TurnOnAsync(ChannelMask.Of(4), Cancel);
@@ -132,8 +137,9 @@ public sealed class RelayCountTests
     public async Task Should_ScheduleOnlyTheBoardsRelays()
     {
         var board = new FakeRelayBoard(4);
-        await using var database = Create(board);
+        await using var database = Create();
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             foreach (var relayId in new[] { 2, 6 })
@@ -155,7 +161,7 @@ public sealed class RelayCountTests
     private static async Task<int> AddGroupAsync(TestDatabase database, params (int RelayId, string Role)[] members)
     {
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
+        var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
         for (var i = 0; i < members.Length; i++)
         {
             group.Members.Add(new RelayGroupMember { RelayId = members[i].RelayId, Position = i + 1, RoleName = members[i].Role, StartDelaySec = 3 });
@@ -170,14 +176,15 @@ public sealed class RelayCountTests
     public async Task Should_SwitchRelaysAboveEight_OnABiggerBoard()
     {
         var board = new FakeRelayBoard(16);
-        await using var database = Create(board);
+        await using var database = Create();
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         var control = database.Services.GetRequiredService<RelayControl>();
 
         await control.TurnOnAsync(12, John, Cancel);
 
         Assert.True(board.State.IsOn(12));
-        await control.TurnAllOffAsync(John, Cancel);
+        await control.TurnAllOffAsync(database.Services.Live().BoardId, John, Cancel);
         Assert.True(board.State.Relays.IsEmpty);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => control.TurnOnAsync(17, John, Cancel));
     }
@@ -185,8 +192,10 @@ public sealed class RelayCountTests
     [Fact]
     public async Task Should_GroupRelaysAboveEight_OnABiggerBoard()
     {
-        await using var database = Create(new FakeRelayBoard(16));
+        var board = new FakeRelayBoard(16);
+        await using var database = Create();
         await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         var groups = database.Services.GetRequiredService<GroupsHandler>();
 
         var members = Enumerable.Range(1, 10).Select(id => new GroupMemberDraft(id, $"Step {id}")).ToList();
@@ -197,11 +206,11 @@ public sealed class RelayCountTests
         Assert.Equal(10, await db.RelayGroupMembers.CountAsync(m => m.GroupId == id, Cancel));
     }
 
-    private static TestDatabase Create(IRelayBoard board)
+    private static TestDatabase Create()
     {
         return TestDatabase.Create((services, configuration) =>
         {
-            services.AddSingleton(board);
+            services.AddBoards(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
             services.AddLocalClock(configuration);
             services.AddEvents(configuration);

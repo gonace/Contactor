@@ -1,11 +1,12 @@
 @page "/input/{Id:int}"
 @implements IDisposable
 @using Contactor.Boards
+@using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Inputs
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Persistence
-@inject IRelayBoard Board
+@inject BoardRegistry Registry
 @inject InputsHandler Inputs
 @inject InputActionsHandler Actions
 @inject EventsHandler Events
@@ -39,7 +40,7 @@
         <form id="input-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">INPUT @Id · NAME</label>
+                    <label for="name" class="label">INPUT @_input.Channel · NAME</label>
                     <input id="name" type="text" maxlength="@Input.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                     <label for="active" class="check">
                         <input id="active" type="checkbox" @bind="_isActive" />
@@ -48,21 +49,21 @@
                 </div>
 
                 @* What the board reads now; the app can't switch an input. *@
-                <section class="status @(!Board.State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
+                <section class="status @(!State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
                     <div class="now-row">
                         <div>
                             <p class="label">NOW</p>
                             <p class="now">
-                                @(Board.State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
-                                @if (Board.State.HasAnswered && Status.SinceUnknown)
+                                @(State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
+                                @if (State.HasAnswered && Status.SinceUnknown)
                                 {
                                     <WhyUnknown Label="Why is the time unknown?" For="Id" />
                                 }
                             </p>
                         </div>
-                        <InputStateBadge Closed="IsClosed" Unknown="!Board.State.HasAnswered" />
+                        <InputStateBadge Closed="IsClosed" Unknown="!State.HasAnswered" />
                     </div>
-                    @if (Board.State.HasAnswered && !Board.State.IsConnected)
+                    @if (State.HasAnswered && !State.IsConnected)
                     {
                         <p class="hint">No contact with the relay board: this may be out of date.</p>
                     }
@@ -144,6 +145,11 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
+    // The input's own board: its state. Unknown (never answered) until the input is loaded.
+    private int? BoardId => _input?.BoardId;
+
+    private BoardState State => BoardId is { } id && Registry.Find(id) is { } board ? board.State : BoardState.Initial;
+
     private const int EventCount = 4;
 
     private InputView? _input;
@@ -161,7 +167,7 @@
     private IReadOnlyList<InputActionTarget> _targets = [];
     private bool _adding;
 
-    private bool IsClosed => Board.State.Inputs.Contains(Id);
+    private bool IsClosed => _input is not null && State.Inputs.Contains(_input.Channel);
 
     // What can still be added: what the input doesn't control yet.
     private List<InputActionTarget> Available => [.. _targets.Where(t => !_actions.Any(a => a.Target.IsSame(t)))];
@@ -202,7 +208,7 @@
         _actions.Remove(row);
     }
 
-    private InputStatus Status => InputStatusText.For(_input!, IsClosed, Board.State.IsConnected, Clock.Now, Clock.ToLocal);
+    private InputStatus Status => InputStatusText.For(_input!, IsClosed, State.IsConnected, Clock.Now, Clock.ToLocal);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -212,7 +218,7 @@
             (_name, _isActive) = (_input.Name, _input.IsActive);
             _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
             _actions = [.. await Actions.ListAsync(Id, CancellationToken.None)];
-            _targets = await Actions.TargetsAsync(CancellationToken.None);
+            _targets = await Actions.TargetsAsync(Id, CancellationToken.None);
         }
 
         _loaded = true;
@@ -220,13 +226,13 @@
 
     protected override void OnInitialized()
     {
-        Board.StateChanged += OnBoardChanged;
+        Registry.StateChanged += OnBoardChanged;
         Changes.Changed += OnChanged;
     }
 
     public void Dispose()
     {
-        Board.StateChanged -= OnBoardChanged;
+        Registry.StateChanged -= OnBoardChanged;
         Changes.Changed -= OnChanged;
     }
 
@@ -256,9 +262,14 @@
         }
     }
 
-    // The board's state: a redraw is enough.
-    private void OnBoardChanged(object? sender, BoardState state)
+    // The input's own board's state: a redraw is enough.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
     {
+        if (change.BoardId != BoardId)
+        {
+            return;
+        }
+
         _ = RefreshAsync(reload: false);
     }
 
@@ -278,7 +289,7 @@
                 {
                     _input = fresh;
                     _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];
-                    _targets = await Actions.TargetsAsync(CancellationToken.None);
+                    _targets = await Actions.TargetsAsync(Id, CancellationToken.None);
                 }
 
                 StateHasChanged();

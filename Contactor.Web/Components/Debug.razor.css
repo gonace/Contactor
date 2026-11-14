@@ -31,6 +31,29 @@ h1 {
     overflow-wrap: anywhere;
 }
 
+/* With two or more boards, the board filter (BoardPicker); --gutter: its chips reach the page's edges. */
+.boards-bar {
+    --gutter: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* With two or more boards, the step's board before it: "WORKSHOP Turn on relay 3". */
+.where {
+    margin-right: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.row.error .where {
+    color: var(--danger-ink);
+}
+
 .clear {
     align-self: flex-start;
     min-height: 44px;

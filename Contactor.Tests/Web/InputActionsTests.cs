@@ -2,6 +2,7 @@ using System.Net;
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Inputs;
@@ -27,9 +28,9 @@ public sealed class InputActionsTests
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private static InputActionTarget Relay(int id, string name = "") => new(id, null, name);
+    private static InputActionTarget Relay(int id, string name = "") => new(id, id, null, name);
 
-    private static InputActionTarget Group(int id, string name = "") => new(null, id, name);
+    private static InputActionTarget Group(int id, string name = "") => new(null, null, id, name);
 
     [Fact]
     public async Task Should_SwitchItsRelays_AsAPersonWould()
@@ -195,7 +196,7 @@ public sealed class InputActionsTests
         await rig.SaveAsync(new InputActionRow(Relay(4), false, true), new InputActionRow(Group(groupId), true, false));
 
         var rows = await rig.Handler.ListAsync(1, Cancel);
-        var targets = await rig.Handler.TargetsAsync(Cancel);
+        var targets = await rig.Handler.TargetsAsync(1, Cancel);
 
         Assert.Equal(["Group: Heater", "Relay 4: Relay 4"], rows.Select(r => r.Target.Label));
         Assert.Equal((false, true), (rows[1].WhenClosed, rows[1].WhenOpened));
@@ -235,7 +236,7 @@ public sealed class InputActionsTests
         await using var rig = await RigAsync();
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.Relays.Add(new Contactor.Web.Persistence.Relay { Id = 6, Name = "Old" });
+            db.Relays.Add(new Contactor.Web.Persistence.Relay { Id = 6, BoardId = 1, Channel = 6, Name = "Old" });
             db.InputActions.Add(new InputAction { InputId = 1, RelayId = 6, WhenClosed = true });
             await db.SaveChangesAsync(Cancel);
         }
@@ -281,9 +282,9 @@ public sealed class InputActionsTests
     [Fact]
     public async Task Should_HandOnOnlyChanges_SeenAsTheyHappen()
     {
-        await using var rig = await RigAsync();
+        // The board reads the input closed at its first answer after start.
+        await using var rig = await RigAsync(inputOn: true);
         await rig.LogInputAsync(on: false);
-        rig.Board.SetInput(1, on: true);
         var recorder = rig.Database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
         await recorder.StartAsync(Cancel);
         try
@@ -292,14 +293,56 @@ public sealed class InputActionsTests
             Assert.False(rig.Feed.Reader.TryRead(out _));
 
             rig.Board.SetInput(1, on: false);
-            await BoardTestRig.WaitUntilAsync(() => rig.InputEvents() == 3);
 
-            Assert.True(rig.Feed.Reader.TryRead(out var change));
+            // Handed on once it is logged.
+            var change = await BoardTestRig.NextAsync(rig.Feed.Reader);
+            Assert.Equal(3, rig.InputEvents());
             Assert.Equal(new InputChanged(1, Closed: false), change);
         }
         finally
         {
             await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
+    // An input's ON refused while its board is closed for its removal is done once the board opens again (the removal
+    // didn't go ahead), if the input is still as it was; its OFFs go through at once.
+    [Fact]
+    public async Task Should_DoARefusedOn_OnceTheBoardOpensAgain_IfTheInputIsStillSo()
+    {
+        await using var rig = await RigAsync(inputCount: 2);
+        await rig.Board.TurnOnAsync(ChannelMask.Of(2), Cancel);
+        await rig.SaveAsync(new InputActionRow(Relay(1), WhenClosed: true, WhenOpened: false), new InputActionRow(Relay(2), false, true));
+        var service = rig.Database.Services.GetServices<IHostedService>().OfType<InputActionService>().Single();
+        await service.StartAsync(Cancel);
+        try
+        {
+            var live = rig.Database.Services.GetRequiredService<BoardRegistry>().All[0];
+            await live.CloseAsync();
+            rig.Board.SetInput(1, on: true);
+            await rig.RunAsync(closed: true);
+            Assert.False(rig.Board.State.Relays.Contains(1));
+            Assert.False(rig.Board.State.Relays.Contains(2));
+
+            live.Reopen();
+            await BoardTestRig.WaitUntilAsync(() => rig.Board.State.Relays.Contains(1));
+
+            // Refused again, and the input opens meanwhile: its moment has passed.
+            await rig.Board.TurnOffAsync(ChannelMask.Of(1), Cancel);
+            await live.CloseAsync();
+            await rig.RunAsync(closed: true);
+            rig.Board.SetInput(1, on: false);
+            live.Reopen();
+
+            // A change queued after it, of an input whose action can be seen: once that is done, so is the retry.
+            await rig.SaveAsync(2, new InputActionRow(Relay(3), WhenClosed: true, WhenOpened: null));
+            rig.Feed.Enqueue(2, closed: true);
+            await BoardTestRig.WaitUntilAsync(() => rig.Board.State.Relays.Contains(3));
+            Assert.False(rig.Board.State.Relays.Contains(1));
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
         }
     }
 
@@ -355,20 +398,25 @@ public sealed class InputActionsTests
         return new GroupDraft("Heater", GroupIcons.All[0], 120, [.. relays.Select(r => new GroupMemberDraft(r, null))]);
     }
 
-    private static async Task<Rig> RigAsync()
+    private static async Task<Rig> RigAsync(bool inputOn = false, int inputCount = 1)
     {
-        var board = new FakeRelayBoard(relayCount: 4, inputCount: 1);
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: inputCount);
+        if (inputOn)
+        {
+            board.SetInput(1, on: true);
+        }
         var database = TestDatabase.Create((services, configuration) =>
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddInputs(configuration);
         });
-        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: inputCount, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         return new Rig(board, database);
     }
 
@@ -396,7 +444,12 @@ public sealed class InputActionsTests
 
         public async Task SaveAsync(params InputActionRow[] rows)
         {
-            Assert.Null(await Handler.SaveAsync(1, rows, Cancel));
+            await SaveAsync(1, rows);
+        }
+
+        public async Task SaveAsync(int inputId, params InputActionRow[] rows)
+        {
+            Assert.Null(await Handler.SaveAsync(inputId, rows, Cancel));
         }
 
         public async Task RunAsync(bool closed)
@@ -416,7 +469,7 @@ public sealed class InputActionsTests
             }
 
             await using var db = await Database.Factory.CreateDbContextAsync(Cancel);
-            var group = new RelayGroup { Name = "Heater", Icon = GroupIcons.All[0] };
+            var group = new RelayGroup { BoardId = 1, Name = "Heater", Icon = GroupIcons.All[0] };
             group.Members.Add(new RelayGroupMember { RelayId = first, Position = 1, RoleName = "A" });
             group.Members.Add(new RelayGroupMember { RelayId = second, Position = 2, RoleName = "B" });
             db.RelayGroups.Add(group);

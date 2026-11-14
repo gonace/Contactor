@@ -1,0 +1,171 @@
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Relays
+@using Microsoft.AspNetCore.Components.Forms
+
+@* The board filter of Relays, Events and Debug, with two or more boards: below 1024 px a row of chips under the
+   heading, on a desktop a list in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the
+   choice in the screen's own cookie and comes back to the page (RelaysEndpoints); no JavaScript. Each list ends with
+   "+ Add a board" ("+ Board" among the chips), which opens BoardNew. *@
+@if (Side)
+{
+    var all = CountOf(Boards);
+    var form = Go ? GoFormId : FormId;
+    @if (Go)
+    {
+        @* Its own form: no chips on this page. Each board goes to Relays filtered to it. *@
+        <form id="@GoFormId" method="post" action="@BoardFilterScreen.Relays.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
+    }
+    <div class="list-label" id="boards-label">BOARDS</div>
+    <div class="side-boards" role="group" aria-labelledby="boards-label">
+        <button type="submit" form="@form" name="show" value="@BoardFilter.AllValue" class="side-board all @(!Go && Filter.IsAll ? "picked" : null)" aria-pressed="@(Go ? null : Filter.IsAll ? "true" : "false")">
+            <span class="line"><span class="name">All boards</span></span>
+            <span class="hint">@(AnyAnswered ? $"{all.On} of {all.Active} on · " : "")@Boards.Count boards</span>
+        </button>
+        @foreach (var board in Boards)
+        {
+            var state = board.State;
+            var count = Counts.Of(board.BoardId, state);
+            var picked = !Go && !Filter.IsAll && Filter.Shows(board.BoardId);
+            <button type="submit" form="@form" name="show" value="@(Go ? OnlyValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
+                <span class="line"><span class="name">@board.Name</span><span class="dot @(state.IsConnected ? null : "off")" aria-hidden="true"></span></span>
+                <span class="hint">
+                    @(state.HasAnswered ? $"{count.On} of {count.Active} on" : "")
+                    @if (!state.IsConnected)
+                    {
+                        @(state.HasAnswered ? " · " : "")<span class="no-contact">No contact</span>
+                    }
+                </span>
+                @Lamps(board)
+            </button>
+        }
+        <a href="board/new" class="side-add">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            Add a board
+        </a>
+    </div>
+}
+else
+{
+    <form id="@FormId" method="post" action="@Screen.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
+    <div class="chips-row" role="group" aria-label="Boards to show">
+        <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">@(Plain ? "All boards" : "All")</button>
+        @foreach (var board in Boards)
+        {
+            var state = board.State;
+            var count = Counts.Of(board.BoardId, state);
+            var picked = !Filter.IsAll && Filter.Shows(board.BoardId);
+            <button type="submit" form="@FormId" name="show" value="@ToggleValue(board.BoardId)" class="chip-filter @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(picked ? "true" : "false")" @key="board.BoardId">
+                <span class="cn">
+                    @if (!state.IsConnected)
+                    {
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                    }
+                    @(Plain ? board.Name : board.Name + " ")
+                    @if (!Plain && state.HasAnswered)
+                    {
+                        <span class="cc" aria-hidden="true">@count.On/@count.Active</span>
+                        <span class="visually-hidden">@count.On of @count.Active on</span>
+                    }
+                    @if (!state.IsConnected)
+                    {
+                        <span class="visually-hidden">: no contact</span>
+                    }
+                </span>
+                @if (!Plain)
+                {
+                    @Lamps(board)
+                }
+            </button>
+        }
+        <a href="board/new" class="chip-add" aria-label="Add a board">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            Board
+        </a>
+    </div>
+    @if (Showing is not null)
+    {
+        <p class="showing">@Showing · <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="link">Show all</button></p>
+    }
+}
+
+@code {
+    /// <summary>The form's id, which every board's button posts.</summary>
+    public const string FormId = "board-filter";
+
+    /// <summary>The form's id on a page without the filter (<see cref="Go"/>).</summary>
+    public const string GoFormId = "board-go";
+
+    /// <summary>
+    /// The side menu's list on a page without a board filter (Settings, a relay's page …): a tap goes to Relays showing
+    /// that board ("All boards": every board), through the Relays screen's own form. Nothing shows as picked.
+    /// </summary>
+    [Parameter]
+    public bool Go { get; set; }
+
+    /// <summary>The screen whose filter this is: where it is posted, and so which cookie keeps it.</summary>
+    [Parameter]
+    [EditorRequired]
+    public BoardFilterScreen Screen { get; set; } = BoardFilterScreen.Relays;
+
+    /// <summary>Every board, in the list's order.</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<LiveBoard> Boards { get; set; } = [];
+
+    /// <summary>The filter, as it applies to these boards (<see cref="BoardFilter.For"/>).</summary>
+    [Parameter]
+    [EditorRequired]
+    public BoardFilter Filter { get; set; } = BoardFilter.All;
+
+    /// <summary>Each board's "3 of 8 on".</summary>
+    [Parameter]
+    public BoardCounts Counts { get; set; } = BoardCounts.None;
+
+    /// <summary>The desktop's side menu list; otherwise the chips, with the form the buttons post.</summary>
+    [Parameter]
+    public bool Side { get; set; }
+
+    /// <summary>
+    /// Chips with only the boards' names, after "All boards": under another filter (Events' All / People / Automatic),
+    /// where a plain "All" and the counts would only confuse. Otherwise "All", and each chip with its "3/8" and lamps.
+    /// </summary>
+    [Parameter]
+    public bool Plain { get; set; }
+
+    /// <summary>The chips' "Showing …" line while filtered, followed by "Show all"; null for none.</summary>
+    [Parameter]
+    public string? Showing { get; set; }
+
+    private bool AnyAnswered => Boards.Any(b => b.State.HasAnswered);
+
+    private (int On, int Active) CountOf(IEnumerable<LiveBoard> boards)
+    {
+        var counts = boards.Select(b => Counts.Of(b.BoardId, b.State)).ToList();
+        return (counts.Sum(c => c.On), counts.Sum(c => c.Active));
+    }
+
+    // What a tap on the board posts on a page without the filter: that board alone.
+    private static string OnlyValue(int boardId)
+    {
+        return boardId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    // What a tap on the board posts: the filter as it would be after it.
+    private string ToggleValue(int boardId)
+    {
+        var next = Filter.Toggle(boardId, [.. Boards.Select(b => b.BoardId)]);
+        return next.IsAll ? BoardFilter.AllValue : next.Format();
+    }
+
+    // One small bar per relay: orange when on.
+    private RenderFragment Lamps(LiveBoard board) => __builder =>
+    {
+        var state = board.State;
+        <span class="lamps" aria-hidden="true">
+            @for (var channel = 1; channel <= board.Capabilities.RelayCount; channel++)
+            {
+                <span class="lamp @(state.IsOn(channel) ? "on" : null)"></span>
+            }
+        </span>
+    };
+}

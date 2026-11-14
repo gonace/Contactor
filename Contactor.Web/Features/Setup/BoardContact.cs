@@ -3,8 +3,9 @@ using Contactor.Boards;
 namespace Contactor.Web.Features.Setup;
 
 /// <summary>
-/// Waits for the board to answer, for the setup guide's "Board online" check. Start watching before the address or
-/// login is saved: the client reconnects at once, and a watch that starts later can miss the old connection ending.
+/// Waits for one board to answer (its <see cref="Boards.LiveBoard"/>, found by its row id), for the setup guide's "Board
+/// online" check. Start watching before the address or login is saved: the client reconnects at once, and a watch that
+/// starts later can miss the old connection ending.
 /// </summary>
 public sealed class BoardContact : IDisposable
 {

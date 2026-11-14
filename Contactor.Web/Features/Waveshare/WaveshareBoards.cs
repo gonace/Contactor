@@ -12,12 +12,13 @@ public static class WaveshareBoards
     /// <c>Waveshare</c>, and <see cref="WaveshareRelayModesService"/>, which logs when the client set the relays to
     /// normal mode.
     /// </summary>
-    public static ActiveBoard Create(BoardModel model, IServiceProvider app, IConfiguration configuration)
+    public static ActiveBoard Create(BoardModel model, BoardSetup setup, IServiceProvider app, IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(configuration);
         var services = ActiveBoard.NewServices(model, app);
         services.AddOptions<WaveshareOptions>()
-            .Bind(configuration.GetSection(WaveshareOptions.SectionName))
+            .Bind(setup.Settings(configuration.GetSection(WaveshareOptions.SectionName)))
             .ValidateDataAnnotations();
         services.AddSingleton<WaveshareClient>();
         services.AddSingleton<WaveshareBoard>();
@@ -25,7 +26,8 @@ public static class WaveshareBoards
         services.AddSingleton<WaveshareTraffic>();
         return ActiveBoard.Build<WaveshareBoard, WaveshareConnection, WaveshareTraffic>(
             model,
+            setup,
             services,
-            own => [ActivatorUtilities.CreateInstance<WaveshareRelayModesService>(app, own.GetRequiredService<WaveshareClient>())]);
+            own => [ActivatorUtilities.CreateInstance<WaveshareRelayModesService>(app, own.GetRequiredService<WaveshareClient>(), setup.BoardId)]);
     }
 }

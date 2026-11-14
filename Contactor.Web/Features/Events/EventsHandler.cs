@@ -13,7 +13,11 @@ public enum EventFilter
 }
 
 /// <summary>One row on the Events screen.</summary>
-public sealed record EventRow(int Id, DateTime TimestampLocal, EventView View);
+/// <param name="Board">
+/// With two or more boards, the board's name, before the row's target ("PAINT SHOP Spray booth fan"); null with one
+/// board, for an event about no board, and when the board is the event's subject.
+/// </param>
+public sealed record EventRow(int Id, DateTime TimestampLocal, EventView View, string? Board = null);
 
 /// <summary>A day's events under its heading, e.g. "TODAY".</summary>
 public sealed record EventDay(string Heading, IReadOnlyList<EventRow> Rows);
@@ -44,6 +48,10 @@ public sealed class EventsHandler
     /// </summary>
     /// <param name="relayId">Only this relay's events, or every event when null.</param>
     /// <param name="groupId">Only this group's events, or every event when null.</param>
+    /// <param name="boards">
+    /// Only these boards' events, and the events about no board; every event when null (the board filter shows every
+    /// board).
+    /// </param>
     public async Task<IReadOnlyList<EventRow>> GetAsync(
         EventFilter filter,
         int? beforeId,
@@ -51,7 +59,8 @@ public sealed class EventsHandler
         CancellationToken cancellationToken,
         int? relayId = null,
         int? groupId = null,
-        int? inputId = null)
+        int? inputId = null,
+        IReadOnlyCollection<int>? boards = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -82,6 +91,12 @@ public sealed class EventsHandler
             query = query.Where(e => e.InputId == onlyInput);
         }
 
+        if (boards is not null)
+        {
+            var ids = boards.ToList();
+            query = query.Where(e => e.BoardId == null || ids.Contains(e.BoardId.Value));
+        }
+
         // People are the actors with an e-mail address; everything else is automatic.
         query = filter switch
         {
@@ -95,15 +110,22 @@ public sealed class EventsHandler
         var personNames = await ActorNames.LoadAsync(db, cancellationToken);
         var groupNames = await db.RelayGroups.AsNoTracking().ToDictionaryAsync(g => g.Id, g => g.Name, cancellationToken);
 
-        return [.. entries.Select(e => new EventRow(
-            e.Id,
-            _clock.ToLocal(e.TimestampUtc),
-            EventText.For(
+        // With one board every event is about it, and the rows read as they always did.
+        var boardNames = await db.Boards.AsNoTracking().ToDictionaryAsync(b => b.Id, b => b.Name, cancellationToken);
+        var several = boardNames.Count > 1;
+
+        return [.. entries.Select(e =>
+        {
+            var boardName = several && e.BoardId is { } boardId && boardNames.GetValueOrDefault(boardId) is { Length: > 0 } name ? name : null;
+            var view = EventText.For(
                 e,
                 e.RelayId is { } relayId ? relayNames.GetValueOrDefault(relayId) : null,
                 personNames.GetValueOrDefault(e.Actor),
                 e.GroupId is { } eventGroupId ? groupNames.GetValueOrDefault(eventGroupId) : null,
-                e.Action == EventActions.InputChanged ? personNames.GetValueOrDefault(EventActors.ForInput(e.InputId ?? 1)) : null)))];
+                e.Action == EventActions.InputChanged ? personNames.GetValueOrDefault(EventActors.ForInput(e.InputId ?? 1)) : null,
+                boardName);
+            return new EventRow(e.Id, _clock.ToLocal(e.TimestampUtc), view, EventText.IsAboutBoard(e) ? null : boardName);
+        })];
     }
 
     /// <summary>Groups rows (newest first) under one heading per local day.</summary>

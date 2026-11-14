@@ -2,10 +2,16 @@
 @using Contactor.Boards
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Persistence
+@using Microsoft.EntityFrameworkCore
 @inject CurrentUser CurrentUser
+@inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardTrafficSetting Debugging
-@inject BoardTrace Trace
+@inject BoardRegistry Registry
 @inject TimeProvider TimeProvider
+@inject ILogger<TabBar> Log
+@inject RelayChanges Changes
 
 <div class="bottom @(SideMenuOnly ? "side-only" : null)">
     @if (_debugging)
@@ -14,8 +20,15 @@
         <div class="toasts" role="log" aria-live="polite" aria-label="Traffic to the relay board">
             @foreach (var toast in ToastsNow)
             {
-                <p class="toast @(toast.Item.IsError ? "error" : null)" @key="toast.Item.Id">
-                    <span class="text">@Arrow(toast.Item) @toast.Item.Text</span>
+                <p class="toast @(toast.Item.IsError ? "error" : null)" @key="toast">
+                    <span class="text">
+                        @Arrow(toast.Item)
+                        @if (toast.Board is not null)
+                        {
+                            <span class="where">@toast.Board</span>
+                        }
+                        @toast.Item.Text
+                    </span>
                     @if (toast.Item.Hex is not null)
                     {
                         <span class="hex">@toast.Item.Hex</span>
@@ -25,7 +38,10 @@
         </div>
     }
 
-    <nav class="tabs" aria-label="Main menu">
+    @{
+        var list = List;
+    }
+    <nav class="tabs @(list is null ? null : "has-list")" aria-label="Main menu">
         <a href="" aria-current="@(Current == Tab.Relays ? "page" : null)">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"></path><path d="M6.4 6.4a8 8 0 1 0 11.2 0"></path></svg>
             Relays
@@ -44,6 +60,11 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"></path><path d="M12 19h8"></path></svg>
                 Debug
             </a>
+        }
+        @if (list is not null)
+        {
+            @* Only in the desktop's side menu, under the tabs; it scrolls on its own while the tabs and the version stay. *@
+            <div class="side-list">@list</div>
         }
         @* Only in the desktop's side menu; on a phone and a tablet the version is at the bottom of Settings. *@
         @* The commit on a line of its own, so the narrow menu never cuts it off. *@
@@ -68,6 +89,9 @@
 
     private readonly List<Toast> _toasts = [];
     private readonly Lock _lock = new();
+
+    // Every board's trace, and any board added while the page is open; with several boards a toast names its board.
+    private BoardTraceWatch? _watch;
     private string? _email;
     private bool _debugging;
     private bool _disposed;
@@ -81,6 +105,26 @@
     /// </summary>
     [Parameter]
     public bool SideMenuOnly { get; set; }
+
+    /// <summary>
+    /// What a page shows in the desktop's side menu under the tabs: the board filter of Relays, Events and Debug. Any
+    /// other page with two or more boards gets the boards anyway, each a way to Relays showing that board.
+    /// </summary>
+    [Parameter]
+    public RenderFragment? SideList { get; set; }
+
+    // "3 of 8 on" for the boards' list on a page without the filter; loaded when there are two or more boards.
+    private BoardCounts _counts = BoardCounts.None;
+
+    // What the list shows of each board's state, so a status that changes none of it doesn't redraw the page.
+    private readonly Dictionary<int, (bool Connected, bool Answered, ChannelMask Relays)> _shown = [];
+
+    private RenderFragment? List => SideList ?? (Registry.All.Count > 1 ? GoList : null);
+
+    private RenderFragment GoList => __builder =>
+    {
+        <BoardPicker Side="true" Go="true" Screen="BoardFilterScreen.Relays" Boards="Registry.All" Filter="BoardFilter.All" Counts="_counts" />
+    };
 
     // A copy: the timers change the list off the render thread.
     private Toast[] ToastsNow
@@ -96,6 +140,20 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Registry.BoardsChanged += OnBoardsChanged;
+        Registry.StateChanged += OnBoardChanged;
+        Changes.Changed += OnRelaysChanged;
+        try
+        {
+            await LoadCountsAsync();
+        }
+#pragma warning disable CA1031 // The page opens all the same; the list shows no counts until the next change.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogCountsFailed(ex);
+        }
+
         _email = (await CurrentUser.GetAsync())?.Email;
         if (_email is null)
         {
@@ -103,14 +161,105 @@
         }
 
         Debugging.Changed += OnDebuggingChanged;
-        Trace.Added += OnTraced;
+        _watch = new BoardTraceWatch(Registry, OnTraced);
+
         _debugging = await Debugging.IsOnAsync(_email, CancellationToken.None);
+    }
+
+    // The boards' list of a page without the filter: its counts, when there is a list to show.
+    private async Task LoadCountsAsync()
+    {
+        if (SideList is not null || Registry.All.Count < 2)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            foreach (var board in Registry.All)
+            {
+                var state = board.State;
+                _shown[board.BoardId] = (state.IsConnected, state.HasAnswered, state.Relays);
+            }
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _counts = await BoardCounts.LoadAsync(db, Registry, CancellationToken.None);
+    }
+
+    // A board renamed, a relay's "In use", a group made or deleted: the list's names and counts again, when the page
+    // has no filter of its own.
+    private void OnRelaysChanged(object? sender, EventArgs e)
+    {
+        if (SideList is null && Registry.All.Count > 1)
+        {
+            _ = RefreshListAsync(reload: true);
+        }
+    }
+
+    // A board added or removed: the list, and its counts, again.
+    private void OnBoardsChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshListAsync(reload: true);
+    }
+
+    // A board's new state: its dot, lamps and counts in the list, when the page has no filter of its own. Only a change
+    // the list shows redraws it: a status that changes nothing (a poll's answer) doesn't.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (SideList is not null || Registry.All.Count < 2)
+        {
+            return;
+        }
+
+        var shown = (change.State.IsConnected, change.State.HasAnswered, change.State.Relays);
+        lock (_lock)
+        {
+            if (_shown.TryGetValue(change.BoardId, out var before) && before == shown)
+            {
+                return;
+            }
+
+            _shown[change.BoardId] = shown;
+        }
+
+        _ = RefreshListAsync(reload: false);
+    }
+
+    private async Task RefreshListAsync(bool reload)
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (reload)
+                {
+                    await LoadCountsAsync();
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed meanwhile.
+        }
+#pragma warning disable CA1031 // The list keeps its last counts; an exception here would end the page's live connection.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogCountsFailed(ex);
+        }
     }
 
     public void Dispose()
     {
+        Registry.BoardsChanged -= OnBoardsChanged;
+        Registry.StateChanged -= OnBoardChanged;
+        Changes.Changed -= OnRelaysChanged;
         Debugging.Changed -= OnDebuggingChanged;
-        Trace.Added -= OnTraced;
+        _watch?.Dispose();
+
         lock (_lock)
         {
             _disposed = true;
@@ -121,6 +270,11 @@
 
             _toasts.Clear();
         }
+    }
+
+    private void LogCountsFailed(Exception ex)
+    {
+        Log.LogError(ex, "Counting the boards' relays for the side menu failed");
     }
 
     private static string Arrow(BoardTraceItem item)
@@ -164,8 +318,8 @@
         }
     }
 
-    // From the board connection's loop.
-    private void OnTraced(object? sender, BoardTraceItem item)
+    // From a board's connection loop.
+    private void OnTraced(LiveBoard board, BoardTraceItem item)
     {
         if (!_debugging || item.IsRoutine)
         {
@@ -181,7 +335,7 @@
 
             Toast? toast = null;
             var timer = TimeProvider.CreateTimer(_ => Remove(toast!), null, ToastTime, Timeout.InfiniteTimeSpan);
-            toast = new Toast(item, timer);
+            toast = new Toast(item, Registry.All.Count > 1 ? board.Name : null, timer);
             _toasts.Add(toast);
             while (_toasts.Count > MaxToasts)
             {
@@ -233,5 +387,21 @@
         }
     }
 
-    private sealed record Toast(BoardTraceItem Item, ITimer Timer);
+    // Board: the board's name, with two or more boards. A class, not a record: the page tells toasts apart by reference
+    // (@key), as two boards' items can have the same id.
+    private sealed class Toast
+    {
+        public Toast(BoardTraceItem item, string? board, ITimer timer)
+        {
+            Item = item;
+            Board = board;
+            Timer = timer;
+        }
+
+        public BoardTraceItem Item { get; }
+
+        public string? Board { get; }
+
+        public ITimer Timer { get; }
+    }
 }

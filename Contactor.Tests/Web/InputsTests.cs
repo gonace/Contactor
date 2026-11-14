@@ -2,6 +2,7 @@ using System.Net;
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Inputs;
@@ -98,7 +99,7 @@ public sealed class InputsTests
     {
         // The latest event says it opened at 13:20 UTC (14:20 in Stockholm). Closed now with contact: a change not logged
         // yet. Closed now without contact: the state shown may be stale, so "since unknown".
-        var input = new InputView(1, "Door", true, new InputChange(Now.AddMinutes(-10), false, known));
+        var input = new InputView(1, 1, "Door", true, new InputChange(Now.AddMinutes(-10), false, known));
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
 
         var status = InputStatusText.For(input, closedNow, connected, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone));
@@ -109,7 +110,7 @@ public sealed class InputsTests
     [Fact]
     public void Should_SaySinceUnknown_ForAnInputThatNeverChanged()
     {
-        var input = new InputView(1, "Door", true, null);
+        var input = new InputView(1, 1, "Door", true, null);
 
         Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, true, Now, utc => utc));
         Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, false, Now, utc => utc));
@@ -125,7 +126,8 @@ public sealed class InputsTests
         await AddChangeAsync(database, inputId: 3, on: true, Now.AddMinutes(-90));
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = Now, LongGapEndedUtc = Now.AddMinutes(-60) });
+            var runtime = await db.BoardRuntimes.SingleAsync(Cancel);
+            (runtime.LastContactUtc, runtime.LongGapEndedUtc) = (Now, Now.AddMinutes(-60));
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -246,13 +248,14 @@ public sealed class InputsTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
-            services.AddSingleton<IRelayBoard>(new FakeRelayBoard(relayCount: 4, inputCount: inputCount));
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddInputs(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: seededInputs ?? inputCount, Cancel);
+        await database.Services.UseFakeBoardAsync(new FakeRelayBoard(relayCount: 4, inputCount: inputCount), seed: false);
         return database;
     }
 

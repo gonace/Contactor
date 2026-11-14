@@ -145,7 +145,7 @@ public sealed class CloudflareAccessTests : IDisposable
     {
         var settings = new Dictionary<string, string?>(AccessTokens.Settings) { [key] = value };
         await using var app = new TestWebApp("Production", settings, setUp: false);
-        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
+        app.SaveBeforeStart(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" }, boardType: "vm201");
 
         var error = Assert.Throws<InvalidOperationException>(() => app.CreateClient());
         Assert.Contains("Cloudflare Access is the sign-in", error.Message, StringComparison.Ordinal);
@@ -159,7 +159,7 @@ public sealed class CloudflareAccessTests : IDisposable
     public async Task Should_RefuseToStart_OnASignInThatDoesNotFitTheWayIn(string? accessType, string signInType)
     {
         await using var app = new TestWebApp("Production", AccessTokens.Settings, setUp: false);
-        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = accessType, SignInType = signInType });
+        app.SaveBeforeStart(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = accessType, SignInType = signInType }, boardType: "vm201");
 
         var error = Assert.Throws<InvalidOperationException>(() => app.CreateClient());
         Assert.Contains("doesn't go with its way in", error.Message, StringComparison.Ordinal);
@@ -170,7 +170,7 @@ public sealed class CloudflareAccessTests : IDisposable
     public async Task Should_LetEveryoneIn_AsSomeone_WithNoSignIn()
     {
         await using var app = new TestWebApp("Production", setUp: false);
-        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "local", SignInType = "none" });
+        app.SaveBeforeStart(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = "local", SignInType = "none" }, boardType: "vm201");
         using var http = app.CreateClient();
 
         using var response = await http.GetAsync("/", Cancel);

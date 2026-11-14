@@ -42,7 +42,7 @@ public sealed class GroupNewTests
     [InlineData(null, true, true, "Has its own schedules", false)]
     public void Should_SayWhetherARelayCanJoin(string? group, bool hasSchedules, bool isActive, string note, bool isFree)
     {
-        var relay = new GroupCandidate(4, "Relay 4", isActive, group, hasSchedules);
+        var relay = new GroupCandidate(4, 4, "Relay 4", isActive, group, hasSchedules);
 
         Assert.Equal((note, isFree), (relay.Note, relay.IsFree));
     }

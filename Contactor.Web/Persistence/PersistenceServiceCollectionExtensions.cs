@@ -68,15 +68,12 @@ public static class PersistenceServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Brings the database up to date and seeds what must always exist: a row for each of the board's relays and
-    /// inputs. Runs before the app starts serving, so every other part can rely on them. Before a board is chosen there
-    /// is nothing to seed; <c>BoardChoice</c> seeds the board's rows once one is.
+    /// Brings the database up to date. Runs before the app starts serving. The boards' rows for their relays and inputs
+    /// come with the boards: <c>BoardChoice</c> seeds them at start and when the setup guide chooses a board.
     /// </summary>
     public static Task InitializeDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        var board = services.GetRequiredService<IRelayBoard>();
-        return services.InitializeDatabaseAsync(board.Capabilities.RelayCount, board.Capabilities.InputCount, cancellationToken);
+        return services.InitializeDatabaseAsync(relayCount: 0, inputCount: 0, cancellationToken);
     }
 
     /// <summary>As the overload below, for a board with one input.</summary>
@@ -113,51 +110,102 @@ public static class PersistenceServiceCollectionExtensions
 
     /// <summary>
     /// Adds the rows a board with <paramref name="relayCount"/> relays and <paramref name="inputCount"/> inputs needs:
-    /// a relay, its runtime row and an input for each, numbered from 1. Existing rows are left as they are, also
-    /// relays and inputs above the count, which a board with more left behind: their events still point to them.
+    /// the board itself and its runtime row when there is none yet, and a relay, its runtime row and an input for each
+    /// channel from 1, found by its channel; the database gives a new row its id, which needn't be its channel.
+    /// Existing rows are left as they are, also relays and inputs above the count, which a board with more left behind:
+    /// their events still point to them. A board with neither relays nor inputs (none chosen yet) adds nothing.
     /// </summary>
     public static async Task SeedBoardAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(services);
         CheckCounts(relayCount, inputCount);
+        if (relayCount == 0 && inputCount == 0)
+        {
+            return;
+        }
+
+        int boardId;
+        var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+        await using (var db = await factory.CreateDbContextAsync(cancellationToken))
+        {
+            var board = await db.FirstBoardAsync(cancellationToken);
+            if (board is null)
+            {
+                // Its model and name come with the choice (BoardChoice); the rows need the board first.
+                board = new Board { SortOrder = 1 };
+                db.Boards.Add(board);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            boardId = board.Id;
+        }
+
+        await services.SeedBoardAsync(boardId, relayCount, inputCount, cancellationToken);
+    }
+
+    /// <summary>
+    /// As <see cref="SeedBoardAsync(IServiceProvider, int, int, CancellationToken)"/>, for the board on this row, which
+    /// must exist: its runtime row, and a relay, its runtime row and an input for each channel from 1.
+    /// </summary>
+    public static async Task SeedBoardAsync(this IServiceProvider services, int boardId, int relayCount, int inputCount, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        CheckCounts(relayCount, inputCount);
+        if (relayCount == 0 && inputCount == 0)
+        {
+            return;
+        }
+
         var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var existing = await db.Relays.Select(r => r.Id).ToListAsync(cancellationToken);
-        for (var id = 1; id <= relayCount; id++)
+        var board = await db.Boards.SingleOrDefaultAsync(b => b.Id == boardId, cancellationToken)
+            ?? throw new InvalidOperationException($"There is no relay board {boardId}.");
+
+        // The relays first, for their ids, then their runtime rows: all or nothing.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (!await db.BoardRuntimes.AnyAsync(r => r.BoardId == board.Id, cancellationToken))
         {
-            if (!existing.Contains(id))
+            db.BoardRuntimes.Add(new BoardRuntime { BoardId = board.Id });
+        }
+
+        var existing = await db.Relays.Where(r => r.BoardId == board.Id).Select(r => r.Channel).ToListAsync(cancellationToken);
+        for (var channel = 1; channel <= relayCount; channel++)
+        {
+            if (!existing.Contains(channel))
             {
                 db.Relays.Add(new Relay
                 {
-                    Id = id,
-                    Name = Relay.DefaultName(id),
+                    BoardId = board.Id,
+                    Channel = channel,
+                    Name = Relay.DefaultName(channel),
                     IsActive = true,
                     MaxOnMinutes = Relay.DefaultMaxOnMinutes,
-                    SortOrder = id,
+                    SortOrder = channel,
                 });
             }
         }
 
-        // One runtime row per relay from the start, so two writers never both try to insert the first one.
-        var runtimes = await db.RelayRuntimes.Select(r => r.RelayId).ToListAsync(cancellationToken);
-        for (var id = 1; id <= relayCount; id++)
+        var inputs = await db.Inputs.Where(i => i.BoardId == board.Id).Select(i => i.Channel).ToListAsync(cancellationToken);
+        for (var channel = 1; channel <= inputCount; channel++)
         {
-            if (!runtimes.Contains(id))
+            if (!inputs.Contains(channel))
             {
-                db.RelayRuntimes.Add(new RelayRuntime { RelayId = id });
-            }
-        }
-
-        var inputs = await db.Inputs.Select(i => i.Id).ToListAsync(cancellationToken);
-        for (var id = 1; id <= inputCount; id++)
-        {
-            if (!inputs.Contains(id))
-            {
-                db.Inputs.Add(new Input { Id = id, Name = Input.DefaultName(id) });
+                db.Inputs.Add(new Input { BoardId = board.Id, Channel = channel, Name = Input.DefaultName(channel) });
             }
         }
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // One runtime row per relay from the start, so two writers never both try to insert the first one.
+        var relays = await db.Relays.Where(r => r.BoardId == board.Id).Select(r => r.Id).ToListAsync(cancellationToken);
+        var runtimes = await db.RelayRuntimes.Select(r => r.RelayId).ToListAsync(cancellationToken);
+        foreach (var relayId in relays.Except(runtimes))
+        {
+            db.RelayRuntimes.Add(new RelayRuntime { RelayId = relayId });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static void CheckCounts(int relayCount, int inputCount)

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -18,31 +19,26 @@ public sealed class RelaySettingsHandler
     public static readonly IReadOnlyList<int?> Limits = [60, 120, 240, null];
 
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
+    private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
 
-    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, IRelayBoard board, LocalClock clock, RelayChanges changes)
+    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
     {
-        _board = board;
+        _registry = registry;
         _dbFactory = dbFactory;
         _clock = clock;
         _changes = changes;
     }
 
-    /// <summary>The relay's settings, or null for an id the board doesn't have.</summary>
+    /// <summary>The relay's settings, or null for a relay its own board doesn't have (by its channel).</summary>
     public async Task<RelaySettings?> GetAsync(int relayId, CancellationToken cancellationToken)
     {
-        if (relayId < 1 || relayId > _board.Capabilities.RelayCount)
-        {
-            return null;
-        }
-
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        return await db.Relays.AsNoTracking()
-            .Where(r => r.Id == relayId)
-            .Select(r => new RelaySettings(r.Id, r.Name, r.IsActive, r.MaxOnMinutes))
-            .SingleOrDefaultAsync(cancellationToken);
+        var relay = await db.Relays.AsNoTracking().SingleOrDefaultAsync(r => r.Id == relayId, cancellationToken);
+        return relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel)
+            ? null
+            : new RelaySettings(relay.Id, relay.Name, relay.IsActive, relay.MaxOnMinutes);
     }
 
     /// <summary>
@@ -73,10 +69,8 @@ public sealed class RelaySettingsHandler
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var relay = settings.Id > _board.Capabilities.RelayCount
-            ? null
-            : await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
-        if (relay is null)
+        var relay = await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
+        if (relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel))
         {
             return "The relay doesn't exist.";
         }
@@ -87,6 +81,7 @@ public sealed class RelaySettingsHandler
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
+                BoardId = relay.BoardId,
                 RelayId = relay.Id,
                 Actor = userEmail,
                 Action = EventActions.Rename,
@@ -100,6 +95,7 @@ public sealed class RelaySettingsHandler
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
+                BoardId = relay.BoardId,
                 RelayId = relay.Id,
                 Actor = userEmail,
                 Action = settings.IsActive ? EventActions.Activate : EventActions.Deactivate,

@@ -138,7 +138,7 @@ public sealed class WaveshareRelayModesServiceTests
 
         Assert.IsType<WaveshareBoard>(board.Board);
         Assert.IsType<WaveshareRelayModesService>(Assert.Single(board.Extras));
-        Assert.Equal(board.Model.Capabilities, database.Services.GetRequiredService<IRelayBoard>().Capabilities);
+        Assert.Equal(board.Model.Capabilities, database.Services.Live().Capabilities);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(Enumerable.Range(1, relays), await db.Relays.OrderBy(r => r.Id).Select(r => r.Id).ToListAsync(Cancel));
         Assert.Equal(inputs, await db.Inputs.CountAsync(Cancel));

@@ -56,8 +56,8 @@ qualified electrician.
 | Devantech ETH002-B, ETH008-B, ETH484-B and ETH8020-B | 2, 8, 4 plus 8 inputs, 20 plus 8 inputs | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Devantech/README.md) |
 
 The app talks to a board through one interface, `IRelayBoard`, so another board needs its own small project and
-nothing else. One board per installation for now; several at once is
-[issue #4](https://github.com/gonace/Contactor/issues/4).
+nothing else. One installation can run several boards, of any of these models: the setup guide sets up the first, and
+Settings → "Add a board" adds more.
 
 ## How it runs
 

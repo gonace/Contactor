@@ -1,0 +1,132 @@
+/* "Name your relays": a card per relay with its name, "Try" and "In use". */
+.intro {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.intro p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+input[type="text"] {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    cursor: pointer;
+}
+
+.check input {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.small {
+    min-height: 44px;
+    padding: 0 14px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.relays {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.relay {
+    padding: 12px 14px 6px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.row {
+    display: flex;
+    gap: 8px;
+}
+
+.row input {
+    flex: 1;
+    min-width: 0;
+}
+
+.try {
+    min-width: 64px;
+    min-height: 52px;
+}
+
+.try[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--on-accent);
+    opacity: 1;
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}

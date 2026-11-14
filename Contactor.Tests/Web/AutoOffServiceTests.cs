@@ -2,6 +2,7 @@ using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -62,7 +63,7 @@ public sealed class AutoOffServiceTests
         await using var rig = await BoardTestRig.StartAsync();
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan };
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan };
             group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
             group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
             db.RelayGroups.Add(group);
@@ -164,7 +165,7 @@ public sealed class AutoOffServiceTests
     {
         await using var rig = await BoardTestRig.StartAsync();
         await SaveRunAsync(rig, relayId: 2, autoOffInMinutes: null);
-        rig.Database.Services.GetRequiredService<ExpectedChanges>().Expect(ChannelMask.Of(2), on: true);
+        rig.Database.Services.Live().Expected.Expect(ChannelMask.Of(2), on: true);
 
         Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
 
@@ -182,12 +183,13 @@ public sealed class AutoOffServiceTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         await fake.TurnOnAsync(ChannelMask.Of(2), Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
@@ -212,12 +214,13 @@ public sealed class AutoOffServiceTests
         {
             services.AddLocalClock(configuration);
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
-            services.AddSingleton<IRelayBoard>(board);
+            services.AddBoards(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             await RelayRuns.StartAsync(db, 1, Jane, BoardTestRig.Start.AddHours(-3), BoardTestRig.Start.AddHours(-1), Cancel);

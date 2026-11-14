@@ -1,0 +1,197 @@
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Features.Setup
+@using Contactor.Web.Persistence
+@inject SetupHandler Setup
+@inject BoardRegistry Registry
+@inject ILogger<BoardRelaysStep> Log
+
+@* "Name your relays": a name and "In use" for each relay of the board, and "Try". Shared by the setup guide (the first
+   board) and "Add a board" (BoardNew); the page keeps the rows (LoadAsync) and saves them (SaveAsync). *@
+<div class="intro">
+    <h1 tabindex="-1" @ref="_heading">Name your relays</h1>
+    <p>Name each relay after what it switches. "Try" turns it on for @((int)SetupHandler.TryLength.TotalSeconds) seconds, so you can hear which one it is. Untick the ones you don't use.</p>
+</div>
+@if (!Board.State.IsConnected)
+{
+    <p class="hint">"Try" works once the app has contact with the relay board.</p>
+}
+<ul class="relays">
+    @foreach (var relay in Rows)
+    {
+        var on = Board.State.IsOn(relay.Channel);
+        <li class="relay" @key="relay.Id">
+            <label class="label" for="@($"relay-{relay.Id}")">RELAY @relay.Channel</label>
+            <div class="row">
+                <input id="@($"relay-{relay.Id}")" type="text" maxlength="@Relay.NameMaxLength" autocomplete="off"
+                       placeholder="@Relay.DefaultName(relay.Channel)" @bind="relay.Name" @bind:event="oninput" />
+                <button type="button" class="small try" aria-pressed="@(on ? "true" : "false")"
+                        aria-label="@($"Try relay {relay.Channel}")"
+                        disabled="@(on || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
+                        @onclick="() => TryAsync(relay)">@(on ? "On" : "Try")</button>
+            </div>
+            <label class="check" for="@($"use-{relay.Id}")">
+                <input id="@($"use-{relay.Id}")" type="checkbox" @bind="relay.IsActive" />
+                <span>In use</span>
+            </label>
+            @if (relay.GroupName is not null)
+            {
+                <p class="hint">In the group @relay.GroupName, which switches it.</p>
+            }
+            @if (relay.Error is not null)
+            {
+                <p class="error" role="alert">@relay.Error</p>
+            }
+        </li>
+    }
+</ul>
+
+@code {
+    /// <summary>The board whose relays these are.</summary>
+    [Parameter]
+    [EditorRequired]
+    public LiveBoard Board { get; set; } = null!;
+
+    /// <summary>The relays as typed, kept by the page (<see cref="LoadAsync"/>).</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<Row> Rows { get; set; } = [];
+
+    /// <summary>Who tries a relay, for the event log; nothing is tried without.</summary>
+    [Parameter]
+    public string? UserEmail { get; set; }
+
+    private ElementReference _heading;
+    private int _watched;
+
+    /// <summary>Every relay the board has, by channel, for the step.</summary>
+    public static async Task<List<Row>> LoadAsync(SetupHandler setup, int boardId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        var relays = await setup.RelaysAsync(boardId, cancellationToken);
+        return [.. relays.Select(r => new Row(r))];
+    }
+
+    /// <summary>
+    /// Saves the names and "In use", logged as on the Relay screen. Returns null when saved, otherwise the message to
+    /// show.
+    /// </summary>
+    public static Task<string?> SaveAsync(SetupHandler setup, IEnumerable<Row> rows, string userEmail, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        ArgumentNullException.ThrowIfNull(rows);
+        return setup.SaveRelaysAsync(rows.Select(r => new SetupRelayChoice(r.Id, r.Name, r.IsActive)), userEmail, cancellationToken);
+    }
+
+    /// <summary>Puts the focus on the step's heading, so a screen reader reads where it is.</summary>
+    public ValueTask FocusAsync()
+    {
+        return _heading.FocusAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_watched != Board.BoardId)
+        {
+            Registry.StateChanged -= OnBoardChanged;
+            Registry.StateChanged += OnBoardChanged;
+            _watched = Board.BoardId;
+        }
+    }
+
+    public void Dispose()
+    {
+        Registry.StateChanged -= OnBoardChanged;
+    }
+
+    private async Task TryAsync(Row relay)
+    {
+        if (UserEmail is null || relay.Trying)
+        {
+            return;
+        }
+
+        relay.Trying = true;
+        relay.Error = null;
+        try
+        {
+            await Setup.TryAsync(relay.Id, UserEmail, CancellationToken.None);
+        }
+        catch (BoardClosedException)
+        {
+            relay.Error = LiveBoard.BeingRemoved;
+        }
+        catch (BoardNotConnectedException)
+        {
+            relay.Error = "No contact with the relay board. Try again in a moment.";
+        }
+        catch (RelayInGroupException)
+        {
+            relay.Error = RelayInGroupException.Text;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "\"Try\" failed for relay {RelayId}", relay.Id);
+            relay.Error = "Something went wrong. Try again.";
+        }
+        finally
+        {
+            relay.Trying = false;
+        }
+    }
+
+    // From the board's read loop.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == _watched)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+
+    /// <summary>A relay as the step shows it: its name as typed, "In use", and whether "Try" is under way.</summary>
+    public sealed class Row
+    {
+        public Row(SetupRelay relay)
+        {
+            ArgumentNullException.ThrowIfNull(relay);
+            Id = relay.Id;
+            Channel = relay.Channel;
+            Name = relay.HasDefaultName ? "" : relay.Name;
+            IsActive = relay.IsActive;
+            GroupName = relay.GroupName;
+        }
+
+        public int Id { get; }
+
+        /// <summary>Its channel on the board: the board's state goes by it, and it is the number shown.</summary>
+        public int Channel { get; }
+
+        public string Name { get; set; }
+
+        public bool IsActive { get; set; }
+
+        public string? GroupName { get; }
+
+        public bool Trying { get; set; }
+
+        public string? Error { get; set; }
+
+        /// <summary>Its name as a summary shows it.</summary>
+        public string Shown => string.IsNullOrWhiteSpace(Name) ? Relay.DefaultName(Channel) : Name.Trim();
+    }
+}

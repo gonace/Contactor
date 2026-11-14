@@ -1,0 +1,226 @@
+@implements IDisposable
+@using System.Globalization
+@using Contactor.Boards
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Identity
+@inject BoardAddressHandler Handler
+@inject BoardRegistry Registry
+@inject CurrentUser CurrentUser
+
+@* One board's card: on Settings with one board ("Relay board"), and on a board's own page ("Board", with its name). *@
+<form class="card" @onsubmit="SaveAsync">
+    <h2>@Title</h2>
+    <p class="hint">@(Model?.Name ?? "No model chosen") · @RelayCount @(RelayCount == 1 ? "relay" : "relays")</p>
+
+    @if (WithName)
+    {
+        <div class="field">
+            <label for="board-name">Name</label>
+            <input id="board-name" type="text" class="name" autocomplete="off" maxlength="@Contactor.Web.Persistence.Board.NameMaxLength"
+                   @bind="_name" @bind:event="oninput" />
+        </div>
+    }
+
+    <div class="fields">
+        <div class="field">
+            <label for="host">Address</label>
+            <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
+                   maxlength="253" placeholder="192.168.1.50" @bind="_host" @bind:event="oninput" />
+        </div>
+        <div class="field">
+            <label for="port">Port</label>
+            <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="@Model?.DefaultPort" @bind="_port" @bind:event="oninput" />
+        </div>
+    </div>
+    <p class="hint">The relay board's IP address on the local network. Your router lists it among its connected devices.</p>
+
+    @if (Model is { HasLogin: true } model)
+    {
+        <label for="no-login" class="check">
+            <input id="no-login" type="checkbox" @bind="_noLogin" />
+            <span>@(model.PasswordOnly ? "The board has no password" : "The board has no login")</span>
+        </label>
+        @if (!_noLogin)
+        {
+            <div class="fields login">
+                @if (!model.PasswordOnly)
+                {
+                    <div class="field">
+                        <label for="username">User name</label>
+                        <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                               maxlength="@model.LoginMaxLength" @bind="_username" @bind:event="oninput" />
+                    </div>
+                }
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input id="password" type="password" autocomplete="new-password"
+                           maxlength="@model.LoginMaxLength" placeholder="@(_hasPassword ? "unchanged" : "none")"
+                           @bind="_newPassword" @bind:event="oninput" />
+                </div>
+            </div>
+            <p class="hint">@(model.PasswordOnly ? model.LoginHint : $"The same as on the board's own web page. {model.LoginHint ?? $"At most {model.LoginMaxLength} characters."}")</p>
+        }
+    }
+
+    @if (State.IsConnected)
+    {
+        <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Endpoint</p>
+    }
+    else if (!Endpoint.HasHost)
+    {
+        <p class="status offline" role="status">The relay board has no address yet</p>
+    }
+    else
+    {
+        <p class="status offline" role="status">No contact with the relay board at @Endpoint</p>
+    }
+
+    @if (_message is not null)
+    {
+        <p class="@(_saved ? "saved" : "error")" role="alert">@_message</p>
+    }
+
+    <button type="submit" class="save" disabled="@_busy">Save</button>
+</form>
+
+@code {
+    private static readonly BoardEndpoint NoEndpoint = new("", 0);
+
+    private SignedInUser? _user;
+    private string _name = "";
+    private string _host = "";
+    private string _port = "";
+    private bool _noLogin;
+    private string _username = "";
+    private string _newPassword = "";
+    private bool _hasPassword;
+    private string? _message;
+    private bool _saved;
+    private bool _busy;
+    private int? _loadedFor;
+
+    /// <summary>The board's row.</summary>
+    [Parameter]
+    [EditorRequired]
+    public int BoardId { get; set; }
+
+    /// <summary>The card's heading.</summary>
+    [Parameter]
+    public string Title { get; set; } = "Relay board";
+
+    /// <summary>Whether the board's name can be changed here too (a board's own page).</summary>
+    [Parameter]
+    public bool WithName { get; set; }
+
+    /// <summary>Told the name saved, so the page can show it.</summary>
+    [Parameter]
+    public EventCallback<string> NameSaved { get; set; }
+
+    private LiveBoard? Live => Registry.Find(BoardId);
+
+    private BoardModel? Model => Live?.Model;
+
+    private int RelayCount => Live?.Capabilities.RelayCount ?? 0;
+
+    private BoardState State => Live?.State ?? BoardState.Initial;
+
+    private BoardEndpoint Endpoint => Live?.Endpoint ?? NoEndpoint;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await CurrentUser.GetAsync();
+        Registry.StateChanged += OnBoardChanged;
+    }
+
+    // Loaded for each board it is given: Settings can give it another one when the boards change.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == BoardId)
+        {
+            return;
+        }
+
+        _loadedFor = BoardId;
+        _message = null;
+        _name = await Handler.GetNameAsync(BoardId, CancellationToken.None) ?? "";
+        var endpoint = await Handler.GetAsync(BoardId, CancellationToken.None);
+        _host = endpoint.Host;
+        _port = endpoint.Port > 0 ? endpoint.Port.ToString(CultureInfo.InvariantCulture) : "";
+        await LoadLoginAsync();
+    }
+
+    public void Dispose()
+    {
+        Registry.StateChanged -= OnBoardChanged;
+    }
+
+    private async Task LoadLoginAsync()
+    {
+        var login = await Handler.GetLoginAsync(BoardId, CancellationToken.None);
+        _username = login.Username;
+        _hasPassword = login.HasPassword;
+        _noLogin = login.Username.Length == 0 && !login.HasPassword;
+        _newPassword = "";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        if (!int.TryParse(_port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
+        {
+            (_message, _saved) = ("The port is a number from 1 to 65535.", false);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            // The name first: a name that can't be saved stops the rest, and one saved shows at once.
+            var error = WithName ? await Handler.RenameAsync(BoardId, _name, CancellationToken.None) : null;
+            if (WithName && error is null)
+            {
+                _name = _name.Trim();
+                await NameSaved.InvokeAsync(_name);
+            }
+
+            error ??= await Handler.SaveAsync(BoardId, _host, port, _user.Email, CancellationToken.None);
+            error ??= Model is { HasLogin: true }
+                ? await Handler.SaveLoginAsync(BoardId, _username, _newPassword, _noLogin, _user.Email, CancellationToken.None)
+                : null;
+            (_message, _saved) = error is null ? ("Saved. The app reconnects to the board.", true) : (error, false);
+            if (error is null)
+            {
+                await LoadLoginAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // From a board's read loop: only this board's state redraws the card.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == BoardId)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

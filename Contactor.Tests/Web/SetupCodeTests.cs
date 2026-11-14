@@ -350,7 +350,7 @@ public sealed partial class SetupCodeTests
     {
         var logs = new LogCapture();
         await using var app = NewInstallation(logs);
-        app.SaveBeforeStart(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" });
+        app.SaveBeforeStart(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = "cloudflare", SignInType = "cloudflare-access" }, boardType: "vm201");
 
         using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         using var response = await http.GetAsync("/", Cancel);
@@ -376,7 +376,7 @@ public sealed partial class SetupCodeTests
         {
             Directory.CreateDirectory(Path.GetDirectoryName(database.FilePath)!);
             await db.GetService<IMigrator>().MigrateAsync("20261113125455_AddInstallationMethods", cancellationToken: Cancel);
-            db.Installations.Add(new Installation { BoardType = "vm201", SetupDoneUtc = DateTime.UtcNow });
+            db.Installations.Add(new Installation { SetupDoneUtc = DateTime.UtcNow });
             await db.SaveChangesAsync(Cancel);
             await db.Database.MigrateAsync(Cancel);
         }

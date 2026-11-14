@@ -1,0 +1,186 @@
+/* "Add a board": the setup guide's board steps as a form under Settings, with the side menu on a desktop. */
+.screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    min-height: 56px;
+    padding: 12px 12px 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.back {
+    min-height: 44px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    background: transparent;
+    text-decoration: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.step-count {
+    padding-right: 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.progress {
+    padding: 4px 20px 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.progress span {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--line);
+}
+
+.progress span.done {
+    background: var(--accent);
+}
+
+.content {
+    flex: 1;
+    padding: 20px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* The board's name, under its model. */
+.field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.field > label {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+input[type="text"] {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.missing {
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    color: var(--muted);
+}
+
+.next {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 16px max(22px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.next > button {
+    height: 56px;
+    border-radius: 12px;
+    border: none;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.next > button.finish {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.next > button.link {
+    height: 44px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+/* A tablet or a desktop: a form stays narrow and centred; wide forms are harder to fill in. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 560px;
+    }
+}
+
+/* A desktop with the side menu: the form is a card beside it, its buttons at the bottom of the card rather than
+   of the window. */
+@supports selector(:has(a)) {
+    @media (min-width: 1024px) {
+        .screen {
+            --beside-menu: 32px;
+            max-width: 640px;
+            min-height: 0;
+            margin-top: 32px;
+            margin-bottom: 32px;
+            padding: 8px 8px 0;
+            border: 1.5px solid var(--line);
+            border-radius: 14px;
+            background: var(--card);
+        }
+
+        .next {
+            position: static;
+            background: transparent;
+            border-top: none;
+        }
+    }
+}

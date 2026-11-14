@@ -111,8 +111,8 @@ public sealed class RelayStatusTextTests
     [Fact]
     public void Should_SettleAnUnconfirmedPress_OnlyWhenTheBoardShowsWhatWasWanted()
     {
-        var on = new UnconfirmedPress(3, On: true);
-        var off = new UnconfirmedPress(3, On: false);
+        var on = new UnconfirmedPress(13, 3, On: true);
+        var off = new UnconfirmedPress(13, 3, On: false);
         var relay3On = new BoardState(true, ChannelMask.Of(3), ChannelMask.None, DateTimeOffset.UnixEpoch);
         var relay3Off = new BoardState(true, ChannelMask.None, ChannelMask.None, DateTimeOffset.UnixEpoch);
 

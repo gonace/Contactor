@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -9,7 +10,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Inputs;
 
 /// <summary>An input's change as the app saw it happen, for <see cref="InputActionService"/>.</summary>
-public sealed record InputChanged(int InputId, bool Closed);
+/// <param name="InputId">The input's row.</param>
+/// <param name="Closed">Whether it closed (or opened).</param>
+/// <param name="Again">
+/// Done again once its board opened again after a removal that didn't go ahead, because the board refused an ON of
+/// it meanwhile: only while the input is still in that state.
+/// </param>
+public sealed record InputChanged(int InputId, bool Closed, bool Again = false);
 
 /// <summary>
 /// The inputs' changes the app saw as they happened, handed over by <see cref="Events.BoardEventRecorder"/> once they
@@ -33,44 +40,82 @@ public sealed class InputChangeFeed
 /// with its run-on and auto-off). Logged with the input as the actor. A relay already in that state is left alone, so
 /// a relay its schedule turned on stays the schedule's; one with the opposite command still on its way isn't, so a
 /// contact that closes and opens quickly still turns it back. A group decides itself whether there is anything to
-/// stop; one that is fully on and not mid-sequence isn't started again. Without the board nothing is sent
-/// or queued for later; a relay that has joined a group is skipped.
+/// stop; one that is fully on and not mid-sequence isn't started again. An input only acts on the relays and groups
+/// of its own board (across boards is issue #204): one on another board is skipped. Without the board nothing is sent
+/// or queued for later; a relay that has joined a group is skipped. Each board has its own queue and loop
+/// (<see cref="IBoardWatcher"/>): a board whose command doesn't finish holds up only its own inputs' actions.
 /// </summary>
-public sealed partial class InputActionService : BackgroundService
+public sealed partial class InputActionService : BackgroundService, IBoardWatcher
 {
     private readonly InputChangeFeed _queue;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
-    private readonly IRelayBoard _board;
-    private readonly RelayControl _relays;
+    private readonly IServiceProvider _services;
     private readonly GroupSequencer _groups;
-    private readonly ExpectedChanges _expected;
     private readonly ILogger<InputActionService> _logger;
+    private readonly BoardParts<BoardInputActions> _boards;
+    private RelayControl? _relays;
 
+    // RelayControl is reached through the services when first needed: it needs the board registry, which needs every
+    // board watcher, this one among them.
     public InputActionService(
         InputChangeFeed queue,
         IDbContextFactory<ContactorDbContext> dbFactory,
-        IRelayBoard board,
-        RelayControl relays,
+        IServiceProvider services,
         GroupSequencer groups,
-        ExpectedChanges expected,
         ILogger<InputActionService> logger)
     {
         _queue = queue;
         _dbFactory = dbFactory;
-        _board = board;
-        _relays = relays;
+        _services = services;
         _groups = groups;
-        _expected = expected;
         _logger = logger;
+        _boards = new BoardParts<BoardInputActions>(logger);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    private RelayControl Relays => _relays ??= _services.GetRequiredService<RelayControl>();
+
+    /// <inheritdoc/>
+    public IAsyncDisposable Watch(LiveBoard board)
+    {
+        ArgumentNullException.ThrowIfNull(board);
+        var part = new BoardInputActions(this, board);
+        _boards.Add(part);
+        return part;
+    }
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        return Task.WhenAll(DispatchAsync(stoppingToken), _boards.RunAsync(stoppingToken));
+    }
+
+    // Hands each change to its input's own board's queue: quick, and never waits for a board.
+    private async Task DispatchAsync(CancellationToken stoppingToken)
     {
         try
         {
             await foreach (var change in _queue.Reader.ReadAllAsync(stoppingToken))
             {
-                await RunAsync(change, stoppingToken);
+                int? boardId;
+                try
+                {
+                    await using var db = await _dbFactory.CreateDbContextAsync(stoppingToken);
+                    boardId = await db.Inputs.Where(i => i.Id == change.InputId).Select(i => (int?)i.BoardId).SingleOrDefaultAsync(stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    LogFailed(ex, change.InputId);
+                    continue;
+                }
+
+                if (boardId is { } id && _boards.Find(id) is { } part)
+                {
+                    part.Enqueue(change);
+                }
+                else if (boardId is not null)
+                {
+                    // Its board isn't run: nothing to act on, and nothing queued.
+                    LogNoBoard(change.InputId);
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -86,22 +131,61 @@ public sealed partial class InputActionService : BackgroundService
         List<InputAction> actions;
         Dictionary<int, List<int>> members;
         Dictionary<int, GroupRuntime> runtimes;
+        BoardChannels channels;
+        LiveBoard? board;
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+            if (await db.Inputs.Where(i => i.Id == change.InputId).Select(i => (int?)i.BoardId).SingleOrDefaultAsync(cancellationToken) is not { } boardId)
+            {
+                return;
+            }
+
+            board = _boards.Find(boardId)?.Board;
+
+            // Only what is on the input's own board: a relay on another board isn't in its channels, and a group on
+            // another board isn't among its groups.
             actions = await db.InputActions.AsNoTracking()
                 .Where(a => a.InputId == change.InputId)
+                .Where(a => (a.RelayId != null && a.Relay!.BoardId == boardId) || (a.GroupId != null && a.Group!.BoardId == boardId))
                 .OrderBy(a => a.GroupId == null).ThenBy(a => a.GroupId).ThenBy(a => a.RelayId)
                 .ToListAsync(cancellationToken);
-            members = (await db.RelayGroupMembers.AsNoTracking().Select(m => new { m.GroupId, m.RelayId }).ToListAsync(cancellationToken))
+            // The groups' relays by channel, as the board's state goes; only the board's own.
+            members = (await db.RelayGroupMembers.AsNoTracking()
+                    .Where(m => m.Group!.BoardId == boardId && m.Relay!.BoardId == boardId)
+                    .Select(m => new { m.GroupId, m.Relay!.Channel })
+                    .ToListAsync(cancellationToken))
                 .GroupBy(m => m.GroupId)
-                .ToDictionary(g => g.Key, g => g.Select(m => m.RelayId).ToList());
+                .ToDictionary(g => g.Key, g => g.Select(m => m.Channel).ToList());
+            channels = await BoardChannels.LoadAsync(db, boardId, cancellationToken);
             runtimes = await db.GroupRuntimes.AsNoTracking().ToDictionaryAsync(r => r.GroupId, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LogFailed(ex, change.InputId);
             return;
+        }
+
+        if (board is null)
+        {
+            // Its board isn't run: nothing to act on, and nothing queued.
+            LogNoBoard(change.InputId);
+            return;
+        }
+
+        var part = _boards.Find(board.BoardId);
+        if (change.Again)
+        {
+            // Only while the input is still as it was: an input's moment has passed once it changed.
+            if (channels.InputChannel(change.InputId) is not { } inputChannel || board.State.Inputs.Contains(inputChannel) != change.Closed)
+            {
+                return;
+            }
+        }
+        else
+        {
+            // A newer change of the input replaces one refused earlier.
+            part?.Forget(change.InputId);
         }
 
         var actor = EventActors.ForInput(change.InputId);
@@ -114,7 +198,13 @@ public sealed partial class InputActionService : BackgroundService
 
             try
             {
-                await RunAsync(action, on, actor, members, runtimes, cancellationToken);
+                await RunAsync(board, action, on, actor, members, runtimes, channels, cancellationToken);
+            }
+            catch (BoardClosedException)
+            {
+                // Refused while its board is being removed: done again if the board opens again (the removal didn't go
+                // ahead) and the input is still as it was. The input's other actions (an OFF goes through) carry on.
+                part?.Refused(change with { Again = true });
             }
             catch (BoardNotConnectedException)
             {
@@ -135,11 +225,13 @@ public sealed partial class InputActionService : BackgroundService
     }
 
     private async Task RunAsync(
+        LiveBoard board,
         InputAction action,
         bool on,
         string actor,
         Dictionary<int, List<int>> members,
         Dictionary<int, GroupRuntime> runtimes,
+        BoardChannels channels,
         CancellationToken cancellationToken)
     {
         if (action.GroupId is { } groupId)
@@ -155,35 +247,148 @@ public sealed partial class InputActionService : BackgroundService
                 // The sequencer knows best what is running or on its way (an ON not confirmed yet is overtaken).
                 await _groups.StopGroupAsync(groupId, actor, cancellationToken);
             }
-            else if (!IsFullyOn(groupRelays, runtimes.GetValueOrDefault(groupId)))
+            else if (!IsFullyOn(board, groupRelays, runtimes.GetValueOrDefault(groupId)))
             {
                 await _groups.StartGroupAsync(groupId, actor, cancellationToken);
             }
         }
-        else if (action.RelayId is { } relayId && relayId <= _board.Capabilities.RelayCount && !IsAlready(relayId, on))
+        else if (action.RelayId is { } relayId
+            && channels.RelayChannel(relayId) is { } channel
+            && channel <= board.Capabilities.RelayCount
+            && !IsAlready(board, channel, on))
         {
             if (on)
             {
-                await _relays.TurnOnAsync(relayId, actor, cancellationToken);
+                await Relays.TurnOnAsync(relayId, actor, cancellationToken);
             }
             else
             {
-                await _relays.TurnOffAsync(relayId, actor, cancellationToken);
+                await Relays.TurnOffAsync(relayId, actor, cancellationToken);
             }
         }
     }
 
-    // The board shows the relay in that state, and no command to change it is on its way.
-    private bool IsAlready(int relayId, bool on)
+    // The board shows the relay (its channel) in that state, and no command to change it is on its way.
+    private static bool IsAlready(LiveBoard board, int channel, bool on)
     {
-        return _board.State.Relays.Contains(relayId) == on && !_expected.IsPending(relayId, !on);
+        return board.State.Relays.Contains(channel) == on && !board.Expected.IsPending(channel, !on);
     }
 
-    // Every relay on, nothing on its way and no sequence under way: starting it again would only log a second start.
-    private bool IsFullyOn(List<int> groupRelays, GroupRuntime? runtime)
+    // Every relay (by channel) on, nothing on its way and no sequence under way: starting it again would only log a
+    // second start.
+    private static bool IsFullyOn(LiveBoard board, List<int> groupRelays, GroupRuntime? runtime)
     {
-        return groupRelays.All(_board.State.Relays.Contains)
+        return groupRelays.All(board.State.Relays.Contains)
             && (runtime is null || (runtime.Phase == GroupPhases.Idle && runtime.PendingPosition is null));
+    }
+
+    // One board's inputs' actions: its own queue and loop, ended with its board's watch. An action under way finishes
+    // before the watch ends, so nothing is sent to a board being disposed; what is still queued then is dropped.
+    private sealed class BoardInputActions : IBoardPart, IAsyncDisposable
+    {
+        private readonly InputActionService _service;
+        private readonly Channel<InputChanged> _changes = Channel.CreateUnbounded<InputChanged>(new UnboundedChannelOptions { SingleReader = true });
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        private readonly CancellationTokenSource _ended = new();
+        private int _disposed;
+
+        // The latest change of each input whose ON the board refused while it was closed for its removal. Under its own
+        // lock: the board's Reopened comes from the removal.
+        private readonly Dictionary<int, InputChanged> _refused = [];
+        private readonly Lock _refusedLock = new();
+
+        public BoardInputActions(InputActionService service, LiveBoard board)
+        {
+            _service = service;
+            Board = board;
+            Board.Reopened += OnReopened;
+        }
+
+        public void Refused(InputChanged change)
+        {
+            lock (_refusedLock)
+            {
+                _refused[change.InputId] = change;
+            }
+        }
+
+        public void Forget(int inputId)
+        {
+            lock (_refusedLock)
+            {
+                _refused.Remove(inputId);
+            }
+        }
+
+        // The board opened again: what it refused meanwhile goes now, after what is already queued.
+        private void OnReopened(object? sender, EventArgs e)
+        {
+            List<InputChanged> again;
+            lock (_refusedLock)
+            {
+                again = [.. _refused.Values];
+                _refused.Clear();
+            }
+
+            foreach (var change in again)
+            {
+                _changes.Writer.TryWrite(change);
+            }
+        }
+
+        public LiveBoard Board { get; }
+
+        public int BoardId => Board.BoardId;
+
+        public void Enqueue(InputChanged change)
+        {
+            _changes.Writer.TryWrite(change);
+        }
+
+        public async Task RunAsync(CancellationToken cancellationToken)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _ended.Token);
+            var token = linked.Token;
+            try
+            {
+                await foreach (var change in _changes.Reader.ReadAllAsync(token))
+                {
+                    await _gate.WaitAsync(token);
+                    try
+                    {
+                        if (Volatile.Read(ref _disposed) == 1)
+                        {
+                            return;
+                        }
+
+                        await _service.RunAsync(change, token);
+                    }
+                    finally
+                    {
+                        _gate.Release();
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Stopping, or the board's watch ended.
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
+
+            Board.Reopened -= OnReopened;
+            _service._boards.Remove(this);
+            _changes.Writer.TryComplete();
+            await _gate.WaitAsync(CancellationToken.None);
+            _gate.Release();
+            await _ended.CancelAsync();
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Input {InputId} changed, but the board isn't connected: its actions were not carried out")]

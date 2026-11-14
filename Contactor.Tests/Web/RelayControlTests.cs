@@ -121,7 +121,7 @@ public sealed class RelayControlTests : IAsyncLifetime
         await _simulator.SetOutputsAsync(0b0010_0010); // Relay 6 turned on at the board itself.
         await WaitUntilAsync(() => Client.State.Outputs == 0b0010_0010);
 
-        await Control.TurnAllOffAsync("john@example.com", Cancel);
+        await Control.TurnAllOffAsync(_database.Services.Live().BoardId, "john@example.com", Cancel);
 
         await WaitUntilAsync(() => Client.State.Outputs == 0);
         Assert.Equal(1, _simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.Off));
@@ -141,7 +141,7 @@ public sealed class RelayControlTests : IAsyncLifetime
 
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOnAsync(1, Jane, Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnOffAsync(1, Jane, Cancel));
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnAllOffAsync(Jane, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => Control.TurnAllOffAsync(_database.Services.Live().BoardId, Jane, Cancel));
 
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(0, await db.EventLog.CountAsync(Cancel));
@@ -165,7 +165,7 @@ public sealed class RelayControlTests : IAsyncLifetime
 
         await Control.TurnOnAsync(1, Jane, Cancel);
         await Control.TurnOffAsync(1, Jane, Cancel);
-        await Control.TurnAllOffAsync(Jane, Cancel);
+        await Control.TurnAllOffAsync(_database.Services.Live().BoardId, Jane, Cancel);
 
         Assert.Equal(3, notified);
     }

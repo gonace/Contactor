@@ -1,22 +1,15 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// The installation itself: which model of board it has, how people reach the app and sign in, and whether the setup
-/// guide has been done. One row; while it doesn't exist there is no board, and every page opens on the setup guide.
+/// The installation itself: how people reach the app and sign in, and whether the setup guide has been done. One row;
+/// while it doesn't exist every page opens on the setup guide. The board is a <see cref="Board"/>.
 /// </summary>
 public sealed class Installation
 {
     public const int SingletonId = 1;
-    public const int BoardTypeMaxLength = 32;
     public const int MethodTypeMaxLength = 32;
 
     public int Id { get; set; } = SingletonId;
-
-    /// <summary>
-    /// The model chosen in the setup guide, by its id in the board catalogue (e.g. <c>vm201</c>). Null while none is
-    /// chosen: the app then has no board.
-    /// </summary>
-    public string? BoardType { get; set; }
 
     /// <summary>
     /// How people reach the app, by its id in the catalogue of ways in (e.g. <c>cloudflare</c>). Null: not chosen yet.
