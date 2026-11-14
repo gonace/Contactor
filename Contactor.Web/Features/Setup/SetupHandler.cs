@@ -7,11 +7,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Setup;
 
-/// <summary>A relay as the setup guide shows it: its name, whether it is in use, and its group, if any.</summary>
-public sealed record SetupRelay(int Id, string Name, bool IsActive, string? GroupName)
+/// <summary>A relay as the setup guide shows it: its channel, its name, whether it is in use, and its group, if any.</summary>
+public sealed record SetupRelay(int Id, int Channel, string Name, bool IsActive, string? GroupName)
 {
     /// <summary>Whether it still has the name it was seeded with, so the guide shows that as a hint, not a value.</summary>
-    public bool HasDefaultName => Name == Relay.DefaultName(Id);
+    public bool HasDefaultName => Name == Relay.DefaultName(Channel);
 }
 
 /// <summary>A relay's name and "In use" as typed in the setup guide.</summary>
@@ -113,10 +113,10 @@ public sealed class SetupHandler
             .Select(m => new { m.RelayId, m.Group!.Name })
             .ToDictionaryAsync(m => m.RelayId, m => m.Name, cancellationToken);
         var relays = await db.Relays.AsNoTracking()
-            .Where(r => r.Id <= count)
-            .OrderBy(r => r.Id)
+            .Where(r => r.Channel <= count)
+            .OrderBy(r => r.Channel)
             .ToListAsync(cancellationToken);
-        return [.. relays.Select(r => new SetupRelay(r.Id, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id)))];
+        return [.. relays.Select(r => new SetupRelay(r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id)))];
     }
 
     /// <summary>
@@ -126,17 +126,18 @@ public sealed class SetupHandler
     public async Task<string?> SaveRelaysAsync(IEnumerable<SetupRelayChoice> choices, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(choices);
+        var channels = await BoardChannels.LoadAsync(_dbFactory, cancellationToken);
         foreach (var choice in choices)
         {
-            if (await _relays.GetAsync(choice.Id, cancellationToken) is not { } current)
+            if (await _relays.GetAsync(choice.Id, cancellationToken) is not { } current || channels.RelayChannel(choice.Id) is not { } channel)
             {
                 continue;
             }
 
-            var name = string.IsNullOrWhiteSpace(choice.Name) ? Relay.DefaultName(choice.Id) : choice.Name;
+            var name = string.IsNullOrWhiteSpace(choice.Name) ? Relay.DefaultName(channel) : choice.Name;
             if (await _relays.SaveAsync(current with { Name = name, IsActive = choice.IsActive }, userEmail, cancellationToken) is { } error)
             {
-                return $"Relay {choice.Id}: {error}";
+                return $"Relay {channel}: {error}";
             }
         }
 
@@ -192,7 +193,8 @@ public sealed class SetupHandler
         try
         {
             await Task.Delay(TryLength, _time);
-            if (!_board.State.IsOn(relayId))
+            var channels = await BoardChannels.LoadAsync(_dbFactory, CancellationToken.None);
+            if (channels.RelayChannel(relayId) is not { } channel || !_board.State.IsOn(channel))
             {
                 _logger.TryNotOn(relayId);
                 return;

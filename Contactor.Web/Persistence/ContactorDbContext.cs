@@ -136,7 +136,7 @@ public sealed class ContactorDbContext : DbContext
         // A relay is in at most one group, and a group has one relay per step.
         member.HasIndex(m => m.RelayId).IsUnique();
         member.HasIndex(m => new { m.GroupId, m.Position }).IsUnique();
-        member.HasOne<Relay>().WithMany().HasForeignKey(m => m.RelayId).OnDelete(DeleteBehavior.Restrict);
+        member.HasOne(m => m.Relay).WithMany().HasForeignKey(m => m.RelayId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureGroupRuntime(EntityTypeBuilder<GroupRuntime> runtime)
@@ -151,12 +151,7 @@ public sealed class ContactorDbContext : DbContext
 
     private static void ConfigureRelay(EntityTypeBuilder<Relay> relay)
     {
-        relay.ToTable("Relay", t =>
-        {
-            t.HasCheckConstraint("CK_Relay_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
-            t.HasCheckConstraint("CK_Relay_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
-        });
-        relay.Property(r => r.Id).ValueGeneratedNever();
+        relay.ToTable("Relay", t => t.HasCheckConstraint("CK_Relay_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         relay.HasIndex(r => new { r.BoardId, r.Channel }).IsUnique();
         relay.HasOne<Board>().WithMany().HasForeignKey(r => r.BoardId).OnDelete(DeleteBehavior.Cascade);
         relay.Property(r => r.Name).HasMaxLength(Relay.NameMaxLength);
@@ -267,12 +262,7 @@ public sealed class ContactorDbContext : DbContext
 
     private static void ConfigureInput(EntityTypeBuilder<Input> input)
     {
-        input.ToTable("Input", t =>
-        {
-            t.HasCheckConstraint("CK_Input_Id", $"\"Id\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
-            t.HasCheckConstraint("CK_Input_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
-        });
-        input.Property(i => i.Id).ValueGeneratedNever();
+        input.ToTable("Input", t => t.HasCheckConstraint("CK_Input_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         input.HasIndex(i => new { i.BoardId, i.Channel }).IsUnique();
         input.HasOne<Board>().WithMany().HasForeignKey(i => i.BoardId).OnDelete(DeleteBehavior.Cascade);
         input.Property(i => i.Name).HasMaxLength(Input.NameMaxLength);

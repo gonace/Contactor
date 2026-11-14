@@ -6,10 +6,11 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Inputs;
 
 /// <summary>A relay or a group an input can control: exactly one of <paramref name="RelayId"/> and <paramref name="GroupId"/>.</summary>
-public sealed record InputActionTarget(int? RelayId, int? GroupId, string Name)
+/// <param name="Channel">A relay's channel on the board, the number the screens show; null for a group.</param>
+public sealed record InputActionTarget(int? RelayId, int? Channel, int? GroupId, string Name)
 {
-    /// <summary>"Group: Fan heater" or "Relay 4: Lighting".</summary>
-    public string Label => GroupId is not null ? $"Group: {Name}" : $"Relay {RelayId}: {Name}";
+    /// <summary>"Group: Fan heater" or "Relay 4: Lighting", by the relay's channel.</summary>
+    public string Label => GroupId is not null ? $"Group: {Name}" : $"Relay {Channel}: {Name}";
 
     /// <summary>
     /// Tells relays and groups apart on a page ("group:2", "relay:4"): names aren't unique, so two groups with one name
@@ -58,10 +59,11 @@ public sealed class InputActionsHandler
         var count = _board.Capabilities.RelayCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var actions = await db.InputActions.AsNoTracking()
-            .Where(a => a.InputId == inputId && (a.RelayId == null || a.RelayId <= count))
+            .Where(a => a.InputId == inputId && (a.RelayId == null || a.Relay!.Channel <= count))
             .Select(a => new
             {
                 a.RelayId,
+                Channel = a.Relay == null ? (int?)null : a.Relay.Channel,
                 a.GroupId,
                 RelayName = a.Relay == null ? null : a.Relay.Name,
                 GroupName = a.Group == null ? null : a.Group.Name,
@@ -74,9 +76,9 @@ public sealed class InputActionsHandler
             .OrderBy(a => a.GroupId is null)
             .ThenBy(a => a.GroupOrder)
             .ThenBy(a => a.GroupId)
-            .ThenBy(a => a.RelayId)
+            .ThenBy(a => a.Channel)
             .Select(a => new InputActionRow(
-                new InputActionTarget(a.RelayId, a.GroupId, a.GroupName ?? a.RelayName ?? ""),
+                new InputActionTarget(a.RelayId, a.Channel, a.GroupId, a.GroupName ?? a.RelayName ?? ""),
                 a.WhenClosed,
                 a.WhenOpened))];
     }
@@ -108,7 +110,7 @@ public sealed class InputActionsHandler
         // What isn't shown, a relay above the board's count, stays.
         var count = _board.Capabilities.RelayCount;
         db.InputActions.RemoveRange(await db.InputActions
-            .Where(a => a.InputId == inputId && (a.RelayId == null || a.RelayId <= count))
+            .Where(a => a.InputId == inputId && (a.RelayId == null || a.Relay!.Channel <= count))
             .ToListAsync(cancellationToken));
         db.InputActions.AddRange(rows.Select(r => new InputAction
         {
@@ -137,7 +139,8 @@ public sealed class InputActionsHandler
 
     private async Task<string?> CheckAsync(ContactorDbContext db, int inputId, IReadOnlyList<InputActionRow> rows, CancellationToken cancellationToken)
     {
-        if (inputId < 1 || inputId > _board.Capabilities.InputCount || !await db.Inputs.AnyAsync(i => i.Id == inputId, cancellationToken))
+        var inputCount = _board.Capabilities.InputCount;
+        if (!await db.Inputs.AnyAsync(i => i.Id == inputId && i.Channel <= inputCount, cancellationToken))
         {
             return "The input doesn't exist.";
         }
@@ -150,10 +153,15 @@ public sealed class InputActionsHandler
             ArgumentNullException.ThrowIfNull(row?.Target);
             if (!targets.Any(t => t.IsSame(row.Target)))
             {
+                // By the relay's channel, as the screens number it.
+                var count = _board.Capabilities.RelayCount;
+                var channel = row.Target.RelayId is { } relayId
+                    ? await db.Relays.Where(r => r.Id == relayId && r.Channel <= count).Select(r => (int?)r.Channel).SingleOrDefaultAsync(cancellationToken)
+                    : null;
                 return row.Target.GroupId is not null ? "That group no longer exists."
-                    : row.Target.RelayId is { } relayId && relayId >= 1 && relayId <= _board.Capabilities.RelayCount
-                        ? $"Relay {relayId} is in a group now: add the group instead."
-                    : $"The board has no relay {row.Target.RelayId}.";
+                    : channel is not null ? $"Relay {channel} is in a group now: add the group instead."
+                    : row.Target.Channel is { } shown ? $"The board has no relay {shown}."
+                    : "The board has no such relay.";
             }
 
             if (seen.Any(t => t.IsSame(row.Target)))
@@ -172,13 +180,13 @@ public sealed class InputActionsHandler
         var count = _board.Capabilities.RelayCount;
         var groups = await db.RelayGroups.AsNoTracking()
             .OrderBy(g => g.SortOrder).ThenBy(g => g.Id)
-            .Select(g => new InputActionTarget(null, g.Id, g.Name))
+            .Select(g => new InputActionTarget(null, null, g.Id, g.Name))
             .ToListAsync(cancellationToken);
         var members = db.RelayGroupMembers.Select(m => m.RelayId);
         var relays = await db.Relays.AsNoTracking()
-            .Where(r => r.Id <= count && !members.Contains(r.Id))
-            .OrderBy(r => r.Id)
-            .Select(r => new InputActionTarget(r.Id, null, r.Name))
+            .Where(r => r.Channel <= count && !members.Contains(r.Id))
+            .OrderBy(r => r.Channel)
+            .Select(r => new InputActionTarget(r.Id, r.Channel, null, r.Name))
             .ToListAsync(cancellationToken);
         return [.. groups, .. relays];
     }

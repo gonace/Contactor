@@ -98,7 +98,7 @@ public sealed class InputsTests
     {
         // The latest event says it opened at 13:20 UTC (14:20 in Stockholm). Closed now with contact: a change not logged
         // yet. Closed now without contact: the state shown may be stale, so "since unknown".
-        var input = new InputView(1, "Door", true, new InputChange(Now.AddMinutes(-10), false, known));
+        var input = new InputView(1, 1, "Door", true, new InputChange(Now.AddMinutes(-10), false, known));
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
 
         var status = InputStatusText.For(input, closedNow, connected, TimeZoneInfo.ConvertTimeFromUtc(Now, zone), utc => TimeZoneInfo.ConvertTimeFromUtc(utc, zone));
@@ -109,7 +109,7 @@ public sealed class InputsTests
     [Fact]
     public void Should_SaySinceUnknown_ForAnInputThatNeverChanged()
     {
-        var input = new InputView(1, "Door", true, null);
+        var input = new InputView(1, 1, "Door", true, null);
 
         Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, true, Now, utc => utc));
         Assert.Equal(new InputStatus("Open since unknown", true), InputStatusText.For(input, false, false, Now, utc => utc));

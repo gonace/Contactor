@@ -30,17 +30,13 @@ public sealed class RelaySettingsHandler
         _changes = changes;
     }
 
-    /// <summary>The relay's settings, or null for an id the board doesn't have.</summary>
+    /// <summary>The relay's settings, or null for a relay the board doesn't have (by its channel).</summary>
     public async Task<RelaySettings?> GetAsync(int relayId, CancellationToken cancellationToken)
     {
-        if (relayId < 1 || relayId > _board.Capabilities.RelayCount)
-        {
-            return null;
-        }
-
+        var count = _board.Capabilities.RelayCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         return await db.Relays.AsNoTracking()
-            .Where(r => r.Id == relayId)
+            .Where(r => r.Id == relayId && r.Channel <= count)
             .Select(r => new RelaySettings(r.Id, r.Name, r.IsActive, r.MaxOnMinutes))
             .SingleOrDefaultAsync(cancellationToken);
     }
@@ -72,10 +68,9 @@ public sealed class RelaySettingsHandler
             return $"The name can be at most {Relay.NameMaxLength} characters.";
         }
 
+        var count = _board.Capabilities.RelayCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var relay = settings.Id > _board.Capabilities.RelayCount
-            ? null
-            : await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
+        var relay = await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id && r.Channel <= count, cancellationToken);
         if (relay is null)
         {
             return "The relay doesn't exist.";

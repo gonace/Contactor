@@ -16,7 +16,7 @@ public sealed class GroupTextTests
         "Fan heater",
         GroupIcons.Fan,
         120,
-        [new GroupMemberView(1, 1, "Fan", 3, 300), new GroupMemberView(2, 2, "Heat", 3, 0)],
+        [new GroupMemberView(11, 1, 1, "Fan", 3, 300), new GroupMemberView(12, 2, 2, "Heat", 3, 0)],
         new GroupRuntime { GroupId = 1 });
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with
         {
-            Members = [.. FanHeater.Members, new GroupMemberView(3, 3, "Mist", 3, 0)],
+            Members = [.. FanHeater.Members, new GroupMemberView(13, 3, 3, "Mist", 3, 0)],
         };
         var starting = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
         var stopping = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(60) } };
@@ -139,7 +139,7 @@ public sealed class GroupTextTests
 
     private static List<string> Notes(GroupView group, BoardState state)
     {
-        return [.. Enumerable.Range(0, group.Members.Count).Select(i => GroupStatusText.MemberNote(group, state, i, state.IsOn(group.Members[i].RelayId), null, Now))];
+        return [.. Enumerable.Range(0, group.Members.Count).Select(i => GroupStatusText.MemberNote(group, state, i, state.IsOn(group.Members[i].Channel), null, Now))];
     }
 
     [Fact]

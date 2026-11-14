@@ -27,4 +27,7 @@ public sealed class RelayGroupMember
     public int RunOnSec { get; set; } = DefaultRunOnSec;
 
     public RelayGroup? Group { get; set; }
+
+    /// <summary>The relay, e.g. for its channel on the board.</summary>
+    public Relay? Relay { get; set; }
 }

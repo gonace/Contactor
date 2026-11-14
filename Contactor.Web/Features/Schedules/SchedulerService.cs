@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -120,14 +121,21 @@ public sealed partial class SchedulerService : BackgroundService
             var schedules = await db.Schedules.AsNoTracking().Where(s => s.IsEnabled).ToListAsync(cancellationToken);
             var windows = ScheduleCalendar.Windows(schedules, _clock.Zone, from, now);
             var runtimes = await db.RelayRuntimes.ToDictionaryAsync(r => r.RelayId, cancellationToken);
+            var channels = await BoardChannels.LoadAsync(db, cancellationToken);
             var changed = false;
             var interrupted = false;
 
-            for (var relayId = 1; relayId <= _board.Capabilities.RelayCount; relayId++)
+            // The board's relays in channel order; the board's state and the commands go by the channel.
+            for (var channel = 1; channel <= _board.Capabilities.RelayCount; channel++)
             {
+                if (channels.RelayAt(channel) is not { } relayId)
+                {
+                    continue;
+                }
+
                 var relayWindows = windows.Where(w => w.RelayId == relayId).ToList();
                 var running = relayWindows.Where(w => w.Contains(now)).OrderByDescending(w => w.OffUtc).FirstOrDefault();
-                var isOn = state.IsOn(relayId);
+                var isOn = state.IsOn(channel);
                 runtimes.TryGetValue(relayId, out var runtime);
 
                 if (running is not null)
@@ -144,7 +152,7 @@ public sealed partial class SchedulerService : BackgroundService
                     var startedNow = running.OnUtc > from && running.OnUtc <= now;
                     if (!isOn && (startedNow || reconcile))
                     {
-                        if (!await SendAsync(relayId, on: true, cancellationToken))
+                        if (!await SendAsync(channel, on: true, cancellationToken))
                         {
                             interrupted = true;
                             break;
@@ -182,7 +190,7 @@ public sealed partial class SchedulerService : BackgroundService
                 }
 
                 var sent = _clock.UtcNow;
-                if (!await SendAsync(relayId, on: false, cancellationToken))
+                if (!await SendAsync(channel, on: false, cancellationToken))
                 {
                     interrupted = true;
                     break;
@@ -199,7 +207,7 @@ public sealed partial class SchedulerService : BackgroundService
             await RelayRuns.SaveAsync(db, cancellationToken);
             if (!interrupted)
             {
-                var groups = await TickGroupsAsync(db, windows, from, now, reconcile, cancellationToken);
+                var groups = await TickGroupsAsync(db, channels, windows, from, now, reconcile, cancellationToken);
                 changed |= groups.Changed;
                 interrupted = groups.Interrupted;
             }
@@ -228,6 +236,7 @@ public sealed partial class SchedulerService : BackgroundService
     // and a missed OFF only stops a group the schedule started.
     private async Task<(bool Changed, bool Interrupted)> TickGroupsAsync(
         ContactorDbContext db,
+        BoardChannels channels,
         IReadOnlyList<ScheduleWindow> windows,
         DateTime from,
         DateTime now,
@@ -248,7 +257,7 @@ public sealed partial class SchedulerService : BackgroundService
             var state = _board.State;
             var phase = runtime?.Phase ?? GroupPhases.Idle;
             var isOn = phase == GroupPhases.Starting
-                || (phase != GroupPhases.Stopping && group.Members.Any(m => state.IsOn(m.RelayId)));
+                || (phase != GroupPhases.Stopping && group.Members.Any(m => channels.RelayChannel(m.RelayId) is { } channel && state.IsOn(channel)));
 
             // On outside the app during its schedule's window: the schedule's, as for a relay.
             var turnedOnBySchedule = runtime?.TurnedOnBy == Actor;
@@ -391,9 +400,9 @@ public sealed partial class SchedulerService : BackgroundService
         _wasConnected = state.IsConnected;
     }
 
-    private async Task<bool> SendAsync(int relayId, bool on, CancellationToken cancellationToken)
+    private async Task<bool> SendAsync(int channel, bool on, CancellationToken cancellationToken)
     {
-        var mask = _board.Capabilities.Relay(relayId);
+        var mask = _board.Capabilities.Relay(channel);
         _expected.Expect(mask, on);
         try
         {

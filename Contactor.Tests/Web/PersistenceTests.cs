@@ -28,12 +28,12 @@ public sealed class PersistenceTests
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
 
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        var relays = await db.Relays.OrderBy(r => r.Id).ToListAsync(Cancel);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], relays.Select(r => r.Id));
-        Assert.Equal("Relay 1", relays[0].Name);
+        var relays = await db.Relays.OrderBy(r => r.Channel).ToListAsync(Cancel);
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], relays.Select(r => r.Channel));
+        Assert.All(relays, r => Assert.Equal($"Relay {r.Channel}", r.Name));
         Assert.All(relays, r => Assert.True(r.IsActive));
         Assert.All(relays, r => Assert.Equal(Relay.DefaultMaxOnMinutes, r.MaxOnMinutes));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], await db.RelayRuntimes.OrderBy(r => r.RelayId).Select(r => r.RelayId).ToListAsync(Cancel));
+        Assert.Equal(relays.Select(r => r.Id).Order(), await db.RelayRuntimes.OrderBy(r => r.RelayId).Select(r => r.RelayId).ToListAsync(Cancel));
         var input = Assert.Single(await db.Inputs.ToListAsync(Cancel));
         Assert.Equal(("Input 1", true), (input.Name, input.IsActive));
     }
@@ -84,17 +84,22 @@ public sealed class PersistenceTests
         Assert.Equal(5000L, await command.ExecuteScalarAsync(Cancel));
     }
 
+    // A relay's and an input's id is only the database's key, apart from its channel.
     [Theory]
-    [InlineData(0)]
     [InlineData(65)]
-    public async Task Should_RejectRelay_WhenIdIsNotABoardChannel(int id)
+    [InlineData(1001)]
+    public async Task Should_TakeAnyId_ForARelayAndAnInput(int id)
     {
         await using var database = TestDatabase.Create();
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        db.Relays.Add(new Relay { Id = id, BoardId = 1, Channel = 9, Name = "Wrong" });
+        db.Relays.Add(new Relay { Id = id, BoardId = 1, Channel = 9, Name = "Pump" });
+        db.Inputs.Add(new Input { Id = id, BoardId = 1, Channel = 2, Name = "Door" });
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+        await db.SaveChangesAsync(Cancel);
+
+        Assert.Equal(9, (await db.Relays.SingleAsync(r => r.Id == id, Cancel)).Channel);
+        Assert.Equal(2, (await db.Inputs.SingleAsync(i => i.Id == id, Cancel)).Channel);
     }
 
     [Theory]
@@ -122,9 +127,85 @@ public sealed class PersistenceTests
         var board = await db.Boards.SingleAsync(Cancel);
         Assert.Equal(("", "", 1), (board.Name, board.Type, board.SortOrder));
         Assert.Equal(board.Id, (await db.BoardRuntimes.SingleAsync(Cancel)).BoardId);
-        Assert.All(await db.Relays.ToListAsync(Cancel), r => Assert.Equal((board.Id, r.Id), (r.BoardId, r.Channel)));
-        Assert.All(await db.Inputs.ToListAsync(Cancel), i => Assert.Equal((board.Id, i.Id), (i.BoardId, i.Channel)));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], await db.Relays.Where(r => r.BoardId == board.Id).OrderBy(r => r.Channel).Select(r => r.Channel).ToListAsync(Cancel));
+        Assert.Equal([1, 2], await db.Inputs.Where(i => i.BoardId == board.Id).OrderBy(i => i.Channel).Select(i => i.Channel).ToListAsync(Cancel));
     }
+
+    // A board whose relays have ids apart from their channels: the rows it lacks are added by channel, with ids the
+    // database gives, named after their channels, each with its runtime row; the rows it has are kept as they are.
+    [Fact]
+    public async Task Should_SeedTheMissingChannels_WithIdsOfTheirOwn()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 0, inputCount: 0, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var board = new Board { SortOrder = 1 };
+            db.Boards.Add(board);
+            await db.SaveChangesAsync(Cancel);
+            db.Relays.Add(new Relay { Id = 102, BoardId = board.Id, Channel = 1, Name = "Fan", IsActive = true, SortOrder = 1 });
+            db.Relays.Add(new Relay { Id = 101, BoardId = board.Id, Channel = 2, Name = "Heat", IsActive = true, SortOrder = 2 });
+            db.RelayRuntimes.Add(new RelayRuntime { RelayId = 101 });
+            db.RelayRuntimes.Add(new RelayRuntime { RelayId = 102 });
+            db.Inputs.Add(new Input { Id = 7, BoardId = board.Id, Channel = 1, Name = "Door" });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        var relays = await check.Relays.OrderBy(r => r.Channel).ToListAsync(Cancel);
+        Assert.Equal(["1:102:Fan", "2:101:Heat", "3:Relay 3", "4:Relay 4"], relays.Select(r => r.Channel <= 2 ? $"{r.Channel}:{r.Id}:{r.Name}" : $"{r.Channel}:{r.Name}"));
+        Assert.Equal(4, relays.Select(r => r.Id).Distinct().Count());
+        Assert.All(relays.Skip(2), r => Assert.DoesNotContain(r.Id, new[] { 101, 102 }));
+        Assert.Equal(relays.Select(r => r.Id).Order(), await check.RelayRuntimes.Select(r => r.RelayId).OrderBy(r => r).ToListAsync(Cancel));
+        var inputs = await check.Inputs.OrderBy(i => i.Channel).ToListAsync(Cancel);
+        Assert.Equal(["1:Door", "2:Input 2"], inputs.Select(i => $"{i.Channel}:{i.Name}"));
+        Assert.Equal(7, inputs[0].Id);
+    }
+
+    // The checks that kept a relay's and an input's id to 1–64 go; the ids and the channels stay as they were.
+    [Fact]
+    public async Task Should_DropTheChecksOnTheIds_AndKeepTheRows_WhenUpgraded()
+    {
+        await using var database = TestDatabase.Create();
+        Directory.CreateDirectory(Path.GetDirectoryName(database.FilePath)!);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.GetService<IMigrator>().MigrateAsync(BeforeIdApartFromChannel, cancellationToken: Cancel);
+        }
+
+        await ExecuteAsync(
+            database.ConnectionString,
+            """
+            INSERT INTO "Board" ("Id", "Name", "Type", "SortOrder") VALUES (1, 'Garage', 'vm201', 1);
+            INSERT INTO "Relay" ("Id", "BoardId", "Channel", "Name", "IsActive", "MaxOnMinutes", "SortOrder") VALUES
+                (1, 1, 1, 'Fan', 1, 120, 1), (2, 1, 2, 'Heat', 1, 120, 2);
+            INSERT INTO "RelayRuntime" ("RelayId", "Version") VALUES (1, 0), (2, 0);
+            INSERT INTO "Input" ("Id", "BoardId", "Channel", "Name", "IsActive", "NotifyOnOpen", "NotifyOnClose") VALUES (1, 1, 1, 'Door', 1, 0, 0);
+            """);
+        await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(
+            database.ConnectionString,
+            "INSERT INTO \"Relay\" (\"Id\", \"BoardId\", \"Channel\", \"Name\", \"IsActive\", \"SortOrder\") VALUES (101, 1, 3, 'Pump', 1, 3);"));
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.MigrateAsync(Cancel);
+        }
+
+        var cs = database.ConnectionString;
+        Assert.Equal("1:1:Fan|2:2:Heat", await ScalarAsync(cs, "SELECT group_concat(\"Id\" || ':' || \"Channel\" || ':' || \"Name\", '|') FROM (SELECT * FROM \"Relay\" ORDER BY \"Id\");"));
+        Assert.Equal("1:1:Door", await ScalarAsync(cs, "SELECT \"Id\" || ':' || \"Channel\" || ':' || \"Name\" FROM \"Input\";"));
+        Assert.Equal(2L, await ScalarAsync(cs, "SELECT COUNT(*) FROM \"RelayRuntime\";"));
+        await ExecuteAsync(cs, "INSERT INTO \"Relay\" (\"Id\", \"BoardId\", \"Channel\", \"Name\", \"IsActive\", \"SortOrder\") VALUES (101, 1, 3, 'Pump', 1, 3);");
+        await ExecuteAsync(cs, "INSERT INTO \"Input\" (\"Id\", \"BoardId\", \"Channel\", \"Name\", \"IsActive\", \"NotifyOnOpen\", \"NotifyOnClose\") VALUES (101, 1, 2, 'Thermostat', 1, 0, 0);");
+
+        // The channel's check stays.
+        await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(cs, "INSERT INTO \"Relay\" (\"Id\", \"BoardId\", \"Channel\", \"Name\", \"IsActive\", \"SortOrder\") VALUES (102, 1, 65, 'Wrong', 1, 4);"));
+        Assert.Equal(0L, await ScalarAsync(cs, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
+    }
+
+    private const string BeforeIdApartFromChannel = "20261114083501_MoveToBoards";
 
     [Fact]
     public async Task Should_AddNoBoard_BeforeOneIsChosen()

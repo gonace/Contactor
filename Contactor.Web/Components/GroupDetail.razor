@@ -89,13 +89,13 @@
                         {
                             var index = i;
                             var member = _members[index];
-                            var on = State.IsOn(member.RelayId);
+                            var on = State.IsOn(member.Channel);
                             var blockedBy = BlockedBy(index);
                             <li class="step @(on ? "on" : "") @(State.HasAnswered ? "" : "unknown")" @key="member.RelayId">
                                 <div class="step-row">
                                     <span class="number" aria-hidden="true">@(index + 1)</span>
                                     <div class="step-text">
-                                        <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.RelayId</label>
+                                        <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.Channel</label>
                                         <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                                         <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : RelayStatusText.Waiting)</span>
                                     </div>
@@ -172,7 +172,7 @@
                             <select id="add-relay" @bind="_addRelayId">
                                 @foreach (var relay in AddableRelays)
                                 {
-                                    <option value="@relay.Id">Relay @relay.Id · @relay.Name</option>
+                                    <option value="@relay.Id">Relay @relay.Channel · @relay.Name</option>
                                 }
                             </select>
                             <button type="button" @onclick="AddRelay">
@@ -328,17 +328,17 @@
     private bool CanChangeMembers => _group is not null
         && _group.Runtime.Phase == GroupPhases.Idle
         && State.IsConnected
-        && !State.Relays.Overlaps(ChannelMask.Of(_group.Members.Select(m => m.RelayId).Concat(_members.Select(m => m.RelayId))));
+        && !State.Relays.Overlaps(ChannelMask.Of(_group.Members.Select(m => m.Channel).Concat(_members.Select(m => m.Channel))));
 
     // One relay at a time follows the saved order; after a change, save first.
     private bool OrderChanged => _group is not null && !_group.Members.Select(m => m.RelayId).SequenceEqual(_members.Select(m => m.RelayId));
 
     // Free relays, and the group's own that were taken out in the form and not saved yet.
-    private IEnumerable<(int Id, string Name)> AddableRelays => _free
-        .Select(r => (r.Id, r.Name))
-        .Concat(_removed.Select(m => (m.RelayId, m.RoleName)))
-        .Where(r => _members.All(m => m.RelayId != r.Item1) && !State.IsOn(r.Item1))
-        .OrderBy(r => r.Item1);
+    private IEnumerable<(int Id, int Channel, string Name)> AddableRelays => _free
+        .Select(r => (Id: r.Id, r.Channel, r.Name))
+        .Concat(_removed.Select(m => (Id: m.RelayId, m.Channel, Name: m.RoleName)))
+        .Where(r => _members.All(m => m.RelayId != r.Id) && !State.IsOn(r.Channel))
+        .OrderBy(r => r.Channel);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -390,7 +390,7 @@
 
     private void SeedMembers(GroupView group)
     {
-        _members = [.. group.Members.Select(m => new EditMember(m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))];
+        _members = [.. group.Members.Select(m => new EditMember(m.RelayId, m.Channel, m.RoleName, m.StartDelaySec, m.RunOnSec))];
         _removed = [];
     }
 
@@ -429,7 +429,7 @@
     // The relay above that must be on first, or null.
     private EditMember? BlockedBy(int index)
     {
-        return index > 0 && !State.IsOn(_members[index - 1].RelayId) ? _members[index - 1] : null;
+        return index > 0 && !State.IsOn(_members[index - 1].Channel) ? _members[index - 1] : null;
     }
 
     private string NoteFor(int index, bool on, EditMember? blockedBy)
@@ -485,7 +485,7 @@
         else
         {
             var relay = _free.First(r => r.Id == _addRelayId);
-            _members.Add(new EditMember(relay.Id, relay.Name, RelayGroupMember.DefaultStartDelaySec, RelayGroupMember.DefaultRunOnSec));
+            _members.Add(new EditMember(relay.Id, relay.Channel, relay.Name, RelayGroupMember.DefaultStartDelaySec, RelayGroupMember.DefaultRunOnSec));
         }
 
         _addRelayId = AddableRelays.FirstOrDefault().Id;
@@ -695,18 +695,21 @@
         }
     }
 
-    // A member as the form edits it.
+    // A member as the form edits it; the board's state goes by its channel, which is also the number shown.
     private sealed class EditMember
     {
-        public EditMember(int relayId, string roleName, int startDelaySec, int runOnSec)
+        public EditMember(int relayId, int channel, string roleName, int startDelaySec, int runOnSec)
         {
             RelayId = relayId;
+            Channel = channel;
             RoleName = roleName;
             StartDelaySec = startDelaySec;
             RunOnSec = runOnSec;
         }
 
         public int RelayId { get; }
+
+        public int Channel { get; }
 
         public string RoleName { get; set; }
 

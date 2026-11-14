@@ -3,7 +3,7 @@ using Contactor.Boards;
 namespace Contactor.Web.Features.Events;
 
 /// <summary>
-/// The relay changes the app itself just asked the board for. When the board's status then shows such a change it
+/// The relay changes the app itself just asked the board for, by channel. When the board's status then shows such a change it
 /// is the app's own, not an external one. An expectation lasts 5 s (the OFF at a pulse's end its length plus
 /// <c>RelayControl.PulseOffWait</c>): the board answers in well under a second, and a
 /// command that changed nothing gets no status at all, so its expectation must not linger and hide a later
@@ -19,7 +19,7 @@ public sealed class ExpectedChanges
 
     private readonly LocalClock _clock;
     private readonly Lock _lock = new();
-    private readonly List<(int RelayId, bool On, DateTime ExpiresUtc)> _expected = [];
+    private readonly List<(int Channel, bool On, DateTime ExpiresUtc)> _expected = [];
 
     public ExpectedChanges(LocalClock clock)
     {
@@ -27,7 +27,7 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>
-    /// Expects every relay in <paramref name="mask"/> to become <paramref name="on"/>, for <see cref="Lifetime"/>, or
+    /// Expects every relay (channel) in <paramref name="mask"/> to become <paramref name="on"/>, for <see cref="Lifetime"/>, or
     /// <paramref name="lifetime"/> for a change the board makes later by itself, e.g. the end of a pulse.
     /// </summary>
     public void Expect(ChannelMask mask, bool on, TimeSpan? lifetime = null)
@@ -35,9 +35,9 @@ public sealed class ExpectedChanges
         var expires = _clock.UtcNow + (lifetime ?? Lifetime);
         lock (_lock)
         {
-            foreach (var relayId in mask.Channels)
+            foreach (var channel in mask.Channels)
             {
-                _expected.Add((relayId, on, expires));
+                _expected.Add((channel, on, expires));
             }
 
             if (_expected.Count > MaxExpected)
@@ -61,9 +61,9 @@ public sealed class ExpectedChanges
     {
         lock (_lock)
         {
-            foreach (var relayId in mask.Channels)
+            foreach (var channel in mask.Channels)
             {
-                var index = _expected.FindLastIndex(e => e.RelayId == relayId && e.On == on);
+                var index = _expected.FindLastIndex(e => e.Channel == channel && e.On == on);
                 if (index >= 0)
                 {
                     _expected.RemoveAt(index);
@@ -76,12 +76,12 @@ public sealed class ExpectedChanges
     /// Whether a command for this change went out in the last few seconds and the board hasn't shown it yet: the
     /// board's state may still show the relay as it was.
     /// </summary>
-    public bool IsPending(int relayId, bool on)
+    public bool IsPending(int channel, bool on)
     {
         var now = _clock.UtcNow;
         lock (_lock)
         {
-            return _expected.Exists(e => e.RelayId == relayId && e.On == on && e.ExpiresUtc > now);
+            return _expected.Exists(e => e.Channel == channel && e.On == on && e.ExpiresUtc > now);
         }
     }
 
@@ -89,17 +89,17 @@ public sealed class ExpectedChanges
     /// Whether the app asked for this change; if so the expectation is used up, so a second identical change is
     /// external.
     /// </summary>
-    /// <param name="relayId">The relay that changed.</param>
+    /// <param name="channel">The relay's channel that changed.</param>
     /// <param name="on">What it changed to.</param>
     /// <param name="receivedUtc">
     /// When the status showing the change arrived. The expectation is matched against that, not against when the
     /// status is handled: a status that arrived in time counts even if handling it took longer.
     /// </param>
-    public bool TryConsume(int relayId, bool on, DateTime receivedUtc)
+    public bool TryConsume(int channel, bool on, DateTime receivedUtc)
     {
         lock (_lock)
         {
-            var index = _expected.FindIndex(e => e.RelayId == relayId && e.On == on && e.ExpiresUtc > receivedUtc);
+            var index = _expected.FindIndex(e => e.Channel == channel && e.On == on && e.ExpiresUtc > receivedUtc);
             if (index >= 0)
             {
                 _expected.RemoveAt(index);

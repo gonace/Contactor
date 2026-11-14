@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -86,6 +87,7 @@ public sealed partial class InputActionService : BackgroundService
         List<InputAction> actions;
         Dictionary<int, List<int>> members;
         Dictionary<int, GroupRuntime> runtimes;
+        BoardChannels channels;
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -93,9 +95,11 @@ public sealed partial class InputActionService : BackgroundService
                 .Where(a => a.InputId == change.InputId)
                 .OrderBy(a => a.GroupId == null).ThenBy(a => a.GroupId).ThenBy(a => a.RelayId)
                 .ToListAsync(cancellationToken);
-            members = (await db.RelayGroupMembers.AsNoTracking().Select(m => new { m.GroupId, m.RelayId }).ToListAsync(cancellationToken))
+            // The groups' relays by channel, as the board's state goes.
+            members = (await db.RelayGroupMembers.AsNoTracking().Select(m => new { m.GroupId, m.Relay!.Channel }).ToListAsync(cancellationToken))
                 .GroupBy(m => m.GroupId)
-                .ToDictionary(g => g.Key, g => g.Select(m => m.RelayId).ToList());
+                .ToDictionary(g => g.Key, g => g.Select(m => m.Channel).ToList());
+            channels = await BoardChannels.LoadAsync(db, cancellationToken);
             runtimes = await db.GroupRuntimes.AsNoTracking().ToDictionaryAsync(r => r.GroupId, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -114,7 +118,7 @@ public sealed partial class InputActionService : BackgroundService
 
             try
             {
-                await RunAsync(action, on, actor, members, runtimes, cancellationToken);
+                await RunAsync(action, on, actor, members, runtimes, channels, cancellationToken);
             }
             catch (BoardNotConnectedException)
             {
@@ -140,6 +144,7 @@ public sealed partial class InputActionService : BackgroundService
         string actor,
         Dictionary<int, List<int>> members,
         Dictionary<int, GroupRuntime> runtimes,
+        BoardChannels channels,
         CancellationToken cancellationToken)
     {
         if (action.GroupId is { } groupId)
@@ -160,7 +165,10 @@ public sealed partial class InputActionService : BackgroundService
                 await _groups.StartGroupAsync(groupId, actor, cancellationToken);
             }
         }
-        else if (action.RelayId is { } relayId && relayId <= _board.Capabilities.RelayCount && !IsAlready(relayId, on))
+        else if (action.RelayId is { } relayId
+            && channels.RelayChannel(relayId) is { } channel
+            && channel <= _board.Capabilities.RelayCount
+            && !IsAlready(channel, on))
         {
             if (on)
             {
@@ -173,13 +181,14 @@ public sealed partial class InputActionService : BackgroundService
         }
     }
 
-    // The board shows the relay in that state, and no command to change it is on its way.
-    private bool IsAlready(int relayId, bool on)
+    // The board shows the relay (its channel) in that state, and no command to change it is on its way.
+    private bool IsAlready(int channel, bool on)
     {
-        return _board.State.Relays.Contains(relayId) == on && !_expected.IsPending(relayId, !on);
+        return _board.State.Relays.Contains(channel) == on && !_expected.IsPending(channel, !on);
     }
 
-    // Every relay on, nothing on its way and no sequence under way: starting it again would only log a second start.
+    // Every relay (by channel) on, nothing on its way and no sequence under way: starting it again would only log a
+    // second start.
     private bool IsFullyOn(List<int> groupRelays, GroupRuntime? runtime)
     {
         return groupRelays.All(_board.State.Relays.Contains)

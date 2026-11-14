@@ -8,13 +8,16 @@ public sealed class Input
 {
     public const int NameMaxLength = 40;
 
-    /// <summary>The input's own number, in links and events. For now the same as <see cref="Channel"/> on the one board.</summary>
+    /// <summary>
+    /// The database's key for the input, in links and events; given by the database, and not its channel. Whatever reads
+    /// the board's inputs goes by <see cref="Channel"/>.
+    /// </summary>
     public int Id { get; set; }
 
     /// <summary>The board it is on.</summary>
     public int BoardId { get; set; }
 
-    /// <summary>Its input on that board, 1 to the board's input count; unique per board.</summary>
+    /// <summary>Its input on that board, 1 to the board's input count; unique per board. The number the screens show.</summary>
     public int Channel { get; set; }
 
     public string Name { get; set; } = "";
@@ -28,10 +31,10 @@ public sealed class Input
     /// <summary>For later: notify people when it closes.</summary>
     public bool NotifyOnClose { get; set; }
 
-    /// <summary>The name an input is seeded with, until someone gives it one: "Input 2".</summary>
-    public static string DefaultName(int id)
+    /// <summary>The name an input is seeded with, until someone gives it one: "Input 2", after its channel.</summary>
+    public static string DefaultName(int channel)
     {
-        return $"Input {id}";
+        return $"Input {channel}";
     }
 
     /// <summary>

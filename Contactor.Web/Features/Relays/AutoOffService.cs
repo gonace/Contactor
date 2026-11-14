@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -59,7 +60,8 @@ public sealed partial class AutoOffService : BackgroundService
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        if (await GiveOwnerlessRelaysAutoOffAsync(db, state, now, cancellationToken))
+        var channels = await BoardChannels.LoadAsync(db, cancellationToken);
+        if (await GiveOwnerlessRelaysAutoOffAsync(db, channels, state, now, cancellationToken))
         {
             _changes.Notify();
         }
@@ -72,10 +74,11 @@ public sealed partial class AutoOffService : BackgroundService
         List<int> turnedOff = [];
         foreach (var runtime in due)
         {
-            if (state.IsOn(runtime.RelayId))
+            // The board's state and the command go by the relay's channel; a relay the board doesn't have isn't on.
+            if (OnBoard(channels, runtime.RelayId) is { } channel && state.IsOn(channel))
             {
                 var sent = _clock.UtcNow;
-                var mask = _board.Capabilities.Relay(runtime.RelayId);
+                var mask = _board.Capabilities.Relay(channel);
                 _expected.Expect(mask, on: false);
                 try
                 {
@@ -114,7 +117,7 @@ public sealed partial class AutoOffService : BackgroundService
         // Not after the board was lost on the way: nothing happens without it.
         if (_board.State.IsConnected)
         {
-            await EndRunsOfOffRelaysAsync(db, state, [.. due.Select(r => r.RelayId)], cancellationToken);
+            await EndRunsOfOffRelaysAsync(db, channels, state, [.. due.Select(r => r.RelayId)], cancellationToken);
         }
 
         if (db.ChangeTracker.HasChanges())
@@ -131,10 +134,13 @@ public sealed partial class AutoOffService : BackgroundService
     // Its status line would keep saying "On since". Not while an ON is still on its way (a person's or a schedule's run
     // is saved before the board shows the relay on), and only the run as read ends: one saved meanwhile stays. Nobody
     // knows who turned it off or when, so nothing is logged.
-    private async Task EndRunsOfOffRelaysAsync(ContactorDbContext db, BoardState state, HashSet<int> handled, CancellationToken cancellationToken)
+    private async Task EndRunsOfOffRelaysAsync(ContactorDbContext db, BoardChannels channels, BoardState state, HashSet<int> handled, CancellationToken cancellationToken)
     {
         var off = Enumerable.Range(1, _board.Capabilities.RelayCount)
-            .Where(r => !state.IsOn(r) && !handled.Contains(r) && !_expected.IsPending(r, on: true))
+            .Where(c => !state.IsOn(c) && !_expected.IsPending(c, on: true))
+            .Select(channels.RelayAt)
+            .OfType<int>()
+            .Where(r => !handled.Contains(r))
             .ToList();
         if (off.Count == 0)
         {
@@ -147,7 +153,7 @@ public sealed partial class AutoOffService : BackgroundService
         var stale = await db.RelayRuntimes
             .Where(r => off.Contains(r.RelayId) && r.OnSinceUtc != null)
             .ToListAsync(cancellationToken);
-        foreach (var run in stale.Where(r => !_expected.IsPending(r.RelayId, on: true) && !_board.State.IsOn(r.RelayId)))
+        foreach (var run in stale.Where(r => channels.RelayChannel(r.RelayId) is { } c && !_expected.IsPending(c, on: true) && !_board.State.IsOn(c)))
         {
             await RelayRuns.EndOutsideAsync(db, run.RelayId, cancellationToken);
             LogStaleRun(run.RelayId);
@@ -158,9 +164,9 @@ public sealed partial class AutoOffService : BackgroundService
     // didn't carry out. It gets the relay's own auto-off from now, as one that came on outside the app, so nothing runs
     // for ever by accident. A relay in a group is left to its group (GroupPlanner.GiveOwnerlessAutoOff). Each update
     // only applies while the relay still has no run, so a person's or a schedule's ON saved meanwhile keeps theirs.
-    private async Task<bool> GiveOwnerlessRelaysAutoOffAsync(ContactorDbContext db, BoardState state, DateTime now, CancellationToken cancellationToken)
+    private async Task<bool> GiveOwnerlessRelaysAutoOffAsync(ContactorDbContext db, BoardChannels channels, BoardState state, DateTime now, CancellationToken cancellationToken)
     {
-        var on = state.Relays.Channels.Where(r => r <= _board.Capabilities.RelayCount).ToList();
+        var on = channels.RelayIds(state.Relays & _board.Capabilities.AllRelays).ToList();
         if (on.Count == 0)
         {
             return false;
@@ -170,13 +176,13 @@ public sealed partial class AutoOffService : BackgroundService
         var ownerless = await db.Relays.AsNoTracking()
             .Where(r => on.Contains(r.Id) && !members.Contains(r.Id))
             .Where(r => !db.RelayRuntimes.Any(x => x.RelayId == r.Id && x.OnSinceUtc != null))
-            .Select(r => new { r.Id, r.MaxOnMinutes })
+            .Select(r => new { r.Id, r.Channel, r.MaxOnMinutes })
             .ToListAsync(cancellationToken);
         var changed = false;
         foreach (var relay in ownerless)
         {
             // Turned off meanwhile, e.g. by a person: nothing to give a run to.
-            if (!_board.State.IsOn(relay.Id))
+            if (!_board.State.IsOn(relay.Channel))
             {
                 continue;
             }
@@ -190,6 +196,12 @@ public sealed partial class AutoOffService : BackgroundService
         }
 
         return changed;
+    }
+
+    // The relay's channel, or null for a relay the board doesn't have (left from a board with more relays).
+    private int? OnBoard(BoardChannels channels, int relayId)
+    {
+        return channels.RelayChannel(relayId) is { } channel && channel <= _board.Capabilities.RelayCount ? channel : null;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -113,10 +113,10 @@ public static class PersistenceServiceCollectionExtensions
 
     /// <summary>
     /// Adds the rows a board with <paramref name="relayCount"/> relays and <paramref name="inputCount"/> inputs needs:
-    /// the board itself and its runtime row when there is none yet, and a relay, its runtime row and an input for each,
-    /// numbered from 1 (for now a relay's and an input's id is its channel). Existing rows are left as they are, also
-    /// relays and inputs above the count, which a board with more left behind: their events still point to them. A
-    /// board with neither relays nor inputs (none chosen yet) adds nothing.
+    /// the board itself and its runtime row when there is none yet, and a relay, its runtime row and an input for each
+    /// channel from 1, found by its channel; the database gives a new row its id, which needn't be its channel.
+    /// Existing rows are left as they are, also relays and inputs above the count, which a board with more left behind:
+    /// their events still point to them. A board with neither relays nor inputs (none chosen yet) adds nothing.
     /// </summary>
     public static async Task SeedBoardAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
     {
@@ -138,49 +138,51 @@ public static class PersistenceServiceCollectionExtensions
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        // The relays first, for their ids, then their runtime rows: all or nothing.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         if (!await db.BoardRuntimes.AnyAsync(r => r.BoardId == board.Id, cancellationToken))
         {
             db.BoardRuntimes.Add(new BoardRuntime { BoardId = board.Id });
         }
 
-        var existing = await db.Relays.Select(r => r.Id).ToListAsync(cancellationToken);
-        for (var id = 1; id <= relayCount; id++)
+        var existing = await db.Relays.Where(r => r.BoardId == board.Id).Select(r => r.Channel).ToListAsync(cancellationToken);
+        for (var channel = 1; channel <= relayCount; channel++)
         {
-            if (!existing.Contains(id))
+            if (!existing.Contains(channel))
             {
                 db.Relays.Add(new Relay
                 {
-                    Id = id,
                     BoardId = board.Id,
-                    Channel = id,
-                    Name = Relay.DefaultName(id),
+                    Channel = channel,
+                    Name = Relay.DefaultName(channel),
                     IsActive = true,
                     MaxOnMinutes = Relay.DefaultMaxOnMinutes,
-                    SortOrder = id,
+                    SortOrder = channel,
                 });
             }
         }
 
-        // One runtime row per relay from the start, so two writers never both try to insert the first one.
-        var runtimes = await db.RelayRuntimes.Select(r => r.RelayId).ToListAsync(cancellationToken);
-        for (var id = 1; id <= relayCount; id++)
+        var inputs = await db.Inputs.Where(i => i.BoardId == board.Id).Select(i => i.Channel).ToListAsync(cancellationToken);
+        for (var channel = 1; channel <= inputCount; channel++)
         {
-            if (!runtimes.Contains(id))
+            if (!inputs.Contains(channel))
             {
-                db.RelayRuntimes.Add(new RelayRuntime { RelayId = id });
-            }
-        }
-
-        var inputs = await db.Inputs.Select(i => i.Id).ToListAsync(cancellationToken);
-        for (var id = 1; id <= inputCount; id++)
-        {
-            if (!inputs.Contains(id))
-            {
-                db.Inputs.Add(new Input { Id = id, BoardId = board.Id, Channel = id, Name = Input.DefaultName(id) });
+                db.Inputs.Add(new Input { BoardId = board.Id, Channel = channel, Name = Input.DefaultName(channel) });
             }
         }
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // One runtime row per relay from the start, so two writers never both try to insert the first one.
+        var relays = await db.Relays.Where(r => r.BoardId == board.Id).Select(r => r.Id).ToListAsync(cancellationToken);
+        var runtimes = await db.RelayRuntimes.Select(r => r.RelayId).ToListAsync(cancellationToken);
+        foreach (var relayId in relays.Except(runtimes))
+        {
+            db.RelayRuntimes.Add(new RelayRuntime { RelayId = relayId });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static void CheckCounts(int relayCount, int inputCount)

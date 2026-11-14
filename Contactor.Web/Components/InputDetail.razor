@@ -39,7 +39,7 @@
         <form id="input-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">INPUT @Id · NAME</label>
+                    <label for="name" class="label">INPUT @_input.Channel · NAME</label>
                     <input id="name" type="text" maxlength="@Input.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                     <label for="active" class="check">
                         <input id="active" type="checkbox" @bind="_isActive" />
@@ -161,7 +161,7 @@
     private IReadOnlyList<InputActionTarget> _targets = [];
     private bool _adding;
 
-    private bool IsClosed => Board.State.Inputs.Contains(Id);
+    private bool IsClosed => _input is not null && Board.State.Inputs.Contains(_input.Channel);
 
     // What can still be added: what the input doesn't control yet.
     private List<InputActionTarget> Available => [.. _targets.Where(t => !_actions.Any(a => a.Target.IsSame(t)))];

@@ -103,7 +103,8 @@ public sealed class SchedulesHandler
             }
             else
             {
-                if (model.RelayId > _board.Capabilities.RelayCount || !await db.Relays.AnyAsync(r => r.Id == model.RelayId, cancellationToken))
+                var count = _board.Capabilities.RelayCount;
+                if (!await db.Relays.AnyAsync(r => r.Id == model.RelayId && r.Channel <= count, cancellationToken))
                 {
                     return "The relay doesn't exist.";
                 }

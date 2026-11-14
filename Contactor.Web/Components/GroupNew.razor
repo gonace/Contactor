@@ -74,7 +74,7 @@
                             }
                         </span>
                         <span class="option-text">
-                            <span class="label">RELAY @relay.RelayId</span>
+                            <span class="label">RELAY @relay.Channel</span>
                             <span class="name">@relay.Name</span>
                             <span class="note">@relay.Note</span>
                         </span>
@@ -99,7 +99,7 @@
                         <div class="step">
                             <span class="number" aria-hidden="true">@(index + 1)</span>
                             <div class="step-text">
-                                <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.RelayId · NAME IN THE GROUP</label>
+                                <label class="label" for="@($"role-{member.RelayId}")">RELAY @ChannelOf(member.RelayId) · NAME IN THE GROUP</label>
                                 <input id="@($"role-{member.RelayId}")" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                             </div>
                             <div class="order">
@@ -147,7 +147,7 @@
             <div class="preview">
                 <span class="icon" aria-hidden="true"><GroupIcon Icon="@draft.Icon" /></span>
                 <span class="preview-text">
-                    <span class="label">GROUP · RELAY @string.Join(" → ", draft.Members.Select(m => m.RelayId))</span>
+                    <span class="label">GROUP · RELAY @string.Join(" → ", draft.Members.Select(m => ChannelOf(m.RelayId)))</span>
                     <span class="name">@draft.Name.Trim()</span>
                     <span class="note">Off</span>
                 </span>
@@ -204,6 +204,12 @@
 
     private readonly GroupWizard _wizard = new();
     private IReadOnlyList<GroupCandidate> _candidates = [];
+
+    // A relay's channel on the board, the number shown; the wizard only offers the candidates.
+    private int ChannelOf(int relayId)
+    {
+        return _candidates.FirstOrDefault(c => c.RelayId == relayId)?.Channel ?? 0;
+    }
     private ElementReference _heading;
     private SignedInUser? _user;
     private string? _error;
@@ -233,9 +239,9 @@
         }
     }
 
-    private static string LabelOf(WizardMember member)
+    private string LabelOf(WizardMember member)
     {
-        return string.IsNullOrWhiteSpace(member.RoleName) ? $"relay {member.RelayId}" : member.RoleName;
+        return string.IsNullOrWhiteSpace(member.RoleName) ? $"relay {ChannelOf(member.RelayId)}" : member.RoleName;
     }
 
     private void Pick(GroupCandidate relay)

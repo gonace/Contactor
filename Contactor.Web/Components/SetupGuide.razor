@@ -214,14 +214,14 @@
             <ul class="relays">
                 @foreach (var relay in _relays)
                 {
-                    var on = Board.State.IsOn(relay.Id);
+                    var on = Board.State.IsOn(relay.Channel);
                     <li class="relay" @key="relay.Id">
-                        <label class="label" for="@($"relay-{relay.Id}")">RELAY @relay.Id</label>
+                        <label class="label" for="@($"relay-{relay.Id}")">RELAY @relay.Channel</label>
                         <div class="row">
                             <input id="@($"relay-{relay.Id}")" type="text" maxlength="@Relay.NameMaxLength" autocomplete="off"
-                                   placeholder="@Relay.DefaultName(relay.Id)" @bind="relay.Name" @bind:event="oninput" />
+                                   placeholder="@Relay.DefaultName(relay.Channel)" @bind="relay.Name" @bind:event="oninput" />
                             <button type="button" class="small try" aria-pressed="@(on ? "true" : "false")"
-                                    aria-label="@($"Try relay {relay.Id}")"
+                                    aria-label="@($"Try relay {relay.Channel}")"
                                     disabled="@(on || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
                                     @onclick="() => TryAsync(relay)">@(on ? "On" : "Try")</button>
                         </div>
@@ -1099,12 +1099,16 @@
         public RelayRow(SetupRelay relay)
         {
             Id = relay.Id;
+            Channel = relay.Channel;
             Name = relay.HasDefaultName ? "" : relay.Name;
             IsActive = relay.IsActive;
             GroupName = relay.GroupName;
         }
 
         public int Id { get; }
+
+        /// <summary>Its channel on the board: the board's state goes by it, and it is the number shown.</summary>
+        public int Channel { get; }
 
         public string Name { get; set; }
 
@@ -1117,6 +1121,6 @@
         public string? Error { get; set; }
 
         /// <summary>Its name as the summary shows it.</summary>
-        public string Shown => string.IsNullOrWhiteSpace(Name) ? Relay.DefaultName(Id) : Name.Trim();
+        public string Shown => string.IsNullOrWhiteSpace(Name) ? Relay.DefaultName(Channel) : Name.Trim();
     }
 }

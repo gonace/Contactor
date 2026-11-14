@@ -70,18 +70,31 @@ public sealed partial class GroupSequencer : BackgroundService
         _shutOffLogged.UnionWith(shutOff);
     }
 
-    /// <summary>Whether every relay of the group is on the board; one left from a board with more relays isn't.</summary>
+    /// <summary>
+    /// Whether every relay of the group is on the board, by its channel; one left from a board with more relays isn't.
+    /// The members come with their relays.
+    /// </summary>
     private bool IsOnBoard(RelayGroup group)
     {
         ArgumentNullException.ThrowIfNull(group);
-        return group.Members.All(m => m.RelayId <= _board.Capabilities.RelayCount);
+        return group.Members.All(m => Channel(m) <= _board.Capabilities.RelayCount);
     }
 
-    /// <summary>The relays that are in a group.</summary>
+    // A member's channel on the board; the members are read with their relays.
+    private static int Channel(RelayGroupMember member)
+    {
+        return member.Relay?.Channel ?? throw new InvalidOperationException("A group's members are read with their relays.");
+    }
+
+    /// <summary>The channels of the relays that are in a group.</summary>
     public async Task<ChannelMask> MemberMaskAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        return ChannelMask.Of(await db.RelayGroupMembers.Select(m => m.RelayId).ToListAsync(cancellationToken));
+        var boardId = await db.FirstBoardIdAsync(cancellationToken);
+        return ChannelMask.Of(await db.RelayGroupMembers
+            .Where(m => m.Relay!.BoardId == boardId)
+            .Select(m => m.Relay!.Channel)
+            .ToListAsync(cancellationToken));
     }
 
     /// <summary>Plans and runs the next step of every group. Does nothing while the board is disconnected.</summary>
@@ -256,7 +269,7 @@ public sealed partial class GroupSequencer : BackgroundService
             var reconnected = Interlocked.Exchange(ref _reconnected, 0) == 1;
             var now = _clock.UtcNow;
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-            var groups = await db.RelayGroups.Include(g => g.Members).OrderBy(g => g.Id).ToListAsync(cancellationToken);
+            var groups = await db.RelayGroups.Include(g => g.Members).ThenInclude(m => m.Relay).OrderBy(g => g.Id).ToListAsync(cancellationToken);
             if (groups.Count == 0)
             {
                 _shutOffLogged.Clear();
@@ -279,8 +292,8 @@ public sealed partial class GroupSequencer : BackgroundService
                 // or its interlock, so its relays are kept off (fail closed) until it is changed or deleted.
                 if (!IsOnBoard(group))
                 {
-                    var on = group.Members.Where(m => state.IsOn(m.RelayId)).OrderBy(m => m.Position).ToList();
-                    all.Off |= ChannelMask.Of(on.Select(m => m.RelayId));
+                    var on = group.Members.Where(m => state.IsOn(Channel(m))).OrderBy(m => m.Position).ToList();
+                    all.Off |= ChannelMask.Of(on.Select(Channel));
                     runtime.Phase = GroupPhases.Idle;
                     runtime.TargetLevel = 0;
                     runtime.NextStepAtUtc = null;
@@ -294,7 +307,7 @@ public sealed partial class GroupSequencer : BackgroundService
                     {
                         // Sent again on every step until the board confirms it, but logged once.
                         // "Fan turned off because Heat was off": the relay the board doesn't have can't be on.
-                        var missing = group.Members.Where(m => m.RelayId > _board.Capabilities.RelayCount).OrderBy(m => m.Position).First();
+                        var missing = group.Members.Where(m => Channel(m) > _board.Capabilities.RelayCount).OrderBy(m => m.Position).First();
                         var details = JsonSerializer.Serialize(new { missing = missing.RoleName, off = on.Select(m => m.RoleName) });
                         events.Add((group.Id, new GroupEvent(EventActions.InterlockTrip, missing.RelayId, EventActors.System, details)));
                     }
@@ -304,7 +317,7 @@ public sealed partial class GroupSequencer : BackgroundService
 
                 var members = group.Members
                     .OrderBy(m => m.Position)
-                    .Select(m => new GroupMemberInfo(m.Position, m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))
+                    .Select(m => new GroupMemberInfo(m.Position, m.RelayId, Channel(m), m.RoleName, m.StartDelaySec, m.RunOnSec))
                     .ToList();
                 if (reconnected && runtime.PendingPosition is { } pending)
                 {
@@ -316,7 +329,7 @@ public sealed partial class GroupSequencer : BackgroundService
                     runtime.PendingSinceUtc = now;
                     if (runtime.PendingOn && runtime.Phase == GroupPhases.Stopping && members.FirstOrDefault(m => m.Position == pending) is { } lost)
                     {
-                        all.On |= ChannelMask.Of(lost.RelayId);
+                        all.On |= ChannelMask.Of(lost.Channel);
                     }
                 }
 

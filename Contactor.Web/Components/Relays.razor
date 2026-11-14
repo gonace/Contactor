@@ -122,7 +122,7 @@
                         <ol class="chips" aria-label="Relays in start order">
                             @foreach (var member in group.Members)
                             {
-                                var memberOn = State.IsOn(member.RelayId);
+                                var memberOn = State.IsOn(member.Channel);
                                 <li>
                                     @if (member.Position > 1)
                                     {
@@ -149,10 +149,10 @@
                 <div class="cards relay-cards">
                     @foreach (var relay in VisibleRelays)
                     {
-                        var on = State.IsOn(relay.Id);
+                        var on = State.IsOn(relay.Channel);
                         <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive") @(State.HasAnswered ? "" : "unknown")" @key="relay.Id">
                             <a class="text" href="relay/@relay.Id">
-                                <span class="label">RELAY @relay.Id</span>
+                                <span class="label">RELAY @relay.Channel</span>
                                 <span class="name">@relay.Name</span>
                                 <span class="status">@(State.HasAnswered ? StatusFor(relay, on) : RelayStatusText.Waiting)</span>
                                 @if (_failedRelayId == relay.Id && _inGroup)
@@ -168,7 +168,7 @@
                                         aria-pressed="@(on ? "true" : "false")"
                                         aria-label="@((on ? "Turn off " : "Turn on ") + relay.Name)"
                                         disabled="@(!State.IsConnected || _busy)"
-                                        @onclick="() => ToggleAsync(relay.Id, on)">@(on ? "ON" : "OFF")</button>
+                                        @onclick="() => ToggleAsync(relay, on)">@(on ? "ON" : "OFF")</button>
                             }
                             else
                             {
@@ -195,13 +195,13 @@
                 <div class="cards input-cards">
                     @foreach (var input in VisibleInputs)
                     {
-                        var closed = State.Inputs.Contains(input.Id);
+                        var closed = State.Inputs.Contains(input.Channel);
                         var status = InputStatusText.For(input, closed, State.IsConnected, Clock.Now, Clock.ToLocal);
                         <div class="card input @(input.IsActive ? "" : "inactive") @(State.HasAnswered ? "" : "unknown")" @key="@($"i{input.Id}")">
                             @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
                             <div class="text">
                                 <a class="title" href="input/@input.Id">
-                                    <span class="label">INPUT @input.Id</span>
+                                    <span class="label">INPUT @input.Channel</span>
                                     <span class="name">@input.Name</span>
                                 </a>
                                 <span class="status">
@@ -263,7 +263,7 @@
     // A group counts as one, and its relays aren't listed on their own.
     private int ActiveCount => _relays.Count(r => r.IsActive) + _groups.Count;
 
-    private int OnCount => _relays.Count(r => r.IsActive && State.IsOn(r.Id)) + _groups.Count(g => State.Relays.Overlaps(g.Mask));
+    private int OnCount => _relays.Count(r => r.IsActive && State.IsOn(r.Channel)) + _groups.Count(g => State.Relays.Overlaps(g.Mask));
 
     private int InactiveCount => _relays.Count(r => !r.IsActive) + _inputs.Count(i => !i.IsActive);
 
@@ -316,7 +316,7 @@
         _groups = await Groups.ListAsync(CancellationToken.None);
         _inputs = await Inputs.ListAsync(CancellationToken.None);
         var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
-        _relays = (await db.Relays.AsNoTracking().Where(r => r.Id <= Board.Capabilities.RelayCount).OrderBy(r => r.SortOrder).ThenBy(r => r.Id).ToListAsync()).Where(r => !members.Contains(r.Id)).ToList();
+        _relays = (await db.Relays.AsNoTracking().Where(r => r.Channel <= Board.Capabilities.RelayCount).OrderBy(r => r.SortOrder).ThenBy(r => r.Channel).ToListAsync()).Where(r => !members.Contains(r.Id)).ToList();
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
         _names = await ActorNames.LoadAsync(db, CancellationToken.None);
 
@@ -382,9 +382,9 @@
         return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
     }
 
-    private async Task ToggleAsync(int relayId, bool isOn)
+    private async Task ToggleAsync(Relay relay, bool isOn)
     {
-        await SwitchAsync(new UnconfirmedPress(relayId, !isOn));
+        await SwitchAsync(new UnconfirmedPress(relay.Id, relay.Channel, !isOn));
     }
 
     private Task TryAgainAsync(UnconfirmedPress press)

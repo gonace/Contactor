@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Persistence;
@@ -44,7 +45,7 @@ public sealed class RelayControl
     /// </summary>
     public async Task TurnOnAsync(int relayId, string actor, CancellationToken cancellationToken)
     {
-        var mask = _board.Capabilities.Relay(relayId);
+        var mask = await MaskAsync(relayId, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         await SendAsync(mask, on: true, cancellationToken);
@@ -68,7 +69,7 @@ public sealed class RelayControl
     /// </summary>
     public async Task PulseAsync(int relayId, TimeSpan length, string actor, CancellationToken cancellationToken)
     {
-        var mask = _board.Capabilities.Relay(relayId);
+        var mask = await MaskAsync(relayId, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         if (_board.Capabilities.Pulse is not { } pulse)
         {
@@ -128,7 +129,7 @@ public sealed class RelayControl
     /// <summary>Turns a relay off for a person or an input, as a press of its button.</summary>
     public async Task TurnOffAsync(int relayId, string actor, CancellationToken cancellationToken)
     {
-        var mask = _board.Capabilities.Relay(relayId);
+        var mask = await MaskAsync(relayId, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(mask, cancellationToken);
         var sent = _clock.UtcNow;
@@ -183,16 +184,17 @@ public sealed class RelayControl
 
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var channels = await BoardChannels.LoadAsync(db, cancellationToken);
         foreach (var relayId in await db.RelayRuntimes.Where(r => r.OnSinceUtc != null).Select(r => r.RelayId).ToListAsync(cancellationToken))
         {
-            if (!refused.Contains(relayId))
+            if (channels.RelayChannel(relayId) is not { } channel || !refused.Contains(channel))
             {
                 await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
             }
         }
 
         var boardId = await db.FirstBoardIdAsync(cancellationToken);
-        foreach (var relayId in wasOn.Except(refused).Channels)
+        foreach (var relayId in channels.RelayIds(wasOn.Except(refused)))
         {
             db.EventLog.Add(new EventLogEntry
             {
@@ -231,6 +233,18 @@ public sealed class RelayControl
             _expected.Forget(mask, on);
             throw;
         }
+    }
+
+    // The relay's channel on the board, as a mask; throws for a relay the board doesn't have, before anything is sent.
+    private async Task<ChannelMask> MaskAsync(int relayId, CancellationToken cancellationToken)
+    {
+        var channels = await BoardChannels.LoadAsync(_dbFactory, cancellationToken);
+        if (channels.RelayChannel(relayId) is not { } channel)
+        {
+            throw new ArgumentOutOfRangeException(nameof(relayId), relayId, "The board has no such relay.");
+        }
+
+        return _board.Capabilities.Relay(channel);
     }
 
     private async Task EnsureNotInGroupAsync(ChannelMask mask, CancellationToken cancellationToken)

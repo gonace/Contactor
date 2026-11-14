@@ -27,9 +27,9 @@ public sealed class InputActionsTests
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private static InputActionTarget Relay(int id, string name = "") => new(id, null, name);
+    private static InputActionTarget Relay(int id, string name = "") => new(id, id, null, name);
 
-    private static InputActionTarget Group(int id, string name = "") => new(null, id, name);
+    private static InputActionTarget Group(int id, string name = "") => new(null, null, id, name);
 
     [Fact]
     public async Task Should_SwitchItsRelays_AsAPersonWould()

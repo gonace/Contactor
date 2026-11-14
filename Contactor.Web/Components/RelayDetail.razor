@@ -45,7 +45,7 @@
         <form id="relay-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">RELAY @Id · NAME</label>
+                    <label for="name" class="label">RELAY @_channel · NAME</label>
                     <input id="name" type="text" maxlength="@Relay.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                     @if (_group is null)
                     {
@@ -202,7 +202,10 @@
     [Parameter]
     public int Id { get; set; }
 
-    private bool IsOn => Id >= 1 && Id <= Board.Capabilities.RelayCount && Board.State.IsOn(Id);
+    // Its channel on the board: the board's state goes by it, and it is the number shown. 0 until the relay is loaded.
+    private int _channel;
+
+    private bool IsOn => _channel >= 1 && _channel <= Board.Capabilities.RelayCount && Board.State.IsOn(_channel);
 
     private string StatusSentence
     {
@@ -219,8 +222,14 @@
     {
         _user = await CurrentUser.GetAsync();
         _relay = await Settings.GetAsync(Id, CancellationToken.None);
+        _channel = 0;
         if (_relay is not null)
         {
+            await using (var db = await DbFactory.CreateDbContextAsync())
+            {
+                _channel = await db.Relays.AsNoTracking().Where(r => r.Id == Id).Select(r => r.Channel).SingleAsync();
+            }
+
             _name = _relay.Name;
             _isActive = _relay.IsActive;
             _maxOnMinutes = _relay.MaxOnMinutes;
@@ -394,7 +403,7 @@
                 }
 
                 // The board shows the relay as the person wanted it: nothing left to decide.
-                if (_toggleFailed && !_inGroup && new UnconfirmedPress(Id, _wanted).IsSettledBy(Board.State))
+                if (_toggleFailed && !_inGroup && new UnconfirmedPress(Id, _channel, _wanted).IsSettledBy(Board.State))
                 {
                     _toggleFailed = false;
                 }

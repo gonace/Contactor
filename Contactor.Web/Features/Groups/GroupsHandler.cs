@@ -20,7 +20,8 @@ public sealed record GroupMemberDraft(
 /// <param name="GroupName">The group it is already in, or null.</param>
 /// <param name="HasSchedules">It has schedules of its own, so it can't join a group.</param>
 /// <param name="InputName">An input that controls it, so it can't join a group; null when none does.</param>
-public sealed record GroupCandidate(int RelayId, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null)
+/// <param name="Channel">Its channel on the board, the number the screens show.</param>
+public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null)
 {
     public bool IsFree => GroupName is null && !HasSchedules && InputName is null;
 
@@ -70,7 +71,7 @@ public sealed class GroupsHandler
     public async Task<IReadOnlyList<GroupView>> ListAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var groups = await db.RelayGroups.AsNoTracking().Include(g => g.Members).OrderBy(g => g.SortOrder).ThenBy(g => g.Id).ToListAsync(cancellationToken);
+        var groups = await db.RelayGroups.AsNoTracking().Include(g => g.Members).ThenInclude(m => m.Relay).OrderBy(g => g.SortOrder).ThenBy(g => g.Id).ToListAsync(cancellationToken);
         var runtimes = await db.GroupRuntimes.AsNoTracking().ToDictionaryAsync(r => r.GroupId, cancellationToken);
         return [.. groups.Select(g => ToView(g, runtimes.GetValueOrDefault(g.Id)))];
     }
@@ -79,7 +80,7 @@ public sealed class GroupsHandler
     public async Task<GroupView?> GetAsync(int groupId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var group = await db.RelayGroups.AsNoTracking().Include(g => g.Members).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+        var group = await db.RelayGroups.AsNoTracking().Include(g => g.Members).ThenInclude(m => m.Relay).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
         if (group is null)
         {
             return null;
@@ -98,7 +99,7 @@ public sealed class GroupsHandler
         var controlled = await db.InputActions.Where(a => a.RelayId != null).Select(a => a.RelayId).Distinct().ToListAsync(cancellationToken);
         return await RelaysOnBoard(db)
             .Where(r => !taken.Contains(r.Id) && !scheduled.Contains(r.Id) && !controlled.Contains(r.Id))
-            .OrderBy(r => r.SortOrder).ThenBy(r => r.Id)
+            .OrderBy(r => r.SortOrder).ThenBy(r => r.Channel)
             .ToListAsync(cancellationToken);
     }
 
@@ -111,9 +112,9 @@ public sealed class GroupsHandler
             .ToDictionaryAsync(m => m.RelayId, m => m.Name, cancellationToken);
         var scheduled = (await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
         var inputs = await ControllingInputsAsync(db, cancellationToken);
-        var relays = await RelaysOnBoard(db).OrderBy(r => r.Id).ToListAsync(cancellationToken);
+        var relays = await RelaysOnBoard(db).OrderBy(r => r.Channel).ToListAsync(cancellationToken);
         return [.. relays.Select(r => new GroupCandidate(
-            r.Id, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id)))];
+            r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id)))];
     }
 
     // The name of an input that controls each relay; the first by number when several do.
@@ -126,11 +127,12 @@ public sealed class GroupsHandler
         return actions.GroupBy(a => a.RelayId).ToDictionary(g => g.Key, g => g.OrderBy(a => a.Id).First().Name);
     }
 
-    // The board's relays: a database can hold more, kept from a board that had more, and those aren't offered.
+    // The board's relays, by their channels: a database can hold more, kept from a board that had more, and those
+    // aren't offered.
     private IQueryable<Relay> RelaysOnBoard(ContactorDbContext db)
     {
         var count = _board.Capabilities.RelayCount;
-        return db.Relays.AsNoTracking().Where(r => r.Id <= count);
+        return db.Relays.AsNoTracking().Where(r => r.Channel <= count);
     }
 
     private static GroupView ToView(RelayGroup group, GroupRuntime? runtime)
@@ -140,7 +142,7 @@ public sealed class GroupsHandler
             group.Name,
             group.Icon,
             group.MaxOnMinutes,
-            [.. group.Members.OrderBy(m => m.Position).Select(m => new GroupMemberView(m.RelayId, m.Position, m.RoleName, m.StartDelaySec, m.RunOnSec))],
+            [.. group.Members.OrderBy(m => m.Position).Select(m => new GroupMemberView(m.RelayId, m.Relay!.Channel, m.Position, m.RoleName, m.StartDelaySec, m.RunOnSec))],
             runtime ?? new GroupRuntime { GroupId = group.Id });
     }
 
@@ -380,8 +382,9 @@ public sealed class GroupsHandler
             return "No contact with the relay board. It's needed to see that the relays are off.";
         }
 
-        var on = relayIds.Distinct().FirstOrDefault(state.IsOn);
-        return on == 0 ? null : $"Turn off {(relays.TryGetValue(on, out var relay) ? relay.Name : $"relay {on}")} first.";
+        // By channel; a relay the board doesn't have can't be on.
+        var on = relayIds.Distinct().Select(relays.GetValueOrDefault).FirstOrDefault(r => r is not null && state.IsOn(r.Channel));
+        return on is null ? null : $"Turn off {on.Name} first.";
     }
 
     private static void AddMembers(RelayGroup group, GroupDraft draft, Dictionary<int, Relay> relays)

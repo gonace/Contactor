@@ -13,7 +13,9 @@ namespace Contactor.Web.Features.Inputs;
 public sealed record InputChange(DateTime TimestampUtc, bool On, bool Known = true);
 
 /// <summary>An input as the screens show it.</summary>
-public sealed record InputView(int Id, string Name, bool IsActive, InputChange? LastChange)
+/// <param name="Id">The input, for links and the database.</param>
+/// <param name="Channel">Its input on the board: what the board's state goes by, and the number the screens show.</param>
+public sealed record InputView(int Id, int Channel, string Name, bool IsActive, InputChange? LastChange)
 {
     /// <summary>"Closed" when the board reads the input as on, otherwise "Open".</summary>
     public static string StateText(bool on)
@@ -47,21 +49,17 @@ public sealed class InputsHandler
     {
         var count = _board.Capabilities.InputCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var inputs = await db.Inputs.AsNoTracking().Where(i => i.Id <= count).OrderBy(i => i.Id).ToListAsync(cancellationToken);
+        var inputs = await db.Inputs.AsNoTracking().Where(i => i.Channel <= count).OrderBy(i => i.Channel).ToListAsync(cancellationToken);
         var changes = await LastChangesAsync(db, cancellationToken);
         return [.. inputs.Select(i => View(i, changes.GetValueOrDefault(i.Id)))];
     }
 
-    /// <summary>One input, or null for a number the board doesn't have.</summary>
+    /// <summary>One input, or null for one the board doesn't have.</summary>
     public async Task<InputView?> GetAsync(int inputId, CancellationToken cancellationToken)
     {
-        if (inputId < 1 || inputId > _board.Capabilities.InputCount)
-        {
-            return null;
-        }
-
+        var count = _board.Capabilities.InputCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var input = await db.Inputs.AsNoTracking().SingleOrDefaultAsync(i => i.Id == inputId, cancellationToken);
+        var input = await db.Inputs.AsNoTracking().SingleOrDefaultAsync(i => i.Id == inputId && i.Channel <= count, cancellationToken);
         return input is null ? null : View(input, (await LastChangesAsync(db, cancellationToken)).GetValueOrDefault(inputId));
     }
 
@@ -80,10 +78,9 @@ public sealed class InputsHandler
             return $"The name can be at most {Input.NameMaxLength} characters.";
         }
 
+        var count = _board.Capabilities.InputCount;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var input = settings.Id > _board.Capabilities.InputCount
-            ? null
-            : await db.Inputs.SingleOrDefaultAsync(i => i.Id == settings.Id, cancellationToken);
+        var input = await db.Inputs.SingleOrDefaultAsync(i => i.Id == settings.Id && i.Channel <= count, cancellationToken);
         if (input is null)
         {
             return "The input doesn't exist.";
@@ -97,7 +94,7 @@ public sealed class InputsHandler
 
     private static InputView View(Input input, InputChange? lastChange)
     {
-        return new InputView(input.Id, input.Name, input.IsActive, lastChange);
+        return new InputView(input.Id, input.Channel, input.Name, input.IsActive, lastChange);
     }
 
     // The latest change of each input, from its newest "input-changed" event.

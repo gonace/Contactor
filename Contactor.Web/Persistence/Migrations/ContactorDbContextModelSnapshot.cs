@@ -201,6 +201,7 @@ namespace Contactor.Web.Persistence.Migrations
             modelBuilder.Entity("Contactor.Web.Persistence.Input", b =>
                 {
                     b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("BoardId")
@@ -231,8 +232,6 @@ namespace Contactor.Web.Persistence.Migrations
                     b.ToTable("Input", null, t =>
                         {
                             t.HasCheckConstraint("CK_Input_Channel", "\"Channel\" BETWEEN 1 AND 64");
-
-                            t.HasCheckConstraint("CK_Input_Id", "\"Id\" BETWEEN 1 AND 64");
                         });
                 });
 
@@ -302,6 +301,7 @@ namespace Contactor.Web.Persistence.Migrations
             modelBuilder.Entity("Contactor.Web.Persistence.Relay", b =>
                 {
                     b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("BoardId")
@@ -332,8 +332,6 @@ namespace Contactor.Web.Persistence.Migrations
                     b.ToTable("Relay", null, t =>
                         {
                             t.HasCheckConstraint("CK_Relay_Channel", "\"Channel\" BETWEEN 1 AND 64");
-
-                            t.HasCheckConstraint("CK_Relay_Id", "\"Id\" BETWEEN 1 AND 64");
                         });
                 });
 
@@ -608,13 +606,15 @@ namespace Contactor.Web.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Contactor.Web.Persistence.Relay", null)
+                    b.HasOne("Contactor.Web.Persistence.Relay", "Relay")
                         .WithMany()
                         .HasForeignKey("RelayId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Group");
+
+                    b.Navigation("Relay");
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.RelayRuntime", b =>

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -69,8 +70,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // Whether the app has had contact since the last gap, and when it last saved that it had.
     private bool _watching;
 
-    // The app's own changes the status in hand matched, to expect again if recording it fails.
-    private readonly List<(int RelayId, bool On)> _consumed = [];
+    // The app's own changes the status in hand matched, by channel, to expect again if recording it fails.
+    private readonly List<(int Channel, bool On)> _consumed = [];
     private DateTime? _contactSavedUtc;
     private bool _lossLogged;
 
@@ -240,9 +241,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
             // The app's own changes this status matched are expected again, or the next try would call them external
             // and clear their runtime, e.g. a relay's auto-off.
-            foreach (var (relayId, on) in _consumed)
+            foreach (var (channel, on) in _consumed)
             {
-                _expected.Expect(ChannelMask.Of(relayId), on);
+                _expected.Expect(ChannelMask.Of(channel), on);
             }
 
             // A newer status that fails right after the one it replaces failed again keeps the grown wait.
@@ -289,19 +290,22 @@ public sealed partial class BoardEventRecorder : BackgroundService
             _lossLogged = false;
         }
 
+        // The board's state goes by channel; the events and runs by the relays' and inputs' ids.
+        var channels = await BoardChannels.LoadAsync(db, cancellationToken);
+
         // The first status after start has nothing to compare the relays with: what happened before is unknown. After
         // a reconnect it is compared with the last status before the loss, so changes made meanwhile are logged.
         if (_known is { } known)
         {
-            await RecordRelayChangesAsync(db, known.Relays, state.Relays, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
-            RecordInputChanges(db, await db.FirstBoardIdAsync(cancellationToken), known.Inputs, state.Inputs, now, noticed: afterGap);
+            await RecordRelayChangesAsync(db, channels, known.Relays, state.Relays, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
+            RecordInputChanges(db, channels, await db.FirstBoardIdAsync(cancellationToken), known.Inputs, state.Inputs, now, noticed: afterGap);
         }
         else
         {
             // At start the inputs are compared with what the event log last says about each: one that changed while
             // the app was down is logged now, as noticed, so its "since" reads unknown.
-            RecordInputChanges(db, await db.FirstBoardIdAsync(cancellationToken), await LastLoggedInputsAsync(db, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
-            await GiveOwnerlessRelaysAutoOffAsync(db, state.Relays, now, cancellationToken);
+            RecordInputChanges(db, channels, await db.FirstBoardIdAsync(cancellationToken), await LastLoggedInputsAsync(db, channels, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
+            await GiveOwnerlessRelaysAutoOffAsync(db, channels, state.Relays, now, cancellationToken);
         }
 
         _known = state;
@@ -319,35 +323,35 @@ public sealed partial class BoardEventRecorder : BackgroundService
         }
     }
 
-    // Every input on the board, each logged on its own. A change the app only noticed after a gap is marked so: it
-    // happened at a time nobody knows.
-    private void RecordInputChanges(ContactorDbContext db, int? boardId, ChannelMask before, ChannelMask after, DateTime now, bool noticed)
+    // Every input on the board, by its channel, each logged on its own. A change the app only noticed after a gap is
+    // marked so: it happened at a time nobody knows.
+    private void RecordInputChanges(ContactorDbContext db, BoardChannels channels, int? boardId, ChannelMask before, ChannelMask after, DateTime now, bool noticed)
     {
-        for (var input = 1; input <= _board.Capabilities.InputCount; input++)
+        for (var channel = 1; channel <= _board.Capabilities.InputCount; channel++)
         {
-            if (before.Contains(input) != after.Contains(input))
+            if (before.Contains(channel) != after.Contains(channel) && channels.InputAt(channel) is { } inputId)
             {
                 db.EventLog.Add(new EventLogEntry
                 {
                     TimestampUtc = now,
                     BoardId = boardId,
-                    InputId = input,
+                    InputId = inputId,
                     Actor = EventActors.External,
                     Action = EventActions.InputChanged,
                     Details = noticed
-                        ? JsonSerializer.Serialize(new { on = after.Contains(input), noticed = true })
-                        : JsonSerializer.Serialize(new { on = after.Contains(input) }),
+                        ? JsonSerializer.Serialize(new { on = after.Contains(channel), noticed = true })
+                        : JsonSerializer.Serialize(new { on = after.Contains(channel) }),
                 });
                 if (!noticed)
                 {
-                    _seenInputChanges.Add((input, after.Contains(input)));
+                    _seenInputChanges.Add((inputId, after.Contains(channel)));
                 }
             }
         }
     }
 
-    // The inputs as the event log last left them; an input never logged counts as matching the status in hand.
-    private async Task<ChannelMask> LastLoggedInputsAsync(ContactorDbContext db, ChannelMask current, CancellationToken cancellationToken)
+    // The inputs as the event log last left them, by channel; an input never logged counts as matching the status in hand.
+    private async Task<ChannelMask> LastLoggedInputsAsync(ContactorDbContext db, BoardChannels channels, ChannelMask current, CancellationToken cancellationToken)
     {
         var lastIds = db.EventLog
             .Where(e => e.Action == EventActions.InputChanged && e.InputId != null)
@@ -359,12 +363,12 @@ public sealed partial class BoardEventRecorder : BackgroundService
             .ToListAsync(cancellationToken);
         var logged = last.ToDictionary(e => e.InputId, e => EventText.InputOn(e.Details));
         var inputs = ChannelMask.None;
-        for (var input = 1; input <= _board.Capabilities.InputCount; input++)
+        for (var channel = 1; channel <= _board.Capabilities.InputCount; channel++)
         {
-            var on = logged.GetValueOrDefault(input) ?? current.Contains(input);
+            var on = (channels.InputAt(channel) is { } inputId ? logged.GetValueOrDefault(inputId) : null) ?? current.Contains(channel);
             if (on)
             {
-                inputs |= ChannelMask.Of(input);
+                inputs |= ChannelMask.Of(channel);
             }
         }
 
@@ -426,26 +430,34 @@ public sealed partial class BoardEventRecorder : BackgroundService
         _contactSavedUtc = now;
     }
 
+    // By channel: the expectations are the board's; the events and runs are the relays'.
     private async Task RecordRelayChangesAsync(
         ContactorDbContext db,
+        BoardChannels channels,
         ChannelMask before,
         ChannelMask after,
         DateTime now,
         DateTime receivedUtc,
         CancellationToken cancellationToken)
     {
-        for (var relayId = 1; relayId <= _board.Capabilities.RelayCount; relayId++)
+        for (var channel = 1; channel <= _board.Capabilities.RelayCount; channel++)
         {
-            var wasOn = before.Contains(relayId);
-            var isOn = after.Contains(relayId);
+            var wasOn = before.Contains(channel);
+            var isOn = after.Contains(channel);
             if (wasOn == isOn)
             {
                 continue;
             }
 
-            if (_expected.TryConsume(relayId, isOn, receivedUtc))
+            if (_expected.TryConsume(channel, isOn, receivedUtc))
             {
-                _consumed.Add((relayId, isOn));
+                _consumed.Add((channel, isOn));
+                continue;
+            }
+
+            // Every channel has its relay once the board's rows are seeded; there is nothing to log for one without.
+            if (channels.RelayAt(channel) is not { } relayId)
+            {
                 continue;
             }
 
@@ -479,9 +491,9 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // At start, and when the board's state was forgotten for a new address: a relay that is on with nobody's run gets
     // its own auto-off from now, as if it had just come on outside the app. One with a run (a person's, a schedule's)
     // keeps it.
-    private async Task GiveOwnerlessRelaysAutoOffAsync(ContactorDbContext db, ChannelMask relays, DateTime now, CancellationToken cancellationToken)
+    private async Task GiveOwnerlessRelaysAutoOffAsync(ContactorDbContext db, BoardChannels channels, ChannelMask relays, DateTime now, CancellationToken cancellationToken)
     {
-        var on = relays.Channels.Where(r => r <= _board.Capabilities.RelayCount).ToList();
+        var on = channels.RelayIds(relays & _board.Capabilities.AllRelays).ToList();
         if (on.Count == 0)
         {
             return;
