@@ -16,8 +16,6 @@ namespace Contactor.Tests.Vm204;
 /// </summary>
 public sealed class Vm204ClientTests
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
-
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -112,7 +110,7 @@ public sealed class Vm204ClientTests
         await using var run = ClientRun.Start(simulator.Port);
 
         // Counted once the first answer was reported, when the client waits for the next poll.
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(PollInterval));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         var reported = run.Changes.Count;
 
         // Polls that change nothing, not even with the analog value moving, report nothing.
@@ -149,8 +147,8 @@ public sealed class Vm204ClientTests
         {
             Assert.True(run.Client.State.IsConnected);
             var failures = poll;
-            await Wait.UntilAsync(() => run.Time.WaitsOnly(PollInterval));
-            run.Time.Advance(PollInterval);
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+            run.Time.Advance(run.PollInterval);
             await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == failures);
         }
 
@@ -172,13 +170,13 @@ public sealed class Vm204ClientTests
         await using var simulator = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
         simulator.Start();
         await using var run = ClientRun.Start(simulator.Port, "admin", "VM204");
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(PollInterval));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         // The next poll is refused and drops the key; the one after it logs in again and asks with the new key.
         simulator.RegenerateKey();
         var key = simulator.Key;
-        run.Time.Advance(PollInterval);
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "The board refused the key") && run.Time.WaitsOnly(PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "The board refused the key") && run.Time.WaitsOnly(run.PollInterval));
         await run.PollAsync();
 
         Assert.Contains($"{Vm204Api.StatusPath}?key={key}", simulator.ReceivedTargets);
@@ -258,8 +256,8 @@ public sealed class Vm204ClientTests
         // The first poll fails, and so does each one after it, until the third in a row loses the connection.
         for (var poll = 1; poll < BoardPoller<Vm204Status>.DefaultFailuresBeforeLost; poll++)
         {
-            await Wait.UntilAsync(() => run.Time.WaitsOnly(PollInterval));
-            run.Time.Advance(PollInterval);
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+            run.Time.Advance(run.PollInterval);
         }
 
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("Connection lost: The VM204's", StringComparison.Ordinal)));
@@ -288,10 +286,10 @@ public sealed class Vm204ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port);
         var time = run.Time;
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(PollInterval));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(run.PollInterval));
 
         board.HangStatus = true;
-        time.Advance(PollInterval);
+        time.Advance(run.PollInterval);
         await Wait.UntilAsync(() => board.Hanging == 1 && time.WaitsOnly(Vm204Client.RequestTimeout));
         time.Advance(Vm204Client.RequestTimeout);
 
@@ -306,9 +304,9 @@ public sealed class Vm204ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port);
         var time = run.Time;
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(PollInterval));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(run.PollInterval));
         board.HangStatus = true;
-        time.Advance(PollInterval);
+        time.Advance(run.PollInterval);
         await Wait.UntilAsync(() => board.Hanging == 1);
         var statusRequests = board.Targets.Count(t => t.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal));
 
@@ -328,7 +326,7 @@ public sealed class Vm204ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         var time = run.Time;
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(run.PollInterval));
         board.HangAll = true;
 
         // A command without an answer (1), and the status read it brings at once, without an answer too (2).
@@ -339,7 +337,7 @@ public sealed class Vm204ClientTests
         await Wait.UntilAsync(() => board.Hanging == 2 && time.WaitsOnly(Vm204Client.RequestTimeout));
         Assert.StartsWith(Vm204Api.StatusPath, board.Targets[^1], StringComparison.Ordinal);
         time.Advance(Vm204Client.RequestTimeout);
-        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsConnected);
 
         // The next command is the third in a row.
@@ -359,14 +357,14 @@ public sealed class Vm204ClientTests
     {
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         board.BrokenAnswers = true;
 
         // A command whose answer can't be read (1), and the status read it brings at once, as broken (2).
         var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
         Assert.StartsWith("The VM204 didn't take the command: ", error.Message, StringComparison.Ordinal);
         await Wait.UntilAsync(() => board.Targets.Count(t => t.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal)) == 2
-            && run.Time.WaitsOnly(TimeSpan.FromSeconds(60)));
+            && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsConnected);
 
         // The next command is the third failure in a row: the board is lost without waiting for a poll.
@@ -465,10 +463,11 @@ public sealed class Vm204ClientTests
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<Vm204State> _changes = [];
 
-        private ClientRun(Vm204Client client, ManualTimeProvider time, CancellationTokenSource cts)
+        private ClientRun(Vm204Client client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
             Client = client;
             Time = time;
+            PollInterval = pollInterval;
             _cts = cts;
             client.Traced += (_, entry) =>
             {
@@ -490,6 +489,8 @@ public sealed class Vm204ClientTests
         public Vm204Client Client { get; }
 
         public ManualTimeProvider Time { get; }
+
+        public TimeSpan PollInterval { get; }
 
         public List<BoardTraceEntry> Traces
         {
@@ -516,7 +517,7 @@ public sealed class Vm204ClientTests
         public static ClientRun Start(int port, string username = "", string password = "", int pollSeconds = 2)
         {
             var time = new ManualTimeProvider();
-            return new ClientRun(CreateClient(port, username, password, pollSeconds, time: time), time, new CancellationTokenSource());
+            return new ClientRun(CreateClient(port, username, password, pollSeconds, time: time), time, TimeSpan.FromSeconds(pollSeconds), new CancellationTokenSource());
         }
 
         /// <summary>

@@ -326,7 +326,7 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
 
         var fetch = keys.GetAsync(access, refresh: false, Cancel);
         Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The fetch never started.");
-        await Wait.UntilAsync(() => time.PendingTimers == 1);
+        await Wait.UntilAsync(() => time.WaitsOnly(CloudflareAccessKeys.FetchTimeout));
         Assert.False(fetch.IsCompleted);
         time.Advance(CloudflareAccessKeys.FetchTimeout);
 
