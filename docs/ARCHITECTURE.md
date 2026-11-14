@@ -484,7 +484,7 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
 }
 ```
 
-No `Urls` in the settings: the .NET image listens on 8080 (`ASPNETCORE_HTTP_PORTS`), and in development Aspire picks the port. ASP.NET Core's data protection keys are kept in `keys/` next to the database, so they survive upgrades.
+No `Urls` in the settings: the .NET image listens on 8080 (`ASPNETCORE_HTTP_PORTS`), also in the Aspire run, which runs the image. ASP.NET Core's data protection keys are kept in `keys/` next to the database, so they survive upgrades.
 
 Anything specific to the installation or secret (the Access team domain and AUD tag, the board's address and password, the tunnel token) is never in the repository or the image. The setup guide saves them in the database. An install script can also ask for them once, save them in `/opt/contactor/.env` (readable by root only), and compose passes them in as environment variables, e.g. `CloudflareAccess__Audience` and `Tunnel__Token`. What the guide saved wins over them.
 

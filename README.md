@@ -84,9 +84,11 @@ Run everything locally with Aspire (the dashboard opens on http://localhost:1528
 dotnet run --project Contactor.AppHost
 ```
 
-The AppHost starts a VM201 simulator on port 9760 and the app against it. The first run downloads cloudflared
-(40–55 MB) from GitHub for the Cloudflare way in; without internet only that way in fails. A new local database starts
-with the setup guide, behind the setup code in the app's log: choose "Only on this network" and "No sign-in" there. The
+It needs Docker Desktop. The AppHost starts a VM201 simulator on port 9760, and the app as its image, built from the
+`Dockerfile` with cloudflared and Tailscale inside, as on a real installation, on http://localhost:8080. What the app
+keeps is in the Docker volume `contactor-dev`; delete it to start over. A new database starts with the setup guide,
+behind the setup code in the app's log: choose any way in and sign-in there, as on a real installation. For quick work
+on the local network only, `dotnet run --project Contactor.Web` runs the app on its own, with a local database file. The
 simulator's page, linked from the dashboard, shows the board's relays and every packet, and switches relays as the
 board's own buttons would. Stop and start the simulator in the dashboard to test a lost connection to the board. The
 tests use the same simulator, so no hardware is needed.

@@ -5,8 +5,8 @@
 #   docker buildx build --platform linux/arm64,linux/amd64 --build-arg VERSION=2026.11.12 --build-arg COMMIT=$(git rev-parse HEAD) .
 #
 # The .NET images are taken by tag, so every release gets their newest security fixes. cloudflared and Tailscale are
-# pinned by digest: they are copied in as they are, and only our own image is checked with cosign. Raise cloudflared
-# together with the version Aspire downloads for development (Contactor.AppHost/Cloudflared.cs).
+# pinned by digest: they are copied in as they are, and only our own image is checked with cosign. The Aspire run
+# builds this image too, so development has the same cloudflared and Tailscale.
 
 FROM cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba AS cloudflared
 # Raising Tailscale: check that tailscaled still passes connections from the Tailscale network only to 127.0.0.1
