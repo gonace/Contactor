@@ -330,24 +330,24 @@ public sealed class BoardRemovalTests
         Assert.Null(registry.Find(boards.BarnId));
     }
 
-    // Until a board can be added in Settings (Issue #4), the only board stays.
+    // The last board can be removed too, as any other: its relays turned off first, everything about it deleted.
     [Fact]
-    public async Task Should_KeepTheOnlyBoard()
+    public async Task Should_RemoveTheLastBoard()
     {
         await using var boards = await TwoBoards.StartAsync();
+        await SeedAsync(boards, 1);
         var removal = boards.App.Services.GetRequiredService<BoardRemoval>();
         Assert.Null(await removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+        await boards.App.Services.GetRequiredService<RelayControl>().TurnOnAsync(await RelayIdAsync(boards, 1, 6), John, Cancel);
 
-        var error = await removal.RemoveAsync(1, turnOffFirst: true, John, Cancel);
+        Assert.Null(await removal.RemoveAsync(1, turnOffFirst: true, John, Cancel));
 
-        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
-        var name = registry.Find(1)!.Name;
-        Assert.Equal($"{name} is the only relay board, so it can't be removed.", error);
-        Assert.False(registry.Find(1)!.IsClosed);
-        using var http = boards.App.CreateClient();
-        var page = WebUtility.HtmlDecode(await http.GetStringAsync("/board/1", Cancel));
-        Assert.Contains($"{name} is the only relay board, so it can't be removed.", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("class=\"remove\"", page, StringComparison.Ordinal);
+        Assert.False(boards.First.State.IsOn(6));
+        Assert.Empty(boards.App.Services.GetRequiredService<BoardRegistry>().All);
+        Assert.Equal(Counts.None, await CountAsync(boards, 1));
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.Boards.AnyAsync(Cancel));
+        Assert.True(await db.Installations.AnyAsync(i => i.SetupDoneUtc != null, Cancel));
     }
 
     // Should the app run no board at all (a new installation, or later every board removed), the screens say so.
@@ -362,7 +362,7 @@ public sealed class BoardRemovalTests
         var control = boards.App.Services.GetRequiredService<RelayControl>();
         Assert.Empty(await control.TurnOffAllBoardsAsync(John, Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => control.TurnAllOffAsync(1, John, Cancel));
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => registry.Only.TurnOnAsync(ChannelMask.Of(1), Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => control.TurnOnAsync(1, John, Cancel));
         using var http = boards.App.CreateClient();
         foreach (var page in new[] { "/", "/events", "/settings", "/debug", "/group/new", "/board/1" })
         {

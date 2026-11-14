@@ -98,21 +98,21 @@ public sealed partial class BoardChoice : IDisposable
     /// wrong) is never saved for the next start to fail on; one choice at a time, so the board saved is the one that
     /// runs.
     /// </summary>
-    public Task ChooseAsync(BoardModel model, CancellationToken cancellationToken)
+    public Task<LiveBoard> ChooseAsync(BoardModel model, CancellationToken cancellationToken)
     {
         return UseAsync(model, save: true, cancellationToken);
     }
 
     /// <summary>
     /// Runs <paramref name="model"/> from now on, unless it already is the board, and adds the rows for its relays and
-    /// inputs. Doesn't save the choice (<see cref="ChooseAsync"/> does).
+    /// inputs. Doesn't save the choice (<see cref="ChooseAsync"/> does). Returns the first board, which runs it now.
     /// </summary>
-    public Task UseAsync(BoardModel model, CancellationToken cancellationToken)
+    public Task<LiveBoard> UseAsync(BoardModel model, CancellationToken cancellationToken)
     {
         return UseAsync(model, save: false, cancellationToken);
     }
 
-    private async Task UseAsync(BoardModel model, bool save, CancellationToken cancellationToken)
+    private async Task<LiveBoard> UseAsync(BoardModel model, bool save, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(model);
         var registration = BoardCatalogue.Find(model.Id)
@@ -130,7 +130,7 @@ public sealed partial class BoardChoice : IDisposable
                     ?? throw new InvalidOperationException("The board's row wasn't added with its relays.");
             }
 
-            await _registry.ReplaceModelAsync(boardId, registration.Model, cancellationToken);
+            var live = await _registry.ReplaceModelAsync(boardId, registration.Model, cancellationToken);
             if (save)
             {
                 await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -144,11 +144,10 @@ public sealed partial class BoardChoice : IDisposable
 
                 board.Type = model.Id;
                 await db.SaveChangesAsync(cancellationToken);
-                if (_registry.Find(boardId) is { } live)
-                {
-                    live.Name = board.Name;
-                }
+                live.Name = board.Name;
             }
+
+            return live;
         }
         finally
         {

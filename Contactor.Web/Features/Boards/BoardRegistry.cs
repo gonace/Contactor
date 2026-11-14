@@ -11,8 +11,9 @@ public sealed record BoardStateChange(int BoardId, BoardState State);
 
 /// <summary>
 /// Every relay board the app runs, one <see cref="LiveBoard"/> per board's row, for the app's lifetime: made at start
-/// for every row (<see cref="LoadAsync"/>), and given a model while the app runs (<see cref="ReplaceModelAsync"/>, the
-/// setup guide's choice). <see cref="BoardHostedService"/> keeps every board's connection open
+/// for every row (<see cref="LoadAsync"/>), given a model while the app runs (<see cref="ReplaceModelAsync"/>, the
+/// setup guide's choice), and added while it runs (<see cref="AddBoardAsync(BoardModel, string?, CancellationToken)"/>,
+/// "Add a board"). <see cref="BoardHostedService"/> keeps every board's connection open
 /// (<see cref="RunAsync"/>). Only the first board takes the address and login in its model's settings section
 /// (install.sh's <c>Vm201__Host</c> and so on); every board takes the ones saved on its own row.
 /// </summary>
@@ -58,7 +59,6 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         _time = time;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<BoardRegistry>();
-        Only = new OnlyBoard(this, loggerFactory.CreateLogger<OnlyBoard>());
     }
 
     /// <summary>
@@ -75,12 +75,6 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
     /// <summary>Every board, in the list's order.</summary>
     public IReadOnlyList<LiveBoard> All => Volatile.Read(ref _boards);
-
-    /// <summary>
-    /// The one board, for the screens that still show one board only: see <see cref="OnlyBoard"/>.
-    /// Until the screens show every board (Issue #4): one board.
-    /// </summary>
-    public OnlyBoard Only { get; }
 
     /// <summary>The board on this row, or null when the app runs none there.</summary>
     public LiveBoard? Find(int boardId)
@@ -255,6 +249,121 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     }
 
     /// <summary>
+    /// "Add a board": a new board of <paramref name="model"/>, last in the list, running from now on. Its row is made with
+    /// "no address and no login" saved (the model's default port), so it never takes the address and login in the
+    /// model's settings section, which are install.sh's for the first board it set up, also when it is the only board
+    /// now: its address is typed in the steps that follow. Then its relays and inputs get their rows by channel, and its
+    /// live board is watched by every safety service before its connection starts, as at start. An empty
+    /// <paramref name="name"/> gives it the model's name, made unique ("Velleman VM201 2"). If it can't be made all the
+    /// way, nothing of it is left. Throws <see cref="ArgumentException"/> for a name longer than
+    /// <see cref="Board.NameMaxLength"/>.
+    /// </summary>
+    public Task<LiveBoard> AddBoardAsync(BoardModel model, string? name, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var registration = BoardCatalogue.Find(model.Id)
+            ?? throw new ArgumentException($"\"{model.Id}\" isn't a board in the catalogue.", nameof(model));
+        return AddBoardAsync(registration.Model, name, setup => Build(registration, setup), cancellationToken);
+    }
+
+    /// <summary>
+    /// As <see cref="AddBoardAsync(BoardModel, string?, CancellationToken)"/>, with the board built by
+    /// <paramref name="build"/>, e.g. in a test.
+    /// </summary>
+    public async Task<LiveBoard> AddBoardAsync(BoardModel model, string? name, Func<BoardSetup, ActiveBoard> build, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(build);
+        name = name?.Trim() ?? "";
+        if (name.Length > Board.NameMaxLength)
+        {
+            throw new ArgumentException($"The name can be at most {Board.NameMaxLength} characters.", nameof(name));
+        }
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            Board row;
+            bool isFirst;
+            await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+            {
+                var names = await db.Boards.Select(b => b.Name).ToListAsync(cancellationToken);
+                isFirst = names.Count == 0;
+                row = new Board
+                {
+                    Name = name.Length > 0 ? name : UniqueName(model, names),
+                    Type = model.Id,
+                    Host = "",
+                    Port = model.DefaultPort,
+                    Username = "",
+                    Password = "",
+                    SortOrder = (await db.Boards.MaxAsync(b => (int?)b.SortOrder, cancellationToken) ?? 0) + 1,
+                };
+                db.Boards.Add(row);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            // A new row may get the id of a board removed before: it is a board of its own.
+            _removed.Remove(row.Id);
+            LiveBoard? live = null;
+            try
+            {
+                await _app.SeedBoardAsync(row.Id, model.Capabilities.RelayCount, model.Capabilities.InputCount, cancellationToken);
+                var built = build(BoardSetup.From(row, isFirst));
+                try
+                {
+                    live = await AddAsync(row);
+                }
+                catch
+                {
+                    await built.DisposeAsync();
+                    throw;
+                }
+
+                // From here on the live board owns it, also when it refuses it.
+                await live.ReplaceAsync(built);
+            }
+            catch
+            {
+                // Nothing of it is left: its live board first (its watches end, then its connection), then its rows.
+                if (live is not null)
+                {
+                    await TakeOutAsync(live);
+                }
+
+                await DeleteRowsAsync(row.Id);
+                throw;
+            }
+
+            LogBoardAdded(row.Id, model.Id);
+            return live;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The name a new board of <paramref name="model"/> gets: the model's ("Velleman VM201"), or with a number after it
+    /// when a board already has that name ("Velleman VM201 2"), within <see cref="Board.NameMaxLength"/>.
+    /// </summary>
+    public static string UniqueName(BoardModel model, IReadOnlyCollection<string> taken)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(taken);
+        var name = Board.DefaultName(model.Name);
+        for (var n = 2; taken.Contains(name, StringComparer.OrdinalIgnoreCase); n++)
+        {
+            var suffix = $" {n}";
+            var stem = Board.DefaultName(model.Name);
+            name = (stem.Length + suffix.Length <= Board.NameMaxLength ? stem : stem[..(Board.NameMaxLength - suffix.Length)].TrimEnd()) + suffix;
+        }
+
+        return name;
+    }
+
+    /// <summary>
     /// Takes the board on this row out of the app, before its rows are deleted (<c>BoardRemoval</c>): out of
     /// <see cref="All"/> first, so nothing new is sent to it, then disposed (a step under way finishes, its watches end,
     /// then its connection), and <see cref="BoardsChanged"/> is raised. Its run ends quietly. Returns false when the app
@@ -276,14 +385,10 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 }
 
                 _removed.Add(boardId);
-
-                Volatile.Write(ref _boards, [.. _boards.Where(b => !ReferenceEquals(b, live))]);
             }
 
-            live.StateChanged -= OnStateChanged;
-            await live.DisposeAsync();
+            await TakeOutAsync(live);
             LogRemoved(boardId);
-            RaiseBoardsChanged();
             return true;
         }
         finally
@@ -378,8 +483,36 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             await board.DisposeAsync();
         }
 
-        Only.Dispose();
         _gate.Dispose();
+    }
+
+    // Only under the gate: out of All first, so nothing new is sent to it, then disposed (a step under way finishes, its
+    // watches end, then its connection); its run ends quietly.
+    private async Task TakeOutAsync(LiveBoard live)
+    {
+        lock (_lock)
+        {
+            Volatile.Write(ref _boards, [.. _boards.Where(b => !ReferenceEquals(b, live))]);
+        }
+
+        live.StateChanged -= OnStateChanged;
+        await live.DisposeAsync();
+        RaiseBoardsChanged();
+    }
+
+    // A board that couldn't be added all the way: its rows go again. A failure here is logged; the first one is thrown.
+    private async Task DeleteRowsAsync(int boardId)
+    {
+        try
+        {
+            await BoardRemoval.DeleteAsync(_dbFactory, boardId, CancellationToken.None);
+        }
+#pragma warning disable CA1031 // The failure to add is the one thrown; this one is logged.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogNotDeleted(ex, boardId);
+        }
     }
 
     private async Task<(Board Row, bool IsFirst)> RowAsync(int boardId, CancellationToken cancellationToken)
@@ -533,11 +666,17 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     [LoggerMessage(Level = LogLevel.Debug, Message = "Relay board {BoardId} added")]
     private partial void LogAdded(int boardId);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Relay board {BoardId} added, a {Model}")]
+    private partial void LogBoardAdded(int boardId, string model);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay board {BoardId} removed")]
     private partial void LogRemoved(int boardId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A listener to relay board {BoardId}'s state failed")]
     private partial void LogSubscriberFailed(Exception exception, int boardId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Relay board {BoardId} couldn't be added, and its rows couldn't be deleted again")]
+    private partial void LogNotDeleted(Exception exception, int boardId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A listener to the list of relay boards failed")]
     private partial void LogBoardsListenerFailed(Exception exception);

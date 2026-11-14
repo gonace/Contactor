@@ -1,3 +1,4 @@
+using Contactor.Boards;
 using Contactor.Boards.Vm201;
 using Contactor.Tests.Boards;
 using Contactor.Web;
@@ -178,6 +179,32 @@ internal sealed class BoardTestRig : IAsyncDisposable
         }
 
         await Database.Services.GetRequiredService<BoardRegistry>().ReplaceAsync(new FakeBoardParts(Second).Build(SecondBoardId), cancel);
+    }
+
+    /// <summary>
+    /// "Add a board" while the app runs (<see cref="BoardRegistry.AddBoardAsync(BoardModel, string?, Func{BoardSetup, ActiveBoard}, CancellationToken)"/>):
+    /// a board in memory (4 relays, 2 inputs) as <see cref="Second"/>, named <paramref name="name"/>.
+    /// </summary>
+    public async Task<LiveBoard> AddBoardAsync(string? name = "Shed")
+    {
+        var cancel = TestContext.Current.CancellationToken;
+        Second = new FakeRelayBoard(relayCount: 4, inputCount: 2) { Time = Time };
+        var parts = new FakeBoardParts(Second);
+        var model = parts.FakeModel;
+        var live = await Database.Services.GetRequiredService<BoardRegistry>().AddBoardAsync(model, name, setup => parts.Build(setup.BoardId, model), cancel);
+        SecondBoardId = live.BoardId;
+        await using var db = await Database.Factory.CreateDbContextAsync(cancel);
+        foreach (var relay in db.Relays.Where(r => r.BoardId == SecondBoardId))
+        {
+            _secondRelays[relay.Channel] = relay.Id;
+        }
+
+        foreach (var input in db.Inputs.Where(i => i.BoardId == SecondBoardId))
+        {
+            _secondInputs[input.Channel] = input.Id;
+        }
+
+        return live;
     }
 
     /// <summary>Starts one of the app's background services, e.g. the group sequencer's loops; stopped on dispose.</summary>

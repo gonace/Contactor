@@ -26,7 +26,7 @@ public sealed record BoardRemovalPreview(int BoardId, string Name, int Relays, i
 /// (<see cref="BoardRegistry.RemoveAsync"/>) and everything about it is deleted in one transaction, its events included.
 /// A group still running on stops it: nothing is removed, the board is opened again, and the person is told when the
 /// run-on ends. A board without contact is removed as it is: whatever is on stays on. The board itself isn't changed.
-/// Until a board can be added in Settings (Issue #4), the only board can't be removed.
+/// The last board can be removed too: the app then has none until one is added (<see cref="BoardRegistry.AddBoardAsync(BoardModel, string?, CancellationToken)"/>).
 /// </summary>
 public sealed partial class BoardRemoval : IDisposable
 {
@@ -110,22 +110,14 @@ public sealed partial class BoardRemoval : IDisposable
         try
         {
             string? name;
-            int boards;
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
                 name = await db.Boards.Where(b => b.Id == boardId).Select(b => b.Name).SingleOrDefaultAsync(cancellationToken);
-                boards = await db.Boards.CountAsync(cancellationToken);
             }
 
             if (name is null)
             {
                 return AlreadyRemoved;
-            }
-
-            // Until a board can be added in Settings (Issue #4): the app keeps one.
-            if (boards <= 1)
-            {
-                return OnlyBoardText(name);
             }
 
             var live = _registry.Find(boardId);
@@ -156,7 +148,7 @@ public sealed partial class BoardRemoval : IDisposable
                 removed = true;
                 try
                 {
-                    await DeleteAsync(boardId, cancellationToken);
+                    await DeleteAsync(_dbFactory, boardId, cancellationToken);
                 }
                 catch
                 {
@@ -193,12 +185,6 @@ public sealed partial class BoardRemoval : IDisposable
         {
             _gate.Release();
         }
-    }
-
-    /// <summary>What the board's page says when the board is the only one: it can't be removed yet.</summary>
-    public static string OnlyBoardText(string name)
-    {
-        return $"{name} is the only relay board, so it can't be removed.";
     }
 
     private static string LostText(string name)
@@ -315,10 +301,10 @@ public sealed partial class BoardRemoval : IDisposable
 
     // Everything about the board, in one transaction, children before what they point to: the foreign keys from an
     // input action, a group member and a relay's runtime and schedules to a relay are Restrict, so nothing is left to a
-    // cascade.
-    private async Task DeleteAsync(int boardId, CancellationToken cancellationToken)
+    // cascade. Also what takes a board that couldn't be added all the way back out (BoardRegistry.AddBoardAsync).
+    internal static async Task DeleteAsync(IDbContextFactory<ContactorDbContext> dbFactory, int boardId, CancellationToken cancellationToken)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var of = new Of(db, boardId);
         await of.InputActions.ExecuteDeleteAsync(cancellationToken);

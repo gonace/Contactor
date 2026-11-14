@@ -234,6 +234,30 @@ button:disabled {
 }
 
 /* With two or more boards: a row per board, opening its page. */
+/* One board: its card, and "Add a board" under it, as one cell of the desktop's two columns. */
+.board-stack {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* "+ Add a board": dashed, like "New group" on Relays. */
+.add-board {
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px dashed var(--line-dashed);
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
 .board-rows {
     display: flex;
     flex-direction: column;

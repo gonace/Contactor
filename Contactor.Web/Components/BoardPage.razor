@@ -40,15 +40,7 @@
                 {
                     <p class="error" role="alert">@_error</p>
                 }
-                @if (Registry.All.Count > 1)
-                {
-                    <button type="button" class="remove" disabled="@_busy" @onclick="AskAsync">Remove @_name</button>
-                }
-                else
-                {
-                    @* Until a board can be added in Settings (Issue #4), the app keeps one. *@
-                    <p class="only">@BoardRemoval.OnlyBoardText(_name)</p>
-                }
+                <button type="button" class="remove" disabled="@_busy" @onclick="AskAsync">Remove @_name</button>
             </section>
         }
     </main>

@@ -86,8 +86,21 @@ internal sealed class PageRenderer : Renderer
         await Dispatcher.InvokeAsync(async () =>
         {
             var element = Find(_rootId, match) ?? throw new InvalidOperationException("No such element on the page.");
-            var handler = element.Handlers.TryGetValue("onclick", out var id) ? id : throw new InvalidOperationException("It has no onclick.");
+            var handler = element.Handlers.TryGetValue("onclick", out var id) ? id : throw new InvalidOperationException($"It has no onclick: {string.Join(", ", element.Attributes.Select(a => $"{a.Key}={a.Value}"))}.");
             await DispatchEventAsync(handler, null, new MouseEventArgs());
+        });
+    }
+
+    /// <summary>Types <paramref name="value"/> into the first field whose attributes match, through its <c>oninput</c> or <c>onchange</c>.</summary>
+    public async Task TypeAsync(Func<IReadOnlyDictionary<string, object?>, bool> match, object value)
+    {
+        await Dispatcher.InvokeAsync(async () =>
+        {
+            var element = Find(_rootId, match) ?? throw new InvalidOperationException("No such element on the page.");
+            var handler = element.Handlers.TryGetValue("oninput", out var id) || element.Handlers.TryGetValue("onchange", out id)
+                ? id
+                : throw new InvalidOperationException("It has no oninput or onchange.");
+            await DispatchEventAsync(handler, null, new ChangeEventArgs { Value = value });
         });
     }
 

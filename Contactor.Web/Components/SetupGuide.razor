@@ -16,20 +16,19 @@
 @inject UsersHandler Users
 @inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
-@inject TimeProvider Time
-@inject LocalClock Clock
 @inject NavigationManager Navigation
 @inject ILogger<SetupGuide> Log
 
 <PageTitle>Setup · Contactor</PageTitle>
 
 <div class="screen">
-    @* While a list of "Which relay board?" is open, everything but the list and its field takes no focus or clicks. *@
-    <header class="header" inert="@(_sheet != Sheet.None)">
+    @* While a list of "Which relay board?" is open, everything but the list and its field takes no focus or clicks
+       (BoardModelPicker makes its own step inert around it). *@
+    <header class="header" inert="@_sheetOpen">
         @if (CanGoBack)
         {
             var shown = _step;
-            <button type="button" class="back" disabled="@_busy" @onclick="() => Back(shown)">
+            <button type="button" class="back" disabled="@Busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
                 Back
             </button>
@@ -41,8 +40,8 @@
         <span class="step-count">STEP @StepInPart OF @StepsInPart</span>
     </header>
 
-    <div class="part" inert="@(_sheet != Sheet.None)">@(InPart1 ? "PART 1 OF 2 · THE APP" : "PART 2 OF 2 · THE BOARD")</div>
-    <div class="progress" aria-hidden="true" inert="@(_sheet != Sheet.None)">
+    <div class="part" inert="@_sheetOpen">@(InPart1 ? "PART 1 OF 2 · THE APP" : "PART 2 OF 2 · THE BOARD")</div>
+    <div class="progress" aria-hidden="true" inert="@_sheetOpen">
         @for (var i = 1; i <= StepsInPart; i++)
         {
             <span class="@(i <= StepInPart ? "done" : null)"></span>
@@ -76,184 +75,41 @@
         }
         else if (_step == StepBoard)
         {
-            var chosen = BoardCatalogue.Find(_type)?.Model;
-            <div class="intro" inert="@(_sheet != Sheet.None)">
-                <h1 tabindex="-1" @ref="_heading">Which relay board?</h1>
-                <p>Choose the brand first, then the model. Both are printed on the board.</p>
-            </div>
-            <div class="field" inert="@(_sheet == Sheet.Model)" @onkeydown="OnSheetKey">
-                <span class="field-label" id="brand-label">Brand</span>
-                <button type="button" class="select @(_sheet == Sheet.Brand ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Brand ? "true" : "false")"
-                        aria-labelledby="brand-label brand-value" @ref="_brandField" @onclick="() => Open(Sheet.Brand)">
-                    <span class="select-text" id="brand-value">
-                        @if (_brand is null)
-                        {
-                            <span class="placeholder">Choose the brand</span>
-                        }
-                        else
-                        {
-                            <span>@_brand</span>
-                        }
-                    </span>
-                    <svg class="chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
-                </button>
-                @if (_sheet == Sheet.Brand)
-                {
-                    @List
-                }
-            </div>
-            <div class="field" inert="@(_sheet == Sheet.Brand)" @onkeydown="OnSheetKey">
-                <span class="field-label" id="model-label">Model</span>
-                <button type="button" class="select @(_sheet == Sheet.Model ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Model ? "true" : "false")"
-                        aria-labelledby="model-label model-value" disabled="@(_brand is null)" @ref="_modelField" @onclick="() => Open(Sheet.Model)">
-                    <span class="select-text" id="model-value">
-                        @if (chosen is not null)
-                        {
-                            <span>@chosen.ModelName</span>
-                            <span class="note">@SetupText.Capabilities(chosen.Capabilities)</span>
-                        }
-                        else
-                        {
-                            <span class="placeholder">@(_brand is null ? "Choose the brand first" : "Choose the model")</span>
-                        }
-                    </span>
-                    <svg class="chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
-                </button>
-                @if (_sheet == Sheet.Model)
-                {
-                    @List
-                }
-            </div>
-            <p class="hint" inert="@(_sheet != Sheet.None)">Not on the list? Contactor only lists the boards it can switch.</p>
+            <BoardModelPicker @ref="_picker" @bind-Type="_type" Busy="_busy" OpenChanged="open => _sheetOpen = open" />
+        }
+        else if (Chosen is not { Model: not null } chosen)
+        {
+            @* The board chosen here is gone (it can't be, while the guide runs): its steps start again. *@
+            <p class="hint">Choose your relay board first.</p>
         }
         else if (_step == StepWhere)
         {
-            <div class="intro">
-                <h1 tabindex="-1" @ref="_heading">Where is the board?</h1>
-                <p>@Model.Name · its address on your network.</p>
-            </div>
-            <div class="fields">
-                <div class="field">
-                    <label for="host">Address</label>
-                    <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
-                           maxlength="@Persistence.Board.HostMaxLength" placeholder="192.168.1.50" @bind="_host" @bind:event="oninput" />
-                </div>
-                <div class="field port">
-                    <label for="port">Port</label>
-                    <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="@Model.DefaultPort" @bind="_port" @bind:event="oninput" />
-                </div>
-            </div>
-            <p class="hint">Your router lists the board among its connected devices. Leave the port empty unless you changed it on the board.</p>
-
-            @if (Model.HasLogin)
-            {
-                <label for="no-login" class="check">
-                    <input id="no-login" type="checkbox" @bind="_noLogin" />
-                    <span>@(Model.PasswordOnly ? "The board has no password" : "The board has no login")</span>
-                </label>
-                @if (!_noLogin)
-                {
-                    <div class="fields">
-                        @if (!Model.PasswordOnly)
-                        {
-                            <div class="field">
-                                <label for="username">User name</label>
-                                <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-                                       maxlength="@Model.LoginMaxLength" @bind="_username" @bind:event="oninput" />
-                            </div>
-                        }
-                        <div class="field">
-                            <label for="password">Password</label>
-                            <input id="password" type="password" autocomplete="new-password"
-                                   maxlength="@Model.LoginMaxLength" placeholder="@(_hasPassword ? "unchanged" : "none")"
-                                   @bind="_newPassword" @bind:event="oninput" />
-                        </div>
-                    </div>
-                    <p class="hint">@(Model.PasswordOnly ? Model.LoginHint : $"The same as on the board's own web page. {Model.LoginHint ?? $"At most {Model.LoginMaxLength} characters."}")</p>
-                }
-            }
-
-            @if (_checking)
-            {
-                <div class="board-status" role="status">
-                    <span class="dot waiting" aria-hidden="true"></span>
-                    <span class="status-text"><strong>Looking for the board</strong><span>at @Board.Endpoint</span></span>
-                </div>
-            }
-            else if (_notFound)
-            {
-                <div class="not-found" role="alert">
-                    <span>No answer from @Board.Endpoint. Check that the board has power and a network cable, and that the address is right.</span>
-                    <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
-                </div>
-            }
-            else if (Board.State.IsConnected && Board.Endpoint.HasHost)
-            {
-                <div class="board-status" role="status">
-                    <span class="dot" aria-hidden="true"></span>
-                    <span class="status-text">
-                        <strong>Board online</strong>
-                        <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Board.Endpoint@(_checkedAt is { } at ? $" · checked {at.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}" : "")</span>
-                    </span>
-                    <button type="button" class="small" disabled="@_busy" @onclick="() => CheckAsync(goOn: false)">Check again</button>
-                </div>
-            }
+            <BoardWhereStep @ref="_where" Board="chosen" Values="_whereFields" UserEmail="@_user?.Email" Busy="_busy"
+                            BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" />
         }
         else if (_step == StepRelays)
         {
-            <div class="intro">
-                <h1 tabindex="-1" @ref="_heading">Name your relays</h1>
-                <p>Name each relay after what it switches. "Try" turns it on for @((int)SetupHandler.TryLength.TotalSeconds) seconds, so you can hear which one it is. Untick the ones you don't use.</p>
-            </div>
-            @if (!Board.State.IsConnected)
-            {
-                <p class="hint">"Try" works once the app has contact with the relay board.</p>
-            }
-            <ul class="relays">
-                @foreach (var relay in _relays)
-                {
-                    var on = Board.State.IsOn(relay.Channel);
-                    <li class="relay" @key="relay.Id">
-                        <label class="label" for="@($"relay-{relay.Id}")">RELAY @relay.Channel</label>
-                        <div class="row">
-                            <input id="@($"relay-{relay.Id}")" type="text" maxlength="@Relay.NameMaxLength" autocomplete="off"
-                                   placeholder="@Relay.DefaultName(relay.Channel)" @bind="relay.Name" @bind:event="oninput" />
-                            <button type="button" class="small try" aria-pressed="@(on ? "true" : "false")"
-                                    aria-label="@($"Try relay {relay.Channel}")"
-                                    disabled="@(on || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
-                                    @onclick="() => TryAsync(relay)">@(on ? "On" : "Try")</button>
-                        </div>
-                        <label class="check" for="@($"use-{relay.Id}")">
-                            <input id="@($"use-{relay.Id}")" type="checkbox" @bind="relay.IsActive" />
-                            <span>In use</span>
-                        </label>
-                        @if (relay.GroupName is not null)
-                        {
-                            <p class="hint">In the group @relay.GroupName, which switches it.</p>
-                        }
-                        @if (relay.Error is not null)
-                        {
-                            <p class="error" role="alert">@relay.Error</p>
-                        }
-                    </li>
-                }
-            </ul>
+            <BoardRelaysStep @ref="_relaysStep" Board="chosen" Rows="_relays" UserEmail="@_user?.Email" />
         }
         else
         {
             var inUse = _relays.Count(r => r.IsActive);
             var first = _relays.FirstOrDefault(r => r.IsActive);
+            var board = Chosen;
+            var connected = board?.State.IsConnected == true;
+            var endpoint = board?.Endpoint;
+            var modelName = board?.Model?.Name ?? "Relay board";
             <div class="intro">
                 <span class="done-mark" aria-hidden="true">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"></path></svg>
                 </span>
                 <h1 tabindex="-1" @ref="_heading">All set@(string.IsNullOrWhiteSpace(_name) ? "" : $", {_name.Trim()}")</h1>
-                <p>@(Board.State.IsConnected ? "Your relay board is ready." : "The app keeps looking for your relay board. You can change its address under Settings.")</p>
+                <p>@(connected ? "Your relay board is ready." : "The app keeps looking for your relay board. You can change its address under Settings.")</p>
             </div>
             <dl class="summary">
                 <div>
                     <dt class="label">BOARD</dt>
-                    <dd>@(Board.Endpoint.HasHost ? $"{Model.Name} at {Board.Endpoint.Host}" : $"{Model.Name}, no address yet")</dd>
+                    <dd>@(endpoint is { HasHost: true } ? $"{modelName} at {endpoint.Host}" : $"{modelName}, no address yet")</dd>
                 </div>
                 <div>
                     <dt class="label">RELAYS</dt>
@@ -271,7 +127,7 @@
         }
     </main>
 
-    <div class="next" inert="@(_sheet != Sheet.None)">
+    <div class="next" inert="@_sheetOpen">
         @if (_error is not null)
         {
             <p class="error" role="alert">@_error</p>
@@ -283,10 +139,10 @@
         else if (_step < StepDone)
         {
             var shown = _step;
-            <button type="button" disabled="@(_busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">Next</button>
+            <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">Next</button>
             @if (_step == StepWhere)
             {
-                <button type="button" class="link" disabled="@_busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
+                <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
             }
         }
         else
@@ -317,52 +173,6 @@
     // may be at the new address.
     private bool CanGoBack => _elsewhere is null
         && (_step == StepSignIn || _step > StepBoard || (_step == StepBoard && SignIns.SignIn?.Id != SignInCatalogue.NoneId));
-
-    // Step 2's open list: under its field on a tablet or desktop, from the bottom of the screen on a phone.
-    private RenderFragment List => __builder =>
-    {
-        <div class="sheet-backdrop" @onclick="Close"></div>
-        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-            <span class="grab" aria-hidden="true"></span>
-            <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Brand ? "Brand" : $"{_brand} model")</h2>
-            <div class="sheet-options">
-                @if (_sheet == Sheet.Brand)
-                {
-                    @foreach (var brand in BoardCatalogue.Brands)
-                    {
-                        var name = brand.Name;
-                        <button type="button" class="sheet-option @(name == _brand ? "chosen" : null)" aria-current="@(name == _brand ? "true" : null)" @onclick="() => ChooseBrand(name)">
-                            <span class="option-text">
-                                <span class="name">@name</span>
-                                <span class="note">@(brand.Models.Count == 1 ? "1 model" : $"{brand.Models.Count} models")</span>
-                            </span>
-                            @if (name == _brand)
-                            {
-                                <svg class="tick" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
-                            }
-                        </button>
-                    }
-                }
-                else
-                {
-                    @foreach (var model in BoardCatalogue.Brands.FirstOrDefault(m => m.Name == _brand)?.Models ?? [])
-                    {
-                        var id = model.Id;
-                        <button type="button" class="sheet-option @(id == _type ? "chosen" : null)" aria-current="@(id == _type ? "true" : null)" @onclick="() => ChooseModel(id)">
-                            <span class="option-text">
-                                <span class="name">@model.ModelName</span>
-                                <span class="note">@SetupText.Capabilities(model.Capabilities)</span>
-                            </span>
-                            @if (id == _type)
-                            {
-                                <svg class="tick" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
-                            }
-                        </button>
-                    }
-                }
-            </div>
-        </div>
-    };
 
     // "How do people reach the app?": every way in; Cloudflare also asks for its tunnel's token and address, Tailscale
     // for an auth key and the app's name.
@@ -503,7 +313,7 @@
         }
     };
 
-    private readonly List<RelayRow> _relays = [];
+    private List<BoardRelaysStep.Row> _relays = [];
     private ElementReference _heading;
     private SignedInUser? _user;
     private int _step = StepAbout;
@@ -525,41 +335,30 @@
     private bool _setupDone;
     private string _name = "";
     private string _type = "";
-    private string? _brand;
-    private Sheet _sheet;
-    private ElementReference _brandField;
-    private ElementReference _modelField;
-    private ElementReference _sheetTitle;
+    // A list of "Which relay board?" is open (BoardModelPicker): the rest of the page is inert meanwhile.
+    private bool _sheetOpen;
 
-    // Where the focus goes after the render: into a list just opened, or back to its field once it closes. The
-    // references are read after the render, when the list is there.
-    private Sheet? _focusNext;
-    private string _host = "";
-    private string _port = "";
-    private bool _noLogin;
-    private string _username = "";
-    private string _newPassword = "";
-    private bool _hasPassword;
-    private bool _checking;
-    private bool _notFound;
+    // The board steps; their headings take the focus on a new step.
+    private BoardModelPicker? _picker;
+    private BoardWhereStep? _where;
+    private BoardRelaysStep? _relaysStep;
+
+    // What is typed on "Where is the board?", kept while the guide goes back and forth.
+    private BoardWhereStep.Fields _whereFields = new();
+
+    // A step's own save or check is under way ("Check again").
+    private bool _stepBusy;
     private bool _busy;
     private bool _moved;
     private string? _error;
 
-    // Whether the last save changed the address or login, so a connection still open is to the old ones.
-    private bool _moving;
+    // The board the guide sets up: the app's first, chosen at "Which relay board?"; null before. The same live board
+    // for its whole life, so the guide keeps listening to it.
+    private int? _boardId;
 
-    // When the last check found the board, for "checked 14:02:05".
-    private DateTime? _checkedAt;
+    private LiveBoard? Chosen => _boardId is { } id ? Registry.Find(id) : null;
 
-    // Until the screens show every board (Issue #4): one board. The same object before and after the board is chosen here, so the guide keeps
-    // listening to it.
-    private OnlyBoard Board => Registry.Only;
-
-    // The steps after "Which relay board?" only come once a board is chosen there.
-    private BoardModel Model => Board.Model!;
-
-    private LiveBoard Chosen => Board.Board!;
+    private bool Busy => _busy || _stepBusy;
 
     protected override async Task OnInitializedAsync()
     {
@@ -602,35 +401,27 @@
         SignIns.TailscaleChanged += OnTunnelChanged;
 
         _name = _user?.DisplayName ?? "";
-        _type = Board.Model?.Id ?? "";
-        _brand = Board.Model?.Brand;
-        if (Board.Model is not null)
+        // The guide sets up the app's first board; any made before is the one chosen at "Which relay board?".
+        if (Registry.All.FirstOrDefault() is { Model: { } model } first)
         {
-            await LoadBoardAsync();
+            _boardId = first.BoardId;
+            _type = model.Id;
+            await LoadBoardAsync(first);
         }
 
-        Board.StateChanged += OnBoardChanged;
+        Registry.StateChanged += OnBoardChanged;
     }
 
     // The chosen board's address, login and relays, for steps 3 to 5.
-    private async Task LoadBoardAsync()
+    private async Task LoadBoardAsync(LiveBoard board)
     {
-        var endpoint = await Address.GetAsync(Chosen.BoardId, CancellationToken.None);
-        _host = endpoint.Host;
-        _port = endpoint.Port == Model.DefaultPort ? "" : endpoint.Port.ToString(CultureInfo.InvariantCulture);
-        var login = await Address.GetLoginAsync(Chosen.BoardId, CancellationToken.None);
-        _username = login.Username;
-        _hasPassword = login.HasPassword;
-        _noLogin = login.Username.Length == 0 && !login.HasPassword;
-
-        var relays = await Setup.RelaysAsync(CancellationToken.None);
-        _relays.Clear();
-        _relays.AddRange(relays.Select(r => new RelayRow(r)));
+        _whereFields = await BoardWhereStep.LoadAsync(Address, board, CancellationToken.None);
+        _relays = await BoardRelaysStep.LoadAsync(Setup, board.BoardId, CancellationToken.None);
     }
 
     public void Dispose()
     {
-        Board.StateChanged -= OnBoardChanged;
+        Registry.StateChanged -= OnBoardChanged;
         SignIns.TunnelChanged -= OnTunnelChanged;
         SignIns.TailscaleChanged -= OnTunnelChanged;
     }
@@ -638,10 +429,10 @@
     // From the tunnel's or Tailscale's own thread: "Tunnel connected" or "On your Tailscale network" on the sign-in step.
     private void OnTunnelChanged(object? sender, EventArgs e)
     {
-        _ = RefreshTunnelAsync();
+        _ = RefreshAsync();
     }
 
-    private async Task RefreshTunnelAsync()
+    private async Task RefreshAsync()
     {
         try
         {
@@ -683,35 +474,30 @@
         if (_moved)
         {
             _moved = false;
-            await _heading.FocusAsync();
-        }
-        else if (_focusNext is { } focus)
-        {
-            _focusNext = null;
-            await (focus switch
+            await (_step switch
             {
-                Sheet.Brand => _brandField,
-                Sheet.Model => _modelField,
-                _ => _sheetTitle,
-            }).FocusAsync();
+                StepBoard when _picker is not null => _picker.FocusAsync(),
+                StepWhere when _where is not null => _where.FocusAsync(),
+                StepRelays when _relaysStep is not null => _relaysStep.FocusAsync(),
+                _ => _heading.FocusAsync(),
+            });
         }
     }
 
     private void Back(int fromStep)
     {
-        if (!_busy && _step == fromStep && CanGoBack)
+        if (!Busy && _step == fromStep && CanGoBack)
         {
             _step--;
-            _sheet = Sheet.None;
+            _sheetOpen = false;
             _error = null;
-            _notFound = false;
             _moved = true;
         }
     }
 
     private async Task GoOnAsync(int fromStep)
     {
-        if (_busy || _step != fromStep)
+        if (Busy || _step != fromStep)
         {
             return;
         }
@@ -735,8 +521,11 @@
                     await ChooseBoardAsync();
                     break;
                 case StepWhere:
-                    _busy = false;
-                    await CheckAsync(goOn: true);
+                    if (_where is not null && await _where.GoOnAsync())
+                    {
+                        Move(StepRelays);
+                    }
+
                     break;
                 case StepRelays:
                     await SaveRelaysAsync();
@@ -819,99 +608,26 @@
         }
 
         // The app switches to the board while it runs, and the guide goes straight on.
-        var before = Board.Model;
-        await Setup.ChooseBoardAsync(_type, CancellationToken.None);
+        var before = Chosen?.Model;
+        var board = await Setup.ChooseBoardAsync(_type, CancellationToken.None);
+        _boardId = board.BoardId;
         if (before?.Id != chosen.Model.Id)
         {
-            await LoadBoardAsync();
+            await LoadBoardAsync(board);
 
             // An address saved for the board chosen before kept that board's own port: offer the new one's instead.
-            if (before is not null && _port == before.DefaultPort.ToString(CultureInfo.InvariantCulture))
+            if (before is not null && _whereFields.Port == before.DefaultPort.ToString(CultureInfo.InvariantCulture))
             {
-                _port = "";
+                _whereFields.Port = "";
             }
         }
 
         Move(StepWhere);
     }
 
-    // Saves the address and login, then waits for the board. Going on only once it answers; "Go on without a
-    // connection" is there for a board that doesn't yet.
-    private async Task CheckAsync(bool goOn)
-    {
-        if (_busy || _user is null)
-        {
-            return;
-        }
-
-        _busy = true;
-        _error = null;
-        _notFound = false;
-        try
-        {
-            // Watching from before the save: the board may be back at its new address before the save returns.
-            using var contact = BoardContact.Watch(Chosen);
-            if (!await SaveAddressAsync())
-            {
-                return;
-            }
-
-            _checking = true;
-            StateHasChanged();
-            // "Check again" with nothing changed asks the board itself, so the check is a real one.
-            var found = !goOn && !_moving && Board.State.IsConnected
-                ? await BoardContact.AskAsync(Chosen, BoardContact.Timeout, Time, CancellationToken.None)
-                : await contact.WaitAsync(_moving, BoardContact.Timeout, Time, CancellationToken.None);
-            _checkedAt = found ? Clock.Now : null;
-            _checking = false;
-            _notFound = !found;
-            if (found && goOn)
-            {
-                Move(StepRelays);
-            }
-        }
-        catch (Exception ex)
-        {
-            Fail(ex, "Checking the relay board failed");
-        }
-        finally
-        {
-            _checking = false;
-            _busy = false;
-        }
-    }
-
-    private async Task<bool> SaveAddressAsync()
-    {
-        if (_user is null)
-        {
-            return false;
-        }
-
-        var port = Model.DefaultPort;
-        if (_port.Trim().Length > 0 && !int.TryParse(_port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out port))
-        {
-            _error = "The port is a number from 1 to 65535.";
-            return false;
-        }
-
-        var (endpoint, login) = (Chosen.Endpoint, Chosen.Login);
-        _error = await Address.SaveAsync(Chosen.BoardId, _host, port, _user.Email, CancellationToken.None)
-            ?? (Model.HasLogin ? await Address.SaveLoginAsync(Chosen.BoardId, _username, _newPassword, _noLogin, _user.Email, CancellationToken.None) : null);
-        if (_error is not null)
-        {
-            return false;
-        }
-
-        _moving = BoardContact.HasMoved(Chosen, endpoint, login);
-        _hasPassword = (await Address.GetLoginAsync(Chosen.BoardId, CancellationToken.None)).HasPassword;
-        _newPassword = "";
-        return true;
-    }
-
     private async Task GoOnWithoutConnectionAsync()
     {
-        if (_busy || _step != StepWhere)
+        if (Busy || _step != StepWhere || _where is null)
         {
             return;
         }
@@ -920,8 +636,7 @@
         _error = null;
         try
         {
-            // An address typed in is still saved, so the app keeps looking for the board there.
-            if (_host.Trim().Length == 0 || await SaveAddressAsync())
+            if (await _where.GoOnWithoutConnectionAsync())
             {
                 Move(StepRelays);
             }
@@ -936,42 +651,6 @@
         }
     }
 
-    private async Task TryAsync(RelayRow relay)
-    {
-        if (_user is null || relay.Trying)
-        {
-            return;
-        }
-
-        relay.Trying = true;
-        relay.Error = null;
-        try
-        {
-            await Setup.TryAsync(relay.Id, _user.Email, CancellationToken.None);
-        }
-        catch (BoardClosedException)
-        {
-            relay.Error = LiveBoard.BeingRemoved;
-        }
-        catch (BoardNotConnectedException)
-        {
-            relay.Error = "No contact with the relay board. Try again in a moment.";
-        }
-        catch (RelayInGroupException)
-        {
-            relay.Error = RelayInGroupException.Text;
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "\"Try\" failed for relay {RelayId}", relay.Id);
-            relay.Error = "Something went wrong. Try again.";
-        }
-        finally
-        {
-            relay.Trying = false;
-        }
-    }
-
     private async Task SaveRelaysAsync()
     {
         if (_user is null)
@@ -979,7 +658,7 @@
             return;
         }
 
-        _error = await Setup.SaveRelaysAsync(_relays.Select(r => new SetupRelayChoice(r.Id, r.Name, r.IsActive)), _user.Email, CancellationToken.None);
+        _error = await BoardRelaysStep.SaveAsync(Setup, _relays, _user.Email, CancellationToken.None);
         if (_error is null)
         {
             await Setup.MarkDoneAsync(CancellationToken.None);
@@ -987,77 +666,10 @@
         }
     }
 
-    // Step 2's lists: a brand, then that brand's models.
-    private void Open(Sheet sheet)
-    {
-        if (_busy || _step != StepBoard || (sheet == Sheet.Model && _brand is null))
-        {
-            return;
-        }
-
-        if (_sheet == sheet)
-        {
-            Close();
-            return;
-        }
-
-        _sheet = sheet;
-        _error = null;
-        _focusNext = Sheet.None;
-    }
-
-    // A new brand clears the model and opens its models at once: the next thing to choose.
-    private void ChooseBrand(string brand)
-    {
-        if (_busy || _sheet != Sheet.Brand)
-        {
-            return;
-        }
-
-        if (brand == _brand)
-        {
-            Close();
-            return;
-        }
-
-        _brand = brand;
-        _type = "";
-        _sheet = Sheet.Model;
-        _focusNext = Sheet.None;
-    }
-
-    private void ChooseModel(string id)
-    {
-        if (_busy || _sheet != Sheet.Model)
-        {
-            return;
-        }
-
-        _type = id;
-        Close();
-    }
-
-    private void Close()
-    {
-        // The field the list belongs to; a closed list's field would be gone with the step.
-        _focusNext = _sheet == Sheet.None ? null : _sheet;
-        _sheet = Sheet.None;
-    }
-
-    private void OnSheetKey(KeyboardEventArgs e)
-    {
-        // On the field, so Escape also closes the list from the field's own button.
-        if (e.Key == "Escape" && _sheet != Sheet.None)
-        {
-            Close();
-        }
-    }
-
     private void Move(int step)
     {
         _step = step;
-        _sheet = Sheet.None;
-        _notFound = false;
+        _sheetOpen = false;
         _moved = true;
     }
 
@@ -1068,67 +680,12 @@
         _error = "Something went wrong. Try again.";
     }
 
-    // From the board's read loop.
-    private void OnBoardChanged(object? sender, BoardState state)
+    // From a board's read loop: the guide's own board's, for "All set".
+    private void OnBoardChanged(object? sender, BoardStateChange change)
     {
-        _ = RefreshAsync(state);
-    }
-
-    private async Task RefreshAsync(BoardState state)
-    {
-        try
+        if (change.BoardId == _boardId)
         {
-            await InvokeAsync(() =>
-            {
-                // The board answered after all: "No answer" would be wrong now.
-                if (state.IsConnected && !_checking)
-                {
-                    _notFound = false;
-                }
-
-                StateHasChanged();
-            });
+            _ = RefreshAsync();
         }
-        catch (ObjectDisposedException)
-        {
-            // The page closed while the update was on its way.
-        }
-    }
-
-    private enum Sheet
-    {
-        None,
-        Brand,
-        Model,
-    }
-
-    private sealed class RelayRow
-    {
-        public RelayRow(SetupRelay relay)
-        {
-            Id = relay.Id;
-            Channel = relay.Channel;
-            Name = relay.HasDefaultName ? "" : relay.Name;
-            IsActive = relay.IsActive;
-            GroupName = relay.GroupName;
-        }
-
-        public int Id { get; }
-
-        /// <summary>Its channel on the board: the board's state goes by it, and it is the number shown.</summary>
-        public int Channel { get; }
-
-        public string Name { get; set; }
-
-        public bool IsActive { get; set; }
-
-        public string? GroupName { get; }
-
-        public bool Trying { get; set; }
-
-        public string? Error { get; set; }
-
-        /// <summary>Its name as the summary shows it.</summary>
-        public string Shown => string.IsNullOrWhiteSpace(Name) ? Relay.DefaultName(Channel) : Name.Trim();
     }
 }

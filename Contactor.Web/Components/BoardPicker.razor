@@ -4,7 +4,8 @@
 
 @* The board filter of Relays, Events and Debug, with two or more boards: below 1024 px a row of chips under the
    heading, on a desktop a list in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the
-   choice in the screen's own cookie and comes back to the page (RelaysEndpoints); no JavaScript. *@
+   choice in the screen's own cookie and comes back to the page (RelaysEndpoints); no JavaScript. Each list ends with
+   "+ Add a board" ("+ Board" among the chips), which opens BoardNew. *@
 @if (Side)
 {
     var all = CountOf(Boards);
@@ -31,6 +32,10 @@
                 @Lamps(board)
             </button>
         }
+        <a href="board/new" class="side-add">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            Add a board
+        </a>
     </div>
 }
 else
@@ -66,6 +71,10 @@ else
                 }
             </button>
         }
+        <a href="board/new" class="chip-add" aria-label="Add a board">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            Board
+        </a>
     </div>
     @if (Showing is not null)
     {

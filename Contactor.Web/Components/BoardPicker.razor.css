@@ -79,6 +79,24 @@
     display: none;
 }
 
+/* "+ Board": the last chip, dashed like "New group", opens "Add a board". */
+.chip-add {
+    flex: none;
+    align-self: stretch;
+    min-height: 44px;
+    padding: 6px 16px 6px 12px;
+    border-radius: 22px;
+    border: 1.5px dashed var(--line-dashed);
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .showing {
     margin: 0 4px;
     display: flex;
@@ -169,6 +187,21 @@
 
 .side-board.lost.picked {
     border-width: 2.5px;
+}
+
+/* "+ Add a board": the end of the list, dashed like "New group". */
+.side-add {
+    min-height: 48px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1.5px dashed var(--line-dashed);
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .side-board.lost .name,

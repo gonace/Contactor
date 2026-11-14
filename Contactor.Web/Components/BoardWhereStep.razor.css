@@ -1,0 +1,151 @@
+/* "Where is the board?": its address, port and login, and whether the app found it there. */
+.intro {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.intro p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px;
+    gap: 10px;
+}
+
+.field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.field > label {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+input[type="text"],
+input[type="password"] {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 17px;
+}
+
+#host,
+#port {
+    font-family: var(--font-mono);
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    cursor: pointer;
+}
+
+.check input {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.board-status {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-wrap: anywhere;
+}
+
+.status-text span {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+    border-radius: 5px;
+    background: var(--ok);
+}
+
+.dot.waiting {
+    background: var(--line-strong);
+}
+
+.not-found {
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-radius: 12px;
+    background: var(--danger-bg);
+    border: 1.5px solid var(--danger-border);
+    color: var(--danger-ink);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.small {
+    min-height: 44px;
+    padding: 0 14px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}

@@ -1,0 +1,256 @@
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Setup
+
+@* "Which relay board?": "Brand", then "Model". Each field opens a list from the bottom of the screen on a phone, and a
+   dropdown under the field on a tablet or desktop. Shared by the setup guide (the first board) and "Add a board"
+   (BoardNew). While a list is open, everything but the list and its field takes no focus or clicks: the page around it
+   is told through OpenChanged. *@
+<div class="intro" inert="@(_sheet != Sheet.None)">
+    <h1 tabindex="-1" @ref="_heading">Which relay board?</h1>
+    <p>Choose the brand first, then the model. Both are printed on the board.</p>
+</div>
+<div class="field" inert="@(_sheet == Sheet.Model)" @onkeydown="OnSheetKey">
+    <span class="field-label" id="brand-label">Brand</span>
+    <button type="button" class="select @(_sheet == Sheet.Brand ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Brand ? "true" : "false")"
+            aria-labelledby="brand-label brand-value" @ref="_brandField" @onclick="() => OpenAsync(Sheet.Brand)">
+        <span class="select-text" id="brand-value">
+            @if (_brand is null)
+            {
+                <span class="placeholder">Choose the brand</span>
+            }
+            else
+            {
+                <span>@_brand</span>
+            }
+        </span>
+        <svg class="chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+    </button>
+    @if (_sheet == Sheet.Brand)
+    {
+        @List
+    }
+</div>
+<div class="field" inert="@(_sheet == Sheet.Brand)" @onkeydown="OnSheetKey">
+    <span class="field-label" id="model-label">Model</span>
+    <button type="button" class="select @(_sheet == Sheet.Model ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Model ? "true" : "false")"
+            aria-labelledby="model-label model-value" disabled="@(_brand is null)" @ref="_modelField" @onclick="() => OpenAsync(Sheet.Model)">
+        <span class="select-text" id="model-value">
+            @if (Chosen is { } chosen)
+            {
+                <span>@chosen.ModelName</span>
+                <span class="note">@SetupText.Capabilities(chosen.Capabilities)</span>
+            }
+            else
+            {
+                <span class="placeholder">@(_brand is null ? "Choose the brand first" : "Choose the model")</span>
+            }
+        </span>
+        <svg class="chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+    </button>
+    @if (_sheet == Sheet.Model)
+    {
+        @List
+    }
+</div>
+@if (ChildContent is not null)
+{
+    <div class="more" inert="@(_sheet != Sheet.None)">@ChildContent</div>
+}
+<p class="hint" inert="@(_sheet != Sheet.None)">Not on the list? Contactor only lists the boards it can switch.</p>
+
+@code {
+    /// <summary>The chosen model's catalogue id; empty while none is chosen.</summary>
+    [Parameter]
+    public string Type { get; set; } = "";
+
+    [Parameter]
+    public EventCallback<string> TypeChanged { get; set; }
+
+    /// <summary>While the page is busy, the lists don't open and nothing is chosen.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>Told when a list opens (true) or closes (false), so the page makes the rest inert meanwhile.</summary>
+    [Parameter]
+    public EventCallback<bool> OpenChanged { get; set; }
+
+    /// <summary>More fields under the model, e.g. the new board's name; inert while a list is open.</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private string? _brand;
+    private Sheet _sheet;
+    private ElementReference _heading;
+    private ElementReference _brandField;
+    private ElementReference _modelField;
+    private ElementReference _sheetTitle;
+
+    // Where the focus goes after the render: into a list just opened, or back to its field once it closes. The
+    // references are read after the render, when the list is there.
+    private Sheet? _focusNext;
+
+    private Contactor.Boards.BoardModel? Chosen => BoardCatalogue.Find(Type)?.Model;
+
+    /// <summary>Whether a list is open.</summary>
+    public bool IsOpen => _sheet != Sheet.None;
+
+    /// <summary>Puts the focus on the step's heading, so a screen reader reads where it is.</summary>
+    public ValueTask FocusAsync()
+    {
+        return _heading.FocusAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        _brand = Chosen?.Brand;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusNext is { } focus)
+        {
+            _focusNext = null;
+            await (focus switch
+            {
+                Sheet.Brand => _brandField,
+                Sheet.Model => _modelField,
+                _ => _sheetTitle,
+            }).FocusAsync();
+        }
+    }
+
+    // The open list: under its field on a tablet or desktop, from the bottom of the screen on a phone.
+    private RenderFragment List => __builder =>
+    {
+        <div class="sheet-backdrop" @onclick="CloseAsync"></div>
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+            <span class="grab" aria-hidden="true"></span>
+            <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Brand ? "Brand" : $"{_brand} model")</h2>
+            <div class="sheet-options">
+                @if (_sheet == Sheet.Brand)
+                {
+                    @foreach (var brand in BoardCatalogue.Brands)
+                    {
+                        var name = brand.Name;
+                        <button type="button" class="sheet-option @(name == _brand ? "chosen" : null)" value="@name" aria-current="@(name == _brand ? "true" : null)" @onclick="() => ChooseBrandAsync(name)">
+                            <span class="option-text">
+                                <span class="name">@name</span>
+                                <span class="note">@(brand.Models.Count == 1 ? "1 model" : $"{brand.Models.Count} models")</span>
+                            </span>
+                            @if (name == _brand)
+                            {
+                                <svg class="tick" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+                            }
+                        </button>
+                    }
+                }
+                else
+                {
+                    @foreach (var model in BoardCatalogue.Brands.FirstOrDefault(m => m.Name == _brand)?.Models ?? [])
+                    {
+                        var id = model.Id;
+                        <button type="button" class="sheet-option @(id == Type ? "chosen" : null)" value="@id" aria-current="@(id == Type ? "true" : null)" @onclick="() => ChooseModelAsync(id)">
+                            <span class="option-text">
+                                <span class="name">@model.ModelName</span>
+                                <span class="note">@SetupText.Capabilities(model.Capabilities)</span>
+                            </span>
+                            @if (id == Type)
+                            {
+                                <svg class="tick" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+                            }
+                        </button>
+                    }
+                }
+            </div>
+        </div>
+    };
+
+    // A brand, then that brand's models.
+    private async Task OpenAsync(Sheet sheet)
+    {
+        if (Busy || (sheet == Sheet.Model && _brand is null))
+        {
+            return;
+        }
+
+        if (_sheet == sheet)
+        {
+            await CloseAsync();
+            return;
+        }
+
+        var wasOpen = IsOpen;
+        _sheet = sheet;
+        _focusNext = Sheet.None;
+        if (!wasOpen)
+        {
+            await OpenChanged.InvokeAsync(true);
+        }
+    }
+
+    // A new brand clears the model and opens its models at once: the next thing to choose.
+    private async Task ChooseBrandAsync(string brand)
+    {
+        if (Busy || _sheet != Sheet.Brand)
+        {
+            return;
+        }
+
+        if (brand == _brand)
+        {
+            await CloseAsync();
+            return;
+        }
+
+        _brand = brand;
+        _sheet = Sheet.Model;
+        _focusNext = Sheet.None;
+        await SetTypeAsync("");
+    }
+
+    private async Task ChooseModelAsync(string id)
+    {
+        if (Busy || _sheet != Sheet.Model)
+        {
+            return;
+        }
+
+        await SetTypeAsync(id);
+        await CloseAsync();
+    }
+
+    private async Task SetTypeAsync(string id)
+    {
+        Type = id;
+        await TypeChanged.InvokeAsync(id);
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_sheet == Sheet.None)
+        {
+            return;
+        }
+
+        // The field the list belongs to; a closed list's field would be gone with the step.
+        _focusNext = _sheet;
+        _sheet = Sheet.None;
+        await OpenChanged.InvokeAsync(false);
+    }
+
+    private async Task OnSheetKey(KeyboardEventArgs e)
+    {
+        // On the field, so Escape also closes the list from the field's own button.
+        if (e.Key == "Escape" && _sheet != Sheet.None)
+        {
+            await CloseAsync();
+        }
+    }
+
+    private enum Sheet
+    {
+        None,
+        Brand,
+        Model,
+    }
+}

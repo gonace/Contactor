@@ -25,7 +25,10 @@
         @if (Boards is [var only])
         {
             @* One board: its card as it always was. *@
-            <BoardForm BoardId="only.BoardId" Title="Relay board" @key="only.BoardId" />
+            <div class="board-stack">
+                <BoardForm BoardId="only.BoardId" Title="Relay board" @key="only.BoardId" />
+                @AddBoard
+            </div>
         }
         else
         {
@@ -33,7 +36,7 @@
                 <h2>Relay boards</h2>
                 @if (Boards.Count == 0)
                 {
-                    <p class="hint">There's no relay board in Contactor.</p>
+                    <p class="hint">There's no relay board in Contactor. Add one to switch its relays here.</p>
                 }
                 else
                 {
@@ -53,7 +56,7 @@
                         }
                     </div>
                 }
-                @* "Add a board" comes here (Issue #4). *@
+                @AddBoard
             </section>
         }
 
@@ -122,6 +125,15 @@
 
 @code {
     private IReadOnlyList<LiveBoard> Boards => Registry.All;
+
+    // "+ Add a board": the setup guide's board steps (BoardNew).
+    private static RenderFragment AddBoard => __builder =>
+    {
+        <a href="board/new" class="add-board">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            Add a board
+        </a>
+    };
 
     private static readonly string VersionText = AppBuild.Current.Text;
 

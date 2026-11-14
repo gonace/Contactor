@@ -113,8 +113,6 @@ public sealed class SetupTests
 
         var boards = app.Services.GetRequiredService<BoardRegistry>();
         Assert.Empty(boards.All);
-        Assert.Null(boards.Only.Model);
-        Assert.Equal(0, boards.Only.Capabilities.RelayCount);
         await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
         Assert.False(await db.Relays.AnyAsync(Cancel));
     }
@@ -293,22 +291,15 @@ public sealed class SetupTests
     {
         await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm204" });
         await database.Services.InitializeDatabaseAsync(Cancel);
-        var boards = database.Services.GetRequiredService<BoardRegistry>().Only;
+        var boards = database.Services.GetRequiredService<BoardRegistry>();
 
         // A new installation, and one part of the way through the guide: Board:Type doesn't choose for it.
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
-        Assert.Null(boards.Model);
+        Assert.Empty(boards.All);
         await AddInstallationAsync(database, new Installation());
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
-        Assert.Null(boards.Model);
-        Assert.Null(boards.Board);
-        Assert.Same(LiveBoard.NoBoard, boards.Capabilities);
-        Assert.False(boards.State.HasAnswered);
-        Assert.False(boards.Endpoint.HasHost);
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => boards.TurnOnAsync(ChannelMask.Of(1), Cancel));
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => boards.RefreshAsync(Cancel));
-        Assert.Empty(database.Services.GetRequiredService<BoardRegistry>().All);
+        Assert.Empty(boards.All);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.False(await db.Relays.AnyAsync(Cancel));
         Assert.False(await db.Inputs.AnyAsync(Cancel));
@@ -666,7 +657,7 @@ public sealed class SetupTests
     public async Task Should_SaveNamesAndInUse_KeepingTheDefaultForAnEmptyName()
     {
         await using var rig = await Rig.StartAsync();
-        var relays = await rig.Setup.RelaysAsync(Cancel);
+        var relays = await rig.Setup.RelaysAsync(await rig.Database.Services.FirstBoardIdAsync(), Cancel);
         Assert.Equal(8, relays.Count);
         Assert.All(relays, r => Assert.True(r.HasDefaultName));
 
@@ -676,7 +667,7 @@ public sealed class SetupTests
             Cancel);
 
         Assert.Null(error);
-        relays = await rig.Setup.RelaysAsync(Cancel);
+        relays = await rig.Setup.RelaysAsync(await rig.Database.Services.FirstBoardIdAsync(), Cancel);
         Assert.Equal(("Fan – Lathe", true), (relays[0].Name, relays[0].IsActive));
         Assert.Equal(("Relay 2", true), (relays[1].Name, relays[1].IsActive));
         Assert.Equal(("Relay 7", false), (relays[6].Name, relays[6].IsActive));
@@ -743,7 +734,7 @@ public sealed class SetupTests
         await Assert.ThrowsAsync<RelayInGroupException>(() => rig.Setup.TryAsync(2, "john@example.com", Cancel));
 
         Assert.False(rig.Board.State.IsOn(2));
-        Assert.Equal("Fan heater", (await rig.Setup.RelaysAsync(Cancel))[1].GroupName);
+        Assert.Equal("Fan heater", (await rig.Setup.RelaysAsync(await rig.Database.Services.FirstBoardIdAsync(), Cancel))[1].GroupName);
     }
 
     // The board switched the relay on although "Try"'s ON was reported as failed: it is turned off after the try, not

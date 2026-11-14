@@ -45,16 +45,20 @@
         </div>
         <div class="actions">
             @* On a desktop "New group" sits here, beside "All off"; on a phone or tablet it is under the cards. *@
-            <a href="group/new" class="new-group in-header">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                New group
-            </a>
+            @if (Boards.Count > 0)
+            {
+                <a href="group/new" class="new-group in-header">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    New group
+                </a>
+            }
+            @* No board: nothing to turn off, and "Add a board" is the way on. *@
             @if (Several)
             {
                 @* Every board at once, so it asks first; each board has its own "All off" in its section. *@
                 <button type="button" class="all-boards-off" disabled="@(!AnyConnected || _busy)" @onclick="() => _confirmAllBoards = true">Turn off all boards</button>
             }
-            else
+            else if (Boards.Count == 1)
             {
                 <button type="button" class="all-off" data-vibrate disabled="@(!State.IsConnected || _busy)" @onclick="() => TurnBoardOffAsync(OnlyBoardId)">All off</button>
             }
@@ -84,7 +88,11 @@
     {
         @* Every board removed: nothing to show or switch. *@
         <div class="connection">
-            <p class="no-board" role="status">There's no relay board in Contactor.</p>
+            <p class="no-board" role="status">There's no relay board in Contactor. Add one to switch its relays here.</p>
+            <a href="board/new" class="add-board">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                Add a board
+            </a>
         </div>
     }
     else
@@ -192,10 +200,13 @@
             }
         }
 
-        <a href="group/new" class="new-group">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            New group
-        </a>
+        @if (Boards.Count > 0)
+        {
+            <a href="group/new" class="new-group">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                New group
+            </a>
+        }
 
         @if (InactiveCount > 0)
         {

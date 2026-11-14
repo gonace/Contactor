@@ -1,0 +1,335 @@
+@implements IDisposable
+@using System.Globalization
+@using Contactor.Boards
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Features.Setup
+@inject BoardAddressHandler Address
+@inject BoardRegistry Registry
+@inject TimeProvider Time
+@inject LocalClock Clock
+@inject ILogger<BoardWhereStep> Log
+
+@* "Where is the board?": its address, port and login, saved through BoardAddressHandler; "Next" waits up to 10 s for
+   the board (BoardContact). Shared by the setup guide (the first board) and "Add a board" (BoardNew); the page has the
+   buttons and calls GoOnAsync or GoOnWithoutConnectionAsync. What is typed lives in Fields, which the page keeps, so it
+   is still there after "Back". *@
+<div class="intro">
+    <h1 tabindex="-1" @ref="_heading">Where is the board?</h1>
+    <p>@Model.Name · its address on your network.</p>
+</div>
+<div class="fields">
+    <div class="field">
+        <label for="host">Address</label>
+        <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
+               maxlength="@Persistence.Board.HostMaxLength" placeholder="192.168.1.50" @bind="Values.Host" @bind:event="oninput" />
+    </div>
+    <div class="field port">
+        <label for="port">Port</label>
+        <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="@Model.DefaultPort" @bind="Values.Port" @bind:event="oninput" />
+    </div>
+</div>
+<p class="hint">Your router lists the board among its connected devices. Leave the port empty unless you changed it on the board.</p>
+
+@if (Model.HasLogin)
+{
+    <label for="no-login" class="check">
+        <input id="no-login" type="checkbox" @bind="Values.NoLogin" />
+        <span>@(Model.PasswordOnly ? "The board has no password" : "The board has no login")</span>
+    </label>
+    @if (!Values.NoLogin)
+    {
+        <div class="fields">
+            @if (!Model.PasswordOnly)
+            {
+                <div class="field">
+                    <label for="username">User name</label>
+                    <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                           maxlength="@Model.LoginMaxLength" @bind="Values.Username" @bind:event="oninput" />
+                </div>
+            }
+            <div class="field">
+                <label for="password">Password</label>
+                <input id="password" type="password" autocomplete="new-password"
+                       maxlength="@Model.LoginMaxLength" placeholder="@(Values.HasPassword ? "unchanged" : "none")"
+                       @bind="Values.NewPassword" @bind:event="oninput" />
+            </div>
+        </div>
+        <p class="hint">@(Model.PasswordOnly ? Model.LoginHint : $"The same as on the board's own web page. {Model.LoginHint ?? $"At most {Model.LoginMaxLength} characters."}")</p>
+    }
+}
+
+@if (_checking)
+{
+    <div class="board-status" role="status">
+        <span class="dot waiting" aria-hidden="true"></span>
+        <span class="status-text"><strong>Looking for the board</strong><span>at @Board.Endpoint</span></span>
+    </div>
+}
+else if (_notFound)
+{
+    <div class="not-found" role="alert">
+        <span>No answer from @Board.Endpoint. Check that the board has power and a network cable, and that the address is right.</span>
+        <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">Check again</button>
+    </div>
+}
+else if (Board.State.IsConnected && Board.Endpoint.HasHost)
+{
+    <div class="board-status" role="status">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="status-text">
+            <strong>Board online</strong>
+            <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Board.Endpoint@(Values.CheckedAt is { } at ? $" · checked {at.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}" : "")</span>
+        </span>
+        <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">Check again</button>
+    </div>
+}
+
+@code {
+    /// <summary>The board the address is for; it must have a model.</summary>
+    [Parameter]
+    [EditorRequired]
+    public LiveBoard Board { get; set; } = null!;
+
+    /// <summary>What is typed, kept by the page (<see cref="LoadAsync"/>).</summary>
+    [Parameter]
+    [EditorRequired]
+    public Fields Values { get; set; } = null!;
+
+    /// <summary>Who saves it, for the event log; nothing is saved without.</summary>
+    [Parameter]
+    public string? UserEmail { get; set; }
+
+    /// <summary>While the page is busy, "Check again" waits.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>Told when a save or a check starts (true) or ends (false), so the page's buttons wait meanwhile.</summary>
+    [Parameter]
+    public EventCallback<bool> BusyChanged { get; set; }
+
+    /// <summary>The message to show, or null to clear it; the page shows it by its buttons.</summary>
+    [Parameter]
+    public EventCallback<string?> ErrorChanged { get; set; }
+
+    private ElementReference _heading;
+    private bool _checking;
+    private bool _notFound;
+    private bool _busy;
+    private int _watched;
+
+    private BoardModel Model => Board.Model!;
+
+    /// <summary>The board's address and login as saved, for the fields; the password is never read back.</summary>
+    public static async Task<Fields> LoadAsync(BoardAddressHandler address, LiveBoard board, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        ArgumentNullException.ThrowIfNull(board);
+        var endpoint = await address.GetAsync(board.BoardId, cancellationToken);
+        var login = await address.GetLoginAsync(board.BoardId, cancellationToken);
+        return new Fields
+        {
+            Host = endpoint.Host,
+            Port = board.Model is { } model && endpoint.Port == model.DefaultPort ? "" : endpoint.Port.ToString(CultureInfo.InvariantCulture),
+            Username = login.Username,
+            HasPassword = login.HasPassword,
+            NoLogin = login.Username.Length == 0 && !login.HasPassword,
+        };
+    }
+
+    /// <summary>Puts the focus on the step's heading, so a screen reader reads where it is.</summary>
+    public ValueTask FocusAsync()
+    {
+        return _heading.FocusAsync();
+    }
+
+    /// <summary>"Next": saves the address and login, then waits for the board. True once it answers.</summary>
+    public Task<bool> GoOnAsync()
+    {
+        return CheckAsync(goOn: true);
+    }
+
+    /// <summary>
+    /// "Go on without a connection": an address typed in is still saved, so the app keeps looking for the board there.
+    /// True when the page may go on.
+    /// </summary>
+    public async Task<bool> GoOnWithoutConnectionAsync()
+    {
+        if (_busy)
+        {
+            return false;
+        }
+
+        await SetBusyAsync(true);
+        await ErrorChanged.InvokeAsync(null);
+        try
+        {
+            return Values.Host.Trim().Length == 0 || await SaveAsync();
+        }
+        catch (Exception ex)
+        {
+            await FailAsync(ex, "Saving the relay board's address failed");
+            return false;
+        }
+        finally
+        {
+            await SetBusyAsync(false);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_watched != Board.BoardId)
+        {
+            Registry.StateChanged -= OnBoardChanged;
+            Registry.StateChanged += OnBoardChanged;
+            _watched = Board.BoardId;
+        }
+    }
+
+    public void Dispose()
+    {
+        Registry.StateChanged -= OnBoardChanged;
+    }
+
+    // Saves the address and login, then waits for the board. Going on only once it answers; "Go on without a
+    // connection" is there for a board that doesn't yet.
+    private async Task<bool> CheckAsync(bool goOn)
+    {
+        if (_busy || UserEmail is null)
+        {
+            return false;
+        }
+
+        await SetBusyAsync(true);
+        await ErrorChanged.InvokeAsync(null);
+        _notFound = false;
+        try
+        {
+            // Watching from before the save: the board may be back at its new address before the save returns.
+            using var contact = BoardContact.Watch(Board);
+            if (!await SaveAsync())
+            {
+                return false;
+            }
+
+            _checking = true;
+            StateHasChanged();
+            // "Check again" with nothing changed asks the board itself, so the check is a real one.
+            var found = !goOn && !Values.Moving && Board.State.IsConnected
+                ? await BoardContact.AskAsync(Board, BoardContact.Timeout, Time, CancellationToken.None)
+                : await contact.WaitAsync(Values.Moving, BoardContact.Timeout, Time, CancellationToken.None);
+            Values.CheckedAt = found ? Clock.Now : null;
+            _checking = false;
+            _notFound = !found;
+            return found && goOn;
+        }
+        catch (Exception ex)
+        {
+            await FailAsync(ex, "Checking the relay board failed");
+            return false;
+        }
+        finally
+        {
+            _checking = false;
+            await SetBusyAsync(false);
+        }
+    }
+
+    private async Task<bool> SaveAsync()
+    {
+        if (UserEmail is null)
+        {
+            return false;
+        }
+
+        var port = Model.DefaultPort;
+        if (Values.Port.Trim().Length > 0 && !int.TryParse(Values.Port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out port))
+        {
+            await ErrorChanged.InvokeAsync("The port is a number from 1 to 65535.");
+            return false;
+        }
+
+        var (endpoint, login) = (Board.Endpoint, Board.Login);
+        var error = await Address.SaveAsync(Board.BoardId, Values.Host, port, UserEmail, CancellationToken.None)
+            ?? (Model.HasLogin ? await Address.SaveLoginAsync(Board.BoardId, Values.Username, Values.NewPassword, Values.NoLogin, UserEmail, CancellationToken.None) : null);
+        if (error is not null)
+        {
+            await ErrorChanged.InvokeAsync(error);
+            return false;
+        }
+
+        Values.Moving = BoardContact.HasMoved(Board, endpoint, login);
+        Values.HasPassword = (await Address.GetLoginAsync(Board.BoardId, CancellationToken.None)).HasPassword;
+        Values.NewPassword = "";
+        return true;
+    }
+
+    private async Task SetBusyAsync(bool busy)
+    {
+        _busy = busy;
+        await BusyChanged.InvokeAsync(busy);
+    }
+
+    private async Task FailAsync(Exception ex, string what)
+    {
+        // An exception that leaves the handler would end the page's live connection.
+        Log.LogError(ex, "{What}", what);
+        await ErrorChanged.InvokeAsync("Something went wrong. Try again.");
+    }
+
+    // From the board's read loop.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == _watched)
+        {
+            _ = RefreshAsync(change.State);
+        }
+    }
+
+    private async Task RefreshAsync(BoardState state)
+    {
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                // The board answered after all: "No answer" would be wrong now.
+                if (state.IsConnected && !_checking)
+                {
+                    _notFound = false;
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+
+    /// <summary>What is typed on the step, kept by the page while it goes back and forth.</summary>
+    public sealed class Fields
+    {
+        public string Host { get; set; } = "";
+
+        /// <summary>Empty: the model's default port.</summary>
+        public string Port { get; set; } = "";
+
+        public bool NoLogin { get; set; }
+
+        public string Username { get; set; } = "";
+
+        /// <summary>A new password; empty keeps the saved one. A secret: never log it.</summary>
+        public string NewPassword { get; set; } = "";
+
+        /// <summary>Whether a password is saved, for "unchanged".</summary>
+        public bool HasPassword { get; set; }
+
+        /// <summary>Whether the last save changed the address or login, so a connection still open is to the old ones.</summary>
+        public bool Moving { get; set; }
+
+        /// <summary>When the last check found the board, for "checked 14:02:05".</summary>
+        public DateTime? CheckedAt { get; set; }
+    }
+}

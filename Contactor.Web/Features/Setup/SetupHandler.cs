@@ -90,9 +90,9 @@ public sealed class SetupHandler
     /// <summary>
     /// Saves the model of board and switches to it at once, while the app runs (<see cref="BoardChoice"/>): the guide
     /// goes straight on. Throws <see cref="InvalidOperationException"/> once the guide is done: the model is never
-    /// changed afterwards (replacing the board is issue #32).
+    /// changed afterwards (replacing the board is issue #32). Returns the board, the app's first, which runs it now.
     /// </summary>
-    public async Task ChooseBoardAsync(string type, CancellationToken cancellationToken)
+    public async Task<LiveBoard> ChooseBoardAsync(string type, CancellationToken cancellationToken)
     {
         var model = BoardCatalogue.Find(type)?.Model
             ?? throw new ArgumentException($"\"{type}\" isn't a board in the catalogue.", nameof(type));
@@ -101,18 +101,20 @@ public sealed class SetupHandler
             throw new InvalidOperationException("The setup guide is done; the board's model is no longer chosen there.");
         }
 
-        await _choice.ChooseAsync(model, cancellationToken);
+        return await _choice.ChooseAsync(model, cancellationToken);
     }
 
-    /// <summary>Every relay its board has, in order, with its name and group.</summary>
-    public async Task<IReadOnlyList<SetupRelay>> RelaysAsync(CancellationToken cancellationToken)
+    /// <summary>Every relay the board on this row has, by channel, with its name and group.</summary>
+    public async Task<IReadOnlyList<SetupRelay>> RelaysAsync(int boardId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var groups = await db.RelayGroupMembers.AsNoTracking()
+            .Where(m => m.Relay!.BoardId == boardId)
             .Select(m => new { m.RelayId, m.Group!.Name })
             .ToDictionaryAsync(m => m.RelayId, m => m.Name, cancellationToken);
         var relays = (await db.Relays.AsNoTracking()
-            .OrderBy(r => r.BoardId).ThenBy(r => r.Channel)
+            .Where(r => r.BoardId == boardId)
+            .OrderBy(r => r.Channel)
             .ToListAsync(cancellationToken))
             .Where(r => _registry.HasRelay(r.BoardId, r.Channel));
         return [.. relays.Select(r => new SetupRelay(r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id)))];

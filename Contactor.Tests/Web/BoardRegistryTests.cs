@@ -61,7 +61,7 @@ public sealed class BoardRegistryTests
     }
 
     // The new model is unknown until it answers, as at a new address, so the screens and the recorder start afresh;
-    // nothing more comes from the old one, to the board's listeners, the registry's or the one-board bridge's.
+    // nothing more comes from the old one, to the board's listeners or the registry's.
     [Fact]
     public async Task Should_ReportTheNewModelsState_AtTheReplacement_AndNothingMoreFromTheOldOne()
     {
@@ -73,11 +73,9 @@ public sealed class BoardRegistryTests
         var board = await registry.ReplaceAsync(old.Build(id, Vm201Model.Model), Cancel);
         var states = new List<BoardState>();
         var changes = new List<BoardStateChange>();
-        var bridged = new List<BoardState>();
         var traffic = new List<BoardTraceEntry>();
         board.StateChanged += (_, state) => states.Add(state);
         registry.StateChanged += (_, change) => changes.Add(change);
-        registry.Only.StateChanged += (_, state) => bridged.Add(state);
         board.Traced += (_, entry) => traffic.Add(entry);
 
         await registry.ReplaceAsync(next.Build(id, Vm204Model.Model), Cancel);
@@ -90,37 +88,11 @@ public sealed class BoardRegistryTests
         Assert.False(states[0].HasAnswered);
         Assert.True(states[1].IsOn(2));
         Assert.Equal(states.Select(s => new BoardStateChange(id, s)), changes);
-        Assert.Equal(states, bridged);
         Assert.Equal("new", Assert.Single(traffic).Text);
         Assert.Equal("new", Assert.Single(board.Trace.Items).Text);
         Assert.False(old.Fake.HasListeners);
         Assert.False(old.Traffic.HasListeners);
         Assert.True(old.Connection.Disposed);
-    }
-
-    // A listener to the one-board bridge from before the board's row was made (the setup guide) sees the board's state,
-    // unknown until it answers, once it gets its model.
-    [Fact]
-    public async Task Should_TellTheBridgesListeners_AboutABoardAddedSinceTheyListened()
-    {
-        await using var database = await DatabaseAsync();
-        var registry = Registry(database);
-        var bridged = new List<BoardState>();
-        var added = 0;
-        registry.Only.StateChanged += (_, state) => bridged.Add(state);
-        registry.BoardsChanged += (_, _) => added++;
-        Assert.Null(registry.Only.Board);
-        var id = await AddRowAsync(database);
-        var parts = new FakeBoardParts(connected: false);
-
-        var board = await registry.ReplaceAsync(parts.Build(id), Cancel);
-        parts.Fake.SetConnected(true);
-
-        Assert.Same(board, registry.Only.Board);
-        Assert.Equal(1, added);
-        Assert.Equal(2, bridged.Count);
-        Assert.False(bridged[0].HasAnswered);
-        Assert.True(bridged[1].IsConnected);
     }
 
     [Fact]
@@ -280,7 +252,7 @@ public sealed class BoardRegistryTests
         await second;
     }
 
-    // Disposing lets go of everything: the model's events, its connection, and the one-board bridge's listener.
+    // Disposing lets go of everything: the model's events and its connection.
     [Fact]
     public async Task Should_LetGoOfEverything_WhenDisposed()
     {
@@ -289,8 +261,6 @@ public sealed class BoardRegistryTests
         var registry = Registry(database);
         var parts = new FakeBoardParts();
         var board = await registry.ReplaceAsync(parts.Build(id), Cancel);
-        var bridged = 0;
-        registry.Only.StateChanged += (_, _) => bridged++;
 
         await registry.DisposeAsync();
         parts.Fake.SetRelay(1, on: true);
@@ -300,7 +270,6 @@ public sealed class BoardRegistryTests
         Assert.False(parts.Fake.HasListeners);
         Assert.False(parts.Traffic.HasListeners);
         Assert.True(parts.Connection.Disposed);
-        Assert.Equal(0, bridged);
         await Assert.ThrowsAsync<ObjectDisposedException>(() => board.ReplaceAsync(new FakeBoardParts().Build(id)));
     }
 
@@ -336,9 +305,6 @@ public sealed class BoardRegistryTests
         Assert.Equal(new BoardEndpoint("", 9760), three.Endpoint);
         Assert.True(three.DefaultLogin.IsNone);
         Assert.All(registry.All, b => Assert.Equal(30, b.Active!.Services.GetRequiredService<IOptions<Vm201Options>>().Value.KeepAliveSeconds));
-
-        // What still runs one board can't tell them apart: it refuses rather than guess.
-        Assert.Throws<InvalidOperationException>(() => registry.Only.Board);
     }
 
     // The setup guide's choice: a row made since start gets its live board, and choosing its model again changes nothing.
