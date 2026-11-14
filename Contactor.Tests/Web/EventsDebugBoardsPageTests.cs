@@ -196,7 +196,7 @@ public sealed partial class EventsDebugBoardsPageTests
         Assert.Matches("<span class=\"where\"[^>]*>Barn</span>\\s*Barn step", html);
         Assert.Matches($"<span class=\"where\"[^>]*>{Regex.Escape(FirstName(boards))}</span>\\s*Last step", html);
         Assert.Contains("1 routine step left out", html, StringComparison.Ordinal);
-        Assert.Contains("lines per board", html, StringComparison.Ordinal);
+        Assert.Contains("relay boards since the app started", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Board: ", html, StringComparison.Ordinal);
 
         var picked = await PickAsync(http, BoardFilterScreen.Debug, Id(boards.BarnId));
@@ -204,6 +204,83 @@ public sealed partial class EventsDebugBoardsPageTests
         Assert.DoesNotContain("Last step", picked, StringComparison.Ordinal);
         Assert.Contains("Showing Barn · ", picked, StringComparison.Ordinal);
         Assert.DoesNotContain("Showing", await PageAsync(http, "/events"), StringComparison.Ordinal);
+    }
+
+    // While filtered, the routine count covers the boards shown, and "Clear" clears only them.
+    [Fact]
+    public async Task Should_CountAndClear_OnlyTheBoardsShown()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        var first = registry.Find(1)!.Trace;
+        var barn = registry.Find(boards.BarnId)!.Trace;
+        first.Clear();
+        barn.Clear();
+        var at = DateTimeOffset.UtcNow;
+        first.Record(Step(at, "First step"));
+        first.Record(Step(at, "Routine", routine: true));
+        first.Record(Step(at, "Routine", routine: true));
+        barn.Record(Step(at, "Barn step"));
+        barn.Record(Step(at, "Routine", routine: true));
+        using var http = boards.App.CreateClient();
+
+        Assert.Contains("3 routine steps left out", await PageAsync(http, "/debug"), StringComparison.Ordinal);
+        var picked = await PickAsync(http, BoardFilterScreen.Debug, Id(boards.BarnId));
+        Assert.Contains("1 routine step left out", picked, StringComparison.Ordinal);
+
+        // The page as the cookie makes it, live: its "Clear" clears Barn only.
+        var onlyBarn = new BoardFilters(BoardFilter.All, BoardFilter.All, BoardFilter.Parse(Id(boards.BarnId)));
+        using var page = await PageRenderer.StartAsync<Microsoft.AspNetCore.Components.CascadingValue<BoardFilters>>(
+            boards.App.Services,
+            John,
+            "John",
+            new Dictionary<string, object?>
+            {
+                ["Value"] = onlyBarn,
+                ["IsFixed"] = true,
+                ["ChildContent"] = (Microsoft.AspNetCore.Components.RenderFragment)(builder =>
+                {
+                    builder.OpenComponent<Contactor.Web.Components.Debug>(0);
+                    builder.CloseComponent();
+                }),
+            });
+        Assert.DoesNotContain("First step", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.ClickAsync(PageRenderer.With("class", "clear"));
+
+        Assert.Empty(barn.Items);
+        Assert.Equal(0, barn.RoutineLeftOut);
+        Assert.Equal(["First step"], first.Items.Select(i => i.Text));
+        Assert.Equal(2, first.RoutineLeftOut);
+        Assert.Empty(page.Errors);
+    }
+
+    // However many boards, the newest 100 steps in all.
+    [Fact]
+    public async Task Should_ShowTheNewestHundredSteps_AcrossTheBoards()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        var first = registry.Find(1)!.Trace;
+        var barn = registry.Find(boards.BarnId)!.Trace;
+        first.Clear();
+        barn.Clear();
+        var at = DateTimeOffset.UtcNow;
+        for (var i = 0; i < 80; i++)
+        {
+            first.Record(Step(at.AddSeconds(2 * i), $"First {i:D2}."));
+            barn.Record(Step(at.AddSeconds((2 * i) + 1), $"Barn {i:D2}."));
+        }
+
+        using var http = boards.App.CreateClient();
+        var html = await PageAsync(http, "/debug");
+
+        Assert.Equal(BoardTrace.Capacity, Regex.Count(html, "<div class=\"row ?\""));
+        Assert.Contains("Barn 79.", html, StringComparison.Ordinal);
+        Assert.Contains("First 30.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Barn 29.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("First 29.", html, StringComparison.Ordinal);
+        Assert.True(html.IndexOf("Barn 79.", StringComparison.Ordinal) < html.IndexOf("First 79.", StringComparison.Ordinal), "Newest first.");
     }
 
     [Fact]

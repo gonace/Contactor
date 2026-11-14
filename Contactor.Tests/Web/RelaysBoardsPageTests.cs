@@ -303,6 +303,10 @@ public sealed partial class RelaysBoardsPageTests
     public async Task Should_ShowEachDetailPage_WithItsOwnBoardsState()
     {
         await using var boards = await TwoBoards.StartAsync();
+
+        // A state the group's interlock allows: its Fan (relay 1) on below its Heat (relay 2). Heat on alone would be
+        // turned off by the interlock within a second of the group being made, before the group's page is read.
+        boards.Barn.SetRelay(1, true);
         boards.Barn.SetRelayAndInput(2, 2, true);
         boards.Barn.SetRelay(3, true);
         using var http = boards.App.CreateClient();
@@ -323,6 +327,10 @@ public sealed partial class RelaysBoardsPageTests
         Assert.Contains(">TURN ON</button>", other, StringComparison.Ordinal);
         Assert.Contains("Closed", input, StringComparison.Ordinal);
         Assert.Contains("TURN OFF THE GROUP", group, StringComparison.Ordinal);
+
+        // Nothing the interlock had to undo.
+        await using var check = await boards.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await check.EventLog.AnyAsync(e => e.Action == EventActions.InterlockTrip, Cancel));
     }
 
     [Fact]

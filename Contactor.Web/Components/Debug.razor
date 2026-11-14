@@ -20,7 +20,7 @@
         {
             <p class="hint">
                 Everything sent to and from the relay boards since the app started, newest first. At most @BoardTrace.Capacity
-                lines per board; nothing is stored.
+                lines; nothing is stored.
             </p>
             @* Which boards' traffic shows: this browser's, in its own cookie (RelaysEndpoints). *@
             <div class="boards-bar">
@@ -118,14 +118,36 @@
         <BoardPicker Side="true" Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Counts="_counts" />
     };
 
-    // Every shown board's steps, merged by time, newest first; a board's own order breaks a tie.
+    // The newest steps of every shown board, merged by time, at most a trace's capacity in all, so the work and the page
+    // stay the same size however many boards there are. Each trace is newest first: one pass takes the newest head each
+    // time; at the same time, the board listed first.
     private void Read()
     {
         var shown = ShownBoards.ToList();
-        _items = [.. shown
-            .SelectMany(board => board.Trace.Items.Select(item => (Board: board, Item: item)))
-            .OrderByDescending(x => x.Item.AtUtc)
-            .ThenByDescending(x => x.Item.Id)];
+        var lists = shown.Select(board => (Board: board, Items: board.Trace.Items)).ToList();
+        var next = new int[lists.Count];
+        var items = new List<(LiveBoard Board, BoardTraceItem Item)>(BoardTrace.Capacity);
+        while (items.Count < BoardTrace.Capacity)
+        {
+            var newest = -1;
+            for (var i = 0; i < lists.Count; i++)
+            {
+                if (next[i] < lists[i].Items.Count
+                    && (newest < 0 || lists[i].Items[next[i]].AtUtc > lists[newest].Items[next[newest]].AtUtc))
+                {
+                    newest = i;
+                }
+            }
+
+            if (newest < 0)
+            {
+                break;
+            }
+
+            items.Add((lists[newest].Board, lists[newest].Items[next[newest]++]));
+        }
+
+        _items = items;
         _routineLeftOut = shown.Sum(b => b.Trace.RoutineLeftOut);
     }
 
