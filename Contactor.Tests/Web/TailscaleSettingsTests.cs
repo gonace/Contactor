@@ -128,6 +128,8 @@ public sealed class TailscaleSettingsTests
     [InlineData("127.0.0.2:8081", true)]
     [InlineData("127.1.2.3:9000", true)]
     [InlineData("127.0.0.1:8081", false)]
+    [InlineData("127.0.0.0:8081", false)]
+    [InlineData("127.255.255.255:8081", false)]
     [InlineData("127.0.0.2", false)]
     [InlineData("127.0.0.2:0", false)]
     [InlineData("0.0.0.0:8081", false)]

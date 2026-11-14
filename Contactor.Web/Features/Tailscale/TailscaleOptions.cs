@@ -7,6 +7,10 @@ public sealed class TailscaleOptions
 {
     public const string SectionName = "Tailscale";
 
+    // The loopback network's own address and its broadcast address, which Kestrel can't listen on.
+    private static readonly IPAddress LoopbackNetwork = IPAddress.Parse("127.0.0.0");
+    private static readonly IPAddress LoopbackBroadcast = IPAddress.Parse("127.255.255.255");
+
     /// <summary>Where tailscaled, Tailscale's own service, is.</summary>
     public string DaemonPath { get; set; } = "/usr/local/bin/tailscaled";
 
@@ -29,7 +33,8 @@ public sealed class TailscaleOptions
 
     /// <summary>
     /// <see cref="ServeAddress"/> as an address and port, or null when it isn't one only Serve can reach: an IPv4
-    /// loopback address other than 127.0.0.1, with a port.
+    /// loopback address other than 127.0.0.1, with a port. Not 127.0.0.0 or 127.255.255.255 either, which Kestrel can't
+    /// listen on.
     /// </summary>
     public IPEndPoint? ServeEndPoint => ParseServeAddress(ServeAddress);
 
@@ -53,6 +58,8 @@ public sealed class TailscaleOptions
         && endPoint.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
         && IPAddress.IsLoopback(endPoint.Address)
         && !endPoint.Address.Equals(IPAddress.Loopback)
+        && !endPoint.Address.Equals(LoopbackNetwork)
+        && !endPoint.Address.Equals(LoopbackBroadcast)
             ? endPoint
             : null;
 }
