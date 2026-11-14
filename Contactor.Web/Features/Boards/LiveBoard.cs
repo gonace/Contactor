@@ -26,7 +26,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
     private const string NotChosen = "No relay board has been chosen yet.";
 
-    /// <summary>What a command to turn a relay on says while the board is being removed (<see cref="Close"/>).</summary>
+    /// <summary>What a command to turn a relay on says while the board is being removed (<see cref="CloseAsync"/>).</summary>
     public const string BeingRemoved = "The relay board is being removed.";
 
     private static readonly BoardEndpoint NoEndpoint = new("", 0);
@@ -43,7 +43,13 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     private Slot? _current;
     private string _name;
     private bool _disposed;
-    private volatile bool _closed;
+
+    // Closed to new ONs while the board is being removed, and the ONs under way: both under _onLock, so Close can wait
+    // for every ON that got past the check before it.
+    private readonly Lock _onLock = new();
+    private bool _closed;
+    private int _onsUnderWay;
+    private TaskCompletionSource? _onsDone;
 
     // What watches this board (its safety services' parts), ended first when it is disposed.
     private readonly List<IAsyncDisposable> _watches = [];
@@ -112,38 +118,114 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
     public BoardLogin Login => Active?.Connection.Login ?? BoardLogin.None;
 
-    /// <summary>
-    /// Whether the board is closed to every new ON while it is being removed (<see cref="Close"/>): a person's tap, a
-    /// schedule, an input's action and a group's step all go through here.
-    /// </summary>
-    public bool IsClosed => _closed;
+    /// <summary>Raised when the board is opened again (<see cref="Reopen"/>): what it refused meanwhile may go now.</summary>
+    public event EventHandler? Reopened;
 
-    /// <summary>Throws <see cref="BoardNotConnectedException"/> while the board is closed (<see cref="Close"/>).</summary>
-    public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Whether the board is closed to every new ON while it is being removed (<see cref="CloseAsync"/>): a person's tap,
+    /// a schedule, an input's action and a group's start all go through here.
+    /// </summary>
+    public bool IsClosed
     {
-        return Open().Board.TurnOnAsync(relays, cancellationToken);
+        get
+        {
+            lock (_onLock)
+            {
+                return _closed;
+            }
+        }
     }
 
-    /// <summary>Throws <see cref="BoardNotConnectedException"/> while the board is closed (<see cref="Close"/>).</summary>
+    /// <summary>Throws <see cref="BoardClosedException"/> while the board is closed (<see cref="CloseAsync"/>).</summary>
+    public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    {
+        return OnAsync(closedToo: false, () => Chosen().Board.TurnOnAsync(relays, cancellationToken));
+    }
+
+    /// <summary>
+    /// An ON a group's stop needs for its run-on (after a trip, the relay above the gap), which goes even while the
+    /// board is closed: an ON above a gap never breaks the interlock, and the run-on is what keeps the board from being
+    /// removed with a heater still hot. Only the group sequencer sends it.
+    /// </summary>
+    internal Task<ChannelMask> TurnOnForRunOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
+    {
+        return OnAsync(closedToo: true, () => Chosen().Board.TurnOnAsync(relays, cancellationToken));
+    }
+
+    /// <summary>Throws <see cref="BoardClosedException"/> while the board is closed (<see cref="CloseAsync"/>).</summary>
     public Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
     {
-        return Open().Board.PulseAsync(relays, length, cancellationToken);
+        return OnAsync(closedToo: false, () => Chosen().Board.PulseAsync(relays, length, cancellationToken));
     }
 
     /// <summary>
     /// Closes the board to every new ON, from now until it is disposed or opened again (<see cref="Reopen"/>), while it
-    /// is being removed: its relays are turned off and nothing may turn one on again. OFFs still go through. A command
-    /// already on its way when it closes isn't stopped; what it did shows in the board's state.
+    /// is being removed: its relays are turned off and nothing may turn one on again. OFFs still go through, and a
+    /// group's run-on (<see cref="TurnOnForRunOnAsync"/>). Completes once every ON already under way has finished, so
+    /// none lands after the board was seen all off.
     /// </summary>
-    public void Close()
+    public Task CloseAsync()
     {
-        _closed = true;
+        lock (_onLock)
+        {
+            _closed = true;
+            if (_onsUnderWay == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            _onsDone ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            return _onsDone.Task;
+        }
     }
 
     /// <summary>Opens the board again after a removal that didn't go ahead: it works as usual.</summary>
     public void Reopen()
     {
-        _closed = false;
+        lock (_onLock)
+        {
+            if (!_closed)
+            {
+                return;
+            }
+
+            _closed = false;
+        }
+
+        Reopened?.Invoke(this, EventArgs.Empty);
+    }
+
+    // Counted while under way; refused, with nothing sent, while closed.
+    private async Task<ChannelMask> OnAsync(bool closedToo, Func<Task<ChannelMask>> send)
+    {
+        lock (_onLock)
+        {
+            if (_closed && !closedToo)
+            {
+                throw new BoardClosedException();
+            }
+
+            _onsUnderWay++;
+        }
+
+        try
+        {
+            return await send();
+        }
+        finally
+        {
+            TaskCompletionSource? done = null;
+            lock (_onLock)
+            {
+                if (--_onsUnderWay == 0)
+                {
+                    done = _onsDone;
+                    _onsDone = null;
+                }
+            }
+
+            done?.TrySetResult();
+        }
     }
 
     public Task<ChannelMask> TurnOffAsync(ChannelMask relays, CancellationToken cancellationToken = default)
@@ -403,10 +485,6 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         return Active ?? throw new BoardNotConnectedException(NotChosen);
     }
 
-    private ActiveBoard Open()
-    {
-        return _closed ? throw new BoardNotConnectedException(BeingRemoved) : Chosen();
-    }
 
     private async Task RunOneAsync(Slot slot, CancellationToken cancellationToken)
     {

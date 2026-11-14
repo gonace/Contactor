@@ -46,6 +46,10 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
     // again, as it would for a relay. Only touched under the tick lock.
     private readonly Dictionary<int, bool> _retryGroups = [];
 
+    // Relays whose schedule's ON the board refused while it was closed for its removal (BoardClosedException): the next
+    // tick tries it again while its window runs, as for a group. Only touched under the tick lock.
+    private readonly HashSet<int> _retryRelays = [];
+
     internal BoardScheduler(
         LiveBoard board,
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -203,9 +207,19 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     }
 
                     var startedNow = running.OnUtc > from && running.OnUtc <= now;
-                    if (!isOn && (startedNow || reconcile))
+                    var retry = _retryRelays.Remove(relayId);
+                    if (!isOn && (startedNow || reconcile || retry))
                     {
-                        if (!await SendAsync(channel, on: true, cancellationToken))
+                        var sent = await SendAsync(channel, on: true, cancellationToken);
+                        if (sent == Sent.Closed)
+                        {
+                            // Refused while the board is being removed: this relay alone is tried again at the next
+                            // tick, should the board open again; the other relays and the groups carry on.
+                            _retryRelays.Add(relayId);
+                            continue;
+                        }
+
+                        if (sent == Sent.Lost)
                         {
                             interrupted = true;
                             break;
@@ -220,6 +234,7 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     continue;
                 }
 
+                _retryRelays.Remove(relayId);
                 if (!isOn)
                 {
                     continue;
@@ -242,14 +257,14 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     continue;
                 }
 
-                var sent = _clock.UtcNow;
-                if (!await SendAsync(channel, on: false, cancellationToken))
+                var sentUtc = _clock.UtcNow;
+                if (await SendAsync(channel, on: false, cancellationToken) != Sent.Done)
                 {
                     interrupted = true;
                     break;
                 }
 
-                await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
+                await RelayRuns.EndAsync(db, relayId, sentUtc, cancellationToken);
 
                 Log(db, progress.BoardId, now, relayId, EventActions.Off, ended?.ScheduleId);
                 changed = true;
@@ -339,6 +354,13 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     await _groups.StopGroupAsync(group.Id, Actor, cancellationToken);
                 }
             }
+            catch (BoardClosedException)
+            {
+                // Refused while the board is being removed: this group alone is tried again at the next tick, should the
+                // board open again. Not a lost board: nothing is reconciled then.
+                _retryGroups[group.Id] = on;
+                continue;
+            }
             catch (BoardNotConnectedException)
             {
                 // Lost the board mid-way: the minute is handled again once it is back.
@@ -382,7 +404,15 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
         _wasConnected = state.IsConnected;
     }
 
-    private async Task<bool> SendAsync(int channel, bool on, CancellationToken cancellationToken)
+    // How a command went: done, refused while the board is closed for its removal, or the board lost.
+    private enum Sent
+    {
+        Done,
+        Closed,
+        Lost,
+    }
+
+    private async Task<Sent> SendAsync(int channel, bool on, CancellationToken cancellationToken)
     {
         var mask = _board.Capabilities.Relay(channel);
         _expected.Expect(mask, on);
@@ -397,7 +427,13 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                 await _board.TurnOffAsync(mask, cancellationToken);
             }
 
-            return true;
+            return Sent.Done;
+        }
+        catch (BoardClosedException)
+        {
+            // Nothing was sent, and the board still answers: no reconnect.
+            _expected.Forget(mask, on);
+            return Sent.Closed;
         }
         catch (BoardNotConnectedException)
         {
@@ -405,7 +441,7 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
             // board did shows as an external change.
             _expected.Forget(mask, on);
             Interlocked.Increment(ref _connectGeneration);
-            return false;
+            return Sent.Lost;
         }
     }
 

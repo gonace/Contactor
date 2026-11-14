@@ -106,6 +106,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
     public Func<Task>? AfterSwitch { get; set; }
 
     /// <summary>
+    /// Runs before an ON reaches the board, e.g. to hold it on its way (a slow request) while something else happens.
+    /// </summary>
+    public Func<Task>? BeforeOn { get; set; }
+
+    /// <summary>
     /// When set, OFF commands are accepted but change nothing, like a relay that won't drop. They return the relays as
     /// any command does: without <see cref="Refuse"/> and <see cref="Unconfirmed"/>.
     /// </summary>
@@ -271,6 +276,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     private async Task<ChannelMask> SwitchAsync(ChannelMask relays, bool on)
     {
+        if (on && BeforeOn is { } before)
+        {
+            await before();
+        }
+
         EnsureConnected();
         if (!Capabilities.AllRelays.ContainsAll(relays))
         {

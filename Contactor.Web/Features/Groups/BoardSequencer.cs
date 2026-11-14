@@ -309,6 +309,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
             var runtimes = await db.GroupRuntimes.ToDictionaryAsync(r => r.GroupId, cancellationToken);
             var all = new GroupCommands();
+
+            // The ONs of groups that are stopping: a run-on's relay (after a trip, the one above the gap). They go even
+            // while the board is closed for its removal.
+            var runOn = ChannelMask.None;
             List<(int GroupId, GroupEvent Event)> events = [];
             HashSet<int> shutOff = [];
             foreach (var group in groups)
@@ -362,6 +366,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     if (runtime.PendingOn && runtime.Phase == GroupPhases.Stopping && members.FirstOrDefault(m => m.Position == pending) is { } lost)
                     {
                         all.On |= ChannelMask.Of(lost.Channel);
+                        runOn |= ChannelMask.Of(lost.Channel);
                     }
                 }
 
@@ -381,6 +386,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 all.Off |= commands.Off;
                 all.On |= commands.On;
+                if (runtime.Phase == GroupPhases.Stopping)
+                {
+                    runOn |= commands.On;
+                }
                 events.AddRange(commands.Events.Select(e => (group.Id, e)));
             }
 
@@ -413,7 +422,11 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 _expected.Expect(all.On, on: true);
                 try
                 {
-                    var taken = await _board.TurnOnAsync(all.On, cancellationToken);
+                    // While the board is closed, only a stop's run-on goes; anything else is refused as a whole, as
+                    // before: nothing of this step's planning is saved, and the next step plans again.
+                    var taken = runOn.ContainsAll(all.On)
+                        ? await _board.TurnOnForRunOnAsync(all.On, cancellationToken)
+                        : await _board.TurnOnAsync(all.On, cancellationToken);
                     _expected.Forget(all.On.Except(taken).Except(_board.State.Relays), on: true);
                 }
                 catch (Exception ex)

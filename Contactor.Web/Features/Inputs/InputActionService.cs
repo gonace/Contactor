@@ -10,7 +10,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Inputs;
 
 /// <summary>An input's change as the app saw it happen, for <see cref="InputActionService"/>.</summary>
-public sealed record InputChanged(int InputId, bool Closed);
+/// <param name="InputId">The input's row.</param>
+/// <param name="Closed">Whether it closed (or opened).</param>
+/// <param name="Again">
+/// Done again once its board opened again after a removal that didn't go ahead, because the board refused an ON of
+/// it meanwhile: only while the input is still in that state.
+/// </param>
+public sealed record InputChanged(int InputId, bool Closed, bool Again = false);
 
 /// <summary>
 /// The inputs' changes the app saw as they happened, handed over by <see cref="Events.BoardEventRecorder"/> once they
@@ -167,6 +173,21 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
             return;
         }
 
+        var part = _boards.Find(board.BoardId);
+        if (change.Again)
+        {
+            // Only while the input is still as it was: an input's moment has passed once it changed.
+            if (channels.InputChannel(change.InputId) is not { } inputChannel || board.State.Inputs.Contains(inputChannel) != change.Closed)
+            {
+                return;
+            }
+        }
+        else
+        {
+            // A newer change of the input replaces one refused earlier.
+            part?.Forget(change.InputId);
+        }
+
         var actor = EventActors.ForInput(change.InputId);
         foreach (var action in actions)
         {
@@ -178,6 +199,12 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
             try
             {
                 await RunAsync(board, action, on, actor, members, runtimes, channels, cancellationToken);
+            }
+            catch (BoardClosedException)
+            {
+                // Refused while its board is being removed: done again if the board opens again (the removal didn't go
+                // ahead) and the input is still as it was. The input's other actions (an OFF goes through) carry on.
+                part?.Refused(change with { Again = true });
             }
             catch (BoardNotConnectedException)
             {
@@ -265,10 +292,48 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
         private readonly CancellationTokenSource _ended = new();
         private int _disposed;
 
+        // The latest change of each input whose ON the board refused while it was closed for its removal. Under its own
+        // lock: the board's Reopened comes from the removal.
+        private readonly Dictionary<int, InputChanged> _refused = [];
+        private readonly Lock _refusedLock = new();
+
         public BoardInputActions(InputActionService service, LiveBoard board)
         {
             _service = service;
             Board = board;
+            Board.Reopened += OnReopened;
+        }
+
+        public void Refused(InputChanged change)
+        {
+            lock (_refusedLock)
+            {
+                _refused[change.InputId] = change;
+            }
+        }
+
+        public void Forget(int inputId)
+        {
+            lock (_refusedLock)
+            {
+                _refused.Remove(inputId);
+            }
+        }
+
+        // The board opened again: what it refused meanwhile goes now, after what is already queued.
+        private void OnReopened(object? sender, EventArgs e)
+        {
+            List<InputChanged> again;
+            lock (_refusedLock)
+            {
+                again = [.. _refused.Values];
+                _refused.Clear();
+            }
+
+            foreach (var change in again)
+            {
+                _changes.Writer.TryWrite(change);
+            }
         }
 
         public LiveBoard Board { get; }
@@ -317,6 +382,7 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
                 return;
             }
 
+            Board.Reopened -= OnReopened;
             _service._boards.Remove(this);
             _changes.Writer.TryComplete();
             await _gate.WaitAsync(CancellationToken.None);

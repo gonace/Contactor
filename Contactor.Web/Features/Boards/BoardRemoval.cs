@@ -19,7 +19,7 @@ public sealed record BoardRemovalPreview(int BoardId, string Name, int Relays, i
 
 /// <summary>
 /// Takes a board out of the app, on its page in Settings, one removal at a time. From the person's confirm the board is
-/// closed to every new ON (<see cref="LiveBoard.Close"/>): no tap, schedule, input action or group step can turn a relay
+/// closed to every new ON (<see cref="LiveBoard.CloseAsync"/>): no tap, schedule, input action or group step can turn a relay
 /// on. A board that answers then has its relays turned off: "All off" for that board
 /// (<see cref="RelayControl.TurnAllOffAsync"/>), its groups stopping in their order with their run-on times. Once the
 /// board shows every relay off, within <see cref="OffWait"/>, its live board is stopped and let go
@@ -129,10 +129,15 @@ public sealed partial class BoardRemoval : IDisposable
             }
 
             var live = _registry.Find(boardId);
-            live?.Close();
             var removed = false;
             try
             {
+                // Closed to every new ON, and every ON already under way has landed: none comes after the last look.
+                if (live is not null)
+                {
+                    await live.CloseAsync();
+                }
+
                 if (live is not null && live.State.IsConnected)
                 {
                     var (error, lost) = await TurnOffAsync(live, name, userEmail, cancellationToken);
@@ -202,8 +207,9 @@ public sealed partial class BoardRemoval : IDisposable
     }
 
     // "All off" for the board, its groups stopping in their order with their run-on times, until the board shows every
-    // relay off. The board is closed meanwhile, so nothing turns one on again; a relay that is on again all the same
-    // (a command already on its way) gets "All off" once more. Returns why not, and whether that was a lost contact.
+    // relay off and no group is stopping. The board is closed meanwhile, so nothing but a stop's run-on turns one on
+    // again; a relay that is on again all the same gets "All off" once more. A group still running on when the wait ends,
+    // or whose run-on ends after it, stops the removal. Returns why not, and whether that was a lost contact.
     private async Task<(string? Error, bool Lost)> TurnOffAsync(LiveBoard live, string name, string userEmail, CancellationToken cancellationToken)
     {
         var boardId = live.BoardId;
@@ -214,24 +220,29 @@ public sealed partial class BoardRemoval : IDisposable
             var deadline = _clock.UtcNow + OffWait;
             while (true)
             {
-                var state = live.State;
+                // Under the board's group lock: no group step is half done (a trip's OFF sent, its run-on's ON not yet).
+                var (state, stopping) = await _groups.ExclusiveAsync(
+                    boardId,
+                    async () => (live.State, await StoppingAsync(live, cancellationToken)),
+                    cancellationToken);
+                var now = _clock.UtcNow;
                 if (!state.IsConnected)
                 {
                     return (LostText(name), true);
                 }
 
-                if ((state.Relays & all).IsEmpty)
+                var runOn = stopping.OrderByDescending(g => g.Off).FirstOrDefault();
+                if (runOn is not null && runOn.Off > now && (runOn.Off > deadline || now >= deadline))
+                {
+                    return ($"{runOn.Name} runs on until {_clock.ToLocal(runOn.Off).ToString("HH:mm", CultureInfo.InvariantCulture)}. Remove {name} when it's done.", false);
+                }
+
+                if (stopping.Count == 0 && (state.Relays & all).IsEmpty)
                 {
                     return (null, false);
                 }
 
-                // A run-on that ends after the wait: no need to wait for it.
-                if (await RunningOnAsync(boardId, deadline, cancellationToken) is { } runOn)
-                {
-                    return ($"{runOn.Name} runs on until {_clock.ToLocal(runOn.Until).ToString("HH:mm", CultureInfo.InvariantCulture)}. Remove {name} when it's done.", false);
-                }
-
-                if (_clock.UtcNow >= deadline)
+                if (now >= deadline)
                 {
                     return ($"Some of {name}'s relays didn't turn off. Nothing was removed. Try again.", false);
                 }
@@ -250,16 +261,57 @@ public sealed partial class BoardRemoval : IDisposable
         }
     }
 
-    // The board's group still running on longest, when that ends after the wait.
-    private async Task<(string Name, DateTime Until)?> RunningOnAsync(int boardId, DateTime deadline, CancellationToken cancellationToken)
+    // The board's groups that are stopping, each with when its last relay goes off: the run-on under way (or about to
+    // start, a step the board hasn't confirmed yet) and every run-on above it, each counted from the one below.
+    private async Task<List<Stopping>> StoppingAsync(LiveBoard live, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var running = await db.GroupRuntimes
-            .Where(r => r.Phase == GroupPhases.Stopping && r.NextStepAtUtc != null && r.NextStepAtUtc > deadline)
-            .Join(db.RelayGroups.Where(g => g.BoardId == boardId), r => r.GroupId, g => g.Id, (r, g) => new { g.Name, Until = r.NextStepAtUtc!.Value })
+        var groups = await db.RelayGroups.AsNoTracking()
+            .Where(g => g.BoardId == live.BoardId)
+            .Include(g => g.Members).ThenInclude(m => m.Relay)
             .ToListAsync(cancellationToken);
-        return running.OrderByDescending(r => r.Until).Select(r => ((string, DateTime)?)(r.Name, r.Until)).FirstOrDefault();
+        var ids = groups.Select(g => g.Id).ToList();
+        var runtimes = await db.GroupRuntimes.AsNoTracking()
+            .Where(r => ids.Contains(r.GroupId) && r.Phase == GroupPhases.Stopping)
+            .ToDictionaryAsync(r => r.GroupId, cancellationToken);
+        var now = _clock.UtcNow;
+        var state = live.State;
+        List<Stopping> stopping = [];
+        foreach (var group in groups)
+        {
+            if (!runtimes.TryGetValue(group.Id, out var runtime))
+            {
+                continue;
+            }
+
+            var members = group.Members.OrderBy(m => m.Position).ToList();
+
+            // The lowest relay that is, or is about to be, on: it runs on next, then each one above it.
+            var level = 0;
+            while (level < members.Count && state.IsOn(members[level].Relay!.Channel))
+            {
+                level++;
+            }
+
+            var low = Math.Max(level, runtime.PendingOn ? runtime.PendingPosition ?? 0 : 0);
+            low = Math.Min(low, members.Count);
+            var above = members.Take(Math.Max(low - 1, 0)).Sum(m => m.RunOnSec);
+            var off = runtime.NextStepAtUtc is { } next
+                ? Max(next, now).AddSeconds(above)
+                : now.AddSeconds(above + (low > 0 ? members[low - 1].RunOnSec : 0));
+            stopping.Add(new Stopping(group.Name, off));
+        }
+
+        return stopping;
     }
+
+    private static DateTime Max(DateTime a, DateTime b)
+    {
+        return a > b ? a : b;
+    }
+
+    // A group that is stopping, and when its last relay goes off.
+    private sealed record Stopping(string Name, DateTime Off);
 
     // Everything about the board, in one transaction, children before what they point to: the foreign keys from an
     // input action, a group member and a relay's runtime and schedules to a relay are Restrict, so nothing is left to a

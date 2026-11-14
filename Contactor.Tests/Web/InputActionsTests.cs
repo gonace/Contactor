@@ -305,6 +305,43 @@ public sealed class InputActionsTests
         }
     }
 
+    // An input's ON refused while its board is closed for its removal is done once the board opens again (the removal
+    // didn't go ahead), if the input is still as it was; its OFFs go through at once.
+    [Fact]
+    public async Task Should_DoARefusedOn_OnceTheBoardOpensAgain_IfTheInputIsStillSo()
+    {
+        await using var rig = await RigAsync();
+        await rig.Board.TurnOnAsync(ChannelMask.Of(2), Cancel);
+        await rig.SaveAsync(new InputActionRow(Relay(1), WhenClosed: true, WhenOpened: false), new InputActionRow(Relay(2), false, true));
+        var service = rig.Database.Services.GetServices<IHostedService>().OfType<InputActionService>().Single();
+        await service.StartAsync(Cancel);
+        try
+        {
+            var live = rig.Database.Services.GetRequiredService<BoardRegistry>().All[0];
+            await live.CloseAsync();
+            rig.Board.SetInput(1, on: true);
+            await rig.RunAsync(closed: true);
+            Assert.False(rig.Board.State.Relays.Contains(1));
+            Assert.False(rig.Board.State.Relays.Contains(2));
+
+            live.Reopen();
+            await BoardTestRig.WaitUntilAsync(() => rig.Board.State.Relays.Contains(1));
+
+            // Refused again, and the input opens meanwhile: its moment has passed.
+            await rig.Board.TurnOffAsync(ChannelMask.Of(1), Cancel);
+            await live.CloseAsync();
+            await rig.RunAsync(closed: true);
+            rig.Board.SetInput(1, on: false);
+            live.Reopen();
+            await Task.Delay(300, Cancel);
+            Assert.False(rig.Board.State.Relays.Contains(1));
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Fact]
     public void Should_NameTheInput_InEvents()
     {

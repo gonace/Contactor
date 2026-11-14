@@ -142,7 +142,7 @@ public sealed class BoardRemovalTests
         Assert.False(boards.Barn.HasListeners);
         Assert.Null(sequencer.For(boards.BarnId));
         Assert.Equal(0, barn.Capabilities.RelayCount);
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => barn.TurnOnAsync(ChannelMask.Of(1), Cancel));
+        await Assert.ThrowsAnyAsync<BoardNotConnectedException>(() => barn.TurnOnAsync(ChannelMask.Of(1), Cancel));
     }
 
     // From the confirm on, nothing turns one of its relays on: a tap, an input's action or a group's start is refused,
@@ -173,7 +173,7 @@ public sealed class BoardRemovalTests
                 () => sequencer.StartGroupAsync(groupId, John, Cancel),
             })
             {
-                refused.Add(await Assert.ThrowsAsync<BoardNotConnectedException>(on));
+                refused.Add(await Assert.ThrowsAsync<BoardClosedException>(on));
             }
         };
 
@@ -217,6 +217,93 @@ public sealed class BoardRemovalTests
         Assert.False(barn.IsClosed);
         await boards.App.Services.GetRequiredService<RelayControl>().TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 1), John, Cancel);
         Assert.True(boards.Barn.State.IsOn(1));
+    }
+
+    // A trip while the board is closed: the stop's run-on (the fan) still comes on, so the board isn't removed with the
+    // heater hot, and the removal is called off with the run-on's end.
+    [Fact]
+    public async Task Should_LetATripsRunOnThrough_AndRemoveNothing_WhileTheBoardIsClosed()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var groupId = await SeedAsync(boards, boards.BarnId);
+        await boards.App.Services.GetRequiredService<GroupSequencer>().StartGroupAsync(groupId, John, Cancel);
+        await Wait.UntilAsync(() => boards.Barn.State.IsOn(3) && boards.Barn.State.IsOn(4));
+        var barn = boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId)!;
+        await barn.CloseAsync();
+
+        // The fan goes off at the board: the heat goes off, and the fan comes on again to run on.
+        boards.Barn.SetRelay(3, on: false);
+        await Wait.UntilAsync(() => boards.Barn.State.IsOn(3) && !boards.Barn.State.IsOn(4));
+
+        var error = await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
+
+        Assert.Matches("^Heater runs on until \\d\\d:\\d\\d\\. Remove Barn when it's done\\.$", error);
+        Assert.True(boards.Barn.State.IsOn(3));
+        Assert.False(barn.IsClosed);
+        Assert.NotNull(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId));
+    }
+
+    // With three relays, the message says when the whole group is off: the run-on under way and every one above it.
+    [Fact]
+    public async Task Should_SayWhenTheWholeGroupIsOff()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        int groupId;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var relays = await db.Relays.Where(r => r.BoardId == boards.BarnId).ToDictionaryAsync(r => r.Channel, r => r.Id, Cancel);
+            var group = new RelayGroup { BoardId = boards.BarnId, Name = "Booth", SortOrder = 1 };
+            group.Members.Add(new RelayGroupMember { RelayId = relays[1], Position = 1, RoleName = "Fan", StartDelaySec = 1, RunOnSec = 600 });
+            group.Members.Add(new RelayGroupMember { RelayId = relays[2], Position = 2, RoleName = "Pump", StartDelaySec = 1, RunOnSec = 300 });
+            group.Members.Add(new RelayGroupMember { RelayId = relays[3], Position = 3, RoleName = "Heat", StartDelaySec = 1 });
+            db.RelayGroups.Add(group);
+            await db.SaveChangesAsync(Cancel);
+            groupId = group.Id;
+        }
+
+        await boards.App.Services.GetRequiredService<GroupSequencer>().StartGroupAsync(groupId, John, Cancel);
+        await Wait.UntilAsync(() => boards.Barn.State.IsOn(1) && boards.Barn.State.IsOn(2) && boards.Barn.State.IsOn(3));
+
+        var error = await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
+
+        DateTime pumpOff;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            pumpOff = (await db.GroupRuntimes.SingleAsync(r => r.GroupId == groupId, Cancel)).NextStepAtUtc!.Value;
+        }
+
+        // The pump runs on 5 minutes, then the fan 10 more.
+        // Counted from the pump's confirmed OFF, or a moment before it was confirmed: the same minute but at its edge.
+        var clock = boards.App.Services.GetRequiredService<LocalClock>();
+        string[] untils = [.. new[] { 0, -2 }.Select(s => clock.ToLocal(pumpOff.AddSeconds(600 + s)).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture))];
+        Assert.Contains(error, untils.Select(u => $"Booth runs on until {u}. Remove Barn when it's done."));
+    }
+
+    // An ON already on its way when the board closes lands before the removal looks at the board, and is turned off.
+    [Fact]
+    public async Task Should_WaitForAnOnUnderWay_BeforeLookingAtTheBoard()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        boards.Barn.BeforeOn = async () =>
+        {
+            held.TrySetResult();
+            await hold.Task;
+        };
+        var on = boards.App.Services.GetRequiredService<RelayControl>().TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 1), John, Cancel);
+        await held.Task;
+
+        var removing = boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
+        await Task.Delay(300, Cancel);
+        Assert.False(removing.IsCompleted);
+        Assert.True(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId)!.IsClosed);
+
+        hold.SetResult();
+        await on;
+        Assert.Null(await removing);
+        Assert.Equal(ChannelMask.None, boards.Barn.State.Relays);
+        Assert.Null(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId));
     }
 
     // Without contact nothing can be sent: removing is still allowed when the person was told so, and nothing is sent.
