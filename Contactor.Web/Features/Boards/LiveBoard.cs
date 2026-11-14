@@ -361,7 +361,8 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     /// <summary>
     /// Makes <paramref name="board"/> this board's model, which the live board owns from now on. The model before it
     /// stops: at once if it isn't running, otherwise its run ends and disposes it. Throws for a model built for another
-    /// board's row, and once disposed (and disposes <paramref name="board"/> then).
+    /// board's row, and the caller still owns <paramref name="board"/> then. Throws once disposed too, and disposes
+    /// <paramref name="board"/> then.
     /// </summary>
     public async Task ReplaceAsync(ActiveBoard board)
     {
