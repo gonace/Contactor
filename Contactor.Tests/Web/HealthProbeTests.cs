@@ -20,7 +20,7 @@ public sealed class HealthProbeTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var server = AnswerOnceAsync(listener, statusLine);
 
-        var result = await Task.Run(() => HealthProbe.Run($"http://127.0.0.1:{port}/healthz"), Cancel);
+        var result = await Task.Run(() => HealthProbe.Run($"http://127.0.0.1:{port}/healthz", TextWriter.Null), Cancel);
 
         await server;
         Assert.Equal(exitCode, result);
@@ -29,7 +29,10 @@ public sealed class HealthProbeTests
     [Fact]
     public void Should_Fail_WhenNothingListens()
     {
-        Assert.Equal(1, HealthProbe.Run("http://127.0.0.1:1/healthz"));
+        using var error = new StringWriter();
+
+        Assert.Equal(1, HealthProbe.Run("http://127.0.0.1:1/healthz", error));
+        Assert.StartsWith("healthcheck: ", error.ToString(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -38,7 +41,10 @@ public sealed class HealthProbeTests
     [InlineData("http://example.com/healthz")]
     public void Should_OnlyAskThisMachineOverHttp(string url)
     {
-        Assert.Equal(1, HealthProbe.Run(url));
+        using var error = new StringWriter();
+
+        Assert.Equal(1, HealthProbe.Run(url, error));
+        Assert.Equal($"healthcheck: {url} is not an http address on this machine.{Environment.NewLine}", error.ToString());
     }
 
     private static async Task AnswerOnceAsync(TcpListener listener, string statusLine)

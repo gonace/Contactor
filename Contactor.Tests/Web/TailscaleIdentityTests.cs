@@ -3,6 +3,7 @@ using Contactor.Web.Features.Tailscale;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Web;
@@ -68,6 +69,7 @@ public sealed class TailscaleIdentityTests
     public async Task Should_BelieveOnlyServesAddress_InKestrel()
     {
         var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
         builder.WebHost.UseUrls("http://127.0.0.1:0", "http://127.0.0.2:0");
         await using var app = builder.Build();
         TailscaleIdentity? identity = null;

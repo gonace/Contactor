@@ -267,7 +267,9 @@ public sealed partial class SetupCodeTests
         await using var database = TestDatabase.Create();
         var args = new[] { SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}" };
         using var app = new FakeApp(HttpStatusCode.NoContent);
-        Assert.Equal(1, SignInReset.Run(args, app.Url));
+        var missing = Reset(args, app.Url);
+        Assert.Equal(1, missing.ExitCode);
+        Assert.StartsWith("reset-sign-in: there is no database at ", missing.Error, StringComparison.Ordinal);
 
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
@@ -276,7 +278,10 @@ public sealed partial class SetupCodeTests
             await db.SaveChangesAsync(Cancel);
         }
 
-        Assert.Equal(0, SignInReset.Run(args, app.Url));
+        var forgotten = Reset(args, app.Url);
+        Assert.Equal((0, ""), (forgotten.ExitCode, forgotten.Error));
+        Assert.Contains("The sign-in is forgotten", forgotten.Output, StringComparison.Ordinal);
+        Assert.Contains("The app wrote the new setup code to its log", forgotten.Output, StringComparison.Ordinal);
         Assert.Equal(1, app.Requests);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
@@ -285,7 +290,9 @@ public sealed partial class SetupCodeTests
         }
 
         // Nothing to forget: the app isn't told again.
-        Assert.Equal(0, SignInReset.Run(args, app.Url));
+        var again = Reset(args, app.Url);
+        Assert.Equal(0, again.ExitCode);
+        Assert.StartsWith("No sign-in is chosen", again.Output, StringComparison.Ordinal);
         Assert.Equal(1, app.Requests);
     }
 
@@ -295,7 +302,10 @@ public sealed partial class SetupCodeTests
         await using var database = await DatabaseInUseAsync();
         using var app = new FakeApp(HttpStatusCode.InternalServerError);
 
-        Assert.Equal(1, SignInReset.Run([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], app.Url));
+        var result = Reset([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], app.Url);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.StartsWith("reset-sign-in: the app answered 500.", result.Error, StringComparison.Ordinal);
     }
 
     // The app not running: the sign-in is still forgotten, and the next start makes the code.
@@ -308,7 +318,9 @@ public sealed partial class SetupCodeTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
 
-        Assert.Equal(0, SignInReset.Run([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], new Uri($"http://127.0.0.1:{port}/setup/reload")));
+        var result = Reset([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], new Uri($"http://127.0.0.1:{port}/setup/reload"));
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("The app isn't running", result.Output, StringComparison.Ordinal);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Null((await db.Installations.SingleAsync(Cancel)).SignInType);
     }
@@ -325,7 +337,9 @@ public sealed partial class SetupCodeTests
         }
 
         using var app = new FakeApp(HttpStatusCode.NoContent);
-        Assert.Equal(1, SignInReset.Run([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], app.Url));
+        var result = Reset([SignInReset.Command, $"--ConnectionStrings:Default={database.ConnectionString}"], app.Url);
+        Assert.Equal(1, result.ExitCode);
+        Assert.StartsWith("reset-sign-in: the database can't be changed yet", result.Error, StringComparison.Ordinal);
         Assert.Equal(0, app.Requests);
     }
 
@@ -379,6 +393,15 @@ public sealed partial class SetupCodeTests
         var logs = new LogCapture();
         using var factory = LoggerFactory.Create(b => b.AddProvider(logs));
         return (new SetupCode(new EphemeralDataProtectionProvider(), time, factory.CreateLogger<SetupCode>()), logs);
+    }
+
+    // The command as it runs on the machine, keeping what it writes rather than printing it in the test run.
+    private static (int ExitCode, string Output, string Error) Reset(string[] args, Uri reloadUrl)
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = SignInReset.Run(args, reloadUrl, output, error);
+        return (exitCode, output.ToString(), error.ToString());
     }
 
     private static async Task<TestDatabase> DatabaseInUseAsync()
