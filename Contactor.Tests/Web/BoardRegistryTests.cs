@@ -165,6 +165,64 @@ public sealed class BoardRegistryTests
         Assert.False(next.Traffic.HasListeners);
     }
 
+    // One board's run that fails, or ends cancelled while nothing stops it (e.g. a timeout), would leave that board
+    // without a connection: the others stop and RunAsync fails, so the host stops the app and the container restarts it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Should_StopTheOtherBoards_AndFail_WhenOneBoardsRunEnds(bool cancelled)
+    {
+        await using var database = await DatabaseAsync();
+        var first = await AddRowAsync(database, sortOrder: 1);
+        var second = await AddRowAsync(database, sortOrder: 2);
+        var registry = Registry(database);
+        var failing = new FakeBoardParts();
+        var other = new FakeBoardParts();
+        await registry.ReplaceAsync(failing.Build(first), Cancel);
+        await registry.ReplaceAsync(other.Build(second), Cancel);
+        var run = registry.RunAsync(Cancel);
+        await WaitUntilAsync(() => failing.Connection.Running && other.Connection.Running);
+
+        Exception failure = cancelled ? new TaskCanceledException("A request timed out.") : new InvalidOperationException("The board's client broke.");
+        failing.Connection.Fail(failure);
+
+        // A cancelled run keeps no exception of its own: the registry says which board's ended.
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(() => run);
+        if (cancelled)
+        {
+            Assert.IsAssignableFrom<OperationCanceledException>(thrown);
+            Assert.Contains($"Relay board {first}'s connection ended", thrown.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Same(failure, thrown);
+        }
+
+        Assert.False(other.Connection.Running);
+        Assert.True(other.Extra.Stopped);
+        Assert.True(failing.Extra.Stopped);
+    }
+
+    // Stopping the app is quiet, also for a board whose connection ends cancelled by the stop.
+    [Fact]
+    public async Task Should_StopQuietly_WhenTheAppStops()
+    {
+        await using var database = await DatabaseAsync();
+        var id = await AddRowAsync(database);
+        var registry = Registry(database);
+        var parts = new FakeBoardParts();
+        await registry.ReplaceAsync(parts.Build(id), Cancel);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = registry.RunAsync(stop.Token);
+        await WaitUntilAsync(() => parts.Connection.Running);
+
+        await stop.CancelAsync();
+
+        await run;
+        Assert.False(parts.Connection.Running);
+        Assert.True(parts.Extra.Stopped);
+    }
+
     [Fact]
     public async Task Should_DisposeTheOldModelAtOnce_WhenItIsNotRunning()
     {

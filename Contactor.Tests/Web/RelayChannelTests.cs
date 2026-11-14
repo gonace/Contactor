@@ -64,9 +64,11 @@ public sealed partial class RelayChannelTests
     {
         await using var rig = await BoardTestRig.StartAsync(layout: layout);
 
-        await rig.Control.PulseAsync(rig.RelayId(5), TimeSpan.FromSeconds(2), Jane, Cancel);
+        // The longest pulse, so the relay is still on when a slow machine gets to look: the simulator times it in real time.
+        await rig.Control.PulseAsync(rig.RelayId(5), RelayControl.MaxPulse, Jane, Cancel);
 
-        Assert.Equal(ChannelMask.Of(5), rig.Simulator.Pulsing);
+        // The simulator reads the packet on its own loop, maybe after the command returned.
+        await BoardTestRig.WaitUntilAsync(() => rig.Simulator.Pulsing == ChannelMask.Of(5));
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(5));
         var pulse = Assert.Single(await rig.EventsAsync());
         Assert.Equal((EventActions.Pulse, (int?)rig.RelayId(5)), (pulse.Action, pulse.RelayId));

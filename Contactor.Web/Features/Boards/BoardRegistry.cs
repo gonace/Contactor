@@ -197,7 +197,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
     /// <summary>
     /// Runs every board until cancelled, each on its own (<see cref="LiveBoard.RunAsync"/>), and a board added while it
-    /// runs from then on. A board whose run fails ends the others' and fails this, as one board's did before.
+    /// runs from then on. A board whose run fails, or ends cancelled while nothing stops it, ends the others' and fails
+    /// this, as one board's did before.
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -331,10 +332,23 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         var failed = _runFailed;
         var run = Task.Run(() => board.RunAsync(token), CancellationToken.None);
         _runs.Add(run);
+        // A run only ends by itself when it is stopped (or its board removed). One that fails, or ends cancelled while
+        // nothing stops it (e.g. a timeout's TaskCanceledException), would leave its board without a connection: it
+        // stops the others and fails RunAsync, as one board's did before, so the host stops the app and the container
+        // starts it again. A run cancelled by the stop itself stays quiet.
         _ = run.ContinueWith(
-            t => failed.TrySetException(t.Exception!.InnerExceptions),
+            t =>
+            {
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                failed.TrySetException(t.Exception?.InnerExceptions
+                    ?? [new OperationCanceledException($"Relay board {board.BoardId}'s connection ended without being stopped.")]);
+            },
             CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
     }
 

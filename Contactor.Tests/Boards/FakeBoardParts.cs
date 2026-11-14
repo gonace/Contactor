@@ -65,6 +65,7 @@ internal sealed class FakeConnection : IBoardConnection, IDisposable
     private volatile bool _running;
     private volatile bool _disposed;
     private volatile int _runs;
+    private readonly TaskCompletionSource _failed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool Running => _running;
 
@@ -96,13 +97,19 @@ internal sealed class FakeConnection : IBoardConnection, IDisposable
         return null;
     }
 
+    /// <summary>Ends the connection's run with <paramref name="exception"/>, as a connection that failed.</summary>
+    public void Fail(Exception exception)
+    {
+        _failed.TrySetException(exception);
+    }
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         _running = true;
         _runs++;
         try
         {
-            await Task.Delay(Timeout.Infinite, cancellationToken);
+            await _failed.Task.WaitAsync(cancellationToken);
         }
         finally
         {
