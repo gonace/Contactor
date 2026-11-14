@@ -111,7 +111,11 @@ public sealed class InputsHandler
             .Where(e => lastIds.Contains(e.Id))
             .Select(e => new { InputId = e.InputId!.Value, e.TimestampUtc, e.Details })
             .ToListAsync(cancellationToken);
-        var longGapEnded = await db.BoardWatchStates.AsNoTracking().Select(s => s.LongGapEndedUtc).SingleOrDefaultAsync(cancellationToken);
+        var boardId = await db.FirstBoardIdAsync(cancellationToken);
+        var longGapEnded = await db.BoardRuntimes.AsNoTracking()
+            .Where(r => r.BoardId == boardId)
+            .Select(r => r.LongGapEndedUtc)
+            .SingleOrDefaultAsync(cancellationToken);
         return last
             .Where(e => EventText.InputOn(e.Details) is not null)
             .ToDictionary(

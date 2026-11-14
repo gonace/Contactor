@@ -389,6 +389,6 @@ public sealed class SchedulerServiceTests
     private static async Task<DateTime?> LastTickAsync(BoardTestRig rig)
     {
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        return (await db.SchedulerStates.SingleAsync(Cancel)).LastTickUtc;
+        return (await db.BoardRuntimes.SingleAsync(Cancel)).LastTickUtc;
     }
 }

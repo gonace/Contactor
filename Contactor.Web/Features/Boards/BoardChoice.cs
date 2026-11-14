@@ -5,8 +5,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Boards;
 
 /// <summary>
-/// Which model of board the app runs, while it runs: the one saved in the setup guide (<see cref="Installation.BoardType"/>),
-/// or none until one is. Choosing one builds it, switches to it (<see cref="BoardSwitch"/>) and adds the rows for its
+/// Which model of board the app runs, while it runs: the one saved in the setup guide (<see cref="Board.Type"/> of the
+/// board), or none until one is. Choosing one builds it, switches to it (<see cref="BoardSwitch"/>) and adds the rows for its
 /// relays and inputs, as at start.
 /// </summary>
 public sealed partial class BoardChoice : IDisposable
@@ -37,39 +37,42 @@ public sealed partial class BoardChoice : IDisposable
     /// <summary>
     /// At start: runs the saved model, if any. An installation in use from before the setup guide chose the model (the
     /// guide is done, no model saved) gets the one <c>Board:Type</c> names, or the VM201 it ran before, saved once so
-    /// it keeps it. Throws for a saved model the catalogue doesn't have.
+    /// it keeps it. Throws for a saved model the catalogue doesn't have. A board without a name gets its model's.
     /// </summary>
     public async Task ApplySavedAsync(CancellationToken cancellationToken)
     {
         BoardModel? model;
         await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
         {
-            var installation = await db.Installations.SingleOrDefaultAsync(cancellationToken);
-            if (installation is null)
+            var board = await db.FirstBoardAsync(cancellationToken);
+            if (board is not null && board.Type.Length > 0)
             {
-                return;
-            }
-
-            if (installation.BoardType is { } saved)
-            {
+                var saved = board.Type;
                 model = BoardCatalogue.Find(saved)?.Model
                     ?? throw new InvalidOperationException(
                         $"The relay board chosen in the setup guide is \"{saved}\", which isn't a board this version of the app knows. Use one of: {BoardCatalogue.Ids}.");
             }
-            else if (installation.SetupDoneUtc is not null)
+            else if (await db.Installations.AnyAsync(i => i.SetupDoneUtc != null, cancellationToken))
             {
                 var type = _configuration.GetSection(BoardOptions.SectionName).Get<BoardOptions>()?.Type ?? BoardCatalogue.EarlierDefaultType;
                 model = BoardCatalogue.Find(type)?.Model
                     ?? throw new InvalidOperationException(
                         $"Board:Type is \"{type}\", which isn't a board the app knows. Use one of: {BoardCatalogue.Ids}.");
-                installation.BoardType = model.Id;
-                await db.SaveChangesAsync(cancellationToken);
+                board ??= AddBoard(db);
+                board.Type = model.Id;
                 LogEarlierModelSaved(model.Name);
             }
             else
             {
                 return;
             }
+
+            if (board.Name.Length == 0)
+            {
+                board.Name = Board.DefaultName(model.Name);
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
         }
 
         await UseAsync(model, cancellationToken);
@@ -113,14 +116,15 @@ public sealed partial class BoardChoice : IDisposable
             if (save)
             {
                 await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-                var installation = await db.Installations.SingleOrDefaultAsync(cancellationToken);
-                if (installation is null)
+                var board = await db.FirstBoardAsync(cancellationToken) ?? AddBoard(db);
+
+                // The name follows the model until someone gives it one of their own.
+                if (board.Name.Length == 0 || BoardCatalogue.Find(board.Type) is { } earlier && board.Name == Board.DefaultName(earlier.Model.Name))
                 {
-                    installation = new Installation();
-                    db.Installations.Add(installation);
+                    board.Name = Board.DefaultName(model.Name);
                 }
 
-                installation.BoardType = model.Id;
+                board.Type = model.Id;
                 await db.SaveChangesAsync(cancellationToken);
             }
         }
@@ -128,6 +132,14 @@ public sealed partial class BoardChoice : IDisposable
         {
             _gate.Release();
         }
+    }
+
+    // At start, before the board's rows are seeded; its runtime row comes with them.
+    private static Board AddBoard(ContactorDbContext db)
+    {
+        var board = new Board { SortOrder = 1 };
+        db.Boards.Add(board);
+        return board;
     }
 
     public void Dispose()

@@ -62,7 +62,7 @@ public sealed class AutoOffServiceTests
         await using var rig = await BoardTestRig.StartAsync();
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan };
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan };
             group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
             group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
             db.RelayGroups.Add(group);

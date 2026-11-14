@@ -235,7 +235,7 @@ public sealed class InputActionsTests
         await using var rig = await RigAsync();
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.Relays.Add(new Contactor.Web.Persistence.Relay { Id = 6, Name = "Old" });
+            db.Relays.Add(new Contactor.Web.Persistence.Relay { Id = 6, BoardId = 1, Channel = 6, Name = "Old" });
             db.InputActions.Add(new InputAction { InputId = 1, RelayId = 6, WhenClosed = true });
             await db.SaveChangesAsync(Cancel);
         }
@@ -416,7 +416,7 @@ public sealed class InputActionsTests
             }
 
             await using var db = await Database.Factory.CreateDbContextAsync(Cancel);
-            var group = new RelayGroup { Name = "Heater", Icon = GroupIcons.All[0] };
+            var group = new RelayGroup { BoardId = 1, Name = "Heater", Icon = GroupIcons.All[0] };
             group.Members.Add(new RelayGroupMember { RelayId = first, Position = 1, RoleName = "A" });
             group.Members.Add(new RelayGroupMember { RelayId = second, Position = 2, RoleName = "B" });
             db.RelayGroups.Add(group);

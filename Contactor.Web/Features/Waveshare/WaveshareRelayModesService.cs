@@ -89,6 +89,7 @@ public sealed partial class WaveshareRelayModesService : BackgroundService
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = _timeProvider.GetUtcNow().UtcDateTime,
+                BoardId = await db.FirstBoardIdAsync(cancellationToken),
                 Actor = EventActors.System,
                 Action = action,
                 Details = details,

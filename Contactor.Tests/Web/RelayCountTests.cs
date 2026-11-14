@@ -155,7 +155,7 @@ public sealed class RelayCountTests
     private static async Task<int> AddGroupAsync(TestDatabase database, params (int RelayId, string Role)[] members)
     {
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
+        var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
         for (var i = 0; i < members.Length; i++)
         {
             group.Members.Add(new RelayGroupMember { RelayId = members[i].RelayId, Position = i + 1, RoleName = members[i].Role, StartDelaySec = 3 });

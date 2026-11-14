@@ -125,7 +125,8 @@ public sealed class InputsTests
         await AddChangeAsync(database, inputId: 3, on: true, Now.AddMinutes(-90));
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = Now, LongGapEndedUtc = Now.AddMinutes(-60) });
+            var runtime = await db.BoardRuntimes.SingleAsync(Cancel);
+            (runtime.LastContactUtc, runtime.LongGapEndedUtc) = (Now, Now.AddMinutes(-60));
             await db.SaveChangesAsync(Cancel);
         }
 

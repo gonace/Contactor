@@ -71,13 +71,18 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
     /// Saves <paramref name="installation"/> in a database made before the app starts, as an installation in use has
     /// it when the app starts. Use with <c>setUp: false</c>, before the first request.
     /// </summary>
-    public void SaveBeforeStart(Installation installation)
+    public void SaveBeforeStart(Installation installation, string? boardType = null)
     {
         Directory.CreateDirectory(_folder);
         var options = new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite($"Data Source={DatabasePath}").Options;
         using var db = new ContactorDbContext(options);
         db.Database.Migrate();
         db.Installations.Add(installation);
+        if (boardType is not null)
+        {
+            db.Boards.Add(new Board { Type = boardType, SortOrder = 1 });
+        }
+
         db.SaveChanges();
     }
 

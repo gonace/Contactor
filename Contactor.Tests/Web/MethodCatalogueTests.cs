@@ -50,7 +50,7 @@ public sealed class MethodCatalogueTests
     [InlineData(true)]
     public async Task Should_ChooseNothing_WhenNothingIsSaved(bool hasInstallation)
     {
-        await using var database = await CreateAsync(hasInstallation ? new Installation { BoardType = "vm201" } : null);
+        await using var database = await CreateAsync(hasInstallation ? new Installation() : null);
         var (access, signIn) = await ApplyAsync(database);
 
         Assert.Null(access.Current);

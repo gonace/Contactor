@@ -139,7 +139,7 @@ public sealed class SchedulesHandler
         schedule.Days = model.Days;
         schedule.OnTime = onTime;
         schedule.OffTime = offTime;
-        Log(db, schedule, userEmail, action, enabled: null);
+        await LogAsync(db, schedule, userEmail, action, enabled: null, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
         return null;
@@ -159,7 +159,7 @@ public sealed class SchedulesHandler
         if (schedule.IsEnabled != isEnabled)
         {
             schedule.IsEnabled = isEnabled;
-            Log(db, schedule, userEmail, EventActions.ScheduleEdit, isEnabled);
+            await LogAsync(db, schedule, userEmail, EventActions.ScheduleEdit, isEnabled, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             _changes.Notify();
         }
@@ -178,16 +178,17 @@ public sealed class SchedulesHandler
         }
 
         db.Schedules.Remove(schedule);
-        Log(db, schedule, userEmail, EventActions.ScheduleDelete, enabled: null);
+        await LogAsync(db, schedule, userEmail, EventActions.ScheduleDelete, enabled: null, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
     }
 
-    private void Log(ContactorDbContext db, Schedule schedule, string userEmail, string action, bool? enabled)
+    private async Task LogAsync(ContactorDbContext db, Schedule schedule, string userEmail, string action, bool? enabled, CancellationToken cancellationToken)
     {
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = _clock.UtcNow,
+            BoardId = await db.FirstBoardIdAsync(cancellationToken),
             RelayId = schedule.RelayId,
             GroupId = schedule.GroupId,
             Actor = userEmail,

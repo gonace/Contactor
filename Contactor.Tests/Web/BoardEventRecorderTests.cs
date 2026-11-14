@@ -595,7 +595,7 @@ public sealed class BoardEventRecorderTests
         await using var setup = await InputRigAsync(lastContact: BoardTestRig.Start.AddMinutes(-1));
         await using (var db = await setup.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan };
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan };
             group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
             group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
             db.RelayGroups.Add(group);
@@ -647,7 +647,8 @@ public sealed class BoardEventRecorderTests
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.BoardWatchStates.Add(new BoardWatchState { LastContactUtc = lastContact, LongGapEndedUtc = longGapEnded });
+            var runtime = await db.BoardRuntimes.SingleAsync(Cancel);
+            (runtime.LastContactUtc, runtime.LongGapEndedUtc) = (lastContact, longGapEnded);
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -750,10 +751,10 @@ public sealed class BoardEventRecorderTests
             await db.Database.ExecuteSqlRawAsync(sql, Cancel);
         }
 
-        public BoardWatchState State()
+        public BoardRuntime State()
         {
             using var db = Database.Factory.CreateDbContext();
-            return db.BoardWatchStates.AsNoTracking().Single();
+            return db.BoardRuntimes.AsNoTracking().Single();
         }
 
         public async ValueTask DisposeAsync()

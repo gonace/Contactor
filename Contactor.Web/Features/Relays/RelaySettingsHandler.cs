@@ -87,6 +87,7 @@ public sealed class RelaySettingsHandler
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
+                BoardId = relay.BoardId,
                 RelayId = relay.Id,
                 Actor = userEmail,
                 Action = EventActions.Rename,
@@ -100,6 +101,7 @@ public sealed class RelaySettingsHandler
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
+                BoardId = relay.BoardId,
                 RelayId = relay.Id,
                 Actor = userEmail,
                 Action = settings.IsActive ? EventActions.Activate : EventActions.Deactivate,

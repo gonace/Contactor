@@ -53,7 +53,7 @@ public sealed class RelayControl
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var maxOnMinutes = await db.Relays.Where(r => r.Id == relayId).Select(r => r.MaxOnMinutes).SingleAsync(cancellationToken);
         await RelayRuns.StartAsync(db, relayId, actor, now, maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null, cancellationToken);
-        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.On });
+        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, BoardId = await db.FirstBoardIdAsync(cancellationToken), RelayId = relayId, Actor = actor, Action = EventActions.On });
         await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
     }
@@ -103,6 +103,7 @@ public sealed class RelayControl
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = now,
+            BoardId = await db.FirstBoardIdAsync(cancellationToken),
             RelayId = relayId,
             Actor = actor,
             Action = EventActions.Pulse,
@@ -136,7 +137,7 @@ public sealed class RelayControl
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
-        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, RelayId = relayId, Actor = actor, Action = EventActions.Off });
+        db.EventLog.Add(new EventLogEntry { TimestampUtc = now, BoardId = await db.FirstBoardIdAsync(cancellationToken), RelayId = relayId, Actor = actor, Action = EventActions.Off });
         await RelayRuns.SaveAsync(db, cancellationToken);
         _changes.Notify();
     }
@@ -190,11 +191,13 @@ public sealed class RelayControl
             }
         }
 
+        var boardId = await db.FirstBoardIdAsync(cancellationToken);
         foreach (var relayId in wasOn.Except(refused).Channels)
         {
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
+                BoardId = boardId,
                 RelayId = relayId,
                 Actor = userEmail,
                 Action = EventActions.Off,

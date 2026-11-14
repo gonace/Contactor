@@ -17,22 +17,35 @@ namespace Contactor.Web.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
-            modelBuilder.Entity("Contactor.Web.Persistence.BoardSetting", b =>
+            modelBuilder.Entity("Contactor.Web.Persistence.Board", b =>
                 {
                     b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Host")
-                        .IsRequired()
                         .HasMaxLength(253)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Password")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Port")
+                    b.Property<int?>("Port")
                         .HasColumnType("INTEGER");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Username")
                         .HasMaxLength(64)
@@ -40,31 +53,31 @@ namespace Contactor.Web.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("BoardSetting", null, t =>
+                    b.ToTable("Board", null, t =>
                         {
-                            t.HasCheckConstraint("CK_BoardSetting_Id", "\"Id\" = 1");
+                            t.HasCheckConstraint("CK_Board_Address", "(\"Host\" IS NULL) = (\"Port\" IS NULL)");
 
-                            t.HasCheckConstraint("CK_BoardSetting_Port", "\"Port\" BETWEEN 1 AND 65535");
+                            t.HasCheckConstraint("CK_Board_Port", "\"Port\" BETWEEN 1 AND 65535");
                         });
                 });
 
-            modelBuilder.Entity("Contactor.Web.Persistence.BoardWatchState", b =>
+            modelBuilder.Entity("Contactor.Web.Persistence.BoardRuntime", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<int>("BoardId")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime?>("LastContactUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("LastTickUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("LongGapEndedUtc")
                         .HasColumnType("TEXT");
 
-                    b.HasKey("Id");
+                    b.HasKey("BoardId");
 
-                    b.ToTable("BoardWatchState", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_BoardWatchState_Id", "\"Id\" = 1");
-                        });
+                    b.ToTable("BoardRuntime", (string)null);
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.CloudflareSetting", b =>
@@ -112,6 +125,9 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasMaxLength(254)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("BoardId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Details")
                         .HasColumnType("TEXT");
 
@@ -130,6 +146,8 @@ namespace Contactor.Web.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("TimestampUtc");
+
+                    b.HasIndex("BoardId", "TimestampUtc");
 
                     b.HasIndex("GroupId", "TimestampUtc");
 
@@ -185,6 +203,12 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("BoardId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -201,8 +225,13 @@ namespace Contactor.Web.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BoardId", "Channel")
+                        .IsUnique();
+
                     b.ToTable("Input", null, t =>
                         {
+                            t.HasCheckConstraint("CK_Input_Channel", "\"Channel\" BETWEEN 1 AND 64");
+
                             t.HasCheckConstraint("CK_Input_Id", "\"Id\" BETWEEN 1 AND 64");
                         });
                 });
@@ -255,10 +284,6 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("BoardType")
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime?>("SetupDoneUtc")
                         .HasColumnType("TEXT");
 
@@ -279,6 +304,12 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("BoardId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -295,8 +326,13 @@ namespace Contactor.Web.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BoardId", "Channel")
+                        .IsUnique();
+
                     b.ToTable("Relay", null, t =>
                         {
+                            t.HasCheckConstraint("CK_Relay_Channel", "\"Channel\" BETWEEN 1 AND 64");
+
                             t.HasCheckConstraint("CK_Relay_Id", "\"Id\" BETWEEN 1 AND 64");
                         });
                 });
@@ -305,6 +341,9 @@ namespace Contactor.Web.Persistence.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BoardId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Icon")
@@ -327,6 +366,8 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BoardId");
 
                     b.ToTable("RelayGroup", (string)null);
                 });
@@ -442,22 +483,6 @@ namespace Contactor.Web.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Contactor.Web.Persistence.SchedulerState", b =>
-                {
-                    b.Property<int>("Id")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("LastTickUtc")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("SchedulerState", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_SchedulerState_Id", "\"Id\" = 1");
-                        });
-                });
-
             modelBuilder.Entity("Contactor.Web.Persistence.TailscaleSetting", b =>
                 {
                     b.Property<int>("Id")
@@ -499,11 +524,37 @@ namespace Contactor.Web.Persistence.Migrations
                     b.ToTable("User", (string)null);
                 });
 
+            modelBuilder.Entity("Contactor.Web.Persistence.BoardRuntime", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.Board", null)
+                        .WithOne()
+                        .HasForeignKey("Contactor.Web.Persistence.BoardRuntime", "BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.EventLogEntry", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.Board", null)
+                        .WithMany()
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.GroupRuntime", b =>
                 {
                     b.HasOne("Contactor.Web.Persistence.RelayGroup", null)
                         .WithOne()
                         .HasForeignKey("Contactor.Web.Persistence.GroupRuntime", "GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.Input", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.Board", null)
+                        .WithMany()
+                        .HasForeignKey("BoardId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -529,6 +580,24 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Navigation("Group");
 
                     b.Navigation("Relay");
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.Relay", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.Board", null)
+                        .WithMany()
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.RelayGroup", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.Board", null)
+                        .WithMany()
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.RelayGroupMember", b =>

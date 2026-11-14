@@ -278,7 +278,7 @@ public sealed class SetupTests
         {
             var installation = await db.Installations.SingleAsync(Cancel);
             Assert.NotNull(installation.SetupDoneUtc);
-            Assert.Null(installation.BoardType);
+            Assert.False(await db.Boards.AnyAsync(Cancel));
         }
 
         await using (var db = await empty.Factory.CreateDbContextAsync(Cancel))
@@ -316,7 +316,7 @@ public sealed class SetupTests
     {
         await using var database = CreateChoiceDatabase(new() { ["Board:Type"] = "vm201" });
         await database.Services.InitializeDatabaseAsync(Cancel);
-        await AddInstallationAsync(database, new Installation { BoardType = "waveshare-16", SetupDoneUtc = Now });
+        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now }, boardType: "waveshare-16");
 
         await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
 
@@ -325,6 +325,7 @@ public sealed class SetupTests
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal(16, await db.Relays.CountAsync(Cancel));
         Assert.Equal(16, await db.RelayRuntimes.CountAsync(Cancel));
+        Assert.Equal("Waveshare Modbus PoE ETH Relay 16CH", (await db.Boards.SingleAsync(Cancel)).Name);
     }
 
     // An installation in use from before the guide chose the model keeps the board it ran: Board:Type's, or the VM201.
@@ -341,7 +342,67 @@ public sealed class SetupTests
 
         Assert.Equal(expected, database.Services.GetRequiredService<BoardSwitch>().Model?.Id);
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Equal(expected, (await db.Installations.SingleAsync(Cancel)).BoardType);
+        var board = await db.Boards.SingleAsync(Cancel);
+        Assert.Equal(expected, board.Type);
+        Assert.Equal(BoardCatalogue.Find(expected)!.Model.Name, board.Name);
+    }
+
+    // A new installation has no board until the guide chooses one: then it gets its row, named after the model.
+    [Fact]
+    public async Task Should_AddTheBoard_WhenTheGuideChoosesIt()
+    {
+        await using var database = CreateChoiceDatabase();
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.False(await db.Boards.AnyAsync(Cancel));
+        }
+
+        await database.Services.GetRequiredService<BoardChoice>().ChooseAsync(BoardCatalogue.Find("vm204")!.Model, Cancel);
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        var board = await check.Boards.SingleAsync(Cancel);
+        Assert.Equal(("vm204", "Velleman VM204", (string?)null, (int?)null), (board.Type, board.Name, board.Host, board.Port));
+        Assert.Equal(board.Id, (await check.BoardRuntimes.SingleAsync(Cancel)).BoardId);
+        var relays = await check.Relays.OrderBy(r => r.Id).ToListAsync(Cancel);
+        Assert.Equal(4, relays.Count);
+        Assert.All(relays, r => Assert.Equal((board.Id, r.Id), (r.BoardId, r.Channel)));
+        Assert.All(await check.Inputs.ToListAsync(Cancel), i => Assert.Equal((board.Id, i.Id), (i.BoardId, i.Channel)));
+    }
+
+    // An installation upgraded from before the board had a row of its own, whose model was never saved: its board keeps
+    // its rows and gets the model it ran (Board:Type, or the VM201) and that model's name.
+    [Fact]
+    public async Task Should_GiveTheBoardTheEarlierModel_WhenItHasRowsButNoModel()
+    {
+        await using var database = CreateChoiceDatabase();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await AddInstallationAsync(database, new Installation { SetupDoneUtc = Now });
+
+        await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
+
+        Assert.Equal("vm201", database.Services.GetRequiredService<BoardSwitch>().Model?.Id);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var board = await db.Boards.SingleAsync(Cancel);
+        Assert.Equal(("vm201", "Velleman VM201"), (board.Type, board.Name));
+        Assert.Equal(8, await db.Relays.CountAsync(r => r.BoardId == board.Id, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_KeepTheBoardsOwnName_AtStart()
+    {
+        await using var database = CreateChoiceDatabase();
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.Boards.Add(new Board { Name = "Garage", Type = "vm201", SortOrder = 1 });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel);
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal("Garage", (await check.Boards.SingleAsync(Cancel)).Name);
     }
 
     [Fact]
@@ -349,7 +410,7 @@ public sealed class SetupTests
     {
         await using var database = CreateChoiceDatabase();
         await database.Services.InitializeDatabaseAsync(Cancel);
-        await AddInstallationAsync(database, new Installation { BoardType = "vm999" });
+        await AddInstallationAsync(database, new Installation(), boardType: "vm999");
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));
@@ -382,7 +443,8 @@ public sealed class SetupTests
         Assert.Equal("vm204", boards.Model?.Id);
         Assert.NotSame(vm201, boards.Current);
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Equal("vm204", (await db.Installations.SingleAsync(Cancel)).BoardType);
+        var board = await db.Boards.SingleAsync(Cancel);
+        Assert.Equal(("vm204", "Velleman VM204"), (board.Type, board.Name));
     }
 
     [Fact]
@@ -406,7 +468,7 @@ public sealed class SetupTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => rig.Setup.ChooseBoardAsync("vm204", Cancel));
 
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Null((await db.Installations.SingleAsync(Cancel)).BoardType);
+        Assert.Equal("", (await db.Boards.SingleAsync(Cancel)).Type);
     }
 
     [Fact]
@@ -524,7 +586,7 @@ public sealed class SetupTests
         {
             await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
             {
-                var group = new RelayGroup { Name = "Fan heater" };
+                var group = new RelayGroup { BoardId = 1, Name = "Fan heater" };
                 group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan", StartDelaySec = 3 });
                 group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat", StartDelaySec = 3 });
                 db.RelayGroups.Add(group);
@@ -575,7 +637,7 @@ public sealed class SetupTests
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var installation = await db.Installations.SingleAsync(Cancel);
         Assert.Equal(Now, installation.SetupDoneUtc);
-        Assert.Equal("vm201", installation.BoardType);
+        Assert.Equal("vm201", (await db.Boards.SingleAsync(Cancel)).Type);
     }
 
     [Fact]
@@ -649,7 +711,7 @@ public sealed class SetupTests
         await using var rig = await Rig.StartAsync();
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater" };
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater" };
             group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan", StartDelaySec = 3 });
             group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat", StartDelaySec = 3 });
             db.RelayGroups.Add(group);
@@ -834,10 +896,15 @@ public sealed class SetupTests
         return TestDatabase.Create((services, configuration) => services.AddBoards(configuration), settings);
     }
 
-    private static async Task AddInstallationAsync(TestDatabase database, Installation installation)
+    private static async Task AddInstallationAsync(TestDatabase database, Installation installation, string? boardType = null)
     {
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
         db.Installations.Add(installation);
+        if (boardType is not null)
+        {
+            db.Boards.Add(new Board { Type = boardType, SortOrder = 1 });
+        }
+
         await db.SaveChangesAsync(Cancel);
     }
 

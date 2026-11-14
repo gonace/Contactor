@@ -278,6 +278,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 db.EventLog.Add(new EventLogEntry
                 {
                     TimestampUtc = now,
+                    BoardId = await db.FirstBoardIdAsync(cancellationToken),
                     Actor = EventActors.System,
                     Action = EventActions.ConnectionRestored,
                     Details = JsonSerializer.Serialize(new { afterSeconds = (int)(now - since).TotalSeconds }),
@@ -293,13 +294,13 @@ public sealed partial class BoardEventRecorder : BackgroundService
         if (_known is { } known)
         {
             await RecordRelayChangesAsync(db, known.Relays, state.Relays, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
-            RecordInputChanges(db, known.Inputs, state.Inputs, now, noticed: afterGap);
+            RecordInputChanges(db, await db.FirstBoardIdAsync(cancellationToken), known.Inputs, state.Inputs, now, noticed: afterGap);
         }
         else
         {
             // At start the inputs are compared with what the event log last says about each: one that changed while
             // the app was down is logged now, as noticed, so its "since" reads unknown.
-            RecordInputChanges(db, await LastLoggedInputsAsync(db, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
+            RecordInputChanges(db, await db.FirstBoardIdAsync(cancellationToken), await LastLoggedInputsAsync(db, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
             await GiveOwnerlessRelaysAutoOffAsync(db, state.Relays, now, cancellationToken);
         }
 
@@ -320,7 +321,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
 
     // Every input on the board, each logged on its own. A change the app only noticed after a gap is marked so: it
     // happened at a time nobody knows.
-    private void RecordInputChanges(ContactorDbContext db, ChannelMask before, ChannelMask after, DateTime now, bool noticed)
+    private void RecordInputChanges(ContactorDbContext db, int? boardId, ChannelMask before, ChannelMask after, DateTime now, bool noticed)
     {
         for (var input = 1; input <= _board.Capabilities.InputCount; input++)
         {
@@ -329,6 +330,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
                 db.EventLog.Add(new EventLogEntry
                 {
                     TimestampUtc = now,
+                    BoardId = boardId,
                     InputId = input,
                     Actor = EventActors.External,
                     Action = EventActions.InputChanged,
@@ -376,25 +378,21 @@ public sealed partial class BoardEventRecorder : BackgroundService
     // restart during the loss would read the gap as shorter than it was.
     private async Task StartWatchingAsync(ContactorDbContext db, DateTime now, bool saveContact, CancellationToken cancellationToken)
     {
-        var saved = await db.BoardWatchStates.SingleOrDefaultAsync(cancellationToken);
-        if (saved is null)
-        {
-            saved = new BoardWatchState();
-            db.BoardWatchStates.Add(saved);
-        }
+        // Kept on the board's runtime row; there is none only before a board's rows are seeded.
+        var saved = await db.FirstBoardRuntimeAsync(cancellationToken);
 
         // After a lost contact, the later of the board's last answer and the app's own last save of the time of contact.
-        var lastContact = _known is null ? saved.LastContactUtc : Later(_disconnectedSinceUtc, _contactSavedUtc);
+        var lastContact = _known is null ? saved?.LastContactUtc : Later(_disconnectedSinceUtc, _contactSavedUtc);
         // A clock that went back (a Raspberry Pi has no clock of its own: after a power cut it starts from its last
         // saved time until it reaches a time server) can't measure the gap, so it counts as long.
-        if (lastContact is not { } last || now < last || now - last > LongGap)
+        if (saved is not null && (lastContact is not { } last || now < last || now - last > LongGap))
         {
             saved.LongGapEndedUtc = now;
         }
 
         if (saveContact)
         {
-            saved.LastContactUtc = now;
+            saved?.LastContactUtc = now;
             _contactSavedUtc = now;
         }
 
@@ -416,7 +414,8 @@ public sealed partial class BoardEventRecorder : BackgroundService
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var state = await db.BoardWatchStates.SingleOrDefaultAsync(cancellationToken);
+        var boardId = await db.FirstBoardIdAsync(cancellationToken);
+        var state = await db.BoardRuntimes.SingleOrDefaultAsync(r => r.BoardId == boardId, cancellationToken);
         if (state is null)
         {
             return;
@@ -453,6 +452,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
+                BoardId = await db.FirstBoardIdAsync(cancellationToken),
                 RelayId = relayId,
                 Actor = EventActors.External,
                 Action = isOn ? EventActions.On : EventActions.Off,
@@ -534,6 +534,7 @@ public sealed partial class BoardEventRecorder : BackgroundService
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = since,
+            BoardId = await db.FirstBoardIdAsync(cancellationToken),
             Actor = EventActors.System,
             Action = EventActions.ConnectionLost,
         });

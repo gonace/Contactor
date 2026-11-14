@@ -448,11 +448,13 @@ public sealed partial class GroupSequencer : BackgroundService
 
     private async Task SaveAsync(ContactorDbContext db, List<(int GroupId, GroupEvent Event)> events, DateTime now, CancellationToken cancellationToken)
     {
+        var boardId = events.Count > 0 ? await db.FirstBoardIdAsync(cancellationToken) : null;
         foreach (var (groupId, e) in events)
         {
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = now,
+                BoardId = boardId,
                 GroupId = groupId,
                 RelayId = e.RelayId,
                 Actor = e.Actor,

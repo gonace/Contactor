@@ -169,6 +169,7 @@ public sealed class GroupsHandler
 
         var group = new RelayGroup
         {
+            BoardId = await db.FirstBoardIdAsync(cancellationToken) ?? throw new InvalidOperationException("A group needs a board."),
             Name = draft.Name.Trim(),
             Icon = draft.Icon,
             MaxOnMinutes = draft.MaxOnMinutes,
@@ -180,7 +181,7 @@ public sealed class GroupsHandler
 
         db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
         await ForgetRelayRunsAsync(db, group.Members.Select(m => m.RelayId), cancellationToken);
-        Log(db, group.Id, userEmail, EventActions.GroupCreate, new { name = group.Name, steps = group.Members.Select(m => m.RoleName) });
+        Log(db, group, userEmail, EventActions.GroupCreate, new { name = group.Name, steps = group.Members.Select(m => m.RoleName) });
         await RelayRuns.SaveAsync(db, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         _changes.Notify();
@@ -246,7 +247,7 @@ public sealed class GroupsHandler
         group.Name = draft.Name.Trim();
         group.Icon = draft.Icon;
         group.MaxOnMinutes = draft.MaxOnMinutes;
-        Log(db, group.Id, userEmail, EventActions.GroupEdit, new { name = group.Name });
+        Log(db, group, userEmail, EventActions.GroupEdit, new { name = group.Name });
         await RelayRuns.SaveAsync(db, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         _changes.Notify();
@@ -280,7 +281,7 @@ public sealed class GroupsHandler
         }
 
         db.RelayGroups.Remove(group);
-        Log(db, group.Id, userEmail, EventActions.GroupDelete, new { name = group.Name });
+        Log(db, group, userEmail, EventActions.GroupDelete, new { name = group.Name });
         await db.SaveChangesAsync(cancellationToken);
         _changes.Notify();
         return null;
@@ -415,12 +416,13 @@ public sealed class GroupsHandler
         }
     }
 
-    private void Log(ContactorDbContext db, int groupId, string userEmail, string action, object details)
+    private void Log(ContactorDbContext db, RelayGroup group, string userEmail, string action, object details)
     {
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = _clock.UtcNow,
-            GroupId = groupId,
+            BoardId = group.BoardId,
+            GroupId = group.Id,
             Actor = userEmail,
             Action = action,
             Details = JsonSerializer.Serialize(details),

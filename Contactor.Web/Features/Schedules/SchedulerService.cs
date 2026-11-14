@@ -14,7 +14,7 @@ namespace Contactor.Web.Features.Schedules;
 /// auto-off; the schedule's OffTime is its end. Overlapping schedules: ON wins, so an OFF is skipped while another
 /// of the relay's schedules is still running.
 /// <para>
-/// It remembers the last minute it handled (<see cref="SchedulerState"/>). After a restart or a lost connection it
+/// It remembers the last minute it handled (<see cref="BoardRuntime.LastTickUtc"/>). After a restart or a lost connection it
 /// catches up on the last 24 h: a run that is still going is turned on (this is also the reconciliation the spec
 /// asks for at start and reconnect), and a missed OFF is only applied to a relay the schedule itself turned on, so
 /// nothing a person turned on is ever turned off at start.
@@ -109,11 +109,10 @@ public sealed partial class SchedulerService : BackgroundService
             var reconcile = generation != _reconciledGeneration;
             var now = FloorToMinute(_clock.UtcNow);
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-            var progress = await db.SchedulerStates.SingleOrDefaultAsync(cancellationToken);
-            if (progress is null)
+            // The board's runtime row holds the progress; without a board there is nothing to run.
+            if (await db.FirstBoardRuntimeAsync(cancellationToken) is not { } progress)
             {
-                progress = new SchedulerState();
-                db.SchedulerStates.Add(progress);
+                return;
             }
 
             // Handles (from, now]; the very first run starts from now, with nothing to catch up.
@@ -153,7 +152,7 @@ public sealed partial class SchedulerService : BackgroundService
 
                         // Since the ON went out, not the minute: a person's OFF is told apart from it by time (RelayRuns.End).
                         await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, cancellationToken);
-                        Log(db, now, relayId, EventActions.On, running.ScheduleId);
+                        Log(db, progress.BoardId, now, relayId, EventActions.On, running.ScheduleId);
                         changed = true;
                     }
 
@@ -191,7 +190,7 @@ public sealed partial class SchedulerService : BackgroundService
 
                 await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
 
-                Log(db, now, relayId, EventActions.Off, ended?.ScheduleId);
+                Log(db, progress.BoardId, now, relayId, EventActions.Off, ended?.ScheduleId);
                 changed = true;
             }
 
@@ -420,11 +419,12 @@ public sealed partial class SchedulerService : BackgroundService
     }
 
     // Without a schedule id when the schedule that turned the relay on no longer runs it.
-    private static void Log(ContactorDbContext db, DateTime now, int relayId, string action, int? scheduleId)
+    private static void Log(ContactorDbContext db, int boardId, DateTime now, int relayId, string action, int? scheduleId)
     {
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = now,
+            BoardId = boardId,
             RelayId = relayId,
             Actor = Actor,
             Action = action,

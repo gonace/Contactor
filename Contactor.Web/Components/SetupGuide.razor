@@ -138,7 +138,7 @@
                 <div class="field">
                     <label for="host">Address</label>
                     <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
-                           maxlength="@BoardSetting.HostMaxLength" placeholder="192.168.1.50" @bind="_host" @bind:event="oninput" />
+                           maxlength="@Persistence.Board.HostMaxLength" placeholder="192.168.1.50" @bind="_host" @bind:event="oninput" />
                 </div>
                 <div class="field port">
                     <label for="port">Port</label>

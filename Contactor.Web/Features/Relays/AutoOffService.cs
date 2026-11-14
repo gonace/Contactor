@@ -93,6 +93,7 @@ public sealed partial class AutoOffService : BackgroundService
                 db.EventLog.Add(new EventLogEntry
                 {
                     TimestampUtc = now,
+                    BoardId = await db.FirstBoardIdAsync(cancellationToken),
                     RelayId = runtime.RelayId,
                     Actor = EventActors.AutoOff,
                     Action = EventActions.Off,

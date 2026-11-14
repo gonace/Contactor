@@ -113,15 +113,36 @@ public static class PersistenceServiceCollectionExtensions
 
     /// <summary>
     /// Adds the rows a board with <paramref name="relayCount"/> relays and <paramref name="inputCount"/> inputs needs:
-    /// a relay, its runtime row and an input for each, numbered from 1. Existing rows are left as they are, also
-    /// relays and inputs above the count, which a board with more left behind: their events still point to them.
+    /// the board itself and its runtime row when there is none yet, and a relay, its runtime row and an input for each,
+    /// numbered from 1 (for now a relay's and an input's id is its channel). Existing rows are left as they are, also
+    /// relays and inputs above the count, which a board with more left behind: their events still point to them. A
+    /// board with neither relays nor inputs (none chosen yet) adds nothing.
     /// </summary>
     public static async Task SeedBoardAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(services);
         CheckCounts(relayCount, inputCount);
+        if (relayCount == 0 && inputCount == 0)
+        {
+            return;
+        }
+
         var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var board = await db.FirstBoardAsync(cancellationToken);
+        if (board is null)
+        {
+            // Its model and name come with the choice (BoardChoice); the rows need the board first.
+            board = new Board { SortOrder = 1 };
+            db.Boards.Add(board);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        if (!await db.BoardRuntimes.AnyAsync(r => r.BoardId == board.Id, cancellationToken))
+        {
+            db.BoardRuntimes.Add(new BoardRuntime { BoardId = board.Id });
+        }
+
         var existing = await db.Relays.Select(r => r.Id).ToListAsync(cancellationToken);
         for (var id = 1; id <= relayCount; id++)
         {
@@ -130,6 +151,8 @@ public static class PersistenceServiceCollectionExtensions
                 db.Relays.Add(new Relay
                 {
                     Id = id,
+                    BoardId = board.Id,
+                    Channel = id,
                     Name = Relay.DefaultName(id),
                     IsActive = true,
                     MaxOnMinutes = Relay.DefaultMaxOnMinutes,
@@ -153,7 +176,7 @@ public static class PersistenceServiceCollectionExtensions
         {
             if (!inputs.Contains(id))
             {
-                db.Inputs.Add(new Input { Id = id, Name = Input.DefaultName(id) });
+                db.Inputs.Add(new Input { Id = id, BoardId = board.Id, Channel = id, Name = Input.DefaultName(id) });
             }
         }
 

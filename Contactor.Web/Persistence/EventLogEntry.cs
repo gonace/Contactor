@@ -11,6 +11,12 @@ public sealed class EventLogEntry
 
     public DateTime TimestampUtc { get; set; }
 
+    /// <summary>
+    /// The board it concerns: every event about a relay, group, input or the board itself has it, and goes with the
+    /// board when the board is removed. Null for an event about no board.
+    /// </summary>
+    public int? BoardId { get; set; }
+
     /// <summary>Null for events that don't concern one relay.</summary>
     public int? RelayId { get; set; }
 

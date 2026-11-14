@@ -69,7 +69,7 @@ public sealed class SettingsHandlersTests
 
         Assert.True(rig.Client.Login.IsNone);
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Empty(await db.BoardSettings.ToListAsync(Cancel));
+        Assert.Null((await db.Boards.SingleAsync(Cancel)).Username);
     }
 
     [Fact]
@@ -78,7 +78,8 @@ public sealed class SettingsHandlersTests
         await using var rig = await BoardTestRig.StartAsync();
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.BoardSettings.Add(new BoardSetting { Host = "127.0.0.1", Port = rig.Simulator.Port, Username = "admin", Password = "secret" });
+            var board = await db.Boards.SingleAsync(Cancel);
+            (board.Host, board.Port, board.Username, board.Password) = ("127.0.0.1", rig.Simulator.Port, "admin", "secret");
             await db.SaveChangesAsync(Cancel);
         }
 

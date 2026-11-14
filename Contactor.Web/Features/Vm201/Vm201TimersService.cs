@@ -113,6 +113,7 @@ public sealed partial class Vm201TimersService : BackgroundService
             db.EventLog.Add(new EventLogEntry
             {
                 TimestampUtc = _timeProvider.GetUtcNow().UtcDateTime,
+                BoardId = await db.FirstBoardIdAsync(cancellationToken),
                 Actor = EventActors.System,
                 Action = EventActions.BoardTimersDisabled,
                 Details = JsonSerializer.Serialize(new { mask = Vm201Channel.All }),

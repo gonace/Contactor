@@ -8,8 +8,14 @@ public sealed class Input
 {
     public const int NameMaxLength = 40;
 
-    /// <summary>The board's input, 1 to the board's input count.</summary>
+    /// <summary>The input's own number, in links and events. For now the same as <see cref="Channel"/> on the one board.</summary>
     public int Id { get; set; }
+
+    /// <summary>The board it is on.</summary>
+    public int BoardId { get; set; }
+
+    /// <summary>Its input on that board, 1 to the board's input count; unique per board.</summary>
+    public int Channel { get; set; }
 
     public string Name { get; set; } = "";
 

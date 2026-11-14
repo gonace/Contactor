@@ -145,7 +145,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     {
         await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.RelayGroups.Add(new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan });
+            db.RelayGroups.Add(new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan });
             await db.SaveChangesAsync(Cancel);
         }
 

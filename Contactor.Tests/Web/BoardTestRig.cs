@@ -8,6 +8,7 @@ using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Web;
 
@@ -46,7 +47,7 @@ internal sealed class BoardTestRig : IAsyncDisposable
 
     public GroupsHandler GroupSetup => Database.Services.GetRequiredService<GroupsHandler>();
 
-    public static async Task<BoardTestRig> StartAsync(Func<Vm201Simulator, Task>? prepare = null)
+    public static async Task<BoardTestRig> StartAsync(Func<Vm201Simulator, Task>? prepare = null, ILoggerProvider? logs = null)
     {
         var simulator = new Vm201Simulator();
         simulator.Start();
@@ -66,6 +67,10 @@ internal sealed class BoardTestRig : IAsyncDisposable
                 services.AddGroups(configuration);
                 services.AddEvents(configuration);
                 services.AddSchedules(configuration);
+                if (logs is not null)
+                {
+                    services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Trace).AddProvider(logs));
+                }
             },
             new Dictionary<string, string?>
             {

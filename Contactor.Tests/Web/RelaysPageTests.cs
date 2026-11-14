@@ -66,7 +66,7 @@ public sealed class RelaysPageTests
         {
             for (var g = 0; g < 4; g++)
             {
-                var group = new RelayGroup { Name = $"Group {g + 1}", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
+                var group = new RelayGroup { BoardId = 1, Name = $"Group {g + 1}", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
                 group.Members.Add(new RelayGroupMember { RelayId = (g * 2) + 1, Position = 1, RoleName = "Fan" });
                 group.Members.Add(new RelayGroupMember { RelayId = (g * 2) + 2, Position = 2, RoleName = "Heat" });
                 db.RelayGroups.Add(group);
@@ -95,7 +95,7 @@ public sealed class RelaysPageTests
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
             group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
             group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
             db.RelayGroups.Add(group);
@@ -123,7 +123,7 @@ public sealed class RelaysPageTests
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
-            var group = new RelayGroup { Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
             group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
             group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
             db.RelayGroups.Add(group);
