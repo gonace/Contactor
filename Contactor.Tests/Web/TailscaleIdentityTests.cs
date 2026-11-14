@@ -77,7 +77,12 @@ public sealed class TailscaleIdentityTests : IDisposable
         try
         {
             var builder = WebApplication.CreateSlimBuilder();
-            builder.WebHost.UseUrls("http://127.0.0.1:0", $"http://unix:{socket}");
+            // Listen calls, not URLs: in a URL, the colon after a Windows drive letter would end the socket's path.
+            builder.WebHost.ConfigureKestrel(kestrel =>
+            {
+                kestrel.Listen(IPAddress.Loopback, 0);
+                kestrel.ListenUnixSocket(socket);
+            });
             await using var app = builder.Build();
             var identity = Identity(socket);
             app.MapGet("/", async (HttpContext context) => await identity.AuthenticateAsync(context) ?? "denied");
