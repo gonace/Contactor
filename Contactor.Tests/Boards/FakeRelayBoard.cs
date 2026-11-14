@@ -62,7 +62,8 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     /// <summary>
     /// Relays the board switches and reports, but leaves out of the relays a command returns, as one whose answer for
-    /// them couldn't be read although they did switch.
+    /// them couldn't be read although they did switch. A command that has only these switches them, reports them and
+    /// then fails, as a real board's client does: the read after it shows what switched.
     /// </summary>
     public ChannelMask Unconfirmed { get; set; }
 
@@ -101,7 +102,10 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// </summary>
     public Func<Task>? AfterSwitch { get; set; }
 
-    /// <summary>When set, OFF commands are accepted but change nothing, like a relay that won't drop.</summary>
+    /// <summary>
+    /// When set, OFF commands are accepted but change nothing, like a relay that won't drop. They return the relays as
+    /// any command does: without <see cref="Refuse"/> and <see cref="Unconfirmed"/>.
+    /// </summary>
     public bool IgnoreOff { get; set; }
 
     /// <summary>When set, the next OFF throws <see cref="BoardNotConnectedException"/>, as if the connection had just dropped.</summary>
@@ -113,12 +117,6 @@ internal sealed class FakeRelayBoard : IRelayBoard
         {
             FailNextOff = false;
             throw new BoardNotConnectedException();
-        }
-
-        if (IgnoreOff)
-        {
-            EnsureConnected();
-            return Task.FromResult(relays);
         }
 
         return SwitchAsync(relays, on: false);
@@ -211,10 +209,16 @@ internal sealed class FakeRelayBoard : IRelayBoard
             throw new ArgumentOutOfRangeException(nameof(relays), relays, $"The board has relays 1–{Capabilities.RelayCount}.");
         }
 
+        // Refused relays stay as they are: a command with only these fails before it switches anything.
         var taken = relays.Except(Refuse);
-        if (!relays.IsEmpty && taken.Except(Unconfirmed).IsEmpty)
+        if (!relays.IsEmpty && taken.IsEmpty)
         {
             throw new BoardNotConnectedException("The board refused the command.");
+        }
+
+        if (!on && IgnoreOff)
+        {
+            return Confirmed(relays, taken);
         }
 
         BoardState state;
@@ -224,7 +228,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             {
                 var held = _heldRelays ?? _state.Relays;
                 _heldRelays = on ? held | taken : held.Except(taken);
-                return taken.Except(Unconfirmed);
+                return Confirmed(relays, taken);
             }
 
             state = _state = Stamp(_state with { Relays = on ? _state.Relays | taken : _state.Relays.Except(taken) });
@@ -242,7 +246,20 @@ internal sealed class FakeRelayBoard : IRelayBoard
             await after();
         }
 
-        return taken.Except(Unconfirmed);
+        return Confirmed(relays, taken);
+    }
+
+    // The relays a command returns: those it took, less the unconfirmed. A command that switched only unconfirmed
+    // relays fails, as on a real board, whose client can't tell that anything switched.
+    private ChannelMask Confirmed(ChannelMask relays, ChannelMask taken)
+    {
+        var confirmed = taken.Except(Unconfirmed);
+        if (!relays.IsEmpty && confirmed.IsEmpty)
+        {
+            throw new BoardNotConnectedException("The board's answers couldn't be read.");
+        }
+
+        return confirmed;
     }
 
     private void EnsureConnected()
