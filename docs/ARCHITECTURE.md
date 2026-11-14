@@ -45,7 +45,7 @@ Phone ──▶ the way in the setup guide chose
 
 ## Boards (`Contactor.Boards`)
 
-The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, and knows its model from the board catalogue, so another make of board needs its own project with those adapters, a reference from `Contactor.Web` and a line in the catalogue, and nothing else changes. One board per installation for now; several at once is issue #4.
+The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, and knows its model from the board catalogue, so another make of board needs its own project with those adapters, a reference from `Contactor.Web` and a line in the catalogue, and nothing else changes. One board per installation for now, though the database already has a row per board (`Board`); several at once is issue #4.
 
 - `IRelayBoard`: `Capabilities`, `State`, `StateChanged`, `TurnOnAsync`/`TurnOffAsync(ChannelMask)`, `PulseAsync(ChannelMask, TimeSpan)` and `RefreshAsync`. Commands go at once or throw `BoardNotConnectedException`; they are never queued. A command returns the relays the board took: all of them on a board that takes a mask at once (the VM201, the VM204), and on one that switches a relay per request (the VM208, the Waveshare and the Devantech boards) those it confirmed: not refused, and with an answer the app could read. One that took none throws. A command isn't confirmed by its return: the next `StateChanged` is the confirmation.
 - `PulseAsync` turns the relays on, and the board itself turns them off again after the length, also when the app stops in between. It goes like an ON: at once or not at all, never queued, and on a per-relay board it returns the relays the board took. It throws `NotSupportedException` on a board without a pulse (the VM204 and the VM208, issue #182), and `ArgumentOutOfRangeException` for a length the board can't do, both before anything is sent. The VM201 also refuses a length that `PulseAbility.CanDo` allows but its CMD_PULSE can't send exactly, such as 100 s (see its README).
@@ -56,7 +56,7 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - `IBoardConnection`: where the board is (`BoardEndpoint`) and its login (`BoardLogin`), with the defaults from the board's own settings, changeable while the app runs; `CheckLogin` says what the board can't take, and `RunAsync` keeps the connection open.
 - `IBoardTraffic`: each step on the connection as a `BoardTraceEntry` in plain words (direction, text, the bytes, error, routine), for the Debug screen and the toasts. The board writes the words and never puts a password in one.
 - **The board catalogue** (`Features/Boards/BoardCatalogue`): every model the app supports, as a `BoardModel` (id, brand, name without the brand, capabilities, default port, login length, an optional login hint in plain words, and whether the login is a password alone, `PasswordOnly`) and how to build it while the app runs (`ActiveBoard`: its adapters, what only it has, and its own small set of services).
-- **No default board, and no restart.** The rest of the app talks to one `BoardSwitch`, which is the `IRelayBoard`, `IBoardConnection` and `IBoardTraffic` and passes everything to the chosen board. Before one is chosen it has no relays and never answers: commands throw `BoardNotConnectedException` and nothing connects. `BoardChoice` chooses: at start the saved model (`Installation.BoardType`), and in the setup guide the one picked there, while the app runs. A switch adds the rows for the new board's relays and inputs, stops the old board's connection, starts the new one's, and reports the new board's state as unknown until it answers, as for a new address. An installation in use from before the guide chose the model (the guide done, none saved) keeps the board it ran: `Board:Type`, or the VM201, saved once at start. The app refuses to start on a saved model the catalogue doesn't have. A model is never switched once the guide is done: replacing the board is issue #32. `AddBoards` registers the switch and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the chosen board's connection open.
+- **No default board, and no restart.** The rest of the app talks to one `BoardSwitch`, which is the `IRelayBoard`, `IBoardConnection` and `IBoardTraffic` and passes everything to the chosen board. Before one is chosen it has no relays and never answers: commands throw `BoardNotConnectedException` and nothing connects. `BoardChoice` chooses: at start the saved model (the board's `Board.Type`), and in the setup guide the one picked there, while the app runs; the board takes the model's name (`BoardModel.Name`) until it has one of its own. A switch adds the rows for the new board's relays and inputs, stops the old board's connection, starts the new one's, and reports the new board's state as unknown until it answers, as for a new address. An installation in use from before the guide chose the model (the guide done, none saved) keeps the board it ran: `Board:Type`, or the VM201, saved once at start on its `Board` row (added then if it has none). The app refuses to start on a saved model the catalogue doesn't have. A model is never switched once the guide is done: replacing the board is issue #32. `AddBoards` registers the switch and what every board has in the app: its address and login on the Settings screen (`BoardAddressHandler`), the Debug trace (`BoardTrace`), the Debugging setting and `BoardHostedService`, which keeps the chosen board's connection open.
 - **Each board is described in `Contactor.Boards.<Model>/README.md`:** its protocol or routes, its client and simulator, and what to check on a real board. Read it before you change that board.
 - **Adding a model:** a project of its own (`Contactor.Boards.<Model>`) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, a `<Model>Boards.Create` in `Features/<Model>` that builds it with what only it has, one line in the catalogue, and a `README.md` that describes the board. Nothing else in the app changes.
 - `ISimulatedBoard`: a fake board of a model for development and tests, on a local port: its relays, inputs and connected clients, a relay switched or an input set "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`. A simulator with a pulse carries it out on its own `TimeProvider` (`SimulatedPulses`): the relay goes back with no further command from the app, a later pulse of the relay starts it again, and switching the relay ends it. Each model's project brings its own (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`, `WaveshareSimulator`, `DevantechSimulator`).
@@ -76,8 +76,41 @@ A small Blazor web app for development, laid out for a desktop browser and filli
 ## Data model (SQLite)
 
 ```
+Board                   (a relay board the app runs; one for now, several is issue #4. None on a new installation:
+                         seeding adds it with its rows once the setup guide chooses the model)
+  Id              int PK
+  Name            text           e.g. "Garage" (max 40); the model's name ("Velleman VM201") to begin with
+  Type            text           the model (catalogue id, e.g. "vm201"); "" while none is chosen: a board whose rows
+                                 came before the setup guide chose the model, which BoardChoice gives one at start
+  Host            text?          the address set in the app (Settings or the setup guide): IP address or host name;
+                                 null, with Port, while Vm201:Host/Port (install.sh) and the like apply
+  Port            int?           1–65535
+  Username        text?          the board's login; null while Vm201:Username/Password and the like apply
+  Password        text?          kept as typed (the board needs it); a secret: never logged or shown
+  SortOrder       int
+                                 Its relays, inputs, groups, runtime and events point to it with cascade delete;
+                                 removing a board comes later in issue #4.
+                                 The migration MoveToBoards made the board an installation ran Board 1, with the
+                                 address, login, model and runtime of the singletons it replaced (BoardSetting,
+                                 SchedulerState, BoardWatchState, Installation.BoardType); each relay's and input's
+                                 Channel is its Id, and every event got BoardId 1.
+
+BoardRuntime            (internal, one row per board)
+  BoardId         int PK FK      cascade delete
+  LastTickUtc     datetime?      the last minute the scheduler handled
+  LastContactUtc  datetime?      saved every 5 minutes while there is contact (spares the SD card), by
+                                 BoardEventRecorder
+  LongGapEndedUtc datetime?      when the app last came back after more than 10 min without contact (a crash,
+                                 a board that was off). A reboot or an upgrade is a short gap: the inputs' times
+                                 stay. At start the inputs are compared with their last logged state; one that
+                                 changed meanwhile, or changed during a lost contact, is logged with
+                                 {"noticed":true} and its time is unknown.
+
 Relay
-  Id              int PK         1 to the board's relay count (at most 64), seeded at start, never deleted
+  Id              int PK         the relay's own number, in links (relay/3) and events; for now the same as its
+                                 Channel (1 to 64). Seeded at start, never deleted
+  BoardId         int FK         the board it is on
+  Channel         int            1 to the board's relay count (at most 64); UNIQUE with BoardId
   Name            text           e.g. "Fan heater – Lathe" (max 40 characters)
   IsActive        bool           false = hidden from the list by default
   MaxOnMinutes    int?           auto-off after a manual on, or after it came on outside the app; null = never. Default 120.
@@ -101,6 +134,9 @@ User
 EventLog
   Id              int PK
   TimestampUtc    datetime
+  BoardId         int? FK        the board it concerns: every event about a relay, group, input or the board has it;
+                                 cascade delete, so a removed board's events go with it. Null for an event about no
+                                 board. Indexed with TimestampUtc
   RelayId         int?           null for events that don't concern one relay
   Actor           text           e-mail, or "schedule" | "auto-off" | "external" | "system" | "input:n" (an input's actions)
   Action          text           "on" | "off" | "pulse" | "rename" | "activate" | "deactivate" |
@@ -126,21 +162,9 @@ RelayRuntime            (internal, for auto-off; one row per relay, seeded at st
                                  command a change applies only to the run as it was read or as its rule requires. On a
                                  conflict RelayRuns reads the row again, applies the same wish by its rule, and saves again.
 
-SchedulerState          (internal, one row: the scheduler's progress)
-  Id              int PK = 1
-  LastTickUtc     datetime?      the last minute the scheduler handled
-
-BoardSetting            (one row; the board's address from the Settings screen)
-  Id              int PK = 1
-  Host            text           IP address or host name
-  Port            int            1–65535
-  Username        text?          the board's login; null while Vm201:Username/Password apply
-  Password        text?          kept as typed (the board needs it); never logged or shown
-                                 While there is no row, Vm201:Host/Port/Username/Password from the settings
-                                 (install.sh) apply; once saved in the app, the row wins.
-
 RelayGroup              (two or more relays that run as one, in a start order)
   Id              int PK
+  BoardId         int FK         the board its relays are on: a group's relays are all on one board (issue #204)
   Name            text           max 40
   Icon            text           "fan" | "flame" | "bulb" | "wind" | "spray" | "drop" | "wrench" | "bolt"
   MaxOnMinutes    int?           auto-off for the whole group; null = never
@@ -167,7 +191,6 @@ GroupRuntime            (internal; the sequence in progress, so it carries on af
 
 Installation            (one row; none on a new installation)
   Id              int PK = 1
-  BoardType       text?          the model chosen in the setup guide (catalogue id); null: no board yet
   AccessType      text?          the way in chosen in the setup guide: "local" | "cloudflare" | "tailscale";
                                  null: not chosen yet
   SignInType      text?          the sign-in chosen in the setup guide: "none" | "cloudflare-access" |
@@ -195,17 +218,10 @@ TailscaleSetting        (one row; Tailscale's settings saved in the setup guide)
                                  tunnel's token. Only the first join needs it.
   HostName        text           the app's name on the Tailscale network, "contactor" to begin with: one DNS label
 
-BoardWatchState         (one row; the app's contact with the board over time, kept by BoardEventRecorder)
-  Id              int PK = 1
-  LastContactUtc  datetime?      saved every 5 minutes while there is contact (spares the SD card)
-  LongGapEndedUtc datetime?      when the app last came back after more than 10 min without contact (a crash,
-                                 a board that was off). A reboot or an upgrade is a short gap: the inputs' times
-                                 stay. At start the inputs are compared with their last logged state; one that
-                                 changed meanwhile, or changed during a lost contact, is logged with
-                                 {"noticed":true} and its time is unknown.
-
 Input                   (one per digital input on the board, seeded at start like relays, never deleted)
-  Id              int PK         1 to the board's input count (at most 64)
+  Id              int PK         the input's own number, in links and events; for now the same as its Channel
+  BoardId         int FK         the board it is on
+  Channel         int            1 to the board's input count (at most 64); UNIQUE with BoardId
   Name            text           e.g. "Door" (max 40); "Input n" to begin with. Its state is always "Closed"
                                  (the board reads it as on) or "Open": an input is an electrical contact
   IsActive        bool           false = hidden from the list by default
@@ -250,7 +266,7 @@ InputAction             (a relay or a group an input switches: exactly one of Re
 - A window over midnight (OffTime < OnTime) belongs to the day it started.
 - **At start or reconnect:** reconcile against the schedules. If an active schedule window is running and the relay is off, turn it on. Never turn anything *off* at start, with two exceptions: auto-off times that have already passed, and a schedule's missed OffTime for a relay **that schedule turned on** (see below).
 - If two schedules overlap: ON wins (an OFF is skipped while another of the relay's schedules is running).
-- **Catch-up:** the scheduler stores the last minute it handled (`SchedulerState.LastTickUtc`). After a restart or a lost connection it handles what it missed, at most 24 h back: a window that is still running is turned on, and a missed OFF is applied only if `RelayRuntime.TurnedOnBy` is `schedule`. A relay a person turned on is never turned off at start. A live tick (OffTime within the last minute) turns the relay off whoever turned it on. While the board is disconnected the scheduler does nothing and doesn't move `LastTickUtc`.
+- **Catch-up:** the scheduler stores the last minute it handled (`BoardRuntime.LastTickUtc`). After a restart or a lost connection it handles what it missed, at most 24 h back: a window that is still running is turned on, and a missed OFF is applied only if `RelayRuntime.TurnedOnBy` is `schedule`. A relay a person turned on is never turned off at start. A live tick (OffTime within the last minute) turns the relay off whoever turned it on. While the board is disconnected the scheduler does nothing and doesn't move `LastTickUtc`.
 - A relay the scheduler turned on is turned off at the next tick when no running window covers it any more (its schedule was deleted, paused or moved during the run, or its OFF is older than the catch-up reaches): nothing else would turn it off.
 - **A person's auto-off wins over a schedule.** A relay a person turned on keeps their `AutoOffAtUtc` even when a schedule window starts while it is on. When auto-off turns it off, the schedule doesn't turn it back on during that run; it runs again at its next OnTime. A new "Turn off automatically after" limit never gives a relay the schedule turned on an auto-off.
 - A relay the scheduler turns on gets `RelayRuntime.TurnedOnBy = "schedule"` and no `AutoOffAtUtc`; its status line reads "On since 06:30 · schedule · off 08:00". An off relay whose schedule turns it on within 24 h reads "Schedule: on tomorrow 06:30".
@@ -343,7 +359,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
      - Status line when on: "On since 14:02 · Jane · off 16:02".
      - Status line when off: "Off", "Schedule: on tomorrow 06:30" or "Off since yesterday · Alex".
    - The link "New group" under the cards, then one button for inactive relays and inputs: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" for both, and "Hide inactive …". Inactive relays and inputs have a dashed border.
-   - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`); its text links to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`), or else "Open since unknown" with an ⓘ right after it (`WhyUnknown.razor`), whose reason shows as a tooltip on hover, on keyboard focus, or when pressed (a second press or a tap elsewhere closes it). The board only reports what an input reads now, so the time is unknown for a change the app only noticed after a gap in contact, or when a long gap came after it (see `BoardWatchState`). Beside it, a badge with its state, "Open" or "Closed" (green when closed). No button: the app can't switch an input.
+   - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`); its text links to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`), or else "Open since unknown" with an ⓘ right after it (`WhyUnknown.razor`), whose reason shows as a tooltip on hover, on keyboard focus, or when pressed (a second press or a tap elsewhere closes it). The board only reports what an input reads now, so the time is unknown for a change the app only noticed after a gap in contact, or when a long gap came after it (see `BoardRuntime.LongGapEndedUtc`). Beside it, a badge with its state, "Open" or "Closed" (green when closed). No button: the app can't switch an input.
    - The list has a section each for "Groups", "Relays" and "Inputs", in that order, each with a small heading and a grid of its own, so the cards line up and Tab goes row by row. With only relays (no groups and no input shown) there are no headings. "Relays" has no heading and no section when there is no relay card to show (every relay in a group, or the rest hidden as inactive).
    - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.

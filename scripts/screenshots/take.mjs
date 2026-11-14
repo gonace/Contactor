@@ -85,7 +85,7 @@ function seed() {
     user.run('jane@example.com', 'Jane');
     user.run('alex@example.com', 'Alex');
 
-    db.prepare('INSERT INTO "RelayGroup" ("Id", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, ?, \'fan\', 120, 1, 1)')
+    db.prepare('INSERT INTO "RelayGroup" ("Id", "BoardId", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, 1, ?, \'fan\', 120, 1, 1)')
         .run('Fan heater – Lathe');
     const member = db.prepare('INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "Position", "RoleName", "StartDelaySec", "RunOnSec") VALUES (1, ?, ?, ?, 3, ?)');
     member.run(1, 1, 'Fan', 300);
@@ -96,7 +96,7 @@ function seed() {
     schedule.run(3, null, 31, '06:30', '08:00', 'jane@example.com');
     schedule.run(null, 1, 31, '06:00', '07:30', 'alex@example.com');
 
-    const event = db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "RelayId", "GroupId", "Actor", "Action", "Details") VALUES (?, ?, ?, ?, ?, ?)');
+    const event = db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "BoardId", "RelayId", "GroupId", "Actor", "Action", "Details") VALUES (?, 1, ?, ?, ?, ?, ?)');
     event.run(utc(26 * 60), 4, null, 'alex@example.com', 'off', null);
     event.run(utc(25 * 60), 5, null, 'jane@example.com', 'on', null);
     event.run(utc(24 * 60 + 30), 5, null, 'auto-off', 'off', '{"afterMinutes":120}');
@@ -111,7 +111,8 @@ function seed() {
 // next start and opens on the relays. The shared person is called John, so the screens greet someone by name.
 function setUp() {
     const db = new DatabaseSync(database);
-    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "BoardType", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, \'vm201\', ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
+    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
+    db.prepare('INSERT INTO "Board" ("Id", "Name", "Type", "SortOrder") VALUES (1, \'Velleman VM201\', \'vm201\', 1)').run();
     db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (\'someone@contactor.invalid\', \'John\', 0)').run();
     db.close();
 }
