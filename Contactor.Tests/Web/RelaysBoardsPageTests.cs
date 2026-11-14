@@ -232,19 +232,26 @@ public sealed partial class RelaysBoardsPageTests
         };
         // Each page, and its side menu's list of the boards (a page without the filter of its own).
         Assert.Equal(before + (2 * pages.Count), Listeners(registry));
-        var renders = pages.Select(p => p.Renders).ToList();
-
         // A status from Barn first, then from the pages' own board: each page draws once, for its own board only. A
         // redraw for Barn would come first, as the statuses come in order. Statuses that change nothing, so nothing is
-        // logged and nothing else redraws the pages.
-        boards.Barn.SetRelay(3, false);
-        boards.First.SetRelay(4, false);
-        foreach (var (page, i) in pages.Select((p, i) => (p, i)))
+        // logged. What the pages still had on their way (the side menu's counts after the group was made) can draw
+        // them once more, so a few tries; a redraw for Barn would make every one of them two.
+        var once = false;
+        for (var attempt = 0; attempt < 5 && !once; attempt++)
         {
-            await BoardTestRig.WaitUntilAsync(() => page.Renders > renders[i]);
-            Assert.Equal(renders[i] + 1, page.Renders);
-            Assert.Empty(page.Errors);
+            var renders = pages.Select(p => p.Renders).ToList();
+            boards.Barn.SetRelay(3, false);
+            boards.First.SetRelay(4, false);
+            foreach (var (page, i) in pages.Select((p, i) => (p, i)))
+            {
+                await BoardTestRig.WaitUntilAsync(() => page.Renders > renders[i]);
+            }
+
+            once = pages.Select((p, i) => p.Renders == renders[i] + 1).All(x => x);
         }
+
+        Assert.True(once);
+        Assert.All(pages, page => Assert.Empty(page.Errors));
 
         foreach (var page in pages)
         {
