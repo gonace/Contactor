@@ -243,7 +243,7 @@
         {
             // An empty name is the model's, made unique, as when it was made.
             var newName = name.Length > 0 ? name : DefaultName;
-            if ((_error = await Address.RenameAsync(made.BoardId, newName, CancellationToken.None)) is not null)
+            if ((_error = await Address.RenameAsync(made.BoardId, newName, _user.Email, CancellationToken.None)) is not null)
             {
                 return;
             }

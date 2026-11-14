@@ -145,6 +145,46 @@ public sealed class BoardRemovalTests
         await Assert.ThrowsAnyAsync<BoardNotConnectedException>(() => barn.TurnOnAsync(ChannelMask.Of(1), Cancel));
     }
 
+    // While it waits for the board to show every relay off, "All off" goes again for what is still on, but only the
+    // first one logs an "Off": here relay 1 comes on again at the board twice, and is turned off three times.
+    [Fact]
+    public async Task Should_LogOnlyTheFirstAllOff_WhileTheBoardIsBeingRemoved()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var control = boards.App.Services.GetRequiredService<RelayControl>();
+        await control.TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 1), John, Cancel);
+        await control.TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 2), John, Cancel);
+        var offs = 0;
+        int? loggedBeforeTheThird = null;
+        boards.Barn.AfterSwitch = async () =>
+        {
+            if (boards.Barn.Sent[^1].On)
+            {
+                return;
+            }
+
+            offs++;
+            if (offs < 3)
+            {
+                // On again at the board itself, as a relay that won't stay off.
+                boards.Barn.SetRelay(1, on: true);
+                return;
+            }
+
+            if (offs == 3)
+            {
+                await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+                loggedBeforeTheThird = await db.EventLog.CountAsync(e => e.BoardId == boards.BarnId && e.Action == EventActions.Off && e.Actor == John, Cancel);
+            }
+        };
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        Assert.Equal(3, offs);
+        Assert.Equal(2, loggedBeforeTheThird);
+        Assert.Equal(ChannelMask.None, boards.Barn.State.Relays);
+    }
+
     // From the confirm on, nothing turns one of its relays on: a tap, an input's action or a group's start is refused,
     // while its OFFs go through.
     [Fact]

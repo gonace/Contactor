@@ -132,6 +132,23 @@ public sealed class RelayControlTests : IAsyncLifetime
         Assert.All(await db.RelayRuntimes.ToListAsync(Cancel), r => Assert.Null(r.OnSinceUtc));
     }
 
+    // "All off" again, for a board being removed: the relays go off and their runs end as ever, and no "Off" is
+    // logged, neither the person's nor an external one.
+    [Fact]
+    public async Task Should_TurnAllOffAgain_WithoutLoggingAnOff()
+    {
+        await Control.TurnOnAsync(2, Jane, Cancel);
+        await WaitUntilAsync(() => Client.State.Outputs == 0b0000_0010);
+
+        await Control.TurnAllOffAgainAsync(_database.Services.Live().BoardId, "john@example.com", Cancel);
+
+        await WaitUntilAsync(() => Client.State.Outputs == 0);
+        Assert.Equal(1, _simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.Off));
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal([EventActions.On], await db.EventLog.OrderBy(e => e.Id).Select(e => e.Action).ToListAsync(Cancel));
+        Assert.All(await db.RelayRuntimes.ToListAsync(Cancel), r => Assert.Null(r.OnSinceUtc));
+    }
+
     [Fact]
     public async Task Should_RecordNothing_WhenTheBoardIsNotConnected()
     {

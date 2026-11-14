@@ -90,6 +90,19 @@ public sealed class EventTextTests
     }
 
     [Theory]
+    [InlineData("""{"from":"Barn","to":"Garage"}""", "renamed the relay board from Barn to Garage")]
+    [InlineData("""{"to":"Garage"}""", "renamed the relay board to Garage")]
+    [InlineData(null, "renamed the relay board to ?")]
+    public void Should_ShowTheBoardsOldAndNewName_WhenTheBoardIsRenamed(string? details, string what)
+    {
+        var entry = Entry("sam@example.com", EventActions.BoardRenamed, details, relayId: null);
+
+        var view = EventText.For(entry, null, "Sam");
+
+        Assert.Equal(("Sam", what, (string?)null), (view.Who, view.What, view.Target));
+    }
+
+    [Theory]
     [InlineData(true, "Door:", "Closed")]
     [InlineData(false, "Door:", "Open")]
     public void Should_DescribeAnInputByItsName(bool on, string who, string what)

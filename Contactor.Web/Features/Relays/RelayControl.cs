@@ -149,7 +149,22 @@ public sealed class RelayControl
     /// for each that was on, then stops every group of that board in its own order, with its run-on times. Throws
     /// <see cref="BoardNotConnectedException"/> when that board isn't connected; nothing is sent or queued then.
     /// </summary>
-    public async Task TurnAllOffAsync(int boardId, string userEmail, CancellationToken cancellationToken)
+    public Task TurnAllOffAsync(int boardId, string userEmail, CancellationToken cancellationToken)
+    {
+        return TurnAllOffAsync(boardId, userEmail, logOff: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// "All off" for one board once more, as <see cref="TurnAllOffAsync(int, string, CancellationToken)"/> but without
+    /// an "Off" event for each relay: for a board being removed, whose first "All off" logged them, while it waits for
+    /// the board to show every relay off. A group's stop is logged as ever (one already stopping logs nothing again).
+    /// </summary>
+    public Task TurnAllOffAgainAsync(int boardId, string userEmail, CancellationToken cancellationToken)
+    {
+        return TurnAllOffAsync(boardId, userEmail, logOff: false, cancellationToken);
+    }
+
+    private async Task TurnAllOffAsync(int boardId, string userEmail, bool logOff, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         var board = _registry.Find(boardId) ?? throw new BoardNotConnectedException($"The app runs no relay board {boardId}.");
@@ -200,17 +215,21 @@ public sealed class RelayControl
             }
         }
 
-        foreach (var relayId in channels.RelayIds(wasOn.Except(refused)))
+        // Logged once: an "All off" again for a board being removed logs nothing more.
+        if (logOff)
         {
-            db.EventLog.Add(new EventLogEntry
+            foreach (var relayId in channels.RelayIds(wasOn.Except(refused)))
             {
-                TimestampUtc = now,
-                BoardId = boardId,
-                RelayId = relayId,
-                Actor = userEmail,
-                Action = EventActions.Off,
-                Details = """{"allOff":true}""",
-            });
+                db.EventLog.Add(new EventLogEntry
+                {
+                    TimestampUtc = now,
+                    BoardId = boardId,
+                    RelayId = relayId,
+                    Actor = userEmail,
+                    Action = EventActions.Off,
+                    Details = """{"allOff":true}""",
+                });
+            }
         }
 
         await SaveAsync(db, board.BoardId, cancellationToken);
