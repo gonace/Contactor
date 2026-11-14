@@ -16,7 +16,6 @@ namespace Contactor.Tests.Vm204;
 /// </summary>
 public sealed class Vm204ClientTests
 {
-
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -327,7 +326,7 @@ public sealed class Vm204ClientTests
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         var time = run.Time;
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && time.WaitsOnly(run.PollInterval));
         board.HangAll = true;
 
         // A command without an answer (1), and the status read it brings at once, without an answer too (2).
@@ -338,7 +337,7 @@ public sealed class Vm204ClientTests
         await Wait.UntilAsync(() => board.Hanging == 2 && time.WaitsOnly(Vm204Client.RequestTimeout));
         Assert.StartsWith(Vm204Api.StatusPath, board.Targets[^1], StringComparison.Ordinal);
         time.Advance(Vm204Client.RequestTimeout);
-        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsConnected);
 
         // The next command is the third in a row.
@@ -358,14 +357,14 @@ public sealed class Vm204ClientTests
     {
         await using var board = ScriptedBoard.Start();
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         board.BrokenAnswers = true;
 
         // A command whose answer can't be read (1), and the status read it brings at once, as broken (2).
         var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
         Assert.StartsWith("The VM204 didn't take the command: ", error.Message, StringComparison.Ordinal);
         await Wait.UntilAsync(() => board.Targets.Count(t => t.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal)) == 2
-            && run.Time.WaitsOnly(TimeSpan.FromSeconds(60)));
+            && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsConnected);
 
         // The next command is the third failure in a row: the board is lost without waiting for a poll.
