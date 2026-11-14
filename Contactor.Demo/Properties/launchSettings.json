@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5070",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Demo__AppPath": "../Contactor.Web/bin/Debug/net10.0/Contactor.Web.dll",
+        "Demo__SimulatorPath": "../Contactor.Simulator/bin/Debug/net10.0/Contactor.Simulator.dll",
+        "Demo__CopyEnvironment": "Development",
+        "Demo__DataRoot": "bin/demo-data"
+      }
+    }
+  }
+}

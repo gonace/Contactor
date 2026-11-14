@@ -1,0 +1,215 @@
+/* The demo's own pages. Every colour is a design token, copied from the app's app.css (docs/ARCHITECTURE.md, Design
+   tokens): the page around the two frames looks like the app, light and dark. */
+:root {
+    --bg: #F5F2EC;
+    --card: #FFFFFF;
+    --ink: #1D1B18;
+    --muted: #5C574F;
+    --line: #E3DED5;
+    --chip: #E8E3DA;
+    --accent: #C2410C;
+    --on-ink: #FFFFFF;
+    --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+    color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #16140F;
+        --card: #221F1A;
+        --ink: #F2EEE7;
+        --muted: #B3AA9E;
+        --line: #332E27;
+        --chip: #2E2A24;
+        --accent: #F06A2C;
+        --on-ink: #16140F;
+    }
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.4;
+}
+
+h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+p {
+    margin: 0;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+button {
+    min-height: 44px;
+    padding: 0 20px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* The page: a header, then the two frames. On a phone and a tablet (below 1024 px) one frame at a time, by the tabs:
+   radio buttons and their labels, so it works without JavaScript. */
+body.demo {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.demo-header {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--card);
+}
+
+.demo-intro p {
+    font-size: 14px;
+}
+
+.tab-input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.demo-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--chip);
+}
+
+.demo-tabs label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    border-radius: 10px;
+    color: var(--muted);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#tab-app:checked ~ .demo-header label[for="tab-app"],
+#tab-simulator:checked ~ .demo-header label[for="tab-simulator"] {
+    background: var(--card);
+    color: var(--ink);
+}
+
+#tab-app:focus-visible ~ .demo-header label[for="tab-app"],
+#tab-simulator:focus-visible ~ .demo-header label[for="tab-simulator"] {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.demo-frames {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+.demo-frames iframe {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--bg);
+}
+
+#tab-app:checked ~ .demo-frames .frame-simulator,
+#tab-simulator:checked ~ .demo-frames .frame-app {
+    display: none;
+}
+
+/* Desktop: the simulator on the left third, the app on the right two thirds, no tabs. */
+@media (min-width: 1024px) {
+    .demo-header {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .demo-intro {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+    }
+
+    .demo-tabs {
+        display: none;
+    }
+
+    #tab-app:checked ~ .demo-frames .frame-simulator,
+    #tab-simulator:checked ~ .demo-frames .frame-app {
+        display: block;
+    }
+
+    .demo-frames .frame-simulator {
+        flex: 1;
+        border-right: 1px solid var(--line);
+    }
+
+    .demo-frames .frame-app {
+        flex: 2;
+    }
+}
+
+/* Busy, stopped: one card in the middle. */
+body.message {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 16px;
+}
+
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 480px;
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--card);
+}
+
+.card h1 {
+    font-size: 24px;
+}

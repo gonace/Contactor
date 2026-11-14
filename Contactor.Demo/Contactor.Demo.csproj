@@ -1,0 +1,55 @@
+<!-- A plain project with ASP.NET Core, not Microsoft.NET.Sdk.Web: a web project that references Contactor.Web (for its
+     database code) fails on both projects' static web assets. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Contactor.Demo</RootNamespace>
+    <!-- `dotnet run` from anywhere finds the paths in Properties/launchSettings.json from here. -->
+    <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Yarp.ReverseProxy" />
+  </ItemGroup>
+
+  <!-- The usings Microsoft.NET.Sdk.Web would bring. -->
+  <ItemGroup>
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <!-- The page's stylesheet, served from the assembly. The demo has no appsettings.json or web root of its own (its
+       settings come from the environment): nothing of it lands on the app's in a project that references both, such as
+       Contactor.Tests. -->
+  <ItemGroup>
+    <EmbeddedResource Include="demo.css" LogicalName="demo.css" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contactor.Web\Contactor.Web.csproj" />
+    <ProjectReference Include="..\Contactor.Simulator\Contactor.Simulator.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Contactor.Web is referenced for its database code only; the simulator only so a build of the demo builds it.
+       The app's settings are the app's, not the demo's (the demo starts the app from the app's own folder): its
+       appsettings files stay out of the demo's output and its published folder. -->
+  <Target Name="LeaveOutTheAppsSettingsFromBuild" AfterTargets="GetCopyToOutputDirectoryItems">
+    <ItemGroup>
+      <_TransitiveItemsToCopyToOutputDirectory Remove="@(_TransitiveItemsToCopyToOutputDirectory)" Condition="'%(Extension)' == '.json' and $([System.String]::new('%(Filename)').StartsWith('appsettings')) and $([System.String]::new('%(FullPath)').Contains('Contactor.Web'))" />
+    </ItemGroup>
+  </Target>
+  <Target Name="LeaveOutTheAppsSettingsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList" BeforeTargets="_HandleFileConflictsForPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.json' and $([System.String]::new('%(Filename)').StartsWith('appsettings')) and $([System.String]::new('%(FullPath)').Contains('Contactor.Web'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>
