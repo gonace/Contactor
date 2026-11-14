@@ -195,12 +195,14 @@ public sealed class BoardRemovalTests
         db.InputActions.Add(new InputAction { InputId = input, RelayId = relays[2] });
         db.InputActions.Add(new InputAction { InputId = input, GroupId = group.Id });
         db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, BoardId = boardId, RelayId = relays[1], Actor = John, Action = EventActions.Rename });
-        if (!await db.GroupRuntimes.AnyAsync(r => r.GroupId == group.Id, Cancel))
-        {
-            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id, Phase = GroupPhases.Idle });
-        }
-
         await db.SaveChangesAsync(Cancel);
+
+        // The group's runtime row comes from its board's sequencer, at its next step.
+        await Wait.UntilAsync(() =>
+        {
+            using var check = boards.Factory.CreateDbContext();
+            return check.GroupRuntimes.Any(r => r.GroupId == group.Id);
+        });
         return group.Id;
     }
 
