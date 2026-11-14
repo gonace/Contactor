@@ -103,6 +103,22 @@ public sealed class HealthEndpointsTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // The image's own health check, with Serve's address set: a request from this machine on port 8080 still gets its
+    // answer.
+    [Fact]
+    public async Task Should_Answer_OnTheAppsPort_WithAServeAddress()
+    {
+        await using var app = new TestWebApp(settings: new Dictionary<string, string?> { ["Tailscale:ServeAddress"] = "127.0.0.2:8081" })
+        {
+            LocalEndPoint = IPEndPoint.Parse("127.0.0.1:8080"),
+        };
+        using var http = app.CreateClient();
+
+        using var response = await http.GetAsync(HealthEndpoints.Path, Cancel);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     [Fact]
     public async Task Should_SeedTheDatabase_WhenTheAppStarts()
     {
