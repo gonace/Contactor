@@ -85,8 +85,9 @@ dotnet run --project Contactor.AppHost
 ```
 
 It needs Docker Desktop. The AppHost starts a VM201 simulator on port 9760, and the app as its image, built from the
-`Dockerfile` with cloudflared and Tailscale inside, as on a real installation, on http://localhost:8080. What the app
-keeps is in the Docker volume `contactor-dev`; delete it to start over. A new database starts with the setup guide,
+`Dockerfile` with cloudflared and Tailscale inside, as on a real installation, on http://localhost:8080; Docker Desktop
+shows its container under `contactor`. What the app keeps is in the Docker volume `contactor-dev`; delete it to start
+over. A new database starts with the setup guide,
 behind the setup code in the app's log: choose any way in and sign-in there, as on a real installation. For quick work
 on this computer only, `dotnet run --project Contactor.Web` runs the app on its own, with a local database file,
 against the simulator started with `dotnet run --project Contactor.Simulator`. The
