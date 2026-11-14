@@ -453,6 +453,44 @@ public sealed class BoardAddingTests
         Assert.DoesNotContain("side-boards", WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel)), StringComparison.Ordinal);
     }
 
+    // The side menu's list on a page without the filter shows a board's new name at once.
+    [Fact]
+    public async Task Should_ShowARenamedBoard_InTheSideMenu()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<RelayDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await RelayIdAsync(boards, 1, 3) });
+        Assert.Contains("Barn", await page.TextAsync(), StringComparison.Ordinal);
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardAddressHandler>().RenameAsync(boards.BarnId, "Barn north", Cancel));
+
+        await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Barn north", StringComparison.Ordinal));
+    }
+
+    // The side menu's list redraws only for a change it shows: a status from Barn that changes nothing doesn't redraw
+    // a page of the first board's relay (its own board's status draws it once); a relay switched or contact lost does.
+    [Fact]
+    public async Task Should_RedrawTheSideMenu_OnlyForAChangeItShows()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<RelayDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await RelayIdAsync(boards, 1, 3) });
+        var renders = page.Renders;
+
+        // In order: Barn's status first, then the first board's. Only the page's own draws.
+        boards.Barn.SetRelay(3, false);
+        boards.First.SetRelay(4, false);
+        await BoardTestRig.WaitUntilAsync(() => page.Renders > renders);
+        Assert.Equal(renders + 1, page.Renders);
+
+        renders = page.Renders;
+        boards.Barn.SetRelay(3, true);
+        await BoardTestRig.WaitUntilAsync(() => page.Renders > renders);
+
+        renders = page.Renders;
+        boards.Barn.SetConnected(false);
+        await BoardTestRig.WaitUntilAsync(() => page.Renders > renders);
+        Assert.Empty(Errors(page));
+    }
+
     // The setup guide's board steps, now shared with "Add a board", still set up the first board as before: its model,
     // install.sh's address for it, its relays' names, and "All set".
     [Fact]

@@ -11,6 +11,7 @@
 @inject BoardRegistry Registry
 @inject TimeProvider TimeProvider
 @inject ILogger<TabBar> Log
+@inject RelayChanges Changes
 
 <div class="bottom @(SideMenuOnly ? "side-only" : null)">
     @if (_debugging)
@@ -141,7 +142,18 @@
     {
         Registry.BoardsChanged += OnBoardsChanged;
         Registry.StateChanged += OnBoardChanged;
-        await LoadCountsAsync();
+        Changes.Changed += OnRelaysChanged;
+        try
+        {
+            await LoadCountsAsync();
+        }
+#pragma warning disable CA1031 // The page opens all the same; the list shows no counts until the next change.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogCountsFailed(ex);
+        }
+
         _email = (await CurrentUser.GetAsync())?.Email;
         if (_email is null)
         {
@@ -173,6 +185,16 @@
 
         await using var db = await DbFactory.CreateDbContextAsync();
         _counts = await BoardCounts.LoadAsync(db, Registry, CancellationToken.None);
+    }
+
+    // A board renamed, a relay's "In use", a group made or deleted: the list's names and counts again, when the page
+    // has no filter of its own.
+    private void OnRelaysChanged(object? sender, EventArgs e)
+    {
+        if (SideList is null && Registry.All.Count > 1)
+        {
+            _ = RefreshListAsync(reload: true);
+        }
     }
 
     // A board added or removed: the list, and its counts, again.
@@ -226,7 +248,7 @@
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            Log.LogError(ex, "Counting the boards' relays for the side menu failed");
+            LogCountsFailed(ex);
         }
     }
 
@@ -234,6 +256,7 @@
     {
         Registry.BoardsChanged -= OnBoardsChanged;
         Registry.StateChanged -= OnBoardChanged;
+        Changes.Changed -= OnRelaysChanged;
         Debugging.Changed -= OnDebuggingChanged;
         _watch?.Dispose();
 
@@ -247,6 +270,11 @@
 
             _toasts.Clear();
         }
+    }
+
+    private void LogCountsFailed(Exception ex)
+    {
+        Log.LogError(ex, "Counting the boards' relays for the side menu failed");
     }
 
     private static string Arrow(BoardTraceItem item)
