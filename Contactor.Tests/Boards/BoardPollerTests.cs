@@ -610,6 +610,11 @@ public sealed class BoardPollerTests
         Assert.Equal(forgotten, poller.State);
         Assert.Equal(forgotten, board.Changes[^1]);
 
+        // Forgotten again, e.g. a second move before an answer: nothing new to report.
+        var reported = board.Changes.Count;
+        poller.Forget();
+        Assert.Equal(reported, board.Changes.Count);
+
         answer.SetResult(7);
         await command;
         Assert.Equal(forgotten, poller.State);

@@ -240,9 +240,20 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     }
 
     /// <summary>Throws <see cref="InvalidOperationException"/> before a model is chosen: it has no address to change.</summary>
+    /// <summary>
+    /// Moves the board to <paramref name="endpoint"/>. At a new address the changes the app just asked the old one for
+    /// are no longer expected (<see cref="Expected"/>): another board may be there, and its changes are its own.
+    /// </summary>
     public void SetEndpoint(BoardEndpoint endpoint)
     {
-        (Active ?? throw new InvalidOperationException(NotChosen)).Connection.SetEndpoint(endpoint);
+        ArgumentNullException.ThrowIfNull(endpoint);
+        var connection = (Active ?? throw new InvalidOperationException(NotChosen)).Connection;
+        var moved = connection.Endpoint != endpoint;
+        connection.SetEndpoint(endpoint);
+        if (moved)
+        {
+            Expected.Clear();
+        }
     }
 
     /// <summary>Throws <see cref="InvalidOperationException"/> before a model is chosen: it has no login to change.</summary>
