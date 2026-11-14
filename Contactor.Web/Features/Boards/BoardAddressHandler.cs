@@ -14,9 +14,6 @@ namespace Contactor.Web.Features.Boards;
 /// </summary>
 public sealed class BoardAddressHandler
 {
-    /// <summary>What saving says before a board is chosen: there is nothing to save it for.</summary>
-    public const string NoBoardMessage = "No relay board has been chosen yet.";
-
     // Before the app runs a board on the row: none.
     private static readonly BoardEndpoint NoEndpoint = new("", 0);
 
@@ -64,7 +61,7 @@ public sealed class BoardAddressHandler
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         if (await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
-            return NoBoardMessage;
+            return LiveBoard.NotChosen;
         }
 
         if (board.Name == name)
@@ -107,7 +104,7 @@ public sealed class BoardAddressHandler
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         if (_registry.Find(boardId) is not { } connection)
         {
-            return NoBoardMessage;
+            return LiveBoard.NotChosen;
         }
 
         var current = await LoginInUseAsync(boardId, cancellationToken);
@@ -119,9 +116,10 @@ public sealed class BoardAddressHandler
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        // The board's row can be removed after the check above.
         if (await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
-            return NoBoardMessage;
+            return LiveBoard.NotChosen;
         }
 
         if (BoardSetup.SavedEndpoint(board) is null)
@@ -186,7 +184,7 @@ public sealed class BoardAddressHandler
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         if (_registry.Find(boardId) is not { } connection || await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
-            return NoBoardMessage;
+            return LiveBoard.NotChosen;
         }
 
         var saved = BoardSetup.SavedEndpoint(board);

@@ -93,6 +93,22 @@ public sealed class BoardAddressHandlerTests
     }
 
     [Fact]
+    public async Task Should_SaveNothing_ForABoardThatDoesNotExist()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var missing = rig.Live.BoardId + 1;
+
+        Assert.Equal(LiveBoard.NotChosen, await Handler(rig).SaveAsync(missing, "127.0.0.1", 9760, John, Cancel));
+        Assert.Equal(LiveBoard.NotChosen, await Handler(rig).SaveLoginAsync(missing, "admin", "pw", none: false, John, Cancel));
+        Assert.Equal(LiveBoard.NotChosen, await Handler(rig).RenameAsync(missing, "Workshop", Cancel));
+
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        var board = await db.Boards.AsNoTracking().SingleAsync(Cancel);
+        Assert.Equal(((string?)null, (string?)null), (board.Host, board.Username));
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action is EventActions.BoardAddressChanged or EventActions.BoardLoginChanged);
+    }
+
+    [Fact]
     public async Task Should_UseTheSavedAddress_AfterARestart()
     {
         await using var rig = await BoardTestRig.StartAsync();
