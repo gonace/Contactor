@@ -55,7 +55,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         _time = time;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<BoardRegistry>();
-        Only = new OnlyBoard(this, time, loggerFactory.CreateLogger<OnlyBoard>());
+        Only = new OnlyBoard(this, loggerFactory.CreateLogger<OnlyBoard>());
     }
 
     /// <summary>

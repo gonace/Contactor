@@ -64,45 +64,12 @@
     @if (Several)
     {
         <div class="boards-bar">
-            @* The board filter is this browser's: a tap posts the new choice, which comes back as a cookie (RelaysEndpoints). *@
-            <form id="board-filter" method="post" action="relays/boards"><AntiforgeryToken /></form>
             @if (_allBoardsMessage is not null)
             {
                 <p class="error" role="alert">@_allBoardsMessage</p>
             }
-            <div class="chips-row" role="group" aria-label="Boards to show">
-                <button type="submit" form="board-filter" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">All</button>
-                @foreach (var board in Boards)
-                {
-                    var state = board.State;
-                    var count = CountOf(board.BoardId);
-                    var picked = !Filter.IsAll && Filter.Shows(board.BoardId);
-                    <button type="submit" form="board-filter" name="show" value="@ToggleValue(board.BoardId)" class="chip-filter @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(picked ? "true" : "false")" @key="board.BoardId">
-                        <span class="cn">
-                            @if (!state.IsConnected)
-                            {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
-                            }
-                            @(board.Name + " ")
-                            @if (state.HasAnswered)
-                            {
-                                <span class="cc" aria-hidden="true">@count.On/@count.Active</span>
-                                <span class="visually-hidden">@count.On of @count.Active on</span>
-                            }
-                            @if (!state.IsConnected)
-                            {
-                                <span class="visually-hidden">: no contact</span>
-                            }
-                        </span>
-                        @Lamps(board)
-                    </button>
-                }
-            </div>
-            @if (!Filter.IsAll)
-            {
-                var shown = CountOf(ShownBoards);
-                <p class="showing">@BoardsText.Showing(ShownBoards.Count, Boards.Count, shown.On, shown.Active) · <button type="submit" form="board-filter" name="show" value="@BoardFilter.AllValue" class="link">Show all</button></p>
-            }
+            @* The board filter is this browser's: a tap posts the new choice, which comes back as a cookie (RelaysEndpoints). *@
+            <BoardPicker Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Counts="_counts" Showing="@ShowingText" />
             @* A board out of contact is never out of sight: a line for each one the filter hides. *@
             @foreach (var board in Boards.Where(b => !Filter.Shows(b.BoardId) && !b.State.IsConnected))
             {
@@ -251,6 +218,7 @@
 
 @code {
     private List<Relay> _relays = [];
+    private BoardCounts _counts = BoardCounts.None;
     private IReadOnlyList<GroupView> _groups = [];
     private IReadOnlyList<InputView> _inputs = [];
     private int? _failedGroupId;
@@ -279,7 +247,7 @@
 
     /// <summary>The boards this browser picked to show (<see cref="BoardFilter"/>), as the page was opened.</summary>
     [CascadingParameter]
-    public BoardFilter? PickedBoards { get; set; }
+    public BoardFilters? PickedBoards { get; set; }
 
     private IReadOnlyList<LiveBoard> Boards => Registry.All;
 
@@ -294,7 +262,7 @@
     // The one board's state; with several boards each card takes its own board's (StateOf).
     private BoardState State => OnlyOne?.State ?? BoardState.Initial;
 
-    private BoardFilter Filter => (PickedBoards ?? BoardFilter.All).For([.. Boards.Select(b => b.BoardId)]);
+    private BoardFilter Filter => (PickedBoards?.Relays ?? BoardFilter.All).For([.. Boards.Select(b => b.BoardId)]);
 
     private IReadOnlyList<LiveBoard> ShownBoards => [.. Boards.Where(b => Filter.Shows(b.BoardId))];
 
@@ -320,11 +288,7 @@
     // A group counts as one, and its relays aren't listed on their own. Only what the board has answered counts as on.
     private (int On, int Active) CountOf(int boardId)
     {
-        var state = StateOf(boardId);
-        var active = _relays.Count(r => r.BoardId == boardId && r.IsActive) + _groups.Count(g => g.BoardId == boardId);
-        var on = _relays.Count(r => r.BoardId == boardId && r.IsActive && state.IsOn(r.Channel))
-            + _groups.Count(g => g.BoardId == boardId && state.Relays.Overlaps(g.Mask));
-        return (on, active);
+        return _counts.Of(boardId, StateOf(boardId));
     }
 
     private (int On, int Active) CountOf(IEnumerable<LiveBoard> boards)
@@ -333,11 +297,19 @@
         return (counts.Sum(c => c.On), counts.Sum(c => c.Active));
     }
 
-    // What a tap on the board posts: the filter as it would be after it.
-    private string ToggleValue(int boardId)
+    // "Showing 2 of 9 boards · 7 of 28 on" while filtered.
+    private string? ShowingText
     {
-        var next = Filter.Toggle(boardId, [.. Boards.Select(b => b.BoardId)]);
-        return next.IsAll ? BoardFilter.AllValue : next.Format();
+        get
+        {
+            if (Filter.IsAll)
+            {
+                return null;
+            }
+
+            var shown = CountOf(ShownBoards);
+            return BoardsText.Showing(ShownBoards.Count, Boards.Count, shown.On, shown.Active);
+        }
     }
 
     private string NoContactSince(BoardState state)
@@ -401,45 +373,10 @@
     };
 
     // One small bar per relay of the board: orange when on. Nothing is on before its first answer.
-    private RenderFragment Lamps(LiveBoard board) => __builder =>
-    {
-        var state = board.State;
-        <span class="lamps" aria-hidden="true">
-            @for (var channel = 1; channel <= board.Capabilities.RelayCount; channel++)
-            {
-                <span class="lamp @(state.IsOn(channel) ? "on" : null)"></span>
-            }
-        </span>
-    };
-
     // The desktop's side menu: every board, to pick which to show.
     private RenderFragment BoardList => __builder =>
     {
-        var all = CountOf(Boards);
-        <div class="list-label" id="boards-label">BOARDS</div>
-        <div class="side-boards" role="group" aria-labelledby="boards-label">
-            <button type="submit" form="board-filter" name="show" value="@BoardFilter.AllValue" class="side-board all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">
-                <span class="line"><span class="name">All boards</span></span>
-                <span class="hint">@(AnyAnswered ? $"{all.On} of {all.Active} on · " : "")@Boards.Count boards</span>
-            </button>
-            @foreach (var board in Boards)
-            {
-                var state = board.State;
-                var count = CountOf(board.BoardId);
-                var picked = !Filter.IsAll && Filter.Shows(board.BoardId);
-                <button type="submit" form="board-filter" name="show" value="@ToggleValue(board.BoardId)" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(picked ? "true" : "false")" @key="board.BoardId">
-                    <span class="line"><span class="name">@board.Name</span><span class="dot @(state.IsConnected ? null : "off")" aria-hidden="true"></span></span>
-                    <span class="hint">
-                        @(state.HasAnswered ? $"{count.On} of {count.Active} on" : "")
-                        @if (!state.IsConnected)
-                        {
-                            @(state.HasAnswered ? " · " : "")<span class="no-contact">No contact</span>
-                        }
-                    </span>
-                    @Lamps(board)
-                </button>
-            }
-        </div>
+        <BoardPicker Side="true" Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Counts="_counts" />
     };
 
     private RenderFragment GroupCard(GroupView group) => __builder =>
@@ -592,6 +529,7 @@
         _relays = (await db.Relays.AsNoTracking().OrderBy(r => r.SortOrder).ThenBy(r => r.Channel).ToListAsync())
             .Where(r => Registry.HasRelay(r.BoardId, r.Channel) && !members.Contains(r.Id))
             .ToList();
+        _counts = new BoardCounts(_relays.Where(r => r.IsActive).Select(r => (r.BoardId, r.Channel)), _groups.Select(g => (g.BoardId, g.Mask)));
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
         _names = await ActorNames.LoadAsync(db, CancellationToken.None);
 

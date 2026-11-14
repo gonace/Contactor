@@ -121,7 +121,6 @@ public sealed class BoardRegistryTests
         Assert.Equal(2, bridged.Count);
         Assert.False(bridged[0].HasAnswered);
         Assert.True(bridged[1].IsConnected);
-        Assert.Same(board.Trace, registry.Only.Trace);
     }
 
     [Fact]

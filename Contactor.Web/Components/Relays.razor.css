@@ -408,115 +408,13 @@ button:disabled {
     cursor: pointer;
 }
 
-/* The board filter: a chip per board (a row that scrolls sideways), what it shows, and the boards it hides that have
-   no contact. On a desktop the side menu has the boards instead of the chips. */
+/* The board filter (BoardPicker), and the boards it hides that have no contact. --gutter: the chips reach the edges. */
 .boards-bar {
+    --gutter: 16px;
     padding: 0 16px 12px;
     display: flex;
     flex-direction: column;
     gap: 8px;
-}
-
-/* Positioned, so a chip's hidden words for screen readers stay inside the row and never widen the page. */
-.chips-row {
-    position: relative;
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    margin: 0 -16px;
-    padding: 2px 16px 6px;
-    scrollbar-width: none;
-}
-
-.chips-row::-webkit-scrollbar {
-    display: none;
-}
-
-.chip-filter {
-    position: relative;
-    flex: none;
-    min-height: 44px;
-    padding: 6px 14px;
-    border-radius: 22px;
-    border: 1.5px solid var(--line-strong);
-    background: var(--card);
-    color: var(--ink);
-    font: inherit;
-    font-size: 15px;
-    font-weight: 600;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 5px;
-    cursor: pointer;
-}
-
-.chip-filter .cn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-}
-
-.chip-filter .cc {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--muted);
-}
-
-/* Picked: the light orange of "you are here". */
-.chip-filter.picked {
-    background: var(--accent-tint);
-    border-color: var(--accent-border);
-    color: var(--accent);
-}
-
-/* No contact: red, picked or not; a picked one has a thicker border. */
-.chip-filter.lost {
-    background: var(--danger-bg);
-    border-color: var(--danger-border);
-    color: var(--danger-ink);
-}
-
-.chip-filter.lost.picked {
-    border-width: 2.5px;
-}
-
-.chip-filter.lost .cc {
-    color: var(--danger-ink);
-}
-
-.chip-filter.all {
-    justify-content: center;
-}
-
-.chip-filter .lamps {
-    display: none;
-}
-
-.showing {
-    margin: 0 4px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    column-gap: 4px;
-    font-size: 14px;
-    color: var(--muted);
-}
-
-/* "Show all": a button that reads as a link, still 44 px to tap. */
-.link {
-    min-height: 44px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--accent);
-    font: inherit;
-    font-weight: 600;
-    text-decoration: underline;
-    cursor: pointer;
 }
 
 .lost-line {
@@ -534,25 +432,6 @@ button:disabled {
 
 .lost-line svg {
     flex-shrink: 0;
-}
-
-/* One small bar per relay: orange when on. */
-.lamps {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px;
-    max-width: 180px;
-}
-
-.lamp {
-    width: 14px;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--chip);
-}
-
-.lamp.on {
-    background: var(--accent);
 }
 
 /* A board's section: its name, its model and count, its own "All off", then its connection, relays and inputs. */
@@ -609,97 +488,6 @@ button:disabled {
 
 .board-line .online {
     margin: 0;
-}
-
-/* The desktop's side menu: the boards, to pick which to show (in TabBar's list, which only shows on a desktop). */
-.list-label {
-    padding: 0 12px 4px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-}
-
-.side-boards {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.side-board {
-    position: relative;
-    min-height: 44px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1.5px solid var(--line-strong);
-    background: var(--card);
-    color: var(--ink);
-    font: inherit;
-    text-align: left;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    cursor: pointer;
-}
-
-.side-board.picked {
-    background: var(--accent-tint);
-    border-color: var(--accent-border);
-}
-
-.side-board.picked .name {
-    color: var(--accent);
-}
-
-.side-board.lost {
-    background: var(--danger-bg);
-    border-color: var(--danger-border);
-    color: var(--danger-ink);
-}
-
-.side-board.lost.picked {
-    border-width: 2.5px;
-}
-
-.side-board.lost .name,
-.side-board.lost .hint {
-    color: var(--danger-ink);
-}
-
-.side-board .line {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.side-board .name {
-    flex: 1;
-    min-width: 0;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.3;
-    overflow-wrap: anywhere;
-}
-
-.side-board .dot {
-    width: 8px;
-    height: 8px;
-    flex-shrink: 0;
-    border-radius: 4px;
-    background: var(--ok);
-}
-
-.side-board .dot.off {
-    background: var(--danger-border);
-}
-
-.side-board .hint {
-    font-size: 13px;
-    color: var(--muted);
-}
-
-.side-board .no-contact {
-    font-weight: 600;
 }
 
 /* "Turn off all boards" asks first: a box over the page. */
@@ -777,18 +565,8 @@ button:disabled {
         padding: 0 24px 14px;
     }
 
-    .chips-row {
-        margin: 0 -24px;
-        padding: 2px 24px 6px;
-    }
-
-    /* The chips show each board's lamps; "All" is as tall as the rest. */
-    .chip-filter .lamps {
-        display: flex;
-    }
-
-    .chip-filter.all {
-        align-self: stretch;
+    .boards-bar {
+        --gutter: 24px;
     }
 
     .board-head {
@@ -837,6 +615,10 @@ button:disabled {
         padding: 0 32px 16px;
     }
 
+    .boards-bar {
+        --gutter: 32px;
+    }
+
     .relays {
         padding: 4px 32px 32px;
         gap: 16px;
@@ -861,15 +643,6 @@ button:disabled {
         margin: 0;
         padding: 0 16px;
         border-radius: 10px;
-    }
-}
-
-/* A desktop with the side menu: the boards are listed there, so no chips. */
-@supports selector(:has(a)) {
-    @media (min-width: 1024px) {
-        .chips-row {
-            display: none;
-        }
     }
 }
 

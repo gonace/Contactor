@@ -14,8 +14,15 @@
         <div class="toasts" role="log" aria-live="polite" aria-label="Traffic to the relay board">
             @foreach (var toast in ToastsNow)
             {
-                <p class="toast @(toast.Item.IsError ? "error" : null)" @key="toast.Item.Id">
-                    <span class="text">@Arrow(toast.Item) @toast.Item.Text</span>
+                <p class="toast @(toast.Item.IsError ? "error" : null)" @key="toast">
+                    <span class="text">
+                        @Arrow(toast.Item)
+                        @if (toast.Board is not null)
+                        {
+                            <span class="where">@toast.Board</span>
+                        }
+                        @toast.Item.Text
+                    </span>
                     @if (toast.Item.Hex is not null)
                     {
                         <span class="hex">@toast.Item.Hex</span>
@@ -74,10 +81,8 @@
     private readonly List<Toast> _toasts = [];
     private readonly Lock _lock = new();
 
-    // Until the screens show every board (Issue #4): one board. Pages with the tab bar only open once the setup guide is done, and a board is
-    // always chosen by then. The one listened to, so the same one is let go. With several boards there are no toasts yet: the bridge
-    // can't tell them apart.
-    private BoardTrace? _trace;
+    // Every board's trace, and any board added while the page is open; with several boards a toast names its board.
+    private BoardTraceWatch? _watch;
     private string? _email;
     private bool _debugging;
     private bool _disposed;
@@ -117,11 +122,7 @@
         }
 
         Debugging.Changed += OnDebuggingChanged;
-        _trace = Registry.All.Count <= 1 ? Registry.Only.Trace : null;
-        if (_trace is not null)
-        {
-            _trace.Added += OnTraced;
-        }
+        _watch = new BoardTraceWatch(Registry, OnTraced);
 
         _debugging = await Debugging.IsOnAsync(_email, CancellationToken.None);
     }
@@ -129,10 +130,7 @@
     public void Dispose()
     {
         Debugging.Changed -= OnDebuggingChanged;
-        if (_trace is not null)
-        {
-            _trace.Added -= OnTraced;
-        }
+        _watch?.Dispose();
 
         lock (_lock)
         {
@@ -187,8 +185,8 @@
         }
     }
 
-    // From the board connection's loop.
-    private void OnTraced(object? sender, BoardTraceItem item)
+    // From a board's connection loop.
+    private void OnTraced(LiveBoard board, BoardTraceItem item)
     {
         if (!_debugging || item.IsRoutine)
         {
@@ -204,7 +202,7 @@
 
             Toast? toast = null;
             var timer = TimeProvider.CreateTimer(_ => Remove(toast!), null, ToastTime, Timeout.InfiniteTimeSpan);
-            toast = new Toast(item, timer);
+            toast = new Toast(item, Registry.All.Count > 1 ? board.Name : null, timer);
             _toasts.Add(toast);
             while (_toasts.Count > MaxToasts)
             {
@@ -256,5 +254,21 @@
         }
     }
 
-    private sealed record Toast(BoardTraceItem Item, ITimer Timer);
+    // Board: the board's name, with two or more boards. A class, not a record: the page tells toasts apart by reference
+    // (@key), as two boards' items can have the same id.
+    private sealed class Toast
+    {
+        public Toast(BoardTraceItem item, string? board, ITimer timer)
+        {
+            Item = item;
+            Board = board;
+            Timer = timer;
+        }
+
+        public BoardTraceItem Item { get; }
+
+        public string? Board { get; }
+
+        public ITimer Timer { get; }
+    }
 }

@@ -22,8 +22,11 @@
     <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 <body>
-    @* The board filter's cookie goes in as a parameter: the live connection has no request to read it from. *@
-    <Routes @rendermode="PageRenderMode" RelaysBoards="@HttpContext.Request.Cookies[BoardFilter.CookieName]" />
+    @* The board filters' cookies go in as parameters: the live connection has no request to read them from. *@
+    <Routes @rendermode="PageRenderMode"
+            RelaysBoards="@HttpContext.Request.Cookies[BoardFilterScreen.Relays.CookieName]"
+            EventsBoards="@HttpContext.Request.Cookies[BoardFilterScreen.Events.CookieName]"
+            DebugBoards="@HttpContext.Request.Cookies[BoardFilterScreen.Debug.CookieName]" />
     @* Blazor shows this when the page's live connection breaks on an error it can't recover from. *@
     <div id="blazor-error-ui" role="alert">
         Something went wrong. <a href="" class="reload">Reload the page</a>

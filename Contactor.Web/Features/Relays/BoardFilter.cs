@@ -3,14 +3,41 @@ using System.Globalization;
 namespace Contactor.Web.Features.Relays;
 
 /// <summary>
-/// Which boards the Relays screen shows, with two or more boards: all of them (<see cref="All"/>), or the ones picked.
-/// Remembered per browser in a cookie (<see cref="CookieName"/>), set by <see cref="RelaysEndpoints"/> and read on the
-/// server when the page is made, so the page never shows every board first. A board that is gone is left out; when no
-/// picked board is left, every board shows.
+/// A screen with a board filter, with two or more boards: Relays, Events and Debug, each remembered on its own.
+/// </summary>
+/// <param name="CookieName">The cookie that keeps the screen's picked boards: their ids, e.g. <c>1-3</c>.</param>
+/// <param name="FormPath">Where the screen's filter is sent (<see cref="RelaysEndpoints"/>).</param>
+/// <param name="PagePath">The screen, where the form goes back to.</param>
+public sealed record BoardFilterScreen(string CookieName, string FormPath, string PagePath)
+{
+    public static BoardFilterScreen Relays { get; } = new(BoardFilter.CookieName, RelaysEndpoints.BoardsPath, "/");
+
+    public static BoardFilterScreen Events { get; } = new("contactor-events-boards", "/events/boards", "/events");
+
+    public static BoardFilterScreen Debug { get; } = new("contactor-debug-boards", "/debug/boards", "/debug");
+
+    /// <summary>Every screen with a board filter.</summary>
+    public static IReadOnlyList<BoardFilterScreen> All { get; } = [Relays, Events, Debug];
+}
+
+/// <summary>
+/// Each screen's board filter (<see cref="BoardFilterScreen"/>), as this browser's cookies had them when the page was
+/// opened.
+/// </summary>
+public sealed record BoardFilters(BoardFilter Relays, BoardFilter Events, BoardFilter Debug)
+{
+    public static BoardFilters All { get; } = new(BoardFilter.All, BoardFilter.All, BoardFilter.All);
+}
+
+/// <summary>
+/// Which boards a screen shows, with two or more boards: all of them (<see cref="All"/>), or the ones picked.
+/// Remembered per browser and screen in a cookie (<see cref="BoardFilterScreen.CookieName"/>), set by
+/// <see cref="RelaysEndpoints"/> and read on the server when the page is made, so the page never shows every board
+/// first. A board that is gone is left out; when no picked board is left, every board shows.
 /// </summary>
 public sealed class BoardFilter
 {
-    /// <summary>The cookie that keeps the picked boards: their ids, e.g. <c>1-3</c>.</summary>
+    /// <summary>The cookie that keeps the Relays screen's picked boards: their ids, e.g. <c>1-3</c>.</summary>
     public const string CookieName = "contactor-relays-boards";
 
     /// <summary>What a form sends to show every board again.</summary>

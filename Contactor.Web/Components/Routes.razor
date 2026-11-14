@@ -1,8 +1,8 @@
 @using Contactor.Web.Features.Relays
 
-@* The Relays screen's board filter, as this browser's cookie had it when the page was opened: every page of the live
-   connection is made from it, and changing it reloads the page (RelaysEndpoints). *@
-<CascadingValue Value="_boardFilter" IsFixed="true">
+@* The board filters of Relays, Events and Debug, as this browser's cookies had them when the page was opened: every
+   page of the live connection is made from them, and changing one reloads the page (RelaysEndpoints). *@
+<CascadingValue Value="_boardFilters" IsFixed="true">
     <Router AppAssembly="typeof(Program).Assembly">
         <Found Context="routeData">
             <SetupGate PageType="routeData.PageType">
@@ -13,14 +13,22 @@
 </CascadingValue>
 
 @code {
-    private BoardFilter _boardFilter = BoardFilter.All;
+    private BoardFilters _boardFilters = BoardFilters.All;
 
-    /// <summary>The board filter's cookie (<see cref="BoardFilter.CookieName"/>) on the request that opened the page.</summary>
+    /// <summary>The Relays screen's board filter cookie (<see cref="BoardFilterScreen.Relays"/>) on the request that opened the page.</summary>
     [Parameter]
     public string? RelaysBoards { get; set; }
 
+    /// <summary>The Events screen's board filter cookie (<see cref="BoardFilterScreen.Events"/>).</summary>
+    [Parameter]
+    public string? EventsBoards { get; set; }
+
+    /// <summary>The Debug screen's board filter cookie (<see cref="BoardFilterScreen.Debug"/>).</summary>
+    [Parameter]
+    public string? DebugBoards { get; set; }
+
     protected override void OnParametersSet()
     {
-        _boardFilter = BoardFilter.Parse(RelaysBoards);
+        _boardFilters = new BoardFilters(BoardFilter.Parse(RelaysBoards), BoardFilter.Parse(EventsBoards), BoardFilter.Parse(DebugBoards));
     }
 }

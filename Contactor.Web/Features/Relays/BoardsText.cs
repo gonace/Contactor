@@ -1,6 +1,6 @@
 namespace Contactor.Web.Features.Relays;
 
-/// <summary>The Relays screen's words about its boards, with two or more boards.</summary>
+/// <summary>The words about the boards on Relays, Events and Debug, with two or more boards.</summary>
 public static class BoardsText
 {
     /// <summary>"Turn off all 16 relays on 9 boards?": what "Turn off all boards" asks first.</summary>
@@ -28,7 +28,7 @@ public static class BoardsText
         {
             0 => null,
             1 => $"Couldn't reach {names[0]}. Its relays are as they were.",
-            _ => $"Couldn't reach {string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}. Their relays are as they were.",
+            _ => $"Couldn't reach {And(names)}. Their relays are as they were.",
         };
     }
 
@@ -36,5 +36,18 @@ public static class BoardsText
     public static string Showing(int shown, int boards, int on, int active)
     {
         return $"Showing {shown} of {boards} boards · {on} of {active} on";
+    }
+
+    /// <summary>"Showing Workshop and Paint shop", while Events or Debug shows only some boards.</summary>
+    public static string Showing(IReadOnlyList<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+        return $"Showing {And(names)}";
+    }
+
+    // "Garage", "Garage and Barn", "Garage, Barn and Office".
+    private static string And(IReadOnlyList<string> names)
+    {
+        return names.Count <= 1 ? string.Concat(names) : $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}";
     }
 }

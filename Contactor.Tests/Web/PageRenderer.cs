@@ -61,6 +61,17 @@ internal sealed class PageRenderer : Renderer
         return Dispatcher.InvokeAsync(() => Find(_rootId, match) is not null);
     }
 
+    /// <summary>The page's text, its markup's and its child components', in order.</summary>
+    public Task<string> TextAsync()
+    {
+        return Dispatcher.InvokeAsync(() =>
+        {
+            var text = new System.Text.StringBuilder();
+            AppendText(_rootId, text);
+            return text.ToString();
+        });
+    }
+
     /// <summary>Presses the first button whose attributes match, through its <c>onclick</c>.</summary>
     public async Task ClickAsync(Func<IReadOnlyDictionary<string, object?>, bool> match)
     {
@@ -70,6 +81,12 @@ internal sealed class PageRenderer : Renderer
             var handler = element.Handlers.TryGetValue("onclick", out var id) ? id : throw new InvalidOperationException("It has no onclick.");
             await DispatchEventAsync(handler, null, new MouseEventArgs());
         });
+    }
+
+    /// <summary>A match on an element's own text, e.g. a button's "People".</summary>
+    public static Func<IReadOnlyDictionary<string, object?>, bool> WithText(string text)
+    {
+        return attributes => attributes.TryGetValue(TextKey, out var found) && (found as string)?.Trim() == text;
     }
 
     /// <summary>An attribute match: the element's <paramref name="name"/> attribute is <paramref name="value"/>.</summary>
@@ -107,6 +124,27 @@ internal sealed class PageRenderer : Renderer
         }
     }
 
+    private void AppendText(int componentId, System.Text.StringBuilder text)
+    {
+        var frames = GetCurrentRenderTreeFrames(componentId);
+        for (var i = 0; i < frames.Count; i++)
+        {
+            ref var frame = ref frames.Array[i];
+            switch (frame.FrameType)
+            {
+                case RenderTreeFrameType.Text:
+                    text.Append(frame.TextContent);
+                    break;
+                case RenderTreeFrameType.Markup:
+                    text.Append(frame.MarkupContent);
+                    break;
+                case RenderTreeFrameType.Component:
+                    AppendText(frame.ComponentId, text);
+                    break;
+            }
+        }
+    }
+
     // Walks the component's frames and its child components' for an element whose attributes match.
     private Element? Find(int componentId, Func<IReadOnlyDictionary<string, object?>, bool> match)
     {
@@ -128,6 +166,17 @@ internal sealed class PageRenderer : Renderer
                     }
                 }
 
+                // Its own words, under a name no attribute has (Text).
+                var words = new System.Text.StringBuilder();
+                for (var t = i + 1; t < i + frame.ElementSubtreeLength && t < frames.Count; t++)
+                {
+                    if (frames.Array[t].FrameType == RenderTreeFrameType.Text)
+                    {
+                        words.Append(frames.Array[t].TextContent);
+                    }
+                }
+
+                attributes[TextKey] = words.ToString();
                 if (match(attributes))
                 {
                     return new Element(attributes, handlers);
@@ -141,6 +190,9 @@ internal sealed class PageRenderer : Renderer
 
         return null;
     }
+
+    // An element's own words, beside its attributes; not a name an attribute can have.
+    private const string TextKey = " text";
 
     private sealed record Element(IReadOnlyDictionary<string, object?> Attributes, IReadOnlyDictionary<string, ulong> Handlers);
 }

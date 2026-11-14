@@ -3,18 +3,37 @@
 @using System.Globalization
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Persistence
+@using Microsoft.EntityFrameworkCore
 @inject BoardRegistry Registry
 @inject LocalClock Clock
+@inject RelayChanges Changes
+@inject IDbContextFactory<ContactorDbContext> DbFactory
 
 <PageTitle>Debug · Contactor</PageTitle>
 
 <div class="screen">
     <header class="header">
         <h1>Debug</h1>
-        <p class="hint">
-            Everything sent to and from the relay board since the app started, newest first. At most @BoardTrace.Capacity
-            lines; nothing is stored. Board: <span class="mono">@Registry.Only.Endpoint</span>
-        </p>
+        @if (Several)
+        {
+            <p class="hint">
+                Everything sent to and from the relay boards since the app started, newest first. At most @BoardTrace.Capacity
+                lines per board; nothing is stored.
+            </p>
+            @* Which boards' traffic shows: this browser's, in its own cookie (RelaysEndpoints). *@
+            <div class="boards-bar">
+                <BoardPicker Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" Showing="@ShowingText" />
+            </div>
+        }
+        else
+        {
+            <p class="hint">
+                Everything sent to and from the relay board since the app started, newest first. At most @BoardTrace.Capacity
+                lines; nothing is stored. Board: <span class="mono">@Boards.FirstOrDefault()?.Endpoint</span>
+            </p>
+        }
         @if (_routineLeftOut > 0)
         {
             <p class="hint">@_routineLeftOut.ToString("N0", CultureInfo.InvariantCulture) routine @(_routineLeftOut == 1 ? "step" : "steps") left out, such as status checks that changed nothing.</p>
@@ -28,13 +47,19 @@
             <p class="empty">No traffic yet.</p>
         }
 
-        @foreach (var item in _items)
+        @foreach (var (board, item) in _items)
         {
-            <div class="row @(item.IsError ? "error" : null)" @key="item.Id">
+            <div class="row @(item.IsError ? "error" : null)" @key="(board.BoardId, item.Id)">
                 <span class="time">@Clock.ToLocal(item.AtUtc.UtcDateTime).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</span>
                 <span class="arrow" aria-label="@Direction(item)">@Arrow(item)</span>
                 <div class="text">
-                    <span>@item.Text</span>
+                    <span>
+                        @if (Several)
+                        {
+                            <span class="where">@board.Name</span>
+                        }
+                        @item.Text
+                    </span>
                     @if (item.Hex is not null)
                     {
                         <span class="hex">@item.Hex</span>
@@ -44,36 +69,85 @@
         }
     </main>
 
-    <TabBar Current="TabBar.Tab.Debug" />
+    <TabBar Current="TabBar.Tab.Debug" SideList="@(Several ? BoardList : null)" />
 </div>
 
 @code {
-    // Until the screens show every board (Issue #4): one board. Debug only opens once the setup guide is done, and a board is always chosen by
-    // then, so the board doesn't change while the page is open.
-    private BoardTrace _trace = null!;
-    private IReadOnlyList<BoardTraceItem> _items = [];
+    private BoardTraceWatch? _watch;
+    private IReadOnlyList<(LiveBoard Board, BoardTraceItem Item)> _items = [];
     private long _routineLeftOut;
+    private BoardCounts _counts = BoardCounts.None;
 
-    protected override void OnInitialized()
+    /// <summary>The boards this browser picked to show (<see cref="BoardFilters.Debug"/>), as the page was opened.</summary>
+    [CascadingParameter]
+    public BoardFilters? PickedBoards { get; set; }
+
+    private IReadOnlyList<LiveBoard> Boards => Registry.All;
+
+    // Two or more boards: the board filter, and each row names its board. One board looks as it always did.
+    private bool Several => Boards.Count > 1;
+
+    private BoardFilter BoardsFilter => (PickedBoards?.Debug ?? BoardFilter.All).For([.. Boards.Select(b => b.BoardId)]);
+
+    private IEnumerable<LiveBoard> ShownBoards => Boards.Where(b => BoardsFilter.Shows(b.BoardId));
+
+    // "Showing Workshop and Paint shop" while filtered.
+    private string? ShowingText => BoardsFilter.IsAll ? null : BoardsText.Showing([.. ShownBoards.Select(b => b.Name)]);
+
+    protected override async Task OnInitializedAsync()
     {
-        _trace = Registry.Only.Trace;
-        _items = _trace.Items;
-        _routineLeftOut = _trace.RoutineLeftOut;
-        _trace.Added += OnChanged;
-        _trace.RoutineCounted += OnChanged;
-        _trace.Cleared += OnChanged;
+        Read();
+        _watch = new BoardTraceWatch(Registry, added: null, changed: OnChanged);
+        Registry.StateChanged += OnBoardChanged;
+        Changes.Changed += OnRelaysChanged;
+        Registry.BoardsChanged += OnRelaysChanged;
+        await LoadCountsAsync();
     }
 
     public void Dispose()
     {
-        _trace.Added -= OnChanged;
-        _trace.RoutineCounted -= OnChanged;
-        _trace.Cleared -= OnChanged;
+        _watch?.Dispose();
+        Registry.StateChanged -= OnBoardChanged;
+        Changes.Changed -= OnRelaysChanged;
+        Registry.BoardsChanged -= OnRelaysChanged;
     }
 
+    // The desktop's side menu: every board, to pick which to show.
+    private RenderFragment BoardList => __builder =>
+    {
+        <BoardPicker Side="true" Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Counts="_counts" />
+    };
+
+    // Every shown board's steps, merged by time, newest first; a board's own order breaks a tie.
+    private void Read()
+    {
+        var shown = ShownBoards.ToList();
+        _items = [.. shown
+            .SelectMany(board => board.Trace.Items.Select(item => (Board: board, Item: item)))
+            .OrderByDescending(x => x.Item.AtUtc)
+            .ThenByDescending(x => x.Item.Id)];
+        _routineLeftOut = shown.Sum(b => b.Trace.RoutineLeftOut);
+    }
+
+    // Only the boards shown: the others' traffic stays.
     private void Clear()
     {
-        _trace.Clear();
+        foreach (var board in ShownBoards)
+        {
+            board.Trace.Clear();
+        }
+    }
+
+    // "3 of 8 on" for the board filter; only with several boards, which is when it shows.
+    private async Task LoadCountsAsync()
+    {
+        if (!Several)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _counts = await BoardCounts.LoadAsync(db, Registry, CancellationToken.None);
     }
 
     private static string Arrow(BoardTraceItem item)
@@ -96,20 +170,39 @@
         };
     }
 
-    // From the board connection's loop, or from Clear.
-    private void OnChanged(object? sender, object e)
+    // From a board's connection loop, a timer, Clear, or a board added.
+    private void OnChanged()
     {
-        _ = RefreshAsync();
+        _ = RefreshAsync(counts: false);
     }
 
-    private async Task RefreshAsync()
+    // A board's new state: only the board filter's lamps and counts show it.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (Several)
+        {
+            _ = RefreshAsync(counts: false);
+        }
+    }
+
+    // A relay, a group or the boards changed: the board filter's counts.
+    private void OnRelaysChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync(counts: true);
+    }
+
+    private async Task RefreshAsync(bool counts)
     {
         try
         {
-            await InvokeAsync(() =>
+            await InvokeAsync(async () =>
             {
-                _items = _trace.Items;
-                _routineLeftOut = _trace.RoutineLeftOut;
+                Read();
+                if (counts)
+                {
+                    await LoadCountsAsync();
+                }
+
                 StateHasChanged();
             });
         }

@@ -34,7 +34,11 @@ public static class EventText
     /// <param name="personName">The display name of the person behind it, when the actor is an e-mail, or the input's name when it is an input.</param>
     /// <param name="groupName">The group's current name, for a group's events; null for others or a deleted group.</param>
     /// <param name="inputName">The input's current name, for an input's changes; null for others.</param>
-    public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, string? inputName = null)
+    /// <param name="boardName">
+    /// The board's name, with two or more boards: an event about the board itself names it ("Workshop had its own
+    /// timers turned off"); null for "The board".
+    /// </param>
+    public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, string? inputName = null, string? boardName = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         if (entry.Action == EventActions.InputChanged)
@@ -46,6 +50,7 @@ public static class EventText
         var byInput = EventActors.TryInput(entry.Actor, out var inputId);
         var who = isPerson ? personName ?? entry.Actor
             : byInput ? personName ?? Input.DefaultName(inputId)
+            : IsAboutBoard(entry) ? boardName ?? "The board"
             : WhoFor(entry);
         var badge = byInput ? "I"
             : !isPerson ? "A"
@@ -166,11 +171,22 @@ public static class EventText
         };
     }
 
+    /// <summary>An event the board itself is the subject of, e.g. "The board lost contact with the app".</summary>
+    public static bool IsAboutBoard(EventLogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return !IsPersonActor(entry.Actor) && !EventActors.TryInput(entry.Actor, out _) && entry.Action
+            is EventActions.ConnectionLost
+            or EventActions.ConnectionRestored
+            or EventActions.BoardTimersDisabled
+            or EventActions.BoardRelayModesReset
+            or EventActions.BoardRelayModesNotReset;
+    }
+
     private static string WhoFor(EventLogEntry entry)
     {
         return entry.Action switch
         {
-            EventActions.ConnectionLost or EventActions.ConnectionRestored or EventActions.BoardTimersDisabled or EventActions.BoardRelayModesReset or EventActions.BoardRelayModesNotReset => "The board",
             EventActions.RunOnStart => "Run-on:",
             EventActions.RunOnEnd => "Run-on done:",
             EventActions.InterlockTrip => "Safety shut-off:",

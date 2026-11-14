@@ -4,8 +4,8 @@ namespace Contactor.Web.Features.Boards;
 
 /// <summary>
 /// Until the screens show every board (Issue #4): one board. The temporary bridge for the screens that still show one
-/// board only (the safety services and handlers each run every board on its own): the <see cref="IRelayBoard"/> of the
-/// app's one board, with its address and Debug trace, the same object for the app's lifetime, so a listener stays when
+/// board only, Settings and the setup guide (the safety services, handlers and other screens each take every board on
+/// its own): the <see cref="IRelayBoard"/> of the app's one board, with its address, the same object for the app's lifetime, so a listener stays when
 /// the board's row is made in the setup guide or its model is replaced. Before the app has a board it has no relays and never answers, as a board before its model is chosen:
 /// commands throw <see cref="BoardNotConnectedException"/>, and nothing connects. With more than one board it throws:
 /// what uses it can't tell them apart yet. Reached through <see cref="BoardRegistry.Only"/>; every use is marked
@@ -18,14 +18,10 @@ public sealed partial class OnlyBoard : IRelayBoard, IDisposable
     private readonly BoardRegistry _registry;
     private readonly ILogger<OnlyBoard> _logger;
 
-    // What the Debug screen shows before the app has a board: nothing, ever.
-    private readonly BoardTrace _noTrace;
-
-    internal OnlyBoard(BoardRegistry registry, TimeProvider time, ILogger<OnlyBoard> logger)
+    internal OnlyBoard(BoardRegistry registry, ILogger<OnlyBoard> logger)
     {
         _registry = registry;
         _logger = logger;
-        _noTrace = new BoardTrace(NoTraffic.Instance, time);
         _registry.StateChanged += OnStateChanged;
     }
 
@@ -45,9 +41,6 @@ public sealed partial class OnlyBoard : IRelayBoard, IDisposable
 
     /// <summary>The one board's model, or null before one is chosen.</summary>
     public BoardModel? Model => Board?.Model;
-
-    /// <summary>The one board's Debug trace; one that stays empty before the app has a board.</summary>
-    public BoardTrace Trace => Board?.Trace ?? _noTrace;
 
     public BoardCapabilities Capabilities => Board?.Capabilities ?? LiveBoard.NoBoard;
 
@@ -82,7 +75,6 @@ public sealed partial class OnlyBoard : IRelayBoard, IDisposable
     public void Dispose()
     {
         _registry.StateChanged -= OnStateChanged;
-        _noTrace.Dispose();
     }
 
     private const string NoBoardYet = "No relay board has been chosen yet.";
@@ -117,15 +109,4 @@ public sealed partial class OnlyBoard : IRelayBoard, IDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A listener to the relay board's state failed")]
     private partial void LogSubscriberFailed(Exception exception);
-
-    private sealed class NoTraffic : IBoardTraffic
-    {
-        public static NoTraffic Instance { get; } = new();
-
-        public event EventHandler<BoardTraceEntry>? Traced
-        {
-            add { }
-            remove { }
-        }
-    }
 }

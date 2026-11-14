@@ -39,10 +39,19 @@ h1 {
     cursor: pointer;
 }
 
+/* Picked: the light orange of "you are here", as every filter in the app. */
 .filters button[aria-pressed="true"] {
-    border-color: var(--ink);
-    background: var(--ink);
-    color: var(--on-ink);
+    border-color: var(--accent-border);
+    background: var(--accent-tint);
+    color: var(--accent);
+}
+
+/* With two or more boards, the board filter (BoardPicker); --gutter: its chips reach the page's edges. */
+.boards-bar {
+    --gutter: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .days {
@@ -152,6 +161,16 @@ h2 {
     font-size: 14px;
     color: var(--muted);
     overflow-wrap: anywhere;
+}
+
+/* With two or more boards, the event's board before its target: "PAINT SHOP Spray booth fan". */
+.where {
+    margin-right: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
 .empty {
