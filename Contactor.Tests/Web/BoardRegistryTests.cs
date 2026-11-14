@@ -108,8 +108,7 @@ public sealed class BoardRegistryTests
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = registry.RunAsync(stop.Token);
 
-        // Nothing to run yet: it waits for a board.
-        await Task.Delay(100, Cancel);
+        // Nothing to run yet: it waits for a board, and only ends when stopped or when a board's run fails.
         Assert.False(run.IsCompleted);
         await registry.ReplaceAsync(old.Build(id, Vm201Model.Model), Cancel);
         await WaitUntilAsync(() => old.Connection.Running && old.Extra.Started);
@@ -157,12 +156,13 @@ public sealed class BoardRegistryTests
         Exception failure = cancelled ? new TaskCanceledException("A request timed out.") : new InvalidOperationException("The board's client broke.");
         failing.Connection.Fail(failure);
 
-        // A cancelled run keeps no exception of its own: the registry says which board's ended.
+        // A cancelled run keeps no exception of its own: the registry says which board's ended, with what ended it.
         var thrown = await Assert.ThrowsAnyAsync<Exception>(() => run);
         if (cancelled)
         {
             Assert.IsAssignableFrom<OperationCanceledException>(thrown);
             Assert.Contains($"Relay board {first}'s connection ended", thrown.Message, StringComparison.Ordinal);
+            Assert.Same(failure, thrown.InnerException);
         }
         else
         {
@@ -214,7 +214,8 @@ public sealed class BoardRegistryTests
     [Fact]
     public async Task Should_WaitForAnAddress_AndTakeTheOneSavedOnItsRow_WhenItsRunStarts()
     {
-        await using var database = await DatabaseAsync();
+        var time = new ManualTimeProvider();
+        await using var database = await DatabaseAsync(time: time);
         var id = await AddRowAsync(database);
         var registry = Registry(database);
         var parts = new FakeBoardParts();
@@ -224,11 +225,19 @@ public sealed class BoardRegistryTests
         var run = registry.RunAsync(stop.Token);
         try
         {
-            await Task.Delay(LiveBoard.AddressCheck + TimeSpan.FromMilliseconds(500), Cancel);
+            // It looks again after each wait, and still finds no address.
+            for (var check = 0; check < 2; check++)
+            {
+                await WaitUntilAsync(() => time.Waits(LiveBoard.AddressCheck));
+                time.Advance(LiveBoard.AddressCheck);
+            }
+
+            await WaitUntilAsync(() => time.Waits(LiveBoard.AddressCheck));
             Assert.Equal(0, parts.Connection.Runs);
             Assert.False(parts.Extra.Started);
 
             board.SetEndpoint(new BoardEndpoint("10.0.0.7", 9760));
+            time.Advance(LiveBoard.AddressCheck);
 
             await WaitUntilAsync(() => parts.Connection.Running);
             Assert.True(parts.Extra.Started);
@@ -332,9 +341,19 @@ public sealed class BoardRegistryTests
         return database.Services.GetRequiredService<BoardRegistry>();
     }
 
-    private static async Task<TestDatabase> DatabaseAsync(IDictionary<string, string?>? settings = null)
+    private static async Task<TestDatabase> DatabaseAsync(IDictionary<string, string?>? settings = null, TimeProvider? time = null)
     {
-        var database = TestDatabase.Create((services, configuration) => services.AddBoards(configuration), settings);
+        var database = TestDatabase.Create(
+            (services, configuration) =>
+            {
+                if (time is not null)
+                {
+                    services.AddSingleton(time);
+                }
+
+                services.AddBoards(configuration);
+            },
+            settings);
         await database.Services.InitializeDatabaseAsync(Cancel);
         return database;
     }

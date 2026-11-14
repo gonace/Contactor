@@ -614,11 +614,25 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 }
 
                 failed.TrySetException(t.Exception?.InnerExceptions
-                    ?? [new OperationCanceledException($"Relay board {board.BoardId}'s connection ended without being stopped.")]);
+                    ?? [new OperationCanceledException($"Relay board {board.BoardId}'s connection ended without being stopped.", CancellationOf(t))]);
             },
             CancellationToken.None,
             TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
+    }
+
+    // What ended a cancelled run, e.g. which request timed out, for the log; null when it keeps none.
+    private static OperationCanceledException? CancellationOf(Task run)
+    {
+        try
+        {
+            run.GetAwaiter().GetResult();
+            return null;
+        }
+        catch (OperationCanceledException ex)
+        {
+            return ex;
+        }
     }
 
     private void OnStateChanged(object? sender, BoardState state)
