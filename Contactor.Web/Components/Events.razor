@@ -86,6 +86,9 @@
     private List<EventRow> _rows = [];
     private EventFilter _filter = EventFilter.All;
     private BoardCounts _counts = BoardCounts.None;
+
+    // What the board filter shows of each board's state (BoardPicker).
+    private readonly ShownBoardStates _shown = new();
     private bool _hasMore;
     private bool _loading;
 
@@ -132,6 +135,8 @@
     // "3 of 8 on" for the board filter, which shows while there is a board.
     private async Task LoadCountsAsync()
     {
+        // Only the boards there are now: a removed board's entry goes.
+        _shown.Reset(Boards);
         if (Boards.Count == 0)
         {
             return;
@@ -181,10 +186,11 @@
         _ = RefreshAsync(reload: true);
     }
 
-    // A board's new state: only the board filter's lamps and counts show it.
+    // A board's new state: only the board filter's dot, lamps and counts show it, so only a change to those redraws the
+    // page; a status that changes nothing (a poll's answer) doesn't.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
-        if (Boards.Count > 0)
+        if (_shown.Changes(change))
         {
             _ = RefreshAsync(reload: false);
         }

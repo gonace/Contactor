@@ -117,7 +117,7 @@
     private BoardCounts _counts = BoardCounts.None;
 
     // What the list shows of each board's state, so a status that changes none of it doesn't redraw the page.
-    private readonly Dictionary<int, (bool Connected, bool Answered, ChannelMask Relays)> _shown = [];
+    private readonly ShownBoardStates _shown = new();
 
     private RenderFragment? List => SideList ?? (Registry.All.Count > 0 ? GoList : null);
 
@@ -171,19 +171,8 @@
     {
         var boards = Registry.All;
         var list = SideList is null && boards.Count > 0;
-        lock (_lock)
-        {
-            // Only the boards there are now: a removed board's entry goes.
-            _shown.Clear();
-            if (list)
-            {
-                foreach (var board in boards)
-                {
-                    var state = board.State;
-                    _shown[board.BoardId] = (state.IsConnected, state.HasAnswered, state.Relays);
-                }
-            }
-        }
+        // Only the boards there are now: a removed board's entry goes.
+        _shown.Reset(list ? boards : []);
 
         if (!list)
         {
@@ -219,18 +208,10 @@
             return;
         }
 
-        var shown = (change.State.IsConnected, change.State.HasAnswered, change.State.Relays);
-        lock (_lock)
+        if (_shown.Changes(change))
         {
-            if (_shown.TryGetValue(change.BoardId, out var before) && before == shown)
-            {
-                return;
-            }
-
-            _shown[change.BoardId] = shown;
+            _ = RefreshListAsync(reload: false);
         }
-
-        _ = RefreshListAsync(reload: false);
     }
 
     private async Task RefreshListAsync(bool reload)

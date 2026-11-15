@@ -397,6 +397,36 @@ public sealed partial class EventsDebugBoardsPageTests
         }
     }
 
+    // Events and Debug show a board's state only in the board filter: a status that changes none of what it shows (a
+    // poll's answer) doesn't redraw the page, while a relay switched on lights its lamp.
+    [Theory]
+    [InlineData("events")]
+    [InlineData("debug")]
+    public async Task Should_RedrawForABoardsStatus_OnlyWhenTheFilterShowsAChange(string screenName)
+    {
+        var fake = new FakeRelayBoard();
+        await using var app = new TestWebApp("Development", configureServices: TestWebApp.WithBoard(fake));
+        using var page = screenName == "events"
+            ? await PageRenderer.StartAsync<Contactor.Web.Components.Events>(app.Services, John, "John")
+            : await PageRenderer.StartAsync<Contactor.Web.Components.Debug>(app.Services, John, "John");
+        var lampOn = PageRenderer.With("class", "lamp on");
+        Assert.False(await page.HasAsync(lampOn));
+
+        // Many statuses that change nothing shown, then one that does: the page draws for the last one (and at most
+        // once or twice for something else the app does meanwhile), not once for each.
+        var renders = page.Renders;
+        const int Unchanged = 20;
+        for (var i = 0; i < Unchanged; i++)
+        {
+            fake.SetRelay(3, false);
+        }
+
+        fake.SetRelay(4, true);
+        await BoardTestRig.WaitUntilAsync(() => page.HasAsync(lampOn).GetAwaiter().GetResult());
+        Assert.InRange(page.Renders - renders, 1, 3);
+        Assert.Empty(page.Errors);
+    }
+
     // A filter cookie that names a board that is gone (or only the one board) never leaves one board showing nothing.
     [Theory]
     [InlineData("2")]
