@@ -326,6 +326,16 @@ public sealed class BoardRemovalTests
         var on = boards.App.Services.GetRequiredService<RelayControl>().TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 1), John, Cancel);
         await held.Task;
 
+        // The ON saves its run after it reached the board. The removal's first OFF waits for that, so the board's rows
+        // are still there when it does: otherwise the ON fails as one for a board that was removed meanwhile.
+        boards.Barn.AfterSwitch = async () =>
+        {
+            if (!boards.Barn.Sent[^1].On)
+            {
+                await on;
+            }
+        };
+
         var barn = boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId)!;
         var removing = boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
         await Wait.UntilAsync(() => barn.IsClosed);
