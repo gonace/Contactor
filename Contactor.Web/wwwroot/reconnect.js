@@ -8,8 +8,9 @@ const retryButton = document.getElementById("components-reconnect-button");
 bar.addEventListener("components-reconnect-state-changed", (event) => {
     switch (event.detail.state) {
         case "failed":
-            // Out of attempts, e.g. while the phone had no network: try again as soon as the page is looked at.
-            document.addEventListener("visibilitychange", retryWhenVisible);
+            // Out of attempts, e.g. while the phone had no network: try again as soon as the page is looked at. While
+            // an update restarts the app (its splash shows), keep trying, so the page comes back by itself.
+            waitForApp();
             break;
         case "rejected":
             // The server no longer knows this page, e.g. after a restart: start afresh.
@@ -32,6 +33,22 @@ async function retry() {
             await resume();
         }
     } catch {
+        waitForApp();
+    }
+}
+
+let waitTimer = 0;
+
+function waitForApp() {
+    if (document.querySelector(".update-splash")) {
+        // One try at a time: a failed try reports "failed" again.
+        if (!waitTimer) {
+            waitTimer = setTimeout(() => {
+                waitTimer = 0;
+                retry();
+            }, 5000);
+        }
+    } else {
         document.addEventListener("visibilitychange", retryWhenVisible);
     }
 }

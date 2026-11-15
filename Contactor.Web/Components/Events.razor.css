@@ -163,6 +163,17 @@ h2 {
     overflow-wrap: anywhere;
 }
 
+/* An update's log, under its event. */
+.log {
+    align-self: flex-start;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
 /* With two or more boards, the event's board before its target: "PAINT SHOP Spray booth fan". */
 .where {
     margin-right: 8px;

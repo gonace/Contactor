@@ -1,0 +1,7 @@
+# The notes of each release (the Images workflow makes them with --generate-notes): the titles of the pull requests
+# merged since the release before. "Update now" in the app shows them as what's new. Pull requests labelled
+# "internal" (tests, build, docs, refactoring) aren't news for anyone using the app, so they are left out.
+changelog:
+  exclude:
+    labels:
+      - internal

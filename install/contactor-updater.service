@@ -1,0 +1,22 @@
+# Contactor's update helper (contactor-updater.sh): runs at start, to finish or go back from an update a power cut
+# left halfway, and whenever the app asks for an update (contactor-updater.path). install.sh puts it in
+# /etc/systemd/system; --uninstall removes it.
+[Unit]
+Description=Contactor's update helper
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/contactor-updater
+# Downloading, checking and starting a new version, and going back when it doesn't come up, on a slow connection.
+TimeoutStartSec=45min
+# What it needs to finish or go back after a power cut, where only root can write.
+StateDirectory=contactor-updater
+StateDirectoryMode=0700
+PrivateTmp=yes
+ProtectSystem=full
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

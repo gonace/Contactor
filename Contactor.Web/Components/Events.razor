@@ -59,6 +59,10 @@
                                         @row.View.Target
                                     </span>
                                 }
+                                @if (row.View.Log is { } log)
+                                {
+                                    <a class="log" href="@log" download data-enhance-nav="false">Download its log</a>
+                                }
                             </div>
                         </div>
                     }

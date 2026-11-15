@@ -1,3 +1,4 @@
+using Contactor.Web.Features.Backup;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Setup;
 
@@ -33,6 +34,7 @@ public static class AppCommands
         error.WriteLine($"  {HealthProbe.Command} [url]   whether the running app answers");
         error.WriteLine($"  {SignInReset.Command}       forgets how people sign in, so the setup guide opens again");
         error.WriteLine($"  {SetupStatus.Command}        how far the setup is");
+        error.WriteLine($"  {UpdateBackup.Command}       copies the database before an update (the update helper runs it)");
         return UnknownExitCode;
     }
 
