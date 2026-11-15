@@ -105,10 +105,21 @@ public interface IRunningProgram : IAsyncDisposable
 /// </summary>
 public sealed partial class DotnetProgramStarter : IProgramStarter, IDisposable
 {
-    // Where dotnet and the system are, and the runtime's own settings. DOTNET_ENVIRONMENT and DOTNET_URLS would make a
-    // copy run as something else or listen elsewhere, so they are left out like everything not named here.
-    private static readonly string[] Kept = ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "USERPROFILE"];
-    private static readonly string[] KeptDotnetLeftOut = ["DOTNET_ENVIRONMENT", "DOTNET_URLS"];
+    // Where dotnet and the system are, and the runtime's own settings, by name. A program also reads every DOTNET_
+    // variable as a setting (DOTNET_ENVIRONMENT, DOTNET_URLS, DOTNET_Foo__Bar for Foo:Bar), which would make a copy run
+    // as something else or listen elsewhere, so no other DOTNET_ variable is passed on, and none with a "__".
+    private static readonly string[] Kept =
+    [
+        "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "USERPROFILE",
+        "DOTNET_ROOT", "DOTNET_CLI_HOME", "DOTNET_NOLOGO", "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_RUNNING_IN_CONTAINER",
+        "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "DOTNET_SYSTEM_GLOBALIZATION_PREDEFINED_CULTURES_ONLY",
+        "DOTNET_TieredCompilation", "DOTNET_TieredPGO", "DOTNET_TC_QuickJitForLoops", "DOTNET_ReadyToRun",
+        "DOTNET_EnableDiagnostics",
+    ];
+
+    // The runtime's own families: where dotnet is for one architecture (DOTNET_ROOT_ARM64) and the garbage collector's
+    // knobs (DOTNET_gcServer, DOTNET_GCHeapHardLimit).
+    private static readonly string[] KeptPrefixes = ["DOTNET_ROOT_", "DOTNET_GC"];
 
     private readonly ILogger<DotnetProgramStarter> _logger;
 
@@ -130,9 +141,9 @@ public sealed partial class DotnetProgramStarter : IProgramStarter, IDisposable
     public static bool Keeps(string name)
     {
         ArgumentNullException.ThrowIfNull(name);
-        return Kept.Contains(name, StringComparer.OrdinalIgnoreCase)
-            || (name.StartsWith("DOTNET_", StringComparison.OrdinalIgnoreCase)
-                && !KeptDotnetLeftOut.Contains(name, StringComparer.OrdinalIgnoreCase));
+        return !name.Contains("__", StringComparison.Ordinal)
+            && (Kept.Contains(name, StringComparer.OrdinalIgnoreCase)
+                || KeptPrefixes.Any(p => name.StartsWith(p, StringComparison.OrdinalIgnoreCase)));
     }
 
     public void Dispose()
