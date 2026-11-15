@@ -17,10 +17,17 @@ public sealed class VisitorCopy
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private DateTimeOffset _lastActive;
 
-    internal VisitorCopy(string visitorId, string dataFolder, SupervisedProgram app, SupervisedProgram simulator, DateTimeOffset now)
+    internal VisitorCopy(
+        string visitorId,
+        string dataFolder,
+        TimeZoneInfo timeZone,
+        SupervisedProgram app,
+        SupervisedProgram simulator,
+        DateTimeOffset now)
     {
         VisitorId = visitorId;
         DataFolder = dataFolder;
+        TimeZone = timeZone;
         App = app;
         Simulator = simulator;
         StartedAt = now;
@@ -34,6 +41,9 @@ public sealed class VisitorCopy
     public string Visitor => VisitorCookie.ForLog(VisitorId);
 
     public string DataFolder { get; }
+
+    /// <summary>The visitor's time zone (<see cref="VisitorTimeZone"/>), which the copy runs in from its start to its end.</summary>
+    public TimeZoneInfo TimeZone { get; }
 
     public SupervisedProgram App { get; }
 

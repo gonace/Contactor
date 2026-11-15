@@ -147,7 +147,7 @@ Schedule                (a relay's or a group's: exactly one of RelayId and Grou
   RelayId         int? FK
   GroupId         int? FK        cascade delete with the group
   Days            int            bit mask: Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64
-  OnTime          text "HH:mm"   LOCAL time (Europe/Stockholm)
+  OnTime          text "HH:mm"   LOCAL time: the app's `TimeZone` setting (default Europe/Stockholm)
   OffTime         text "HH:mm"   LOCAL time; OffTime < OnTime = over midnight
   IsEnabled       bool
   CreatedBy       text           e-mail
@@ -269,7 +269,7 @@ InputAction             (a relay or a group an input switches, on the input's ow
 - `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` at start.
 - **SQLite stays the database.** Keep SQLite-specific code to `Persistence` (the start-up settings above) and `Features/Backup` (`VACUUM INTO`); everything else goes through EF Core, so a later switch to PostgreSQL stays a small change.
 - **Relay state is not stored.** The VM201 is the source of truth; the app always shows the board's latest `CMD_STATUS`.
-- Every timestamp is stored in UTC and shown in Europe/Stockholm. Schedules are stored as local time, see below.
+- Every timestamp is stored in UTC and shown in the app's `TimeZone` setting (default Europe/Stockholm). Schedules are stored as local time, see below.
 - EF Core migrations: `dotnet tool run dotnet-ef migrations add <Name> --project Contactor.Web --context ContactorDbContext --output-dir Persistence/Migrations --namespace Contactor.Web.Persistence.Migrations`. The tool puts the model snapshot in a wrong folder named after the namespace; move it to `Persistence/Migrations/`. The database file is `/data/contactor.db` in the container (`/var/lib/contactor` on the Raspberry Pi's SD card). The app writes little (a row a minute from the scheduler, the time of contact every 5 minutes, the event log, a nightly backup), so a good SD card is enough; an endurance card is recommended.
 
 ---
@@ -291,7 +291,7 @@ InputAction             (a relay or a group an input switches, on the input's ow
 
 ### Scheduling
 - A `BackgroundService` ticks every minute, on the minute.
-- Times are read in `TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm")`. **Daylight saving:** an OnTime that doesn't exist (02:xx in spring) runs at the next valid minute. An OnTime that exists twice (02:xx in autumn) runs only once.
+- Times are read in the app's `TimeZone` setting (default Europe/Stockholm; `LocalClock`). **Daylight saving:** an OnTime that doesn't exist (02:xx in spring) runs at the next valid minute. An OnTime that exists twice (02:xx in autumn) runs only once.
 - At OnTime ON is sent, and at OffTime OFF. Both are logged with Actor `schedule`.
 - A window over midnight (OffTime < OnTime) belongs to the day it started.
 - **At start or reconnect:** reconcile against the schedules. If an active schedule window is running and the relay is off, turn it on. Never turn anything *off* at start, with two exceptions: auto-off times that have already passed, and a schedule's missed OffTime for a relay **that schedule turned on** (see below).

@@ -3,7 +3,6 @@ using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Demo;
 
@@ -45,7 +44,7 @@ public sealed class WorkshopTemplateTests : IDisposable
         var relays = await db.Relays.OrderBy(r => r.Channel).ToListAsync(Cancel);
         Assert.Equal(
             [
-                (1, "Fan", true, (int?)null), (2, "Heat", true, null), (3, "Air compressor", true, 60), (4, "Lights", true, 240),
+                (1, "Fan", true, (int?)120), (2, "Heat", true, 120), (3, "Air compressor", true, 60), (4, "Lights", true, 240),
                 (5, "Ventilation", true, 120), (6, "Outdoor light", true, 120), (7, "Relay 7", false, 120), (8, "Relay 8", false, 120),
             ],
             relays.Select(r => (r.Channel, r.Name, r.IsActive, r.MaxOnMinutes)).ToList());
@@ -197,12 +196,12 @@ public sealed class WorkshopTemplateTests : IDisposable
         var done = await PreparedAsync(database);
         await using (var db = Open(done))
         {
-            (await db.Installations.SingleAsync(Cancel)).SetupDoneUtc = DateTime.UtcNow;
+            (await db.Installations.SingleAsync(Cancel)).SetupDoneUtc = Wednesday.UtcDateTime;
             await db.SaveChangesAsync(Cancel);
         }
 
-        Assert.False(await database.ApplyTemplateAsync(chose, Cancel));
-        Assert.False(await database.ApplyTemplateAsync(done, Cancel));
+        Assert.False(await database.ApplyTemplateAsync(chose, Stockholm, Cancel));
+        Assert.False(await database.ApplyTemplateAsync(done, Stockholm, Cancel));
 
         await using (var db = Open(chose))
         {
@@ -223,8 +222,8 @@ public sealed class WorkshopTemplateTests : IDisposable
         var database = Database(Wednesday);
         var dataFolder = await PreparedAsync(database);
 
-        Assert.True(await database.ApplyTemplateAsync(dataFolder, Cancel));
-        Assert.False(await database.ApplyTemplateAsync(dataFolder, Cancel));
+        Assert.True(await database.ApplyTemplateAsync(dataFolder, Stockholm, Cancel));
+        Assert.False(await database.ApplyTemplateAsync(dataFolder, Stockholm, Cancel));
 
         await using var db = Open(dataFolder);
         Assert.Single(await db.RelayGroups.ToListAsync(Cancel));
@@ -252,7 +251,7 @@ public sealed class WorkshopTemplateTests : IDisposable
     {
         var database = Database(now);
         var dataFolder = await PreparedAsync(database);
-        Assert.True(await database.ApplyTemplateAsync(dataFolder, Cancel));
+        Assert.True(await database.ApplyTemplateAsync(dataFolder, Stockholm, Cancel));
         return dataFolder;
     }
 
@@ -266,7 +265,7 @@ public sealed class WorkshopTemplateTests : IDisposable
 
     private static AppCopyDatabase Database(DateTimeOffset now)
     {
-        return new AppCopyDatabase(new FixedTime(now), Options.Create(new DemoOptions()));
+        return new AppCopyDatabase(new FixedTime(now));
     }
 
     private static ContactorDbContext Open(string dataFolder)

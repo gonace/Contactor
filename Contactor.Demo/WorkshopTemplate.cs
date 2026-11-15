@@ -40,11 +40,12 @@ public static class WorkshopTemplate
     /// <summary>The wait between the fan and the heat.</summary>
     public const int HeatStartDelaySec = 3;
 
-    // Each relay by channel: its name, whether it is in use, and its "Turn off automatically after".
+    // Each relay by channel: its name, whether it is in use, and its "Turn off automatically after". The fan and the
+    // heat keep theirs, as making a group in the app leaves them; the group's own is what switches them.
     private static readonly (string Name, bool InUse, int? MaxOnMinutes)[] Relays =
     [
-        ("Fan", true, null),
-        ("Heat", true, null),
+        ("Fan", true, Relay.DefaultMaxOnMinutes),
+        ("Heat", true, Relay.DefaultMaxOnMinutes),
         ("Air compressor", true, 60),
         ("Lights", true, 240),
         ("Ventilation", true, Relay.DefaultMaxOnMinutes),
@@ -101,7 +102,7 @@ public static class WorkshopTemplate
             BoardId = board.Id,
             Name = GroupName,
             Icon = GroupIcons.Flame,
-            MaxOnMinutes = 120,
+            MaxOnMinutes = RelayGroup.DefaultMaxOnMinutes,
             SortOrder = 1,
         };
         group.Members.Add(new RelayGroupMember { RelayId = fan.Id, Position = 1, RoleName = fan.Name, RunOnSec = FanRunOnSec });

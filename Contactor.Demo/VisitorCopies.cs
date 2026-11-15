@@ -201,9 +201,10 @@ public sealed partial class VisitorCopies : IAsyncDisposable
 
     /// <summary>
     /// A request to the visitor's copy: finds it, or starts it on the first request with an id kept for one, while
-    /// there is room.
+    /// there is room, in <paramref name="timeZone"/> (the visitor's, see <see cref="VisitorTimeZone"/>; null: UTC). A
+    /// copy that runs keeps its own.
     /// </summary>
-    public Use Use(string visitorId)
+    public Use Use(string visitorId, TimeZoneInfo? timeZone = null)
     {
         Entry entry;
         lock (_lock)
@@ -224,7 +225,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             }
 
             _kept.Remove(visitorId);
-            entry = Create(visitorId);
+            entry = Create(visitorId, timeZone ?? TimeZoneInfo.Utc);
             _copies.Add(visitorId, entry);
 
             // Set before anything can stop it, so a stop always waits for the start to end.
@@ -305,20 +306,28 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             stopped = entry.Cancel.Token;
         }
 
-        var applied = false;
         try
         {
             // Its database is made, and its app started, before it is changed.
             await copy.Started.WaitAsync(stopped);
+        }
+        catch (Exception)
+        {
+            // It didn't start, or ended meanwhile: it is being stopped, and nothing is left to fill.
+            return TemplateResult.None;
+        }
 
+        var applied = false;
+        try
+        {
             // Cancelled when the app is stopped for good, which a stop of the copy does before it deletes its folder.
             await copy.App.RestartAsync(
-                async appStopped => applied = await _database.ApplyTemplateAsync(copy.DataFolder, appStopped),
+                async appStopped => applied = await _database.ApplyTemplateAsync(copy.DataFolder, copy.TimeZone, appStopped),
                 stopped);
         }
         catch (Exception) when (copy.Stopped.IsCompleted)
         {
-            // It ended meanwhile, or didn't start: nothing is left to fill.
+            // It ended meanwhile: nothing is left to fill.
             return TemplateResult.None;
         }
         catch (Exception ex)
@@ -439,7 +448,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         return true;
     }
 
-    private Entry Create(string visitorId)
+    private Entry Create(string visitorId, TimeZoneInfo timeZone)
     {
         var visitor = VisitorCookie.ForLog(visitorId);
 
@@ -455,7 +464,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             ["ConnectionStrings__Default"] = _database.ConnectionString(dataFolder),
             ["Vm201__Host"] = Host,
             ["Vm201__Port"] = board,
-            ["TimeZone"] = _options.TimeZone,
+            ["TimeZone"] = timeZone.Id,
             ["DOTNET_gcServer"] = "0",
             ["Logging__LogLevel__Default"] = "Warning",
         }, ProgramProbe.App);
@@ -472,6 +481,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         var copy = new VisitorCopy(
             visitorId,
             dataFolder,
+            timeZone,
             Supervise(app),
             Supervise(simulator),
             _time.GetUtcNow());
@@ -504,14 +514,15 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            copy.SetFailed(ex);
             if (ex is not OperationCanceledException)
             {
                 LogStartFailed(_logger, copy.Visitor, ex);
             }
 
-            // Not awaited: the stop waits for this start to end.
+            // Stopped before Started fails, so whatever waits for it finds the copy stopped. Not awaited: the stop waits
+            // for this start to end.
             _ = Stop(entry, "it didn't start");
+            copy.SetFailed(ex);
             return;
         }
 

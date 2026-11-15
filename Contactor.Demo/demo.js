@@ -1,4 +1,6 @@
-// The demo page's only script. A click or a key anywhere, in the page or in either frame (both are this site's own),
+// The demo page's only script. Before the frames load (their first request starts the visitor's copy), it puts the
+// browser's time zone in a short-lived cookie, which the copy runs in; then "Getting your demo ready" covers both
+// frames until each has loaded. A click or a key anywhere, in the page or in either frame (both are this site's own),
 // keeps the visitor's copy: it tells the demo at most every data-report seconds. After data-idle seconds without one,
 // a popup counts down data-warning seconds; with no click or key by then, it asks the demo to end the copy. The demo
 // keeps it when the visitor used it since in another tab: then the popup goes and the count starts over. Otherwise the
@@ -13,6 +15,10 @@
     const popup = document.getElementById("demo-idle");
     const left = document.getElementById("demo-idle-left");
     const ended = document.getElementById("demo-ended");
+    const waiting = document.getElementById("demo-waiting");
+    const frames = [...document.querySelectorAll(".demo-frames > iframe")];
+    const appFrame = document.querySelector(".demo-frames > .frame-app");
+    const offer = document.getElementById("demo-template");
     let lastActive = Date.now();
     let lastReport = Date.now();
     let reportTimer = null;
@@ -121,6 +127,7 @@
 
         over = true;
         clearTimeout(reportTimer);
+        clearTimeout(waitTimer);
         popup.hidden = true;
         for (const part of document.querySelectorAll(".demo-header, .demo-frames")) {
             part.remove();
@@ -168,29 +175,89 @@
         target.addEventListener("keydown", heard, true);
     }
 
-    listen(document, null);
-    for (const frame of document.querySelectorAll(".demo-frames iframe")) {
-        const attach = () => { try { listen(frame.contentDocument, frame); } catch { /* Not this site's: nothing to hear. */ } };
-        frame.addEventListener("load", attach);
-        attach();
+    // The waiting screen: shown until every frame in `loading` has loaded, everything behind it inert meanwhile. When
+    // that takes longer than a frame can wait for the copy, the page says the demo ended, with "Start again".
+    let loading = new Set();
+    let waitTimer = null;
+    function wait(title, text) {
+        document.getElementById("demo-waiting-title").textContent = title;
+        document.getElementById("demo-waiting-text").textContent = text;
+        waiting.hidden = false;
+        for (const part of [...frames, offer]) {
+            if (part !== null) {
+                part.inert = true;
+            }
+        }
+
+        clearTimeout(waitTimer);
+        waitTimer = setTimeout(end, Number(body.dataset.start) * 1000);
     }
 
-    // "Skip setup": "Go through the setup myself" hides the offer at once and tells the demo; the template's form goes
-    // as it is (the page comes back with the app filled in), saying meanwhile that it is on its way.
-    const offer = document.getElementById("demo-template");
+    function loaded(frame) {
+        if (!loading.delete(frame) || loading.size > 0 || over) {
+            return;
+        }
+
+        clearTimeout(waitTimer);
+        waiting.hidden = true;
+        const offered = offer !== null && offer.isConnected;
+        for (const each of frames) {
+            each.inert = each === appFrame && offered;
+        }
+
+        if (offered) {
+            offer.inert = false;
+        }
+    }
+
+    listen(document, null);
+    for (const frame of frames) {
+        const attach = () => { try { listen(frame.contentDocument, frame); } catch { /* Not this site's: nothing to hear. */ } };
+        frame.addEventListener("load", () => { attach(); loaded(frame); });
+    }
+
+    try {
+        const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (typeof zone === "string" && zone.length > 0 && zone.length <= 64) {
+            document.cookie = body.dataset.zoneCookie + "=" + encodeURIComponent(zone) + "; path=/; max-age=600; samesite=strict"
+                + (location.protocol === "https:" ? "; secure" : "");
+        }
+    } catch {
+        // No time zone: the copy runs in UTC.
+    }
+
+    wait("Getting your demo ready", "One moment: your own copy of the app and a simulated relay board are starting. It takes a few seconds.");
+    loading = new Set(frames);
+    for (const frame of frames) {
+        frame.src = frame.dataset.src;
+    }
+
+    // "Skip setup": "Go through the setup myself" hides the offer at once and tells the demo. The template is sent by
+    // the script too; meanwhile "Setting up the workshop" covers the frames, until the app's frame has loaded again.
     if (offer !== null) {
         const setup = document.getElementById("demo-setup-form");
         setup.addEventListener("submit", (event) => {
             event.preventDefault();
             fetch(setup.action, { method: "POST", credentials: "same-origin" }).catch(() => { /* It offers it again on a reload. */ });
             offer.remove();
-            const app = document.querySelector(".frame-app");
-            app.inert = false;
-            app.focus();
+            appFrame.inert = false;
+            appFrame.focus();
         });
-        document.getElementById("demo-template-form").addEventListener("submit", () => {
-            document.getElementById("demo-template-text").textContent = "Setting up the workshop. This takes a few seconds.";
-            setTimeout(() => { for (const button of offer.querySelectorAll("button")) { button.disabled = true; } }, 0);
+        const template = document.getElementById("demo-template-form");
+        template.addEventListener("submit", (event) => {
+            event.preventDefault();
+            offer.remove();
+            wait("Setting up the workshop", "One moment: the app starts again with the ready-made workshop.");
+
+            // Only the reload below ends the wait: the app's frame may load something else while its app restarts.
+            loading = new Set();
+            const reload = () => {
+                loading = new Set([appFrame]);
+                appFrame.src = appFrame.dataset.src;
+            };
+            fetch(template.action, { method: "POST", credentials: "same-origin", body: new URLSearchParams(new FormData(template)) })
+                .then((response) => { if (response.status === 404) { end(); } else { reload(); } })
+                .catch(reload);
         });
     }
 

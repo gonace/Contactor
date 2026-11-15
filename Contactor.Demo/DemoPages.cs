@@ -5,8 +5,10 @@ namespace Contactor.Demo;
 
 /// <summary>
 /// The demo's own pages: the simulator and the app side by side (two tabs on a phone), "busy", and "ended". Only the
-/// side-by-side page has a script, <c>demo.js</c>: it tells the demo about clicks and keys and asks whether the visitor
-/// is still there. Every colour comes from the app's design tokens, in <c>demo.css</c>.
+/// side-by-side page has a script, <c>demo.js</c>: it sends the visitor's time zone before the frames load, shows
+/// "Getting your demo ready" until they have, tells the demo about clicks and keys and asks whether the visitor is still
+/// there. Without it the frames load at once and the copy runs in UTC. Every colour comes from the app's design tokens,
+/// in <c>demo.css</c>.
 /// </summary>
 public static class DemoPages
 {
@@ -40,6 +42,11 @@ public static class DemoPages
 
         // Rounded down: the page may report more often than the demo allows for, never less.
         var report = Seconds(ReportEvery(options));
+
+        // A frame waits for the copy to start and then for its program to listen, each up to the start timeout; the
+        // page gives up a little after both.
+        var start = Seconds(options.StartTimeout * 2 + TimeSpan.FromSeconds(15));
+        var appInert = offersTemplate ? " inert" : "";
         return Document("Contactor demo", "demo", $"""
             <input type="radio" name="tab" id="tab-app" class="tab-input" checked>
             <input type="radio" name="tab" id="tab-simulator" class="tab-input">
@@ -54,9 +61,20 @@ public static class DemoPages
                 </div>
             </header>
             <main class="demo-frames">
-                <iframe class="frame-simulator" title="Simulator" src="{DemoRoutes.SimulatorPrefix}/"></iframe>
-                <iframe class="frame-app" title="Contactor" src="{DemoRoutes.AppFrame}"{(offersTemplate ? " inert" : "")}></iframe>
+                <iframe class="frame-simulator" title="Simulator" data-src="{DemoRoutes.SimulatorPrefix}/"></iframe>
+                <iframe class="frame-app" title="Contactor" data-src="{DemoRoutes.AppFrame}"{appInert}></iframe>
+                <noscript>
+                    <iframe class="frame-simulator" title="Simulator" src="{DemoRoutes.SimulatorPrefix}/"></iframe>
+                    <iframe class="frame-app" title="Contactor" src="{DemoRoutes.AppFrame}"{appInert}></iframe>
+                </noscript>
                 {(offersTemplate ? TemplateOffer() : "")}
+                <div class="waiting" id="demo-waiting" role="status" aria-live="polite">
+                    <div class="card">
+                        <div class="spinner" aria-hidden="true"></div>
+                        <h2 id="demo-waiting-title">Getting your demo ready</h2>
+                        <p class="muted" id="demo-waiting-text">One moment: your own copy of the app and a simulated relay board are starting. It takes a few seconds.</p>
+                    </div>
+                </div>
             </main>
             <div class="overlay" id="demo-idle" hidden>
                 <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="demo-idle-title" aria-describedby="demo-idle-text">
@@ -69,7 +87,11 @@ public static class DemoPages
                 {EndedCard()}
             </div>
             <script src="{DemoRoutes.ScriptPath}?v={ScriptVersion.Value}" defer></script>
-            """, bodyData: $"""data-idle="{idle}" data-warning="{warning}" data-report="{report}" data-activity="{DemoRoutes.ActivityPath}" data-timeout="{DemoRoutes.TimeoutPath}" """);
+            """,
+            // Without the script: no waiting screen, and the frames in <noscript> load as they are, laid out as the
+            // page's own (only then, or its text would show).
+            head: """<noscript><style>.waiting, .demo-frames > iframe { display: none !important; } .demo-frames noscript { display: contents; }</style></noscript>""",
+            bodyData: $"""data-idle="{idle}" data-warning="{warning}" data-report="{report}" data-start="{start}" data-activity="{DemoRoutes.ActivityPath}" data-timeout="{DemoRoutes.TimeoutPath}" data-zone-cookie="{VisitorTimeZone.CookieName}" """);
     }
 
     public static string Busy()
@@ -146,15 +168,16 @@ public static class DemoPages
         return HasFont(name) ? Resource("fonts" + name.Value) : throw new ArgumentException("Not one of the fonts.", nameof(name));
     }
 
-    // Over the app's frame only: the simulator stays usable. Two forms, so it works without the script; the script only
-    // hides it at once for "Go through the setup myself", and says that the template is on its way.
+    // Over the app's frame only: the simulator stays usable. Two forms, so it works without the script; the script sends
+    // them itself, hides it at once for "Go through the setup myself", and for the template shows "Setting up the
+    // workshop" until the app's frame has loaded again.
     private static string TemplateOffer()
     {
         return $$"""
             <section class="template-offer" id="demo-template" aria-labelledby="demo-template-title">
                 <div class="card">
                     <h2 id="demo-template-title">Skip setup: start from a template</h2>
-                    <p class="muted" id="demo-template-text" aria-live="polite">The app is new, so it opens on its setup guide. Skip it with a ready-made workshop, or set it up yourself.</p>
+                    <p class="muted" id="demo-template-text">The app is new, so it opens on its setup guide. Skip it with a ready-made workshop, or set it up yourself.</p>
                     <form method="post" action="{{DemoRoutes.TemplatePath}}" target="_top" id="demo-template-form">
                         <input type="hidden" name="template" value="{{WorkshopTemplate.Id}}">
                         <button type="submit" class="template-choice">

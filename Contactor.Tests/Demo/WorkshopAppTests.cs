@@ -5,7 +5,6 @@ using Contactor.Tests.Web;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Demo;
 
@@ -41,9 +40,9 @@ public sealed class WorkshopAppTests
             setUp: false);
         var dataFolder = Path.GetDirectoryName(app.DatabasePath)!;
         Directory.CreateDirectory(dataFolder);
-        var database = new AppCopyDatabase(time, Options.Create(new DemoOptions()));
+        var database = new AppCopyDatabase(time);
         await database.PrepareAsync(dataFolder, Cancel);
-        Assert.True(await database.ApplyTemplateAsync(dataFolder, Cancel));
+        Assert.True(await database.ApplyTemplateAsync(dataFolder, Stockholm, Cancel));
         int eventsBefore;
         await using (var db = Open(app))
         {
