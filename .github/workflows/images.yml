@@ -15,56 +15,72 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
-    # Every test on the commit being released, in a job of its own that can't publish anything (as in Honeyglass): the
-    # Raspberry Pi takes a new image the same night, so a red test stops the release before anything is published.
+  version:
     # Only main is published, so "latest" is always what is on main.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      # The test report is a check run on the commit.
-      checks: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
-        with:
-          global-json-file: global.json
-
-      - name: Build
-        run: dotnet build Contactor.slnx --configuration Release
-
-      - name: Test
-        # xunit writes a TRX file per run into TestResults for the report below.
-        run: dotnet test --solution Contactor.slnx --no-build --configuration Release --results-directory TestResults -- --report-xunit-trx
-
-      - name: Release test report
-        # Also after a failed test, so the failing tests show on the run and the commit; the release still stops.
-        if: ${{ !cancelled() }}
-        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
-        with:
-          name: Release tests
-          path: TestResults/*.trx
-          reporter: dotnet-trx
-
-  publish:
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
-        with:
-          cosign-release: v3.1.4
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Compute the version
         id: version
         # YYYY.M.D in UTC, plus .N when a release was already made today (see scripts/release-version.sh).
         run: echo "version=$(bash scripts/release-version.sh)" >> "$GITHUB_OUTPUT"
+
+  test:
+    # The whole suite on the commit being released: a red test stops the release before anything is published.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Contactor.slnx
+
+      - name: Build
+        run: dotnet build Contactor.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test --solution Contactor.slnx --no-build --configuration Release --results-directory TestResults -- --report-xunit-trx
+
+      - name: Report
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
+        if: ${{ !cancelled() }}
+        with:
+          name: Release test report
+          path: TestResults/*.trx
+          reporter: dotnet-trx
+
+  publish:
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: contactor
+            dockerfile: Dockerfile
+          - image: contactor-demo
+            dockerfile: Contactor.Demo/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
 
       - name: Check the signing key
         # Before publishing: a wrong key or password stops the release here (see scripts/images-sign.sh).
@@ -73,44 +89,23 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: bash scripts/images-sign.sh --check
 
-      - name: Publish the demo's image
-        id: publish-demo
-        # First, so a failure here stops the release before the app's image, which the Raspberry Pi takes the same
-        # night, is touched. As the app's below, from Contactor.Demo/Dockerfile, with the same version.
-        env:
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/contactor-demo"
-          digest=$(bash scripts/images-build.sh "$image" "$VERSION" "$GITHUB_SHA" Contactor.Demo/Dockerfile)
-          echo "Published $image@$digest ($VERSION)"
-          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
-
-      - name: Sign the demo's image
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE: ${{ steps.publish-demo.outputs.image }}
-        run: bash scripts/images-sign.sh "$IMAGE"
-
-      - name: Publish the image
+      - name: Publish image
         id: publish
-        # From the Dockerfile, for linux/arm64 and linux/amd64 (scripts/images-build.sh); it prints the digest of the
+        # From its Dockerfile, for linux/arm64 and linux/amd64 (scripts/images-build.sh), which prints the digest of the
         # image index it pushed, so the sign step signs exactly that, never a tag.
         env:
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/contactor"
-          digest=$(bash scripts/images-build.sh "$image" "$VERSION" "$GITHUB_SHA")
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}"
+          digest=$(bash scripts/images-build.sh "$image" "$VERSION" "$GITHUB_SHA" "${{ matrix.dockerfile }}")
           echo "Published $image@$digest ($VERSION)"
           echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Sign the image
+      - name: Sign image
+        # The digest the publish step pushed: the Raspberry Pi only runs images signed with our key, and a tag moved in
+        # between can't get another image signed.
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -119,10 +114,19 @@ jobs:
           IMAGE: ${{ steps.publish.outputs.image }}
         run: bash scripts/images-sign.sh "$IMAGE"
 
-      - name: Tag the commit
-        # So each version maps to its exact code.
+  tag:
+    # Tags the commit every image was built from, so each version maps to its exact code.
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Push the tag
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           git tag "v$VERSION" "$GITHUB_SHA"
           git push origin "v$VERSION"
