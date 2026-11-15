@@ -64,10 +64,12 @@ public sealed record GroupView(
 /// <summary>The status line under a group's name.</summary>
 public static class GroupStatusText
 {
+    /// <param name="relayStatus">The words of a relay's status, which a group's shares.</param>
     /// <param name="toLocal">From UTC to local time.</param>
     /// <param name="nameOf">"you" for the viewer, otherwise a person's name, "schedule" or "auto-off".</param>
     /// <param name="outlook">What the group's schedules say: when a run ends, or when the next one starts.</param>
     public static string For(
+        RelayStatusText relayStatus,
         GroupView group,
         BoardState state,
         DateTime nowUtc,
@@ -75,6 +77,7 @@ public static class GroupStatusText
         Func<string?, string?> nameOf,
         RelayOutlook? outlook = null)
     {
+        ArgumentNullException.ThrowIfNull(relayStatus);
         ArgumentNullException.ThrowIfNull(group);
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(toLocal);
@@ -111,7 +114,7 @@ public static class GroupStatusText
         if (!GroupPlanner.AnyOn(group.Infos, state))
         {
             return outlook?.NextOnUtc is { } nextOn
-                ? $"Schedule: on {RelayStatusText.When(toLocal(nextOn), toLocal(nowUtc))}"
+                ? $"Schedule: on {relayStatus.When(toLocal(nextOn), toLocal(nowUtc))}"
                 : "Off";
         }
 
@@ -124,7 +127,7 @@ public static class GroupStatusText
         // A group the schedule started goes off when its run ends.
         var offAtUtc = runtime.TurnedOnBy == EventActors.Schedule ? outlook?.RunningUntilUtc : runtime.AutoOffAtUtc;
         var nowLocal = toLocal(nowUtc);
-        var text = RelayStatusText.For(
+        var text = relayStatus.For(
             true,
             runtime.OnSinceUtc is { } since ? toLocal(since) : null,
             nameOf(runtime.TurnedOnBy),

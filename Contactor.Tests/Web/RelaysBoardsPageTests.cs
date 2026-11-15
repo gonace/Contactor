@@ -90,14 +90,14 @@ public sealed partial class RelaysBoardsPageTests
         var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
 
         // What the question asks, then what "Turn off" does and says.
-        Assert.Equal("Turn off all 2 relays on 2 boards?", BoardsText.ConfirmAllOff(registry.All.Sum(b => b.State.Relays.Count), registry.All.Count));
+        Assert.Equal("Turn off all 2 relays on 2 boards?", TestTexts.Boards.ConfirmAllOff(registry.All.Sum(b => b.State.Relays.Count), registry.All.Count));
         var unreachable = await control.TurnOffAllBoardsAsync(John, Cancel);
 
         Assert.False(boards.First.State.IsOn(3));
         Assert.True(boards.Barn.State.IsOn(2));
         Assert.Equal(
             "Couldn't reach Barn. Its relays are as they were.",
-            BoardsText.Unreachable([.. unreachable.Select(id => registry.Find(id)!.Name)]));
+            TestTexts.Boards.Unreachable([.. unreachable.Select(id => registry.Find(id)!.Name)]));
     }
 
     [Fact]
@@ -475,12 +475,12 @@ public sealed partial class RelaysBoardsPageTests
     [Fact]
     public void Should_NameTheBoardsItCouldNotReach()
     {
-        Assert.Null(BoardsText.Unreachable([]));
-        Assert.Equal("Couldn't reach Garage and Barn. Their relays are as they were.", BoardsText.Unreachable(["Garage", "Barn"]));
-        Assert.Equal("Couldn't reach Garage, Barn and Office. Their relays are as they were.", BoardsText.Unreachable(["Garage", "Barn", "Office"]));
-        Assert.Equal("Turn off every relay on 9 boards?", BoardsText.ConfirmAllOff(0, 9));
-        Assert.Equal("Turn off the 1 relay that is on, on 2 boards?", BoardsText.ConfirmAllOff(1, 2));
-        Assert.Equal("Turn off all 16 relays on 9 boards?", BoardsText.ConfirmAllOff(16, 9));
+        Assert.Null(TestTexts.Boards.Unreachable([]));
+        Assert.Equal("Couldn't reach Garage and Barn. Their relays are as they were.", TestTexts.Boards.Unreachable(["Garage", "Barn"]));
+        Assert.Equal("Couldn't reach Garage, Barn and Office. Their relays are as they were.", TestTexts.Boards.Unreachable(["Garage", "Barn", "Office"]));
+        Assert.Equal("Turn off every relay on 9 boards?", TestTexts.Boards.ConfirmAllOff(0, 9));
+        Assert.Equal("Turn off the 1 relay that is on, on 2 boards?", TestTexts.Boards.ConfirmAllOff(1, 2));
+        Assert.Equal("Turn off all 16 relays on 9 boards?", TestTexts.Boards.ConfirmAllOff(16, 9));
     }
 
     private static async Task<string> PageAsync(HttpClient http)

@@ -1,4 +1,6 @@
 using System.Net;
+using Contactor.Boards;
+using Contactor.Tests.Boards;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Contactor.Web.Persistence;
@@ -6,7 +8,7 @@ using Contactor.Web.Persistence;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The Relay screen as the server first renders it, with no board connected.
+/// The Relay screen as the server first renders it, with no board connected unless a test brings one.
 /// </summary>
 public sealed class RelayDetailPageTests
 {
@@ -77,6 +79,38 @@ public sealed class RelayDetailPageTests
         {
             Assert.Contains($"href=\"relay/{id}\"", html, StringComparison.Ordinal);
         }
+    }
+
+    [Theory]
+    [InlineData("john@example.com", "by you")]
+    [InlineData(EventActors.External, "outside the app")]
+    public async Task Should_SayWhoTurnedTheRelayOn(string actor, string who)
+    {
+        var board = new FakeRelayBoard();
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
+            TestWebApp.WithBoard(board));
+        using var http = app.CreateClient();
+        await board.TurnOnAsync(ChannelMask.Of(3), Cancel);
+        var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+
+        // The app notes the change it didn't make first, as made outside the app; the test's actor replaces that.
+        await Wait.UntilAsync(() =>
+        {
+            using var db = factory.CreateDbContext();
+            return db.RelayRuntimes.Single(r => r.RelayId == 3).TurnedOnBy is not null;
+        });
+        await using (var db = await factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
+            (runtime.OnSinceUtc, runtime.TurnedOnBy) = (DateTime.UtcNow, actor);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/3", Cancel));
+
+        Assert.Matches($"<p[^>]*>On since [0-2][0-9]:[0-5][0-9], {who}\\.( Turns off [0-2][0-9]:[0-5][0-9]\\.)?</p>", html);
     }
 
     private static TestWebApp CreateApp()

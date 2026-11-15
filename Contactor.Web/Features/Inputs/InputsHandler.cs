@@ -159,8 +159,10 @@ public static class InputStatusText
     /// <param name="connected">Whether the app has contact with the board now.</param>
     /// <param name="nowLocal">Now, in local time.</param>
     /// <param name="toLocal">Turns a UTC time into local time.</param>
-    public static InputStatus For(InputView input, bool on, bool connected, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
+    /// <param name="relayStatus">The words of a relay's status, whose times an input's shares.</param>
+    public static InputStatus For(RelayStatusText relayStatus, InputView input, bool on, bool connected, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
     {
+        ArgumentNullException.ThrowIfNull(relayStatus);
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(toLocal);
         var state = InputView.StateText(on);
@@ -174,7 +176,7 @@ public static class InputStatusText
 
         // Known for a change to the state the board reports now, which the app saw, with no long gap after it.
         return input.LastChange is { } change && change.On == on && change.Known
-            ? new InputStatus($"{state} since {RelayStatusText.When(toLocal(change.TimestampUtc), nowLocal)}", false)
+            ? new InputStatus($"{state} since {relayStatus.When(toLocal(change.TimestampUtc), nowLocal)}", false)
             : new InputStatus($"{state} since unknown", true);
     }
 }

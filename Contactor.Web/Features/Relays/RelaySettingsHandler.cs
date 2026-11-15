@@ -3,7 +3,9 @@ using Contactor.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Relays;
 
@@ -29,9 +31,11 @@ public sealed class RelaySettingsHandler
     private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
+    private readonly IStringLocalizer<RelaysTexts> _texts;
 
-    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
+    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes, IStringLocalizer<RelaysTexts> texts)
     {
+        _texts = texts;
         _registry = registry;
         _dbFactory = dbFactory;
         _clock = clock;
@@ -67,19 +71,19 @@ public sealed class RelaySettingsHandler
         var name = settings.Name.Trim();
         if (name.Length == 0)
         {
-            return "Enter a name.";
+            return _texts["Relays.Save.EnterName"];
         }
 
         if (name.Length > Relay.NameMaxLength)
         {
-            return $"The name can be at most {Relay.NameMaxLength} characters.";
+            return _texts["Relays.Save.NameTooLong", Relay.NameMaxLength];
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var relay = await db.Relays.SingleOrDefaultAsync(r => r.Id == settings.Id, cancellationToken);
         if (relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel))
         {
-            return "The relay doesn't exist.";
+            return _texts["Relays.Missing"];
         }
 
         var now = _clock.UtcNow;

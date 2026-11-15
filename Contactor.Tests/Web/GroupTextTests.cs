@@ -232,7 +232,7 @@ public sealed class GroupTextTests
     }
 
     private static string Status(GroupView group, BoardState state, RelayOutlook? outlook = null) =>
-        GroupStatusText.For(group, state, Now, utc => utc, email => email switch
+        GroupStatusText.For(TestTexts.RelayStatus, group, state, Now, utc => utc, email => email switch
         {
             "john@example.com" => "John",
             EventActors.Schedule => "schedule",

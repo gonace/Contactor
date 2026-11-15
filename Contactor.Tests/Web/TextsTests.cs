@@ -46,6 +46,43 @@ public sealed partial class TextsTests
     }
 
     [Fact]
+    public void Should_KeepEveryFormat_ACustomPattern_InEveryLanguage()
+    {
+        // A key ending in "Format" holds a .NET date format, e.g. Relays.When.DateFormat's "d MMM". A one-letter
+        // standard format ("d", "t") would follow the language's own long or short forms instead of the pattern.
+        var formats = 0;
+        var problems = new List<string>();
+        foreach (var area in Areas)
+        {
+            foreach (var language in LanguageCatalogue.Default.All)
+            {
+                var texts = Texts(area, language == LanguageCatalogue.Default.Fallback ? CultureInfo.InvariantCulture : language.Culture) ?? [];
+                foreach (var (key, format) in texts.Where(t => t.Key.EndsWith("Format", StringComparison.Ordinal)))
+                {
+                    formats++;
+                    if (format.Trim().Length <= 1)
+                    {
+                        problems.Add($"{key} in {language.Code}: \"{format}\" is a standard format");
+                        continue;
+                    }
+
+                    try
+                    {
+                        _ = new DateTime(2026, 9, 3, 14, 2, 0).ToString(format, language.Culture);
+                    }
+                    catch (FormatException)
+                    {
+                        problems.Add($"{key} in {language.Code}: \"{format}\" isn't a date format");
+                    }
+                }
+            }
+        }
+
+        Assert.True(formats > 0, "No format found: the search no longer finds them.");
+        Assert.Empty(problems);
+    }
+
+    [Fact]
     public void Should_FindAMissingText_AnEmptyOne_AndOtherPlaceholders()
     {
         var english = new Dictionary<string, string>

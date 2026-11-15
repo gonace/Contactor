@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Relays.Hi" xml:space="preserve">
+    <value>Hi {0}</value>
+    <comment>The greeting at the top of Relays: {0} is the person's name.</comment>
+  </data>
+  <data name="Relays.OnCount" xml:space="preserve">
+    <value>{0} of {1} on</value>
+    <comment>How many of the shown relays and groups are on, e.g. "3 of 8 on".</comment>
+  </data>
+  <data name="Relays.NewGroup" xml:space="preserve">
+    <value>New group</value>
+  </data>
+  <data name="Relays.AllBoardsOff" xml:space="preserve">
+    <value>Turn off all boards</value>
+  </data>
+  <data name="Relays.AllOff" xml:space="preserve">
+    <value>All off</value>
+  </data>
+  <data name="Relays.AllOffOn" xml:space="preserve">
+    <value>All off on {0}</value>
+    <comment>Read out by screen readers: {0} is the board's name.</comment>
+  </data>
+  <data name="Relays.Groups" xml:space="preserve">
+    <value>Groups</value>
+    <comment>The heading over the group cards.</comment>
+  </data>
+  <data name="Relays.Relays" xml:space="preserve">
+    <value>Relays</value>
+    <comment>The heading over the relay cards.</comment>
+  </data>
+  <data name="Relays.Inputs" xml:space="preserve">
+    <value>Inputs</value>
+    <comment>The heading over the input cards.</comment>
+  </data>
+  <data name="Relays.ConfirmAllOff.Every" xml:space="preserve">
+    <value>Turn off every relay {0}?</value>
+    <comment>{0} is Relays.OnBoards.</comment>
+  </data>
+  <data name="Relays.ConfirmAllOff.One" xml:space="preserve">
+    <value>Turn off the 1 relay that is on, {0}?</value>
+    <comment>{0} is Relays.OnBoards.</comment>
+  </data>
+  <data name="Relays.ConfirmAllOff.All" xml:space="preserve">
+    <value>Turn off all {1} relays {0}?</value>
+    <comment>{0} is Relays.OnBoards, {1} the number of relays that are on (2 or more).</comment>
+  </data>
+  <data name="Relays.OnBoards_One" xml:space="preserve">
+    <value>on {0} board</value>
+  </data>
+  <data name="Relays.OnBoards_Other" xml:space="preserve">
+    <value>on {0} boards</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.Text" xml:space="preserve">
+    <value>Groups stop in their own order. A board without contact is left as it is.</value>
+  </data>
+  <data name="Relays.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+    <comment>Confirms Relays.ConfirmAllOff.</comment>
+  </data>
+  <data name="Relays.Unreachable.One" xml:space="preserve">
+    <value>Couldn't reach {0}. Its relays are as they were.</value>
+    <comment>{0} is a board's name.</comment>
+  </data>
+  <data name="Relays.Unreachable.Several" xml:space="preserve">
+    <value>Couldn't reach {0}. Their relays are as they were.</value>
+    <comment>{0} is the boards' names, as Relays.List.Last joins them.</comment>
+  </data>
+  <data name="Relays.List.Separator" xml:space="preserve">
+    <value>, </value>
+    <comment>Between names in a list, except the last two.</comment>
+  </data>
+  <data name="Relays.List.Last" xml:space="preserve">
+    <value>{0} and {1}</value>
+    <comment>The last two names in a list.</comment>
+  </data>
+  <data name="Relays.Showing.Boards" xml:space="preserve">
+    <value>Showing {0} of {1} boards · {2} of {3} on</value>
+    <comment>While the board filter hides some boards.</comment>
+  </data>
+  <data name="Relays.Showing.Names" xml:space="preserve">
+    <value>Showing {0}</value>
+    <comment>{0} is the shown boards' names.</comment>
+  </data>
+  <data name="Relays.Lost.Yet" xml:space="preserve">
+    <value>no contact yet</value>
+    <comment>After a board's name, for a board the filter hides.</comment>
+  </data>
+  <data name="Relays.Lost.Since" xml:space="preserve">
+    <value>no contact since {0}</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Relays.Lost.None" xml:space="preserve">
+    <value>no contact</value>
+  </data>
+  <data name="Relays.Online.One" xml:space="preserve">
+    <value>Board online · updated {0}</value>
+    <comment>{0} is Relays.Updated.Now or Relays.Updated.MinutesAgo.</comment>
+  </data>
+  <data name="Relays.Online.Several" xml:space="preserve">
+    <value>Online · updated {0}</value>
+    <comment>As Relays.Online.One, under a board's name.</comment>
+  </data>
+  <data name="Relays.Updated.Now" xml:space="preserve">
+    <value>just now</value>
+  </data>
+  <data name="Relays.Updated.MinutesAgo" xml:space="preserve">
+    <value>{0} min ago</value>
+  </data>
+  <data name="Relays.NoContact.One" xml:space="preserve">
+    <value>No contact with the relay board</value>
+  </data>
+  <data name="Relays.NoContact.Named" xml:space="preserve">
+    <value>No contact with {0}</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Relays.NoContactYet.One" xml:space="preserve">
+    <value>No contact with the relay board yet</value>
+  </data>
+  <data name="Relays.NoContactYet.Named" xml:space="preserve">
+    <value>No contact with {0} yet</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Relays.NoContact.Since" xml:space="preserve">
+    <value>Since {0}. The states below may be wrong.</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Relays.NoContact.MayBeWrong" xml:space="preserve">
+    <value>The states below may be wrong.</value>
+  </data>
+  <data name="Relays.NoContact.FirstAnswer" xml:space="preserve">
+    <value>Waiting for its first answer.</value>
+  </data>
+  <data name="Relays.GroupLabel" xml:space="preserve">
+    <value>GROUP · {0}</value>
+    <comment>Over a group's name: {0} is its relays' numbers, e.g. "1 → 2".</comment>
+  </data>
+  <data name="Relays.RelayLabel" xml:space="preserve">
+    <value>RELAY {0}</value>
+    <comment>Over a relay's name: {0} is its number on the board.</comment>
+  </data>
+  <data name="Relays.InputLabel" xml:space="preserve">
+    <value>INPUT {0}</value>
+    <comment>Over an input's name: {0} is its number on the board.</comment>
+  </data>
+  <data name="Relays.StartOrder" xml:space="preserve">
+    <value>Relays in start order</value>
+    <comment>Read out by screen readers: a group's relays.</comment>
+  </data>
+  <data name="Relays.Chip.Unknown" xml:space="preserve">
+    <value> (unknown)</value>
+    <comment>Read out by screen readers after a relay's name, before the board's first answer.</comment>
+  </data>
+  <data name="Relays.Chip.On" xml:space="preserve">
+    <value> (on)</value>
+  </data>
+  <data name="Relays.Chip.Off" xml:space="preserve">
+    <value> (off)</value>
+  </data>
+  <data name="Relays.InGroup" xml:space="preserve">
+    <value>This relay is in a group and is switched from the group.</value>
+  </data>
+  <data name="Relays.WhyUnknown" xml:space="preserve">
+    <value>Why is the time unknown for {0}?</value>
+    <comment>Read out by screen readers: {0} is the input's name.</comment>
+  </data>
+  <data name="Relays.By.You" xml:space="preserve">
+    <value>you</value>
+    <comment>Who turned a relay on, in its status line: the person looking.</comment>
+  </data>
+  <data name="Relays.By.Schedule" xml:space="preserve">
+    <value>schedule</value>
+  </data>
+  <data name="Relays.By.AutoOff" xml:space="preserve">
+    <value>auto-off</value>
+  </data>
+  <data name="Relays.By.Outside" xml:space="preserve">
+    <value>outside the app</value>
+  </data>
+  <data name="Relays.Status.Waiting" xml:space="preserve">
+    <value>Waiting for the board</value>
+    <comment>In place of every state before the board's first answer.</comment>
+  </data>
+  <data name="Relays.Status.Unconfirmed" xml:space="preserve">
+    <value>The board didn't answer. The relay may or may not have switched.</value>
+  </data>
+  <data name="Relays.Status.LeaveIt" xml:space="preserve">
+    <value>Leave it</value>
+    <comment>Beside "Try again" under Relays.Status.Unconfirmed.</comment>
+  </data>
+  <data name="Relays.Status.ScheduleOn" xml:space="preserve">
+    <value>Schedule: on {0}</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Relays.Status.Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Relays.Status.OffSince" xml:space="preserve">
+    <value>Off since {0}</value>
+  </data>
+  <data name="Relays.Status.OffSinceBy" xml:space="preserve">
+    <value>Off since {0} · {1}</value>
+    <comment>{1} is who turned it off.</comment>
+  </data>
+  <data name="Relays.Status.On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Relays.Status.OnSince" xml:space="preserve">
+    <value>On since {0}</value>
+  </data>
+  <data name="Relays.Status.OnSinceBy" xml:space="preserve">
+    <value>On since {0} · {1}</value>
+    <comment>{1} is who turned it on.</comment>
+  </data>
+  <data name="Relays.Status.OnSinceOff" xml:space="preserve">
+    <value>On since {0} · off {1}</value>
+    <comment>{1} is when it turns off.</comment>
+  </data>
+  <data name="Relays.Status.OnSinceByOff" xml:space="preserve">
+    <value>On since {0} · {1} · off {2}</value>
+    <comment>{1} is who turned it on, {2} when it turns off.</comment>
+  </data>
+  <data name="Relays.Sentence.Off" xml:space="preserve">
+    <value>Off right now.</value>
+  </data>
+  <data name="Relays.Sentence.On" xml:space="preserve">
+    <value>On right now.</value>
+  </data>
+  <data name="Relays.Sentence.OnSince" xml:space="preserve">
+    <value>On since {0}.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceByYou" xml:space="preserve">
+    <value>On since {0}, by you.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceBySchedule" xml:space="preserve">
+    <value>On since {0}, by a schedule.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceOutside" xml:space="preserve">
+    <value>On since {0}, outside the app.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceBy" xml:space="preserve">
+    <value>On since {0}, by {1}.</value>
+    <comment>{1} is the person's name.</comment>
+  </data>
+  <data name="Relays.Sentence.TurnsOff" xml:space="preserve">
+    <value>{0} Turns off {1}.</value>
+    <comment>{0} is one of the sentences above, {1} a time.</comment>
+  </data>
+  <data name="Relays.When.Yesterday" xml:space="preserve">
+    <value>yesterday {0}</value>
+    <comment>{0} is a time, e.g. 14:02.</comment>
+  </data>
+  <data name="Relays.When.Tomorrow" xml:space="preserve">
+    <value>tomorrow {0}</value>
+  </data>
+  <data name="Relays.When.Date" xml:space="preserve">
+    <value>{0} {1}</value>
+    <comment>{0} is the date in Relays.When.DateFormat, {1} the time.</comment>
+  </data>
+  <data name="Relays.When.DateFormat" xml:space="preserve">
+    <value>d MMM</value>
+    <comment>A .NET date format for a day this year, e.g. "3 Nov". Not a sentence: change only the order and the parts.</comment>
+  </data>
+  <data name="Relays.Missing" xml:space="preserve">
+    <value>The relay doesn't exist.</value>
+  </data>
+  <data name="Relays.Detail.NameLabel" xml:space="preserve">
+    <value>RELAY {0} · NAME</value>
+    <comment>{0} is the relay's number on the board.</comment>
+  </data>
+  <data name="Relays.Detail.Active" xml:space="preserve">
+    <value>{0}: shown in the list. Untick it for relays that aren't used.</value>
+    <comment>{0} is Relays.Detail.ActiveWord, in bold.</comment>
+  </data>
+  <data name="Relays.Detail.ActiveWord" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="Relays.Detail.InGroup" xml:space="preserve">
+    <value>This relay is in the group {0} and is switched from there, in the group's order.</value>
+    <comment>{0} is the group's name, in bold.</comment>
+  </data>
+  <data name="Relays.Detail.OpenGroup" xml:space="preserve">
+    <value>Open the group</value>
+  </data>
+  <data name="Relays.Detail.TurnOn" xml:space="preserve">
+    <value>TURN ON</value>
+  </data>
+  <data name="Relays.Detail.TurnOff" xml:space="preserve">
+    <value>TURN OFF</value>
+  </data>
+  <data name="Relays.Detail.Limit" xml:space="preserve">
+    <value>Turn off automatically after</value>
+  </data>
+  <data name="Relays.Detail.LimitHint" xml:space="preserve">
+    <value>Applies when someone turns the relay on by hand.</value>
+  </data>
+  <data name="Relays.Detail.LimitNow" xml:space="preserve">
+    <value>The relay has been on longer than that and turns off when you save.</value>
+  </data>
+  <data name="Relays.Detail.Schedules" xml:space="preserve">
+    <value>Schedules</value>
+  </data>
+  <data name="Relays.Detail.NoSchedules" xml:space="preserve">
+    <value>No schedules. Add one to turn the relay on at set times.</value>
+  </data>
+  <data name="Relays.Detail.NoEvents" xml:space="preserve">
+    <value>Nothing has happened to this relay yet.</value>
+  </data>
+  <data name="Relays.Save.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
+  </data>
+  <data name="Relays.Save.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+</root>
