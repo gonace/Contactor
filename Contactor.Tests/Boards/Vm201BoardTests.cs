@@ -85,10 +85,10 @@ public sealed class Vm201BoardTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(100)] // CanDo allows it.
+    [InlineData(100)]
     [InlineData(90.5)]
     [InlineData(360_000)]
-    public async Task Should_RefuseALengthTheBoardCantSendExactly_EvenWhenCanDoAllowsIt(double seconds)
+    public async Task Should_RefuseALengthTheBoardCantSendExactly(double seconds)
     {
         var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
 
