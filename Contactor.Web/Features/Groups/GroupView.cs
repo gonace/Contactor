@@ -87,11 +87,13 @@ public sealed class GroupStatusText
 {
     private readonly IStringLocalizer<GroupsTexts> _texts;
     private readonly RelayStatusText _relayStatus;
+    private readonly EventText _lengths;
 
-    public GroupStatusText(IStringLocalizer<GroupsTexts> texts, RelayStatusText relayStatus)
+    public GroupStatusText(IStringLocalizer<GroupsTexts> texts, RelayStatusText relayStatus, EventText lengths)
     {
         _texts = texts;
         _relayStatus = relayStatus;
+        _lengths = lengths;
     }
 
     /// <param name="toLocal">From UTC to local time.</param>
@@ -227,9 +229,9 @@ public sealed class GroupStatusText
     /// A countdown, shown every second, in the app's one format for a length: "4 min 59 s", "5 min", or "42 s" under a
     /// minute. Rounded up to a whole second, so it never reads 0.
     /// </summary>
-    public static string Remaining(TimeSpan left)
+    public string Remaining(TimeSpan left)
     {
-        return EventText.Seconds(Math.Max((int)Math.Ceiling(left.TotalSeconds), 1));
+        return _lengths.Seconds(Math.Max((int)Math.Ceiling(left.TotalSeconds), 1));
     }
 }
 
@@ -237,10 +239,12 @@ public sealed class GroupStatusText
 public sealed class GroupPlanText
 {
     private readonly IStringLocalizer<GroupsTexts> _texts;
+    private readonly EventText _lengths;
 
-    public GroupPlanText(IStringLocalizer<GroupsTexts> texts)
+    public GroupPlanText(IStringLocalizer<GroupsTexts> texts, EventText lengths)
     {
         _texts = texts;
+        _lengths = lengths;
     }
 
     /// <summary>"Fan → wait 3 s → Heat".</summary>
@@ -250,7 +254,7 @@ public sealed class GroupPlanText
         var text = members.Count > 0 ? members[0].RoleName ?? "" : "";
         foreach (var member in members.Skip(1))
         {
-            text = _texts["Groups.Plan.Then", text, EventText.Seconds(member.StartDelaySec), member.RoleName ?? ""];
+            text = _texts["Groups.Plan.Then", text, _lengths.Seconds(member.StartDelaySec), member.RoleName ?? ""];
         }
 
         return text;
@@ -261,7 +265,7 @@ public sealed class GroupPlanText
     {
         ArgumentNullException.ThrowIfNull(members);
         return string.Join(_texts["Groups.Plan.Arrow"], members.Reverse().Select((m, i) => i > 0 && m.RunOnSec > 0
-            ? _texts["Groups.Plan.RunsOn", m.RoleName ?? "", EventText.Seconds(m.RunOnSec)].Value
+            ? _texts["Groups.Plan.RunsOn", m.RoleName ?? "", _lengths.Seconds(m.RunOnSec)].Value
             : _texts["Groups.Plan.Off", m.RoleName ?? ""].Value));
     }
 

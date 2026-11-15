@@ -44,7 +44,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
         using var details = System.Text.Json.JsonDocument.Parse(entry.Details!);
         Assert.Equal("Relay 4", details.RootElement.GetProperty("from").GetString());
         Assert.Equal("Ventilation – Paint shop", details.RootElement.GetProperty("to").GetString());
-        Assert.Equal(("renamed Relay 4 to", "Ventilation – Paint shop"), (EventText.For(entry, "Ventilation – Paint shop", "Sam").What, EventText.For(entry, null, "Sam").Target));
+        Assert.Equal(("renamed Relay 4 to", "Ventilation – Paint shop"), (TestTexts.Events.For(entry, "Ventilation – Paint shop", "Sam").What, TestTexts.Events.For(entry, null, "Sam").Target));
     }
 
     [Fact]

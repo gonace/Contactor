@@ -55,7 +55,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
         Assert.Equal((ScheduleDays.Weekdays, SixThirty, Eight, true), (schedule.Days, schedule.OnTime, schedule.OffTime, schedule.IsEnabled));
         var entry = Assert.Single(await EventsAsync());
         Assert.Equal((EventActions.ScheduleAdd, John, 1), (entry.Action, entry.Actor, entry.RelayId!.Value));
-        Assert.Equal("added schedule Mon–Fri 06:30–08:00", EventText.For(entry, "Relay 1", "John").What);
+        Assert.Equal("added schedule Mon–Fri 06:30–08:00", TestTexts.Events.For(entry, "Relay 1", "John").What);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
         var schedule = await Handler.GetAsync(id, Cancel);
         Assert.Equal((ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0)), (schedule!.Days, schedule.OnTime, schedule.OffTime));
         var edit = (await EventsAsync())[1];
-        Assert.Equal("changed schedule to Saturday 22:00–01:00", EventText.For(edit, "Relay 1", "Jane").What);
+        Assert.Equal("changed schedule to Saturday 22:00–01:00", TestTexts.Events.For(edit, "Relay 1", "Jane").What);
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
         Assert.True(await Handler.SetEnabledAsync(id, true, John, Cancel));
 
         Assert.True((await Handler.GetAsync(id, Cancel))!.IsEnabled);
-        var texts = (await EventsAsync()).Skip(1).Select(e => EventText.For(e, "Relay 1", "John").What);
+        var texts = (await EventsAsync()).Skip(1).Select(e => TestTexts.Events.For(e, "Relay 1", "John").What);
         Assert.Equal(["paused schedule Mon–Fri 06:30–08:00", "resumed schedule Mon–Fri 06:30–08:00"], texts);
     }
 
@@ -117,7 +117,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
 
         Assert.Empty(await Handler.ListAsync(2, Cancel));
         Assert.Null(await Handler.GetAsync(id, Cancel));
-        Assert.Equal("deleted schedule Every day 06:30–08:00", EventText.For((await EventsAsync())[1], "Relay 2", "John").What);
+        Assert.Equal("deleted schedule Every day 06:30–08:00", TestTexts.Events.For((await EventsAsync())[1], "Relay 2", "John").What);
         Assert.False(await Handler.SetEnabledAsync(id, false, John, Cancel));
     }
 
@@ -154,7 +154,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
 
         var list = await Handler.ListAsync(1, Cancel);
 
-        Assert.Equal(["Mon–Fri 06:30", "Mon–Fri 16:00", "Saturday 08:00"], list.Select(s => $"{ScheduleText.ShortDays(s.Days)} {ScheduleText.Time(s.OnTime)}"));
+        Assert.Equal(["Mon–Fri 06:30", "Mon–Fri 16:00", "Saturday 08:00"], list.Select(s => $"{TestTexts.Schedules.ShortDays(s.Days)} {ScheduleText.Time(s.OnTime)}"));
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public sealed class SchedulesHandlerTests : IAsyncLifetime
     {
         var entry = new EventLogEntry { Actor = John, Action = EventActions.ScheduleAdd, RelayId = 1, Details = """{"days":999}""" };
 
-        Assert.Equal("added a schedule", EventText.For(entry, "Relay 1", "John").What);
+        Assert.Equal("added a schedule", TestTexts.Events.For(entry, "Relay 1", "John").What);
     }
 
     private async Task<List<EventLogEntry>> EventsAsync()

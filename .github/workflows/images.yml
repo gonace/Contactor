@@ -1,4 +1,4 @@
-name: Images
+name: Release
 
 on:
   workflow_dispatch:
@@ -65,13 +65,20 @@ jobs:
   publish:
     needs: [version, test]
     runs-on: ubuntu-latest
+    # Each image's digest, for the release notes. Each leg of the matrix sets only its own output; an empty output
+    # doesn't overwrite the other leg's.
+    outputs:
+      contactor: ${{ steps.publish.outputs.contactor }}
+      contactor_demo: ${{ steps.publish.outputs.contactor_demo }}
     strategy:
       matrix:
         include:
           - image: contactor
             dockerfile: Dockerfile
+            output: contactor
           - image: contactor-demo
             dockerfile: Contactor.Demo/Dockerfile
+            output: contactor_demo
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,6 +108,7 @@ jobs:
           digest=$(bash scripts/images-build.sh "$image" "$VERSION" "$GITHUB_SHA" "${{ matrix.dockerfile }}")
           echo "Published $image@$digest ($VERSION)"
           echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+          echo "${{ matrix.output }}=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Sign image
         # The digest the publish step pushed: the Raspberry Pi only runs images signed with our key, and a tag moved in
@@ -123,6 +131,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Check the digests
+        # Before the tag: the release notes list both images by digest, so a missing one stops the release here.
+        env:
+          CONTACTOR_DIGEST: ${{ needs.publish.outputs.contactor }}
+          DEMO_DIGEST: ${{ needs.publish.outputs.contactor_demo }}
+        run: |
+          for digest in "$CONTACTOR_DIGEST" "$DEMO_DIGEST"; do
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "An image's digest is missing or not a sha256 digest: '$digest'." >&2
+              exit 1
+            fi
+          done
+
       - name: Push the tag
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -136,7 +157,7 @@ jobs:
         # the tag, so it downloads this release's files and they always match. The release is made only when it isn't
         # there yet, with notes from the titles of the pull requests merged since the release before, those labelled
         # "internal" left out (.github/release.yml); "Update now" in the app shows them, and they can be edited on GitHub
-        # afterwards. A new run replaces only the attached files.
+        # afterwards. A new run replaces only the attached files; the next step adds the images.
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -150,3 +171,36 @@ jobs:
           fi
           gh release upload "v$VERSION" release/install.sh release/compose.yml release/contactor-updater.sh \
             release/contactor-updater.service release/contactor-updater.path --clobber
+
+      - name: List the images in the release notes
+        # An "Images" section at the end of the notes: each image's version, digest, package page and a docker pull
+        # line by digest. The release text goes above it. Run again by hand (the same script), it replaces the section
+        # (from its marker to the end) and leaves the text above alone. No list items ("* " or "- "): "Update now" in the app shows those as changes.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          CONTACTOR_DIGEST: ${{ needs.publish.outputs.contactor }}
+          DEMO_DIGEST: ${{ needs.publish.outputs.contactor_demo }}
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          packages="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pkgs/container"
+          marker="<!-- images -->"
+          notes=$(gh release view "v$VERSION" --json body --jq .body)
+          notes="${notes%%"$marker"*}"
+          while [[ "$notes" == *[[:space:]] ]]; do notes="${notes%[[:space:]]}"; done
+          {
+            if [[ -n "$notes" ]]; then printf '%s\n\n' "$notes"; fi
+            echo "$marker"
+            echo "## Images"
+            echo
+            echo "| Image | Version | Digest |"
+            echo "|---|---|---|"
+            echo "| [$registry/contactor]($packages/contactor) | \`$VERSION\` | \`$CONTACTOR_DIGEST\` |"
+            echo "| [$registry/contactor-demo]($packages/contactor-demo) | \`$VERSION\` | \`$DEMO_DIGEST\` |"
+            echo
+            echo '```sh'
+            echo "docker pull $registry/contactor@$CONTACTOR_DIGEST"
+            echo "docker pull $registry/contactor-demo@$DEMO_DIGEST"
+            echo '```'
+          } > release/notes.md
+          gh release edit "v$VERSION" --notes-file release/notes.md

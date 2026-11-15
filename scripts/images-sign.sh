@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Signs published images with cosign, by digest, so the Raspberry Pi only runs images we signed. The Images workflow
+# Signs published images with cosign, by digest, so the Raspberry Pi only runs images we signed. The Release workflow
 # signs with it right after publishing, and passes it the digest of the image index the publish itself pushed, so
 # what gets signed is exactly what was built: a tag could be moved to another image between publishing and signing.
 # It takes the private key itself (not a path) in COSIGN_PRIVATE_KEY and its password in COSIGN_PASSWORD, and the

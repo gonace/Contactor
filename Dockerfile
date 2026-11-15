@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The Contactor image: the app, cloudflared and Tailscale, for linux/arm64 (the Raspberry Pi) and linux/amd64. Built
-# and pushed by the Images workflow:
+# and pushed by the Release workflow:
 #
 #   docker buildx build --platform linux/arm64,linux/amd64 --build-arg VERSION=2026.11.12 --build-arg COMMIT=$(git rev-parse HEAD) .
 #

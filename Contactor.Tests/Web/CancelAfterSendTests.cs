@@ -101,18 +101,30 @@ public sealed class CancelAfterSendTests : IAsyncLifetime
         Assert.Equal([(3, Jane, EventActions.On), (3, Jane, EventActions.Off)], await EventsAsync());
     }
 
-    // The groups' stop that follows is cancelled before anything of it goes out; the OFF that did go out is recorded.
+    // The OFF that went out is recorded, and the groups stop all the same, with their run-on: "All off" doesn't end
+    // with the relays outside a group off and a group still running.
     [Fact]
-    public async Task Should_RecordAllOff_WhenTheCallerCancelsAfterItWentOut()
+    public async Task Should_RecordAllOffAndStopTheGroups_WhenTheCallerCancelsAfterItWentOut()
     {
+        var groupId = await AddGroupAsync((3, "Fan"), (4, "Heat"));
+        await Groups.StartGroupAsync(groupId, Jane, Cancel);
+        await Groups.StepAsync(Cancel);
+        _time.Now += TimeSpan.FromSeconds(3);
+        await Groups.StepAsync(Cancel);
+        Assert.True(_board.State.IsOn(4));
         await Control.TurnOnAsync(2, Jane, Cancel);
         CancelAfterTheNextSwitch();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Control.TurnAllOffAsync(BoardId, Jane, _caller.Token));
+        await Control.TurnAllOffAsync(BoardId, Jane, _caller.Token);
 
+        Assert.True(_caller.IsCancellationRequested);
         Assert.False(_board.State.IsOn(2));
+        Assert.False(_board.State.IsOn(4));
         Assert.Null((await RunAsync(2)).OnSinceUtc);
-        Assert.Equal([(2, Jane, EventActions.On), (2, Jane, EventActions.Off)], await EventsAsync());
+        Assert.Equal(GroupPhases.Stopping, (await GroupRunAsync(groupId)).Phase);
+        var events = await EventsAsync();
+        Assert.Contains((2, Jane, EventActions.Off), events);
+        Assert.Contains((0, Jane, EventActions.GroupOff), events);
     }
 
     [Fact]

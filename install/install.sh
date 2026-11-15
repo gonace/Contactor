@@ -21,7 +21,7 @@
 # halfway runs nothing.
 set -eu
 
-# The release this script is attached to (e.g. v2026.11.15): the Images workflow fills it in. Empty: the latest.
+# The release this script is attached to (e.g. v2026.11.15): the Release workflow fills it in. Empty: the latest.
 RELEASE=""
 
 REPOSITORY="https://github.com/gonace/Contactor"

@@ -4,7 +4,9 @@ using Contactor.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Schedules;
 
@@ -23,9 +25,11 @@ public sealed class SchedulesHandler
     private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
+    private readonly IStringLocalizer<SchedulesTexts> _texts;
 
-    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes)
+    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes, IStringLocalizer<SchedulesTexts> texts)
     {
+        _texts = texts;
         _registry = registry;
         _dbFactory = dbFactory;
         _clock = clock;
@@ -63,14 +67,14 @@ public sealed class SchedulesHandler
     }
 
     /// <summary>Checks a schedule before it is saved; null when it is fine, otherwise the message to show.</summary>
-    public static string? Validate(ScheduleDays days, TimeOnly onTime, TimeOnly offTime)
+    public string? Validate(ScheduleDays days, TimeOnly onTime, TimeOnly offTime)
     {
         if ((days & ScheduleDays.All) == ScheduleDays.None || (days & ~ScheduleDays.All) != ScheduleDays.None)
         {
-            return "Choose at least one day.";
+            return _texts["Schedules.Save.NoDay"];
         }
 
-        return onTime == offTime ? "Turning on and turning off can't be at the same time." : null;
+        return onTime == offTime ? _texts["Schedules.Save.SameTime"].Value : null;
     }
 
     /// <summary>Adds a schedule (Id 0) or changes one. Returns null when saved, otherwise the message to show.</summary>
@@ -92,14 +96,14 @@ public sealed class SchedulesHandler
         {
             if ((model.RelayId is null) == (model.GroupId is null))
             {
-                return "Choose a relay or a group.";
+                return _texts["Schedules.Save.NoTarget"];
             }
 
             if (model.GroupId is { } groupId)
             {
                 if (!await db.RelayGroups.AnyAsync(g => g.Id == groupId, cancellationToken))
                 {
-                    return "The group doesn't exist.";
+                    return _texts["Schedules.GroupMissing"];
                 }
             }
             else
@@ -108,13 +112,13 @@ public sealed class SchedulesHandler
                 var relay = await db.Relays.AsNoTracking().Where(r => r.Id == model.RelayId).Select(r => new { r.BoardId, r.Channel }).SingleOrDefaultAsync(cancellationToken);
                 if (relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel))
                 {
-                    return "The relay doesn't exist.";
+                    return _texts["Schedules.RelayMissing"];
                 }
 
                 // A relay in a group runs with its group; its own schedule would start it out of order.
                 if (await db.RelayGroupMembers.AnyAsync(m => m.RelayId == model.RelayId, cancellationToken))
                 {
-                    return "This relay is in a group. Add the schedule to the group.";
+                    return _texts["Schedules.Save.InGroup"];
                 }
             }
 
@@ -127,7 +131,7 @@ public sealed class SchedulesHandler
             var existing = await db.Schedules.SingleOrDefaultAsync(s => s.Id == model.Id, cancellationToken);
             if (existing is null)
             {
-                return "The schedule no longer exists.";
+                return _texts["Schedules.Missing"];
             }
 
             if (existing.Days == model.Days && existing.OnTime == onTime && existing.OffTime == offTime)
@@ -218,7 +222,7 @@ public sealed class SchedulesHandler
     {
         for (var i = 0; i < ScheduleText.Days.Count; i++)
         {
-            if (days.HasFlag(ScheduleText.Days[i].Day))
+            if (days.HasFlag(ScheduleText.Days[i]))
             {
                 return i;
             }

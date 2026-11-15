@@ -18,7 +18,7 @@ Each asks for a password. Then:
 1. Copy `contactor-main.pub` and `contactor-reserve.pub` into this folder and commit them.
 2. Copy both public keys into `install/contactor-updater.sh` (its `COSIGN_KEYS`), as `scripts/images-sign.sh --check`
    asks. The update helper only runs an image signed with one of them.
-3. For the Images workflow, add two repository secrets: `COSIGN_PRIVATE_KEY` (the contents of
+3. For the Release workflow, add two repository secrets: `COSIGN_PRIVATE_KEY` (the contents of
    `contactor-main.key`) and `COSIGN_PASSWORD` (its password).
 4. Keep `contactor-reserve.key` and its password offline, e.g. on a USB stick. Keep a copy of `contactor-main.key`
    offline too, so you can sign a release again by hand (see the top of `scripts/images-sign.sh`).
@@ -39,7 +39,7 @@ keys with the next "Update now": after a healthy update it brings itself up to d
 install command (`install.sh`) once more. So:
 
 1. Stop using the main key at once: set the two repository secrets to the reserve key. `COSIGN_PRIVATE_KEY` gets
-   the contents of `contactor-reserve.key`, and `COSIGN_PASSWORD` gets its password. The Images workflow then
+   the contents of `contactor-reserve.key`, and `COSIGN_PASSWORD` gets its password. The Release workflow then
    signs with the reserve key, which every installation trusts.
 2. Make a new main key pair only, in the folder outside the repository:
    `cosign generate-key-pair --output-key-prefix contactor-main`. Replace `contactor-main.pub` in this folder and

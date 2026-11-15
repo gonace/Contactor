@@ -250,8 +250,8 @@ public sealed class SetupTests
         var first = new EventLogEntry { Actor = "john@example.com", Action = EventActions.BoardAddressChanged, Details = """{"to":"192.168.1.50:9760"}""" };
         var next = new EventLogEntry { Actor = "john@example.com", Action = EventActions.BoardAddressChanged, Details = """{"from":"192.168.1.50:9760","to":"192.168.1.51:9760"}""" };
 
-        Assert.Equal("set the relay board's address to 192.168.1.50:9760", EventText.For(first, null, "John").What);
-        Assert.Equal("changed the relay board's address from 192.168.1.50:9760 to 192.168.1.51:9760", EventText.For(next, null, "John").What);
+        Assert.Equal("set the relay board's address to 192.168.1.50:9760", TestTexts.Events.For(first, null, "John").What);
+        Assert.Equal("changed the relay board's address from 192.168.1.50:9760 to 192.168.1.51:9760", TestTexts.Events.For(next, null, "John").What);
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 namespace Contactor.Web.Features.Identity;
 
 public static class IdentityServiceCollectionExtensions
@@ -7,6 +9,7 @@ public static class IdentityServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
         services.AddSingleton<SignInChoice>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddKeyedSingleton<ISignInMethod, NoSignIn>(SignInCatalogue.NoneId);
         services.AddScoped<CurrentUser>();
         services.AddSingleton<UsersHandler>();
