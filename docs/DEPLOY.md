@@ -210,7 +210,7 @@ the public keys in `deploy/cosign/` (also in `COSIGN_KEYS` in `deploy/upgrade.sh
 - the **reserve key** is kept offline.
 
 If the main key is lost or leaks: sign with the reserve key (`scripts/images-publish.sh` asks which key file to use),
-make a new main pair, replace its public half in `deploy/cosign/`, `deploy/upgrade.sh` and `deploy/demo/upgrade.sh`, update the two secrets,
+make a new main pair, replace its public half in `deploy/cosign/` and in `deploy/upgrade.sh`, update the two secrets,
 and publish a release; installations take the new key the next time someone runs `install.sh`.
 
 If you publish your own images, make your own key pairs and put their public halves in instead.

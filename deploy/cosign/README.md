@@ -17,8 +17,7 @@ cosign generate-key-pair --output-key-prefix contactor-reserve
 Each asks for a password. Then:
 
 1. Copy `contactor-main.pub` and `contactor-reserve.pub` into this folder and commit them.
-2. Copy both public keys into `deploy/upgrade.sh` and `deploy/demo/upgrade.sh` (their `COSIGN_KEYS`), as
-   `scripts/images-sign.sh --check` asks.
+2. Copy both public keys into `deploy/upgrade.sh` (its `COSIGN_KEYS`), as `scripts/images-sign.sh --check` asks.
 3. Keep `contactor-main.key` where you publish from, and `contactor-reserve.key` offline (a USB stick).
 4. For the Images workflow, add two repository secrets: `COSIGN_PRIVATE_KEY` (the contents of
    `contactor-main.key`) and `COSIGN_PASSWORD` (its password).

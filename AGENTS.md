@@ -68,7 +68,6 @@ Contactor.Tests/          # The only test project
 deploy/
   compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
   demo/compose.yml          # The public demo and its cloudflared, on a network with no route out; no published ports
-  demo/upgrade.sh           # Starts or upgrades the demo: Docker 28+, the cosign signature, no host address on its network
   install.sh                # Run on the Pi: settings to /opt/contactor/.env, data folder, ghcr.io login, first start
   upgrade.sh                # Pulls, checks the cosign signature, restarts, waits until healthy
   autoupdate-install.sh     # systemd timer: upgrade every night 03:00–04:00
