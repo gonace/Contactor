@@ -105,10 +105,10 @@
                                         <span class="note">@(State.HasAnswered ? StepNote(stepIndex) : StatusText.Waiting)</span>
                                     </div>
                                     <div class="order">
-                                        <button type="button" aria-label="@Texts["Groups.MoveUp", step.Name]" disabled="@(!CanChangeMembers || stepIndex == 0)" @onclick="() => Move(stepIndex, -1)">
+                                        <button type="button" aria-label="@Texts["Groups.MoveUp", step.Label]" disabled="@(!CanChangeMembers || stepIndex == 0)" @onclick="() => Move(stepIndex, -1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
                                         </button>
-                                        <button type="button" aria-label="@Texts["Groups.MoveDown", step.Name]" disabled="@(!CanChangeMembers || stepIndex == _editor.Steps.Count - 1)" @onclick="() => Move(stepIndex, 1)">
+                                        <button type="button" aria-label="@Texts["Groups.MoveDown", step.Label]" disabled="@(!CanChangeMembers || stepIndex == _editor.Steps.Count - 1)" @onclick="() => Move(stepIndex, 1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
                                         </button>
                                     </div>
@@ -166,7 +166,7 @@
                             @if (stepIndex < _editor.Steps.Count - 1)
                             {
                                 var below = _editor.Steps[stepIndex + 1];
-                                <li class="gap" aria-label="@Texts["Groups.Between", step.Name, below.Name]">
+                                <li class="gap" aria-label="@Texts["Groups.Between", step.Label, below.Label]">
                                     <label>
                                         @Texts["Groups.StartWait"]
                                         <select @bind="below.StartDelaySec">

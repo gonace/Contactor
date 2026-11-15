@@ -12,6 +12,10 @@ public sealed class GroupEditor
     private readonly List<EditStep> _steps = [];
     private readonly List<EditRelay> _removed = [];
 
+    // The group's relays as saved: only those, taken out, are offered again from here; the others are free relays,
+    // offered (or not, once another group has one) by the page's list of free relays.
+    private readonly HashSet<int> _saved = [];
+
     public GroupEditor(IReadOnlyList<GroupStepInfo> steps)
     {
         Reset(steps);
@@ -20,7 +24,7 @@ public sealed class GroupEditor
     /// <summary>The steps in start order.</summary>
     public IReadOnlyList<EditStep> Steps => _steps;
 
-    /// <summary>The group's own relays taken out and not saved yet: they can be added back.</summary>
+    /// <summary>The group's own saved relays taken out and not saved yet: they can be added back.</summary>
     public IReadOnlyList<EditRelay> Removed => _removed;
 
     /// <summary>How many relays the group has, in all its steps.</summary>
@@ -39,6 +43,8 @@ public sealed class GroupEditor
         ArgumentNullException.ThrowIfNull(steps);
         _steps.Clear();
         _removed.Clear();
+        _saved.Clear();
+        _saved.UnionWith(steps.SelectMany(s => s.Relays).Select(r => r.RelayId));
         foreach (var step in steps)
         {
             _steps.Add(new EditStep(step.Name, step.StartDelaySec, step.RunOnSec, step.Relays.Select(r => new EditRelay(r.RelayId, r.Channel, r.Name))));
@@ -105,7 +111,11 @@ public sealed class GroupEditor
             }
 
             step.Relays.Remove(relay);
-            _removed.Add(relay);
+            if (_saved.Contains(relay.RelayId))
+            {
+                _removed.Add(relay);
+            }
+
             if (step.Relays.Count == 0)
             {
                 _steps.Remove(step);
@@ -140,6 +150,9 @@ public sealed class EditStep
     }
 
     public string Name { get; set; }
+
+    /// <summary>Its name, or while that is empty its first relay's: what it is saved as, e.g. for a screen reader.</summary>
+    public string Label => string.IsNullOrWhiteSpace(Name) ? Relays.FirstOrDefault()?.Name ?? "" : Name.Trim();
 
     /// <summary>The wait before it starts, once the step above is on. Unused for the first.</summary>
     public int StartDelaySec { get; set; }

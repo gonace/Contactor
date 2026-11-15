@@ -477,7 +477,7 @@
                         {
                             <span class="arrow" aria-hidden="true">→</span>
                         }
-                        <span class="chip @chipState"><span class="dot" aria-hidden="true"></span>@step.Name<span class="visually-hidden">@(!state.HasAnswered ? Texts["Relays.Chip.Unknown"] : chipState == "partly" ? GroupTexts["Groups.Chip.Partly"] : Texts[chipState == "on" ? "Relays.Chip.On" : "Relays.Chip.Off"])</span></span>
+                        <span class="chip @chipState"><span class="dot" aria-hidden="true"></span>@step.Name<span class="visually-hidden">@(!state.HasAnswered ? Texts["Relays.Chip.Unknown"] : chipState == "partly" ? Texts["Relays.Chip.Partly"] : Texts[chipState == "on" ? "Relays.Chip.On" : "Relays.Chip.Off"])</span></span>
                     </li>
                 }
             </ol>

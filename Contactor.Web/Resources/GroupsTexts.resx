@@ -66,7 +66,7 @@
   </data>
   <data name="Groups.Chain" xml:space="preserve">
     <value>RELAY {0}</value>
-    <comment>A group's relays by number, e.g. "RELAY 1 → 2".</comment>
+    <comment>A group's relays by number, a step's joined by "+", e.g. "RELAY 1 + 2 → 3 + 4".</comment>
   </data>
   <data name="Groups.Plan.Then" xml:space="preserve">
     <value>{0} → wait {1} → {2}</value>
@@ -146,7 +146,7 @@
     <value>All the relays of a group must be on one board.</value>
   </data>
   <data name="Groups.Save.RoleTooLong" xml:space="preserve">
-    <value>The name in the group can be at most {0} characters.</value>
+    <value>The step's name can be at most {0} characters.</value>
   </data>
   <data name="Groups.Save.Wait" xml:space="preserve">
     <value>The wait on start is {0}–{1} seconds.</value>
@@ -222,10 +222,6 @@
   <data name="Groups.Step.Only" xml:space="preserve">
     <value>Only {0} on</value>
     <comment>A step with only some of its relays on: {0} lists them, e.g. "Fan 1" or "Fan 1, Fan 2".</comment>
-  </data>
-  <data name="Groups.Chip.Partly" xml:space="preserve">
-    <value> (partly on)</value>
-    <comment>For a screen reader, after a step's name on the group's card: only some of its relays are on.</comment>
   </data>
   <data name="Groups.Between" xml:space="preserve">
     <value>Between {0} and {1}</value>

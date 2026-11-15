@@ -519,7 +519,7 @@ button:disabled {
 
 .remove {
     align-self: flex-start;
-    min-height: 36px;
+    min-height: 44px;
     padding: 0 4px;
     border: none;
     background: transparent;
@@ -623,6 +623,17 @@ button:disabled {
 
 .step .add {
     margin-left: 38px;
+}
+
+/* A long relay name in the list never widens the page. */
+.add,
+.add select {
+    min-width: 0;
+    width: 100%;
+}
+
+.step .add {
+    width: auto;
 }
 
 .add-buttons {

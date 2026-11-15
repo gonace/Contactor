@@ -230,7 +230,7 @@ public sealed class GroupStatusText
         return _texts["Groups.MissingRelay", channel];
     }
 
-    /// <summary>"RELAY 1 → 2": the group's relays by their channels.</summary>
+    /// <summary>"RELAY 1 + 2 → 3 + 4": the group's relays by their channels, a step's joined by "+".</summary>
     public string Chain(GroupView group)
     {
         ArgumentNullException.ThrowIfNull(group);

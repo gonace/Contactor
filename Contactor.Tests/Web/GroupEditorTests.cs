@@ -57,6 +57,31 @@ public sealed class GroupEditorTests
         Assert.Equal(["Fan", "Heater 1"], editor.Steps.Select(s => s.Name));
     }
 
+    // A free relay added and taken out again isn't kept: the page offers it from the free relays, once, and not at
+    // all once another group has taken it.
+    [Fact]
+    public void Should_OfferAgain_OnlyTheGroupsOwnSavedRelays()
+    {
+        var editor = new GroupEditor(FanHeater);
+        editor.AddToStep(0, Fan2);
+
+        editor.Remove(13);
+        editor.Remove(12);
+
+        Assert.Equal([12], editor.Removed.Select(r => r.RelayId));
+        Assert.True(editor.HasSameRelays([FanHeater[0]]));
+    }
+
+    [Fact]
+    public void Should_NameAStepWithoutAName_AfterItsFirstRelay()
+    {
+        var editor = new GroupEditor(FanHeater);
+
+        editor.Steps[0].Name = "  ";
+
+        Assert.Equal(("Fan 1", "Heat"), (editor.Steps[0].Label, editor.Steps[1].Label));
+    }
+
     [Fact]
     public void Should_MoveAWholeStep_ButNotPastTheEnds()
     {

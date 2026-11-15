@@ -162,6 +162,10 @@
   <data name="Relays.Chip.On" xml:space="preserve">
     <value> (on)</value>
   </data>
+  <data name="Relays.Chip.Partly" xml:space="preserve">
+    <value> (partly on)</value>
+    <comment>For a screen reader, after a step's name on a group's card: only some of its relays are on.</comment>
+  </data>
   <data name="Relays.Chip.Off" xml:space="preserve">
     <value> (off)</value>
   </data>

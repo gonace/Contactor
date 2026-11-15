@@ -574,6 +574,11 @@ public sealed class GroupStepsTests
         Assert.Equal(["Only Fan 1 on", "Needs Fans to be on"], Notes(group, State(1)));
         Assert.Equal(["On", "Only Heater 2 on"], Notes(group, State(1, 2, 4)));
         Assert.Equal(["Off · starts first", "Needs Fans to be on"], Notes(group, State()));
+
+        // Two of three relays of a step on.
+        GroupStepInfo threeFans = new("Fans", 3, 0, [new(21, 1, "Fan 1"), new(22, 2, "Fan 2"), new(25, 5, "Fan 3")]);
+        var three = group with { Steps = [threeFans, FansHeaters[1]] };
+        Assert.Equal(["Only Fan 1, Fan 2 on", "Needs Fans to be on"], Notes(three, State(1, 2)));
     }
 
     [Fact]
