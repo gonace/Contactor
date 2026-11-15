@@ -239,17 +239,14 @@ public sealed class BoardRemovalTests
         await sequencer.StartGroupAsync(groupId, John, Cancel);
         await Wait.UntilAsync(() => boards.Barn.State.IsOn(3) && boards.Barn.State.IsOn(4));
         var before = await CountAsync(boards, boards.BarnId);
+        var clock = boards.App.Services.GetRequiredService<LocalClock>();
+        var asked = clock.UtcNow;
 
         var error = await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
 
-        DateTime ends;
-        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
-        {
-            ends = (await db.GroupRuntimes.SingleAsync(r => r.GroupId == groupId, Cancel)).NextStepAtUtc!.Value;
-        }
-
-        var until = boards.App.Services.GetRequiredService<LocalClock>().ToLocal(ends).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-        Assert.Equal($"Heater runs on until {until}. Remove Barn when it's done.", error);
+        // The fan runs on 10 minutes from the heat's confirmed OFF, or from the removal's look before it was confirmed.
+        var ends = await RunOnEndsAsync(boards, groupId);
+        Assert.Contains(error, Untils(clock, asked.AddSeconds(600), ends).Select(u => $"Heater runs on until {u}. Remove Barn when it's done."));
         Assert.True(boards.Barn.State.IsOn(3));
         Assert.False(boards.Barn.State.IsOn(4));
         Assert.Equal(before with { Events = 0 }, await CountAsync(boards, boards.BarnId) with { Events = 0 });
@@ -303,20 +300,15 @@ public sealed class BoardRemovalTests
 
         await boards.App.Services.GetRequiredService<GroupSequencer>().StartGroupAsync(groupId, John, Cancel);
         await Wait.UntilAsync(() => boards.Barn.State.IsOn(1) && boards.Barn.State.IsOn(2) && boards.Barn.State.IsOn(3));
+        var clock = boards.App.Services.GetRequiredService<LocalClock>();
+        var asked = clock.UtcNow;
 
         var error = await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
 
-        DateTime pumpOff;
-        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
-        {
-            pumpOff = (await db.GroupRuntimes.SingleAsync(r => r.GroupId == groupId, Cancel)).NextStepAtUtc!.Value;
-        }
-
-        // The pump runs on 5 minutes, then the fan 10 more.
-        // Counted from the pump's confirmed OFF, or a moment before it was confirmed: the same minute but at its edge.
-        var clock = boards.App.Services.GetRequiredService<LocalClock>();
-        string[] untils = [.. new[] { 0, -2 }.Select(s => clock.ToLocal(pumpOff.AddSeconds(600 + s)).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture))];
-        Assert.Contains(error, untils.Select(u => $"Booth runs on until {u}. Remove Barn when it's done."));
+        // The pump runs on 5 minutes, then the fan 10 more: counted from the heat's confirmed OFF, or from the
+        // removal's look before it was confirmed.
+        var pumpOff = await RunOnEndsAsync(boards, groupId);
+        Assert.Contains(error, Untils(clock, asked.AddSeconds(300 + 600), pumpOff.AddSeconds(600)).Select(u => $"Booth runs on until {u}. Remove Barn when it's done."));
     }
 
     // An ON already on its way when the board closes lands before the removal looks at the board, and is turned off.
@@ -478,6 +470,38 @@ public sealed class BoardRemovalTests
             return check.GroupRuntimes.Any(r => r.GroupId == group.Id);
         });
         return group.Id;
+    }
+
+    // When the group's run-on under way ends. The sequencer saves it when the board confirms the stop's OFF, on its own
+    // step, which can come after the removal has answered.
+    private static async Task<DateTime> RunOnEndsAsync(TwoBoards boards, int groupId)
+    {
+        DateTime? next = null;
+        await Wait.UntilAsync(() =>
+        {
+            using var db = boards.Factory.CreateDbContext();
+            next = db.GroupRuntimes.AsNoTracking().Single(r => r.GroupId == groupId).NextStepAtUtc;
+            return next is not null;
+        });
+        return next!.Value;
+    }
+
+    // Every "HH:mm" the removal can say for a run-on that ends between from and to, both included.
+    private static List<string> Untils(LocalClock clock, DateTime from, DateTime to)
+    {
+        Assert.True(from <= to, $"{from:O} is after {to:O}.");
+        List<string> untils = [];
+        for (var at = from; at < to.AddMinutes(1); at = at.AddMinutes(1))
+        {
+            untils.Add(clock.ToLocal(Min(at, to)).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        return untils;
+    }
+
+    private static DateTime Min(DateTime a, DateTime b)
+    {
+        return a < b ? a : b;
     }
 
     private static async Task<Counts> CountAsync(TwoBoards boards, int boardId)
