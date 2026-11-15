@@ -9,6 +9,7 @@ using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Web;
 
@@ -156,6 +157,34 @@ public sealed class AutoOffServiceTests
         var run = await RuntimeAsync(rig, 2);
         Assert.Equal(((DateTime?)null, (string?)null, (DateTime?)null), (run.OnSinceUtc, run.TurnedOnBy, run.AutoOffAtUtc));
         Assert.DoesNotContain(rig.Simulator.ReceivedCommands, p => p.Command == Vm201Command.Off);
+        Assert.Empty(await rig.EventsAsync());
+    }
+
+    // A pulse's run ends at the next check after the board turned the relay off by itself, as it should: that is only
+    // a debug line, where another run left on a relay that is off is worth an information line.
+    [Fact]
+    public async Task Should_EndAPulsesRun_WithOnlyADebugLine()
+    {
+        var logs = new LevelCollector();
+        await using var rig = await BoardTestRig.StartAsync(logs: logs);
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var pulse = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 2, Cancel);
+            pulse.OnSinceUtc = BoardTestRig.Start.AddSeconds(-3);
+            pulse.AutoOffAtUtc = pulse.OnSinceUtc + TimeSpan.FromSeconds(2) + RelayControl.PulseBackstop;
+            pulse.TurnedOnBy = Jane;
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await SaveRunAsync(rig, relayId: 4, autoOffInMinutes: 60);
+
+        Assert.Empty(await AutoOff(rig).CheckAsync(Cancel));
+
+        Assert.Null((await RuntimeAsync(rig, 2)).OnSinceUtc);
+        Assert.Null((await RuntimeAsync(rig, 4)).OnSinceUtc);
+        Assert.Contains((LogLevel.Debug, "Relay 2's pulse is over: its run ends"), logs.Lines);
+        Assert.Contains((LogLevel.Information, "Relay 4 is off but has a run: ending it"), logs.Lines);
+        Assert.DoesNotContain(logs.Lines, l => l.Message.StartsWith("Relay 2 ", StringComparison.Ordinal));
         Assert.Empty(await rig.EventsAsync());
     }
 
@@ -332,5 +361,37 @@ public sealed class AutoOffServiceTests
     private static AutoOffService AutoOff(BoardTestRig rig)
     {
         return rig.Database.Services.GetRequiredService<AutoOffService>();
+    }
+
+    private sealed class LevelCollector : ILoggerProvider, ILogger
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<(LogLevel Level, string Message)> _lines = new();
+
+        public IReadOnlyCollection<(LogLevel Level, string Message)> Lines => _lines;
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return this;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            _lines.Enqueue((logLevel, formatter(state, exception)));
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }

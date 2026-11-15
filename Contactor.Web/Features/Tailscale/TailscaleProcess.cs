@@ -50,15 +50,15 @@ public sealed class TailscaleProcess : ITailscaleProcess
     {
         Directory.CreateDirectory(_options.StateDirectory);
         var start = new ProcessStartInfo(_options.DaemonPath);
+        foreach (var argument in DaemonArguments(_options.StateDirectory, Socket))
+        {
+            start.ArgumentList.Add(argument);
+        }
 
-        // No root and no network device in the image: Tailscale's own network stack, in the app's process space.
-        start.ArgumentList.Add("--tun=userspace-networking");
-        start.ArgumentList.Add($"--statedir={_options.StateDirectory}");
-        start.ArgumentList.Add($"--socket={Socket}");
-
-        // Its log cache goes to the user's cache folder, which the image's user has none of: keep it with the state.
-        start.Environment["XDG_CACHE_HOME"] = _options.StateDirectory;
-        return ChildProcess.RunAsync(start, output, cancellationToken);
+        // It sends no logs and keeps none (--no-logs-no-support), but still writes its log settings (tailscaled.log.conf)
+        // to its logs folder, by default a folder in the user's home, which isn't in /data: keep them with the state.
+        start.Environment["TS_LOGS_DIR"] = _options.StateDirectory;
+        return ChildProcess.RunAsync(start, output, _time, cancellationToken);
     }
 
     public async Task<TailscaleCommandResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
@@ -84,7 +84,7 @@ public sealed class TailscaleProcess : ITailscaleProcess
         using var both = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, limit.Token);
         try
         {
-            var exitCode = await ChildProcess.RunAsync(start, Collect, both.Token);
+            var exitCode = await ChildProcess.RunAsync(start, Collect, _time, both.Token);
             lock (output)
             {
                 return new TailscaleCommandResult(exitCode, output.ToString());
@@ -106,6 +106,14 @@ public sealed class TailscaleProcess : ITailscaleProcess
         return WithKeyFileAsync(_options.StateDirectory, authKey, path =>
             RunAsync(UpArguments(path, hostName, force), timeout, cancellationToken));
     }
+
+    /// <summary>The arguments of <c>tailscaled</c>, with its state in <paramref name="stateDirectory"/>.</summary>
+    /// <remarks>
+    /// No root and no network device in the image: Tailscale's own network stack, in the app's process space. Its logs
+    /// stay on this machine: none go to Tailscale's log server, so Tailscale's support can't look at them.
+    /// </remarks>
+    public static IReadOnlyList<string> DaemonArguments(string stateDirectory, string socket) =>
+        ["--tun=userspace-networking", $"--statedir={stateDirectory}", $"--socket={socket}", "--no-logs-no-support"];
 
     /// <summary>The arguments of <c>tailscale up</c> with the auth key in the file at <paramref name="keyFile"/>.</summary>
     public static IReadOnlyList<string> UpArguments(string keyFile, string hostName, bool force) =>
