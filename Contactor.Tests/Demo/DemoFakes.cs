@@ -211,10 +211,31 @@ internal sealed class EchoStarter : IProgramStarter
 {
     private readonly Lock _lock = new();
     private readonly List<ProgramStart> _started = [];
+    private readonly List<(string Name, EchoRun Run)> _runs = [];
+    private string? _exitsAtOnce;
     private int _requests;
 
     /// <summary>Whether a program says it listens; otherwise requests wait for it until it is stopped.</summary>
     public bool Listens { get; init; } = true;
+
+    /// <summary>The name of a program that, started from now on, exits at once with 1, before it listens.</summary>
+    public string? ExitsAtOnce
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _exitsAtOnce;
+            }
+        }
+        set
+        {
+            lock (_lock)
+            {
+                _exitsAtOnce = value;
+            }
+        }
+    }
 
     /// <summary>The programs started, in order.</summary>
     public IReadOnlyList<ProgramStart> Started
@@ -231,11 +252,27 @@ internal sealed class EchoStarter : IProgramStarter
     /// <summary>How many requests the programs got, all together.</summary>
     public int Requests => Volatile.Read(ref _requests);
 
+    /// <summary>The program's latest run exits by itself with 1, as one that crashes.</summary>
+    public Task ExitAsync(string name)
+    {
+        EchoRun run;
+        lock (_lock)
+        {
+            run = _runs.Last(r => r.Name == name).Run;
+        }
+
+        return run.ExitAsync(1);
+    }
+
     public IRunningProgram Start(ProgramStart start)
     {
         lock (_lock)
         {
             _started.Add(start);
+            if (start.Name == _exitsAtOnce)
+            {
+                return new ExitedRun();
+            }
         }
 
         var builder = WebApplication.CreateSlimBuilder();
@@ -286,7 +323,13 @@ internal sealed class EchoStarter : IProgramStarter
                 $"{start.Name} {start.Visitor} {context.Request.Path}{context.Request.QueryString} cookie=[{context.Request.Headers.Cookie}]");
         });
         app.StartAsync().GetAwaiter().GetResult();
-        return new EchoRun(app, Listens);
+        var run = new EchoRun(app, Listens);
+        lock (_lock)
+        {
+            _runs.Add((start.Name, run));
+        }
+
+        return run;
     }
 
     private sealed class EchoRun : IRunningProgram
@@ -308,6 +351,12 @@ internal sealed class EchoStarter : IProgramStarter
             return _listens ? Task.CompletedTask : Task.Delay(Timeout.Infinite, cancellationToken);
         }
 
+        public async Task ExitAsync(int code)
+        {
+            await _app.StopAsync();
+            _exited.TrySetResult(code);
+        }
+
         public async Task StopAsync()
         {
             if (_exited.Task.IsCompleted)
@@ -323,6 +372,27 @@ internal sealed class EchoStarter : IProgramStarter
         {
             await StopAsync();
             await _app.DisposeAsync();
+        }
+    }
+
+    // A program that exited before it listened.
+    private sealed class ExitedRun : IRunningProgram
+    {
+        public Task<int> Exited => Task.FromResult(1);
+
+        public Task WaitUntilListeningAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromException(new InvalidOperationException("It exited before it listened."));
+        }
+
+        public Task StopAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
         }
     }
 }
