@@ -174,8 +174,8 @@ jobs:
 
       - name: List the images in the release notes
         # An "Images" section at the end of the notes: each image's version, digest, package page and a docker pull
-        # line by digest. The release text goes above it. A new run replaces the section (from its marker to the end)
-        # and leaves the text above alone. No list items ("* " or "- "): "Update now" in the app shows those as changes.
+        # line by digest. The release text goes above it. Run again by hand (the same script), it replaces the section
+        # (from its marker to the end) and leaves the text above alone. No list items ("* " or "- "): "Update now" in the app shows those as changes.
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
