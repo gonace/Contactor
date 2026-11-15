@@ -45,6 +45,7 @@ public sealed class Vm201PulseTests
     public void Should_RefuseALengthItCantSendExactly(int seconds)
     {
         Assert.False(Vm201Pulse.TryEncode(TimeSpan.FromSeconds(seconds), out _, out _));
+        Assert.False(Vm201Pulse.Ability.CanDo(TimeSpan.FromSeconds(seconds)));
     }
 
     [Fact]
@@ -58,12 +59,12 @@ public sealed class Vm201PulseTests
     }
 
     [Fact]
-    public void Should_HaveAnAbilityThatAllowsMoreThanItCanSend()
+    public void Should_HaveAnAbility_ThatAllowsOnlyWhatItCanSend()
     {
-        // CanDo is the closest a PulseAbility comes: 100 s is in it, but the board can't send it.
-        Assert.Equal(new PulseAbility(TimeSpan.FromSeconds(1), TimeSpan.FromHours(99), TimeSpan.FromSeconds(1)), Vm201Pulse.Ability);
-        Assert.True(Vm201Pulse.Ability.CanDo(TimeSpan.FromSeconds(100)));
-        Assert.False(Vm201Pulse.TryEncode(TimeSpan.FromSeconds(100), out _, out _));
+        // 100 s is in the range and the step, but the board can't send it.
+        Assert.Equal((TimeSpan.FromSeconds(1), TimeSpan.FromHours(99), TimeSpan.FromSeconds(1)), (Vm201Pulse.Ability.Shortest, Vm201Pulse.Ability.Longest, Vm201Pulse.Ability.Step));
+        Assert.False(Vm201Pulse.Ability.CanDo(TimeSpan.FromSeconds(100)));
+        Assert.True(Vm201Pulse.Ability.CanDo(TimeSpan.FromSeconds(120)));
     }
 
     [Theory]
