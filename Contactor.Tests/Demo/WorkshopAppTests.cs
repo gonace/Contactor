@@ -3,6 +3,7 @@ using Contactor.Boards.Vm201;
 using Contactor.Demo;
 using Contactor.Tests.Web;
 using Contactor.Web.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -43,20 +44,23 @@ public sealed class WorkshopAppTests
         var database = new AppCopyDatabase(time);
         await database.PrepareAsync(dataFolder, Cancel);
         Assert.True(await database.ApplyTemplateAsync(dataFolder, Stockholm, Cancel));
-        int eventsBefore;
-        await using (var db = Open(app))
+
+        // The last event before the app starts, read from the file: the app's services would start the app, and its
+        // board could log its first events before the read.
+        int lastBefore;
+        await using (var db = OpenBeforeStart(database.ConnectionString(dataFolder)))
         {
-            eventsBefore = await db.EventLog.CountAsync(Cancel);
+            lastBefore = await db.EventLog.MaxAsync(e => (int?)e.Id, Cancel) ?? 0;
         }
 
         var client = app.CreateClient();
         await UntilAsync(() => ConnectedAsync(client));
 
         // The board's first answer is handled, and its own timers turned off, as on any start.
-        await UntilAsync(() => LoggedAsync(app, EventActions.BoardTimersDisabled, eventsBefore));
+        await UntilAsync(() => LoggedAsync(app, EventActions.BoardTimersDisabled, lastBefore));
         var expected = on.Aggregate(0, (mask, channel) => mask | (1 << (channel - 1)));
         await UntilAsync(() => Task.FromResult(simulator.Outputs == expected));
-        await UntilAsync(async () => on.Length == 0 || await LoggedAsync(app, EventActions.On, eventsBefore));
+        await UntilAsync(async () => on.Length == 0 || await LoggedAsync(app, EventActions.On, lastBefore));
 
         var page = await client.GetStringAsync("/", Cancel);
         Assert.Contains("Fan heater", page, StringComparison.Ordinal);
@@ -70,7 +74,7 @@ public sealed class WorkshopAppTests
         // Since the start: no safety shut-off, no door noticed after a gap, and nothing turned off.
         await using (var db = Open(app))
         {
-            var since = await db.EventLog.Where(e => e.Id > eventsBefore).ToListAsync(Cancel);
+            var since = await db.EventLog.Where(e => e.Id > lastBefore).ToListAsync(Cancel);
             Assert.DoesNotContain(since, e => e.Action is EventActions.InterlockTrip or EventActions.InputChanged or EventActions.Off or EventActions.GroupOff);
             Assert.Equal(on.Length, since.Count(e => e.Action == EventActions.On && e.Actor == EventActors.Schedule));
         }
@@ -112,6 +116,13 @@ public sealed class WorkshopAppTests
     {
         await using var db = Open(app);
         return await db.EventLog.AnyAsync(e => e.Id > afterId && e.Action == action, Cancel);
+    }
+
+    private static ContactorDbContext OpenBeforeStart(string connectionString)
+    {
+        // No pooled connection keeps the file open once the test ends.
+        var unpooled = new SqliteConnectionStringBuilder(connectionString) { Pooling = false }.ToString();
+        return new ContactorDbContext(new DbContextOptionsBuilder<ContactorDbContext>().UseSqlite(unpooled).Options);
     }
 
     private static ContactorDbContext Open(TestWebApp app)
