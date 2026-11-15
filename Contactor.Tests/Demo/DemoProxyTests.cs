@@ -312,19 +312,25 @@ public sealed class DemoProxyTests : IAsyncDisposable
     [InlineData("Sec-Fetch-Site", "same-site")]
     [InlineData("Origin", "https://elsewhere.example")]
     [InlineData("Origin", "null")]
+    [InlineData("", "")]
     public async Task Should_LetNoOtherSite_KeepOrEndACopy(string header, string value)
     {
         var client = await StartAsync();
         var id = await NewVisitorAsync(client);
         _time.Advance(TimeSpan.FromMinutes(10));
 
-        using var activity = Post("/demo/activity", id);
-        activity.Headers.Add(header, value);
-        using var end = Post("/demo/end", id);
-        end.Headers.Add(header, value);
+        // Nothing said at all is refused too: every browser says where a POST comes from.
+        using var activity = Bare("/demo/activity", id);
+        using var end = Bare("/demo/end", id);
         _time.Advance(TimeSpan.FromMinutes(6));
-        using var timeout = Post("/demo/timeout", id);
-        timeout.Headers.Add(header, value);
+        using var timeout = Bare("/demo/timeout", id);
+        if (header.Length > 0)
+        {
+            activity.Headers.Add(header, value);
+            end.Headers.Add(header, value);
+            timeout.Headers.Add(header, value);
+        }
+
         using var activityResponse = await client.SendAsync(activity, Cancel);
         using var endResponse = await client.SendAsync(end, Cancel);
         using var timeoutResponse = await client.SendAsync(timeout, Cancel);
@@ -353,7 +359,6 @@ public sealed class DemoProxyTests : IAsyncDisposable
 
         // The script's fetch, from the page.
         using var setup = Post("/demo/setup", id);
-        setup.Headers.Add("Sec-Fetch-Site", "same-origin");
         setup.Headers.Add("Sec-Fetch-Dest", "empty");
         using var declined = await client.SendAsync(setup, Cancel);
 
@@ -401,6 +406,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
         request.Headers.Remove("Sec-Fetch-Site");
         request.Headers.Add("Sec-Fetch-Site", site);
         using var setup = Post("/demo/setup", id);
+        setup.Headers.Remove("Sec-Fetch-Site");
         setup.Headers.Add("Sec-Fetch-Site", "cross-site");
 
         using var response = await client.SendAsync(request, Cancel);
@@ -421,7 +427,6 @@ public sealed class DemoProxyTests : IAsyncDisposable
 
         // "Start again": a form's POST, from the page.
         using var end = Post("/demo/end", mine);
-        end.Headers.Add("Sec-Fetch-Site", "same-origin");
         end.Headers.Add("Sec-Fetch-Dest", "document");
         end.Headers.Add("Origin", "http://localhost");
         using var ended = await client.SendAsync(end, Cancel);
@@ -481,7 +486,6 @@ public sealed class DemoProxyTests : IAsyncDisposable
         using var active = await client.SendAsync(Post("/demo/activity", id), Cancel);
 
         using var end = Post("/demo/end", id);
-        end.Headers.Add("Sec-Fetch-Site", "same-origin");
         end.Headers.Add("Sec-Fetch-Dest", "document");
         using var ended = await client.SendAsync(end, Cancel);
 
@@ -728,7 +732,6 @@ public sealed class DemoProxyTests : IAsyncDisposable
     private static HttpRequestMessage Timeout(string id)
     {
         var request = Post("/demo/timeout", id);
-        request.Headers.Add("Sec-Fetch-Site", "same-origin");
         request.Headers.Add("Sec-Fetch-Dest", "empty");
         return request;
     }
@@ -737,13 +740,21 @@ public sealed class DemoProxyTests : IAsyncDisposable
     private static HttpRequestMessage TemplateForm(string id, string template)
     {
         var request = Post("/demo/template", id);
-        request.Headers.Add("Sec-Fetch-Site", "same-origin");
         request.Headers.Add("Sec-Fetch-Dest", "document");
         request.Content = new FormUrlEncodedContent([new KeyValuePair<string, string>("template", template)]);
         return request;
     }
 
+    // A fetch or a form from the demo's own page: a browser says so.
     private static HttpRequestMessage Post(string path, string? id)
+    {
+        var request = Bare(path, id);
+        request.Headers.Add("Sec-Fetch-Site", "same-origin");
+        return request;
+    }
+
+    // A POST that says nothing of where it comes from.
+    private static HttpRequestMessage Bare(string path, string? id)
     {
         var request = Get(path, id);
         request.Method = HttpMethod.Post;

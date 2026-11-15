@@ -144,8 +144,8 @@ public static class DemoRoutes
 
     /// <summary>
     /// Whether a POST comes from the demo's own pages: a browser says where a request comes from, and another site
-    /// may not end a visitor's copy or keep it going. A request that says nothing (not a browser) only reaches the copy
-    /// of the cookie it sends.
+    /// may not end a visitor's copy or keep it going. Every browser the demo's pages work in sends <c>Sec-Fetch-Site</c>
+    /// or <c>Origin</c> with a POST, so a request with neither is refused too.
     /// </summary>
     public static bool IsFromThisSite(HttpRequest request)
     {
@@ -157,9 +157,8 @@ public static class DemoRoutes
         }
 
         var origin = request.Headers.Origin.ToString();
-        return origin.Length == 0
-            || (Uri.TryCreate(origin, UriKind.Absolute, out var uri)
-                && string.Equals(uri.Authority, request.Host.Value, StringComparison.OrdinalIgnoreCase));
+        return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            && string.Equals(uri.Authority, request.Host.Value, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

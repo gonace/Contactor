@@ -76,6 +76,36 @@ public sealed class DemoRoutesTests
         Assert.Equal(document, DemoRoutes.IsDocument(request));
     }
 
+    [Theory]
+    [InlineData("same-origin", "", true)]
+    [InlineData("same-origin", "https://elsewhere.example", true)]
+    [InlineData("cross-site", "", false)]
+    [InlineData("same-site", "", false)]
+    [InlineData("none", "", false)]
+    [InlineData("cross-site", "http://demo.example", false)]
+    [InlineData("", "http://demo.example", true)]
+    [InlineData("", "http://DEMO.example", true)]
+    [InlineData("", "https://elsewhere.example", false)]
+    [InlineData("", "http://demo.example:8080", false)]
+    [InlineData("", "null", false)]
+    [InlineData("", "", false)]
+    public void Should_TellAPostFromThisSite_FromAnotherOrOneThatDoesntSay(string site, string origin, bool fromThisSite)
+    {
+        var request = Request("POST", "/demo/activity", "", "");
+        request.Host = new HostString("demo.example");
+        if (site.Length > 0)
+        {
+            request.Headers["Sec-Fetch-Site"] = site;
+        }
+
+        if (origin.Length > 0)
+        {
+            request.Headers.Origin = origin;
+        }
+
+        Assert.Equal(fromThisSite, DemoRoutes.IsFromThisSite(request));
+    }
+
     private static HttpRequest Request(string method, string path, string query, string destination)
     {
         var context = new DefaultHttpContext();
