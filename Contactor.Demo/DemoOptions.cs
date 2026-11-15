@@ -55,9 +55,9 @@ public sealed class DemoOptions
     public TimeSpan StartTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// The address the tunnel (cloudflared) connects to the demo from, its own address on the demo's network. Only a
-    /// request from there may say that the visitor came in over HTTPS (<c>X-Forwarded-Proto</c>), so the visitor's
-    /// cookie is marked Secure. Empty: nobody may.
+    /// The address the tunnel's requests reach the demo from: the forwarder's address on the demo's network, which
+    /// passes on what the tunnel's connector says. Only a request from there may say that the visitor came in over
+    /// HTTPS (<c>X-Forwarded-Proto</c>), so the visitor's cookie is marked Secure. Empty: nobody may.
     /// </summary>
     public string TunnelAddress { get; set; } = "";
 
