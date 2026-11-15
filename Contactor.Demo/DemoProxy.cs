@@ -465,9 +465,11 @@ public sealed partial class DemoProxy : IDisposable
             var ownHost = string.Equals(uri.Authority, context.Request.Host.Value, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(uri.Host, context.Request.Host.Host, StringComparison.OrdinalIgnoreCase)
                 || uri.IsLoopback;
-            if (ownHost)
+            // A path that starts with // (or /\, which Uri turns into //) would read as another site once relative.
+            var path = uri.PathAndQuery;
+            if (ownHost && !path.StartsWith("//", StringComparison.Ordinal))
             {
-                context.Response.Headers.Location = uri.PathAndQuery + uri.Fragment;
+                context.Response.Headers.Location = path + uri.Fragment;
             }
         }
 

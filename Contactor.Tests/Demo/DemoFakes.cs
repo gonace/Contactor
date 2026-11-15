@@ -261,6 +261,13 @@ internal sealed class EchoStarter : IProgramStarter
                 return;
             }
 
+            if (context.Request.Path == "/redirect-sneaky")
+            {
+                context.Response.StatusCode = StatusCodes.Status302Found;
+                context.Response.Headers.Location = $"http://{context.Request.Host}//evil.example/x";
+                return;
+            }
+
             if (context.Request.Path == "/redirect-away")
             {
                 context.Response.StatusCode = StatusCodes.Status302Found;
