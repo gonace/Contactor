@@ -15,8 +15,7 @@ public sealed class Vm201BoardTests
     [Fact]
     public void Should_HaveEightRelaysAndOneInput_AndAPulse()
     {
-        var pulse = new PulseAbility(TimeSpan.FromSeconds(1), TimeSpan.FromHours(99), TimeSpan.FromSeconds(1));
-        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true, Pulse: pulse), Vm201Board.Vm201Capabilities);
+        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true, Pulse: Vm201Pulse.Ability), Vm201Board.Vm201Capabilities);
         Assert.Equal(ChannelMask.FirstN(8), Vm201Board.Vm201Capabilities.AllRelays);
     }
 
@@ -86,10 +85,10 @@ public sealed class Vm201BoardTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(100)] // CanDo allows it.
+    [InlineData(100)]
     [InlineData(90.5)]
     [InlineData(360_000)]
-    public async Task Should_RefuseALengthTheBoardCantSendExactly_EvenWhenCanDoAllowsIt(double seconds)
+    public async Task Should_RefuseALengthTheBoardCantSendExactly(double seconds)
     {
         var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
 

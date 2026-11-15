@@ -5,7 +5,7 @@ namespace Contactor.Boards.Vm201;
 /// <summary>
 /// The time of a VM201 pulse (<see cref="Vm201Command.Pulse"/>): a number 1–99 and a unit, 's', 'm' or 'h'. So a
 /// length goes out exactly only as whole seconds up to 99 s, else whole minutes up to 99 min, else whole hours up to
-/// 99 h; 100 s, for one, can't be sent, though <see cref="Ability"/> allows it.
+/// 99 h; 100 s, for one, can't be sent.
 /// </summary>
 public static class Vm201Pulse
 {
@@ -16,11 +16,11 @@ public static class Vm201Pulse
     public const byte Minutes = (byte)'m';
     public const byte Hours = (byte)'h';
 
-    /// <summary>
-    /// From 1 s to 99 h in steps of 1 s, the closest a <see cref="PulseAbility"/> comes: not every length in it can
-    /// be sent (<see cref="TryEncode"/>).
-    /// </summary>
-    public static PulseAbility Ability { get; } = new(TimeSpan.FromSeconds(1), TimeSpan.FromHours(MaxTime), TimeSpan.FromSeconds(1));
+    /// <summary>From 1 s to 99 h in steps of 1 s, and only the lengths that can be sent (<see cref="TryEncode"/>).</summary>
+    public static PulseAbility Ability { get; } = new(TimeSpan.FromSeconds(1), TimeSpan.FromHours(MaxTime), TimeSpan.FromSeconds(1))
+    {
+        Exact = length => TryEncode(length, out _, out _),
+    };
 
     private static readonly (byte Unit, TimeSpan Size)[] Units =
     [
