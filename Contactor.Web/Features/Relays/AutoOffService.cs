@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
@@ -84,11 +85,12 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
             .ToListAsync(cancellationToken);
         var expected = board.Expected;
 
-        // Once an OFF went out, it is recorded whatever happens to the caller now: a cancel (mostly at shutdown) would
-        // leave the board's change without its event, and the run with an auto-off that already went. A cancel before
-        // the next OFF stops there, and what went out is still saved.
+        // Once an OFF went out, it is recorded whatever happens to the caller now: a cancel (mostly at shutdown) or a
+        // later OFF that fails (e.g. a timeout) would leave the board's change without its event, and the run with an
+        // auto-off that already went. A failure after an OFF went out stops there, what went out is saved, and then the
+        // failure is thrown.
         List<int> turnedOff = [];
-        var cancelled = false;
+        ExceptionDispatchInfo? failed = null;
         foreach (var runtime in due)
         {
             // The board's state and the command go by the relay's channel; a relay the board doesn't have isn't on.
@@ -108,17 +110,18 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
                     expected.Forget(mask, on: false);
                     break;
                 }
-                catch (OperationCanceledException) when (turnedOff.Count > 0 && cancellationToken.IsCancellationRequested)
+                catch (Exception ex) when (turnedOff.Count > 0)
                 {
-                    // As a failed command: whatever the board did shows as an external change.
+                    // Nothing is logged for this OFF: whatever the board did shows as an external change. It is tried
+                    // again at the next check.
                     expected.Forget(mask, on: false);
-                    cancelled = true;
+                    failed = ExceptionDispatchInfo.Capture(ex);
                     break;
                 }
                 catch
                 {
-                    // Cancelled before anything went out, or failed some other way: nothing is logged, so whatever the
-                    // board did shows as an external change.
+                    // Cancelled or failed before anything went out: nothing is logged, so whatever the board did shows
+                    // as an external change.
                     expected.Forget(mask, on: false);
                     throw;
                 }
@@ -145,8 +148,8 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
             await RelayRuns.EndOutsideAsync(db, runtime.RelayId, Record(turnedOff, cancellationToken));
         }
 
-        // Not after the board was lost on the way, nor after a cancel: nothing happens without it.
-        if (board.State.IsConnected && !cancelled)
+        // Not after the board was lost on the way, nor after a failure: nothing happens without it.
+        if (board.State.IsConnected && failed is null)
         {
             await EndRunsOfOffRelaysAsync(db, board, channels, state, [.. due.Select(r => r.RelayId)], Record(turnedOff, cancellationToken));
         }
@@ -157,10 +160,7 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
             _changes.Notify();
         }
 
-        if (cancelled)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
+        failed?.Throw();
 
         return turnedOff;
     }

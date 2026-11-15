@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
@@ -183,10 +184,11 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
             var interrupted = false;
 
             // Once a command went out, it is recorded whatever happens to the caller now: a cancel (mostly at
-            // shutdown) would leave the board's change without its run and event. A cancel before the next command
-            // stops there, and what went out is still saved.
+            // shutdown) or a later command that fails (e.g. a timeout) would leave the board's change without its run
+            // and event. A failure after a command went out stops there, what went out is saved, and then the failure
+            // is thrown.
             var wentOut = false;
-            var cancelled = false;
+            ExceptionDispatchInfo? failed = null;
 
             // The board's relays in channel order; the board's state and the commands go by the channel.
             for (var channel = 1; channel <= _board.Capabilities.RelayCount; channel++)
@@ -221,11 +223,11 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                         {
                             sent = await SendAsync(channel, on: true, cancellationToken);
                         }
-                        catch (OperationCanceledException) when (wentOut && cancellationToken.IsCancellationRequested)
+                        catch (Exception ex) when (wentOut)
                         {
-                            // As a failed command (SendAsync forgot its expectation): whatever the board did shows as an
-                            // external change.
-                            cancelled = interrupted = true;
+                            // SendAsync forgot its expectation: whatever the board did shows as an external change.
+                            failed = ExceptionDispatchInfo.Capture(ex);
+                            interrupted = true;
                             break;
                         }
 
@@ -282,11 +284,11 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                 {
                     off = await SendAsync(channel, on: false, cancellationToken);
                 }
-                catch (OperationCanceledException) when (wentOut && cancellationToken.IsCancellationRequested)
+                catch (Exception ex) when (wentOut)
                 {
-                    // As a failed command (SendAsync forgot its expectation): whatever the board did shows as an
-                    // external change.
-                    cancelled = interrupted = true;
+                    // SendAsync forgot its expectation: whatever the board did shows as an external change.
+                    failed = ExceptionDispatchInfo.Capture(ex);
+                    interrupted = true;
                     break;
                 }
 
@@ -306,10 +308,10 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
             // The relays' runs are saved first: whatever happens to the groups, a relay this tick switched keeps its
             // "turned on by the schedule" and its event.
             await RelayRuns.SaveAsync(db, wentOut ? CancellationToken.None : cancellationToken);
-            if (cancelled)
+            if (failed is not null)
             {
                 _changes.Notify();
-                cancellationToken.ThrowIfCancellationRequested();
+                failed.Throw();
             }
 
             if (!interrupted)
