@@ -65,18 +65,23 @@ sudo /opt/contactor-demo/upgrade.sh
 ```
 
 It refuses a Docker older than 28, pulls the image, checks its signature with cosign by digest (the public keys in
-`deploy/cosign/`, as the Raspberry Pi does) and starts exactly that image. Then it checks that the machine has no
-address on the demo's network, and stops the demo if it has. Always start the demo with it, not with
-`docker compose up`. The tunnel starts once the demo is healthy, after a few seconds.
+`deploy/cosign/`, as the Raspberry Pi does) and prepares exactly that image. Before it starts anything, it checks that
+the machine has no address on the demo's network, neither IPv4 nor global IPv6, and stops the demo if it has or if it
+can't tell. Always start the demo with it, not with `docker compose up`. The tunnel starts once the demo is healthy,
+after a few seconds.
 
 **Check it:**
 
 1. `cd /opt/contactor-demo && sudo docker compose ps`: both containers say `healthy`.
-2. `ip -br addr | grep 172.30.60.` prints nothing: the machine has no address on the demo's network (with another
-   subnet, grep for that). If it prints a line, stop the demo at once (`sudo docker compose down`): a visitor could
-   reach the machine. Upgrade Docker as in What you need, and start it again.
-3. Open your hostname. The page shows the simulator and the app, with "Skip setup: start from a template".
-4. Choose **Workshop**. The app shows the relays, and switching one shows in the simulator too.
+2. `ip -br addr | grep 172.30.60.` prints nothing: the machine has no IPv4 address on the demo's network (with another
+   subnet, grep for that).
+3. `ip -6 -o addr show dev br-$(sudo docker network inspect -f '{{.Id}}' contactor-demo_demo | cut -c1-12) scope global`
+   prints nothing: the machine has no IPv6 address there either.
+
+   If step 2 or 3 prints a line, stop the demo at once (`sudo docker compose down`): a visitor could reach the machine.
+   Upgrade Docker as in What you need, keep `enable_ipv6: false` in `compose.yml`, and start it again.
+4. Open your hostname. The page shows the simulator and the app, with "Skip setup: start from a template".
+5. Choose **Workshop**. The app shows the relays, and switching one shows in the simulator too.
 
 Logs: `sudo docker compose logs -f demo` and `sudo docker compose logs -f cloudflared`.
 
@@ -111,7 +116,7 @@ The demo's limits are settings, under `environment:` of the `demo` service in `c
 
 With more visitors, give the container more memory too (`mem_limit`, about 250 MB per visitor and 500 MB more).
 
-**If the network clashes:** when `upgrade.sh` says that the pool overlaps with another, the subnet
+**If the network clashes:** when `upgrade.sh` can't prepare the demo because the networks overlap, the subnet
 `172.30.60.0/28` is in use on the machine. Pick another, e.g. `172.30.61.0/28`, and change the subnet, the
 `ip_range`, cloudflared's `ipv4_address` and `Demo__TunnelAddress` in `compose.yml` to match, and grep for the new
 subnet in Check it.

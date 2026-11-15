@@ -85,6 +85,8 @@ networks:
   # both places above.
   demo:
     internal: true
+    # No IPv6 either, so a daemon's default can't give this machine an IPv6 address here; upgrade.sh checks that too.
+    enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.gateway_mode_ipv4: isolated
     ipam:

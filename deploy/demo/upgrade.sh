@@ -5,8 +5,9 @@
 #   sudo bash /opt/contactor-demo/upgrade.sh
 #
 # It refuses, and leaves the demo as it was, on a Docker Engine older than 28 and on an image that isn't signed with
-# one of our keys. After the start it checks that this machine has no address on the demo's network, and stops the
-# demo if it has: a visitor could otherwise reach this machine's services (e.g. SSH) as a board.
+# one of our keys. Before the start it checks that this machine has no address on the demo's network (IPv4, or global
+# IPv6), and stops the demo if it has, or if it can't tell: a visitor could otherwise reach this machine's services
+# (e.g. SSH) as a board.
 set -euo pipefail
 
 readonly DIR=/opt/contactor-demo
@@ -30,6 +31,13 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/L6B3FW9vgpVpMZ9WkkUZYoriYJQ
 )
 
 fail() { echo "Error: $*" >&2; exit 1; }
+# Stops the demo, so nothing runs on a network that wasn't checked, and fails.
+stop_demo() {
+    if docker compose down; then
+        fail "$* The demo is stopped."
+    fi
+    fail "$* Stopping the demo failed too: stop it at once with cd $DIR && sudo docker compose down"
+}
 
 [[ $EUID -eq 0 ]] || fail "run it as root, e.g. with sudo."
 command -v ip > /dev/null || fail "ip (iproute2) is missing; it checks the demo's network. Install it: apt install iproute2."
@@ -80,20 +88,30 @@ if [[ -z "$signed" ]]; then
     fail "not starting: $reference isn't signed with our key. The demo keeps running its current image."
 fi
 
-# By the digest just checked, so a tag moved in the meantime can't start anything else.
-echo "Starting the demo"
-DEMO_IMAGE=$reference docker compose up -d --remove-orphans || fail "the demo was not started; see: cd $DIR && docker compose logs"
+# By the digest just checked, so a tag moved in the meantime can't start anything else. First only the containers and
+# the network are made, and nothing new starts until the network has passed the check below.
+export DEMO_IMAGE=$reference
+echo "Preparing the demo"
+docker compose up --no-start --remove-orphans || stop_demo "could not prepare the demo."
 
-# The bridge of the demo's network must have no IPv4 address on this machine.
+# The bridge of the demo's network must have no IPv4 address and no global IPv6 address on this machine.
 network=$(docker network ls --quiet --no-trunc \
-    --filter label=com.docker.compose.project=contactor-demo --filter label=com.docker.compose.network=demo)
-[[ -n "$network" ]] || { docker compose down; fail "could not find the demo's network; the demo is stopped."; }
-bridge=$(docker network inspect -f '{{index .Options "com.docker.network.bridge.name"}}' "$network")
+    --filter label=com.docker.compose.project=contactor-demo --filter label=com.docker.compose.network=demo) \
+    || stop_demo "could not look up the demo's network."
+[[ -n "$network" && "$network" != *[[:space:]]* ]] || stop_demo "could not find the demo's network."
+bridge=$(docker network inspect -f '{{index .Options "com.docker.network.bridge.name"}}' "$network") \
+    || stop_demo "could not read the demo's network."
 bridge=${bridge:-br-${network::12}}
-if [[ -n "$(ip -4 -o addr show dev "$bridge" 2>&1)" ]]; then
-    docker compose down
-    fail "this machine has an address on the demo's network ($bridge), so a visitor could reach it; the demo is stopped. Use Docker $MIN_DOCKER or later and keep gateway_mode_ipv4: isolated in compose.yml."
+ipv4=$(ip -4 -o addr show dev "$bridge" 2>&1) \
+    || stop_demo "could not read the addresses of the demo's network ($bridge)."
+ipv6=$(ip -6 -o addr show dev "$bridge" scope global 2>&1) \
+    || stop_demo "could not read the addresses of the demo's network ($bridge)."
+if [[ -n "$ipv4" || -n "$ipv6" ]]; then
+    stop_demo "this machine has an address on the demo's network ($bridge), so a visitor could reach it. Use Docker $MIN_DOCKER or later and keep gateway_mode_ipv4: isolated and enable_ipv6: false in compose.yml."
 fi
+
+echo "Starting the demo"
+docker compose up -d --remove-orphans || fail "the demo was not started; see: cd $DIR && docker compose logs"
 
 docker image prune -f > /dev/null
 echo "The demo runs $reference."
