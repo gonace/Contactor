@@ -62,9 +62,9 @@ public sealed class DemoOptions
     public string TunnelAddress { get; set; } = "";
 
     /// <summary>
-    /// Reads <see cref="TunnelAddress"/> as an IP address written out in full: <see cref="IPAddress.TryParse(string?, out IPAddress?)"/>
-    /// alone also takes shorthand such as <c>172.30.60</c> (172.30.0.60) or <c>2886745090</c>, which would trust another
-    /// address than the one written.
+    /// Reads <see cref="TunnelAddress"/> as an IP address written out in full. <c>IPAddress.TryParse</c> alone also takes
+    /// shorthand such as <c>172.30.60</c> (172.30.0.60) or <c>2886745090</c>, which would trust another address than the
+    /// one written.
     /// </summary>
     public static bool TryParseTunnelAddress(string? text, [NotNullWhen(true)] out IPAddress? address)
     {
@@ -159,7 +159,8 @@ public sealed class DemoOptionsValidation : IValidateOptions<DemoOptions>
             errors.Add("Demo:StartTimeout is from 00:00:01 to 00:10:00.");
         }
 
-        if (!string.IsNullOrWhiteSpace(options.TunnelAddress) && !DemoOptions.TryParseTunnelAddress(options.TunnelAddress, out _))
+        if (!string.IsNullOrWhiteSpace(options.TunnelAddress)
+            && !DemoOptions.TryParseTunnelAddress(options.TunnelAddress, out _))
         {
             errors.Add("Demo:TunnelAddress is empty or an IP address, e.g. 172.30.60.2.");
         }

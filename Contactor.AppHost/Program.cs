@@ -52,12 +52,13 @@ public static class Program
             .WaitFor(simulator);
 
         // The public demo (docs/DEMO.md) on http://localhost:5070, as its launch profile says: each visitor gets their
-        // own copy of the app and the simulator, started from their build output, not the resources above. The paths are
-        // given in full, so they don't depend on the folder Aspire starts it in.
+        // own copy of the app and the simulator, started from their build output, not the resources above. Aspire
+        // starts it without its launch profile's settings, so they are given here, with full paths.
         var root = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, ".."));
+        string Output(string project) => Path.Combine(root, project, "bin", Configuration, "net10.0", project + ".dll");
         builder.AddProject<Projects.Contactor_Demo>("contactor-demo")
-            .WithEnvironment("Demo__AppPath", Path.Combine(root, "Contactor.Web", "bin", Configuration, "net10.0", "Contactor.Web.dll"))
-            .WithEnvironment("Demo__SimulatorPath", Path.Combine(root, "Contactor.Simulator", "bin", Configuration, "net10.0", "Contactor.Simulator.dll"))
+            .WithEnvironment("Demo__AppPath", Output("Contactor.Web"))
+            .WithEnvironment("Demo__SimulatorPath", Output("Contactor.Simulator"))
             .WithEnvironment("Demo__CopyEnvironment", "Development")
             .WithEnvironment("Demo__DataRoot", Path.Combine(root, "Contactor.Demo", "bin", "demo-data"))
             .WithHttpHealthCheck("/healthz");
