@@ -271,12 +271,12 @@ V7=$(release v7)
 request update
 helper &
 helper_run=$!
-for _ in $(seq 1 60); do
-    [[ "$(status_of step)" == download && "$(status_of state)" == running ]] && break
-    sleep 0.5
+# Cancel once the pull of the new version is under way.
+for _ in $(seq 1 150); do
+    pgrep -f "^docker pull --quiet $REPOSITORY:latest" > /dev/null && break
+    sleep 0.2
 done
-sleep 2
-check "the download was still under way when cancel came" pgrep -f "^docker pull --quiet $REPOSITORY:latest" > /dev/null
+check "the download was under way when cancel came" bash -c "pgrep -f '^docker pull --quiet $REPOSITORY:latest' > /dev/null"
 request cancel
 wait "$helper_run" || true
 check "it says the update was cancelled" test "$(status_of state)-$(status_of reason)" = failed-cancelled
@@ -310,6 +310,9 @@ as_app touch "$DIR/data/groups-busy"
 request update
 helper CONTACTOR_WAIT_SECONDS=6
 check "it says why it stopped" test "$(status_of state)-$(status_of reason)" = failed-switching
+log_file=$(find "$DIR/data/updates/logs" -name "update-*.log" | sort | tail -n 1)
+check "its log says it waits once, and why it stopped" \
+    test "$(grep -c 'Waiting for the relays to finish switching' "$log_file")-$(grep -c 'still switching after' "$log_file")" = 1-1
 check "the same version runs" test "$(running_image)" = "$running"
 check "latest names the running version" test "$(image_id "$REPOSITORY:latest")" = "$running"
 check "2026.11.27 is removed" test -z "$(image_id "$V9")"
@@ -344,9 +347,9 @@ as_app chmod 700 "$DIR/data/updates/request/inside"
 as_app rm -rf "$DIR/data/updates/request"
 
 say "install.sh while the helper runs: it refuses, and changes nothing"
-flock "$STATE/lock" sleep 30 &
-holder=$!
-sleep 1
+# Held by this script itself, as the helper holds it while it runs: let go of below, whole (a child would keep it).
+exec 8> "$STATE/lock"
+flock 8
 if CONTACTOR_UPDATER_STATE=$STATE sh "$ROOT/install/install.sh" > "$WORK/install.log" 2>&1; then
     fail "install.sh ran while the helper ran"
 else
@@ -357,9 +360,24 @@ if CONTACTOR_UPDATER_STATE=$STATE sh "$ROOT/install/install.sh" --uninstall > "$
 else
     check "install.sh --uninstall says so too" grep -q "is being updated from its Settings right now" "$WORK/install.log"
 fi
-kill "$holder" 2> /dev/null || true
-wait "$holder" 2> /dev/null || true
+exec 8>&-
 check "the app runs on all along" test "$(running_image)" = "$running"
+
+say "A first run after a start that ends early still counts: the next \"Update now\" is taken"
+mv "$DIR/compose.yml" "$WORK/compose.yml"
+BOOT=test-start-5
+helper
+check "the run without compose.yml noted this start" grep -qx test-start-5 "$STATE/boot"
+mv "$WORK/compose.yml" "$DIR/compose.yml"
+changed=$(status_of changed)
+request update
+helper
+check "the next request is taken" test "$(status_of changed)" != "$changed"
+
+say "Secrets across the 2000-character cut"
+stripped=$(printf '%s Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after\n' "$(head -c 1990 /dev/zero | tr '\0' a)" \
+    | bash -c "MAX_LINE=2000; $(sed -n '/^strip_secrets() {/,/^}/p' "$HELPER"); strip_secrets")
+check "a token across the cut is hidden whole" bash -c "[[ '$stripped' == *' [hidden] …' && '$stripped' != *Zq* ]]"
 
 printf '\nThe helper said:\n'
 if [[ "$FAILED" -gt 0 ]]; then

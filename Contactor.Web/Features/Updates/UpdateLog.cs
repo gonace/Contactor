@@ -70,15 +70,16 @@ public static partial class UpdateLog
         var lines = text.Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
-            // Cut first, and every pattern runs without backtracking: a huge line costs time in proportion, no more.
-            var line = lines[i].Length > MaxLineLength ? lines[i][..MaxLineLength] + "…" : lines[i];
+            // Secrets are hidden before the line is cut, so none is cut in half and left showing. Every pattern runs
+            // without backtracking, and a first, far longer bound keeps a huge line cheap (what lies past it is cut anyway).
+            var line = lines[i].Length > 64 * MaxLineLength ? lines[i][..(64 * MaxLineLength)] : lines[i];
             line = TailscaleKey().Replace(line, Hidden);
             line = Token().Replace(line, Hidden);
             line = Bearer().Replace(line, Hidden);
             line = Basic().Replace(line, Hidden);
             line = Named().Replace(line, m => m.Groups["name"].Value + (m.Groups["value"].Success ? Hidden : ""));
             line = LongRun().Replace(line, m => LooksRandom(m.Value) ? Hidden : m.Value);
-            lines[i] = line;
+            lines[i] = line.Length > MaxLineLength ? line[..MaxLineLength] + "…" : line;
         }
 
         return string.Join('\n', lines);

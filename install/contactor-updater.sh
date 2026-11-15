@@ -43,7 +43,7 @@ readonly HEALTH_SECONDS=${CONTACTOR_HEALTH_SECONDS:-300}
 # A request older than this (in seconds) was left behind, e.g. while the helper wasn't running: it is never acted on.
 readonly REQUEST_MAX_AGE=120
 # How long the update waits, just before the restart, for a group that is starting or running on; then it stops with
-# nothing changed. update-backup says so with its exit code (UpdateBackup.GroupsBusyExitCode); asked every 5 seconds.
+# nothing changed. update-backup says so with its exit code (UpdateBackup.GroupsBusyExitCode); asked every 10 seconds.
 readonly WAIT_SECONDS=${CONTACTOR_WAIT_SECONDS:-600}
 readonly GROUPS_BUSY=3
 # How long a file in the app's folder may take to read: a FIFO there would otherwise hold the helper for ever.
@@ -172,14 +172,16 @@ strip_secrets() {
             return out text
         }
         {
-            line = length($0) > max ? substr($0, 1, max) "…" : $0
+            # Secrets are hidden before the line is cut, so none is cut in half and left showing; a first, far longer
+            # bound keeps a huge line cheap (what lies past it is cut anyway).
+            line = length($0) > 64 * max ? substr($0, 1, 64 * max) : $0
             line = hide(line, "tskey-[A-Za-z0-9-]+")
             line = hide(line, "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_.-]*")
             line = hide(line, "[Bb][Ee][Aa][Rr][Ee][Rr] [^ \t]+")
             line = hide(line, "[Bb][Aa][Ss][Ii][Cc] [^ \t]+")
             line = named(line)
             line = long_runs(line)
-            print line
+            print (length(line) > max ? substr(line, 1, max) "…" : line)
         }'
 }
 
@@ -662,8 +664,10 @@ update() {
     while :; do
         as_app rm -f -- "$UPDATES/before-update.db" 2> /dev/null || true
         backed=0
-        run_logged timeout 300 docker exec "$cid" dotnet /app/Contactor.Web.dll update-backup || backed=$?
+        timeout 300 docker exec "$cid" dotnet /app/Contactor.Web.dll update-backup > "$TMP/backup" 2>&1 || backed=$?
         if [[ "$backed" -ne "$GROUPS_BUSY" ]]; then
+            # Only the try that counts goes into the log; the waiting ones say the same each time.
+            tail -n 200 "$TMP/backup" | sed 's/^/    /' | strip_secrets | to_log
             break
         fi
         # A group is starting or running on: the restart would cut it off. It waits, as long as WAIT_SECONDS.
@@ -676,8 +680,8 @@ update() {
             log "Waiting for the relays to finish switching."
             status running step=waiting
         fi
-        sleep 5
-        waited=$((waited + 5))
+        sleep 10
+        waited=$((waited + 10))
         if cancelled; then
             fail_before cancelled
             return 0
@@ -814,10 +818,16 @@ main() {
     fi
     [[ $EUID -eq 0 ]] || { echo "contactor-updater: run it as root." >&2; return 1; }
     [[ ${#COSIGN_KEYS[@]} -gt 0 ]] || { echo "contactor-updater: no signing keys." >&2; return 1; }
-    # Not installed (yet, or any more): nothing to do.
-    [[ -d "$DATA" && -f "$DIR/compose.yml" ]] || return 0
     mkdir -p "$STATE"
     chmod 700 "$STATE"
+    # Before anything can end this run early: otherwise the first "Update now" after it would count as the first run
+    # since the machine started, and be ignored.
+    if [[ "$(cat "$STATE/boot" 2> /dev/null || true)" != "$BOOT_ID" ]]; then
+        FIRST_SINCE_START=1
+        printf '%s\n' "$BOOT_ID" > "$STATE/boot" || true
+    fi
+    # Not installed (yet, or any more): nothing to do.
+    [[ -d "$DATA" && -f "$DIR/compose.yml" ]] || return 0
     exec 9> "$STATE/lock"
     flock --nonblock 9 || return 0
     TMP=$(mktemp -d "$STATE/run.XXXXXX")
@@ -827,11 +837,6 @@ main() {
     # Tells the app the helper is here; written only when it changes, to spare the SD card.
     if [[ "$(read_app_file "$UPDATES/helper" 64 || true)" != "version=$HELPER_VERSION" ]]; then
         printf 'version=%s\n' "$HELPER_VERSION" | write_app_file "$UPDATES/helper" || true
-    fi
-
-    if [[ "$(cat "$STATE/boot" 2> /dev/null || true)" != "$BOOT_ID" ]]; then
-        FIRST_SINCE_START=1
-        printf '%s\n' "$BOOT_ID" > "$STATE/boot" || true
     fi
 
     recover

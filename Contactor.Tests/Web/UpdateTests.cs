@@ -329,9 +329,22 @@ public sealed class UpdateLogTests
 
         Assert.Equal(UpdateLog.MaxLineLength + 1, stripped.Length);
         Assert.EndsWith("…", stripped, StringComparison.Ordinal);
-        Assert.Equal("x password=[hidden] " + new string('b', UpdateLog.MaxLineLength - 19) + "…",
+        Assert.Equal("x password=[hidden] " + new string('b', UpdateLog.MaxLineLength - 20) + "…",
             UpdateLog.Strip("x password=hunter2 " + new string('b', 5000)));
         Assert.DoesNotContain("hunter2", UpdateLog.Strip(new string('c', 3000) + " password=hunter2"), StringComparison.Ordinal);
+    }
+
+    // A token across the cut is hidden whole: none of it is left showing before the "…".
+    [Fact]
+    public void Should_HideATokenAcrossTheCut()
+    {
+        var token = "Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5";
+        var line = new string('a', UpdateLog.MaxLineLength - 10) + " " + token + " after";
+
+        var stripped = UpdateLog.Strip(line);
+
+        Assert.Equal(new string('a', UpdateLog.MaxLineLength - 10) + " [hidden] …", stripped);
+        Assert.DoesNotContain("Zq", stripped, StringComparison.Ordinal);
     }
 
     [Fact]
