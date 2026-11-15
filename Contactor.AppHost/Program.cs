@@ -45,7 +45,10 @@ public static class Program
         // the container under "contactor", as "contactor-web", the name of its image too. The image is always tagged
         // "dev": Aspire otherwise gives each build a new tag, so every run left one more image of about 445 MB behind.
         // A new build takes the tag from the one before, which stays as an untagged image: `docker image prune` removes
-        // those, and every other untagged image.
+        // those, and every other untagged image, but not one a container still uses (e.g. a container a crashed run
+        // left behind: remove the container first). Images from older runs have a hash as their tag
+        // (contactor-web:<hash>, older ones web:<hash>), so prune keeps them: `docker images contactor-web` lists them,
+        // and `docker image rm` removes them.
         var board = simulator.GetEndpoint("vm201");
         builder.AddDockerfile("contactor-web", Path.Combine(builder.AppHostDirectory, ".."))
             .WithImageTag("dev")
