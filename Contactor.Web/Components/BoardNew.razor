@@ -3,6 +3,7 @@
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Setup
 @using Contactor.Web.Persistence
 @inject BoardRegistry Registry
@@ -290,7 +291,8 @@
         }
     }
 
-    // "Done": the relays' names and "In use", then the relay list, where the new board is now.
+    // "Done": the relays' names and "In use", then the relay list, where the new board is now. Relays shows every board
+    // then (a page load, which clears its filter's cookie), so a filter can't hide the board just added.
     private async Task FinishAsync()
     {
         if (Busy || _step != StepRelays || _user is null || Chosen is null)
@@ -315,7 +317,7 @@
 
         if (_error is null)
         {
-            Navigation.NavigateTo("");
+            Navigation.NavigateTo(RelaysEndpoints.ShowAllPath.TrimStart('/'), forceLoad: true);
         }
     }
 

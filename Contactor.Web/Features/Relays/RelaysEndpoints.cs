@@ -8,6 +8,9 @@ public static class RelaysEndpoints
     /// <summary>Where the Relays screen's board filter is sent.</summary>
     public const string BoardsPath = "/relays/boards";
 
+    /// <summary>Where a page sends the browser to show every board on Relays: "Add a board" once done.</summary>
+    public const string ShowAllPath = "/relays/boards/all";
+
     // A year: as long as browsers keep a cookie without asking again.
     private static readonly TimeSpan CookieLife = TimeSpan.FromDays(365);
 
@@ -29,7 +32,19 @@ public static class RelaysEndpoints
                 .WithTags("Relays").ExcludeFromDescription().DisableAntiforgery();
         }
 
+        endpoints.MapGet(ShowAllPath, ShowAllBoards).WithTags("Relays").ExcludeFromDescription();
         return endpoints;
+    }
+
+    /// <summary>
+    /// <c>GET /relays/boards/all</c>: Relays shows every board again, then goes to Relays. "Add a board" ends here, so
+    /// the board just added shows whatever the filter was. A link rather than a form: it takes no input, and the only
+    /// thing it can do is show every board, so it needs no token. Behind the sign-in like every page.
+    /// </summary>
+    private static RedirectHttpResult ShowAllBoards(HttpContext context)
+    {
+        context.Response.Cookies.Delete(BoardFilterScreen.Relays.CookieName);
+        return TypedResults.LocalRedirect("~" + BoardFilterScreen.Relays.PagePath);
     }
 
     private static async Task<RedirectHttpResult> ShowBoardsAsync(HttpContext context, IAntiforgery antiforgery, BoardFilterScreen screen)
