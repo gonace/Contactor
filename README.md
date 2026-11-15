@@ -91,11 +91,12 @@ shows its container under `contactor`, and `docker compose ls` lists a running `
 runs. This is harmless. Each run builds the image as `contactor-web:dev`. When the image changed, the build before it
 stays in Docker as an untagged `<none>` image. `docker image prune` removes these, and every other untagged image. What
 the app keeps is in the Docker volume `contactor-dev`; delete it to start over. A new database starts with the setup
-guide, behind the setup code in the app's log: choose any way in and sign-in there, as on a real installation. For
-quick work on this computer only, `dotnet run --project Contactor.Web` runs the app on its own, with a local database file, against the simulator started with `dotnet run --project Contactor.Simulator`. The
-simulator's page, linked from the dashboard, shows the board's relays and every packet, and switches relays as the
-board's own buttons would. Stop and start the simulator in the dashboard to test a lost connection to the board. The
-tests use the same simulator, so no hardware is needed.
+guide, behind the setup code in the app's log: choose any way in and sign-in there, as on a real installation. For quick
+work on this computer only, `dotnet run --project Contactor.Web` runs the app on its own, with a local database file,
+against the simulator started with `dotnet run --project Contactor.Simulator`. The simulator's page, linked from the
+dashboard, shows the board's relays and every packet, and switches relays as the board's own buttons would. Stop and
+start the simulator in the dashboard to test a lost connection to the board. The tests use the same simulator, so no
+hardware is needed.
 
 `docs/ARCHITECTURE.md` describes the architecture and the rules the app follows, and `AGENTS.md` how to work in this repository. Each board's protocol or routes are in the `README.md` of its project, e.g. `Contactor.Boards.Vm201/README.md`.
 
