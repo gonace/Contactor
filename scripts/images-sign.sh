@@ -18,8 +18,9 @@
 set -euo pipefail
 
 readonly KEYS=(deploy/cosign/contactor-main.pub deploy/cosign/contactor-reserve.pub)
-# The scripts that check signatures on the machine Contactor runs on. Each carries its own copy of both public keys.
-readonly VERIFIERS=(install/contactor-updater.sh)
+# The scripts that check signatures on the machine Contactor runs on: the update helper (each update) and install.sh
+# (a new installation). Each carries its own copy of both public keys.
+readonly VERIFIERS=(install/contactor-updater.sh install/install.sh)
 readonly SIGNING_CONFIG=deploy/cosign/signing-config.json
 
 fail() { echo "Error: $*" >&2; exit 1; }

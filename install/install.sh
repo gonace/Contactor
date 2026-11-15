@@ -14,7 +14,8 @@
 #   ... | sh -s -- --uninstall --delete-data  removes that too
 #
 # The only file attached to each GitHub Release. compose.yml and the update helper (contactor-updater.sh and its
-# systemd units) come from the image it installs (/app/install and /app/updater), so they always match the app. For
+# systemd units) come from the image it installs (/app/install and /app/updater), so they always match the app: a new
+# installation checks that image's signature first; run again, it takes them from the image the app runs. For
 # testing only: CONTACTOR_IMAGE runs another image, and CONTACTOR_UPDATER_STATE is the helper's folder.
 #
 # Plain POSIX sh, so it runs with dash too. Everything is in functions, called on the last line: a download cut off
@@ -34,6 +35,20 @@ IMAGE_COMPOSE="/app/install/compose.yml"
 IMAGE_UPDATER="/app/updater"
 # The container it makes to read them, never started: by name, so one a stopped run left behind is removed next time.
 READER="contactor-install-read"
+# cosign checks a new installation's image, as the update helper checks each update (contactor-updater.sh). It runs as
+# a container, so nothing is installed on the machine.
+COSIGN="ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d"
+# The public keys our images are signed with, as in deploy/cosign and the update helper: the main key, and the reserve
+# key whose private half is kept offline. scripts/images-sign.sh refuses to sign with a key that isn't here.
+COSIGN_KEYS="-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEPRbttsnxj+3I6BPt+aRzSluhz9Un
+gXBxyvK5NYdVG/ywtSyKmrV6fZ90OM0CJb4aTugO0p6QU7fyh3weYfyYjg==
+-----END PUBLIC KEY-----
+
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/L6B3FW9vgpVpMZ9WkkUZYoriYJQ
+58dJAHz8BXwrkuF99WS2Pv10Kx8L4IPTIYZbrEcIom6DAkeqWi6kZMqpMQ==
+-----END PUBLIC KEY-----"
 # The update helper: the only part of Contactor outside /opt/contactor (see contactor-updater.sh).
 HELPER="/usr/local/sbin/contactor-updater"
 UNITS="/etc/systemd/system"
@@ -51,8 +66,6 @@ WAIT_SECONDS=120
 NO_SETUP_STATUS_UNTIL="2026.11.15"
 
 TMP=""
-# Set while the newest image's tag may have moved (see pull_newest).
-PULLED_NEWEST=""
 # The root-only folder the files read from an image go to (see from_image).
 IMAGE_TMP=""
 BUSY=""
@@ -126,7 +139,6 @@ fail_with_log() {
 }
 
 cleanup() {
-    put_back_newest
     if [ -n "$TMP" ]; then
         rm -rf -- "$TMP"
     fi
@@ -298,10 +310,10 @@ image_id() {
     docker_ image inspect -f '{{.Id}}' "$1" 2> /dev/null || true
 }
 
-# Copies files out of image $1 (by ID) into a new root-only folder, IMAGE_TMP, each under its own name: from a
+# Copies files out of image $1 (by ID or digest) into a new root-only folder, IMAGE_TMP, each under its own name: from a
 # container made from the image and never started, without a network, removed afterwards. Nothing is downloaded, and
 # nothing comes from a running container (whose files the app could change). Each later argument is a path in the
-# image; one that isn't there is left out, and the caller says what that means.
+# image; one that isn't there is left out, and the caller says what that means. Any other failure to copy stops it.
 from_image() {
     read_image="$1"
     shift
@@ -318,7 +330,13 @@ from_image() {
         fail_with_log "Couldn't read Contactor's files from its image." "$TMP/read.log"
     fi
     for read_path in "$@"; do
-        docker_ cp "$read_id:$read_path" "$IMAGE_TMP/$(basename "$read_path")" > /dev/null 2>&1 || true
+        if ! docker_ cp "$read_id:$read_path" "$IMAGE_TMP/$(basename "$read_path")" > "$TMP/copy.log" 2>&1; then
+            # Not in the image: Docker says so in one of these words. Anything else went wrong copying it.
+            if ! grep -qi -e 'could not find the file' -e 'no such container:path' "$TMP/copy.log"; then
+                docker_ rm -f -v "$READER" > /dev/null 2>&1 || true
+                fail_with_log "Couldn't copy $read_path out of Contactor's image. Check that Docker works and the disk isn't full, then run this command again." "$TMP/copy.log"
+            fi
+        fi
     done
     docker_ rm -f -v "$READER" > /dev/null 2>&1 || true
 }
@@ -360,70 +378,66 @@ updating() {
         && ! as_root flock --nonblock "$HELPER_STATE/lock" true 2> /dev/null
 }
 
-# The name image $1 (by ID) was pulled under by digest, in the repository of image $2 (repository@sha256:…), or nothing.
-digest_of() {
-    docker_ image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2> /dev/null \
-        | awk -v name="${2%:*}@sha256:" 'index($0, name) == 1' | head -n 1 || true
-}
-
-# Pulls the newest Contactor (CONTACTOR_IMAGE, or IMAGE) for its update helper; NEWEST_ID is its ID. It changes
-# nothing the app runs: put_back_newest puts the tag back on the image it named before, so a plain docker compose up
-# never starts a version this machine didn't install (as the update helper keeps it, see contactor-updater.sh).
-NEWEST=""
-NEWEST_ID=""
-KEPT_ID=""
-KEPT_DIGEST=""
-pull_newest() {
-    NEWEST="${CONTACTOR_IMAGE:-$IMAGE}"
-    KEPT_ID="$(image_id "$NEWEST")"
-    KEPT_DIGEST=""
-    if [ -n "$KEPT_ID" ]; then
-        KEPT_DIGEST="$(digest_of "$KEPT_ID" "$NEWEST")"
-    fi
-    busy "Looking for the newest update helper"
-    # Docker's containerd image store forgets an image's digest once its tag moves on: pulled by its digest, it stays.
-    if [ -n "$KEPT_DIGEST" ]; then
-        docker_ pull --quiet "$KEPT_DIGEST" > "$TMP/pull.log" 2>&1 || true
-    fi
-    # From here on, the tag goes back also when this script stops.
-    PULLED_NEWEST=1
-    docker_ pull --quiet "$NEWEST" > "$TMP/pull.log" 2>&1 \
-        || fail_with_log "Couldn't download Contactor ($NEWEST) for its update helper." "$TMP/pull.log"
-    unbusy
-    NEWEST_ID="$(image_id "$NEWEST")"
-    [ -n "$NEWEST_ID" ] || fail "Couldn't download Contactor ($NEWEST) for its update helper."
-}
-
-# Once the helper is read: when the pull brought another image, the tag goes back on the one it named before (or
-# off, when it named none), and the image it brought is removed unless something uses it.
-put_back_newest() {
-    if [ -z "$PULLED_NEWEST" ]; then
-        return 0
-    fi
-    PULLED_NEWEST=""
-    now_id="$(image_id "$NEWEST")"
-    if [ -z "$now_id" ] || [ "$now_id" = "$KEPT_ID" ]; then
-        return 0
-    fi
-    case "$NEWEST" in
-        # A name by digest never moves.
-        *@*) ;;
-        *)
-            if [ -n "$KEPT_ID" ]; then
-                docker_ tag "${KEPT_DIGEST:-$KEPT_ID}" "$NEWEST" > /dev/null 2>&1 || true
-            else
-                docker_ image rm "$NEWEST" > /dev/null 2>&1 || true
-            fi
-            ;;
+# The repository of image $1, without its tag or digest, e.g. ghcr.io/gonace/contactor or localhost:5000/contactor.
+repository_of() {
+    name="${1%%@*}"
+    case "${name##*/}" in
+        *:*) name="${name%:*}" ;;
     esac
-    docker_ image rm "$now_id" > /dev/null 2>&1 || true
+    printf '%s\n' "$name"
 }
 
-# Puts the update helper of the newest Contactor in place, or brings it up to date: the script and its two systemd
-# units, from that image's /app/updater. The newest, not the one the app runs, so running this again also brings a
-# helper that can't update itself (an old one, or one without the current signing keys) up to date. A file that is
-# already the same stays as it is.
+# The name image $1 (by ID) was pulled under by digest in the repository of image $2 (repository@sha256:…), or nothing.
+digest_of() {
+    digest_name="$(repository_of "$2")@sha256:"
+    docker_ image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2> /dev/null \
+        | awk -v name="$digest_name" 'index($0, name) == 1' | head -n 1 || true
+}
+
+# Whether image $1 (by digest) is signed with one of COSIGN_KEYS, as the update helper checks it (its signed()). What
+# cosign said is in $TMP/cosign.log.
+signed() {
+    if [ -z "$(image_id "$COSIGN")" ]; then
+        docker_ pull --quiet "$COSIGN" > "$TMP/cosign.log" 2>&1 \
+            || fail_with_log "Couldn't download cosign, which checks Contactor's signature." "$TMP/cosign.log"
+    fi
+    : > "$TMP/cosign.log"
+    key=""
+    while IFS= read -r line; do
+        if [ -z "$line" ]; then
+            continue
+        fi
+        key="${key:+$key
+}$line"
+        case "$line" in
+            *"END PUBLIC KEY"*)
+                if docker_ run --rm --network host --env COSIGN_KEY="$key" "$COSIGN" \
+                    verify --key env://COSIGN_KEY --insecure-ignore-tlog=true "$1" > "$TMP/cosign.try" 2>&1; then
+                    return 0
+                fi
+                if [ ! -s "$TMP/cosign.log" ]; then
+                    grep -v -e 'Skipping tlog verification' -e '^$' "$TMP/cosign.try" > "$TMP/cosign.log" || true
+                fi
+                key=""
+                ;;
+        esac
+    done << EOF
+$COSIGN_KEYS
+EOF
+    return 1
+}
+
+# The version line of helper $1, e.g. 2; nothing when there is no such file or line.
+helper_version_of() {
+    { as_root sed -n 's/^readonly HELPER_VERSION=\([0-9]\{1,9\}\)$/\1/p' "$1" 2> /dev/null || true; } | head -n 1
+}
+
+# Puts the update helper of image $1 (the one the app runs, by ID or digest) in place, or brings it up to date: the
+# script and its two systemd units, from the image's /app/updater. Nothing is downloaded. A file that is already the
+# same stays as it is, and a helper older than the one in place never replaces it (it brings itself up to date after
+# each update).
 ensure_helper() {
+    helper_image="$1"
     if ! has_systemd; then
         warn "No update helper: this machine doesn't run systemd, so \"Update now\" in Settings isn't available."
         return 0
@@ -434,11 +448,9 @@ ensure_helper() {
             return 0
         fi
     done
-    pull_newest
-    helper_version="$(version_of "$NEWEST_ID")"
-    from_image "$NEWEST_ID" "$IMAGE_UPDATER/contactor-updater.sh" "$IMAGE_UPDATER/contactor-updater.service" \
+    helper_version="$(version_of "$helper_image")"
+    from_image "$helper_image" "$IMAGE_UPDATER/contactor-updater.sh" "$IMAGE_UPDATER/contactor-updater.service" \
         "$IMAGE_UPDATER/contactor-updater.path"
-    put_back_newest
     if ! in_image "$IMAGE_TMP/contactor-updater.sh"; then
         # A release from before the image carried it. Not an error: the app runs, it only can't update itself.
         if [ -f "$HELPER" ]; then
@@ -466,12 +478,23 @@ ensure_helper() {
         as_root bash -n "$IMAGE_TMP/contactor-updater.sh" 2> /dev/null \
             || fail "contactor-updater.sh in Contactor's image ($IMAGE_UPDATER) isn't Contactor's update helper."
     fi
+    installed_version="$(helper_version_of "$HELPER")"
+    image_version="$(helper_version_of "$IMAGE_TMP/contactor-updater.sh")"
+    if [ -n "$installed_version" ] && [ "$image_version" -lt "$installed_version" ]; then
+        warn "The update helper in place (version $installed_version) is newer than Contactor${helper_version:+ $helper_version}'s (version $image_version): it stays."
+        install_units=""
+    else
+        install_units=1
+    fi
     # Only once all three passed, so a bad file changes nothing.
     for file in contactor-updater.sh contactor-updater.service contactor-updater.path; do
         case "$file" in
             *.sh) target="$HELPER" mode=755 ;;
             *) target="$UNITS/$file" mode=644 ;;
         esac
+        if [ -z "$install_units" ]; then
+            continue
+        fi
         if ! as_root cmp -s "$IMAGE_TMP/$file" "$target"; then
             put_file "$IMAGE_TMP/$file" "$target" "$mode"
             changed=1
@@ -490,6 +513,8 @@ ensure_helper() {
     if [ -n "$changed" ] && [ -n "$existed" ]; then
         HELPER_UPDATED=1
         ok "Update helper brought up to date"
+    elif [ -z "$install_units" ]; then
+        ok "Update helper in place"
     else
         ok "Update helper installed"
     fi
@@ -534,40 +559,60 @@ check_compose() {
     compose config --quiet > "$TMP/config.log" 2>&1 || fail_with_log "$DIR/compose.yml can't be read." "$TMP/config.log"
 }
 
-# Downloads image $1, unless it is here already: what works is kept as it is.
+# The image to install, by digest, once its signature is checked: IMAGE_REF. The image is the one compose.yml names, or
+# for a new installation CONTACTOR_IMAGE or IMAGE, downloaded unless it is here already. An image that isn't signed with
+# our key stops the installation before anything changes, and one this run downloaded is removed again.
+IMAGE_REF=""
 ensure_image() {
-    if [ -n "$(image_id "$1")" ]; then
-        return 0
+    if [ -f "$DIR/compose.yml" ]; then
+        check_compose
+        image="$(compose config --images 2> /dev/null | head -n 1 || true)"
+        [ -n "$image" ] || fail "$DIR/compose.yml names no image."
+    else
+        image="${CONTACTOR_IMAGE:-$IMAGE}"
     fi
-    busy "Downloading Contactor"
-    docker_ pull --quiet "$1" > "$TMP/pull.log" 2>&1 || fail_with_log "Couldn't download Contactor ($1)." "$TMP/pull.log"
-    ok "Downloading Contactor $(version_of "$1")"
+    pulled=""
+    if [ -z "$(image_id "$image")" ]; then
+        busy "Downloading Contactor"
+        docker_ pull --quiet "$image" > "$TMP/pull.log" 2>&1 || fail_with_log "Couldn't download Contactor ($image)." "$TMP/pull.log"
+        pulled=1
+        ok "Downloading Contactor $(version_of "$image")"
+    fi
+    IMAGE_REF="$(digest_of "$(image_id "$image")" "$image")"
+    busy "Checking Contactor's signature"
+    if [ -z "$IMAGE_REF" ] || ! signed "$IMAGE_REF"; then
+        if [ -n "$pulled" ]; then
+            docker_ image rm -f "$(image_id "$image")" > /dev/null 2>&1 || true
+        fi
+        if [ -z "$IMAGE_REF" ]; then
+            fail "Contactor ($image) wasn't downloaded from its registry, so its signature can't be checked. Nothing was changed."
+        fi
+        fail_with_log "Contactor ($IMAGE_REF) isn't signed with Contactor's key, so it isn't installed. Nothing was changed." "$TMP/cosign.log"
+    fi
+    ok "Contactor $(version_of "$IMAGE_REF") is signed with Contactor's key"
 }
 
-# The image, compose.yml and the data folder, where they are missing. An existing compose.yml stays as it is, with the
-# image it names; a new one comes from the image it installs.
+# compose.yml and the data folder, where they are missing. An existing compose.yml stays as it is; a new one comes
+# from the image it installs (IMAGE_REF), read before anything is changed.
 ensure_files() {
     kept=""
     if [ -d "$DATA" ]; then
         kept=1
     fi
-    as_root mkdir -p "$DIR"
-    as_root chmod 755 "$DIR"
-    if [ -f "$DIR/compose.yml" ]; then
-        check_compose
-        image="$(compose config --images 2> /dev/null | head -n 1 || true)"
-        [ -n "$image" ] || fail "$DIR/compose.yml names no image."
-        ensure_image "$image"
-    else
-        image="${CONTACTOR_IMAGE:-$IMAGE}"
-        ensure_image "$image"
-        from_image "$(image_id "$image")" "$IMAGE_COMPOSE"
+    new_compose=""
+    if [ ! -f "$DIR/compose.yml" ]; then
+        from_image "$IMAGE_REF" "$IMAGE_COMPOSE"
         if ! in_image "$IMAGE_TMP/compose.yml"; then
-            old_version="$(version_of "$image")"
-            fail "Contactor${old_version:+ $old_version} is too old for this installer: its image has no compose.yml. Remove it (sudo docker image rm $image) and run this command again."
+            old_version="$(version_of "$IMAGE_REF")"
+            fail "Contactor${old_version:+ $old_version} is too old for this installer: its image has no compose.yml ($IMAGE_COMPOSE). Nothing was changed."
         fi
         image_file_ok "$IMAGE_TMP/compose.yml" '^services:' \
-            || fail "compose.yml in Contactor's image ($IMAGE_COMPOSE) isn't Contactor's compose.yml."
+            || fail "compose.yml in Contactor's image ($IMAGE_COMPOSE) isn't Contactor's compose.yml. Nothing was changed."
+        new_compose=1
+    fi
+    as_root mkdir -p "$DIR"
+    as_root chmod 755 "$DIR"
+    if [ -n "$new_compose" ]; then
         put_file "$IMAGE_TMP/compose.yml" "$DIR/compose.yml" 644
         check_compose
     fi
@@ -583,8 +628,11 @@ ensure_files() {
     fi
 }
 
+# Starts exactly the image whose signature was checked, by its digest; never downloads.
 start() {
-    compose up --detach --remove-orphans > "$TMP/up.log" 2>&1 || fail_with_log "Contactor didn't start." "$TMP/up.log"
+    as_root env CONTACTOR_IMAGE="$IMAGE_REF" docker compose --project-directory "$DIR" -f "$DIR/compose.yml" \
+        up --detach --no-build --pull never --remove-orphans > "$TMP/up.log" 2>&1 \
+        || fail_with_log "Contactor didn't start." "$TMP/up.log"
     ok "Contactor started"
 }
 
@@ -784,7 +832,8 @@ install() {
             version="$(version_of "$cid")"
             wait_ready "$cid"
             ok "Contactor${version:+ $version} is running"
-            ensure_helper
+            # From the image it runs, which was checked when it was installed or updated.
+            ensure_helper "$(docker_ inspect -f '{{.Image}}' "$cid")"
             show "$cid" again
             return 0
         fi
@@ -793,12 +842,13 @@ install() {
     check_machine
     check_disk
     ensure_docker
+    ensure_image
     ensure_files
     start
     cid="$(container)"
     [ -n "$cid" ] || fail "Contactor didn't start: see sudo docker logs contactor"
     wait_ready "$cid"
-    ensure_helper
+    ensure_helper "$IMAGE_REF"
     show "$cid" ""
 }
 
