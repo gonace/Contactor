@@ -510,6 +510,8 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             ["Vm201__Host"] = Host,
             ["Vm201__Port"] = board,
             ["TimeZone"] = timeZone.Id,
+            // No copy asks GitHub for releases: there is nothing to update in the demo.
+            ["Updates__ReleasesUrl"] = "",
             ["DOTNET_gcServer"] = "0",
             ["Logging__LogLevel__Default"] = "Warning",
         }, ProgramProbe.App);

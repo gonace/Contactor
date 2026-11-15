@@ -1,0 +1,11 @@
+# Starts Contactor's update helper (contactor-updater.service) when the app asks for an update: "Update now" in its
+# Settings writes data/updates/request. install.sh puts it in /etc/systemd/system; --uninstall removes it.
+[Unit]
+Description=Contactor's update helper, waiting for "Update now"
+
+[Path]
+PathExists=/opt/contactor/data/updates/request
+Unit=contactor-updater.service
+
+[Install]
+WantedBy=multi-user.target

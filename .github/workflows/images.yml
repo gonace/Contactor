@@ -131,10 +131,12 @@ jobs:
           git push origin "v$VERSION"
 
       - name: Attach the install files to the release
-        # The one-command install (install/install.sh) and the compose.yml it downloads, attached to the release of
-        # this tag. install.sh gets the tag, so it downloads this release's compose.yml and the two always match. The
-        # release is made only when it isn't there yet; its notes are written by hand, and a new run replaces only
-        # these two files.
+        # The one-command install (install/install.sh), the compose.yml it downloads and the update helper it puts in
+        # place (contactor-updater.sh and its two systemd units), attached to the release of this tag. install.sh gets
+        # the tag, so it downloads this release's files and they always match. The release is made only when it isn't
+        # there yet, with notes from the titles of the pull requests merged since the release before, those labelled
+        # "internal" left out (.github/release.yml); "Update now" in the app shows them, and they can be edited on GitHub
+        # afterwards. A new run replaces only the attached files.
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -142,8 +144,9 @@ jobs:
           mkdir -p release
           sed "s/^RELEASE=\"\"$/RELEASE=\"v$VERSION\"/" install/install.sh > release/install.sh
           grep -qx "RELEASE=\"v$VERSION\"" release/install.sh || { echo "install.sh has no RELEASE=\"\" line to fill in." >&2; exit 1; }
-          cp install/compose.yml release/compose.yml
+          cp install/compose.yml install/contactor-updater.sh install/contactor-updater.service install/contactor-updater.path release/
           if ! gh release view "v$VERSION" > /dev/null 2>&1; then
-            gh release create "v$VERSION" --verify-tag --title "$VERSION" --notes ""
+            gh release create "v$VERSION" --verify-tag --title "$VERSION" --generate-notes
           fi
-          gh release upload "v$VERSION" release/install.sh release/compose.yml --clobber
+          gh release upload "v$VERSION" release/install.sh release/compose.yml release/contactor-updater.sh \
+            release/contactor-updater.service release/contactor-updater.path --clobber

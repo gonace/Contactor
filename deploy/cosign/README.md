@@ -16,9 +16,11 @@ cosign generate-key-pair --output-key-prefix contactor-reserve
 Each asks for a password. Then:
 
 1. Copy `contactor-main.pub` and `contactor-reserve.pub` into this folder and commit them.
-2. For the Images workflow, add two repository secrets: `COSIGN_PRIVATE_KEY` (the contents of
+2. Copy both public keys into `install/contactor-updater.sh` (its `COSIGN_KEYS`), as `scripts/images-sign.sh --check`
+   asks. The update helper only runs an image signed with one of them.
+3. For the Images workflow, add two repository secrets: `COSIGN_PRIVATE_KEY` (the contents of
    `contactor-main.key`) and `COSIGN_PASSWORD` (its password).
-3. Keep `contactor-reserve.key` and its password offline, e.g. on a USB stick. Keep a copy of `contactor-main.key`
+4. Keep `contactor-reserve.key` and its password offline, e.g. on a USB stick. Keep a copy of `contactor-main.key`
    offline too, so you can sign a release again by hand (see the top of `scripts/images-sign.sh`).
 
 `signing-config.json` lists no transparency log or timestamp service: the signature is checked with the public key
@@ -26,15 +28,19 @@ alone, so nothing about our releases is sent anywhere else.
 
 ## If the main key is lost or leaks
 
-1. Stop using it at once: set the two repository secrets to the reserve key. `COSIGN_PRIVATE_KEY` gets the
-   contents of `contactor-reserve.key`, and `COSIGN_PASSWORD` gets its password. The Images workflow then signs
-   with the reserve key.
+An installation's update helper trusts only the keys in its own copy of `install/contactor-updater.sh`. It gets new
+keys only when someone runs `install.sh` again. So:
+
+1. Stop using the main key at once: set the two repository secrets to the reserve key. `COSIGN_PRIVATE_KEY` gets
+   the contents of `contactor-reserve.key`, and `COSIGN_PASSWORD` gets its password. The Images workflow then
+   signs with the reserve key, which every installation trusts.
 2. Make a new main key pair only, in the folder outside the repository:
-   `cosign generate-key-pair --output-key-prefix contactor-main`. Replace `contactor-main.pub` in this folder with
-   its public half, and merge that change into `main`.
-3. Set the two secrets to the new main key, and publish a release with the Images workflow.
+   `cosign generate-key-pair --output-key-prefix contactor-main`. Replace `contactor-main.pub` in this folder and
+   the old main key in `COSIGN_KEYS` with its public half. Merge that change into `main`, and publish a release.
+3. When every installation has run `install.sh` again, set the two secrets to the new main key.
 4. The reserve key was in the secrets, so it isn't offline anymore. Make a new reserve pair the same way
-   (`--output-key-prefix contactor-reserve`), replace `contactor-reserve.pub`, and keep its private half offline.
+   (`--output-key-prefix contactor-reserve`), replace `contactor-reserve.pub` and the old reserve key in
+   `COSIGN_KEYS`, and keep its private half offline.
 
 A release signed before the change is checked with the old public key, from this folder's history in git.
 

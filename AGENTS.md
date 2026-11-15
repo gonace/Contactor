@@ -68,6 +68,7 @@ Contactor.Tests/          # The only test project
 install/
   install.sh                # The one-command install (curl … | sh), attached to each GitHub Release
   compose.yml               # The generic compose file it puts in /opt/contactor, attached to each release too
+  contactor-updater.sh      # The update helper on the host ("Update now"), with its .service and .path units; attached too
 deploy/
   demo/compose.yml          # The public demo, on a network with no route out, and its forwarder on port 8080 for an existing tunnel's connector
   demo/Caddyfile            # The forwarder's settings: only to the demo, passing on X-Forwarded-Proto
@@ -80,10 +81,12 @@ scripts/
   release-version.sh        # YYYY.M.D[.N]
   images-build.sh           # Build and push an image with docker buildx; prints the digest to sign
   images-sign.sh            # cosign, by digest
+  updater-test.sh           # Tests the update helper for real: Docker, a local registry, a test key, stand-in images
 LICENSE                     # MIT
 THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence texts in licenses/ (in the image: /licenses)
 .github/workflows/build.yml # build + test (pull requests, merges to main, by hand)
 .github/workflows/images.yml # publish and sign the images, the app's and the demo's, and attach install/ to the release (by hand)
+.github/release.yml         # The releases' notes: merged pull requests, those labelled "internal" left out
 .github/pull_request_template.md # What every pull request description has
 .agents/writing.md          # How to write pull requests, issues and comments
 .agents/review.md           # The independent review's checklist
