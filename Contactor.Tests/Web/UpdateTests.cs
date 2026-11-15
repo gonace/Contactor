@@ -453,6 +453,18 @@ public sealed class UpdateBoxViewTests
     }
 
     [Fact]
+    public void Should_NameTheDate_WhenCheckedDaysAgo_InTheLanguagesFormat()
+    {
+        var checkedAt = Now.AddDays(-3).AddHours(-4).AddMinutes(12);
+
+        Assert.Equal("Checked 9 November at 07:12.", View(Snapshot(releases: [Older], checkedUtc: checkedAt)).CheckedLine);
+        using (TestCulture.Formats("sv-SE"))
+        {
+            Assert.Equal("Checked 9 november at 07:12.", View(Snapshot(releases: [Older], checkedUtc: checkedAt)).CheckedLine);
+        }
+    }
+
+    [Fact]
     public void Should_SaySoWhenGitHubCantBeReached()
     {
         Assert.Equal("Couldn't check for updates.", View(Snapshot(releases: [], checkedUtc: null, failed: true)).CheckedLine);

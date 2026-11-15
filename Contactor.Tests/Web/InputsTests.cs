@@ -272,4 +272,13 @@ public sealed class InputsTests
         });
         await db.SaveChangesAsync(Cancel);
     }
+
+    [Fact]
+    public void Should_NameWhatAnInputControls()
+    {
+        Assert.Equal("Group: Heater", TestTexts.Inputs.Label(new InputActionTarget(null, null, 2, "Heater")));
+        Assert.Equal("Relay 4: Lighting", TestTexts.Inputs.Label(new InputActionTarget(7, 4, null, "Lighting")));
+        Assert.Equal("Relay : Gone", TestTexts.Inputs.Label(new InputActionTarget(7, null, null, "Gone")));
+    }
+
 }

@@ -1,9 +1,10 @@
+using System.Globalization;
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
-using Contactor.Web.Features.Languages;
 using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Localization;
@@ -177,7 +178,7 @@ public sealed class InputsText
         ArgumentNullException.ThrowIfNull(target);
         return target.GroupId is not null
             ? _texts["Inputs.Target.Group", target.Name]
-            : _texts["Inputs.Target.Relay", target.Channel ?? 0, target.Name];
+            : _texts["Inputs.Target.Relay", target.Channel?.ToString(CultureInfo.CurrentCulture) ?? "", target.Name];
     }
 
     /// <summary>An input's status line: "Open since 14:02", or "Open since unknown" when the app didn't see the change.</summary>
