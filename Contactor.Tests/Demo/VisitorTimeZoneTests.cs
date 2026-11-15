@@ -17,6 +17,33 @@ public sealed class VisitorTimeZoneTests
         Assert.Equal(name, VisitorTimeZone.Find(name).Id);
     }
 
+    // Old names Chromium still sends, which a machine without tzdata-legacy (such as this one may be) doesn't have.
+    [Theory]
+    [InlineData("Asia/Calcutta", "Asia/Kolkata")]
+    [InlineData("Europe/Kiev", "Europe/Kyiv")]
+    [InlineData("US/Eastern", "America/New_York")]
+    [InlineData("America/Godthab", "America/Nuuk")]
+    [InlineData("Asia/Saigon", "Asia/Ho_Chi_Minh")]
+    [InlineData("America/Buenos_Aires", "America/Argentina/Buenos_Aires")]
+    [InlineData("Asia/Katmandu", "Asia/Kathmandu")]
+    [InlineData("Asia/Rangoon", "Asia/Yangon")]
+    [InlineData("Atlantic/Faeroe", "Atlantic/Faroe")]
+    [InlineData("Pacific/Enderbury", "Pacific/Kanton")]
+    [InlineData("Etc/UCT", "Etc/UTC")]
+    public void Should_TakeAnOldName_AsItsCurrentOne(string name, string current)
+    {
+        Assert.Equal(current, VisitorTimeZone.Find(name).Id);
+    }
+
+    // A name that is still a country's own zone keeps its name, though the database links it to another.
+    [Theory]
+    [InlineData("Europe/Bratislava")]
+    [InlineData("Arctic/Longyearbyen")]
+    public void Should_KeepAName_ThatIsStillCurrent(string name)
+    {
+        Assert.Equal(name, VisitorTimeZone.Find(name).Id);
+    }
+
     [Fact]
     public void Should_ReadTheCookie_TheScriptWrites()
     {
@@ -50,6 +77,13 @@ public sealed class VisitorTimeZoneTests
     [InlineData("Europe/Stockholm; path=/")]
     [InlineData("Europe/Stockhölm")]
     [InlineData("-Europe/Stockholm")]
+    [InlineData("UTC-11")]
+    [InlineData("UTC+12")]
+    [InlineData("Factory")]
+    [InlineData("posixrules")]
+    [InlineData("localtime")]
+    [InlineData("posix/Europe/Stockholm")]
+    [InlineData("right/Europe/Stockholm")]
     public void Should_RunInUtc_OnANameThatIsntATimeZone(string? name)
     {
         Assert.Same(TimeZoneInfo.Utc, VisitorTimeZone.Find(name));
