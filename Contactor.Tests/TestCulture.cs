@@ -20,11 +20,22 @@ internal static class TestCulture
 
     /// <summary>
     /// The formats of <paramref name="name"/> (its dates and numbers) for the rest of a test, e.g. "sv-SE" with its
-    /// decimal comma; the texts stay English, as no other language has its own. Disposing it goes back to English.
+    /// decimal comma; the texts stay English. Disposing it goes back to English.
     /// </summary>
     public static IDisposable Formats(string name)
     {
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(name);
+        return new Back();
+    }
+
+    /// <summary>
+    /// The language <paramref name="code"/> for the rest of a test, as a request in it has: its texts, dates and
+    /// numbers, e.g. "sv". Disposing it goes back to English.
+    /// </summary>
+    public static IDisposable Language(string code)
+    {
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(code);
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(code);
         return new Back();
     }
 
@@ -33,6 +44,7 @@ internal static class TestCulture
         public void Dispose()
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en");
         }
     }
 }

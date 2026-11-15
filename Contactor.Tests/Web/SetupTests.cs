@@ -41,7 +41,7 @@ public sealed class SetupTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
         Assert.Contains("Setup code", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 1 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class SetupTests
 
         // John signed in through the sign-in chosen in Part 1: the guide goes on at "About you".
         Assert.Contains("About you", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 5 OF 5", html, StringComparison.Ordinal);
         Assert.Contains("PART 1 OF 2", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Skip for now", html, StringComparison.Ordinal);
         Assert.Contains("value=\"John\"", html, StringComparison.Ordinal);
@@ -89,7 +89,7 @@ public sealed class SetupTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync(page, Cancel));
 
         Assert.Contains("About you", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 5 OF 5", html, StringComparison.Ordinal);
     }
 
     // The guide always starts where it stands: the board is chosen before anything after it.
@@ -101,7 +101,7 @@ public sealed class SetupTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup?step=3", Cancel));
 
-        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 5 OF 5", html, StringComparison.Ordinal);
     }
 
     [Fact]

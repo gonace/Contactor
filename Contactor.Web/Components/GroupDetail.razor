@@ -6,6 +6,7 @@
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
@@ -27,6 +28,7 @@
 @inject IStringLocalizer<GroupsTexts> Texts
 @inject IStringLocalizer<RelaysTexts> RelayTexts
 @inject IStringLocalizer<BoardsTexts> BoardTexts
+@inject AppLanguage Language
 
 <PageTitle>@(Common["Common.PageTitle", _group?.Name ?? Common["Common.Screen.Group"].Value])</PageTitle>
 
@@ -745,6 +747,7 @@
 
     private async Task RefreshAsync(bool reload)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(async () =>

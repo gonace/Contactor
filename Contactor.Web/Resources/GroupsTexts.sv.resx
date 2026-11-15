@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Groups.Status.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Groups.Status.StartingIn" xml:space="preserve">
+    <value>Startar · {0} om {1}</value>
+  </data>
+  <data name="Groups.Status.StartingStep" xml:space="preserve">
+    <value>Startar · steg {0} av {1}</value>
+  </data>
+  <data name="Groups.Status.StoppingRunOn" xml:space="preserve">
+    <value>Stängs av · efterkörning i {1}: {0}</value>
+  </data>
+  <data name="Groups.Status.Stopping" xml:space="preserve">
+    <value>Stängs av</value>
+  </data>
+  <data name="Groups.Status.ScheduleOn" xml:space="preserve">
+    <value>Schema: på {0}</value>
+  </data>
+  <data name="Groups.Status.OutOfOrder" xml:space="preserve">
+    <value>Fel ordning · stängs av</value>
+  </data>
+  <data name="Groups.Status.Only" xml:space="preserve">
+    <value>{0} · bara {1}</value>
+  </data>
+  <data name="Groups.List.Separator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="Groups.Member.KeepsRunning" xml:space="preserve">
+    <value>Går i {0} till</value>
+  </data>
+  <data name="Groups.Member.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Groups.Member.StartsIn" xml:space="preserve">
+    <value>Startar om {0}</value>
+  </data>
+  <data name="Groups.Member.Needs" xml:space="preserve">
+    <value>Kräver att {0} är på</value>
+  </data>
+  <data name="Groups.Member.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Groups.MissingRelay" xml:space="preserve">
+    <value>Kan inte köras: relä {0} finns inte på kortet</value>
+  </data>
+  <data name="Groups.Chain" xml:space="preserve">
+    <value>RELÄ {0}</value>
+  </data>
+  <data name="Groups.Plan.Then" xml:space="preserve">
+    <value>{0} → vänta {1} → {2}</value>
+  </data>
+  <data name="Groups.Plan.RunsOn" xml:space="preserve">
+    <value>Efterkörning i {1}: {0}, sedan av</value>
+  </data>
+  <data name="Groups.Plan.Off" xml:space="preserve">
+    <value>{0} av</value>
+  </data>
+  <data name="Groups.Plan.Arrow" xml:space="preserve">
+    <value> → </value>
+  </data>
+  <data name="Groups.Plan.Interlock" xml:space="preserve">
+    <value>{0} kan bara vara på när {1} är på.</value>
+  </data>
+  <data name="Groups.Plan.Separator" xml:space="preserve">
+    <value> </value>
+  </data>
+  <data name="Groups.Note.InGroup" xml:space="preserve">
+    <value>Redan i {0}</value>
+  </data>
+  <data name="Groups.Note.HasSchedules" xml:space="preserve">
+    <value>Har egna scheman</value>
+  </data>
+  <data name="Groups.Note.ControlledBy" xml:space="preserve">
+    <value>Styrs av {0}</value>
+  </data>
+  <data name="Groups.Note.Free" xml:space="preserve">
+    <value>Ledigt</value>
+  </data>
+  <data name="Groups.Note.InactiveFree" xml:space="preserve">
+    <value>Inaktivt · ledigt</value>
+  </data>
+  <data name="Groups.OneBoard" xml:space="preserve">
+    <value>En grupps reläer sitter alla på samma kort.</value>
+  </data>
+  <data name="Groups.Gone" xml:space="preserve">
+    <value>Gruppen finns inte längre.</value>
+  </data>
+  <data name="Groups.Save.TurnOffFirst" xml:space="preserve">
+    <value>Stäng av gruppen, och reläerna du lägger till, innan du ändrar dess steg eller deras reläer.</value>
+  </data>
+  <data name="Groups.Delete.TurnOffFirst" xml:space="preserve">
+    <value>Stäng av gruppen innan du tar bort den.</value>
+  </data>
+  <data name="Groups.Save.Name" xml:space="preserve">
+    <value>Ge gruppen ett namn.</value>
+  </data>
+  <data name="Groups.Save.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Groups.Save.Icon" xml:space="preserve">
+    <value>Välj en ikon.</value>
+  </data>
+  <data name="Groups.Save.Limit" xml:space="preserve">
+    <value>Välj hur länge gruppen får vara på.</value>
+  </data>
+  <data name="Groups.Save.TooFew" xml:space="preserve">
+    <value>Välj minst {0} reläer.</value>
+  </data>
+  <data name="Groups.Save.EmptyStep" xml:space="preserve">
+    <value>Varje steg behöver minst ett relä.</value>
+  </data>
+  <data name="Groups.Save.Twice" xml:space="preserve">
+    <value>Ett relä kan bara vara med i gruppen en gång.</value>
+  </data>
+  <data name="Groups.Save.NoRelay" xml:space="preserve">
+    <value>Det reläet finns inte.</value>
+  </data>
+  <data name="Groups.Save.OneBoard" xml:space="preserve">
+    <value>Alla reläer i en grupp måste sitta på samma kort.</value>
+  </data>
+  <data name="Groups.Save.RoleTooLong" xml:space="preserve">
+    <value>Stegets namn får vara högst {0} tecken.</value>
+  </data>
+  <data name="Groups.Save.Wait" xml:space="preserve">
+    <value>Väntan vid start är {0}–{1} sekunder.</value>
+  </data>
+  <data name="Groups.Save.RunOn" xml:space="preserve">
+    <value>Efterkörningen får vara högst {0} minuter.</value>
+  </data>
+  <data name="Groups.Save.HasSchedules" xml:space="preserve">
+    <value>{0} har egna scheman. Ta bort dem först.</value>
+  </data>
+  <data name="Groups.Save.Controlled" xml:space="preserve">
+    <value>{0} styrs av ingången {1}. Ta bort det där först.</value>
+  </data>
+  <data name="Groups.Save.InGroup" xml:space="preserve">
+    <value>{0} är redan i {1}.</value>
+  </data>
+  <data name="Groups.Save.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Den behövs för att se att reläerna är av.</value>
+  </data>
+  <data name="Groups.Save.RelayOn" xml:space="preserve">
+    <value>Stäng av {0} först.</value>
+  </data>
+  <data name="Groups.Missing" xml:space="preserve">
+    <value>Gruppen finns inte.</value>
+  </data>
+  <data name="Groups.NameLabel" xml:space="preserve">
+    <value>GRUPP · NAMN</value>
+  </data>
+  <data name="Groups.Icon" xml:space="preserve">
+    <value>Ikon</value>
+  </data>
+  <data name="Groups.Icon.Fan" xml:space="preserve">
+    <value>Fläkt</value>
+  </data>
+  <data name="Groups.Icon.Heat" xml:space="preserve">
+    <value>Värme</value>
+  </data>
+  <data name="Groups.Icon.Light" xml:space="preserve">
+    <value>Ljus</value>
+  </data>
+  <data name="Groups.Icon.Air" xml:space="preserve">
+    <value>Luft</value>
+  </data>
+  <data name="Groups.Icon.Paint" xml:space="preserve">
+    <value>Färg</value>
+  </data>
+  <data name="Groups.Icon.Pump" xml:space="preserve">
+    <value>Pump</value>
+  </data>
+  <data name="Groups.Icon.Tools" xml:space="preserve">
+    <value>Verktyg</value>
+  </data>
+  <data name="Groups.Icon.Power" xml:space="preserve">
+    <value>Ström</value>
+  </data>
+  <data name="Groups.TurnOn" xml:space="preserve">
+    <value>SLÅ PÅ GRUPPEN</value>
+  </data>
+  <data name="Groups.TurnOff" xml:space="preserve">
+    <value>STÄNG AV GRUPPEN</value>
+  </data>
+  <data name="Groups.Steps" xml:space="preserve">
+    <value>Steg i startordning</value>
+  </data>
+  <data name="Groups.Steps.Hint" xml:space="preserve">
+    <value>Startar uppifrån, stannar nerifrån. Reläerna i ett steg slår om tillsammans. Ett relä kan bara vara på när alla reläer i steget ovanför är på.</value>
+  </data>
+  <data name="Groups.Steps.HintOn" xml:space="preserve">
+    <value>På {0}. Startar uppifrån, stannar nerifrån. Reläerna i ett steg slår om tillsammans. Ett relä kan bara vara på när alla reläer i steget ovanför är på.</value>
+  </data>
+  <data name="Groups.MoveUp" xml:space="preserve">
+    <value>Flytta upp {0}</value>
+  </data>
+  <data name="Groups.MoveDown" xml:space="preserve">
+    <value>Flytta ner {0}</value>
+  </data>
+  <data name="Groups.Remove" xml:space="preserve">
+    <value>Ta bort</value>
+  </data>
+  <data name="Groups.RemoveRelay" xml:space="preserve">
+    <value>Ta bort {0} från gruppen</value>
+  </data>
+  <data name="Groups.Step.Label" xml:space="preserve">
+    <value>STEG {0} · NAMN</value>
+  </data>
+  <data name="Groups.Step.StartsFirst" xml:space="preserve">
+    <value>Av · startar först</value>
+  </data>
+  <data name="Groups.Step.Only" xml:space="preserve">
+    <value>Bara {0} på</value>
+  </data>
+  <data name="Groups.Between" xml:space="preserve">
+    <value>Mellan {0} och {1}</value>
+  </data>
+  <data name="Groups.StartWait" xml:space="preserve">
+    <value>Vid start, vänta</value>
+  </data>
+  <data name="Groups.RunOn" xml:space="preserve">
+    <value>Efterkörning vid stopp</value>
+  </data>
+  <data name="Groups.RunOn.None" xml:space="preserve">
+    <value>Ingen</value>
+  </data>
+  <data name="Groups.NoContactMembers" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Stegen och deras reläer kan ändras när kortet svarar.</value>
+  </data>
+  <data name="Groups.TurnOffToChange" xml:space="preserve">
+    <value>Stäng av gruppen för att ändra dess steg eller deras reläer.</value>
+  </data>
+  <data name="Groups.RelayToAdd" xml:space="preserve">
+    <value>Relä att lägga till</value>
+  </data>
+  <data name="Groups.RelayOption" xml:space="preserve">
+    <value>Relä {0} · {1}</value>
+  </data>
+  <data name="Groups.AddRelayToStep" xml:space="preserve">
+    <value>Lägg till ett relä i det här steget</value>
+  </data>
+  <data name="Groups.AddStep" xml:space="preserve">
+    <value>Lägg till ett steg</value>
+  </data>
+  <data name="Groups.LimitHint" xml:space="preserve">
+    <value>Gäller när någon slår på gruppen för hand. Den stannar i sin stoppordning, med sina efterkörningstider.</value>
+  </data>
+  <data name="Groups.NoSchedules" xml:space="preserve">
+    <value>Inga scheman. Lägg till ett för att slå på gruppen vid bestämda tider.</value>
+  </data>
+  <data name="Groups.NoEvents" xml:space="preserve">
+    <value>Inget har hänt med den här gruppen än.</value>
+  </data>
+  <data name="Groups.Safety" xml:space="preserve">
+    <value>Appens förregling fungerar bara medan appen är igång. Där säkerheten hänger på den, t.ex. värme utan fläkt, måste den också kopplas in i installationen.</value>
+  </data>
+  <data name="Groups.Delete" xml:space="preserve">
+    <value>Ta bort gruppen</value>
+  </data>
+  <data name="Groups.ChangedElsewhere" xml:space="preserve">
+    <value>Någon annan ändrade gruppen medan du hade sidan öppen. Om du sparar skrivs deras ändring över.</value>
+  </data>
+  <data name="Groups.Delete.Title" xml:space="preserve">
+    <value>Ta bort gruppen?</value>
+  </data>
+  <data name="Groups.Delete.Text" xml:space="preserve">
+    <value>Dess reläer blir vanliga reläer igen, som slås om ett och ett. Gruppens scheman tas också bort.</value>
+  </data>
+  <data name="Groups.New.Step" xml:space="preserve">
+    <value>STEG {0} AV {1}</value>
+  </data>
+  <data name="Groups.New.Title1" xml:space="preserve">
+    <value>Namn och ikon</value>
+  </data>
+  <data name="Groups.New.Lead1" xml:space="preserve">
+    <value>Ikonen visas på gruppens kort i listan över reläer.</value>
+  </data>
+  <data name="Groups.New.Title2" xml:space="preserve">
+    <value>Vilka reläer?</value>
+  </data>
+  <data name="Groups.New.Lead2" xml:space="preserve">
+    <value>Välj två eller fler. Ordningen du väljer dem i är startordningen. Du kan ändra den i nästa steg.</value>
+  </data>
+  <data name="Groups.New.Title3" xml:space="preserve">
+    <value>Ordning och regler</value>
+  </data>
+  <data name="Groups.New.Lead3" xml:space="preserve">
+    <value>Gruppen startar uppifrån och stannar nerifrån. Ställ in väntetiderna mellan stegen.</value>
+  </data>
+  <data name="Groups.New.Title4" xml:space="preserve">
+    <value>Granska och skapa</value>
+  </data>
+  <data name="Groups.New.Lead4" xml:space="preserve">
+    <value>Kontrollera att den gör det du väntar dig.</value>
+  </data>
+  <data name="Groups.New.Name" xml:space="preserve">
+    <value>Namn</value>
+  </data>
+  <data name="Groups.New.NameExample" xml:space="preserve">
+    <value>T.ex. Värmefläkt – Svarv</value>
+  </data>
+  <data name="Groups.New.OnBoard" xml:space="preserve">
+    <value>PÅ {0}</value>
+  </data>
+  <data name="Groups.New.RoleLabel" xml:space="preserve">
+    <value>RELÄ {0} · NAMN I GRUPPEN</value>
+  </data>
+  <data name="Groups.New.Interlock" xml:space="preserve">
+    <value>Förregling: ett relä kan bara vara på när reläet ovanför är på. Slås det på ändå, t.ex. på kortet, stänger appen av det direkt.</value>
+  </data>
+  <data name="Groups.New.Preview" xml:space="preserve">
+    <value>SÅ HÄR SER DEN UT I LISTAN</value>
+  </data>
+  <data name="Groups.New.WhenOn" xml:space="preserve">
+    <value>NÄR GRUPPEN SLÅS PÅ</value>
+  </data>
+  <data name="Groups.New.WhenOff" xml:space="preserve">
+    <value>NÄR GRUPPEN STÄNGS AV</value>
+  </data>
+  <data name="Groups.New.Interlock.Label" xml:space="preserve">
+    <value>FÖRREGLING</value>
+  </data>
+  <data name="Groups.New.AutoOff" xml:space="preserve">
+    <value>STÄNGS AV AUTOMATISKT</value>
+  </data>
+  <data name="Groups.New.AutoOffAfter" xml:space="preserve">
+    <value>Efter {0}. Du kan ändra det på gruppens sida.</value>
+  </data>
+  <data name="Groups.New.Create" xml:space="preserve">
+    <value>Skapa grupp</value>
+  </data>
+  <data name="Groups.New.NoneChosen" xml:space="preserve">
+    <value>Inga valda än</value>
+  </data>
+  <data name="Groups.New.ChosenTooFew" xml:space="preserve">
+    <value>{0} valda · välj minst {1}</value>
+  </data>
+  <data name="Groups.New.Chosen" xml:space="preserve">
+    <value>{0} valda</value>
+  </data>
+  <data name="Groups.New.RelayNumber" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
+    <value>Kräver att {0} är på.</value>
+  </data>
+  <data name="Groups.Refusal.NotInGroup" xml:space="preserve">
+    <value>Det reläet är inte med i gruppen.</value>
+  </data>
+</root>

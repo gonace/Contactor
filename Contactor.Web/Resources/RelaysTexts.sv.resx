@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Relays.Hi" xml:space="preserve">
+    <value>Hej {0}</value>
+  </data>
+  <data name="Relays.OnCount" xml:space="preserve">
+    <value>{0} av {1} på</value>
+  </data>
+  <data name="Relays.NewGroup" xml:space="preserve">
+    <value>Ny grupp</value>
+  </data>
+  <data name="Relays.AllBoardsOff" xml:space="preserve">
+    <value>Stäng av alla kort</value>
+  </data>
+  <data name="Relays.AllOff" xml:space="preserve">
+    <value>Allt av</value>
+  </data>
+  <data name="Relays.AllOffOn" xml:space="preserve">
+    <value>Allt av på {0}</value>
+  </data>
+  <data name="Relays.Groups" xml:space="preserve">
+    <value>Grupper</value>
+  </data>
+  <data name="Relays.Relays" xml:space="preserve">
+    <value>Reläer</value>
+  </data>
+  <data name="Relays.Inputs" xml:space="preserve">
+    <value>Ingångar</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.Every" xml:space="preserve">
+    <value>Stäng av alla reläer {0}?</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.One" xml:space="preserve">
+    <value>Stäng av 1 påslaget relä {0}?</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.All" xml:space="preserve">
+    <value>Stäng av alla {1} påslagna reläer {0}?</value>
+  </data>
+  <data name="Relays.OnBoards_One" xml:space="preserve">
+    <value>på {0} kort</value>
+  </data>
+  <data name="Relays.OnBoards_Other" xml:space="preserve">
+    <value>på {0} kort</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.Text" xml:space="preserve">
+    <value>Grupper stängs av i sin egen ordning. Ett kort utan kontakt lämnas som det är.</value>
+  </data>
+  <data name="Relays.TurnOff" xml:space="preserve">
+    <value>Stäng av</value>
+  </data>
+  <data name="Relays.Unreachable.One" xml:space="preserve">
+    <value>Fick inte kontakt med {0}. Dess reläer är som förut.</value>
+  </data>
+  <data name="Relays.Unreachable.Several" xml:space="preserve">
+    <value>Fick inte kontakt med {0}. Deras reläer är som förut.</value>
+  </data>
+  <data name="Relays.List.Separator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="Relays.List.Last" xml:space="preserve">
+    <value>{0} och {1}</value>
+  </data>
+  <data name="Relays.Showing.Boards" xml:space="preserve">
+    <value>Visar {0} av {1} kort · {2} av {3} på</value>
+  </data>
+  <data name="Relays.Showing.Names" xml:space="preserve">
+    <value>Visar {0}</value>
+  </data>
+  <data name="Relays.Lost.Yet" xml:space="preserve">
+    <value>ingen kontakt än</value>
+  </data>
+  <data name="Relays.Lost.Since" xml:space="preserve">
+    <value>ingen kontakt sedan {0}</value>
+  </data>
+  <data name="Relays.Lost.None" xml:space="preserve">
+    <value>ingen kontakt</value>
+  </data>
+  <data name="Relays.Online.One" xml:space="preserve">
+    <value>Kortet är anslutet · uppdaterat {0}</value>
+  </data>
+  <data name="Relays.Online.Several" xml:space="preserve">
+    <value>Anslutet · uppdaterat {0}</value>
+  </data>
+  <data name="Relays.Updated.Now" xml:space="preserve">
+    <value>nyss</value>
+  </data>
+  <data name="Relays.Updated.MinutesAgo" xml:space="preserve">
+    <value>för {0} min sedan</value>
+  </data>
+  <data name="Relays.NoContact.One" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet</value>
+  </data>
+  <data name="Relays.NoContact.Named" xml:space="preserve">
+    <value>Ingen kontakt med {0}</value>
+  </data>
+  <data name="Relays.NoContactYet.One" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet än</value>
+  </data>
+  <data name="Relays.NoContactYet.Named" xml:space="preserve">
+    <value>Ingen kontakt med {0} än</value>
+  </data>
+  <data name="Relays.NoContact.Since" xml:space="preserve">
+    <value>Sedan {0}. Lägena nedan kan vara fel.</value>
+  </data>
+  <data name="Relays.NoContact.MayBeWrong" xml:space="preserve">
+    <value>Lägena nedan kan vara fel.</value>
+  </data>
+  <data name="Relays.NoContact.FirstAnswer" xml:space="preserve">
+    <value>Väntar på dess första svar.</value>
+  </data>
+  <data name="Relays.GroupLabel" xml:space="preserve">
+    <value>GRUPP · {0}</value>
+  </data>
+  <data name="Relays.DefaultName" xml:space="preserve">
+    <value>Relä {0}</value>
+  </data>
+  <data name="Relays.RelayLabel" xml:space="preserve">
+    <value>RELÄ {0}</value>
+  </data>
+  <data name="Relays.InputLabel" xml:space="preserve">
+    <value>INGÅNG {0}</value>
+  </data>
+  <data name="Relays.Chip.Unknown" xml:space="preserve">
+    <value> (okänt)</value>
+  </data>
+  <data name="Relays.Chip.On" xml:space="preserve">
+    <value> (på)</value>
+  </data>
+  <data name="Relays.Chip.Partly" xml:space="preserve">
+    <value> (delvis på)</value>
+  </data>
+  <data name="Relays.Chip.Off" xml:space="preserve">
+    <value> (av)</value>
+  </data>
+  <data name="Relays.InGroup" xml:space="preserve">
+    <value>Det här reläet är med i en grupp och styrs från gruppen.</value>
+  </data>
+  <data name="Relays.WhyUnknown" xml:space="preserve">
+    <value>Varför är tiden okänd för {0}?</value>
+  </data>
+  <data name="Relays.By.You" xml:space="preserve">
+    <value>du</value>
+  </data>
+  <data name="Relays.By.Schedule" xml:space="preserve">
+    <value>schema</value>
+  </data>
+  <data name="Relays.By.AutoOff" xml:space="preserve">
+    <value>automatiskt</value>
+  </data>
+  <data name="Relays.By.Outside" xml:space="preserve">
+    <value>utanför appen</value>
+  </data>
+  <data name="Relays.Status.Waiting" xml:space="preserve">
+    <value>Väntar på kortet</value>
+  </data>
+  <data name="Relays.Status.Unconfirmed" xml:space="preserve">
+    <value>Kortet svarade inte. Reläet kan ha slagits om, eller inte.</value>
+  </data>
+  <data name="Relays.Status.LeaveIt" xml:space="preserve">
+    <value>Låt vara</value>
+  </data>
+  <data name="Relays.Status.ScheduleOn" xml:space="preserve">
+    <value>Schema: på {0}</value>
+  </data>
+  <data name="Relays.Status.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Relays.Status.OffSince" xml:space="preserve">
+    <value>Av sedan {0}</value>
+  </data>
+  <data name="Relays.Status.OffSinceBy" xml:space="preserve">
+    <value>Av sedan {0} · {1}</value>
+  </data>
+  <data name="Relays.Status.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Relays.Status.OnSince" xml:space="preserve">
+    <value>På sedan {0}</value>
+  </data>
+  <data name="Relays.Status.OnSinceBy" xml:space="preserve">
+    <value>På sedan {0} · {1}</value>
+  </data>
+  <data name="Relays.Status.OnSinceOff" xml:space="preserve">
+    <value>På sedan {0} · av {1}</value>
+  </data>
+  <data name="Relays.Status.OnSinceByOff" xml:space="preserve">
+    <value>På sedan {0} · {1} · av {2}</value>
+  </data>
+  <data name="Relays.Sentence.Off" xml:space="preserve">
+    <value>Av just nu.</value>
+  </data>
+  <data name="Relays.Sentence.On" xml:space="preserve">
+    <value>På just nu.</value>
+  </data>
+  <data name="Relays.Sentence.OnSince" xml:space="preserve">
+    <value>På sedan {0}.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceByYou" xml:space="preserve">
+    <value>På sedan {0}, av dig.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceBySchedule" xml:space="preserve">
+    <value>På sedan {0}, av ett schema.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceOutside" xml:space="preserve">
+    <value>På sedan {0}, utanför appen.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceBy" xml:space="preserve">
+    <value>På sedan {0}, av {1}.</value>
+  </data>
+  <data name="Relays.Sentence.TurnsOff" xml:space="preserve">
+    <value>{0} Stängs av {1}.</value>
+  </data>
+  <data name="Relays.When.Yesterday" xml:space="preserve">
+    <value>i går {0}</value>
+  </data>
+  <data name="Relays.When.Tomorrow" xml:space="preserve">
+    <value>i morgon {0}</value>
+  </data>
+  <data name="Relays.When.Date" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="Relays.When.DateFormat" xml:space="preserve">
+    <value>d MMM</value>
+  </data>
+  <data name="Relays.Missing" xml:space="preserve">
+    <value>Reläet finns inte.</value>
+  </data>
+  <data name="Relays.Detail.NameLabel" xml:space="preserve">
+    <value>RELÄ {0} · NAMN</value>
+  </data>
+  <data name="Relays.Detail.Active" xml:space="preserve">
+    <value>{0}: visas i listan. Bocka ur för reläer som inte används.</value>
+  </data>
+  <data name="Relays.Detail.ActiveWord" xml:space="preserve">
+    <value>Aktiv</value>
+  </data>
+  <data name="Relays.Detail.InGroup" xml:space="preserve">
+    <value>Det här reläet är med i gruppen {0} och styrs därifrån, i gruppens ordning.</value>
+  </data>
+  <data name="Relays.Detail.OpenGroup" xml:space="preserve">
+    <value>Öppna gruppen</value>
+  </data>
+  <data name="Relays.Detail.TurnOn" xml:space="preserve">
+    <value>SLÅ PÅ</value>
+  </data>
+  <data name="Relays.Detail.TurnOff" xml:space="preserve">
+    <value>STÄNG AV</value>
+  </data>
+  <data name="Relays.Detail.Limit" xml:space="preserve">
+    <value>Stäng av automatiskt efter</value>
+  </data>
+  <data name="Relays.Detail.LimitHint" xml:space="preserve">
+    <value>Gäller när någon slår på reläet för hand.</value>
+  </data>
+  <data name="Relays.Detail.LimitNow" xml:space="preserve">
+    <value>Reläet har varit på längre än så och stängs av när du sparar.</value>
+  </data>
+  <data name="Relays.Detail.Schedules" xml:space="preserve">
+    <value>Scheman</value>
+  </data>
+  <data name="Relays.Detail.NoSchedules" xml:space="preserve">
+    <value>Inga scheman. Lägg till ett för att slå på reläet vid bestämda tider.</value>
+  </data>
+  <data name="Relays.Detail.NoEvents" xml:space="preserve">
+    <value>Inget har hänt med det här reläet än.</value>
+  </data>
+  <data name="Relays.Save.EnterName" xml:space="preserve">
+    <value>Skriv ett namn.</value>
+  </data>
+  <data name="Relays.Save.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+</root>

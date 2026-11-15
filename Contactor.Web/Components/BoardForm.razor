@@ -9,6 +9,7 @@
 @inject CurrentUser CurrentUser
 @inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
+@inject AppLanguage Language
 
 @* One board's card: on Settings with one board ("Relay board"), and on a board's own page ("Board", with its name). *@
 <form class="card" @onsubmit="SaveAsync">
@@ -217,6 +218,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);

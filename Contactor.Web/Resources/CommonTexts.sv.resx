@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Common.PageTitle" xml:space="preserve">
+    <value>{0} · Contactor</value>
+  </data>
+  <data name="Common.Screen.Relays" xml:space="preserve">
+    <value>Reläer</value>
+  </data>
+  <data name="Common.Screen.Events" xml:space="preserve">
+    <value>Händelser</value>
+  </data>
+  <data name="Common.Screen.Settings" xml:space="preserve">
+    <value>Inställningar</value>
+  </data>
+  <data name="Common.Screen.Debug" xml:space="preserve">
+    <value>Felsökning</value>
+  </data>
+  <data name="Common.Screen.Setup" xml:space="preserve">
+    <value>Installation</value>
+  </data>
+  <data name="Common.Screen.NewGroup" xml:space="preserve">
+    <value>Ny grupp</value>
+  </data>
+  <data name="Common.Screen.AddBoard" xml:space="preserve">
+    <value>Lägg till reläkort</value>
+  </data>
+  <data name="Common.Screen.NewSchedule" xml:space="preserve">
+    <value>Nytt schema</value>
+  </data>
+  <data name="Common.Screen.EditSchedule" xml:space="preserve">
+    <value>Ändra schema</value>
+  </data>
+  <data name="Common.Screen.RelayBoard" xml:space="preserve">
+    <value>Reläkort</value>
+  </data>
+  <data name="Common.Screen.Relay" xml:space="preserve">
+    <value>Relä</value>
+  </data>
+  <data name="Common.Screen.Input" xml:space="preserve">
+    <value>Ingång</value>
+  </data>
+  <data name="Common.Screen.Group" xml:space="preserve">
+    <value>Grupp</value>
+  </data>
+  <data name="Common.MainMenu" xml:space="preserve">
+    <value>Huvudmeny</value>
+  </data>
+  <data name="Common.BoardTraffic" xml:space="preserve">
+    <value>Trafik till reläkortet</value>
+  </data>
+  <data name="Common.Reconnecting" xml:space="preserve">
+    <value>Ansluter igen…</value>
+  </data>
+  <data name="Common.NoConnection" xml:space="preserve">
+    <value>Ingen anslutning till appen.</value>
+  </data>
+  <data name="Common.SomethingWrong" xml:space="preserve">
+    <value>Något gick fel.</value>
+  </data>
+  <data name="Common.ReloadPage" xml:space="preserve">
+    <value>Ladda om sidan</value>
+  </data>
+  <data name="Common.Save" xml:space="preserve">
+    <value>Spara</value>
+  </data>
+  <data name="Common.Cancel" xml:space="preserve">
+    <value>Avbryt</value>
+  </data>
+  <data name="Common.Delete" xml:space="preserve">
+    <value>Ta bort</value>
+  </data>
+  <data name="Common.Next" xml:space="preserve">
+    <value>Nästa</value>
+  </data>
+  <data name="Common.Back" xml:space="preserve">
+    <value>Tillbaka</value>
+  </data>
+  <data name="Common.TryAgain" xml:space="preserve">
+    <value>Försök igen</value>
+  </data>
+  <data name="Common.Language" xml:space="preserve">
+    <value>Språk</value>
+  </data>
+  <data name="Common.Language.Hint" xml:space="preserve">
+    <value>Ett språk för alla som använder appen. Alla öppna sidor byter till det.</value>
+  </data>
+  <data name="Common.Language.Intro" xml:space="preserve">
+    <value>Språket i Contactor, för alla som använder det. Du kan ändra det senare under Inställningar.</value>
+  </data>
+  <data name="Common.Language.NotSaved" xml:space="preserve">
+    <value>Språket kunde inte sparas. Försök igen.</value>
+  </data>
+  <data name="Common.SomethingWrongTryAgain" xml:space="preserve">
+    <value>Något gick fel. Försök igen.</value>
+  </data>
+  <data name="Common.BoardNotResponding" xml:space="preserve">
+    <value>Reläkortet svarar inte. Försök igen.</value>
+  </data>
+  <data name="Common.NoBoard" xml:space="preserve">
+    <value>Det finns inget reläkort i Contactor. Lägg till ett för att styra dess reläer här.</value>
+  </data>
+  <data name="Common.AddBoard" xml:space="preserve">
+    <value>Lägg till reläkort</value>
+  </data>
+  <data name="Common.NoModel" xml:space="preserve">
+    <value>Ingen modell vald</value>
+  </data>
+  <data name="Common.TurnOn" xml:space="preserve">
+    <value>Slå på {0}</value>
+  </data>
+  <data name="Common.TurnOff" xml:space="preserve">
+    <value>Stäng av {0}</value>
+  </data>
+  <data name="Common.Switch.On" xml:space="preserve">
+    <value>PÅ</value>
+  </data>
+  <data name="Common.Switch.Off" xml:space="preserve">
+    <value>AV</value>
+  </data>
+  <data name="Common.NameAndState" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="Common.Add" xml:space="preserve">
+    <value>Lägg till</value>
+  </data>
+  <data name="Common.Never" xml:space="preserve">
+    <value>Aldrig</value>
+  </data>
+  <data name="Common.Hours" xml:space="preserve">
+    <value>{0} tim</value>
+  </data>
+  <data name="Common.Schedule.Active" xml:space="preserve">
+    <value>Aktivt</value>
+  </data>
+  <data name="Common.Schedule.Paused" xml:space="preserve">
+    <value>Pausat</value>
+  </data>
+  <data name="Common.AllEvents" xml:space="preserve">
+    <value>Alla händelser</value>
+  </data>
+  <data name="Common.Version" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="Common.Version.Development" xml:space="preserve">
+    <value>Utvecklingsversion</value>
+  </data>
+  <data name="Common.Version.Commit" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Common.Download" xml:space="preserve">
+    <value>Ladda ner</value>
+  </data>
+  <data name="Common.Saved" xml:space="preserve">
+    <value>Sparat.</value>
+  </data>
+</root>

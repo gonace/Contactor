@@ -73,7 +73,7 @@ else
                     @if (!Plain && state.HasAnswered)
                     {
                         <span class="cc" aria-hidden="true">@count.On/@count.Active</span>
-                        <span class="visually-hidden">@count.On of @count.Active on</span>
+                        <span class="visually-hidden">@Texts["Boards.Picker.OnCount", count.On, count.Active]</span>
                     }
                     @if (!state.IsConnected)
                     {

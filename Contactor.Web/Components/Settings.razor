@@ -287,6 +287,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);

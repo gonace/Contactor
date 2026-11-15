@@ -3,6 +3,7 @@
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Setup
 @using Contactor.Web.Persistence
@@ -14,6 +15,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BoardNew> Log
 @inject IStringLocalizer<BoardsTexts> Texts
+@inject AppLanguage Language
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.AddBoard"]])</PageTitle>
 
@@ -141,7 +143,7 @@
     // The name an empty field gives the board: the model's, made unique among the other boards.
     private string DefaultName => BoardCatalogue.Find(_type)?.Model is { } model
         ? BoardRegistry.UniqueName(model, [.. Registry.All.Where(b => b.BoardId != _boardId).Select(b => b.Name)])
-        : "E.g. Garage";
+        : Texts["Boards.New.NameExample"];
 
     protected override async Task OnInitializedAsync()
     {
@@ -394,6 +396,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);

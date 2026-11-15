@@ -19,8 +19,10 @@ public sealed class LanguageCatalogue
 {
     public static readonly Language English = new("en", "English");
 
+    public static readonly Language Swedish = new("sv", "Svenska");
+
     /// <summary>The app's languages.</summary>
-    public static readonly LanguageCatalogue Default = new([English]);
+    public static readonly LanguageCatalogue Default = new([English, Swedish]);
 
     public LanguageCatalogue(IReadOnlyList<Language> all)
     {
