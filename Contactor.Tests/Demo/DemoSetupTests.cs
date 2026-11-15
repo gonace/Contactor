@@ -83,8 +83,9 @@ public sealed class DemoSetupTests : IDisposable
 
         var page = DemoPages.Page(options);
 
-        // It reports at least twice within the idle time, so the demo never ends a copy whose page still counts.
-        Assert.Contains("data-idle=\"20\" data-warning=\"10\" data-report=\"10\"", page, StringComparison.Ordinal);
+        // It reports at least twice within the idle time, so the demo never ends a copy whose page still counts, and
+        // twice within the count down, so a count down that ran out is never taken for a click in another tab.
+        Assert.Contains("data-idle=\"20\" data-warning=\"10\" data-report=\"5\"", page, StringComparison.Ordinal);
         Assert.Contains("Your demo ends in <span id=\"demo-idle-left\">0:10</span>", page, StringComparison.Ordinal);
     }
 

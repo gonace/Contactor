@@ -64,6 +64,9 @@ public sealed partial class DemoProxy : IDisposable
             case DemoTarget.End:
                 await EndAsync(context);
                 break;
+            case DemoTarget.Timeout:
+                await TimeoutAsync(context);
+                break;
             case DemoTarget.App:
             case DemoTarget.Simulator:
                 await ForwardAsync(context, route);
@@ -148,8 +151,8 @@ public sealed partial class DemoProxy : IDisposable
             : StatusCodes.Status404NotFound;
     }
 
-    // Ends the copy of the cookie's visitor, never another's: the page's count down ran out, or "Start again", which
-    // then starts over at the page.
+    // Ends the copy of the cookie's visitor, never another's: "Start again" (or "Try again"), which then starts over at
+    // the page.
     private async Task EndAsync(HttpContext context)
     {
         NoStore(context.Response);
@@ -173,6 +176,21 @@ public sealed partial class DemoProxy : IDisposable
         {
             context.Response.StatusCode = StatusCodes.Status204NoContent;
         }
+    }
+
+    // The page's count down ran out: 204 when the copy ended (or was gone already), so the page says so; 409 when the
+    // visitor used it since in another tab, so the page keeps it and counts again.
+    private async Task TimeoutAsync(HttpContext context)
+    {
+        NoStore(context.Response);
+        if (!DemoRoutes.IsFromThisSite(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        var ended = VisitorCookie.Read(context.Request) is not { } visitorId || await _copies.EndIfIdleAsync(visitorId);
+        context.Response.StatusCode = ended ? StatusCodes.Status204NoContent : StatusCodes.Status409Conflict;
     }
 
     private async Task ForwardAsync(HttpContext context, DemoRoute route)

@@ -241,7 +241,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         }
     }
 
-    /// <summary>The visitor ends their copy (or the page's count down did): stops it and deletes its data.</summary>
+    /// <summary>"Start again": stops the visitor's copy and deletes its data, whatever their other tabs do.</summary>
     public Task EndAsync(string visitorId)
     {
         lock (_lock)
@@ -249,6 +249,45 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             _kept.Remove(visitorId);
             return _copies.TryGetValue(visitorId, out var entry) ? StopLocked(entry, "ended on the page") : Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// A page's count down ran out: stops the visitor's copy and deletes its data, unless the demo heard of a click or a
+    /// key (or a page load) within <see cref="DemoOptions.IdleTimeout"/>, from another tab of the same visitor, which uses
+    /// the same copy. A page reports a click up to <see cref="DemoPages.ReportEvery"/> late, but only when it reported an
+    /// earlier one that much before; and that is at most half the idle timeout. So a tab with a click within the idle
+    /// timeout keeps the copy. The tab whose count down ran out was quiet for the idle timeout and the count down
+    /// together, and was heard of at most that delay late; that is at most half the count down, so it ends the copy.
+    /// True when nothing of the visitor's is left (it ended, or there was none); false when it was kept.
+    /// </summary>
+    public Task<bool> EndIfIdleAsync(string visitorId)
+    {
+        Task stop;
+        lock (_lock)
+        {
+            var now = _time.GetUtcNow();
+            if (_copies.TryGetValue(visitorId, out var entry))
+            {
+                if (now - entry.Copy.LastActive < _options.IdleTimeout)
+                {
+                    return Task.FromResult(false);
+                }
+
+                stop = StopLocked(entry, "its page counted down");
+            }
+            else
+            {
+                if (_kept.TryGetValue(visitorId, out var keptAt) && now - keptAt < _options.IdleTimeout)
+                {
+                    return Task.FromResult(false);
+                }
+
+                _kept.Remove(visitorId);
+                stop = Task.CompletedTask;
+            }
+        }
+
+        return EndedAsync(stop);
     }
 
     /// <summary>
@@ -301,6 +340,12 @@ public sealed partial class VisitorCopies : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopAllAsync();
+    }
+
+    private static async Task<bool> EndedAsync(Task stop)
+    {
+        await stop;
+        return true;
     }
 
     private Entry Create(string visitorId)

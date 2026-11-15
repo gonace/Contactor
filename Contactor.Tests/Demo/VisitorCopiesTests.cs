@@ -289,6 +289,96 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_KeepTheCopy_WhenOneTabsCountDownRunsOut_WhileAnotherTabIsUsed()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+
+        // Tab A is left alone; tab B, with the same cookie, reports a click a minute before A's count down ends.
+        _time.Advance(TimeSpan.FromMinutes(16));
+        Assert.True(_copies.Active(copy.VisitorId));
+        _time.Advance(TimeSpan.FromMinutes(1));
+
+        Assert.False(await _copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.False(copy.Stopped.IsCompleted);
+        Assert.Equal(1, _copies.Count);
+    }
+
+    [Fact]
+    public async Task Should_KeepTheCopy_ForAClickJustWithinTheIdleTimeout_ReportedAsLateAsAPageMay()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        var reportEvery = DemoPages.ReportEvery(_folder.Options());
+        Assert.Equal(TimeSpan.FromMinutes(1), reportEvery);
+
+        // Tab B reports a click; its next click, a moment later, waits for the report a minute after the first.
+        _time.Advance(TimeSpan.FromMinutes(1));
+        Assert.True(_copies.Active(copy.VisitorId));
+        _time.Advance(reportEvery);
+        Assert.True(_copies.Active(copy.VisitorId));
+
+        // Tab A's count down runs out when B's last click is a moment short of the idle timeout.
+        _time.Advance(TimeSpan.FromMinutes(15) - TimeSpan.FromSeconds(1));
+        Assert.False(await _copies.EndIfIdleAsync(copy.VisitorId));
+
+        // Nothing from any tab for the idle timeout: the count down ends it.
+        _time.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(await _copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.True(copy.Stopped.IsCompleted);
+        Assert.Equal(0, _copies.Taken);
+        Assert.Empty(_folder.CopyFolders());
+    }
+
+    [Fact]
+    public async Task Should_EndTheCopy_WhenTheOnlyTabsCountDownRunsOut_HeardOfAsLateAsAPageMay()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        var reportEvery = DemoPages.ReportEvery(_folder.Options());
+
+        // The tab's last click was reported as late as it may be: its count down runs out sooner, by the demo's clock.
+        _time.Advance(reportEvery);
+        Assert.True(_copies.Active(copy.VisitorId));
+        _time.Advance(IdleAndWarning - reportEvery);
+
+        Assert.True(await _copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.True(copy.Stopped.IsCompleted);
+        Assert.Equal(0, _copies.Count);
+    }
+
+    [Fact]
+    public async Task Should_EndTheCopy_OnStartAgain_EvenJustAfterAClick()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        Assert.True(_copies.Active(copy.VisitorId));
+
+        await _copies.EndAsync(copy.VisitorId);
+
+        Assert.True(copy.Stopped.IsCompleted);
+        Assert.Equal(0, _copies.Taken);
+    }
+
+    [Fact]
+    public async Task Should_AnswerACountDown_ForAVisitorWithoutACopy()
+    {
+        // A place kept by a page load within the idle timeout stays kept; one older than that goes.
+        var visit = _copies.Visit(null);
+        var id = visit.NewId!;
+        _time.Advance(TimeSpan.FromMinutes(14));
+        Assert.False(await _copies.EndIfIdleAsync(id));
+        Assert.Equal(1, _copies.KeptCount);
+        _time.Advance(TimeSpan.FromMinutes(1));
+        Assert.True(await _copies.EndIfIdleAsync(id));
+        Assert.Equal(0, _copies.KeptCount);
+        Assert.Equal(UseKind.None, _copies.Use(id).Kind);
+
+        // Nothing at all: nothing is left.
+        Assert.True(await _copies.EndIfIdleAsync("0123456789abcdef0123456789abcdef"));
+    }
+
+    [Fact]
     public async Task Should_LookForIdleCopies_EveryMinute()
     {
         var copy = Start(_copies);

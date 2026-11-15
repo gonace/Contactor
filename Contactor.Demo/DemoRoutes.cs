@@ -18,8 +18,13 @@ public enum DemoTarget
     /// <summary>The page reports a click or a key (a POST).</summary>
     Activity,
 
-    /// <summary>The visitor's copy ends: the page's count down ran out, or "Start again" (a POST).</summary>
+    /// <summary>The visitor's copy ends: "Start again", or "Try again" when it didn't start (a POST).</summary>
     End,
+
+    /// <summary>
+    /// The page's count down ran out (a POST): the copy ends unless the visitor used it since in another tab.
+    /// </summary>
+    Timeout,
 
     /// <summary>The visitor's own app.</summary>
     App,
@@ -56,6 +61,7 @@ public static class DemoRoutes
     public const string FontsPrefix = "/demo/fonts";
     public const string ActivityPath = "/demo/activity";
     public const string EndPath = "/demo/end";
+    public const string TimeoutPath = "/demo/timeout";
 
     /// <summary>The app frame's address: its query tells the app's <c>/</c> from the page also where a browser doesn't say.</summary>
     public const string AppFrame = "/?demo-frame";
@@ -102,6 +108,11 @@ public static class DemoRoutes
         if (HttpMethods.IsPost(request.Method) && path.Equals(EndPath, StringComparison.OrdinalIgnoreCase))
         {
             return new DemoRoute(DemoTarget.End, path);
+        }
+
+        if (HttpMethods.IsPost(request.Method) && path.Equals(TimeoutPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return new DemoRoute(DemoTarget.Timeout, path);
         }
 
         if (path.StartsWithSegments(Prefix, StringComparison.OrdinalIgnoreCase) || ForItsMachine(path, AppOnlyForItsMachine))

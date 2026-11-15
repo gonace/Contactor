@@ -13,8 +13,8 @@ public static class DemoPages
     /// <summary>How often the busy page tries again by itself.</summary>
     public const int BusyRetrySeconds = 30;
 
-    /// <summary>How often the page reports clicks and keys at most.</summary>
-    public static readonly TimeSpan ReportEvery = TimeSpan.FromMinutes(1);
+    /// <summary>The longest the page waits to report a click or a key.</summary>
+    public static readonly TimeSpan ReportAtMost = TimeSpan.FromMinutes(1);
 
     private static readonly string[] Fonts = ["ibm-plex-sans-latin-400-normal.woff2", "ibm-plex-sans-latin-600-normal.woff2"];
 
@@ -34,8 +34,8 @@ public static class DemoPages
         var idle = Seconds(options.IdleTimeout);
         var warning = Seconds(options.IdleWarning);
 
-        // At least twice within the idle timeout, so the demo never thinks a visitor left whose page doesn't.
-        var report = Seconds(TimeSpan.FromTicks(Math.Min(ReportEvery.Ticks, options.IdleTimeout.Ticks / 2)));
+        // Rounded down: the page may report more often than the demo allows for, never less.
+        var report = Seconds(ReportEvery(options));
         return Document("Contactor demo", "demo", $"""
             <input type="radio" name="tab" id="tab-app" class="tab-input" checked>
             <input type="radio" name="tab" id="tab-simulator" class="tab-input">
@@ -64,7 +64,7 @@ public static class DemoPages
                 {EndedCard()}
             </div>
             <script src="{DemoRoutes.ScriptPath}?v={ScriptVersion.Value}" defer></script>
-            """, bodyData: $"""data-idle="{idle}" data-warning="{warning}" data-report="{report}" data-activity="{DemoRoutes.ActivityPath}" data-end="{DemoRoutes.EndPath}" """);
+            """, bodyData: $"""data-idle="{idle}" data-warning="{warning}" data-report="{report}" data-activity="{DemoRoutes.ActivityPath}" data-timeout="{DemoRoutes.TimeoutPath}" """);
     }
 
     public static string Busy()
@@ -103,6 +103,18 @@ public static class DemoPages
                 </form>
             </main>
             """);
+    }
+
+    /// <summary>
+    /// How often the page reports clicks and keys at most, so how late the demo may hear of one: at least twice within
+    /// the idle timeout, so the demo never thinks a visitor left whose page doesn't, and at least twice within the count
+    /// down, so a page whose count down ran out is never taken for one still used in another tab (see
+    /// <see cref="VisitorCopies.EndIfIdleAsync"/>).
+    /// </summary>
+    public static TimeSpan ReportEvery(DemoOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return TimeSpan.FromTicks(Math.Min(ReportAtMost.Ticks, Math.Min(options.IdleTimeout.Ticks / 2, options.IdleWarning.Ticks / 2)));
     }
 
     /// <summary>demo.css, as UTF-8.</summary>

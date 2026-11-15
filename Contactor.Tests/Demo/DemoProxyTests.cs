@@ -48,7 +48,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Contains("<iframe class=\"frame-app\" title=\"Contactor\" src=\"/?demo-frame\"></iframe>", html, StringComparison.Ordinal);
         Assert.Contains("reset when you're done", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Nobody else", html, StringComparison.Ordinal);
-        Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\" data-activity=\"/demo/activity\" data-timeout=\"/demo/timeout\"", html, StringComparison.Ordinal);
         Assert.Matches("<script src=\"/demo/demo.js\\?v=[0-9a-f]{12}\" defer></script>", html);
         Assert.Contains("role=\"alertdialog\"", html, StringComparison.Ordinal);
         Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
@@ -269,13 +269,18 @@ public sealed class DemoProxyTests : IAsyncDisposable
         activity.Headers.Add(header, value);
         using var end = Post("/demo/end", id);
         end.Headers.Add(header, value);
+        _time.Advance(TimeSpan.FromMinutes(6));
+        using var timeout = Post("/demo/timeout", id);
+        timeout.Headers.Add(header, value);
         using var activityResponse = await client.SendAsync(activity, Cancel);
         using var endResponse = await client.SendAsync(end, Cancel);
+        using var timeoutResponse = await client.SendAsync(timeout, Cancel);
 
         Assert.Equal(HttpStatusCode.Forbidden, activityResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, endResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, timeoutResponse.StatusCode);
         Assert.Equal(1, Copies.Count);
-        _time.Advance(TimeSpan.FromMinutes(7));
+        _time.Advance(TimeSpan.FromMinutes(1));
         Assert.Equal(1, await Copies.StopExpiredAsync());
     }
 
@@ -312,13 +317,47 @@ public sealed class DemoProxyTests : IAsyncDisposable
     {
         var client = await StartAsync();
         var id = await NewVisitorAsync(client);
+        _time.Advance(TimeSpan.FromMinutes(17));
+
+        using var ended = await client.SendAsync(Timeout(id), Cancel);
+
+        Assert.Equal(HttpStatusCode.NoContent, ended.StatusCode);
+        Assert.Equal(0, Copies.Taken);
+
+        // Another tab's count down, later: nothing is left, so it says the copy ended too.
+        using var again = await client.SendAsync(Timeout(id), Cancel);
+        Assert.Equal(HttpStatusCode.NoContent, again.StatusCode);
+    }
+
+    [Fact]
+    public async Task Should_KeepTheCopy_WhenThePagesCountDownRunsOut_WhileAnotherTabIsUsed()
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+        _time.Advance(TimeSpan.FromMinutes(10));
+        using var active = await client.SendAsync(Post("/demo/activity", id), Cancel);
+        _time.Advance(TimeSpan.FromMinutes(7));
+
+        using var kept = await client.SendAsync(Timeout(id), Cancel);
+
+        Assert.Equal(HttpStatusCode.Conflict, kept.StatusCode);
+        Assert.Equal(1, Copies.Count);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(Post("/demo/activity", id), Cancel)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Should_EndTheCopy_OnStartAgain_EvenWhileAnotherTabIsUsed()
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+        using var active = await client.SendAsync(Post("/demo/activity", id), Cancel);
 
         using var end = Post("/demo/end", id);
         end.Headers.Add("Sec-Fetch-Site", "same-origin");
-        end.Headers.Add("Sec-Fetch-Dest", "empty");
+        end.Headers.Add("Sec-Fetch-Dest", "document");
         using var ended = await client.SendAsync(end, Cancel);
 
-        Assert.Equal(HttpStatusCode.NoContent, ended.StatusCode);
+        Assert.Equal(HttpStatusCode.SeeOther, ended.StatusCode);
         Assert.Equal(0, Copies.Taken);
     }
 
@@ -406,6 +445,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
     [InlineData("/demo/fonts/")]
     [InlineData("/demo/activity")]
     [InlineData("/demo/end")]
+    [InlineData("/demo/timeout")]
     public async Task Should_NotFind_AnythingElseOfTheDemos(string path)
     {
         var client = await StartAsync();
@@ -475,6 +515,15 @@ public sealed class DemoProxyTests : IAsyncDisposable
     {
         var request = Get("/", id);
         request.Headers.Add("Sec-Fetch-Dest", "document");
+        return request;
+    }
+
+    // The page's count down: a fetch from the page.
+    private static HttpRequestMessage Timeout(string id)
+    {
+        var request = Post("/demo/timeout", id);
+        request.Headers.Add("Sec-Fetch-Site", "same-origin");
+        request.Headers.Add("Sec-Fetch-Dest", "empty");
         return request;
     }
 

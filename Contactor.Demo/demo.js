@@ -1,7 +1,9 @@
 // The demo page's only script. A click or a key anywhere, in the page or in either frame (both are this site's own),
 // keeps the visitor's copy: it tells the demo at most every data-report seconds. After data-idle seconds without one,
-// a popup counts down data-warning seconds; with no click or key by then, the copy ends and the page says so. The demo
-// itself deletes a copy whose page stopped reporting, so this script only shows what the demo does anyway.
+// a popup counts down data-warning seconds; with no click or key by then, it asks the demo to end the copy. The demo
+// keeps it when the visitor used it since in another tab: then the popup goes and the count starts over. Otherwise the
+// copy ends and the page says so. The demo itself deletes a copy whose pages stopped reporting, so this script only
+// shows what the demo does anyway.
 (() => {
     "use strict";
     const body = document.body;
@@ -14,13 +16,20 @@
     let lastActive = Date.now();
     let lastReport = Date.now();
     let reportTimer = null;
+    let timingOut = false;
     let over = false;
+
+    // Where the visitor was when the popup opened, to go back there when it goes: an element of the page or of a
+    // frame, and the frame the visitor last used, when that element is gone (the frame went to another page).
+    let lastFrame = null;
+    let focusFrame = null;
+    let focusElement = null;
 
     function report() {
         reportTimer = null;
         lastReport = Date.now();
         fetch(body.dataset.activity, { method: "POST", credentials: "same-origin" })
-            .then((response) => { if (response.status === 404) { end(false); } })
+            .then((response) => { if (response.status === 404) { end(); } })
             .catch(() => { /* Offline for a moment: the next click tries again. */ });
     }
 
@@ -30,26 +39,88 @@
         }
 
         lastActive = Date.now();
-        if (!popup.hidden) {
-            popup.hidden = true;
-        }
-
+        hidePopup();
         if (reportTimer === null) {
             reportTimer = setTimeout(report, Math.max(0, lastReport + reportEvery - Date.now()));
         }
     }
 
-    function end(tellTheDemo) {
+    function showPopup() {
+        focusFrame = null;
+        focusElement = document.activeElement;
+        if (focusElement instanceof HTMLIFrameElement) {
+            focusFrame = focusElement;
+            try {
+                focusElement = focusFrame.contentDocument.activeElement;
+            } catch {
+                focusElement = null;
+            }
+        }
+
+        popup.hidden = false;
+        document.getElementById("demo-idle-keep").focus();
+    }
+
+    function hidePopup() {
+        if (popup.hidden) {
+            return;
+        }
+
+        popup.hidden = true;
+        const frame = focusFrame;
+        const element = focusElement;
+        focusFrame = null;
+        focusElement = null;
+
+        // After the click or key that hid it: a click on the popup's backdrop would take the focus away again.
+        setTimeout(() => {
+            if (over || !popup.hidden) {
+                return;
+            }
+
+            try {
+                const inFrame = frame !== null && frame.isConnected && element !== null
+                    && element.ownerDocument === frame.contentDocument;
+                const inPage = frame === null && element !== null && element.ownerDocument === document;
+                if ((inFrame || inPage) && element.isConnected && element !== element.ownerDocument.body) {
+                    if (inFrame) {
+                        frame.focus();
+                    }
+
+                    element.focus({ preventScroll: true });
+                } else if (lastFrame !== null && lastFrame.isConnected) {
+                    lastFrame.focus();
+                }
+            } catch {
+                // Nowhere to go back to: the focus stays where it is.
+            }
+        }, 0);
+    }
+
+    // The count down ran out: the demo ends the copy (204), or keeps it for another tab that used it since (409).
+    // Anything else (offline, an error on the way) tries again at the next tick.
+    function timeOut() {
+        timingOut = true;
+        fetch(body.dataset.timeout, { method: "POST", credentials: "same-origin" })
+            .then((response) => {
+                timingOut = false;
+                if (response.status === 409) {
+                    lastActive = Date.now();
+                    hidePopup();
+                } else if (response.ok || response.status === 404) {
+                    end();
+                }
+            })
+            .catch(() => { timingOut = false; });
+    }
+
+    function end() {
         if (over) {
             return;
         }
 
         over = true;
         clearTimeout(reportTimer);
-        if (tellTheDemo) {
-            fetch(body.dataset.end, { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
-        }
-
         popup.hidden = true;
         for (const part of document.querySelectorAll(".demo-header, .demo-frames")) {
             part.remove();
@@ -65,27 +136,41 @@
         }
 
         const quiet = Date.now() - lastActive;
-        if (quiet >= idle + warning) {
-            end(true);
-        } else if (quiet >= idle) {
-            const seconds = Math.ceil((idle + warning - quiet) / 1000);
+        if (quiet >= idle) {
+            const seconds = Math.max(0, Math.ceil((idle + warning - quiet) / 1000));
             left.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
             if (popup.hidden) {
-                popup.hidden = false;
-                document.getElementById("demo-idle-keep").focus();
+                showPopup();
             }
+        }
+
+        if (quiet >= idle + warning && !timingOut) {
+            timeOut();
         }
     }
 
     // Again after each load: a frame that navigates or reloads has a new document.
-    function listen(target) {
-        target.addEventListener("pointerdown", active, true);
-        target.addEventListener("keydown", active, true);
+    const heardFrom = new WeakSet();
+    function listen(target, frame) {
+        if (heardFrom.has(target)) {
+            return;
+        }
+
+        heardFrom.add(target);
+        const heard = () => {
+            if (frame !== null) {
+                lastFrame = frame;
+            }
+
+            active();
+        };
+        target.addEventListener("pointerdown", heard, true);
+        target.addEventListener("keydown", heard, true);
     }
 
-    listen(document);
+    listen(document, null);
     for (const frame of document.querySelectorAll(".demo-frames iframe")) {
-        const attach = () => { try { listen(frame.contentDocument); } catch { /* Not this site's: nothing to hear. */ } };
+        const attach = () => { try { listen(frame.contentDocument, frame); } catch { /* Not this site's: nothing to hear. */ } };
         frame.addEventListener("load", attach);
         attach();
     }
