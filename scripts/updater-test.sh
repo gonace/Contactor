@@ -610,7 +610,8 @@ installer() {
         printf '%s\n' 'as_root() { "$@"; }' 'has_systemd() { true; }' 'show() { echo "(the box)"; }' \
             'TMP=$(mktemp -d)' 'trap cleanup EXIT' "trap 'exit 130' INT" 'install'
     } > "$WORK/installer.sh"
-    env ${INSTALL_COSIGN:+INSTALL_COSIGN="$INSTALL_COSIGN"} PATH="$WORK/stand-ins:$WORK/bin:$PATH" TMPDIR="$WORK" CONTACTOR_IMAGE="$REPOSITORY:latest" \
+    # INSTALL_CTRL_C: Ctrl-C (SIGINT) reaches it, also when it runs in the background, where bash would ignore it.
+    env ${INSTALL_CTRL_C:+--default-signal=INT} ${INSTALL_COSIGN:+INSTALL_COSIGN="$INSTALL_COSIGN"} PATH="$WORK/stand-ins:$WORK/bin:$PATH" TMPDIR="$WORK" CONTACTOR_IMAGE="$REPOSITORY:latest" \
         sh "$WORK/installer.sh" > "$WORK/install.log" 2>&1 || result=$?
     cat "$WORK/install.log" >> "$WORK/installs.log"
     return "$result"
@@ -738,19 +739,21 @@ else
 fi
 check "nothing is in its folder" test ! -e "$WORK/inst3/opt"
 check "the image it downloaded is removed again" test -z "$(image_id "$REPOSITORY:latest")"
-# A cosign that takes a while and then fails, to stop install.sh with Ctrl-C during the check.
+# A cosign that takes a while and then says the image is signed: only Ctrl-C during the check stops the installation.
 mkdir -p "$WORK/slow-cosign"
-printf 'FROM busybox:1.36\nENTRYPOINT ["sh", "-c", "sleep 4; exit 1", "--"]\n' > "$WORK/slow-cosign/Dockerfile"
+printf 'FROM busybox:1.36\nENTRYPOINT ["sh", "-c", "sleep 8; exit 0", "--"]\n' > "$WORK/slow-cosign/Dockerfile"
 docker build --quiet -t contactor-updater-test-slow-cosign "$WORK/slow-cosign" > /dev/null
 : > "$WORK/docker.log"
-INSTALL_COSIGN=contactor-updater-test-slow-cosign installer "$WORK/inst3" &
+INSTALL_CTRL_C=1 INSTALL_COSIGN=contactor-updater-test-slow-cosign installer "$WORK/inst3" &
 install_run=$!
 for _ in $(seq 1 150); do
     grep -q '^run ' "$WORK/docker.log" && break
     sleep 0.2
 done
 pkill -INT -f "^sh $WORK/installer.sh" || true
-wait "$install_run" || true
+install_result=0
+wait "$install_run" || install_result=$?
+check "Ctrl-C during the check stops it (exit code 130)" test "$install_result" = 130
 check "stopped during the check, it removes the image it downloaded" test -z "$(image_id "$REPOSITORY:latest")"
 check "and nothing is in its folder" test ! -e "$WORK/inst3/opt"
 docker image rm contactor-updater-test-slow-cosign > /dev/null 2>&1 || true

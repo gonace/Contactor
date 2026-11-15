@@ -466,7 +466,7 @@ ensure_helper() {
     helper_version="$(version_of "$helper_image")"
     if [ "${2:-}" = check ]; then
         running_ref="$(digest_of "$helper_image" "${3:-}")"
-        result=2
+        result=3
         if [ -n "$running_ref" ]; then
             result=0
             signed "$running_ref" || result=$?
@@ -478,6 +478,11 @@ ensure_helper() {
             0) ;;
             1)
                 warn "Contactor${helper_version:+ $helper_version} isn't signed with Contactor's key: the update helper isn't installed or brought up to date from it."
+                return 0
+                ;;
+            3)
+                # E.g. built on this machine: only an image from a registry has a digest that is signed.
+                warn "This image has no published digest, so its signature can't be checked; the update helper in place stays."
                 return 0
                 ;;
             *)
