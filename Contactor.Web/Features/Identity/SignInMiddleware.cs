@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Setup;
 using Contactor.Web.Persistence;
@@ -11,36 +12,49 @@ namespace Contactor.Web.Features.Identity;
 /// user on <see cref="HttpContext.User"/>. Blazor Server copies that user into the circuit when it starts, which is
 /// where <see cref="CurrentUser"/> reads it. An unknown e-mail becomes a new <see cref="User"/>. While no sign-in is
 /// chosen, the installation is being set up: only what <see cref="SetupMode"/> lets through answers, with nobody
-/// signed in.
+/// signed in. With "Only on this network", and in setup mode, a request from outside this network gets 403 first
+/// (<see cref="ThisNetwork"/>).
 /// </summary>
 public sealed partial class SignInMiddleware
 {
     public const string AuthenticationType = "Contactor";
 
+    /// <summary>How long after a warning about a request from outside this network the next one waits.</summary>
+    public static readonly TimeSpan OutsideWarningInterval = TimeSpan.FromMinutes(1);
+
     private readonly RequestDelegate _next;
     private readonly SignInChoice _choice;
+    private readonly AccessChoice _access;
     private readonly IServiceProvider _services;
     private readonly SetupMode _setup;
     private readonly IHostEnvironment _environment;
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly ILogger<SignInMiddleware> _logger;
+    private readonly TimeProvider _time;
+
+    // When the last warning about a request from outside this network was logged, in UTC ticks; 0 before the first.
+    private long _lastOutsideWarningTicks;
 
     public SignInMiddleware(
         RequestDelegate next,
         SignInChoice choice,
+        AccessChoice access,
         IServiceProvider services,
         SetupMode setup,
         IHostEnvironment environment,
         IDbContextFactory<ContactorDbContext> dbFactory,
-        ILogger<SignInMiddleware> logger)
+        ILogger<SignInMiddleware> logger,
+        TimeProvider time)
     {
         _next = next;
         _choice = choice;
+        _access = access;
         _services = services;
         _setup = setup;
         _environment = environment;
         _dbFactory = dbFactory;
         _logger = logger;
+        _time = time;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -52,8 +66,18 @@ public sealed partial class SignInMiddleware
             return;
         }
 
+        var signIn = _choice.Current;
+        if (ThisNetwork.Required(_access.Current, signInChosen: signIn is not null) && !ThisNetwork.Asked(context))
+        {
+            WarnAboutOutside(context);
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            await context.Response.WriteAsync(ThisNetwork.Refusal, context.RequestAborted);
+            return;
+        }
+
         string? email;
-        if (_choice.Current is { } method)
+        if (signIn is { } method)
         {
             email = await method.Create(_services).AuthenticateAsync(context);
         }
@@ -90,6 +114,21 @@ public sealed partial class SignInMiddleware
             || (_environment.IsDevelopment() && (path.StartsWithSegments("/health") || path.StartsWithSegments("/alive")));
     }
 
+    // At most once a minute, so a scan of the open port doesn't fill the log.
+    private void WarnAboutOutside(HttpContext context)
+    {
+        var now = _time.GetUtcNow().UtcTicks;
+        var last = Interlocked.Read(ref _lastOutsideWarningTicks);
+        // A clock set back counts as a minute gone, so it never holds the warnings back for long.
+        if ((last != 0 && now >= last && now - last < OutsideWarningInterval.Ticks)
+            || Interlocked.CompareExchange(ref _lastOutsideWarningTicks, now, last) != last)
+        {
+            return;
+        }
+
+        LogRefusedOutside(context.Connection.RemoteIpAddress?.ToString());
+    }
+
     private async Task<User> FindOrCreateUserAsync(string email, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -114,6 +153,9 @@ public sealed partial class SignInMiddleware
             return await check.Users.AsNoTracking().SingleAsync(u => u.Email == email, cancellationToken);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Refused a request from outside this network ({RemoteAddress}). The app's port can be reached from the internet: close it in the firewall or router")]
+    private partial void LogRefusedOutside(string? remoteAddress);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Created user {DisplayName} on first sign-in")]
     private partial void LogUserCreated(string displayName);

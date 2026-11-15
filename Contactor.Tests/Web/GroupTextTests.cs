@@ -112,11 +112,11 @@ public sealed class GroupTextTests
         var starting = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
         var stopping = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(299) } };
 
-        Assert.Equal("On", GroupStatusText.MemberNote(starting, State(1), 0, on: true, null, Now));
-        Assert.Equal("Starts in 3 s", GroupStatusText.MemberNote(starting, State(1), 1, on: false, null, Now));
-        Assert.Equal("Keeps running for 4 min 59 s", GroupStatusText.MemberNote(stopping, State(1), 0, on: true, null, Now));
-        Assert.Equal("Off", GroupStatusText.MemberNote(stopping, State(1), 1, on: false, null, Now));
-        Assert.Equal("Needs Fan to be on", GroupStatusText.MemberNote(FanHeater, State(), 1, on: false, "Fan", Now));
+        Assert.Equal("On", TestTexts.GroupStatus.MemberNote(starting, State(1), 0, on: true, null, Now));
+        Assert.Equal("Starts in 3 s", TestTexts.GroupStatus.MemberNote(starting, State(1), 1, on: false, null, Now));
+        Assert.Equal("Keeps running for 4 min 59 s", TestTexts.GroupStatus.MemberNote(stopping, State(1), 0, on: true, null, Now));
+        Assert.Equal("Off", TestTexts.GroupStatus.MemberNote(stopping, State(1), 1, on: false, null, Now));
+        Assert.Equal("Needs Fan to be on", TestTexts.GroupStatus.MemberNote(FanHeater, State(), 1, on: false, "Fan", Now));
     }
 
     // Only the relay that is next shows a countdown: the one after the last relay on when starting, the last one on
@@ -139,7 +139,7 @@ public sealed class GroupTextTests
 
     private static List<string> Notes(GroupView group, BoardState state)
     {
-        return [.. Enumerable.Range(0, group.Members.Count).Select(i => GroupStatusText.MemberNote(group, state, i, state.IsOn(group.Members[i].Channel), null, Now))];
+        return [.. Enumerable.Range(0, group.Members.Count).Select(i => TestTexts.GroupStatus.MemberNote(group, state, i, state.IsOn(group.Members[i].Channel), null, Now))];
     }
 
     [Fact]
@@ -231,8 +231,15 @@ public sealed class GroupTextTests
         Assert.False(FanHeater.IsOn(State()));
     }
 
+    [Fact]
+    public void Should_NameTheMissingRelay_AndTheChain()
+    {
+        Assert.Equal("Can't run: relay 5 isn't on the board", TestTexts.GroupStatus.MissingRelay(5));
+        Assert.Equal("RELAY 1 → 2", TestTexts.GroupStatus.Chain(FanHeater));
+    }
+
     private static string Status(GroupView group, BoardState state, RelayOutlook? outlook = null) =>
-        GroupStatusText.For(TestTexts.RelayStatus, group, state, Now, utc => utc, email => email switch
+        TestTexts.GroupStatus.For(group, state, Now, utc => utc, email => email switch
         {
             "john@example.com" => "John",
             EventActors.Schedule => "schedule",

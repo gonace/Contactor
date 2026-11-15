@@ -23,6 +23,9 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject ILogger<GroupDetail> Log
 @inject RelayStatusText StatusText
+@inject GroupStatusText GroupStatus
+@inject IStringLocalizer<GroupsTexts> Texts
+@inject IStringLocalizer<RelaysTexts> RelayTexts
 
 <PageTitle>@(Common["Common.PageTitle", _group?.Name ?? Common["Common.Screen.Group"].Value])</PageTitle>
 
@@ -30,7 +33,7 @@
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            Relays
+            @Common["Common.Screen.Relays"]
         </a>
         @if (_group is not null)
         {
@@ -42,7 +45,7 @@
     @if (_loaded && _group is null)
     {
         <main class="content">
-            <p class="missing">The group doesn't exist.</p>
+            <p class="missing">@Texts["Groups.Missing"]</p>
         </main>
     }
     else if (_group is not null)
@@ -50,12 +53,12 @@
         <form id="group-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">GROUP · NAME</label>
+                    <label for="name" class="label">@Texts["Groups.NameLabel"]</label>
                     <input id="name" type="text" maxlength="@RelayGroup.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                 </div>
 
                 <fieldset class="icon-field">
-                    <legend>Icon</legend>
+                    <legend>@Texts["Groups.Icon"]</legend>
                     <IconPicker @bind-Value="_icon" />
                 </fieldset>
 
@@ -70,9 +73,9 @@
                 else
                 {
                 <section class="status @(GroupOn ? "on" : "") @(_group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : "")">
-                    <p>@(Missing is { } missing ? GroupView.MissingRelayText(missing) : GroupStatusText.For(StatusText, _group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook))</p>
+                    <p>@(Missing is { } missing ? GroupStatus.MissingRelay(missing) : GroupStatus.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook))</p>
                     <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy || Missing is not null)" @onclick="ToggleGroupAsync">
-                        @(GroupOn ? "TURN OFF THE GROUP" : "TURN ON THE GROUP")
+                        @Texts[GroupOn ? "Groups.TurnOff" : "Groups.TurnOn"]
                     </button>
                     @if (_toggleError is not null)
                     {
@@ -83,8 +86,8 @@
 
                 <section class="members">
                     <div class="section-text">
-                        <h2>Relays in start order</h2>
-                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? $"On {board.Name}. " : "")Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</p>
+                        <h2>@Texts["Groups.Members"]</h2>
+                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? Texts["Groups.Members.HintOn", board.Name] : Texts["Groups.Members.Hint"])</p>
                     </div>
                     <ol class="steps">
                         @for (var i = 0; i < _members.Count; i++)
@@ -97,15 +100,15 @@
                                 <div class="step-row">
                                     <span class="number" aria-hidden="true">@(index + 1)</span>
                                     <div class="step-text">
-                                        <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.Channel</label>
+                                        <label class="label" for="@($"role-{member.RelayId}")">@RelayTexts["Relays.RelayLabel", member.Channel]</label>
                                         <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                                         <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : StatusText.Waiting)</span>
                                     </div>
                                     <div class="order">
-                                        <button type="button" aria-label="@($"Move {member.RoleName} up")" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
+                                        <button type="button" aria-label="@Texts["Groups.MoveUp", member.RoleName]" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
                                         </button>
-                                        <button type="button" aria-label="@($"Move {member.RoleName} down")" disabled="@(!CanChangeMembers || index == _members.Count - 1)" @onclick="() => Move(index, 1)">
+                                        <button type="button" aria-label="@Texts["Groups.MoveDown", member.RoleName]" disabled="@(!CanChangeMembers || index == _members.Count - 1)" @onclick="() => Move(index, 1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
                                         </button>
                                     </div>
@@ -115,18 +118,18 @@
                                                 class="member-toggle"
                                                 data-vibrate
                                                 aria-pressed="@(on ? "true" : "false")"
-                                                aria-label="@((on ? "Turn off " : "Turn on ") + member.RoleName)"
+                                                aria-label="@Common[on ? "Common.TurnOff" : "Common.TurnOn", member.RoleName]"
                                                 disabled="@(!State.IsConnected || _busy || OrderChanged || Missing is not null || (!on && blockedBy is not null))"
-                                                @onclick="() => ToggleMemberAsync(member.RelayId, on)">@(on ? "ON" : "OFF")</button>
+                                                @onclick="() => ToggleMemberAsync(member.RelayId, on)">@Common[on ? "Common.Switch.On" : "Common.Switch.Off"]</button>
                                     }
                                     else
                                     {
-                                        <button type="button" class="member-toggle unknown" aria-label="@($"{member.RoleName}: {StatusText.Waiting}")" disabled>–</button>
+                                        <button type="button" class="member-toggle unknown" aria-label="@Common["Common.NameAndState", member.RoleName, StatusText.Waiting]" disabled>–</button>
                                     }
                                 </div>
                                 @if (CanChangeMembers && _members.Count > RelayGroup.MinMembers)
                                 {
-                                    <button type="button" class="remove" @onclick="() => Remove(index)">Remove from the group</button>
+                                    <button type="button" class="remove" @onclick="() => Remove(index)">@Texts["Groups.Remove"]</button>
                                 }
                                 @if (_memberError is { } error && error.RelayId == member.RelayId)
                                 {
@@ -136,9 +139,9 @@
                             @if (index < _members.Count - 1)
                             {
                                 var below = _members[index + 1];
-                                <li class="gap" aria-label="@($"Between {member.RoleName} and {below.RoleName}")">
+                                <li class="gap" aria-label="@Texts["Groups.Between", member.RoleName, below.RoleName]">
                                     <label>
-                                        On start, wait
+                                        @Texts["Groups.StartWait"]
                                         <select @bind="below.StartDelaySec">
                                             @foreach (var seconds in Choices(GroupsHandler.StartDelayChoices, below.StartDelaySec))
                                             {
@@ -147,11 +150,11 @@
                                         </select>
                                     </label>
                                     <label>
-                                        On stop, run on
+                                        @Texts["Groups.RunOn"]
                                         <select @bind="member.RunOnSec">
                                             @foreach (var seconds in Choices(GroupsHandler.RunOnChoices, member.RunOnSec))
                                             {
-                                                <option value="@seconds">@(seconds == 0 ? "None" : EventText.Seconds(seconds))</option>
+                                                <option value="@seconds">@(seconds == 0 ? Texts["Groups.RunOn.None"] : EventText.Seconds(seconds))</option>
                                             }
                                         </select>
                                     </label>
@@ -161,49 +164,49 @@
                     </ol>
                     @if (!State.IsConnected)
                     {
-                        <p class="hint">No contact with the relay board. The relays and their order can be changed once the board responds.</p>
+                        <p class="hint">@Texts["Groups.NoContactMembers"]</p>
                     }
                     else if (!CanChangeMembers)
                     {
-                        <p class="hint">Turn the group off to change its relays or their order.</p>
+                        <p class="hint">@Texts["Groups.TurnOffToChange"]</p>
                     }
                     else if (_members.Count < Capabilities.RelayCount && AddableRelays.Any())
                     {
                         <div class="add">
-                            <label for="add-relay" class="visually-hidden">Relay to add</label>
+                            <label for="add-relay" class="visually-hidden">@Texts["Groups.RelayToAdd"]</label>
                             <select id="add-relay" @bind="_addRelayId">
                                 @foreach (var relay in AddableRelays)
                                 {
-                                    <option value="@relay.Id">Relay @relay.Channel · @relay.Name</option>
+                                    <option value="@relay.Id">@Texts["Groups.RelayOption", relay.Channel, relay.Name]</option>
                                 }
                             </select>
                             <button type="button" @onclick="AddRelay">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                                Add relay
+                                @Texts["Groups.AddRelay"]
                             </button>
                         </div>
                     }
                 </section>
 
                 <section class="limits">
-                    <h2>Turn off automatically after</h2>
+                    <h2>@RelayTexts["Relays.Detail.Limit"]</h2>
                     <div class="choices">
                         @foreach (var limit in RelaySettingsHandler.Limits)
                         {
-                            <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@(limit is { } m ? $"{m / 60} h" : "Never")</button>
+                            <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@(limit is { } m ? Common["Common.Hours", m / 60] : Common["Common.Never"])</button>
                         }
                     </div>
-                    <p class="hint">Applies when someone turns the group on by hand. It stops in its stop order, with its run-on times.</p>
+                    <p class="hint">@Texts["Groups.LimitHint"]</p>
                 </section>
 
                 <section class="schedules">
                     <div class="section-head">
-                        <h2>Schedules</h2>
-                        <a href="group/@Id/schedule/new">Add</a>
+                        <h2>@RelayTexts["Relays.Detail.Schedules"]</h2>
+                        <a href="group/@Id/schedule/new">@Common["Common.Add"]</a>
                     </div>
                     @if (_schedules.Count == 0)
                     {
-                        <p class="hint">No schedules. Add one to turn the group on at set times.</p>
+                        <p class="hint">@Texts["Groups.NoSchedules"]</p>
                     }
                     @foreach (var schedule in _schedules)
                     {
@@ -217,19 +220,19 @@
                                     aria-pressed="@(schedule.IsEnabled ? "true" : "false")"
                                     aria-label="@($"{ScheduleText.ShortDays(schedule.Days)} {ScheduleText.Times(schedule.OnTime, schedule.OffTime)}")"
                                     disabled="@_busy"
-                                    @onclick="() => SetEnabledAsync(schedule)">@(schedule.IsEnabled ? "Active" : "Paused")</button>
+                                    @onclick="() => SetEnabledAsync(schedule)">@Common[schedule.IsEnabled ? "Common.Schedule.Active" : "Common.Schedule.Paused"]</button>
                         </div>
                     }
                 </section>
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>Events</h2>
-                        <a href="events">All events</a>
+                        <h2>@Common["Common.Screen.Events"]</h2>
+                        <a href="events">@Common["Common.AllEvents"]</a>
                     </div>
                     @if (_events.Count == 0)
                     {
-                        <p class="hint">Nothing has happened to this group yet.</p>
+                        <p class="hint">@Texts["Groups.NoEvents"]</p>
                     }
                     else
                     {
@@ -250,19 +253,19 @@
                 </section>
 
                 <section class="safety">
-                    <p>The app's interlock only works while the app runs. Where safety depends on it, e.g. heat without the fan, it must also be wired in the installation.</p>
+                    <p>@Texts["Groups.Safety"]</p>
                 </section>
 
                 @if (CanChangeMembers)
                 {
-                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Delete the group</button>
+                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">@Texts["Groups.Delete"]</button>
                 }
             </main>
 
             <div class="save">
                 @if (_changedElsewhere)
                 {
-                    <p class="warning" role="status">Someone else changed the group while you had this page open. Saving overwrites their change.</p>
+                    <p class="warning" role="status">@Texts["Groups.ChangedElsewhere"]</p>
                 }
                 @if (_saveError is not null)
                 {
@@ -276,8 +279,8 @@
         {
             <div class="backdrop">
                 <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
-                    <h2 id="confirm-title">Delete the group?</h2>
-                    <p>Its relays become ordinary relays again, switched one by one. The group's schedules are deleted too.</p>
+                    <h2 id="confirm-title">@Texts["Groups.Delete.Title"]</h2>
+                    <p>@Texts["Groups.Delete.Text"]</p>
                     <div class="dialog-buttons">
                         <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Common["Common.Cancel"]</button>
                         <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">@Common["Common.Delete"]</button>
@@ -310,7 +313,7 @@
     private SignedInUser? _user;
     private bool _loaded;
     private bool _busy;
-    private const string SomethingWentWrong = "Something went wrong. Try again.";
+    private string SomethingWentWrong => Common["Common.SomethingWrongTryAgain"];
 
     private List<EditMember> _removed = [];
     private ITimer? _tick;
@@ -444,7 +447,7 @@
 
     private string NoteFor(int index, bool on, EditMember? blockedBy)
     {
-        return GroupStatusText.MemberNote(_group!, State, index, on, blockedBy?.RoleName, Clock.UtcNow);
+        return GroupStatus.MemberNote(_group!, State, index, on, blockedBy?.RoleName, Clock.UtcNow);
     }
 
     private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)
@@ -510,14 +513,14 @@
 
         if (email == _user?.Email)
         {
-            return "you";
+            return RelayTexts["Relays.By.You"];
         }
 
         return email switch
         {
-            EventActors.Schedule => "schedule",
-            EventActors.AutoOff => "auto-off",
-            EventActors.External => "outside the app",
+            EventActors.Schedule => RelayTexts["Relays.By.Schedule"],
+            EventActors.AutoOff => RelayTexts["Relays.By.AutoOff"],
+            EventActors.External => RelayTexts["Relays.By.Outside"],
             _ => _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email),
         };
     }
@@ -548,7 +551,7 @@
         }
         catch (BoardNotConnectedException)
         {
-            _toggleError = "The board isn't responding. Try again.";
+            _toggleError = Common["Common.BoardNotResponding"];
         }
         catch (Exception ex)
         {
@@ -584,7 +587,7 @@
         }
         catch (BoardNotConnectedException)
         {
-            _memberError = (relayId, "The board isn't responding. Try again.");
+            _memberError = (relayId, Common["Common.BoardNotResponding"]);
         }
         catch (Exception ex)
         {

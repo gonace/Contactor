@@ -1,3 +1,4 @@
+using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Resources;
 using Microsoft.Extensions.Localization;
@@ -18,6 +19,10 @@ internal static class TestTexts
     public static RelayStatusText RelayStatus { get; } = new(For<RelaysTexts>());
 
     public static BoardsText Boards { get; } = new(For<RelaysTexts>());
+
+    public static GroupStatusText GroupStatus { get; } = new(For<GroupsTexts>(), RelayStatus);
+
+    public static GroupPlanText GroupPlan { get; } = new(For<GroupsTexts>());
 
     public static IStringLocalizer<T> For<T>() => new StringLocalizer<T>(Factory);
 }

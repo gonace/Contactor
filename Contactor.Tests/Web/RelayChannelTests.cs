@@ -388,7 +388,7 @@ public sealed partial class RelayChannelTests
         foreach (var view in new[] { group!, listed })
         {
             Assert.Equal([(rig.RelayId(1), 1), (rig.RelayId(2), 2)], view.Members.Select(m => (m.RelayId, m.Channel)));
-            Assert.Equal("RELAY 1 → 2", view.Chain);
+            Assert.Equal("RELAY 1 → 2", TestTexts.GroupStatus.Chain(view));
             Assert.Equal(ChannelMask.Of([1, 2]), view.Mask);
             Assert.Null(view.MissingRelay(rig.Simulator.Model.Capabilities.RelayCount));
             Assert.True(view.IsOn(Board(rig).State));
@@ -622,7 +622,7 @@ public sealed partial class RelayChannelTests
             [new GroupMemberView(108, 1, 1, "Fan", 3, 300), new GroupMemberView(107, 2, 2, "Heat", 3, 0), new GroupMemberView(42, 9, 3, "Mist", 3, 0)],
             new GroupRuntime { GroupId = 1 });
 
-        Assert.Equal("RELAY 1 → 2 → 9", group.Chain);
+        Assert.Equal("RELAY 1 → 2 → 9", TestTexts.GroupStatus.Chain(group));
         Assert.Equal(ChannelMask.Of([1, 2, 9]), group.Mask);
         Assert.Equal(9, group.MissingRelay(relayCount: 8));
         Assert.Null(group.MissingRelay(relayCount: 9));

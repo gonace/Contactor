@@ -13,8 +13,10 @@ services:
     image: ${CONTACTOR_IMAGE:-ghcr.io/gonace/contactor:latest}
     container_name: contactor
     restart: unless-stopped
+    # IPv4 only: on IPv6, Docker passes a visitor on from a private address of its own, so the app couldn't tell
+    # someone on the internet from someone on this network.
     ports:
-      - "8080:8080"
+      - "0.0.0.0:8080:8080"
     # Everything the app keeps: the database, its backups, the event log, the app's keys and Tailscale's state. Next to
     # this file, so it stays when the container is removed. The app runs as the image's user (1654), who must own it:
     # install.sh makes it so; by hand, mkdir data && sudo chown 1654:1654 data before the first start.
