@@ -2,6 +2,8 @@
 # Contactor's update helper: updates Contactor when someone presses "Update now" in its Settings, and goes back to the
 # version before when the new one doesn't come up. install.sh puts it in /usr/local/sbin/contactor-updater, with
 # contactor-updater.service (which runs it) and contactor-updater.path (which starts the service when the app asks).
+# After a healthy update it brings itself and those units up to date from the copies in the new image (/app/updater),
+# so a fix to the helper or a new signing key reaches the machine without the install command.
 # It runs as root, because it uses Docker; the app runs in its container and never gets the Docker socket.
 #
 # The app and this helper talk only through files in Contactor's data folder (/opt/contactor/data, the app's /data):
@@ -22,19 +24,24 @@
 # One update at a time: systemd runs one copy of the service, and a lock keeps a second run out.
 #
 # For testing only (scripts/updater-test.sh): CONTACTOR_DIR, CONTACTOR_REPOSITORY, CONTACTOR_COSIGN,
-# CONTACTOR_COSIGN_KEYS (public keys, separated by empty lines), CONTACTOR_UPDATER_STATE, CONTACTOR_HEALTH_SECONDS,
+# CONTACTOR_COSIGN_KEYS (public keys, separated by empty lines), CONTACTOR_UPDATER_STATE, CONTACTOR_UPDATER_PATH (where
+# this helper is installed), CONTACTOR_UNITS (where its units are), CONTACTOR_HEALTH_SECONDS,
 # CONTACTOR_BOOT_ID (this start's id), CONTACTOR_STUCK_SECONDS, CONTACTOR_WAIT_SECONDS and CONTACTOR_TEST_STOP_AT (stops the run dead at a
 # step, as a power cut would). They come from the service's own
 # environment, which only root can set, never from the app.
 set -euo pipefail
 umask 022
 
-readonly HELPER_VERSION=1
+readonly HELPER_VERSION=2
 readonly DIR=${CONTACTOR_DIR:-/opt/contactor}
 readonly DATA=$DIR/data
 readonly UPDATES=$DATA/updates
 readonly STATE=${CONTACTOR_UPDATER_STATE:-/var/lib/contactor-updater}
 readonly JOURNAL=$STATE/journal
+# Where install.sh puts this helper and its two systemd units, and where the image keeps its copies of them (Dockerfile).
+readonly SELF=${CONTACTOR_UPDATER_PATH:-/usr/local/sbin/contactor-updater}
+readonly UNITS=${CONTACTOR_UNITS:-/etc/systemd/system}
+readonly IMAGE_UPDATER=/app/updater
 readonly REPOSITORY=${CONTACTOR_REPOSITORY:-ghcr.io/gonace/contactor}
 # The image's user, who owns the data folder.
 readonly APP_UID=1654
@@ -740,6 +747,7 @@ finish_check() {
         remove_old_images "$(docker image inspect -f '{{.Id}}' "$NEW")" "$(docker image inspect -f '{{.Id}}' "$PREVIOUS" 2> /dev/null || true)"
         journal_clear
         status "done"
+        update_helper "$NEW"
         return 0
     fi
     go_back health
@@ -782,6 +790,121 @@ go_back() {
     fi
     journal_clear
     status went-back "reason=$reason" "back=$(now)"
+}
+
+# --- The helper itself --------------------------------------------------------------------------------------------
+
+# Whether $1 is a helper that can run: a regular file, not empty, that says its version and that bash can read.
+good_helper() {
+    [[ -f "$1" && ! -L "$1" && -s "$1" ]] && grep -Eq '^readonly HELPER_VERSION=[0-9]{1,9}$' "$1" && bash -n "$1" 2> /dev/null
+}
+
+# Whether $1 is one of the helper's systemd units: a regular file, not empty, with a [Unit] section that names it.
+good_unit() {
+    [[ -f "$1" && ! -L "$1" && -s "$1" ]] && grep -qx '\[Unit\]' "$1" && grep -q 'contactor-updater' "$1"
+}
+
+# The version line of helper $1, e.g. 2.
+helper_version_of() {
+    sed -n 's/^readonly HELPER_VERSION=\([0-9]*\)$/\1/p' "$1" 2> /dev/null | head -n 1
+}
+
+# Puts $1 in place of $2 with mode $3, if $4 (good_helper or good_unit) passes the copy: in one step (a new file in the
+# same folder, then mv), so whatever runs $2 now keeps its own copy, and a cut-off write never takes its place. The
+# copy before stays as $2.previous. Returns 0 when it replaced it, 1 when they are the same, 2 when it couldn't.
+replace_file() {
+    local source=$1 target=$2 mode=$3 check=$4 new
+    if cmp -s -- "$source" "$target"; then
+        return 1
+    fi
+    if ! new=$(mktemp "$target.new.XXXXXX" 2> /dev/null); then
+        log "Couldn't write next to $target."
+        return 2
+    fi
+    if ! { cat -- "$source" > "$new" && chmod "$mode" "$new" && "$check" "$new"; }; then
+        rm -f -- "$new"
+        log "The new $(basename "$target") didn't pass the check once written (is the disk full?); the old one stays."
+        return 2
+    fi
+    sync "$new" 2> /dev/null || true
+    if [[ -f "$target" ]]; then
+        ln -f -- "$target" "$target.previous" 2> /dev/null || cp -p -- "$target" "$target.previous" 2> /dev/null || true
+    fi
+    if ! mv -f -- "$new" "$target"; then
+        rm -f -- "$new"
+        log "Couldn't put the new $(basename "$target") in place; the old one stays."
+        return 2
+    fi
+    sync "$(dirname "$target")" 2> /dev/null || true
+    return 0
+}
+
+# Brings this helper and its units up to date from image $1 (by digest), which was checked with cosign and is now
+# running healthy. The files are read from a container made from that image and never started: not from the running
+# app (whose files the app could change), not from the data folder, and nothing is downloaded. The new helper runs from
+# the next run on; this run keeps reading its own copy, which mv leaves alone. A new helper that fails its check
+# changes nothing: the update counts as done either way. An image without the copies (releases before them) changes
+# nothing either.
+update_helper() {
+    local image=$1 cid file result units_changed="" from to
+    [[ -n "$image" ]] && is_reference "$image" || return 0
+    # New copies an earlier run was writing when the power went off.
+    rm -f -- "$SELF".new.* "$UNITS"/contactor-updater.service.new.* "$UNITS"/contactor-updater.path.new.*
+    rm -rf -- "$TMP/updater"
+    mkdir -m 700 "$TMP/updater" || return 0
+    if ! cid=$(timeout 120 docker create --pull never --network none "$image" 2> /dev/null) || [[ -z "$cid" ]]; then
+        log "Couldn't look for a new update helper in ${TO:-the new version}; this one stays."
+        return 0
+    fi
+    for file in contactor-updater.sh contactor-updater.service contactor-updater.path; do
+        timeout 120 docker cp "$cid:$IMAGE_UPDATER/$file" "$TMP/updater/$file" > /dev/null 2>&1 || true
+    done
+    docker rm -v "$cid" > /dev/null 2>&1 || true
+
+    file=$TMP/updater/contactor-updater.sh
+    if [[ ! -e "$file" && ! -L "$file" ]]; then
+        log "${TO:-The new version} brings no update helper; this one stays."
+        return 0
+    fi
+    if ! good_helper "$file"; then
+        log "The update helper in ${TO:-the new version} didn't pass the check; this one (version $HELPER_VERSION) stays."
+        return 0
+    fi
+    to=$(helper_version_of "$file")
+    from=$(helper_version_of "$SELF")
+    if [[ -n "$from" ]] && ((10#$to < 10#$from)); then
+        log "The update helper in ${TO:-the new version} (version $to) is older than this one ($from); this one stays."
+        return 0
+    fi
+    result=0
+    replace_file "$file" "$SELF" 755 good_helper || result=$?
+    case "$result" in
+        0)
+            from=$(helper_version_of "$SELF.previous")
+            log "The update helper is brought up to date (version ${from:-?} to ${to:-?}); the next run uses it."
+            ;;
+        1) log "The update helper is up to date (version ${to:-?})." ;;
+        *) return 0 ;;
+    esac
+    for file in contactor-updater.service contactor-updater.path; do
+        if [[ ! -e "$TMP/updater/$file" && ! -L "$TMP/updater/$file" ]]; then
+            continue
+        fi
+        if ! good_unit "$TMP/updater/$file"; then
+            log "$file in ${TO:-the new version} didn't pass the check; the old one stays."
+            continue
+        fi
+        result=0
+        replace_file "$TMP/updater/$file" "$UNITS/$file" 644 good_unit || result=$?
+        if [[ "$result" -eq 0 ]]; then
+            log "$file is brought up to date."
+            units_changed=1
+        fi
+    done
+    if [[ -n "$units_changed" && -d /run/systemd/system ]] && command -v systemctl > /dev/null 2>&1; then
+        systemctl daemon-reload > /dev/null 2>&1 || log "systemctl daemon-reload failed; the new units count from the next start."
+    fi
+    return 0
 }
 
 # An update the last run left unfinished, e.g. after a power cut.

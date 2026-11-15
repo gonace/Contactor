@@ -36,6 +36,9 @@ COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 # Static Go programs; the app runs them only while Tailscale is the way in, with their state in /data/tailscale.
 COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscale /usr/local/bin/
 COPY --from=build /app /app
+# The update helper and its systemd units, as install.sh puts them on the machine: after a healthy update, the helper
+# brings itself up to date from the copies in the image it just checked (install/contactor-updater.sh). Owned by root.
+COPY install/contactor-updater.sh install/contactor-updater.service install/contactor-updater.path /app/updater/
 # Our licence and the others' (cloudflared's Apache 2.0 and Tailscale's BSD licence ask for their texts to go with them).
 COPY LICENSE THIRD-PARTY-NOTICES.md /licenses/
 COPY licenses/ /licenses/

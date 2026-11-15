@@ -16,6 +16,8 @@ StateDirectory=contactor-updater
 StateDirectoryMode=0700
 PrivateTmp=yes
 ProtectSystem=full
+# After a healthy update it brings itself (/usr/local/sbin/contactor-updater) and these units up to date.
+ReadWritePaths=/usr/local/sbin /etc/systemd/system
 NoNewPrivileges=yes
 
 [Install]

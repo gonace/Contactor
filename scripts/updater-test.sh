@@ -9,7 +9,9 @@
 #   (the next run finishes the update or goes back, after a new start of the machine); a cancel during the download;
 #   requests that must do nothing (left behind, unknown, a symlink, from before the machine started, already up to
 #   date); files in the app's folder that must not hang the helper (a FIFO, a link to /dev/urandom, a folder it can't
-#   remove); and install.sh refusing to run while the helper runs.
+#   remove); install.sh refusing to run while the helper runs; and the helper bringing itself up to date from the new
+#   image (a newer helper is used from the next run on; one that fails its check, the same one, an older one or none
+#   changes nothing; nothing in the data folder or the running container changes what is installed).
 #
 #   sudo bash scripts/updater-test.sh
 #
@@ -31,6 +33,9 @@ chmod 755 "$WORK"
 readonly WORK
 readonly DIR=$WORK/opt/contactor
 readonly STATE=$WORK/state
+# The helper and its units as install.sh puts them on the machine: the helper brings these up to date itself.
+readonly INSTALLED=$WORK/sbin/contactor-updater
+readonly UNITS=$WORK/units
 FAILED=0
 # The machine's start, as the helper sees it: a power cut starts it again.
 BOOT=test-start-1
@@ -61,16 +66,42 @@ request() { printf '%s\n' "$1" | as_app sh -c 'cat > "$1"' sh "$DIR/data/updates
 helper() {
     env CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" \
         CONTACTOR_COSIGN_KEYS="$(cat "$WORK/keys/cosign.pub")" CONTACTOR_UPDATER_STATE="$STATE" \
+        CONTACTOR_UPDATER_PATH="$INSTALLED" CONTACTOR_UNITS="$UNITS" \
         CONTACTOR_HEALTH_SECONDS="${HEALTH_SECONDS:-60}" CONTACTOR_BOOT_ID="$BOOT" CONTACTOR_STUCK_SECONDS=1 \
-        "$@" bash "$HELPER" >> "$WORK/helper.log" 2>&1
+        "$@" bash "$INSTALLED" >> "$WORK/helper.log" 2>&1
+}
+
+# The copies of the helper and its units a stand-in image brings in /app/updater, as the Dockerfile puts them there:
+# "same" (this one), "newer" and "newer2" (a higher HELPER_VERSION, units with a line more), "broken" (a higher
+# version that bash can't read), "older" (a lower version) and "none" (no copies, as releases before them).
+variants() {
+    local name version
+    for name in same newer newer2 broken older; do
+        mkdir -p "$WORK/variants/$name"
+        cp "$ROOT/install/contactor-updater.sh" "$ROOT/install/contactor-updater.service" "$ROOT/install/contactor-updater.path" \
+            "$WORK/variants/$name/"
+    done
+    for name in newer:901 newer2:903 broken:902 older:0; do
+        version=${name#*:}
+        name=${name%%:*}
+        sed -i "s/^readonly HELPER_VERSION=[0-9]*$/readonly HELPER_VERSION=$version/" "$WORK/variants/$name/contactor-updater.sh"
+        printf '# (test) the %s units\n' "$name" >> "$WORK/variants/$name/contactor-updater.service"
+        printf '# (test) the %s units\n' "$name" >> "$WORK/variants/$name/contactor-updater.path"
+    done
+    printf 'if [[ then\n' >> "$WORK/variants/broken/contactor-updater.sh"
 }
 
 # A stand-in of the app's image: version $1, "good" or "bad" (never healthy), "big" for a good one that takes a while
-# to download (600 MB that don't compress).
+# to download (600 MB that don't compress); with the helper copies $4 (see variants).
 build() {
-    local version=$1 mode=$2 tag=$3
-    mkdir -p "$WORK/image"
-    cat > "$WORK/image/dotnet" <<'EOF'
+    local version=$1 mode=$2 tag=$3 copies=${4:-none}
+    rm -rf "$WORK/image"
+    mkdir -p "$WORK/image/root/usr/local/bin"
+    if [[ "$copies" != none ]]; then
+        mkdir -p "$WORK/image/root/app/updater"
+        cp "$WORK/variants/$copies/"* "$WORK/image/root/app/updater/"
+    fi
+    cat > "$WORK/image/root/usr/local/bin/dotnet" <<'EOF'
 #!/bin/sh
 # Stands in for "dotnet /app/Contactor.Web.dll [command]".
 case "${2:-}" in
@@ -93,22 +124,22 @@ touch /tmp/started
 trap 'exit 0' TERM
 while :; do sleep 1; done
 EOF
-    chmod 755 "$WORK/image/dotnet"
+    chmod 755 "$WORK/image/root/usr/local/bin/dotnet"
     cat > "$WORK/image/Dockerfile" <<'EOF'
 FROM busybox:1.36
 ARG VERSION
 ARG MODE
 LABEL org.opencontainers.image.version=$VERSION
 ENV VERSION=$VERSION MODE=$MODE
-COPY dotnet big /usr/local/bin/
+COPY root/ /
 USER 1654:1654
 ENTRYPOINT ["dotnet", "/app/Contactor.Web.dll"]
 EOF
     if [[ "$mode" == big ]]; then
-        head -c 600M /dev/urandom > "$WORK/image/big"
+        head -c 600M /dev/urandom > "$WORK/image/root/usr/local/bin/big"
         mode=good
     else
-        : > "$WORK/image/big"
+        : > "$WORK/image/root/usr/local/bin/big"
     fi
     docker build --quiet --build-arg VERSION="$version" --build-arg MODE="$mode" -t "$REPOSITORY:$tag" "$WORK/image" > /dev/null
     docker push --quiet "$REPOSITORY:$tag" > /dev/null
@@ -147,10 +178,18 @@ say "Setting up: a registry, a key, the stand-in images and an installation in $
 docker run -d --name "$REGISTRY_CONTAINER" -p 127.0.0.1:5000:5000 registry:2 > /dev/null
 mkdir -p "$WORK/keys"
 docker run --rm --user 0 -v "$WORK/keys:/keys" -w /keys -e COSIGN_PASSWORD= "$COSIGN" generate-key-pair > /dev/null 2>&1
-for version in 2026.11.14:good:v1 2026.11.20:good:v2 2026.11.21:bad:v3 2026.11.22:good:v4 2026.11.23:good:v5 2026.11.24:bad:v6 2026.11.25:big:v7 2026.11.26:good:v8 2026.11.27:good:v9; do
-    IFS=: read -r number mode tag <<< "$version"
-    build "$number" "$mode" "$tag"
+variants
+for version in 2026.11.14:good:v1 2026.11.20:good:v2 2026.11.21:bad:v3 2026.11.22:good:v4 2026.11.23:good:v5 \
+    2026.11.24:bad:v6 2026.11.25:big:v7 2026.11.26:good:v8 2026.11.27:good:v9 2026.11.28:good:v10:newer \
+    2026.11.29:good:v11:broken 2026.11.30:good:v12:newer 2026.12.1:good:v13 2026.12.2:good:v14:older \
+    2026.12.3:good:v15:newer2; do
+    IFS=: read -r number mode tag copies <<< "$version"
+    build "$number" "$mode" "$tag" "$copies"
 done
+mkdir -p "$WORK/sbin" "$UNITS"
+cp "$HELPER" "$INSTALLED"
+cp "$ROOT/install/contactor-updater.service" "$ROOT/install/contactor-updater.path" "$UNITS/"
+chmod 755 "$INSTALLED"
 V1=$(release v1)
 mkdir -p "$DIR/data"
 cp "$ROOT/install/compose.yml" "$DIR/compose.yml"
@@ -165,7 +204,8 @@ for _ in $(seq 1 30); do
 done
 # The first run makes the updates folder and says the helper is there.
 helper
-check "the helper says it is installed" grep -qx 'version=1' "$DIR/data/updates/helper"
+HELPER_VERSION=$(sed -n 's/^readonly HELPER_VERSION=//p' "$HELPER")
+check "the helper says it is installed" grep -qx "version=$HELPER_VERSION" "$DIR/data/updates/helper"
 
 say "A request when there is nothing newer"
 request update
@@ -328,11 +368,11 @@ check "the first run after a start takes no request" test "$(status_of changed)"
 say "Files in the app's folder that must not hang the helper"
 as_app mkfifo "$DIR/data/updates/request"
 check "a FIFO as the request: the helper ends, and the FIFO is gone" \
-    bash -c "timeout 60 env $(printf '%q ' CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" CONTACTOR_COSIGN_KEYS="$(cat "$WORK/keys/cosign.pub")" CONTACTOR_UPDATER_STATE="$STATE" CONTACTOR_BOOT_ID="$BOOT" CONTACTOR_STUCK_SECONDS=1) bash $HELPER >> $WORK/helper.log 2>&1 && test ! -e $DIR/data/updates/request"
+    bash -c "timeout 60 env $(printf '%q ' CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" CONTACTOR_COSIGN_KEYS="$(cat "$WORK/keys/cosign.pub")" CONTACTOR_UPDATER_STATE="$STATE" CONTACTOR_BOOT_ID="$BOOT" CONTACTOR_STUCK_SECONDS=1) bash $INSTALLED >> $WORK/helper.log 2>&1 && test ! -e $DIR/data/updates/request"
 as_app rm -f "$DIR/data/updates/helper"
 as_app ln -s /dev/urandom "$DIR/data/updates/helper"
 check "the helper file a link to /dev/urandom: the helper ends" \
-    bash -c "timeout 60 env $(printf '%q ' CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" CONTACTOR_COSIGN_KEYS="$(cat "$WORK/keys/cosign.pub")" CONTACTOR_UPDATER_STATE="$STATE" CONTACTOR_BOOT_ID="$BOOT" CONTACTOR_STUCK_SECONDS=1) bash $HELPER >> $WORK/helper.log 2>&1"
+    bash -c "timeout 60 env $(printf '%q ' CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" CONTACTOR_COSIGN_KEYS="$(cat "$WORK/keys/cosign.pub")" CONTACTOR_UPDATER_STATE="$STATE" CONTACTOR_BOOT_ID="$BOOT" CONTACTOR_STUCK_SECONDS=1) bash $INSTALLED >> $WORK/helper.log 2>&1"
 check "and it is a plain file again" test -f "$DIR/data/updates/helper" -a ! -L "$DIR/data/updates/helper"
 as_app mkdir -p "$DIR/data/updates/request/inside"
 as_app touch "$DIR/data/updates/request/inside/file"
@@ -373,6 +413,76 @@ changed=$(status_of changed)
 request update
 helper
 check "the next request is taken" test "$(status_of changed)" != "$changed"
+
+say "The helper brings itself up to date: a newer helper in 2026.11.28"
+release v10 > /dev/null
+request update
+helper
+check "it says done" test "$(status_of state)-$(status_of to)" = done-2026.11.28
+check "the run that brought it was the old helper" test "$(status_of helper)" = "$HELPER_VERSION"
+check "the new helper is in place" cmp -s "$INSTALLED" "$WORK/variants/newer/contactor-updater.sh"
+check "the old one is kept beside it" cmp -s "$INSTALLED.previous" "$HELPER"
+check "the service unit is the new one" cmp -s "$UNITS/contactor-updater.service" "$WORK/variants/newer/contactor-updater.service"
+check "the path unit is the new one" cmp -s "$UNITS/contactor-updater.path" "$WORK/variants/newer/contactor-updater.path"
+check "the old units are kept beside them" cmp -s "$UNITS/contactor-updater.service.previous" "$ROOT/install/contactor-updater.service"
+check "no half-written file is left" test -z "$(find "$WORK/sbin" "$UNITS" -name '*.new.*')"
+check "the new helper stays executable" test -x "$INSTALLED"
+log_file=$(find "$DIR/data/updates/logs" -name "update-*.log" | sort | tail -n 1)
+check "the log says so" grep -q "The update helper is brought up to date (version $HELPER_VERSION to 901)" "$log_file"
+helper
+check "the next run is the new helper" grep -qx 'version=901' "$DIR/data/updates/helper"
+
+installed_as() { stat -c '%i %Y' "$INSTALLED" "$INSTALLED.previous" "$UNITS/contactor-updater.service" "$UNITS/contactor-updater.path"; }
+
+say "A newer helper that fails its check (2026.11.29): the one in place stays, and the update is done"
+before=$(installed_as)
+release v11 > /dev/null
+request update
+helper
+check "it says done" test "$(status_of state)-$(status_of to)" = done-2026.11.29
+check "nothing is replaced" test "$(installed_as)" = "$before"
+log_file=$(find "$DIR/data/updates/logs" -name "update-*.log" | sort | tail -n 1)
+check "the log says why" grep -q "didn't pass the check; this one (version 901) stays" "$log_file"
+
+say "The same helper (2026.11.30): nothing is replaced"
+release v12 > /dev/null
+request update
+helper
+check "it says done" test "$(status_of state)-$(status_of to)" = done-2026.11.30
+check "nothing is replaced" test "$(installed_as)" = "$before"
+
+say "No helper in the image (2026.12.1, as releases before it): nothing is replaced"
+release v13 > /dev/null
+request update
+helper
+check "it says done" test "$(status_of state)-$(status_of to)" = done-2026.12.1
+check "nothing is replaced" test "$(installed_as)" = "$before"
+
+say "An older helper (2026.12.2): nothing is replaced"
+release v14 > /dev/null
+request update
+helper
+check "it says done" test "$(status_of state)-$(status_of to)" = done-2026.12.2
+check "nothing is replaced" test "$(installed_as)" = "$before"
+
+say "Nothing in the data folder or the running app changes what is installed (2026.12.3, after a power cut)"
+V15=$(release v15)
+request update
+helper CONTACTOR_TEST_STOP_AT=check || true
+check "2026.12.3 runs" test "$(running_image)" = "$(image_id "$V15")"
+# What the app, or anyone in its container, could put there.
+docker exec -u 0 contactor sh -c 'echo "echo evil" > /app/updater/contactor-updater.sh'
+for path in updates/contactor-updater.sh updates/updater/contactor-updater.sh app/updater/contactor-updater.sh; do
+    as_app mkdir -p "$(dirname "$DIR/data/$path")"
+    # shellcheck disable=SC2016 # expanded by the inner shell
+    printf '#!/usr/bin/env bash\nreadonly HELPER_VERSION=999\necho evil\n' | as_app sh -c 'cat > "$1"' sh "$DIR/data/$path"
+done
+BOOT=test-start-6
+helper
+check "after the next start it says done" test "$(status_of state)-$(status_of to)" = done-2026.12.3
+check "the installed helper is the image's own copy" cmp -s "$INSTALLED" "$WORK/variants/newer2/contactor-updater.sh"
+check "the units are the image's own copies" cmp -s "$UNITS/contactor-updater.service" "$WORK/variants/newer2/contactor-updater.service"
+check "no container it made to read the image is left" test "$(docker ps -aq --filter "ancestor=$(image_id "$V15")" | wc -l)" = 1
 
 say "Secrets across the 2000-character cut"
 stripped=$(printf '%s Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after\n' "$(head -c 1990 /dev/zero | tr '\0' a)" \
