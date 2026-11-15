@@ -21,8 +21,10 @@ There is no sign-in in front: the demo is public.
 
 - A virtual machine on Proxmox (amd64): Debian 13 or Ubuntu 24.04, 2 CPU cores, 4 GB of memory and 20 GB of disk. The
   demo takes about 250 MB per visitor, and at most 10 visitors at once. Its container may use 3 GB in all.
-- Docker Engine 28 or later with the Compose plugin (`docker compose version`). Docker 28 is the first that keeps the
-  machine off the demo's network.
+- Docker Engine 28 or later with the Compose plugin, installed from Docker's own apt repository
+  (https://docs.docker.com/engine/install/debian/ or .../ubuntu/), not the distribution's `docker.io` package, which is
+  older (Debian 13 has 26.1). Docker 28 is the first that keeps the machine off the demo's network: an older one would
+  let a visitor reach the machine's own services, such as SSH. `upgrade.sh` refuses to start the demo on one.
 - A domain on Cloudflare, and a Cloudflare Zero Trust account (the free plan is enough).
 - A classic GitHub token with only `read:packages`: the image is private, as the app's is.
 
@@ -40,7 +42,7 @@ There is no sign-in in front: the demo is public.
 On your computer, from the repository:
 
 ```sh
-scp deploy/demo/compose.yml <host>:
+scp deploy/demo/compose.yml deploy/demo/upgrade.sh <host>:
 ```
 
 On the machine:
@@ -48,6 +50,7 @@ On the machine:
 ```sh
 sudo mkdir -p /opt/contactor-demo
 sudo install -m 644 compose.yml /opt/contactor-demo/compose.yml
+sudo install -m 755 upgrade.sh /opt/contactor-demo/upgrade.sh
 sudo bash -c 'umask 077; read -rsp "Tunnel token: " t; echo; printf "CLOUDFLARE_TUNNEL_TOKEN=%s\n" "$t" > /opt/contactor-demo/.env'
 sudo docker login ghcr.io -u token
 ```
@@ -58,17 +61,22 @@ read. Never put it in the repository.
 Start it:
 
 ```sh
-cd /opt/contactor-demo
-sudo docker compose up -d
+sudo /opt/contactor-demo/upgrade.sh
 ```
 
-The tunnel starts once the demo is healthy, after a few seconds.
+It refuses a Docker older than 28, pulls the image, checks its signature with cosign by digest (the public keys in
+`deploy/cosign/`, as the Raspberry Pi does) and starts exactly that image. Then it checks that the machine has no
+address on the demo's network, and stops the demo if it has. Always start the demo with it, not with
+`docker compose up`. The tunnel starts once the demo is healthy, after a few seconds.
 
 **Check it:**
 
-1. `sudo docker compose ps`: both containers say `healthy`.
-2. Open your hostname. The page shows the simulator and the app, with "Skip setup: start from a template".
-3. Choose **Workshop**. The app shows the relays, and switching one shows in the simulator too.
+1. `cd /opt/contactor-demo && sudo docker compose ps`: both containers say `healthy`.
+2. `ip -br addr | grep 172.30.60.` prints nothing: the machine has no address on the demo's network (with another
+   subnet, grep for that). If it prints a line, stop the demo at once (`sudo docker compose down`): a visitor could
+   reach the machine. Upgrade Docker as in What you need, and start it again.
+3. Open your hostname. The page shows the simulator and the app, with "Skip setup: start from a template".
+4. Choose **Workshop**. The app shows the relays, and switching one shows in the simulator too.
 
 Logs: `sudo docker compose logs -f demo` and `sudo docker compose logs -f cloudflared`.
 
@@ -77,22 +85,20 @@ Logs: `sudo docker compose logs -f demo` and `sudo docker compose logs -f cloudf
 Each release publishes the demo's image with the app's, with the same version.
 
 ```sh
-cd /opt/contactor-demo
-sudo docker compose pull
-sudo docker compose up -d
-sudo docker image prune -f
+sudo /opt/contactor-demo/upgrade.sh
 ```
 
-The visitors' copies end when the demo starts again. When a release changes `deploy/demo/compose.yml`, copy it over
-again first, as in Install.
+It only starts an image signed with our key; on an unsigned or wrongly signed one, the demo keeps running the image it
+has. The visitors' copies end when the demo starts again. When a release changes `deploy/demo/compose.yml` or
+`deploy/demo/upgrade.sh`, copy them over again first, as in Install.
 
 To stay on one version, e.g. after a bad release, add `DEMO_IMAGE=ghcr.io/gonace/contactor-demo:2026.11.15` to
-`/opt/contactor-demo/.env` and run `sudo docker compose up -d`. Remove the line to follow the newest again.
+`/opt/contactor-demo/.env` and run `upgrade.sh`. Remove the line to follow the newest again.
 
 ## Settings
 
 The demo's limits are settings, under `environment:` of the `demo` service in `compose.yml`, e.g.
-`Demo__MaxVisitors: 5`.
+`Demo__MaxVisitors: 5`. Run `upgrade.sh` after a change.
 
 | Setting | Default | What it is |
 |---|---|---|
@@ -105,6 +111,7 @@ The demo's limits are settings, under `environment:` of the `demo` service in `c
 
 With more visitors, give the container more memory too (`mem_limit`, about 250 MB per visitor and 500 MB more).
 
-**If the network clashes:** when `docker compose up` says that the pool overlaps with another, the subnet
+**If the network clashes:** when `upgrade.sh` says that the pool overlaps with another, the subnet
 `172.30.60.0/28` is in use on the machine. Pick another, e.g. `172.30.61.0/28`, and change the subnet, the
-`ip_range`, cloudflared's `ipv4_address` and `Demo__TunnelAddress` in `compose.yml` to match.
+`ip_range`, cloudflared's `ipv4_address` and `Demo__TunnelAddress` in `compose.yml` to match, and grep for the new
+subnet in Check it.

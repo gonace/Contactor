@@ -1,7 +1,7 @@
 # The public demo (docs/DEMO.md): Contactor.Demo, with a copy of the app and the simulator for each visitor, behind a
-# Cloudflare tunnel. Copy this file to /opt/contactor-demo, next to /opt/contactor-demo/.env (readable by root only),
-# which holds the tunnel's token. No port is published: cloudflared connects out to Cloudflare and forwards the demo's
-# hostname to http://demo:8080.
+# Cloudflare tunnel. Copy this file and upgrade.sh to /opt/contactor-demo, next to /opt/contactor-demo/.env (readable
+# by root only), which holds the tunnel's token, and start it with upgrade.sh. No port is published: cloudflared
+# connects out to Cloudflare and forwards the demo's hostname to http://demo:8080.
 #
 #   demo ──(network "demo": internal, no route out, not even to this machine)── cloudflared ──(network "outside")── Cloudflare
 #
@@ -41,8 +41,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    # Time for the demo to stop every copy.
-    stop_grace_period: 30s
+    # Time for the demo to stop every copy: more than .NET's own 30 s to shut down, so Docker never kills it halfway.
+    stop_grace_period: 40s
     logging: *logging
 
   cloudflared:
@@ -78,9 +78,11 @@ services:
 
 networks:
   # The demo's only network. internal: no route out. gateway_mode_ipv4 isolated (Docker 28 or later): this machine
-  # has no address on it either, so the demo can't reach its services. The demo takes an address from ip_range, so
-  # cloudflared's is always free. If the subnet clashes with one of this machine's networks, pick another and change
-  # cloudflared's address in both places above.
+  # has no address on it either, so the demo can't reach its services. An older Docker ignores the setting and keeps an
+  # address here, so start the demo with upgrade.sh, which refuses an older Docker and stops the demo when this machine
+  # has an address on the network all the same. The demo takes an address from ip_range, so cloudflared's is always
+  # free. If the subnet clashes with one of this machine's networks, pick another and change cloudflared's address in
+  # both places above.
   demo:
     internal: true
     driver_opts:

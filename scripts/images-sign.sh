@@ -19,8 +19,9 @@
 set -euo pipefail
 
 readonly KEYS=(deploy/cosign/contactor-main.pub deploy/cosign/contactor-reserve.pub)
-# The scripts that check signatures on the Raspberry Pi. Each carries its own copy of both public keys.
-readonly VERIFIERS=(deploy/upgrade.sh)
+# The scripts that check signatures, on the Raspberry Pi and on the demo's machine. Each carries its own copy of both
+# public keys.
+readonly VERIFIERS=(deploy/upgrade.sh deploy/demo/upgrade.sh)
 readonly SIGNING_CONFIG=deploy/cosign/signing-config.json
 
 fail() { echo "Error: $*" >&2; exit 1; }
