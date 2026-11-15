@@ -68,6 +68,8 @@ public sealed class TailscaleIdentityTests
     [Fact]
     public async Task Should_BelieveOnlyServesAddress_InKestrel()
     {
+        // macOS has only 127.0.0.1 until another loopback address is added (sudo ifconfig lo0 alias 127.0.0.2).
+        Assert.SkipUnless(CanListenOn(IPAddress.Parse("127.0.0.2")), "This computer can't listen on 127.0.0.2.");
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls("http://127.0.0.1:0", "http://127.0.0.2:0");
@@ -166,5 +168,19 @@ public sealed class TailscaleIdentityTests
         }
 
         return context;
+    }
+
+    private static bool CanListenOn(IPAddress address)
+    {
+        using var socket = new System.Net.Sockets.Socket(address.AddressFamily, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+        try
+        {
+            socket.Bind(new IPEndPoint(address, 0));
+            return true;
+        }
+        catch (System.Net.Sockets.SocketException)
+        {
+            return false;
+        }
     }
 }

@@ -40,7 +40,7 @@ public static class TailscaleServiceCollectionExtensions
 
         var endPoint = TailscaleOptions.ParseServeAddress(address)
             ?? throw new InvalidOperationException(
-                $"Tailscale:ServeAddress \"{address}\" must be an IPv4 loopback address other than 127.0.0.1, with a port, e.g. 127.0.0.2:8081.");
+                $"Tailscale:ServeAddress \"{address}\" must be an IPv4 loopback address other than 127.0.0.1, 127.0.0.0 and 127.255.255.255, with a port, e.g. 127.0.0.2:8081.");
         return webHost.UseUrls([.. Addresses(configuration), $"http://{endPoint}"]);
     }
 
