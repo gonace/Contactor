@@ -1,7 +1,7 @@
 namespace Contactor.AppHost;
 
 /// <summary>
-/// Runs everything for development: <c>dotnet run --project Contactor.AppHost</c>. The app runs as its image, built
+/// Runs everything for development: <c>aspire run</c>. The app runs as its image, built
 /// from the <c>Dockerfile</c> with cloudflared and Tailscale inside, as on a real installation; it needs Docker Desktop.
 /// The public demo runs beside it as <c>contactor-demo</c>, with copies of its own.
 /// </summary>
@@ -42,8 +42,8 @@ public static class Program
         // simulator's address as a container reaches it, and sends its telemetry to the dashboard. Docker Desktop shows
         // the container under "contactor", as "contactor-web", the name of its image too. The image is always tagged
         // "dev": Aspire otherwise gives each build a new tag, so every run left one more image of about 445 MB behind.
-        // A new build takes the tag from the one before, which stays as an untagged image (the README says how to remove
-        // those).
+        // A new build takes the tag from the one before, which stays as an untagged image: `docker image prune` removes
+        // those, and every other untagged image.
         var board = simulator.GetEndpoint("vm201");
         builder.AddDockerfile("contactor-web", Path.Combine(builder.AppHostDirectory, ".."))
             .WithImageTag("dev")

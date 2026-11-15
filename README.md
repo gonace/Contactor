@@ -90,14 +90,15 @@ The earlier way, with `deploy/install.sh`, is in [docs/DEPLOY.md](docs/DEPLOY.md
 
 ## Development
 
-Needs the .NET 10 SDK and Docker Desktop.
+Needs the .NET 10 SDK.
 
 ```sh
 dotnet build
 dotnet test
 ```
 
-Run everything locally with Aspire (once: `dotnet tool install -g Aspire.Cli --version 13.5.4`):
+Run everything locally with Aspire, which also needs Docker Desktop (once: `dotnet tool install -g Aspire.Cli --version
+13.5.4`):
 
 ```sh
 aspire run
@@ -107,8 +108,8 @@ The dashboard links to everything it starts:
 - **The app** on http://localhost:8080, built from the `Dockerfile` as on a real installation. Its data is in the
   Docker volume `contactor-dev`; delete it to start over. A new database starts with the setup guide, behind the setup
   code in the app's log.
-- **The simulator**, a VM201 the app talks to, with a page to switch its relays and see its traffic. No hardware
-  needed; the tests use it too.
+- **The simulator**, a VM201 the app talks to, with a page to switch its relays and see its traffic. Stop and start
+  it in the dashboard to test a lost connection to the board. No hardware needed; the tests use it too.
 - **The demo** on http://localhost:5070, as on [the public demo](https://contactor.obscured.app). How to host it is in
   [`docs/DEMO.md`](docs/DEMO.md).
 
