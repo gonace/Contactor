@@ -55,8 +55,9 @@ public sealed class TailscaleProcess : ITailscaleProcess
             start.ArgumentList.Add(argument);
         }
 
-        // Its log cache goes to the user's cache folder, which the image's user has none of: keep it with the state.
-        start.Environment["XDG_CACHE_HOME"] = _options.StateDirectory;
+        // It sends no logs and keeps none (--no-logs-no-support), but still writes its log settings (tailscaled.log.conf)
+        // to its logs folder, by default a folder in the user's home, which isn't in /data: keep them with the state.
+        start.Environment["TS_LOGS_DIR"] = _options.StateDirectory;
         return ChildProcess.RunAsync(start, output, _time, cancellationToken);
     }
 
