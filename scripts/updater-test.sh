@@ -502,9 +502,9 @@ say "update_helper on its own: what the image holds, a missing helper, leftovers
 direct() {
     # shellcheck disable=SC2016 # expanded by the inner shell
     env PATH="$WORK/bin:$PATH" CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" \
-        CONTACTOR_COSIGN_KEYS=unused CONTACTOR_UPDATER_STATE="$WORK/direct/state" CONTACTOR_READER="$READER" \
+        TEST_WORK="$WORK" CONTACTOR_COSIGN_KEYS=unused CONTACTOR_UPDATER_STATE="$WORK/direct/state" CONTACTOR_READER="$READER" \
         CONTACTOR_UPDATER_PATH="$WORK/direct/sbin/contactor-updater" CONTACTOR_UNITS="$WORK/direct/units" \
-        bash -c 'source <(sed "\$d" "$1"); TMP=$(mktemp -d); TO=test; update_helper "$2"; echo "update_helper returned $?"' \
+        bash -c 'source <(sed "\$d" "$1"); TMP=$(mktemp -d -p "$TEST_WORK"); TO=test; update_helper "$2"; echo "update_helper returned $?"' \
         sh "$HELPER" "$1" > "$WORK/direct.log" 2>&1 || true
 }
 # An installation of this helper and its units in $WORK/direct.
