@@ -98,7 +98,7 @@ public sealed record UpdateBoxView(
 
         if (snapshot.Status is { } status && now - status.ChangedUtc <= UpdateService.ResultShownFor)
         {
-            var stale = status.IsRunning && now - status.ChangedUtc > UpdateService.StaleAfter;
+            var stale = UpdateService.IsStale(status, now);
             if (status.IsRunning && !stale)
             {
                 var to = status.To ?? offered ?? "the new version";
@@ -107,7 +107,7 @@ public sealed record UpdateBoxView(
                     Steps = StepsFor(status.Step ?? UpdateSteps.Download, to),
                     From = status.From ?? running,
                     To = to,
-                    CanCancel = status.Step is UpdateSteps.Download or UpdateSteps.Verify or UpdateSteps.Backup,
+                    CanCancel = status.Step is UpdateSteps.Download or UpdateSteps.Verify or UpdateSteps.Backup or UpdateSteps.Waiting,
                     StartedLine = $"Started{(snapshot.StartedBy is { } by ? $" by {by}" : "")} at {Time(status.StartedUtc, clock)}. The relays stay as they are.",
                 };
             }
@@ -170,6 +170,11 @@ public sealed record UpdateBoxView(
                 UpdateReasons.Space => Failure($"Not enough room for {to}", Room(status)),
                 UpdateReasons.Backup => Failure("Couldn't back up before updating", "Nothing was changed. Try again in a while."),
                 UpdateReasons.Cancelled => new UpdateResultView("The update was cancelled", "Nothing was changed.", IsAlert: false, IsDone: false),
+                UpdateReasons.Switching => new UpdateResultView(
+                    "The update was stopped because the relays were still switching",
+                    "Try again later. Nothing was changed.",
+                    IsAlert: false,
+                    IsDone: false),
                 UpdateReasons.Interrupted => Failure($"The update to {to} was interrupted", "Nothing was changed. Try again."),
                 _ => Failure($"The update to {to} didn't start", "Nothing was changed. Try again."),
             },
@@ -204,12 +209,19 @@ public sealed record UpdateBoxView(
     // The steps, each done, under way or still to come.
     private static IReadOnlyList<UpdateStepView> StepsFor(string current, string to)
     {
-        var at = current == UpdateSteps.Back ? UpdateSteps.Shown.Count - 1 : Math.Max(0, UpdateSteps.Shown.ToList().IndexOf(current));
+        var at = current switch
+        {
+            UpdateSteps.Back => UpdateSteps.Shown.Count - 1,
+            UpdateSteps.Waiting => UpdateSteps.Shown.ToList().IndexOf(UpdateSteps.Backup),
+            _ => Math.Max(0, UpdateSteps.Shown.ToList().IndexOf(current)),
+        };
         return [.. UpdateSteps.Shown.Select((step, i) => new UpdateStepView(
             step switch
             {
                 UpdateSteps.Download => $"Downloading {to}",
                 UpdateSteps.Verify => "Checking that it's ours",
+                // Just before the restart, while a group is starting or running on.
+                UpdateSteps.Backup when current == UpdateSteps.Waiting => "Waiting for the relays to finish switching",
                 UpdateSteps.Backup => "Backing up",
                 UpdateSteps.Restart => "Restarting",
                 _ => "Checking the new version",

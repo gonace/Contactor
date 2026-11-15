@@ -22,8 +22,9 @@
 # One update at a time: systemd runs one copy of the service, and a lock keeps a second run out.
 #
 # For testing only (scripts/updater-test.sh): CONTACTOR_DIR, CONTACTOR_REPOSITORY, CONTACTOR_COSIGN,
-# CONTACTOR_COSIGN_KEYS (public keys, separated by empty lines), CONTACTOR_UPDATER_STATE, CONTACTOR_HEALTH_SECONDS
-# and CONTACTOR_TEST_STOP_AT (stops the run dead at a step, as a power cut would). They come from the service's own
+# CONTACTOR_COSIGN_KEYS (public keys, separated by empty lines), CONTACTOR_UPDATER_STATE, CONTACTOR_HEALTH_SECONDS,
+# CONTACTOR_BOOT_ID (this start's id), CONTACTOR_STUCK_SECONDS, CONTACTOR_WAIT_SECONDS and CONTACTOR_TEST_STOP_AT (stops the run dead at a
+# step, as a power cut would). They come from the service's own
 # environment, which only root can set, never from the app.
 set -euo pipefail
 umask 022
@@ -41,6 +42,18 @@ readonly APP_UID=1654
 readonly HEALTH_SECONDS=${CONTACTOR_HEALTH_SECONDS:-300}
 # A request older than this (in seconds) was left behind, e.g. while the helper wasn't running: it is never acted on.
 readonly REQUEST_MAX_AGE=120
+# How long the update waits, just before the restart, for a group that is starting or running on; then it stops with
+# nothing changed. update-backup says so with its exit code (UpdateBackup.GroupsBusyExitCode); asked every 5 seconds.
+readonly WAIT_SECONDS=${CONTACTOR_WAIT_SECONDS:-600}
+readonly GROUPS_BUSY=3
+# How long a file in the app's folder may take to read: a FIFO there would otherwise hold the helper for ever.
+readonly READ_SECONDS=5
+# A request the helper can't remove would start it again and again (contactor-updater.path): it waits this long first.
+readonly STUCK_SECONDS=${CONTACTOR_STUCK_SECONDS:-60}
+# This start of the machine: the first run after a start takes no request (see take_request).
+readonly BOOT_ID=${CONTACTOR_BOOT_ID:-$(cat /proc/sys/kernel/random/boot_id 2> /dev/null || echo unknown)}
+# The longest line the log keeps; the app's UpdateLog cuts at the same length.
+readonly MAX_LINE=2000
 readonly KEEP_LOGS=10
 # Room kept free beyond what the update needs, in MB.
 readonly SPARE_MB=200
@@ -84,6 +97,8 @@ NEW=""
 STARTED=""
 PHASE=""
 TMP=""
+# Set on the first run since the machine started.
+FIRST_SINCE_START=""
 
 # --- Files in the data folder, always as the app's user ----------------------------------------------------------
 
@@ -91,6 +106,15 @@ TMP=""
 # could reach itself.
 as_app() {
     setpriv --reuid="$APP_UID" --regid="$APP_UID" --clear-groups --no-new-privs -- "$@"
+}
+
+# Prints at most $2 bytes of a file in the app's folder, as the app's user: only a regular file, not a link, a FIFO or
+# a device, and never for longer than READ_SECONDS. Fails when it isn't one to read.
+read_app_file() {
+    local path=$1 bytes=$2
+    # shellcheck disable=SC2016 # expanded by the inner shell
+    timeout "$READ_SECONDS" setpriv --reuid="$APP_UID" --regid="$APP_UID" --clear-groups --no-new-privs -- \
+        sh -c '[ -f "$1" ] && [ ! -L "$1" ] && head -c "$2" -- "$1"' sh "$path" "$bytes" 2> /dev/null
 }
 
 # Writes standard input to a file in the updates folder, as the app's user, in one step: the app never reads half a file.
@@ -107,7 +131,7 @@ strip_secrets() {
     for ((i = 0; i < 24; i++)); do
         run+="[A-Za-z0-9+=_-]"
     done
-    awk -v run="$run" -v q="'" '
+    awk -v run="$run" -v q="'" -v max="$MAX_LINE" '
         BEGIN {
             name = "[a-z0-9_.-]*(token|key|password|passwd|pwd|secret|auth)[a-z0-9_.-]*[\"" q "]?[ \t]*[:=][ \t]*[\"" q "]?"
             value = "^[^ \t\"" q ",;&]+"
@@ -148,7 +172,7 @@ strip_secrets() {
             return out text
         }
         {
-            line = $0
+            line = length($0) > max ? substr($0, 1, max) "…" : $0
             line = hide(line, "tskey-[A-Za-z0-9-]+")
             line = hide(line, "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_.-]*")
             line = hide(line, "[Bb][Ee][Aa][Rr][Ee][Rr] [^ \t]+")
@@ -163,7 +187,8 @@ strip_secrets() {
 to_log() {
     if [[ -n "$LOG" ]]; then
         # shellcheck disable=SC2016 # expanded by the inner shell
-        as_app sh -c 'cat >> "$1"' sh "$LOG" 2> /dev/null || true
+        timeout "$READ_SECONDS" setpriv --reuid="$APP_UID" --regid="$APP_UID" --clear-groups --no-new-privs -- \
+            sh -c 'cat >> "$1"' sh "$LOG" 2> /dev/null || true
     else
         cat > /dev/null
     fi
@@ -377,7 +402,9 @@ wait_healthy() {
 free_mb() {
     local least="" folder kb root
     root=$(docker info -f '{{.DockerRootDir}}' 2> /dev/null || echo /var/lib/docker)
-    for folder in "$root" "$DATA"; do
+    # Docker's containerd image store keeps the images in containerd's own folder.
+    for folder in "$root" /var/lib/containerd "$DATA"; do
+        [[ "$folder" != /var/lib/containerd || -d "$folder" ]] || continue
         while [[ ! -d "$folder" ]]; do
             folder=$(dirname "$folder")
         done
@@ -440,8 +467,21 @@ take_request() {
     local path=$UPDATES/request word="" mtime age
     as_app test -e "$path" 2> /dev/null || as_app test -L "$path" 2> /dev/null || return 0
     mtime=$(as_app stat -c %Y -- "$path" 2> /dev/null || echo 0)
-    word=$(as_app head -c 16 -- "$path" 2> /dev/null | head -n 1 | tr -d '\r' || true)
-    as_app rm -f -- "$path" 2> /dev/null || log "Couldn't remove the request."
+    word=$(read_app_file "$path" 16 | head -n 1 | tr -d '\r' || true)
+    # Anything there goes, a folder too; as the app's user, so nothing else can.
+    as_app rm -rf -- "$path" 2> /dev/null || true
+    if as_app test -e "$path" 2> /dev/null || as_app test -L "$path" 2> /dev/null; then
+        # contactor-updater.path would start the helper again at once, until systemd gives up on it.
+        log "Couldn't remove the request; waiting $STUCK_SECONDS seconds before the next try."
+        sleep "$STUCK_SECONDS"
+        return 0
+    fi
+    if [[ -n "$FIRST_SINCE_START" ]]; then
+        # The machine's clock may be wrong at first (a Raspberry Pi has none of its own), so a request's age can't be
+        # told: none is taken. The app took it back long ago anyway.
+        log "A request from before the machine started is ignored."
+        return 0
+    fi
     [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
     age=$(($(date +%s) - mtime))
     if [[ "$age" -gt "$REQUEST_MAX_AGE" || "$age" -lt "-$REQUEST_MAX_AGE" ]]; then
@@ -460,6 +500,44 @@ cancelled() {
 }
 
 # --- The update --------------------------------------------------------------------------------------------------
+
+PULL_CANCELLED=0
+
+# Pulls $1, checking for "cancel" every second. The docker client is this shell's own child, so stopping it stops
+# the pull (the daemon gives up a pull nobody waits for); this waits until it is really gone.
+pull() {
+    local pid status=0
+    PULL_CANCELLED=0
+    docker pull --quiet "$1" > "$TMP/pull" 2>&1 &
+    pid=$!
+    while kill -0 "$pid" 2> /dev/null; do
+        if cancelled; then
+            PULL_CANCELLED=1
+            kill "$pid" 2> /dev/null || true
+            wait "$pid" 2> /dev/null || true
+            return 1
+        fi
+        sleep 1
+    done
+    wait "$pid" || status=$?
+    return "$status"
+}
+
+# Puts "latest" back on the running version, and checks that it stays there: a pull the daemon was finishing as it
+# was stopped could still move it.
+put_latest_back() {
+    local want i
+    want=$(docker image inspect -f '{{.Id}}' "$PREVIOUS" 2> /dev/null || true)
+    for i in 1 2 3 4 5; do
+        docker tag "$PREVIOUS" "$REPOSITORY:latest" 2> /dev/null || true
+        sleep 1
+        if [[ -n "$want" && "$(docker image inspect -f '{{.Id}}' "$REPOSITORY:latest" 2> /dev/null || true)" == "$want" ]]; then
+            [[ "$i" -lt 2 ]] || log "\"latest\" names ${FROM:-the running version} again."
+            return 0
+        fi
+    done
+    log "Couldn't put \"latest\" back on ${FROM:-the running version}."
+}
 
 # Ends an update that stopped before the restart: nothing was changed.
 fail_before() {
@@ -516,27 +594,21 @@ update() {
     # Each version is kept under its digest: Docker's containerd image store forgets an image's digest once its tag
     # moves on, and going back needs it. For the running version that only fetches its manifest.
     log "Downloading $REPOSITORY:latest."
-    {
-        docker pull --quiet "$PREVIOUS" && docker pull --quiet "$REPOSITORY:latest"
-    } > "$TMP/pull" 2>&1 &
-    local pull=$! pulled=0
-    while kill -0 "$pull" 2> /dev/null; do
-        if cancelled; then
-            kill "$pull" 2> /dev/null || true
-            wait "$pull" 2> /dev/null || true
-            docker tag "$PREVIOUS" "$REPOSITORY:latest" 2> /dev/null || true
-            fail_before cancelled
+    local reference
+    for reference in "$PREVIOUS" "$REPOSITORY:latest"; do
+        if ! pull "$reference"; then
+            tail -n 50 "$TMP/pull" | sed 's/^/    /' | strip_secrets | to_log
+            # Whatever the pull did before it stopped: "latest" names the running version again.
+            put_latest_back
+            if [[ "$PULL_CANCELLED" == 1 ]]; then
+                fail_before cancelled
+            else
+                fail_before download
+            fi
             return 0
         fi
-        sleep 1
+        tail -n 50 "$TMP/pull" | sed 's/^/    /' | strip_secrets | to_log
     done
-    wait "$pull" || pulled=$?
-    tail -n 50 "$TMP/pull" | sed 's/^/    /' | strip_secrets | to_log
-    if [[ "$pulled" -ne 0 ]]; then
-        docker tag "$PREVIOUS" "$REPOSITORY:latest" 2> /dev/null || true
-        fail_before download
-        return 0
-    fi
     new_id=$(docker image inspect -f '{{.Id}}' "$REPOSITORY:latest")
     NEW=$(reference_of "$new_id")
     if [[ -n "$NEW" && "$new_id" != "$previous_id" ]] && ! run_logged docker pull --quiet "$NEW"; then
@@ -586,9 +658,36 @@ update() {
 
     status running step=backup
     log "Backing up the database."
-    as_app rm -f -- "$UPDATES/before-update.db" 2> /dev/null || true
-    if ! run_logged timeout 300 docker exec "$cid" dotnet /app/Contactor.Web.dll update-backup \
-        || ! as_app test -s "$UPDATES/before-update.db"; then
+    local waited=0 backed=0
+    while :; do
+        as_app rm -f -- "$UPDATES/before-update.db" 2> /dev/null || true
+        backed=0
+        run_logged timeout 300 docker exec "$cid" dotnet /app/Contactor.Web.dll update-backup || backed=$?
+        if [[ "$backed" -ne "$GROUPS_BUSY" ]]; then
+            break
+        fi
+        # A group is starting or running on: the restart would cut it off. It waits, as long as WAIT_SECONDS.
+        if [[ "$waited" -ge "$WAIT_SECONDS" ]]; then
+            log "The relays were still switching after $WAIT_SECONDS seconds."
+            fail_before switching
+            return 0
+        fi
+        if [[ "$waited" -eq 0 ]]; then
+            log "Waiting for the relays to finish switching."
+            status running step=waiting
+        fi
+        sleep 5
+        waited=$((waited + 5))
+        if cancelled; then
+            fail_before cancelled
+            return 0
+        fi
+    done
+    if [[ "$waited" -gt 0 ]]; then
+        log "The relays are done switching, after $waited seconds."
+        status running step=backup
+    fi
+    if [[ "$backed" -ne 0 ]] || ! as_app test -s "$UPDATES/before-update.db"; then
         fail_before backup
         return 0
     fi
@@ -643,10 +742,12 @@ go_back() {
     fi
     log "Going back to ${FROM:-the version before} ($PREVIOUS)."
     run_logged compose stop --timeout 30 contactor || true
-    if as_app test -s "$UPDATES/before-update.db"; then
+    if as_app test -f "$UPDATES/before-update.db" && ! as_app test -L "$UPDATES/before-update.db" \
+        && as_app test -s "$UPDATES/before-update.db"; then
         # The WAL files belong to the database being replaced: left behind, SQLite would apply them to the backup.
         # shellcheck disable=SC2016 # expanded by the inner shell
-        if as_app sh -c 'rm -f "$1-wal" "$1-shm" && cp "$2" "$1.restoring" && mv -f "$1.restoring" "$1"' \
+        if timeout 300 setpriv --reuid="$APP_UID" --regid="$APP_UID" --clear-groups --no-new-privs -- \
+            sh -c 'rm -f "$1-wal" "$1-shm" && cp "$2" "$1.restoring" && mv -f "$1.restoring" "$1"' \
             sh "$DATA/contactor.db" "$UPDATES/before-update.db"; then
             log "The database is back as it was before the update."
         else
@@ -724,8 +825,13 @@ main() {
 
     as_app mkdir -p "$UPDATES/logs" || { echo "contactor-updater: can't write to $UPDATES." >&2; return 1; }
     # Tells the app the helper is here; written only when it changes, to spare the SD card.
-    if [[ "$(as_app cat -- "$UPDATES/helper" 2> /dev/null || true)" != "version=$HELPER_VERSION" ]]; then
+    if [[ "$(read_app_file "$UPDATES/helper" 64 || true)" != "version=$HELPER_VERSION" ]]; then
         printf 'version=%s\n' "$HELPER_VERSION" | write_app_file "$UPDATES/helper" || true
+    fi
+
+    if [[ "$(cat "$STATE/boot" 2> /dev/null || true)" != "$BOOT_ID" ]]; then
+        FIRST_SINCE_START=1
+        printf '%s\n' "$BOOT_ID" > "$STATE/boot" || true
     fi
 
     recover

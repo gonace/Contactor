@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Text.Json;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Persistence;
@@ -76,6 +77,15 @@ public sealed partial class UpdateService : BackgroundService
     public static readonly TimeSpan PollBusy = TimeSpan.FromSeconds(1);
     public static readonly TimeSpan PollIdle = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// While the app restarts (<see cref="UpdateSteps.IsRestarting"/>), the helper writes its status at least every 7
+    /// minutes (the restart and the health check, or going back and its health check): one unchanged for longer is from
+    /// a helper that stopped, and the splash goes.
+    /// </summary>
+    public static readonly TimeSpan RestartStaleAfter = TimeSpan.FromMinutes(15);
+
+    private const string CouldNotAsk = "Couldn't ask for the update. Try again in a while.";
+
     private static readonly JsonSerializerOptions CacheJson = new(JsonSerializerDefaults.Web);
 
     private readonly UpdateFolder _folder;
@@ -94,6 +104,7 @@ public sealed partial class UpdateService : BackgroundService
     private PendingUpdate? _pending;
     private bool _noAnswer;
     private bool _helperInstalled;
+    private bool _stale;
     private string? _recordedId;
 
     public UpdateService(
@@ -136,11 +147,20 @@ public sealed partial class UpdateService : BackgroundService
         }
     }
 
-    /// <summary>Whether a running update's status hasn't changed for <see cref="StaleAfter"/>.</summary>
+    /// <summary>Whether a running update's status hasn't changed for too long (<see cref="IsStale(HelperStatus, DateTime)"/>).</summary>
     public bool IsStale(HelperStatus status)
     {
+        return IsStale(status, _timeProvider.GetUtcNow().UtcDateTime);
+    }
+
+    /// <summary>
+    /// Whether a running update's status, at <paramref name="nowUtc"/>, is from a helper that stopped: unchanged for
+    /// <see cref="RestartStaleAfter"/> while the app restarts, <see cref="StaleAfter"/> before that.
+    /// </summary>
+    public static bool IsStale(HelperStatus status, DateTime nowUtc)
+    {
         ArgumentNullException.ThrowIfNull(status);
-        return status.IsRunning && _timeProvider.GetUtcNow().UtcDateTime - status.ChangedUtc > StaleAfter;
+        return status.IsRunning && nowUtc - status.ChangedUtc > (UpdateSteps.IsRestarting(status.Step) ? RestartStaleAfter : StaleAfter);
     }
 
     /// <summary>
@@ -175,31 +195,44 @@ public sealed partial class UpdateService : BackgroundService
                 return "You have the newest version.";
             }
 
-            await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-            if (await db.GroupRuntimes.AnyAsync(r => r.Phase != GroupPhases.Idle, cancellationToken))
-            {
-                return "A group is starting or running on. Update once it's done.";
-            }
-
             var now = _timeProvider.GetUtcNow().UtcDateTime;
             try
             {
-                _folder.WriteRequest(UpdateFolder.UpdateWord);
+                await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+                if (await db.GroupRuntimes.AnyAsync(r => r.Phase != GroupPhases.Idle, cancellationToken))
+                {
+                    return "A group is starting or running on. Update once it's done.";
+                }
+
+                // The event first: an update is never asked for without it.
+                var asked = new EventLogEntry
+                {
+                    TimestampUtc = now,
+                    Actor = user.Email,
+                    Action = EventActions.UpdateRequested,
+                    Details = JsonSerializer.Serialize(new { from = _build.Version, to = newest.Version }),
+                };
+                db.EventLog.Add(asked);
+                await db.SaveChangesAsync(cancellationToken);
+                try
+                {
+                    _folder.WriteRequest(UpdateFolder.UpdateWord);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    LogRequestFailed(ex);
+                    // Nothing was asked for after all.
+                    db.EventLog.Remove(asked);
+                    await db.SaveChangesAsync(CancellationToken.None);
+                    return CouldNotAsk;
+                }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is DbException or DbUpdateException or InvalidOperationException)
             {
                 LogRequestFailed(ex);
-                return "Couldn't ask for the update. Try again in a while.";
+                return CouldNotAsk;
             }
 
-            db.EventLog.Add(new EventLogEntry
-            {
-                TimestampUtc = now,
-                Actor = user.Email,
-                Action = EventActions.UpdateRequested,
-                Details = JsonSerializer.Serialize(new { from = _build.Version, to = newest.Version }),
-            });
-            await db.SaveChangesAsync(cancellationToken);
             LogRequested(user.Email, _build.Version, newest.Version);
             lock (_lock)
             {
@@ -231,7 +264,7 @@ public sealed partial class UpdateService : BackgroundService
                     _pending = null;
                 }
             }
-            else if (snapshot.Status is { IsRunning: true, Step: UpdateSteps.Download or UpdateSteps.Verify or UpdateSteps.Backup })
+            else if (snapshot.Status is { IsRunning: true, Step: UpdateSteps.Download or UpdateSteps.Verify or UpdateSteps.Backup or UpdateSteps.Waiting })
             {
                 try
                 {
@@ -306,6 +339,14 @@ public sealed partial class UpdateService : BackgroundService
                     _status = status;
                     changed = true;
                 }
+            }
+
+            // A helper that stopped: nothing in the folder changes, so time tells (the loop polls every second while it runs).
+            var stale = _status is { } current && IsStale(current, now);
+            if (stale != _stale)
+            {
+                _stale = stale;
+                changed = true;
             }
 
             if (_pending is { } pending)
@@ -425,6 +466,7 @@ public sealed partial class UpdateService : BackgroundService
             UpdateStates.Done => EventActions.UpdateDone,
             UpdateStates.WentBack => EventActions.UpdateWentBack,
             UpdateStates.Failed => EventActions.UpdateFailed,
+            UpdateStates.Current => EventActions.UpdateCurrent,
             _ => null,
         };
         if (action is null || _recordedId == status.Id)
@@ -433,7 +475,7 @@ public sealed partial class UpdateService : BackgroundService
         }
 
         var marker = $"\"id\":\"{status.Id}\"";
-        var updateActions = new[] { EventActions.UpdateDone, EventActions.UpdateWentBack, EventActions.UpdateFailed };
+        var updateActions = new[] { EventActions.UpdateDone, EventActions.UpdateWentBack, EventActions.UpdateFailed, EventActions.UpdateCurrent };
         if (!await db.EventLog.AnyAsync(e => updateActions.Contains(e.Action) && e.Details != null && e.Details.Contains(marker), cancellationToken))
         {
             db.EventLog.Add(new EventLogEntry

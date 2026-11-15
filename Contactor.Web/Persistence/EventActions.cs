@@ -46,4 +46,7 @@ public static class EventActions
 
     /// <summary>An update that stopped before the restart: nothing was changed. Details as for <see cref="UpdateWentBack"/>.</summary>
     public const string UpdateFailed = "update-failed";
+
+    /// <summary>The helper found nothing newer to download than what runs. Details as for <see cref="UpdateDone"/>.</summary>
+    public const string UpdateCurrent = "update-current";
 }

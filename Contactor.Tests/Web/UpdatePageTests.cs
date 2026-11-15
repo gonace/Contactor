@@ -140,7 +140,7 @@ public sealed class UpdatePageTests
         var renders = page.Renders;
 
         WriteStatus(service, "state=running\nstep=restart");
-        await WaitForAsync(() => page.Renders > renders);
+        await Wait.UntilAsync(() => page.Renders > renders);
 
         var text = await page.TextAsync();
         Assert.Contains("Contactor is updating", text, StringComparison.Ordinal);
@@ -193,16 +193,5 @@ public sealed class UpdatePageTests
         {
             service.FollowStatusAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
-    }
-
-    // The page redraws on the service's own thread; this waits for it by counting, never against the clock alone.
-    private static async Task WaitForAsync(Func<bool> condition)
-    {
-        for (var i = 0; i < 500 && !condition(); i++)
-        {
-            await Task.Delay(10, Cancel);
-        }
-
-        Assert.True(condition());
     }
 }

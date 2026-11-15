@@ -21,6 +21,10 @@ public static class UpdateSteps
     public const string Download = "download";
     public const string Verify = "verify";
     public const string Backup = "backup";
+
+    /// <summary>Just before the restart, a group is starting or running on: the helper waits for it (up to 10 minutes).</summary>
+    public const string Waiting = "waiting";
+
     public const string Restart = "restart";
     public const string Check = "check";
 
@@ -47,6 +51,10 @@ public static class UpdateReasons
     public const string Cancelled = "cancelled";
     public const string Interrupted = "interrupted";
     public const string Health = "health";
+
+    /// <summary>A group was still starting or running on after the helper waited 10 minutes.</summary>
+    public const string Switching = "switching";
+
     public const string Error = "error";
 }
 
@@ -116,11 +124,11 @@ public sealed partial record HelperStatus(
         return new HelperStatus(
             id,
             state,
-            state == UpdateStates.Running && step is UpdateSteps.Download or UpdateSteps.Verify or UpdateSteps.Backup or UpdateSteps.Restart or UpdateSteps.Check or UpdateSteps.Back ? step : null,
+            state == UpdateStates.Running && step is UpdateSteps.Download or UpdateSteps.Verify or UpdateSteps.Backup or UpdateSteps.Waiting or UpdateSteps.Restart or UpdateSteps.Check or UpdateSteps.Back ? step : null,
             Version(values.GetValueOrDefault("from")),
             Version(values.GetValueOrDefault("to")),
             reason is UpdateReasons.Download or UpdateReasons.Signature or UpdateReasons.Space or UpdateReasons.Backup
-                or UpdateReasons.Cancelled or UpdateReasons.Interrupted or UpdateReasons.Health or UpdateReasons.Error ? reason : null,
+                or UpdateReasons.Cancelled or UpdateReasons.Interrupted or UpdateReasons.Health or UpdateReasons.Switching or UpdateReasons.Error ? reason : null,
             started,
             changed,
             Time(values.GetValueOrDefault("back")),

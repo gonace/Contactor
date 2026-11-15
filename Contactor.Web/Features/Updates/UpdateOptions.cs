@@ -7,7 +7,9 @@ public sealed class UpdateOptions
 
     /// <summary>
     /// The folder the app shares with the update helper on the host (install/contactor-updater.sh); empty for an
-    /// <c>updates</c> folder next to the database, as the helper expects (<c>/data/updates</c>).
+    /// <c>updates</c> folder next to the database. The helper always looks in <c>/opt/contactor/data/updates</c>, which
+    /// is the container's <c>/data/updates</c>: the default with the database where the image keeps it
+    /// (<c>/data/contactor.db</c>). Set it only for tests, or with a database elsewhere and a folder mapped to match.
     /// </summary>
     public string Folder { get; set; } = "";
 

@@ -14,8 +14,8 @@
 #   ... | sh -s -- --uninstall --delete-data  removes that too
 #
 # Attached to each GitHub Release with that release's compose.yml and update helper (contactor-updater.sh and its
-# systemd units), which it downloads, so they always match. For testing only: CONTACTOR_IMAGE runs another image, and
-# CONTACTOR_DOWNLOADS is where those files are downloaded from.
+# systemd units), which it downloads, so they always match. For testing only: CONTACTOR_IMAGE runs another image,
+# CONTACTOR_DOWNLOADS is where those files are downloaded from, and CONTACTOR_UPDATER_STATE is the helper's folder.
 #
 # Plain POSIX sh, so it runs with dash too. Everything is in functions, called on the last line: a download cut off
 # halfway runs nothing.
@@ -30,7 +30,7 @@ DATA="/opt/contactor/data"
 # The update helper: the only part of Contactor outside /opt/contactor (see contactor-updater.sh).
 HELPER="/usr/local/sbin/contactor-updater"
 UNITS="/etc/systemd/system"
-HELPER_STATE="/var/lib/contactor-updater"
+HELPER_STATE="${CONTACTOR_UPDATER_STATE:-/var/lib/contactor-updater}"
 # The image's user (the .NET images' "app" user), who must own the data folder.
 APP_UID=1654
 # Free disk space, in GB: below NEEDS_GB it stops, below ADVISED_GB it warns. The image is about 300 MB; the rest is
@@ -294,9 +294,16 @@ has_systemd() {
     [ -d /run/systemd/system ] && command -v systemctl > /dev/null 2>&1
 }
 
-# Whether the update helper is updating Contactor right now.
+# Whether the update helper is running right now, e.g. in the middle of an update: it holds its lock while it runs
+# (a oneshot service is "activating" meanwhile, never "active", so systemctl alone doesn't tell).
 updating() {
-    has_systemd && as_root systemctl is-active --quiet contactor-updater.service 2> /dev/null
+    if has_systemd; then
+        case "$(as_root systemctl is-active contactor-updater.service 2> /dev/null || true)" in
+            activating | deactivating | reloading) return 0 ;;
+        esac
+    fi
+    as_root test -f "$HELPER_STATE/lock" && command -v flock > /dev/null 2>&1 \
+        && ! as_root flock --nonblock "$HELPER_STATE/lock" true 2> /dev/null
 }
 
 # Puts this release's update helper in place, or brings it up to date: the script and its two systemd units. A file

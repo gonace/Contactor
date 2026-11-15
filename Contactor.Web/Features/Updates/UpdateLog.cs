@@ -16,6 +16,9 @@ public static partial class UpdateLog
 
     public const string Hidden = "[hidden]";
 
+    /// <summary>The longest line kept, as the helper keeps it; anything after it is cut, with "…".</summary>
+    public const int MaxLineLength = 2000;
+
     /// <summary>The log of update <paramref name="id"/> in <paramref name="logsFolder"/>, stripped; null when there is none.</summary>
     public static async Task<string?> ReadAsync(string logsFolder, string? id, CancellationToken cancellationToken)
     {
@@ -67,7 +70,9 @@ public static partial class UpdateLog
         var lines = text.Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
-            var line = TailscaleKey().Replace(lines[i], Hidden);
+            // Cut first, and every pattern runs without backtracking: a huge line costs time in proportion, no more.
+            var line = lines[i].Length > MaxLineLength ? lines[i][..MaxLineLength] + "…" : lines[i];
+            line = TailscaleKey().Replace(line, Hidden);
             line = Token().Replace(line, Hidden);
             line = Bearer().Replace(line, Hidden);
             line = Basic().Replace(line, Hidden);
@@ -84,21 +89,21 @@ public static partial class UpdateLog
         return run.Any(char.IsAsciiDigit) && run.Any(char.IsAsciiLetterUpper) && run.Any(char.IsAsciiLetterLower);
     }
 
-    [GeneratedRegex(@"tskey-[A-Za-z0-9-]+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"tskey-[A-Za-z0-9-]+", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex TailscaleKey();
 
-    [GeneratedRegex(@"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]*", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]*", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Token();
 
-    [GeneratedRegex(@"[Bb][Ee][Aa][Rr][Ee][Rr] [^ \t]+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"[Bb][Ee][Aa][Rr][Ee][Rr] [^ \t]+", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Bearer();
 
-    [GeneratedRegex(@"[Bb][Aa][Ss][Ii][Cc] [^ \t]+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"[Bb][Aa][Ss][Ii][Cc] [^ \t]+", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Basic();
 
-    [GeneratedRegex(@"(?<name>[A-Za-z0-9_.-]*(?i:token|key|password|passwd|pwd|secret|auth)[A-Za-z0-9_.-]*[""']?[ \t]*[:=][ \t]*[""']?)(?<value>[^ \t""',;&]+)?", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?<name>[A-Za-z0-9_.-]*(?i:token|key|password|passwd|pwd|secret|auth)[A-Za-z0-9_.-]*[""']?[ \t]*[:=][ \t]*[""']?)(?<value>[^ \t""',;&]+)?", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Named();
 
-    [GeneratedRegex(@"[A-Za-z0-9+=_-]{24,}", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"[A-Za-z0-9+=_-]{24,}", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex LongRun();
 }

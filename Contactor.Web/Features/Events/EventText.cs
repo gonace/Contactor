@@ -96,7 +96,9 @@ public static class EventText
             EventActions.UpdateRequested => ($"started the update to {to}", false),
             EventActions.UpdateDone => ($"updated to {to}", false),
             EventActions.UpdateWentBack => ($"went back to {Text(entry.Details, "from") ?? "the version before"}: the update to {to} didn't work", true),
+            EventActions.UpdateCurrent => ($"found nothing newer than {Text(entry.Details, "from") ?? "the version it runs"} to download", false),
             EventActions.UpdateFailed when Text(entry.Details, "reason") == Updates.UpdateReasons.Cancelled => ($"didn't update to {to}: the update was cancelled", false),
+            EventActions.UpdateFailed when Text(entry.Details, "reason") == Updates.UpdateReasons.Switching => ($"didn't update to {to}: the relays were still switching. Nothing was changed", false),
             EventActions.UpdateFailed => ($"didn't update to {to}: {FailedBecause(Text(entry.Details, "reason"))}. Nothing was changed", true),
             _ => ((string?)null, false),
         };

@@ -88,8 +88,16 @@ public sealed class UpdateFolder
 
         Directory.CreateDirectory(Path);
         var partial = System.IO.Path.Combine(Path, $".request-{Guid.NewGuid():N}");
-        File.WriteAllText(partial, word + "\n", Encoding.ASCII);
-        File.Move(partial, RequestPath, overwrite: true);
+        try
+        {
+            File.WriteAllText(partial, word + "\n", Encoding.ASCII);
+            File.Move(partial, RequestPath, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(partial);
+            throw;
+        }
     }
 
     public bool RequestWaiting => File.Exists(RequestPath);

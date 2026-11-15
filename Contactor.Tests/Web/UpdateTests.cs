@@ -319,6 +319,21 @@ public sealed class UpdateLogTests
         Assert.Equal("11:20:38 The last lines of 2026.11.24's log:\n    starting with Tunnel__Token=[hidden] and [hidden]\n", stripped);
     }
 
+    // Every pattern runs without backtracking, on lines cut to MaxLineLength: a huge line costs only its length.
+    [Fact]
+    public void Should_CutAHugeLine_AndStillHideWhatItKeeps()
+    {
+        var huge = "api_key " + new string('a', 1_000_000);
+
+        var stripped = UpdateLog.Strip(huge);
+
+        Assert.Equal(UpdateLog.MaxLineLength + 1, stripped.Length);
+        Assert.EndsWith("…", stripped, StringComparison.Ordinal);
+        Assert.Equal("x password=[hidden] " + new string('b', UpdateLog.MaxLineLength - 19) + "…",
+            UpdateLog.Strip("x password=hunter2 " + new string('b', 5000)));
+        Assert.DoesNotContain("hunter2", UpdateLog.Strip(new string('c', 3000) + " password=hunter2"), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Should_ReadALog_ByItsUpdatesId_Stripped()
     {
@@ -529,6 +544,45 @@ public sealed class UpdateBoxViewTests
     }
 
     [Fact]
+    public void Should_SayItWaitsForTheRelays_WhileAGroupIsSwitching()
+    {
+        var snapshot = Snapshot(releases: [Newest], status: Status(UpdateStates.Running, UpdateSteps.Waiting), startedBy: "John");
+
+        var view = View(snapshot);
+
+        Assert.Equal(UpdateBoxKind.Running, view.Kind);
+        Assert.Equal(["Downloading 2026.11.20", "Checking that it's ours", "Waiting for the relays to finish switching", "Restarting", "Checking the new version"], view.Steps.Select(s => s.Text));
+        Assert.Equal([UpdateStepState.Done, UpdateStepState.Done, UpdateStepState.Now, UpdateStepState.Later, UpdateStepState.Later], view.Steps.Select(s => s.State));
+        Assert.True(view.CanCancel);
+
+        // It waits 10 minutes at most, without a new status meanwhile: not a helper that stopped.
+        _time.Advance(TimeSpan.FromMinutes(11));
+        Assert.Equal(UpdateBoxKind.Running, View(snapshot).Kind);
+    }
+
+    [Fact]
+    public void Should_SayTheUpdateWasStopped_WhenTheRelaysKeptSwitching()
+    {
+        var view = View(Snapshot(releases: [Newest], status: Status(UpdateStates.Failed) with { Reason = UpdateReasons.Switching }));
+
+        Assert.Equal(new UpdateResultView("The update was stopped because the relays were still switching", "Try again later. Nothing was changed.", IsAlert: false, IsDone: false), view.Result);
+        Assert.True(view.CanUpdate);
+    }
+
+    // A helper that stopped while the app restarted: the splash and the steps don't stay for an hour.
+    [Fact]
+    public void Should_SayItDidntFinish_SoonerWhenItStoppedDuringTheRestart()
+    {
+        var snapshot = Snapshot(releases: [Newest], status: Status(UpdateStates.Running, UpdateSteps.Check));
+
+        _time.Advance(TimeSpan.FromMinutes(13));
+        Assert.Equal(UpdateBoxKind.Running, View(snapshot).Kind);
+
+        _time.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal("The update to 2026.11.20 didn't finish", View(snapshot).Result!.Title);
+    }
+
+    [Fact]
     public void Should_SaySoWhenTheHelperDidntAnswer()
     {
         var view = View(Snapshot(releases: [Newest]) with { NoAnswer = true });
@@ -697,24 +751,65 @@ public sealed class UpdateServiceTests
         Assert.Equal(restarting, rig.Service.IsRestarting);
     }
 
-    [Fact]
-    public async Task Should_NotShowTheSplashForEver_ForAHelperThatStopped()
+    // Nothing in the folder changes when the helper stops: the service's own polling tells the pages.
+    [Theory]
+    [InlineData(UpdateSteps.Restart)]
+    [InlineData(UpdateSteps.Check)]
+    [InlineData(UpdateSteps.Back)]
+    public async Task Should_TakeTheSplashAway_ForAHelperThatStopped(string step)
     {
         await using var rig = await Rig.StartAsync();
-        rig.WriteStatus("state=running\nstep=restart");
+        rig.WriteStatus($"state=running\nstep={step}");
         rig.Service.Poll();
         Assert.True(rig.Service.IsRestarting);
+        var changes = 0;
+        rig.Service.Changed += (_, _) => changes++;
 
-        rig.Time.Advance(UpdateService.StaleAfter + TimeSpan.FromMinutes(1));
+        rig.Time.Advance(UpdateService.RestartStaleAfter);
+        Assert.False(rig.Service.Poll());
+        Assert.True(rig.Service.IsRestarting);
 
+        rig.Time.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(rig.Service.Poll());
+
+        Assert.Equal(1, changes);
         Assert.False(rig.Service.IsRestarting);
         Assert.Null(await rig.Service.RequestAsync(John, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_SayTheUpdateCantBeAskedFor_WhenTheDatabaseFails()
+    {
+        await using var rig = await Rig.StartAsync();
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync("DROP TABLE \"EventLog\"", Cancel);
+        }
+
+        Assert.Equal("Couldn't ask for the update. Try again in a while.", await rig.Service.RequestAsync(John, Cancel));
+
+        Assert.False(File.Exists(rig.Folder.RequestPath));
+        Assert.Null(rig.Service.Snapshot().Pending);
+    }
+
+    // The event is saved before the request is written, and taken back when the request can't be.
+    [Fact]
+    public async Task Should_LogNothing_WhenTheRequestCantBeWritten()
+    {
+        await using var rig = await Rig.StartAsync();
+        Directory.CreateDirectory(Path.Combine(rig.Folder.RequestPath, "in-the-way"));
+
+        Assert.Equal("Couldn't ask for the update. Try again in a while.", await rig.Service.RequestAsync(John, Cancel));
+
+        Assert.Empty(await rig.EventsAsync());
+        Assert.Null(rig.Service.Snapshot().Pending);
     }
 
     [Theory]
     [InlineData(UpdateStates.Done, "", EventActions.UpdateDone)]
     [InlineData(UpdateStates.WentBack, "reason=health", EventActions.UpdateWentBack)]
     [InlineData(UpdateStates.Failed, "reason=signature", EventActions.UpdateFailed)]
+    [InlineData(UpdateStates.Current, "", EventActions.UpdateCurrent)]
     public async Task Should_LogHowItEnded_Once(string state, string more, string action)
     {
         await using var rig = await Rig.StartAsync();
@@ -749,6 +844,7 @@ public sealed class UpdateServiceTests
     [Theory]
     [InlineData(UpdateSteps.Download, true)]
     [InlineData(UpdateSteps.Backup, true)]
+    [InlineData(UpdateSteps.Waiting, true)]
     [InlineData(UpdateSteps.Restart, false)]
     [InlineData(UpdateSteps.Check, false)]
     public async Task Should_AskTheHelperToCancel_OnlyUntilTheRestart(string step, bool cancels)
@@ -944,6 +1040,31 @@ public sealed class UpdateBackupTests
         Assert.False(File.Exists(copy + ".partial"));
     }
 
+    // The restart would cut a group's start or run-on off: the helper waits and asks again.
+    [Theory]
+    [InlineData(GroupPhases.Starting)]
+    [InlineData(GroupPhases.Stopping)]
+    public async Task Should_CopyNothing_WhileAGroupIsStartingOrRunningOn(string phase)
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var board = await db.Boards.FirstAsync(Cancel);
+            var group = new RelayGroup { Name = "Fan heater", BoardId = board.Id };
+            db.RelayGroups.Add(group);
+            await db.SaveChangesAsync(Cancel);
+            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id, Phase = phase });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        var (exitCode, output, error) = Run(database);
+
+        Assert.Equal((UpdateBackup.GroupsBusyExitCode, ""), (exitCode, output));
+        Assert.StartsWith("update-backup: a group is starting or running on", error, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(database.FilePath)!, "updates", UpdateFolder.BackupFileName)));
+    }
+
     [Fact]
     public async Task Should_SayThereIsNoDatabase()
     {
@@ -995,11 +1116,20 @@ public sealed class UpdateEventTextTests
     [InlineData("download", "didn't update to 2026.11.20: it couldn't be downloaded. Nothing was changed", true)]
     [InlineData("signature", "didn't update to 2026.11.20: it didn't pass the check that it's ours. Nothing was changed", true)]
     [InlineData("cancelled", "didn't update to 2026.11.20: the update was cancelled", false)]
+    [InlineData("switching", "didn't update to 2026.11.20: the relays were still switching. Nothing was changed", false)]
     public void Should_SayWhyItDidntUpdate(string reason, string what, bool alert)
     {
         var view = EventText.For(Entry(EventActors.System, EventActions.UpdateFailed, $"{{\"id\":\"20261115-140200\",\"to\":\"2026.11.20\",\"reason\":\"{reason}\"}}"), null, null);
 
         Assert.Equal((what, alert), (view.What, view.IsAlert));
+    }
+
+    [Fact]
+    public void Should_SayThereWasNothingNewer()
+    {
+        var view = EventText.For(Entry(EventActors.System, EventActions.UpdateCurrent, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.14\"}"), null, null);
+
+        Assert.Equal(("Contactor", "found nothing newer than 2026.11.14 to download", false), (view.Who, view.What, view.IsAlert));
     }
 
     [Fact]
