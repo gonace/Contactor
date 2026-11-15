@@ -373,6 +373,15 @@ remove_helper() {
         as_root systemctl disable --now contactor-updater.path contactor-updater.service > /dev/null 2>&1 || true
     fi
     as_root rm -f "$HELPER" "$UNITS/contactor-updater.service" "$UNITS/contactor-updater.path"
+    # The copies the helper keeps of itself and its units when it brings them up to date, and any new copy it or this
+    # script (ensure_helper's .new) was writing when the power went off.
+    for target in "$HELPER" "$UNITS/contactor-updater.service" "$UNITS/contactor-updater.path"; do
+        for file in "$target.previous" "$target.new" "$target".new.*; do
+            if [ -e "$file" ] || [ -L "$file" ]; then
+                as_root rm -f -- "$file"
+            fi
+        done
+    done
     as_root rm -rf -- "$HELPER_STATE"
     if has_systemd; then
         as_root systemctl daemon-reload > /dev/null 2>&1 || true
