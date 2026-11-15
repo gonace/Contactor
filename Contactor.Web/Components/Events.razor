@@ -21,9 +21,10 @@
                 <button type="button" aria-pressed="@(_filter == filter ? "true" : "false")" @onclick="() => SetFilterAsync(filter)">@label</button>
             }
         </div>
-        @if (Several)
+        @if (Boards.Count > 0)
         {
-            @* Which boards' events show: this browser's, in its own cookie (RelaysEndpoints). Events about no board always show. *@
+            @* Which boards' events show: this browser's, in its own cookie (RelaysEndpoints). Events about no board always show.
+               With one board, only the board and "+ Board" (BoardPicker). *@
             <div class="boards-bar">
                 <BoardPicker Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" Showing="@ShowingText" />
             </div>
@@ -71,7 +72,7 @@
         }
     </main>
 
-    <TabBar Current="TabBar.Tab.Events" SideList="@(Several ? BoardList : null)" />
+    <TabBar Current="TabBar.Tab.Events" SideList="@(Boards.Count > 0 ? BoardList : null)" />
 </div>
 
 @code {
@@ -85,6 +86,9 @@
     private List<EventRow> _rows = [];
     private EventFilter _filter = EventFilter.All;
     private BoardCounts _counts = BoardCounts.None;
+
+    // What the board filter shows of each board's state (BoardPicker).
+    private readonly ShownBoardStates _shown = new();
     private bool _hasMore;
     private bool _loading;
 
@@ -94,7 +98,7 @@
 
     private IReadOnlyList<LiveBoard> Boards => Registry.All;
 
-    // Two or more boards: the board filter, and each row names its board. One board looks as it always did.
+    // Two or more boards: "All boards" in the board filter, and each row names its board.
     private bool Several => Boards.Count > 1;
 
     private BoardFilter BoardsFilter => (PickedBoards?.Events ?? BoardFilter.All).For([.. Boards.Select(b => b.BoardId)]);
@@ -128,10 +132,12 @@
         <BoardPicker Side="true" Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" />
     };
 
-    // "3 of 8 on" for the board filter; only with several boards, which is when it shows.
+    // "3 of 8 on" for the board filter, which shows while there is a board.
     private async Task LoadCountsAsync()
     {
-        if (!Several)
+        // Only the boards there are now: a removed board's entry goes.
+        _shown.Reset(Boards);
+        if (Boards.Count == 0)
         {
             return;
         }
@@ -180,10 +186,11 @@
         _ = RefreshAsync(reload: true);
     }
 
-    // A board's new state: only the board filter's lamps and counts show it.
+    // A board's new state: only the board filter's dot, lamps and counts show it, so only a change to those redraws the
+    // page; a status that changes nothing (a poll's answer) doesn't.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
-        if (Several)
+        if (_shown.Changes(change))
         {
             _ = RefreshAsync(reload: false);
         }

@@ -31,7 +31,7 @@ h1 {
     overflow-wrap: anywhere;
 }
 
-/* With two or more boards, the board filter (BoardPicker); --gutter: its chips reach the page's edges. */
+/* The board filter (BoardPicker); --gutter: its chips reach the page's edges. */
 .boards-bar {
     --gutter: 20px;
     display: flex;

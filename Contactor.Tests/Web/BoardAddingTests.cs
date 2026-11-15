@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
@@ -185,7 +186,7 @@ public sealed class BoardAddingTests
     }
 
     // "+ Add a board": in Settings under the one board's card, at the end of the list of several, at the end of the
-    // filter's chips, and in the side menu's list on Relays, Events and Debug.
+    // filter's chips, and in the side menu's list on Relays, Events and Debug, with one board too.
     [Fact]
     public async Task Should_OfferAddABoard_WhereTheDesignPutsIt()
     {
@@ -195,8 +196,11 @@ public sealed class BoardAddingTests
             var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
             Assert.Matches("(?s)class=\"board-stack\".*id=\"host\".*href=\"board/new\" class=\"add-board\"", settings);
 
-            // One board: no filter, so the relays don't offer it; Settings is the place.
-            Assert.DoesNotContain("board/new", WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel)), StringComparison.Ordinal);
+            // One board: the side menu has it too, and the relays' chips.
+            Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", settings);
+            var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+            Assert.Matches("(?s)class=\"chips-row\".*href=\"board/new\" class=\"chip-add\"", relays);
+            Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", relays);
         }
 
         await using var boards = await TwoBoards.StartAsync();
@@ -428,7 +432,7 @@ public sealed class BoardAddingTests
 
     // With two boards the desktop's side menu lists them on every page: on a page without the filter (Settings, a
     // relay's page) each board posts the Relays screen's own form with that board alone, which goes to Relays showing
-    // it; "+ Add a board" ends the list. Relays keeps its filter, and one board has no list.
+    // it; "+ Add a board" ends the list. Relays keeps its filter. One board has the list too, without "All boards".
     [Fact]
     public async Task Should_ListTheBoards_InTheSideMenu_OnEveryPage()
     {
@@ -450,7 +454,70 @@ public sealed class BoardAddingTests
 
         await using var one = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
         using var client = one.CreateClient();
-        Assert.DoesNotContain("side-boards", WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel)), StringComparison.Ordinal);
+        var alone = WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel));
+        // The one board is every board there is: it posts every board, so a board added later isn't hidden.
+        Assert.Matches("(?s)class=\"side-boards\".*form=\"board-go\" name=\"show\" value=\"all\".*href=\"board/new\" class=\"side-add\"", alone);
+        Assert.DoesNotContain("All boards", alone, StringComparison.Ordinal);
+        Assert.DoesNotContain("aria-pressed", alone[alone.IndexOf("side-boards", StringComparison.Ordinal)..], StringComparison.Ordinal);
+    }
+
+    // One board, tapped in the side menu of a page without the filter: Relays shows it, and after a second board is
+    // added Relays shows both, not only the one tapped.
+    [Fact]
+    public async Task Should_ShowABoardAddedLater_AfterTheOneBoardWasTappedInTheSideMenu()
+    {
+        await using var app = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
+        using var http = app.CreateClient();
+        var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+        var token = Regex.Match(settings, "(?s)<form id=\"board-go\".*?name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
+        var tap = Regex.Match(settings, "form=\"board-go\" name=\"show\" value=\"([^\"]*)\"");
+        Assert.True(token.Success && tap.Success, "The side menu has the board, in its own form.");
+        using (var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["show"] = tap.Groups[1].Value, ["__RequestVerificationToken"] = token.Groups[1].Value }))
+        using (var response = await http.PostAsync(RelaysEndpoints.BoardsPath, form, Cancel))
+        {
+            response.EnsureSuccessStatusCode();
+            Assert.Equal("/", response.RequestMessage!.RequestUri!.AbsolutePath);
+        }
+
+        await app.Services.GetRequiredService<BoardRegistry>().AddBoardAsync(Model("vm201"), "Barn", Cancel);
+
+        var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+        Assert.Contains(">Barn<", relays, StringComparison.Ordinal);
+        Assert.Equal(2, Occurrences(relays, "RELAY 8"));
+        Assert.DoesNotContain("Showing", relays, StringComparison.Ordinal);
+    }
+
+    // A board added while a page is open brings "All boards" ("All" among the chips) to its side menu and chips, and
+    // the board removed again takes it away: on Relays, with the board filter, and on Settings, with the list that goes
+    // to Relays (TabBar).
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_ShowAndHideAllBoards_AsABoardIsAddedAndRemoved_WhileThePageIsOpen(bool onRelays)
+    {
+        await using var app = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
+        using var page = onRelays
+            ? await PageRenderer.StartAsync<Relays>(app.Services, John, "John")
+            : await PageRenderer.StartAsync<Settings>(app.Services, John, "John");
+        var sideAll = WithClass("side-board all");
+        var chipAll = WithClass("chip-filter all");
+        Assert.True(await page.HasAsync(WithClass("side-board")));
+        Assert.False(await page.HasAsync(sideAll));
+        Assert.False(await page.HasAsync(chipAll));
+
+        var registry = app.Services.GetRequiredService<BoardRegistry>();
+        var barn = await registry.AddBoardAsync(Model("vm201"), "Barn", Cancel);
+        await BoardTestRig.WaitUntilAsync(() => page.HasAsync(sideAll).GetAwaiter().GetResult());
+        Assert.Contains("All boards", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Contains("Barn", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Equal(onRelays, await page.HasAsync(chipAll));
+
+        Assert.Null(await app.Services.GetRequiredService<BoardRemoval>().RemoveAsync(barn.BoardId, turnOffFirst: false, John, Cancel));
+        await BoardTestRig.WaitUntilAsync(() => !page.HasAsync(sideAll).GetAwaiter().GetResult());
+        Assert.False(await page.HasAsync(chipAll));
+        Assert.DoesNotContain("All boards", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(WithClass("side-board")));
+        Assert.Empty(Errors(page));
     }
 
     // The side menu's list on a page without the filter shows a board's new name at once.
@@ -549,6 +616,12 @@ public sealed class BoardAddingTests
     }
 
     // What went wrong on the page, but for moving the focus to a new step's heading, which needs a browser.
+    // An element whose class starts with these classes, e.g. "side-board all".
+    private static Func<IReadOnlyDictionary<string, object?>, bool> WithClass(string classes)
+    {
+        return attributes => attributes.GetValueOrDefault("class")?.ToString()?.StartsWith(classes + " ", StringComparison.Ordinal) == true;
+    }
+
     private static List<Exception> Errors(PageRenderer page)
     {
         return [.. page.Errors.Where(e => !e.ToString().Contains("ElementReference has not been configured correctly", StringComparison.Ordinal))];

@@ -14,7 +14,7 @@ namespace Contactor.Tests.Web;
 /// <summary>
 /// Events, Debug and the tab bar's toasts with two boards (<see cref="TwoBoards"/>): each event and step names its
 /// board, each screen has the board filter, kept in a cookie of its own, and the toasts name their board. With one board
-/// they are as they always were.
+/// they are as they always were, with the board filter showing only the board and "+ Board".
 /// </summary>
 public sealed partial class EventsDebugBoardsPageTests
 {
@@ -344,8 +344,8 @@ public sealed partial class EventsDebugBoardsPageTests
 
         await BoardTestRig.WaitUntilAsync(() => page.HasAsync(PageRenderer.With("class", "toast ")).Result);
         Assert.False(await page.HasAsync(PageRenderer.With("class", "where")));
-        Assert.False(await page.HasAsync(PageRenderer.With("id", "board-filter")));
         Assert.Contains("Board: ", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.With("class", "chip-filter all picked")));
         Assert.Empty(page.Errors);
     }
 
@@ -366,8 +366,84 @@ public sealed partial class EventsDebugBoardsPageTests
 
         Assert.Matches("<strong[^>]*>The board</strong> had its own timers turned off", html);
         Assert.DoesNotContain("class=\"where\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("board-filter", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("All boards", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Showing", html, StringComparison.Ordinal);
         Assert.Contains("Relay 2", html, StringComparison.Ordinal);
+    }
+
+    // One board: Relays, Events and Debug show the board in the filter, picked, and "+ Board" / "+ Add a board", but no
+    // "All boards"; a tap on the board (its chip or its box in the side menu) posts every board, so it shows everything
+    // still, as there is nothing to filter.
+    [Theory]
+    [InlineData("relays")]
+    [InlineData("events")]
+    [InlineData("debug")]
+    public async Task Should_ShowTheOneBoard_AndAddABoard_WithoutAllBoards(string screenName)
+    {
+        var screen = screenName == "relays" ? BoardFilterScreen.Relays : Screen(screenName);
+        await using var app = await OneBoardAsync();
+        using var http = app.CreateClient();
+
+        var page = await PageAsync(http, screen.PagePath);
+        var chip = Regex.Match(page, "name=\"show\" value=\"([^\"]*)\" class=\"chip-filter picked ");
+        var side = Regex.Match(page, "name=\"show\" value=\"([^\"]*)\" class=\"side-board picked ");
+        Assert.Equal(BoardFilter.AllValue, chip.Groups[1].Value);
+        Assert.Equal(BoardFilter.AllValue, side.Groups[1].Value);
+
+        foreach (var html in new[] { page, await PickAsync(http, screen, chip.Groups[1].Value) })
+        {
+            AssertOnlyTheBoard(html, screen);
+            AssertEverythingShows(html, screenName);
+        }
+    }
+
+    // Events and Debug show a board's state only in the board filter: a status that changes none of what it shows (a
+    // poll's answer) doesn't redraw the page, while a relay switched on lights its lamp.
+    [Theory]
+    [InlineData("events")]
+    [InlineData("debug")]
+    public async Task Should_RedrawForABoardsStatus_OnlyWhenTheFilterShowsAChange(string screenName)
+    {
+        var fake = new FakeRelayBoard();
+        await using var app = new TestWebApp("Development", configureServices: TestWebApp.WithBoard(fake));
+        using var page = screenName == "events"
+            ? await PageRenderer.StartAsync<Contactor.Web.Components.Events>(app.Services, John, "John")
+            : await PageRenderer.StartAsync<Contactor.Web.Components.Debug>(app.Services, John, "John");
+        var lampOn = PageRenderer.With("class", "lamp on");
+        Assert.False(await page.HasAsync(lampOn));
+
+        // Many statuses that change nothing shown, then one that does: the page draws for the last one (and at most
+        // once or twice for something else the app does meanwhile), not once for each.
+        var renders = page.Renders;
+        const int Unchanged = 20;
+        for (var i = 0; i < Unchanged; i++)
+        {
+            fake.SetRelay(3, false);
+        }
+
+        fake.SetRelay(4, true);
+        await BoardTestRig.WaitUntilAsync(() => page.HasAsync(lampOn).GetAwaiter().GetResult());
+        Assert.InRange(page.Renders - renders, 1, 3);
+        Assert.Empty(page.Errors);
+    }
+
+    // A filter cookie that names a board that is gone (or only the one board) never leaves one board showing nothing.
+    [Theory]
+    [InlineData("2")]
+    [InlineData("1")]
+    [InlineData("1-2")]
+    public async Task Should_ShowEverything_WithOneBoard_WhateverTheCookieSays(string cookie)
+    {
+        await using var app = await OneBoardAsync();
+        using var http = app.CreateClient();
+        http.DefaultRequestHeaders.Add("Cookie", string.Join("; ", BoardFilterScreen.All.Select(s => $"{s.CookieName}={cookie}")));
+
+        foreach (var (name, screen) in new[] { ("relays", BoardFilterScreen.Relays), ("events", BoardFilterScreen.Events), ("debug", BoardFilterScreen.Debug) })
+        {
+            var html = await PageAsync(http, screen.PagePath);
+            AssertOnlyTheBoard(html, screen);
+            AssertEverythingShows(html, name);
+        }
     }
 
     [Fact]
@@ -424,6 +500,60 @@ public sealed partial class EventsDebugBoardsPageTests
         Assert.Equal("Schedule", EventText.For(on, "Fan", null, boardName: "Garage").Who);
         Assert.True(EventText.IsAboutBoard(lost));
         Assert.False(EventText.IsAboutBoard(on));
+    }
+
+    // The app with one board, signed in as John: an event about its relay 2, and a step in its traffic.
+    private static async Task<TestWebApp> OneBoardAsync()
+    {
+        var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
+            TestWebApp.WithBoard(new FakeRelayBoard()));
+        await EnsureUserAsync(app);
+        var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+        await using (var db = await factory.CreateDbContextAsync(Cancel))
+        {
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, BoardId = 1, RelayId = 2, Actor = John, Action = EventActions.On });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        app.Services.GetRequiredService<BoardRegistry>().All.Single().Trace.Record(Step(DateTimeOffset.UtcNow, "Turn on relay 3"));
+        return app;
+    }
+
+    // The filter, in the chips and in the side menu: the one board, picked, then "+ Board" or "+ Add a board"; no
+    // "All boards" and no "Showing".
+    private static void AssertOnlyTheBoard(string html, BoardFilterScreen screen)
+    {
+        Assert.Contains($"form id=\"board-filter\" method=\"post\" action=\"{screen.FormPath.TrimStart('/')}\"", html, StringComparison.Ordinal);
+        Assert.Matches("(?s)class=\"chips-row\".*class=\"chip-filter picked \" aria-pressed=\"true\".*href=\"board/new\" class=\"chip-add\"", html);
+        Assert.Matches("(?s)class=\"side-boards\".*class=\"side-board picked \" aria-pressed=\"true\".*href=\"board/new\" class=\"side-add\"", html);
+        Assert.Single(Regex.Matches(html, "class=\"chip-filter "));
+        Assert.Single(Regex.Matches(html, "class=\"side-board "));
+        Assert.DoesNotContain("All boards", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Showing", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("board-go", html, StringComparison.Ordinal);
+    }
+
+    // The screen as with one board it always was: every relay, the board's event, its traffic.
+    private static void AssertEverythingShows(string html, string screenName)
+    {
+        switch (screenName)
+        {
+            case "relays":
+                Assert.Contains("RELAY 8", html, StringComparison.Ordinal);
+                Assert.Contains("Board online", html, StringComparison.Ordinal);
+                Assert.Contains("class=\"all-off\"", html, StringComparison.Ordinal);
+                break;
+            case "events":
+                Assert.Contains("Relay 2", html, StringComparison.Ordinal);
+                Assert.DoesNotContain("class=\"where\"", html, StringComparison.Ordinal);
+                break;
+            default:
+                Assert.Contains("Turn on relay 3", html, StringComparison.Ordinal);
+                Assert.Contains("Board: ", html, StringComparison.Ordinal);
+                break;
+        }
     }
 
     private static BoardTraceEntry Step(DateTimeOffset at, string text, bool routine = false)

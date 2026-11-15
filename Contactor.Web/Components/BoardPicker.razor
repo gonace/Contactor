@@ -2,10 +2,11 @@
 @using Contactor.Web.Features.Relays
 @using Microsoft.AspNetCore.Components.Forms
 
-@* The board filter of Relays, Events and Debug, with two or more boards: below 1024 px a row of chips under the
-   heading, on a desktop a list in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the
-   choice in the screen's own cookie and comes back to the page (RelaysEndpoints); no JavaScript. Each list ends with
-   "+ Add a board" ("+ Board" among the chips), which opens BoardNew. *@
+@* The board filter of Relays, Events and Debug: below 1024 px a row of chips under the heading, on a desktop a list
+   in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the choice in the screen's own cookie
+   and comes back to the page (RelaysEndpoints); no JavaScript. Each list ends with "+ Add a board" ("+ Board" among
+   the chips), which opens BoardNew. With one board there is nothing to filter: no "All boards", and the board shows
+   as picked, as it is the one shown. *@
 @if (Side)
 {
     var all = CountOf(Boards);
@@ -17,16 +18,19 @@
     }
     <div class="list-label" id="boards-label">BOARDS</div>
     <div class="side-boards" role="group" aria-labelledby="boards-label">
-        <button type="submit" form="@form" name="show" value="@BoardFilter.AllValue" class="side-board all @(!Go && Filter.IsAll ? "picked" : null)" aria-pressed="@(Go ? null : Filter.IsAll ? "true" : "false")">
-            <span class="line"><span class="name">All boards</span></span>
-            <span class="hint">@(AnyAnswered ? $"{all.On} of {all.Active} on · " : "")@Boards.Count boards</span>
-        </button>
+        @if (Several)
+        {
+            <button type="submit" form="@form" name="show" value="@BoardFilter.AllValue" class="side-board all @(!Go && Filter.IsAll ? "picked" : null)" aria-pressed="@(Go ? null : Filter.IsAll ? "true" : "false")">
+                <span class="line"><span class="name">All boards</span></span>
+                <span class="hint">@(AnyAnswered ? $"{all.On} of {all.Active} on · " : "")@Boards.Count boards</span>
+            </button>
+        }
         @foreach (var board in Boards)
         {
             var state = board.State;
             var count = Counts.Of(board.BoardId, state);
-            var picked = !Go && !Filter.IsAll && Filter.Shows(board.BoardId);
-            <button type="submit" form="@form" name="show" value="@(Go ? OnlyValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
+            var picked = !Go && Picked(board.BoardId);
+            <button type="submit" form="@form" name="show" value="@(Go ? GoValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
                 <span class="line"><span class="name">@board.Name</span><span class="dot @(state.IsConnected ? null : "off")" aria-hidden="true"></span></span>
                 <span class="hint">
                     @(state.HasAnswered ? $"{count.On} of {count.Active} on" : "")
@@ -48,12 +52,15 @@ else
 {
     <form id="@FormId" method="post" action="@Screen.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
     <div class="chips-row" role="group" aria-label="Boards to show">
-        <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">@(Plain ? "All boards" : "All")</button>
+        @if (Several)
+        {
+            <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">@(Plain ? "All boards" : "All")</button>
+        }
         @foreach (var board in Boards)
         {
             var state = board.State;
             var count = Counts.Of(board.BoardId, state);
-            var picked = !Filter.IsAll && Filter.Shows(board.BoardId);
+            var picked = Picked(board.BoardId);
             <button type="submit" form="@FormId" name="show" value="@ToggleValue(board.BoardId)" class="chip-filter @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(picked ? "true" : "false")" @key="board.BoardId">
                 <span class="cn">
                     @if (!state.IsConnected)
@@ -97,7 +104,8 @@ else
 
     /// <summary>
     /// The side menu's list on a page without a board filter (Settings, a relay's page …): a tap goes to Relays showing
-    /// that board ("All boards": every board), through the Relays screen's own form. Nothing shows as picked.
+    /// that board ("All boards", or the one board: every board), through the Relays screen's own form. Nothing shows as
+    /// picked.
     /// </summary>
     [Parameter]
     public bool Go { get; set; }
@@ -136,6 +144,9 @@ else
     [Parameter]
     public string? Showing { get; set; }
 
+    // Two or more boards: "All boards" (or "All") first. With one board it would only say the same as the board.
+    private bool Several => Boards.Count > 1;
+
     private bool AnyAnswered => Boards.Any(b => b.State.HasAnswered);
 
     private (int On, int Active) CountOf(IEnumerable<LiveBoard> boards)
@@ -144,10 +155,17 @@ else
         return (counts.Sum(c => c.On), counts.Sum(c => c.Active));
     }
 
-    // What a tap on the board posts on a page without the filter: that board alone.
-    private static string OnlyValue(int boardId)
+    // A picked board, light orange: one of the boards picked, or the only board, which is always the one shown.
+    private bool Picked(int boardId)
     {
-        return boardId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Several ? !Filter.IsAll && Filter.Shows(boardId) : Boards.Count == 1;
+    }
+
+    // What a tap on the board posts on a page without the filter: that board alone. The one board posts every board, as
+    // it is every board there is: kept as that board alone, the cookie would hide a board added later.
+    private string GoValue(int boardId)
+    {
+        return Several ? boardId.ToString(System.Globalization.CultureInfo.InvariantCulture) : BoardFilter.AllValue;
     }
 
     // What a tap on the board posts: the filter as it would be after it.
