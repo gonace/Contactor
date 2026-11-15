@@ -44,6 +44,8 @@ public sealed class ForwardedHeadersCheckTests
     [InlineData("false")]
     [InlineData("False")]
     [InlineData("0")]
+    [InlineData("1")]
+    [InlineData(" true")]
     public async Task Should_Start_WithForwardedHeadersOff(string? value)
     {
         var settings = new Dictionary<string, string?>();

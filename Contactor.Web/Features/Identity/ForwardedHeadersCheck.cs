@@ -10,7 +10,7 @@ public static partial class ForwardedHeadersCheck
     public const string Key = "ForwardedHeaders_Enabled";
 
     public const string Message =
-        "Forwarded headers are on (ASPNETCORE_FORWARDEDHEADERS_ENABLED). Contactor reads the visitor's address itself; turn the setting off.";
+        "Forwarded headers are on (the setting ForwardedHeaders_Enabled, e.g. ASPNETCORE_FORWARDEDHEADERS_ENABLED). Contactor reads the visitor's address itself; turn the setting off.";
 
     /// <summary>Logs an error and throws when the setting is on, as ASP.NET Core reads it: "true", in any case.</summary>
     public static void CheckForwardedHeadersOff(this WebApplication app)
