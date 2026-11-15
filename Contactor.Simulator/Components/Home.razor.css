@@ -107,6 +107,7 @@ h1 {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
 }
 
 .board .name {
@@ -116,6 +117,7 @@ h1 {
 }
 
 .dot {
+    flex: none;
     width: 10px;
     height: 10px;
     border-radius: 50%;
@@ -490,10 +492,6 @@ h3 {
     .board .lamps {
         width: 0;
         min-width: 100%;
-    }
-
-    .board .line {
-        gap: 12px;
     }
 
     .board .name {

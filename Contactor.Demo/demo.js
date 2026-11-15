@@ -35,6 +35,11 @@
     let timeoutFailures = 0;
     let timeoutAgainAt = 0;
 
+    // How long the check and the count down's end wait for an answer: a request that hangs counts as no answer, so the
+    // tab doesn't wait until the next click. Without AbortSignal.timeout (an older browser), they wait as before.
+    const answerWithin = 10000;
+    const answerSignal = () => typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(answerWithin) : undefined;
+
     // Where the visitor was when the popup opened, to go back there when it goes: an element of the page or of a
     // frame, and the frame the visitor last used, when that element is gone (the frame went to another page).
     let lastFrame = null;
@@ -131,7 +136,7 @@
     // was quiet that long, so it is about to end; or when the demo doesn't answer, to warn rather than not.
     function check() {
         checking = true;
-        fetch(body.dataset.quiet, { method: "POST", credentials: "same-origin" })
+        fetch(body.dataset.quiet, { method: "POST", credentials: "same-origin", signal: answerSignal() })
             .then((response) => {
                 if (response.status === 404) {
                     end("ended");
@@ -155,7 +160,7 @@
     // when). Anything else (offline, an error on the way) is asked again a little later, a few times.
     function timeOut() {
         timingOut = true;
-        fetch(body.dataset.timeout, { method: "POST", credentials: "same-origin" })
+        fetch(body.dataset.timeout, { method: "POST", credentials: "same-origin", signal: answerSignal() })
             .then((response) => {
                 if (response.status === 409) {
                     return response.json().then(heardOf, () => false).then((heard) => {

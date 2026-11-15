@@ -121,7 +121,7 @@ public sealed class BoardAddressHandlerTests
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var board = await db.Boards.AsNoTracking().SingleAsync(Cancel);
         Assert.Equal(((string?)null, (string?)null), (board.Host, board.Username));
-        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action is EventActions.BoardAddressChanged or EventActions.BoardLoginChanged);
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action is EventActions.BoardAddressChanged or EventActions.BoardLoginChanged or EventActions.BoardRenamed);
     }
 
     [Fact]

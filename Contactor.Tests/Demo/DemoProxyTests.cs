@@ -567,6 +567,43 @@ public sealed class DemoProxyTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_SaySomethingWentWrong_ToTheTemplateAndAFrame_WhenAProgramIsGivenUpAfterItGotGoing()
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+        var applying = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Database.WhileApplying = async appStopped =>
+        {
+            applying.TrySetResult();
+            await Task.Delay(System.Threading.Timeout.Infinite, appStopped);
+        };
+        using var template = Post("/demo/template", id);
+        template.Headers.Add("Sec-Fetch-Dest", "empty");
+        template.Content = new FormUrlEncodedContent([new KeyValuePair<string, string>("template", "workshop")]);
+        var templating = client.SendAsync(template, Cancel);
+        await applying.Task.WaitAsync(Cancel);
+
+        // The app is stopped while the template is applied: a frame waits for it.
+        using var frame = Get("/?demo-frame", id);
+        frame.Headers.Add("Sec-Fetch-Dest", "iframe");
+        var framing = client.SendAsync(frame, Cancel);
+        await Wait.UntilAsync(() => _time.Waits(new DemoOptions().StartTimeout));
+
+        // The simulator, which listened, exits and then doesn't start again: it is given up, and the copy is stopped.
+        Echo.ExitsAtOnce = "simulator";
+        await Echo.ExitAsync("simulator");
+
+        using var templated = await templating;
+        using var framed = await framing;
+        Assert.Equal(HttpStatusCode.InternalServerError, templated.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, framed.StatusCode);
+        var html = await framed.Content.ReadAsStringAsync(Cancel);
+        Assert.Contains("Something went wrong with your copy", html, StringComparison.Ordinal);
+        Assert.Contains("data-demo-copy=\"went-wrong\"", html, StringComparison.Ordinal);
+        await Wait.UntilAsync(() => Copies.Taken == 0);
+    }
+
+    [Fact]
     public async Task Should_GiveAVisitorWhoseCopyWasStopped_ANewId()
     {
         var client = await StartAsync();

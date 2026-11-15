@@ -14,7 +14,9 @@ public static class Program
     // The port the image listens on, published as the same port on this computer.
     private const int AppPort = 8080;
 
-    // Where a container reaches this computer, as Docker Desktop names it.
+    // Where a container reaches this computer, as Docker Desktop names it. The app's Vm201__Host is the name Aspire gets
+    // from the container runtime, which is this one on Docker Desktop, the runtime the AppHost needs. Another runtime
+    // can use another name (Podman: host.containers.internal), and the simulator's page then shows this one.
     private const string ContainerHost = "host.docker.internal";
 
     // The build the demo starts its copies of the app and the simulator from: the AppHost's own, which builds them
@@ -43,7 +45,10 @@ public static class Program
         // the container under "contactor", as "contactor-web", the name of its image too. The image is always tagged
         // "dev": Aspire otherwise gives each build a new tag, so every run left one more image of about 445 MB behind.
         // A new build takes the tag from the one before, which stays as an untagged image: `docker image prune` removes
-        // those, and every other untagged image.
+        // those, and every other untagged image, but not one a container still uses (e.g. a container a crashed run
+        // left behind: remove the container first). Images from older runs have a hash as their tag
+        // (contactor-web:<hash>, older ones web:<hash>), so prune keeps them: `docker images contactor-web` and
+        // `docker images web` list them, and `docker image rm` removes them.
         var board = simulator.GetEndpoint("vm201");
         builder.AddDockerfile("contactor-web", Path.Combine(builder.AppHostDirectory, ".."))
             .WithImageTag("dev")
@@ -57,8 +62,8 @@ public static class Program
 
         // The public demo (docs/DEMO.md) on http://localhost:5070: each visitor gets their own copy of the app and the
         // simulator, started from their build output, not the resources above. Aspire runs it with `dotnet run
-        // --no-launch-profile` and takes only its address from the launch profile; this is the one place its settings
-        // are given in development, with full paths.
+        // --no-launch-profile`, and its launch profile has only its address; this is the one place its settings are
+        // given in development, with full paths.
         var root = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, ".."));
         string Output(string project) => Path.Combine(root, project, "bin", Configuration, "net10.0", project + ".dll");
         builder.AddProject<Projects.Contactor_Demo>("contactor-demo")
