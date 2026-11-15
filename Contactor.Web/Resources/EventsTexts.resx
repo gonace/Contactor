@@ -77,6 +77,10 @@
   <data name="Events.Short.Outside" xml:space="preserve">
     <value>outside the app</value>
   </data>
+  <data name="Events.Short.RemovedInput" xml:space="preserve">
+    <value>a removed input</value>
+    <comment>An input that is no longer in the app, in a relay's status line.</comment>
+  </data>
   <data name="Events.Short.System" xml:space="preserve">
     <value>the system</value>
   </data>

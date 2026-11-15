@@ -473,6 +473,43 @@ public sealed class BoardRemovalTests
         Assert.Contains(views, v => v.What == "turned on" && v.Target == "Relay 2");
     }
 
+    // A relay that a removed board's input turned on (its owner "input:n" with no input left), and one it turned off:
+    // the Relays and Relay screens say "a removed input" and don't break.
+    [Fact]
+    public async Task Should_ShowARemovedInput_AsWhoSwitchedARelay()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var on = await RelayIdAsync(boards, 1, 2);
+        var off = await RelayIdAsync(boards, 1, 3);
+        boards.First.SetRelay(2, true);
+        await Wait.UntilAsync(() =>
+        {
+            using var check = boards.Factory.CreateDbContext();
+            return check.RelayRuntimes.Any(r => r.RelayId == on && r.OnSinceUtc != null);
+        });
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var input = EventActors.ForInput(await db.Inputs.Where(i => i.BoardId == boards.BarnId && i.Channel == 1).Select(i => i.Id).SingleAsync(Cancel));
+            await db.RelayRuntimes.Where(r => r.RelayId == on).ExecuteUpdateAsync(r => r.SetProperty(x => x.TurnedOnBy, input), Cancel);
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = new DateTime(2026, 11, 15, 12, 0, 0, DateTimeKind.Utc), BoardId = 1, RelayId = off, Actor = input, Action = EventActions.Off });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        using (var relays = await PageRenderer.StartAsync<Contactor.Web.Components.Relays>(boards.App.Services, John, "John"))
+        {
+            var text = await relays.TextAsync();
+            Assert.Empty(relays.Errors);
+            Assert.Equal(2, text.Split("· a removed input").Length - 1);
+        }
+
+        using var relay = await PageRenderer.StartAsync<Contactor.Web.Components.RelayDetail>(
+            boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = on });
+        Assert.Empty(relay.Errors);
+        Assert.Contains(", by a removed input.", await relay.TextAsync(), StringComparison.Ordinal);
+    }
+
     // The last board can be removed too, as any other: its relays turned off first, everything about it deleted.
     [Fact]
     public async Task Should_RemoveTheLastBoard()
