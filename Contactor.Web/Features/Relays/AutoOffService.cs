@@ -115,6 +115,13 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
                     cancelled = true;
                     break;
                 }
+                catch
+                {
+                    // Cancelled before anything went out, or failed some other way: nothing is logged, so whatever the
+                    // board did shows as an external change.
+                    expected.Forget(mask, on: false);
+                    throw;
+                }
 
                 var minutes = runtime.OnSinceUtc is { } since ? (int)Math.Round((runtime.AutoOffAtUtc!.Value - since).TotalMinutes) : (int?)null;
                 db.EventLog.Add(new EventLogEntry

@@ -206,8 +206,9 @@ public sealed class RelayControl
             expected.Forget(wasOn & refused, on: false);
         }
 
-        // Once the OFF went out, it is recorded whatever happens to the caller now. The groups' stop after it is
-        // cancelled as ever before its own command goes out.
+        // Once the OFF went out, it is recorded whatever happens to the caller now, and the groups stop all the same:
+        // "All off" never ends with the relays outside a group off and the groups still running (board removal waits
+        // for every relay to go off). Before anything went out, a cancel stops it as ever.
         var record = single.IsEmpty ? cancellationToken : Recorded;
         var now = _clock.UtcNow;
         await using var db = await _dbFactory.CreateDbContextAsync(record);
@@ -242,7 +243,7 @@ public sealed class RelayControl
 
         await SaveAsync(db, board.BoardId, record);
         _changes.Notify();
-        await _groups.StopAllAsync(boardId, userEmail, cancellationToken);
+        await _groups.StopAllAsync(boardId, userEmail, record);
     }
 
     /// <summary>

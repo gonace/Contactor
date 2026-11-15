@@ -128,6 +128,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// </summary>
     public Func<Task>? BeforeOn { get; set; }
 
+    /// <summary>As <see cref="BeforeOn"/>, before an OFF reaches the board.</summary>
+    public Func<Task>? BeforeOff { get; set; }
+
     /// <summary>
     /// When set, OFF commands are accepted but change nothing, like a relay that won't drop. They return the relays as
     /// any command does: without <see cref="Refuse"/> and <see cref="Unconfirmed"/>.
@@ -302,6 +305,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
         if (on && BeforeOn is { } before)
         {
             await before();
+        }
+
+        if (!on && BeforeOff is { } beforeOff)
+        {
+            await beforeOff();
         }
 
         EnsureConnected();

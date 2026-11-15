@@ -223,8 +223,8 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                         }
                         catch (OperationCanceledException) when (wentOut && cancellationToken.IsCancellationRequested)
                         {
-                            // As a failed command: whatever the board did shows as an external change.
-                            _expected.Forget(_board.Capabilities.Relay(channel), on: true);
+                            // As a failed command (SendAsync forgot its expectation): whatever the board did shows as an
+                            // external change.
                             cancelled = interrupted = true;
                             break;
                         }
@@ -284,8 +284,8 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                 }
                 catch (OperationCanceledException) when (wentOut && cancellationToken.IsCancellationRequested)
                 {
-                    // As a failed command: whatever the board did shows as an external change.
-                    _expected.Forget(_board.Capabilities.Relay(channel), on: false);
+                    // As a failed command (SendAsync forgot its expectation): whatever the board did shows as an
+                    // external change.
                     cancelled = interrupted = true;
                     break;
                 }
@@ -443,7 +443,8 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
         _wasConnected = state.IsConnected;
     }
 
-    // How a command went: done, refused while the board is closed for its removal, or the board lost.
+    // How a command went: done, refused while the board is closed for its removal, or the board lost. Any other failure,
+    // a cancel included, is thrown; every way but done forgets the command's expectation.
     private enum Sent
     {
         Done,
@@ -481,6 +482,13 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
             _expected.Forget(mask, on);
             Interlocked.Increment(ref _connectGeneration);
             return Sent.Lost;
+        }
+        catch
+        {
+            // Cancelled, or failed some other way: nothing is logged, so whatever the board did shows as an external
+            // change, as for RelayControl's commands. Only a command the board took keeps its expectation.
+            _expected.Forget(mask, on);
+            throw;
         }
     }
 
