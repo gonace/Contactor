@@ -140,9 +140,9 @@ public sealed class EventText
         };
     }
 
-    // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan for 5 min",
-    // the red "Safety shut-off: Heat turned off, with Fan off". A step's name may be plural ("Fans"), so no verb agrees
-    // with it. A relay of a group switched on its own is an ordinary on/off and returns null.
+    // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on for 5 min: Fan",
+    // the red "Safety shut-off: Heat turned off. Fan must be on first." A step's name may be plural ("Fans"), so no verb
+    // agrees with it. A relay of a group switched on its own is an ordinary on/off and returns null.
     private (string Line, string? Target, bool IsAlert)? GroupText(EventLogEntry entry, string? relayName, string groupName)
     {
         var role = Text(entry.Details, "role") ?? relayName ?? _texts["Events.TheRelay"];
@@ -162,7 +162,8 @@ public sealed class EventText
         };
     }
 
-    // "Heat turned off, with Fan off", from {"missing":"Fan","off":["Heat"]}.
+    // "Heat turned off. Fan must be on first.", from {"missing":"Fan","off":["Heat"]}; with nothing turned off, the
+    // step above was started so it can run on: "Fan turned on to run on".
     private string TripLine(string? details)
     {
         var missing = Text(details, "missing") ?? _texts["Events.TheRelayAbove"];

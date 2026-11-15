@@ -107,7 +107,7 @@ public sealed class WorkshopTemplateTests : IDisposable
         var relays = await db.Relays.ToDictionaryAsync(r => r.Id, r => r.Name, Cancel);
         var texts = events.Select(e => Text(e, names, relays)).ToList();
         Assert.Contains("Alex turned on the group · Fan heater · Fan → 3 s → Heat", texts);
-        Assert.Contains("Run-on: Fan for 2 min · Fan heater", texts);
+        Assert.Contains("Run-on for 2 min: Fan · Fan heater", texts);
         Assert.Contains("Run-on done: Fan off · Fan heater", texts);
         Assert.Contains("Auto-off turned off the group after 2 h · Fan heater", texts);
         Assert.Contains(texts, t => t is "Sam turned on · Air compressor" or "Alex turned on · Air compressor");

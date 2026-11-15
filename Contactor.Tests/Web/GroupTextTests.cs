@@ -32,7 +32,7 @@ public sealed class GroupTextTests
     }
 
     [Theory]
-    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on:", "Fan for 5 min")]
+    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on", "for 5 min: Fan")]
     [InlineData(EventActions.RunOnEnd, """{"role":"Fan"}""", "Run-on done:", "Fan off")]
     [InlineData(EventActions.GroupOff, """{"afterMinutes":120}""", "Auto-off", "turned off the group after 2 h")]
     public void Should_DescribeWhatTheGroupDidByItself(string action, string details, string who, string what)
@@ -54,16 +54,20 @@ public sealed class GroupTextTests
             null,
             "Fan heater");
 
-        Assert.Equal(("Safety shut-off:", "Heat turned off, with Fan off", true), (view.Who, view.What, view.IsAlert));
+        Assert.Equal(("Safety shut-off:", "Heat turned off. Fan must be on first.", true), (view.Who, view.What, view.IsAlert));
     }
 
     // A step's name may be plural ("Fans", Issue #326): no verb in the line agrees with it.
     [Theory]
-    [InlineData(EventActions.RunOnStart, """{"seconds":180,"role":"Fans"}""", "Run-on: Fans for 3 min")]
+    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on for 5 min: Fan")]
+    [InlineData(EventActions.RunOnStart, """{"seconds":180,"role":"Fans"}""", "Run-on for 3 min: Fans")]
+    [InlineData(EventActions.RunOnEnd, """{"role":"Fan"}""", "Run-on done: Fan off")]
     [InlineData(EventActions.RunOnEnd, """{"role":"Fans"}""", "Run-on done: Fans off")]
-    [InlineData(EventActions.InterlockTrip, """{"missing":"Fans","off":["Heaters","Lamp"]}""", "Safety shut-off: Heaters and Lamp turned off, with Fans off")]
-    [InlineData(EventActions.InterlockTrip, """{"missing":"Fans","off":[]}""", "Safety shut-off: Fans turned on")]
-    public void Should_ReadRight_ForAPluralStepName(string action, string details, string text)
+    [InlineData(EventActions.InterlockTrip, """{"missing":"Fan","off":["Heat"]}""", "Safety shut-off: Heat turned off. Fan must be on first.")]
+    [InlineData(EventActions.InterlockTrip, """{"missing":"Fans","off":["Heaters","Lamp"]}""", "Safety shut-off: Heaters and Lamp turned off. Fans must be on first.")]
+    [InlineData(EventActions.InterlockTrip, """{"missing":"Fan","off":[]}""", "Safety shut-off: Fan turned on to run on")]
+    [InlineData(EventActions.InterlockTrip, """{"missing":"Fans","off":[]}""", "Safety shut-off: Fans turned on to run on")]
+    public void Should_ReadRight_ForASingularOrPluralStepName(string action, string details, string text)
     {
         var view = TestTexts.Events.For(Entry(EventActors.System, action, details), "Relay 1", null, "Fan heater");
 
@@ -100,7 +104,7 @@ public sealed class GroupTextTests
     {
         var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.InterlockTrip, "{not json"), null, null, "Fan heater");
 
-        Assert.Equal("the relay above turned on", view.What);
+        Assert.Equal("the relay above turned on to run on", view.What);
     }
 
     [Fact]

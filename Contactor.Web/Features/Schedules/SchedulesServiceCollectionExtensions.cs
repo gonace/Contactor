@@ -8,7 +8,8 @@ public static class SchedulesServiceCollectionExtensions
     public static IServiceCollection AddSchedules(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        // The texts of the handler and the schedules' words; registered with the languages too, and once is enough.
+        // The texts of the handler and the schedules' words. AddLanguages also adds the localization; adding it twice is
+        // harmless.
         services.AddLocalization();
         services.TryAddSingleton<ScheduleText>();
         services.AddSingleton<SchedulesHandler>();

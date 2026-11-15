@@ -13,7 +13,7 @@ public static class EventsServiceCollectionExtensions
         services.AddSingleton<BoardEventRecorder>();
         services.AddSingleton<IBoardWatcher>(sp => sp.GetRequiredService<BoardEventRecorder>());
         services.AddHostedService(sp => sp.GetRequiredService<BoardEventRecorder>());
-        // The events' words, which take a schedule's; registered with the languages too, and once is enough.
+        // The events' words, which take a schedule's. AddLanguages also adds the localization; adding it twice is harmless.
         services.AddLocalization();
         services.TryAddSingleton<ScheduleText>();
         services.TryAddSingleton<EventText>();

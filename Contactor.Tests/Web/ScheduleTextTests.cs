@@ -57,5 +57,4 @@ public sealed class ScheduleTextTests
         Assert.Equal(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], ScheduleText.Days.Select(ScheduleText.ShortName));
         Assert.Equal("Monday", ScheduleText.Name(ScheduleDays.Monday));
     }
-
 }

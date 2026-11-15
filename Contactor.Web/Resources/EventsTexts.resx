@@ -33,8 +33,8 @@
     <value>System</value>
   </data>
   <data name="Events.Who.RunOn" xml:space="preserve">
-    <value>Run-on:</value>
-    <comment>In bold before Events.Group.RunOnStart.</comment>
+    <value>Run-on</value>
+    <comment>In bold in Events.Group.RunOnStart.</comment>
   </data>
   <data name="Events.Who.RunOnDone" xml:space="preserve">
     <value>Run-on done:</value>
@@ -136,20 +136,20 @@
     <value>{0} turned off the group</value>
   </data>
   <data name="Events.Group.RunOnStart" xml:space="preserve">
-    <value>{0} {1} for {2}</value>
-    <comment>After Events.Who.RunOn: {1} is the name of a step of the group, e.g. "Fan" or "Fans", {2} a length. Reads right for any name.</comment>
+    <value>{0} for {2}: {1}</value>
+    <comment>{0} is Events.Who.RunOn, in bold, {1} the name of a step of the group, e.g. "Fan" or "Fans", {2} a length: "Run-on for 5 min: Fan". Reads right for any name.</comment>
   </data>
   <data name="Events.Group.RunOnEnd" xml:space="preserve">
     <value>{0} {1} off</value>
     <comment>After Events.Who.RunOnDone: {1} is a step's name.</comment>
   </data>
   <data name="Events.Group.Trip" xml:space="preserve">
-    <value>{0} {1} turned off, with {2} off</value>
-    <comment>After Events.Who.SafetyShutOff: {1} is the steps turned off, {2} the step above that was off. Reads right for any name.</comment>
+    <value>{0} {1} turned off. {2} must be on first.</value>
+    <comment>After Events.Who.SafetyShutOff: {1} is the steps turned off, {2} the step above that was off: "Heat turned off. Fan must be on first." Reads right for any name.</comment>
   </data>
   <data name="Events.Group.TripStarted" xml:space="preserve">
-    <value>{0} {1} turned on</value>
-    <comment>After Events.Who.SafetyShutOff: {1} is the step above, started so it can run on.</comment>
+    <value>{0} {1} turned on to run on</value>
+    <comment>After Events.Who.SafetyShutOff: {1} is the step above, started so it can run on before the group stops.</comment>
   </data>
   <data name="Events.Group.StartFailed" xml:space="preserve">
     <value>{0} couldn't start {1}</value>
