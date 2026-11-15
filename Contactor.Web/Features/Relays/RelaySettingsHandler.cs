@@ -8,7 +8,14 @@ using Microsoft.EntityFrameworkCore;
 namespace Contactor.Web.Features.Relays;
 
 /// <summary>What the Relay screen edits.</summary>
-public sealed record RelaySettings(int Id, string Name, bool IsActive, int? MaxOnMinutes);
+public sealed record RelaySettings(int Id, string Name, bool IsActive, int? MaxOnMinutes)
+{
+    /// <summary>The board the relay is on, as read; saving ignores it.</summary>
+    public int BoardId { get; init; }
+
+    /// <summary>The relay's channel on its board, the number the screens show, as read; saving ignores it.</summary>
+    public int Channel { get; init; }
+}
 
 /// <summary>
 /// Loads and saves a relay's name, whether it is active, and its auto-off limit.
@@ -38,7 +45,7 @@ public sealed class RelaySettingsHandler
         var relay = await db.Relays.AsNoTracking().SingleOrDefaultAsync(r => r.Id == relayId, cancellationToken);
         return relay is null || !_registry.HasRelay(relay.BoardId, relay.Channel)
             ? null
-            : new RelaySettings(relay.Id, relay.Name, relay.IsActive, relay.MaxOnMinutes);
+            : new RelaySettings(relay.Id, relay.Name, relay.IsActive, relay.MaxOnMinutes) { BoardId = relay.BoardId, Channel = relay.Channel };
     }
 
     /// <summary>

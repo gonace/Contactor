@@ -353,7 +353,7 @@ public sealed class InputActionsTests
         var on = EventText.For(new EventLogEntry { Actor = Door, Action = EventActions.On, RelayId = 4 }, "Lighting", null);
 
         Assert.Equal(new EventView(false, "I", "Door", "turned off the group", "Fan heater"), groupOff);
-        Assert.Equal(new EventView(false, "I", "Input 1", "turned on", "Lighting"), on);
+        Assert.Equal(new EventView(false, "I", "An input", "turned on", "Lighting"), on);
         Assert.Equal("Door", EventText.ShortWho(Door, "Door"));
     }
 

@@ -353,7 +353,10 @@ public sealed partial class RelaysBoardsPageTests
         Assert.Contains("Closed", input, StringComparison.Ordinal);
         Assert.Contains("TURN OFF THE GROUP", group, StringComparison.Ordinal);
 
-        // Nothing the interlock had to undo.
+        // Nothing the interlock had to undo: no OFF reached the board, and no trip was logged. The board shows a trip
+        // whose event isn't saved yet.
+        Assert.DoesNotContain(boards.Barn.Sent, command => !command.On);
+        Assert.True(boards.Barn.State.Relays.ContainsAll(ChannelMask.Of(1) | ChannelMask.Of(2) | ChannelMask.Of(3)));
         await using var check = await boards.Factory.CreateDbContextAsync(Cancel);
         Assert.False(await check.EventLog.AnyAsync(e => e.Action == EventActions.InterlockTrip, Cancel));
     }

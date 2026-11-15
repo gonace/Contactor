@@ -44,6 +44,20 @@ public sealed class ExpectedChangesTests
     }
 
     [Fact]
+    public void Should_ExpectNothing_OnceCleared()
+    {
+        _expected.Expect(new ChannelMask(0b0000_0011), on: true);
+        _expected.Expect(new ChannelMask(0b0000_0001), on: false, TimeSpan.FromSeconds(40));
+
+        _expected.Clear();
+
+        var now = _time.GetUtcNow().UtcDateTime;
+        Assert.False(_expected.TryConsume(1, on: true, now));
+        Assert.False(_expected.TryConsume(2, on: true, now));
+        Assert.False(_expected.TryConsume(1, on: false, now));
+    }
+
+    [Fact]
     public void Should_ForgetAFailedCommandsExpectation_AndOnlyThatOne()
     {
         _expected.Expect(new ChannelMask(0b0000_0011), on: true);

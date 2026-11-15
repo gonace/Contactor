@@ -135,6 +135,19 @@ public sealed class BoardEndpointTests
         await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
     }
 
+    // A client that has no state yet (e.g. the saved address set at start) reports no change when its address moves.
+    [Fact]
+    public void Should_ReportNoChange_WhenItKnowsNothingYet()
+    {
+        var client = Client(port: 9760);
+        var changes = 0;
+        client.StateChanged += (_, _) => changes++;
+
+        client.SetEndpoint(new BoardEndpoint("127.0.0.1", 9761));
+
+        Assert.Equal((0, Vm201State.Initial), (changes, client.State));
+    }
+
     private static Vm201Client Client(int port)
     {
         return new Vm201Client(
