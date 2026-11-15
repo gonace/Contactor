@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Contactor.Web;
 using Contactor.Web.Features.Backup;
 using Contactor.Web.Features.Events;
@@ -48,20 +50,21 @@ public sealed class EventRetentionTests
     [Fact]
     public async Task Should_RemoveInBatches()
     {
-        var time = new FixedTimeProvider(Now);
+        var time = new ManualTimeProvider(new DateTimeOffset(Now));
         await using var database = await CreateAsync(time);
-        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
-        {
-            var old = Now.AddYears(-2);
-            db.EventLog.AddRange(Enumerable.Range(0, (2 * EventRetention.BatchSize) + 1).Select(i => Event(old.AddMinutes(i))));
-            await db.SaveChangesAsync(Cancel);
-        }
-
+        await AddOldAsync(database, (2 * EventRetention.BatchSize) + 1);
         var kept = await AddAsync(database, Now.AddDays(-1));
 
-        var cleanup = await database.Services.GetRequiredService<EventRetention>().RemoveOldAsync(Cancel);
+        // The pause between two full batches only ends when the clock passes it.
+        var cleanup = database.Services.GetRequiredService<EventRetention>().RemoveOldAsync(Cancel);
+        for (var pause = 0; pause < 2; pause++)
+        {
+            await BoardTestRig.WaitUntilAsync(() => time.WaitsOnly(EventRetention.PauseBetweenBatches));
+            Assert.False(cleanup.IsCompleted);
+            time.Advance(EventRetention.PauseBetweenBatches);
+        }
 
-        Assert.Equal(new EventCleanup((2 * EventRetention.BatchSize) + 1, 3), cleanup);
+        Assert.Equal(new EventCleanup((2 * EventRetention.BatchSize) + 1, 3), await cleanup);
         Assert.Equal([kept], await IdsAsync(database));
     }
 
@@ -84,6 +87,42 @@ public sealed class EventRetentionTests
 
         Assert.Equal(4, cleanup.Removed);
         Assert.Equal([input, off, pulse, update], await IdsAsync(database));
+    }
+
+    [Fact]
+    public async Task Should_RemoveEveryOldEvent_OfAnInputOrRelayWithANewerOne()
+    {
+        var time = new FixedTimeProvider(Now);
+        await using var database = await CreateAsync(time);
+        var old = Now.AddYears(-2);
+        await AddAsync(database, old, EventActions.InputChanged, inputId: 1);
+        await AddAsync(database, old.AddHours(1), EventActions.Off, relayId: 3);
+        await AddAsync(database, old.AddHours(2), EventActions.Pulse, relayId: 3);
+        await AddAsync(database, old.AddHours(3), EventActions.UpdateDone);
+        var input = await AddAsync(database, Now.AddDays(-1), EventActions.InputChanged, inputId: 1);
+        var off = await AddAsync(database, Now.AddDays(-1), EventActions.Off, relayId: 3);
+        var update = await AddAsync(database, Now.AddDays(-1), EventActions.UpdateCurrent);
+
+        var cleanup = await database.Services.GetRequiredService<EventRetention>().RemoveOldAsync(Cancel);
+
+        Assert.Equal(4, cleanup.Removed);
+        Assert.Equal([input, off, update], await IdsAsync(database));
+    }
+
+    [Fact]
+    public async Task Should_KeepTheLastLoggedUpdateEnd_ByItsId()
+    {
+        var time = new FixedTimeProvider(Now);
+        await using var database = await CreateAsync(time);
+        var old = Now.AddYears(-2);
+
+        // Logged last, with the helper's earlier time of change.
+        await AddAsync(database, old.AddHours(1), EventActions.UpdateDone);
+        var last = await AddAsync(database, old, EventActions.UpdateWentBack);
+
+        await database.Services.GetRequiredService<EventRetention>().RemoveOldAsync(Cancel);
+
+        Assert.Equal([last], await IdsAsync(database));
     }
 
     [Fact]
@@ -150,19 +189,45 @@ public sealed class EventRetentionTests
         }
     }
 
+    [Fact]
+    public async Task Should_NotLogAFailure_WhenStoppedDuringThePauseBetweenBatches()
+    {
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 14, 23, 0, 0, TimeSpan.Zero));
+        var logs = new ListLoggerProvider();
+        await using var database = await CreateAsync(time, logs: logs);
+        await AddOldAsync(database, EventRetention.BatchSize + 1);
+        var backup = database.Services.GetRequiredService<BackupService>();
+        await backup.StartAsync(Cancel);
+        await BoardTestRig.WaitUntilAsync(() => time.PendingTimers == 1);
+
+        time.Advance(backup.UntilNext());
+        await BoardTestRig.WaitUntilAsync(() => time.WaitsOnly(EventRetention.PauseBetweenBatches));
+        await backup.StopAsync(Cancel);
+
+        Assert.Single(await IdsAsync(database));
+        Assert.DoesNotContain(logs.Entries, e => e.Level >= LogLevel.Error);
+        Assert.DoesNotContain(logs.Entries, e => e.Line.StartsWith("Could not", StringComparison.Ordinal));
+    }
+
     // Moves the clock to the next backup and waits until the night is done: its wait for the next night has started.
+    // Waiting for that one wait, not for any timer, also holds with a pause between batches (more than BatchSize old events).
     private static async Task RunNightAsync(ManualTimeProvider time, BackupService backup)
     {
         await BoardTestRig.WaitUntilAsync(() => time.PendingTimers == 1);
         time.Advance(backup.UntilNext());
-        await BoardTestRig.WaitUntilAsync(() => time.PendingTimers == 1);
+        await BoardTestRig.WaitUntilAsync(() => time.WaitsOnly(backup.UntilNext()));
     }
 
-    private static async Task<TestDatabase> CreateAsync(TimeProvider time, string? backupFolder = null)
+    private static async Task<TestDatabase> CreateAsync(TimeProvider time, string? backupFolder = null, ListLoggerProvider? logs = null)
     {
         var database = TestDatabase.Create(
             (services, configuration) =>
             {
+                if (logs is not null)
+                {
+                    services.AddSingleton<ILoggerProvider>(logs);
+                }
+
                 services.AddLocalClock(configuration);
                 services.AddSingleton(time);
                 services.AddBackup(configuration);
@@ -175,6 +240,14 @@ public sealed class EventRetentionTests
     private static EventLogEntry Event(DateTime timestampUtc, string action = EventActions.On, int? relayId = null, int? inputId = null)
     {
         return new EventLogEntry { TimestampUtc = timestampUtc, RelayId = relayId, InputId = inputId, Actor = EventActors.System, Action = action };
+    }
+
+    private static async Task AddOldAsync(TestDatabase database, int count)
+    {
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        var old = Now.AddYears(-2);
+        db.EventLog.AddRange(Enumerable.Range(0, count).Select(i => Event(old.AddMinutes(i))));
+        await db.SaveChangesAsync(Cancel);
     }
 
     private static async Task<int> AddAsync(TestDatabase database, DateTime timestampUtc, string action = EventActions.On, int? relayId = null, int? inputId = null)
@@ -215,5 +288,48 @@ public sealed class EventRetentionTests
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync(Cancel);
+    }
+
+    private sealed class ListLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries = new();
+
+        public IReadOnlyList<(LogLevel Level, string Line)> Entries => [.. _entries];
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new ListLogger(_entries);
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class ListLogger : ILogger
+        {
+            private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries;
+
+            public ListLogger(ConcurrentQueue<(LogLevel Level, string Line)> entries)
+            {
+                _entries = entries;
+            }
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull
+            {
+                return null;
+            }
+
+            public bool IsEnabled(LogLevel logLevel)
+            {
+                return true;
+            }
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                ArgumentNullException.ThrowIfNull(formatter);
+                _entries.Enqueue((logLevel, formatter(state, exception)));
+            }
+        }
     }
 }

@@ -92,14 +92,12 @@ public sealed partial class EventRetention
             .Select(g => g.Max(e => e.Id))
             .ToListAsync(cancellationToken);
 
-        // UpdateService: the helper's status names the last update, whose event must stay so it isn't logged again.
+        // UpdateService: the helper's status names the last update, whose event (the last one logged) must stay so it
+        // isn't logged again.
         string[] updateEnds = [EventActions.UpdateDone, EventActions.UpdateWentBack, EventActions.UpdateFailed, EventActions.UpdateCurrent];
         var update = await db.EventLog.AsNoTracking()
             .Where(e => updateEnds.Contains(e.Action))
-            .OrderByDescending(e => e.TimestampUtc)
-            .ThenByDescending(e => e.Id)
-            .Select(e => (int?)e.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+            .MaxAsync(e => (int?)e.Id, cancellationToken);
 
         var latest = inputs.Concat(relays).ToHashSet();
         if (update is { } updateId)
