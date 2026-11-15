@@ -359,7 +359,7 @@
   </data>
   <data name="Boards.Login.PasswordOnly" xml:space="preserve">
     <value>The {0} board takes a password only, no user name.</value>
-    <comment>{0} names the board, e.g. "Devantech board".</comment>
+    <comment>{0} is the board's brand, e.g. "Devantech"; the text already says "board".</comment>
   </data>
   <data name="Boards.Login.PasswordTooLong" xml:space="preserve">
     <value>The password can be at most {0} characters.</value>
@@ -373,5 +373,6 @@
   </data>
   <data name="Boards.Login.NoLoginWebPage" xml:space="preserve">
     <value>The {0} board takes no login: its password only protects its own web page.</value>
+    <comment>{0} is the board's brand, e.g. "Waveshare"; the text already says "board".</comment>
   </data>
 </root>

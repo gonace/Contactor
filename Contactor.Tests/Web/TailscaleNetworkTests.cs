@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Tailscale;
-using Contactor.Web.Resources;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
