@@ -90,11 +90,12 @@ Each release publishes the demo's image with the app's, with the same version.
 cd /opt/contactor-demo && sudo docker compose pull && sudo docker compose up -d
 ```
 
-The visitors' copies end when the demo starts again. When a release changes `deploy/demo/compose.yml`
-or `deploy/demo/Caddyfile`, copy both over again first, as in Install, and do Check it once more.
+The visitors' copies end when the demo starts again. When a release changes `deploy/demo/compose.yml` or
+`deploy/demo/Caddyfile`, copy both over again first, as in Install, and do Check it once more.
 
 To stay on one version, e.g. after a bad release, add `DEMO_IMAGE=ghcr.io/gonace/contactor-demo:2026.11.15` to
-`/opt/contactor-demo/.env` (make the file if there is none) and run `sudo docker compose up -d`. Remove the line to follow the newest again.
+`/opt/contactor-demo/.env` (make the file if there is none) and run `sudo docker compose up -d`. Remove the line to
+follow the newest again.
 
 ## Settings
 
