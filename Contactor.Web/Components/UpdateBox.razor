@@ -46,7 +46,7 @@
             </ol>
             @if (view.CanCancel)
             {
-                <button type="button" class="secondary" disabled="@_busy" @onclick="CancelAsync">Cancel</button>
+                <button type="button" class="secondary" disabled="@_busy" @onclick="CancelAsync">@Common["Common.Cancel"]</button>
             }
             <p class="hint">@view.StartedLine</p>
             break;
@@ -87,7 +87,7 @@
                 </div>
                 @if (!result.IsDone && view.CanUpdate)
                 {
-                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">Try again</button>
+                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">@Common["Common.TryAgain"]</button>
                 }
                 @if (view.LogId is { } logId)
                 {
@@ -170,7 +170,7 @@
             <p>Contactor restarts. That takes about a minute, and the app doesn't answer meanwhile.</p>
             <p>The relays stay as they are. Schedules and auto-offs catch up once it's back.</p>
             <div class="dialog-buttons">
-                <button type="button" class="cancel" disabled="@_busy" @onclick="() => _asking = false">Cancel</button>
+                <button type="button" class="cancel" disabled="@_busy" @onclick="() => _asking = false">@Common["Common.Cancel"]</button>
                 <button type="button" class="confirm" disabled="@_busy" @onclick="UpdateAsync">Update</button>
             </div>
         </div>

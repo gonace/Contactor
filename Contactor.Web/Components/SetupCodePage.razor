@@ -1,25 +1,30 @@
 @page "/setup/code"
 @attribute [ExcludeFromInteractiveRouting]
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @using Microsoft.AspNetCore.Components.Forms
 @using Contactor.Web.Features.Setup
 @inject SetupCode Code
 @inject SignInChoice SignIn
 @inject NavigationManager Navigation
+@inject AppLanguage Language
 
 @*
     Without the live connection: typing the code gives the browser a cookie, which only an ordinary page's answer can.
 *@
-<PageTitle>Setup · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Setup"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
         <span></span>
-        <span class="step-count">STEP 1 OF 4</span>
+        <span class="step-count">STEP 1 OF @StepsInPart1(Language.HasChoice)</span>
     </header>
     <div class="part">PART 1 OF 2 · THE APP</div>
     <div class="progress" aria-hidden="true">
-        <span class="done"></span><span></span><span></span><span></span>
+        @for (var i = 1; i <= StepsInPart1(Language.HasChoice); i++)
+        {
+            <span class="@(i == 1 ? "done" : null)"></span>
+        }
     </div>
     <form method="post" class="form" @formname="setup-code" @onsubmit="Submit">
         <AntiforgeryToken />
@@ -43,13 +48,19 @@
             </div>
         </main>
         <div class="next">
-            <button type="submit">Next</button>
+            <button type="submit">@Common["Common.Next"]</button>
         </div>
     </form>
 </div>
 
 @code {
     private string? _error;
+
+    /// <summary>
+    /// The steps of the guide's Part 1: this code, the way in, the sign-in and "About you", and "Language" first with
+    /// two or more languages to choose from.
+    /// </summary>
+    public static int StepsInPart1(bool languageStep) => languageStep ? 5 : 4;
 
     [SupplyParameterFromForm]
     public string? Typed { get; set; }

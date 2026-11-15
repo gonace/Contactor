@@ -20,7 +20,7 @@
 @inject NavigationManager Navigation
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 
-<PageTitle>@(_relay?.Name ?? "Relay") · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", _relay?.Name ?? Common["Common.Screen.Relay"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -31,7 +31,7 @@
         @if (_relay is not null)
         {
             @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
-            <button type="submit" form="relay-form" class="save-top" disabled="@_busy">Save</button>
+            <button type="submit" form="relay-form" class="save-top" disabled="@_busy">@Common["Common.Save"]</button>
         }
     </header>
 
@@ -173,7 +173,7 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">Save</button>
+                <button type="submit" disabled="@_busy">@Common["Common.Save"]</button>
             </div>
         </form>
     }

@@ -11,7 +11,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<GroupNew> Log
 
-<PageTitle>New group · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.NewGroup"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -19,7 +19,7 @@
         {
             <a href="" class="back">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                Cancel
+                @Common["Common.Cancel"]
             </a>
         }
         else
@@ -27,7 +27,7 @@
             var shown = _wizard.Step;
             <button type="button" class="back" disabled="@_busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                Back
+                @Common["Common.Back"]
             </button>
         }
         <span class="step-count">STEP @_wizard.Step OF @GroupWizard.StepCount</span>
@@ -198,7 +198,7 @@
         @if (_wizard.Step < GroupWizard.StepCount)
         {
             var shown = _wizard.Step;
-            <button type="button" disabled="@(!_wizard.CanGoOn)" @onclick="() => GoOn(shown)">Next</button>
+            <button type="button" disabled="@(!_wizard.CanGoOn)" @onclick="() => GoOn(shown)">@Common["Common.Next"]</button>
         }
         else
         {

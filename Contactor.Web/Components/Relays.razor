@@ -24,7 +24,7 @@
 @inject GroupSequencer Sequencer
 @inject ILogger<Relays> Log
 
-<PageTitle>Relays · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Relays"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -228,7 +228,7 @@
                 <h2 id="confirm-title">@BoardsText.ConfirmAllOff(RelaysOnNow, Boards.Count)</h2>
                 <p>Groups stop in their own order. A board without contact is left as it is.</p>
                 <div class="dialog-buttons">
-                    <button type="button" class="cancel" @onclick="() => _confirmAllBoards = false">Cancel</button>
+                    <button type="button" class="cancel" @onclick="() => _confirmAllBoards = false">@Common["Common.Cancel"]</button>
                     <button type="button" class="confirm" data-vibrate disabled="@(_busy || !AnyConnected)" @onclick="TurnOffAllBoardsAsync">Turn off</button>
                 </div>
             </div>

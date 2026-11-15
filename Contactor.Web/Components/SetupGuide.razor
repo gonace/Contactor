@@ -7,6 +7,7 @@
 @using Contactor.Web.Features.Cloudflare
 @using Contactor.Web.Features.Tailscale
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Setup
 @using Contactor.Web.Persistence
@@ -17,9 +18,10 @@
 @inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
+@inject AppLanguage Language
 @inject ILogger<SetupGuide> Log
 
-<PageTitle>Setup · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Setup"]])</PageTitle>
 
 <div class="screen">
     @* While a list of "Which relay board?" is open, everything but the list and its field takes no focus or clicks
@@ -30,7 +32,7 @@
             var shown = _step;
             <button type="button" class="back" disabled="@Busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                Back
+                @Common["Common.Back"]
             </button>
         }
         else
@@ -49,7 +51,15 @@
     </div>
 
     <main class="content">
-        @if (_step == StepWayIn)
+        @if (_step == StepLanguage)
+        {
+            <div class="intro">
+                <h1 id="language-heading" tabindex="-1" @ref="_heading">@Common["Common.Language"]</h1>
+                <p>@Common["Common.Language.Intro"]</p>
+            </div>
+            <LanguagePicker LabelledBy="language-heading" />
+        }
+        else if (_step == StepWayIn)
         {
             @WayInStep
         }
@@ -139,7 +149,7 @@
         else if (_step < StepDone)
         {
             var shown = _step;
-            <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">Next</button>
+            <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">@Common["Common.Next"]</button>
             @if (_step == StepWhere)
             {
                 <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
@@ -155,7 +165,9 @@
 
 @code {
     // The steps in order. Part 1 sets up the app; its first step, the setup code, is a page of its own
-    // (SetupCodePage), so the guide's Part 1 starts at its step 2. Part 2 is the board.
+    // (SetupCodePage), so the guide's Part 1 starts at its step 2: "Language" with two or more languages, else the way
+    // in. Part 2 is the board.
+    private const int StepLanguage = 0;
     private const int StepWayIn = 1;
     private const int StepSignIn = 2;
     private const int StepAbout = 3;
@@ -163,16 +175,18 @@
     private const int StepWhere = 5;
     private const int StepRelays = 6;
     private const int StepDone = 7;
-    private const int StepsInPart = 4;
+    private const int StepsInPart2 = 4;
 
     private bool InPart1 => _step <= StepAbout;
 
-    private int StepInPart => InPart1 ? _step + 1 : _step - StepAbout;
+    private int StepsInPart => InPart1 ? SetupCodePage.StepsInPart1(Language.HasChoice) : StepsInPart2;
 
-    // Not back past the way in (the code is typed), nor from "About you" to the sign-in: that is saved, and this page
-    // may be at the new address.
+    private int StepInPart => InPart1 ? _step + (Language.HasChoice ? 2 : 1) : _step - StepAbout;
+
+    // Not back past the guide's first step (the code is typed), nor from "About you" to the sign-in: that is saved, and
+    // this page may be at the new address.
     private bool CanGoBack => _elsewhere is null
-        && (_step == StepSignIn || _step > StepBoard || (_step == StepBoard && SignIns.SignIn?.Id != SignInCatalogue.NoneId));
+        && ((_step == StepWayIn && Language.HasChoice) || _step == StepSignIn || _step > StepBoard || (_step == StepBoard && SignIns.SignIn?.Id != SignInCatalogue.NoneId));
 
     // "How do people reach the app?": every way in; Cloudflare also asks for its tunnel's token and address, Tailscale
     // for an auth key and the app's name.
@@ -384,7 +398,7 @@
 
         _step = part1 switch
         {
-            SetupPart1Step.WayIn => StepWayIn,
+            SetupPart1Step.WayIn => Language.HasChoice ? StepLanguage : StepWayIn,
             SetupPart1Step.SignIn => StepSignIn,
 
             // With No sign-in everyone is the same person: nothing to say about you.
@@ -518,6 +532,10 @@
         {
             switch (_step)
             {
+                case StepLanguage:
+                    // Saved already, as it was picked.
+                    Move(StepWayIn);
+                    break;
                 case StepWayIn:
                     await ChooseWayInAsync();
                     break;

@@ -283,6 +283,10 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Language")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("SetupDoneUtc")
                         .HasColumnType("TEXT");
 

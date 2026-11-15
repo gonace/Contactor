@@ -1,0 +1,72 @@
+@using Contactor.Web.Features.Languages
+@using Microsoft.Data.Sqlite
+@using Microsoft.EntityFrameworkCore
+@inject AppLanguage Language
+@inject ILogger<LanguagePicker> Log
+
+@* The app's one language, on the setup guide's "Language" step and in Settings. Saved at once, as a choice needs no
+   Save: every open page then reloads in it (LanguageWatch). Only shown with two or more languages to choose from. *@
+@if (Language.HasChoice)
+{
+    <div class="language">
+        @if (LabelledBy is null)
+        {
+            <label for="language">@Common["Common.Language"]</label>
+        }
+        <select id="language" @key="_shown" aria-labelledby="@LabelledBy" disabled="@_busy" @onchange="ChooseAsync">
+            @foreach (var language in Language.All)
+            {
+                <option value="@language.Code" lang="@language.Code" selected="@(language.Code == Language.Current.Code)">@language.Name</option>
+            }
+        </select>
+        @if (_error)
+        {
+            <p class="error" role="alert">@Common["Common.Language.NotSaved"]</p>
+        }
+        else if (LabelledBy is null)
+        {
+            <p class="hint">@Common["Common.Language.Hint"]</p>
+        }
+    </div>
+}
+
+@code {
+    private bool _busy;
+    private bool _error;
+    private int _shown;
+
+    /// <summary>
+    /// The id of a heading that names the choice, e.g. the guide's "Language" step: no label and no hint of its own
+    /// then, as the step says it.
+    /// </summary>
+    [Parameter]
+    public string? LabelledBy { get; set; }
+
+    private async Task ChooseAsync(ChangeEventArgs e)
+    {
+        if (_busy || e.Value is not string code)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = false;
+        try
+        {
+            await Language.ChooseAsync(code, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is DbUpdateException or SqliteException)
+        {
+            // Left to the page's connection, it would end it: the choice stays as it was, with a word about it.
+            Log.LogError(ex, "The app's language couldn't be saved");
+            _error = true;
+
+            // A new list, so it shows the language the app is still in rather than the one picked.
+            _shown++;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

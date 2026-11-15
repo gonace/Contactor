@@ -23,7 +23,7 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject ILogger<GroupDetail> Log
 
-<PageTitle>@(_group?.Name ?? "Group") · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", _group?.Name ?? Common["Common.Screen.Group"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -34,7 +34,7 @@
         @if (_group is not null)
         {
             @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
-            <button type="submit" form="group-form" class="save-top" disabled="@_busy">Save</button>
+            <button type="submit" form="group-form" class="save-top" disabled="@_busy">@Common["Common.Save"]</button>
         }
     </header>
 
@@ -267,7 +267,7 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">Save</button>
+                <button type="submit" disabled="@_busy">@Common["Common.Save"]</button>
             </div>
         </form>
 
@@ -278,8 +278,8 @@
                     <h2 id="confirm-title">Delete the group?</h2>
                     <p>Its relays become ordinary relays again, switched one by one. The group's schedules are deleted too.</p>
                     <div class="dialog-buttons">
-                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Cancel</button>
-                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Delete</button>
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Common["Common.Cancel"]</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">@Common["Common.Delete"]</button>
                     </div>
                 </div>
             </div>

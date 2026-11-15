@@ -13,11 +13,11 @@
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 
-<PageTitle>@(IsNew ? "New schedule" : "Edit schedule") · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common[IsNew ? "Common.Screen.NewSchedule" : "Common.Screen.EditSchedule"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <a href="@BackUrl" class="back">Cancel</a>
+        <a href="@BackUrl" class="back">@Common["Common.Cancel"]</a>
     </header>
 
     @if (_loaded && _target is null)
@@ -86,8 +86,8 @@
                     <h2 id="confirm-title">Delete the schedule?</h2>
                     <p>@ScheduleText.Summary(_saved!.Days, _saved.OnTime, _saved.OffTime, IsGroup)</p>
                     <div class="dialog-buttons">
-                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">Cancel</button>
-                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">Delete</button>
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Common["Common.Cancel"]</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">@Common["Common.Delete"]</button>
                     </div>
                 </div>
             </div>

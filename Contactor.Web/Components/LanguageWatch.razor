@@ -1,0 +1,71 @@
+@implements IDisposable
+@using System.Globalization
+@using Contactor.Web.Features.Languages
+@inject AppLanguage Language
+@inject NavigationManager Navigation
+
+@* Shows nothing. A page's live connection keeps the language it started with, so when the app's language changes the
+   page reloads, and its new connection starts in the new language (AppLanguageCultureProvider). *@
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Only live, not while the page is drawn for its first answer.
+        if (!firstRender)
+        {
+            return;
+        }
+
+        Language.Changed += OnChanged;
+
+        // Changed between this connection's start and now. Only when the connection has one of the app's languages,
+        // as every request does: one that doesn't would reload for ever.
+        if (IsAppLanguage(CultureInfo.CurrentUICulture) && !IsCurrent(CultureInfo.CurrentUICulture))
+        {
+            Reload();
+        }
+    }
+
+    public void Dispose()
+    {
+        Language.Changed -= OnChanged;
+    }
+
+    private bool IsAppLanguage(CultureInfo culture)
+    {
+        return Language.All.Any(l => l.Culture.Name == culture.Name);
+    }
+
+    private bool IsCurrent(CultureInfo culture)
+    {
+        return Language.Current.Culture.Name == culture.Name;
+    }
+
+    // Raised on the connection of the page where the language was chosen: this page reloads on its own connection.
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        _ = ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            await InvokeAsync(Reload);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the change was on its way.
+        }
+        catch (Exception ex)
+        {
+            // As from a button: the page's connection deals with it.
+            await DispatchExceptionAsync(ex);
+        }
+    }
+
+    private void Reload()
+    {
+        Navigation.Refresh(forceReload: true);
+    }
+}

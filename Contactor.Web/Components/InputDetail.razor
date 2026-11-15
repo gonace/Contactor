@@ -14,7 +14,7 @@
 @inject LocalClock Clock
 @inject NavigationManager Navigation
 
-<PageTitle>@(_input?.Name ?? "Input") · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", _input?.Name ?? Common["Common.Screen.Input"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -25,7 +25,7 @@
         @if (_input is not null)
         {
             @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
-            <button type="submit" form="input-form" class="save-top" disabled="@_busy">Save</button>
+            <button type="submit" form="input-form" class="save-top" disabled="@_busy">@Common["Common.Save"]</button>
         }
     </header>
 
@@ -136,7 +136,7 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">Save</button>
+                <button type="submit" disabled="@_busy">@Common["Common.Save"]</button>
             </div>
         </form>
     }

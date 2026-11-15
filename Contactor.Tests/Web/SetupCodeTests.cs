@@ -376,8 +376,9 @@ public sealed partial class SetupCodeTests
         {
             Directory.CreateDirectory(Path.GetDirectoryName(database.FilePath)!);
             await db.GetService<IMigrator>().MigrateAsync("20261113125455_AddInstallationMethods", cancellationToken: Cancel);
-            db.Installations.Add(new Installation { SetupDoneUtc = DateTime.UtcNow });
-            await db.SaveChangesAsync(Cancel);
+
+            // The row as that version wrote it: the entity has columns added since, which this table doesn't have yet.
+            await db.Database.ExecuteSqlAsync($"INSERT INTO Installation (Id, SetupDoneUtc) VALUES ({Installation.SingletonId}, {DateTime.UtcNow})", Cancel);
             await db.Database.MigrateAsync(Cancel);
         }
 
