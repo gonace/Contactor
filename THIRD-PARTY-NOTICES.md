@@ -3,7 +3,8 @@
 Contactor is licensed under the MIT License (see `LICENSE`). It includes, or its container images bundle, the
 following works of others, each under its own licence. The licence texts are in `licenses/` in the repository and in
 `/licenses` in each image, next to `LICENSE` and this file. The demo's image (`Contactor.Demo/Dockerfile`) bundles all
-of them except cloudflared and Tailscale, and also YARP.
+of them except cloudflared and Tailscale, and also YARP; its `/licenses` is the same folder, so it holds their licence
+texts too.
 
 ## IBM Plex Sans and IBM Plex Mono
 
