@@ -226,6 +226,8 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                         catch (Exception ex) when (wentOut)
                         {
                             // SendAsync forgot its expectation: whatever the board did shows as an external change.
+                            // Logged now, so it isn't lost should the save of what went out fail too.
+                            LogFailedAfterSend(ex, relayId, cancellationToken);
                             failed = ExceptionDispatchInfo.Capture(ex);
                             interrupted = true;
                             break;
@@ -287,6 +289,8 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                 catch (Exception ex) when (wentOut)
                 {
                     // SendAsync forgot its expectation: whatever the board did shows as an external change.
+                    // Logged now, so it isn't lost should the save of what went out fail too.
+                    LogFailedAfterSend(ex, relayId, cancellationToken);
                     failed = ExceptionDispatchInfo.Capture(ex);
                     interrupted = true;
                     break;
@@ -523,4 +527,16 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Scheduler tick on relay board {BoardId} failed")]
     private partial void LogTickFailed(Exception exception, int boardId);
+
+    // A cancel by the caller (mostly at shutdown) isn't a failure.
+    private void LogFailedAfterSend(Exception exception, int relayId, CancellationToken cancellationToken)
+    {
+        if (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogCommandFailed(exception, relayId, BoardId);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Scheduler could not switch relay {RelayId} on relay board {BoardId}; the commands that went out before it are saved")]
+    private partial void LogCommandFailed(Exception exception, int relayId, int boardId);
 }

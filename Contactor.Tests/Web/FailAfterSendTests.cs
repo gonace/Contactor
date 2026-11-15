@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Contactor.Tests.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Boards;
@@ -8,6 +9,7 @@ using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Web;
 
@@ -22,6 +24,8 @@ public sealed class FailAfterSendTests : IAsyncLifetime
 
     // 14:05 local on the test's day; it starts at 14:02.
     private static readonly DateTimeOffset OnTime = new(2026, 11, 4, 13, 5, 0, TimeSpan.Zero);
+
+    private readonly ErrorCollector _errors = new();
 
     private readonly FakeRelayBoard _board = new(8);
     private readonly FixedTimeProvider _time = new(Now);
@@ -41,6 +45,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         {
             services.AddBoards(configuration);
             services.AddSingleton<TimeProvider>(_time);
+            services.AddLogging(logging => logging.AddProvider(_errors));
             services.AddLocalClock(configuration);
             services.AddEvents(configuration);
             services.AddRelays(configuration);
@@ -72,6 +77,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.Equal((EventActors.Schedule, (DateTime?)OnTime.UtcDateTime, (DateTime?)null), (run.TurnedOnBy, run.OnSinceUtc, run.AutoOffAtUtc));
         Assert.Equal([(2, EventActors.Schedule, EventActions.On)], await EventsAsync());
         Assert.False(_database.Services.Live().Expected.IsPending(5, on: true));
+        Assert.Contains("Scheduler could not switch relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
 
         // The next tick turns relay 5 on, and leaves relay 2 alone.
         _board.BeforeOn = null;
@@ -81,6 +87,39 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.True(_board.State.IsOn(5));
         Assert.Equal(sent + 1, _board.Sent.Count);
         Assert.Equal([(2, EventActors.Schedule, EventActions.On), (5, EventActors.Schedule, EventActions.On)], await EventsAsync());
+    }
+
+    // Relay 5's schedule ends at 14:05, when relay 2's starts.
+    [Fact]
+    public async Task Should_RecordTheScheduleOnThatWentOut_WhenTheNextOffTimesOut()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await AddScheduleAsync(relayId: 5, on: new TimeOnly(14, 0), off: new TimeOnly(14, 5));
+        await Scheduler.TickAsync(Cancel);
+        Assert.True(_board.State.IsOn(5));
+        _time.Now = OnTime;
+        _board.BeforeOff = TimeOutTheFirst();
+
+        await Assert.ThrowsAsync<TimeoutException>(() => Scheduler.TickAsync(Cancel));
+
+        Assert.Equal((true, true), (_board.State.IsOn(2), _board.State.IsOn(5)));
+        Assert.Equal(EventActors.Schedule, (await RunAsync(2)).TurnedOnBy);
+        Assert.Equal(EventActors.Schedule, (await RunAsync(5)).TurnedOnBy);
+        Assert.Equal([(5, EventActors.Schedule, EventActions.On), (2, EventActors.Schedule, EventActions.On)], await EventsAsync());
+        Assert.False(_database.Services.Live().Expected.IsPending(5, on: false));
+        Assert.Contains("Scheduler could not switch relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
+
+        // The next tick turns relay 5 off, and leaves relay 2 alone.
+        _board.BeforeOff = null;
+        var sent = _board.Sent.Count;
+        _time.Now = OnTime.AddMinutes(1);
+        await Scheduler.TickAsync(Cancel);
+        Assert.Equal((true, false), (_board.State.IsOn(2), _board.State.IsOn(5)));
+        Assert.Equal(sent + 1, _board.Sent.Count);
+        Assert.Null((await RunAsync(5)).OnSinceUtc);
+        Assert.Equal(
+            [(5, EventActors.Schedule, EventActions.On), (2, EventActors.Schedule, EventActions.On), (5, EventActors.Schedule, EventActions.Off)],
+            await EventsAsync());
     }
 
     [Fact]
@@ -98,6 +137,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.Equal(Jane, (await RunAsync(5)).TurnedOnBy);
         Assert.Equal([(2, Jane, EventActions.On), (5, Jane, EventActions.On), (2, EventActors.AutoOff, EventActions.Off)], await EventsAsync());
         Assert.False(_database.Services.Live().Expected.IsPending(5, on: false));
+        Assert.Contains("Auto-off could not turn off relay 5 on relay board 1; the OFFs that went out before it are saved", _errors.Lines);
 
         // The next check turns relay 5 off.
         _board.BeforeOff = null;
@@ -113,6 +153,13 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         return () => ++commands == 2 ? throw new TimeoutException("The board didn't answer.") : Task.CompletedTask;
     }
 
+    // The first OFF times out before it reaches the board.
+    private static Func<Task> TimeOutTheFirst()
+    {
+        var commands = 0;
+        return () => ++commands == 1 ? throw new TimeoutException("The board didn't answer.") : Task.CompletedTask;
+    }
+
     private async Task<RelayRuntime> RunAsync(int relayId)
     {
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
@@ -126,18 +173,55 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         return [.. (await db.EventLog.AsNoTracking().OrderBy(e => e.Id).ToListAsync(Cancel)).Select(e => (e.RelayId ?? 0, e.Actor, e.Action))];
     }
 
-    private async Task AddScheduleAsync(int relayId)
+    // 14:05 to 14:10 unless told otherwise.
+    private async Task AddScheduleAsync(int relayId, TimeOnly? on = null, TimeOnly? off = null)
     {
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         db.Schedules.Add(new Schedule
         {
             RelayId = relayId,
             Days = ScheduleDays.All,
-            OnTime = new TimeOnly(14, 5),
-            OffTime = new TimeOnly(14, 10),
+            OnTime = on ?? new TimeOnly(14, 5),
+            OffTime = off ?? new TimeOnly(14, 10),
             IsEnabled = true,
             CreatedBy = Jane,
         });
         await db.SaveChangesAsync(Cancel);
+    }
+
+    // The error lines logged, by their message.
+    private sealed class ErrorCollector : ILoggerProvider, ILogger
+    {
+        private readonly ConcurrentQueue<string> _lines = new();
+
+        public IReadOnlyCollection<string> Lines => _lines;
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return this;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return logLevel >= LogLevel.Error;
+        }
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+            {
+                _lines.Enqueue(formatter(state, exception));
+            }
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }

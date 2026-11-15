@@ -112,9 +112,15 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
                 }
                 catch (Exception ex) when (turnedOff.Count > 0)
                 {
-                    // Nothing is logged for this OFF: whatever the board did shows as an external change. It is tried
-                    // again at the next check.
+                    // No event for this OFF: whatever the board did shows as an external change. It is tried again at
+                    // the next check. Logged now, so it isn't lost should the save of what went out fail too; a cancel
+                    // by the caller (mostly at shutdown) isn't a failure.
                     expected.Forget(mask, on: false);
+                    if (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                    {
+                        LogOffFailed(ex, runtime.RelayId, board.BoardId);
+                    }
+
                     failed = ExceptionDispatchInfo.Capture(ex);
                     break;
                 }
@@ -370,6 +376,9 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off check of relay board {BoardId} failed")]
     private partial void LogCheckFailed(Exception exception, int boardId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off could not turn off relay {RelayId} on relay board {BoardId}; the OFFs that went out before it are saved")]
+    private partial void LogOffFailed(Exception exception, int relayId, int boardId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is on with nobody's run: it gets its own auto-off")]
     private partial void LogOwnerless(int relayId);
