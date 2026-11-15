@@ -9,9 +9,12 @@
 #   (the next run finishes the update or goes back, after a new start of the machine); a cancel during the download;
 #   requests that must do nothing (left behind, unknown, a symlink, from before the machine started, already up to
 #   date); files in the app's folder that must not hang the helper (a FIFO, a link to /dev/urandom, a folder it can't
-#   remove); install.sh refusing to run while the helper runs; and the helper bringing itself up to date from the new
+#   remove); install.sh refusing to run while the helper runs; the helper bringing itself up to date from the new
 #   image (a newer helper is used from the next run on; one that fails its check, the same one, an older one or none
-#   changes nothing; nothing in the data folder or the running container changes what is installed).
+#   changes nothing; nothing in the data folder or the running container changes what is installed); and install.sh:
+#   refusing an image that isn't signed, taking compose.yml and the helper from the signed image it installs and,
+#   run again, the helper from the image the app runs (never an older helper, nothing pulled or downloaded), and saying
+#   clearly when an image has no compose.yml or Docker can't copy a file out.
 #
 #   sudo bash scripts/updater-test.sh
 #
@@ -44,8 +47,9 @@ BOOT=test-start-1
 
 cleanup() {
     docker compose --project-directory "$DIR" -f "$DIR/compose.yml" down --timeout 1 > /dev/null 2>&1 || true
-    docker rm -f "$REGISTRY_CONTAINER" > /dev/null 2>&1 || true
-    docker rm -f -v "$READER" > /dev/null 2>&1 || true
+    # With its volume: the stand-in images pushed to it take about 600 MB.
+    docker rm -f -v "$REGISTRY_CONTAINER" > /dev/null 2>&1 || true
+    docker rm -f -v "$READER" contactor-install-read > /dev/null 2>&1 || true
     rm -rf -- "$WORK"
 }
 trap cleanup EXIT
@@ -74,7 +78,8 @@ helper() {
         "$@" bash "$INSTALLED" >> "$WORK/helper.log" 2>&1
 }
 
-# The copies of the helper and its units a stand-in image brings in /app/updater, as the Dockerfile puts them there:
+# The copies of the helper and its units a stand-in image brings in /app/updater, and compose.yml in /app/install, as
+# the Dockerfile puts them there:
 # "same" (this one), "newer" and "newer2" (a higher HELPER_VERSION, units with a line more), "broken" (a higher
 # version that bash can't read), "older" (a lower version) and "none" (no copies, as releases before them).
 variants() {
@@ -101,8 +106,9 @@ build() {
     rm -rf "$WORK/image"
     mkdir -p "$WORK/image/root/usr/local/bin"
     if [[ "$copies" != none ]]; then
-        mkdir -p "$WORK/image/root/app/updater"
+        mkdir -p "$WORK/image/root/app/updater" "$WORK/image/root/app/install"
         cp "$WORK/variants/$copies/"* "$WORK/image/root/app/updater/"
+        cp "$ROOT/install/compose.yml" "$WORK/image/root/app/install/"
     fi
     cat > "$WORK/image/root/usr/local/bin/dotnet" <<'EOF'
 #!/bin/sh
@@ -588,6 +594,184 @@ done
 sh "$WORK/uninstall.sh"
 check "nothing of the helper is left" test -z "$(find "$WORK/uninstall" -type f)"
 
+say "install.sh: a new installation of an image that isn't signed is refused, and changes nothing"
+# install.sh's own functions on folders of the test's own ($1), as root, with the test's systemctl, cosign and key, a
+# curl and wget that only note they were asked, and a docker that notes each command (and fails "docker cp" while
+# $WORK/fail-cp is there); the box at the end is left out (the stand-in app has no setup-status).
+installer() {
+    local folder=$1 result=0
+    mkdir -p "$folder/sbin" "$folder/units"
+    {
+        sed '$d' "$ROOT/install/install.sh"
+        printf 'DIR=%s\nDATA=%s\nHELPER=%s\nUNITS=%s\nHELPER_STATE=%s\nCOSIGN=%s\n' "$folder/opt" "$folder/opt/data" \
+            "$folder/sbin/contactor-updater" "$folder/units" "$folder/state" "${INSTALL_COSIGN:-$COSIGN}"
+        printf 'COSIGN_KEYS="%s"\n' "$(cat "$WORK/keys/cosign.pub")"
+        # shellcheck disable=SC2016 # for the inner shell
+        printf '%s\n' 'as_root() { "$@"; }' 'has_systemd() { true; }' 'show() { echo "(the box)"; }' \
+            'TMP=$(mktemp -d)' 'trap cleanup EXIT' "trap 'exit 130' INT" 'install'
+    } > "$WORK/installer.sh"
+    # INSTALL_CTRL_C: Ctrl-C (SIGINT) reaches it, also when it runs in the background, where bash would ignore it.
+    env ${INSTALL_CTRL_C:+--default-signal=INT} ${INSTALL_COSIGN:+INSTALL_COSIGN="$INSTALL_COSIGN"} PATH="$WORK/stand-ins:$WORK/bin:$PATH" TMPDIR="$WORK" CONTACTOR_IMAGE="$REPOSITORY:latest" \
+        sh "$WORK/installer.sh" > "$WORK/install.log" 2>&1 || result=$?
+    cat "$WORK/install.log" >> "$WORK/installs.log"
+    return "$result"
+}
+mkdir -p "$WORK/stand-ins"
+for tool in curl wget; do
+    printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$tool" "$WORK/downloads.log" > "$WORK/stand-ins/$tool"
+done
+cat > "$WORK/stand-ins/docker" << EOF
+#!/bin/sh
+echo "\$1 \$2" >> "$WORK/docker.log"
+if [ "\$1" = cp ] && [ -e "$WORK/fail-cp" ]; then
+    echo "Error response from daemon: write /var/lib/docker/tmp: no space left on device" >&2
+    exit 1
+fi
+exec $(command -v docker) "\$@"
+EOF
+chmod 755 "$WORK/stand-ins/"*
+installed() { find "$INST/sbin" "$INST/units" -type f -exec md5sum {} + 2> /dev/null | sort; }
+check "install.sh's image is the one compose.yml names" \
+    grep -qF "image: \${CONTACTOR_IMAGE:-$(sed -n 's/^IMAGE="\(.*\)"$/\1/p' "$ROOT/install/install.sh")}" "$ROOT/install/compose.yml"
+check "install.sh trusts the same keys as the helper" bash -c "diff <(sed -n '/^COSIGN_KEYS=\"/,/END PUBLIC KEY-----\"$/p' '$ROOT/install/install.sh' | grep -v '^\$' | tr -d '\"' | sed 's/^COSIGN_KEYS=//') \
+    <(sed -n '/^COSIGN_KEYS=(/,/^)/p' '$HELPER' | grep -v -e '^COSIGN_KEYS=(' -e '^)' | tr -d '\"')"
+docker compose --project-directory "$DIR" -f "$DIR/compose.yml" down --timeout 1 > /dev/null 2>&1
+INST=$WORK/inst
+# 2026.11.22, never signed (see "An unsigned image" above).
+release v4 unsigned > /dev/null
+if installer "$INST"; then
+    fail "install.sh installed an image that isn't signed"
+else
+    check "it says the image isn't signed" grep -q "isn't signed with Contactor's key, so it isn't installed. Nothing was changed." "$WORK/install.log"
+fi
+check "nothing is in its folder" test ! -e "$INST/opt"
+check "no helper is installed" test -z "$(installed)"
+check "no app runs" test -z "$(running_image)"
+check "the image it downloaded is removed again" test -z "$(image_id "$REPOSITORY:latest")"
+
+say "install.sh: a new installation of a signed image takes compose.yml and the helper from that image"
+V15=$(release v15)
+temporary=$(find "$WORK" -maxdepth 1 -name 'tmp.*' | sort)
+check "a new installation" installer "$INST"
+check "it says the image is signed" grep -q "Contactor 2026.12.3 is signed with Contactor's key" "$WORK/install.log"
+check "it took compose.yml from the image" cmp -s "$INST/opt/compose.yml" "$ROOT/install/compose.yml"
+check "the helper and its units from the image" bash -c "cmp -s '$INST/sbin/contactor-updater' '$WORK/variants/newer2/contactor-updater.sh' \
+    && cmp -s '$INST/units/contactor-updater.service' '$WORK/variants/newer2/contactor-updater.service' \
+    && cmp -s '$INST/units/contactor-updater.path' '$WORK/variants/newer2/contactor-updater.path'"
+check "the helper is executable" test -x "$INST/sbin/contactor-updater"
+check "the app runs exactly that image, by its digest" \
+    test "$(docker inspect -f '{{.Config.Image}}' contactor 2> /dev/null)" = "$V15" -a "$(running_image)" = "$(image_id "$V15")"
+check "the data folder is the app's" test "$(stat -c %u "$INST/opt/data")" = 1654
+check "nothing was downloaded with curl or wget" test ! -e "$WORK/downloads.log"
+check "no container it made to read the image is left" test -z "$(docker ps -aq --filter "name=^contactor-install-read\$")"
+check "no half-written file is left" test -z "$(find "$INST" -name '*.new')"
+check "its temporary folders are gone" test "$(find "$WORK" -maxdepth 1 -name 'tmp.*' | sort)" = "$temporary"
+
+say "install.sh again: the helper comes from the image the app runs, and nothing is downloaded"
+before=$(docker inspect -f '{{.Id}}' contactor)
+echo '# (test) changed by hand' >> "$INST/opt/compose.yml"
+release v10 > /dev/null
+rm -f "$INST/sbin/contactor-updater" "$WORK/docker.log"
+check "install.sh runs again" installer "$INST"
+check "it puts the running image's helper back" cmp -s "$INST/sbin/contactor-updater" "$WORK/variants/newer2/contactor-updater.sh"
+check "it pulled, tagged and removed no image" bash -c "! grep -Eq '^(pull|tag|rmi|image (pull|tag|rm))( |\$)' '$WORK/docker.log'"
+check "compose.yml stays as it was" grep -qx '# (test) changed by hand' "$INST/opt/compose.yml"
+check "the same container runs on" test "$(docker inspect -f '{{.Id}}' contactor)" = "$before"
+check "nothing was downloaded with curl or wget" test ! -e "$WORK/downloads.log"
+
+say "install.sh again, with a newer helper in place: an older one never replaces it"
+sed -i 's/^readonly HELPER_VERSION=[0-9]*$/readonly HELPER_VERSION=999/' "$INST/sbin/contactor-updater"
+echo '# (test) the units in place' >> "$INST/units/contactor-updater.path"
+before=$(installed)
+check "install.sh runs again" installer "$INST"
+check "it says the one in place stays" grep -q "The update helper in place (version 999) is newer than Contactor 2026.12.3's (version 903): it stays." "$WORK/install.log"
+check "nothing of the helper changed" test "$(installed)" = "$before"
+
+say "install.sh again, when Docker can't copy the helper out: it says so, nothing changed"
+touch "$WORK/fail-cp"
+if installer "$INST"; then
+    fail "install.sh went on without the helper"
+else
+    check "it says copying failed, and what to check" \
+        grep -q "Couldn't copy /app/updater/contactor-updater.sh out of Contactor's image. Check that Docker works and the disk isn't full" "$WORK/install.log"
+fi
+rm -f "$WORK/fail-cp"
+check "nothing of the helper changed" test "$(installed)" = "$before"
+check "no container it made to read the image is left" test -z "$(docker ps -aq --filter "name=^contactor-install-read\$")"
+
+say "install.sh again, with a newer helper in place whose units are gone: the units are put back"
+rm -f "$INST/units/contactor-updater.path"
+check "install.sh runs again" installer "$INST"
+check "the path unit is back, from the running image" cmp -s "$INST/units/contactor-updater.path" "$WORK/variants/newer2/contactor-updater.path"
+check "the newer helper stays" grep -qx 'readonly HELPER_VERSION=999' "$INST/sbin/contactor-updater"
+
+# Runs the app in $INST on image $1 (by digest), as an update would leave it.
+run_on() {
+    docker pull --quiet "$1" > /dev/null
+    CONTACTOR_IMAGE=$1 docker compose --project-directory "$INST/opt" -f "$INST/opt/compose.yml" up -d --pull never > /dev/null 2>&1
+}
+
+say "install.sh again, while the app runs an image that isn't signed: the helper isn't taken from it"
+run_on "$V4_UNSIGNED"
+before=$(installed)
+check "install.sh runs again" installer "$INST"
+check "it says the image isn't signed" grep -q "Contactor 2026.11.22 isn't signed with Contactor's key: the update helper isn't installed or brought up to date from it." "$WORK/install.log"
+check "nothing of the helper changed" test "$(installed)" = "$before"
+
+say "install.sh again, while the app runs a signed image without a helper: the one in place stays"
+V13=$(release v13)
+run_on "$V13"
+check "install.sh runs again" installer "$INST"
+check "it says the one in place stays" grep -q "Contactor 2026.12.1 brings no update helper: the one in place stays." "$WORK/install.log"
+check "nothing of the helper changed" test "$(installed)" = "$before"
+rm -f "$INST/sbin/contactor-updater" "$INST/units/"*
+check "with no helper in place, install.sh runs again" installer "$INST"
+check "it says what to do" grep -q "Run the install command with --uninstall (your data is kept), then the install command again." "$WORK/install.log"
+docker compose --project-directory "$INST/opt" -f "$INST/opt/compose.yml" down --timeout 1 > /dev/null 2>&1
+
+say "install.sh: a new installation when the signature can't be checked stops, and removes what it downloaded"
+docker image rm "$REPOSITORY:latest" "$V13" > /dev/null 2>&1 || true
+release v15 > /dev/null
+if INSTALL_COSIGN=$REGISTRY/no-such-cosign:1 installer "$WORK/inst3"; then
+    fail "install.sh installed without checking the signature"
+else
+    check "it says it couldn't check" grep -q "Couldn't check the signature (no connection?). Nothing was installed." "$WORK/install.log"
+fi
+check "nothing is in its folder" test ! -e "$WORK/inst3/opt"
+check "the image it downloaded is removed again" test -z "$(image_id "$REPOSITORY:latest")"
+# A cosign that takes a while and then says the image is signed: only Ctrl-C during the check stops the installation.
+mkdir -p "$WORK/slow-cosign"
+printf 'FROM busybox:1.36\nENTRYPOINT ["sh", "-c", "sleep 8; exit 0", "--"]\n' > "$WORK/slow-cosign/Dockerfile"
+docker build --quiet -t contactor-updater-test-slow-cosign "$WORK/slow-cosign" > /dev/null
+: > "$WORK/docker.log"
+INSTALL_CTRL_C=1 INSTALL_COSIGN=contactor-updater-test-slow-cosign installer "$WORK/inst3" &
+install_run=$!
+for _ in $(seq 1 150); do
+    grep -q '^run ' "$WORK/docker.log" && break
+    sleep 0.2
+done
+pkill -INT -f "^sh $WORK/installer.sh" || true
+install_result=0
+wait "$install_run" || install_result=$?
+check "Ctrl-C during the check stops it (exit code 130)" test "$install_result" = 130
+check "stopped during the check, it removes the image it downloaded" test -z "$(image_id "$REPOSITORY:latest")"
+check "and nothing is in its folder" test ! -e "$WORK/inst3/opt"
+docker image rm contactor-updater-test-slow-cosign > /dev/null 2>&1 || true
+
+say "install.sh: a new installation of a signed image without compose.yml stops, and says why"
+docker compose --project-directory "$INST/opt" -f "$INST/opt/compose.yml" down --timeout 1 > /dev/null 2>&1
+docker image rm "$REPOSITORY:latest" > /dev/null 2>&1 || true
+release v13 > /dev/null
+if installer "$WORK/inst2"; then
+    fail "install.sh installed without a compose.yml"
+else
+    check "it says the image has no compose.yml" grep -q "is too old for this installer: its image has no compose.yml" "$WORK/install.log"
+fi
+check "nothing is in its folder" test ! -e "$WORK/inst2/opt"
+check "no container it made to read the image is left" test -z "$(docker ps -aq --filter "name=^contactor-install-read\$")"
+check "nothing was downloaded with curl or wget" test ! -e "$WORK/downloads.log"
+docker image rm "$REPOSITORY:latest" > /dev/null 2>&1 || true
+
 say "Secrets across the 2000-character cut"
 stripped=$(printf '%s Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after\n' "$(head -c 1990 /dev/zero | tr '\0' a)" \
     | bash -c "MAX_LINE=2000; FIRST_CUT=8000; $(sed -n '/^strip_secrets() {/,/^}/p' "$HELPER"); strip_secrets")
@@ -606,6 +790,8 @@ check "three 8000-character worst-case lines are stripped well within 10 s" test
 printf '\nThe helper said:\n'
 if [[ "$FAILED" -gt 0 ]]; then
     sed 's/^/  | /' "$WORK/helper.log"
+    printf '\ninstall.sh said:\n'
+    sed 's/^/  | /' "$WORK/installs.log" 2> /dev/null || true
 else
     sed 's/^/  | /' "$WORK/helper.log" | tail -n 40
 fi

@@ -35,8 +35,10 @@ can't undo a helper that a bad release already replaced.
 
 An installation's update helper trusts only the keys in its own copy of `install/contactor-updater.sh`. It gets new
 keys with the next "Update now": after a healthy update it brings itself up to date from the copy in the new image
-(Issue #325). A helper from before that change doesn't, so such an installation gets them only when someone runs the
-install command (`install.sh`) once more. So:
+(Issue #325). A helper from before that change doesn't: after such an update, running the install command
+(`install.sh`) once more takes the new helper from the image the app now runs. The install command never gets keys
+anywhere else. A new installation checks the image's signature with the keys in its own copy of `install/install.sh`,
+so a release must have both keys in both scripts (`scripts/images-sign.sh --check` makes sure). So:
 
 1. Stop using the main key at once: set the two repository secrets to the reserve key. `COSIGN_PRIVATE_KEY` gets
    the contents of `contactor-reserve.key`, and `COSIGN_PASSWORD` gets its password. The Release workflow then
@@ -45,11 +47,12 @@ install command (`install.sh`) once more. So:
    `cosign generate-key-pair --output-key-prefix contactor-main`. Replace `contactor-main.pub` in this folder and
    the old main key in `COSIGN_KEYS` with its public half. Merge that change into `main`, and publish a release,
    signed with the reserve key. An installation that updates to it gets the new keys. Its notes ask anyone whose
-   helper is older than that change to run the install command once. Until an installation has the new keys, it
-   still trusts the old main key.
+   helper is older than that change to update and then run the install command once. Until an installation has
+   the new keys, it still trusts the old main key.
 3. Once you expect most installations to have that release, set the two secrets to the new main key. One that
-   hasn't then refuses the next update ("isn't signed with our key") and stays on its version until `install.sh`
-   is run again.
+   hasn't then refuses the next update ("isn't signed with our key") and stays on its version. Running the install
+   command again doesn't help it, as it takes the helper from the version that runs; it is installed anew instead
+   (`--uninstall`, which keeps the data, then the install command).
 4. The reserve key was in the secrets, so it isn't offline anymore. Make a new reserve pair the same way
    (`--output-key-prefix contactor-reserve`), replace `contactor-reserve.pub` and the old reserve key in
    `COSIGN_KEYS`, and keep its private half offline.

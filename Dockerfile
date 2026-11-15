@@ -39,6 +39,9 @@ COPY --from=build /app /app
 # The update helper and its systemd units, as install.sh puts them on the machine: after a healthy update, the helper
 # brings itself up to date from the copies in the image it just checked (install/contactor-updater.sh). Owned by root.
 COPY install/contactor-updater.sh install/contactor-updater.service install/contactor-updater.path /app/updater/
+# The compose.yml install.sh puts in /opt/contactor: it takes it, and the helper above, from the image it installs, so
+# a release attaches only install.sh. Owned by root.
+COPY install/compose.yml /app/install/
 # Our licence and the others' (cloudflared's Apache 2.0 and Tailscale's BSD licence ask for their texts to go with them).
 COPY LICENSE THIRD-PARTY-NOTICES.md /licenses/
 COPY licenses/ /licenses/

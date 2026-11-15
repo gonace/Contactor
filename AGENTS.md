@@ -67,9 +67,9 @@ Contactor.Tests/          # The only test project
   Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 install/
-  install.sh                # The one-command install (curl … | sh), attached to each GitHub Release
-  compose.yml               # The generic compose file it puts in /opt/contactor, attached to each release too
-  contactor-updater.sh      # The update helper on the host ("Update now"), with its .service and .path units; attached too
+  install.sh                # The one-command install (curl … | sh), the only file attached to each GitHub Release
+  compose.yml               # The generic compose file it puts in /opt/contactor; in the image (/app/install), read from there
+  contactor-updater.sh      # The update helper on the host ("Update now"), with its .service and .path units; in the image (/app/updater), read from there
 deploy/
   demo/compose.yml          # The public demo, on a network with no route out, and its forwarder on port 8080 for an existing tunnel's connector
   demo/Caddyfile            # The forwarder's settings: only to the demo, passing on X-Forwarded-Proto
@@ -86,7 +86,7 @@ scripts/
 LICENSE                     # MIT
 THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence texts in licenses/ (in the image: /licenses)
 .github/workflows/build.yml # Build & Test: build + test (pull requests, merges to main, by hand)
-.github/workflows/images.yml # Release: publish and sign the images, the app's and the demo's, and attach install/ to the release (by hand)
+.github/workflows/images.yml # Release: publish and sign the images, the app's and the demo's, and attach install.sh to the release (by hand)
 .github/release.yml         # The releases' notes: merged pull requests, those labelled "internal" left out
 .github/pull_request_template.md # What every pull request description has
 .agents/writing.md          # How to write pull requests, issues and comments
