@@ -30,3 +30,10 @@ select:disabled {
     font-size: 14px;
     color: var(--muted);
 }
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}

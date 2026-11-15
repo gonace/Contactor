@@ -105,4 +105,11 @@
   <data name="Common.Language.Hint" xml:space="preserve">
     <value>One language for everyone who uses the app. Every open page changes to it.</value>
   </data>
+  <data name="Common.Language.Intro" xml:space="preserve">
+    <value>The language of Contactor, for everyone who uses it. You can change it later under Settings.</value>
+    <comment>The setup guide's "Language" step, under its heading Common.Language.</comment>
+  </data>
+  <data name="Common.Language.NotSaved" xml:space="preserve">
+    <value>The language couldn't be saved. Try again.</value>
+  </data>
 </root>

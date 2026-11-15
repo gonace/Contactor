@@ -80,31 +80,35 @@ public sealed partial class TextsTests
     [Fact]
     public void Should_HaveAnEnglishText_ForEveryKeyTheCodeUses()
     {
-        var english = Areas.ToDictionary(a => Area(a), a => Texts(a, CultureInfo.InvariantCulture)!);
-        var areas = string.Join('|', english.Keys);
-        var used = new Regex($"\"((?:{areas})\\.[A-Za-z0-9.]+)\"");
-        var missing = new List<string>();
-        var count = 0;
-        foreach (var file in Directory.EnumerateFiles(WebFolder, "*.*", SearchOption.AllDirectories)
+        var english = Areas.ToDictionary(a => Area(a), a => (IReadOnlyDictionary<string, string>)Texts(a, CultureInfo.InvariantCulture)!);
+        var files = Directory.EnumerateFiles(WebFolder, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".razor", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal))
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
-        {
-            foreach (Match match in used.Matches(File.ReadAllText(file)))
-            {
-                count++;
-                var key = match.Groups[1].Value;
-                var texts = english[key[..key.IndexOf('.', StringComparison.Ordinal)]];
-                var known = texts.ContainsKey(key) || (texts.ContainsKey(key + Plurals.One) && texts.ContainsKey(key + Plurals.Other));
-                if (!known)
-                {
-                    missing.Add($"{Path.GetFileName(file)}: {key}");
-                }
-            }
-        }
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Select(f => (Path.GetFileName(f), File.ReadAllText(f)));
+
+        var (count, missing) = MissingKeys(files, english);
 
         Assert.True(count > 20, $"Only {count} keys found: the search no longer finds them.");
         Assert.Empty(missing);
+    }
+
+    [Fact]
+    public void Should_FindAKeyWithoutAText_AlsoWithAnUnderscore()
+    {
+        var english = new Dictionary<string, IReadOnlyDictionary<string, string>>
+        {
+            ["Common"] = new Dictionary<string, string> { ["Common.Save"] = "Save", ["Common.Relays_One"] = "{0} relay", ["Common.Relays_Other"] = "{0} relays" },
+        };
+        var code = """
+            @Common["Common.Save"] @Common["Common.Missing_Key"] @Common.Plural("Common.Relays", 2) @Common["Common.Relays_Other"]
+            "Other.Thing" "Common.Gone"
+            """;
+
+        var (count, missing) = MissingKeys([("Page.razor", code)], english);
+
+        Assert.Equal(5, count);
+        Assert.Equal(["Page.razor: Common.Missing_Key", "Page.razor: Common.Gone"], missing);
     }
 
     [Fact]
@@ -214,6 +218,33 @@ public sealed partial class TextsTests
     {
         var plain = text.Replace("{{", "", StringComparison.Ordinal).Replace("}}", "", StringComparison.Ordinal);
         return string.Join(", ", PlaceholderPattern().Matches(plain).Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).Distinct().Order());
+    }
+
+    /// <summary>
+    /// The keys <paramref name="files"/> use that have no English text: every string literal that starts with an area,
+    /// e.g. "Common.Save". A plural's key, as <see cref="Plurals.Plural"/> takes it, needs its "_One" and "_Other". A
+    /// key put together in code (an interpolated string) isn't seen: write keys whole.
+    /// </summary>
+    private static (int Count, List<string> Missing) MissingKeys(IEnumerable<(string Name, string Text)> files, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> english)
+    {
+        var used = new Regex($"\"((?:{string.Join('|', english.Keys)})\\.[A-Za-z0-9._]+)\"");
+        var missing = new List<string>();
+        var count = 0;
+        foreach (var (name, text) in files)
+        {
+            foreach (Match match in used.Matches(text))
+            {
+                count++;
+                var key = match.Groups[1].Value;
+                var texts = english[key[..key.IndexOf('.', StringComparison.Ordinal)]];
+                if (!texts.ContainsKey(key) && !(texts.ContainsKey(key + Plurals.One) && texts.ContainsKey(key + Plurals.Other)))
+                {
+                    missing.Add($"{name}: {key}");
+                }
+            }
+        }
+
+        return (count, missing);
     }
 
     // The area's texts in exactly this language, without falling back; null when the language has no file.
