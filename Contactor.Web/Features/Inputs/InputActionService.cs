@@ -279,7 +279,7 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
     private static bool IsFullyOn(LiveBoard board, List<int> groupRelays, GroupRuntime? runtime)
     {
         return groupRelays.All(board.State.Relays.Contains)
-            && (runtime is null || (runtime.Phase == GroupPhases.Idle && runtime.PendingPosition is null));
+            && (runtime is null || (runtime.Phase == GroupPhases.Idle && runtime.PendingStep is null));
     }
 
     // One board's inputs' actions: its own queue and loop, ended with its board's watch. An action under way finishes

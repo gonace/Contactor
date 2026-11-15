@@ -1,0 +1,326 @@
+using System.Text.Json;
+using Contactor.Boards;
+using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Groups;
+using Contactor.Web.Persistence;
+
+namespace Contactor.Tests.Web;
+
+/// <summary>
+/// A group whose steps hold several relays, without a board: the relays of a step switch together, the interlock goes
+/// step by step, and one relay can still be switched by hand. The board's status is given by hand, and time moves only
+/// when a test moves it.
+/// </summary>
+public sealed class GroupStepsTests
+{
+    private const string John = "john@example.com";
+    private static readonly DateTime T0 = new(2026, 11, 15, 14, 0, 0, DateTimeKind.Utc);
+
+    // Two fans (relays 1 and 2), then two heaters (relays 3 and 4) three seconds later; the fans run on 3 minutes.
+    // The relays' ids aren't their channels.
+    private static readonly IReadOnlyList<GroupStepInfo> FansHeaters =
+    [
+        new("Fans", 3, 180, [new(21, 1, "Fan 1"), new(22, 2, "Fan 2")]),
+        new("Heaters", 3, 0, [new(23, 3, "Heater 1"), new(24, 4, "Heater 2")]),
+    ];
+
+    private readonly GroupRuntime _runtime = new() { GroupId = 1 };
+
+    [Fact]
+    public void Should_StartEveryRelayOfAStepTogether_ThenTheNextStepAfterItsWait()
+    {
+        var start = new GroupCommands();
+        Assert.True(GroupPlanner.Start(FansHeaters, State(), _runtime, John, null, T0, start));
+        Assert.Equal((Mask(1, 2), ChannelMask.None), (start.On, start.Off));
+
+        // One fan on is not the step on: the heaters wait.
+        Assert.True(Plan(State(1), T0.AddSeconds(1)).IsEmpty);
+        Assert.Null(_runtime.NextStepAtUtc);
+
+        Assert.True(Plan(State(1, 2), T0.AddSeconds(1)).IsEmpty);
+        Assert.Equal(T0.AddSeconds(4), _runtime.NextStepAtUtc);
+        Assert.Equal(Mask(3, 4), Plan(State(1, 2), T0.AddSeconds(4)).On);
+
+        Plan(State(1, 2, 3, 4), T0.AddSeconds(5));
+        Plan(State(1, 2, 3, 4), T0.AddSeconds(6));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    [Fact]
+    public void Should_StopStarting_WhenOneRelayOfTheStepNeverComesOn()
+    {
+        GroupPlanner.Start(FansHeaters, State(), _runtime, John, null, T0, new GroupCommands());
+
+        var failed = Plan(State(1), T0.AddSeconds(5));
+
+        var e = Assert.Single(failed.Events);
+        Assert.Equal((EventActions.GroupStartFailed, (int?)22), (e.Action, e.RelayId));
+        Assert.Equal("Fan 2", Read(e.Details, "role"));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+        Assert.True(Plan(State(1), T0.AddSeconds(30)).IsEmpty);
+    }
+
+    [Fact]
+    public void Should_StartOnlyTheRelaysOfTheStepThatAreOff()
+    {
+        // Fan 1 was turned on by hand.
+        var start = new GroupCommands();
+        GroupPlanner.Start(FansHeaters, State(1), _runtime, John, null, T0, start);
+
+        Assert.Equal(Mask(2), start.On);
+    }
+
+    [Fact]
+    public void Should_StopTheLastStepTogether_ThenRunOnTheStepAbove()
+    {
+        var stop = new GroupCommands();
+        Assert.True(GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), _runtime, John, T0, stop));
+        Assert.Equal(Mask(3, 4), stop.Off);
+
+        // One heater off is not the step off.
+        Assert.True(Plan(State(1, 2, 4), T0.AddSeconds(1)).IsEmpty);
+
+        var runOn = Assert.Single(Plan(State(1, 2), T0.AddSeconds(1)).Events);
+        Assert.Equal((EventActions.RunOnStart, (int?)null, "Fans"), (runOn.Action, runOn.RelayId, Read(runOn.Details, "role")));
+        Assert.Equal(T0.AddSeconds(181), _runtime.NextStepAtUtc);
+
+        Assert.True(Plan(State(1, 2), T0.AddSeconds(180)).IsEmpty);
+        var end = Plan(State(1, 2), T0.AddSeconds(181));
+        Assert.Equal(Mask(1, 2), end.Off);
+        Assert.Equal(EventActions.RunOnEnd, Assert.Single(end.Events).Action);
+
+        Plan(State(), T0.AddSeconds(182));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+        Assert.Null(_runtime.OnSinceUtc);
+    }
+
+    [Fact]
+    public void Should_TurnOffBothHeaters_AndStartTheFanThatStopped_WhenOneFanStops()
+    {
+        var trip = Plan(State(1, 3, 4), T0);
+
+        Assert.Equal((Mask(3, 4), Mask(2)), (trip.Off, trip.On));
+        var e = Assert.Single(trip.Events);
+        Assert.Equal((EventActions.InterlockTrip, (int?)22, EventActors.System), (e.Action, e.RelayId, e.Actor));
+        Assert.Equal("""{"missing":"Fan 2","off":["Heater 1","Heater 2"]}""", e.Details);
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
+
+        // Handled: not again while the board hasn't reported it.
+        Assert.True(Plan(State(1, 3, 4), T0.AddSeconds(1)).IsEmpty);
+
+        // The fans are on again and run on, then stop together.
+        Assert.Equal(EventActions.RunOnStart, Assert.Single(Plan(State(1, 2), T0.AddSeconds(2)).Events).Action);
+        Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(182)).Off);
+    }
+
+    [Fact]
+    public void Should_StartTheWholeStep_WhenAStepAboveIsOff()
+    {
+        var trip = Plan(State(3), T0);
+
+        Assert.Equal((Mask(3), Mask(1, 2)), (trip.Off, trip.On));
+        var e = Assert.Single(trip.Events);
+        Assert.Equal((int?)null, e.RelayId);
+        Assert.Equal("""{"missing":"Fans","off":["Heater 1"]}""", e.Details);
+    }
+
+    [Fact]
+    public void Should_LetTheLowestStepOn_BePartlyOn()
+    {
+        Assert.True(Plan(State(1), T0).IsEmpty);
+        Assert.True(Plan(State(1, 2, 3), T0).IsEmpty);
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    [Fact]
+    public void Should_RefuseAHeater_UntilBothFansAreOn()
+    {
+        var refused = new GroupCommands();
+        Assert.Equal(new MemberRefusal("Fans"), GroupPlanner.MemberOn(FansHeaters, State(1), _runtime, 3, John, null, T0, refused));
+        Assert.True(refused.IsEmpty);
+
+        var on = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 4, John, null, T0, on));
+        Assert.Equal(Mask(4), on.On);
+        Assert.Equal((EventActions.On, (int?)24), (on.Events[0].Action, on.Events[0].RelayId));
+    }
+
+    [Fact]
+    public void Should_RunOneFanAlone_AndItsStepMateBesideIt()
+    {
+        var first = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(FansHeaters, State(), _runtime, 1, John, null, T0, first));
+        Assert.Equal(Mask(1), first.On);
+        Assert.True(Plan(State(1), T0.AddSeconds(1)).IsEmpty);
+
+        // The relay beside it in its step needs nothing above it.
+        var second = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(FansHeaters, State(1), _runtime, 2, John, null, T0.AddSeconds(2), second));
+        Assert.Equal(Mask(2), second.On);
+    }
+
+    [Fact]
+    public void Should_TurnOffTheHeatersAtOnce_ThenRunOnOnlyTheFanTurnedOff()
+    {
+        _runtime.OnSinceUtc = T0.AddMinutes(-5);
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2, 3, 4), _runtime, 1, John, T0, off);
+
+        Assert.Equal(Mask(3, 4), off.Off);
+        Assert.Equal((EventActions.Off, (int?)21), (off.Events[0].Action, off.Events[0].RelayId));
+
+        var runOn = Assert.Single(Plan(State(1, 2), T0.AddSeconds(1)).Events);
+        Assert.Equal((EventActions.RunOnStart, (int?)21, "Fan 1"), (runOn.Action, runOn.RelayId, Read(runOn.Details, "role")));
+
+        // Only Fan 1 stops; Fan 2 stays on.
+        var end = Plan(State(1, 2), T0.AddSeconds(181));
+        Assert.Equal(Mask(1), end.Off);
+        Plan(State(2), T0.AddSeconds(182));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+        Assert.NotNull(_runtime.OnSinceUtc);
+        Assert.True(Plan(State(2), T0.AddMinutes(10)).IsEmpty);
+    }
+
+    [Fact]
+    public void Should_TurnOffOneFanAtOnce_WhenNothingBelowIsOn()
+    {
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 2, John, T0, off);
+
+        Assert.Equal(Mask(2), off.Off);
+        Assert.Single(off.Events);
+        Plan(State(1), T0.AddSeconds(1));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+        Assert.True(Plan(State(1), T0.AddMinutes(10)).IsEmpty);
+    }
+
+    [Fact]
+    public void Should_StopTheWholeGroup_DuringOneFansRunOn()
+    {
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2, 3, 4), _runtime, 1, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+
+        // "Turn off" on the group: both fans go when Fan 1's run-on ends, not only Fan 1, and not sooner.
+        var stop = new GroupCommands();
+        Assert.True(GroupPlanner.Stop(FansHeaters, State(1, 2), _runtime, John, T0.AddSeconds(2), stop));
+        Assert.Equal((ChannelMask.None, EventActions.GroupOff), (stop.Off, Assert.Single(stop.Events).Action));
+        Assert.Null(_runtime.StopRelayId);
+        Assert.True(Plan(State(1, 2), T0.AddSeconds(180)).IsEmpty);
+        Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
+    }
+
+    [Fact]
+    public void Should_StopAGroupThatIsOnlyPartlyOn()
+    {
+        var stop = new GroupCommands();
+
+        Assert.True(GroupPlanner.Stop(FansHeaters, State(1), _runtime, John, T0, stop));
+
+        Assert.Equal(Mask(1), stop.Off);
+        Plan(State(), T0.AddSeconds(1));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    [Fact]
+    public void Should_StopAStepOnItsWay_WhenTheGroupIsStopped()
+    {
+        GroupPlanner.Start(FansHeaters, State(), _runtime, John, null, T0, new GroupCommands());
+
+        var stop = new GroupCommands();
+        GroupPlanner.Stop(FansHeaters, State(), _runtime, John, T0.AddSeconds(1), stop);
+
+        Assert.Equal(Mask(1, 2), stop.Off);
+        Assert.Equal((1, (int?)null, false), (_runtime.PendingStep, _runtime.PendingRelayId, _runtime.PendingOn));
+    }
+
+    [Fact]
+    public void Should_CarryOnFromTheFans_WhenStartedDuringTheirRunOn()
+    {
+        GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), _runtime, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+
+        var start = new GroupCommands();
+        GroupPlanner.Start(FansHeaters, State(1, 2), _runtime, John, null, T0.AddSeconds(30), start);
+
+        Assert.Equal((Mask(3, 4), ChannelMask.None), (start.On, start.Off));
+    }
+
+    [Fact]
+    public void Should_LogTheStepsByName()
+    {
+        Assert.Equal("""{"steps":["Fans","Heaters"],"delays":[3]}""", GroupPlanner.Chain(FansHeaters));
+    }
+
+    [Fact]
+    public void Should_NameARelay_ByItsStep_WhenItIsAlone()
+    {
+        GroupStepInfo fan = new("Fan", 3, 0, [new(11, 1, "Relay 1")]);
+
+        Assert.Equal("Fan", GroupPlanner.NameOf(fan, fan.Relays[0]));
+        Assert.Equal("Fan 2", GroupPlanner.NameOf(FansHeaters[0], FansHeaters[0].Relays[1]));
+        Assert.Equal(("Heaters", 24), (GroupPlanner.RelayAt(FansHeaters, 4).Step.Name, GroupPlanner.RelayAt(FansHeaters, 4).Relay.RelayId));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GroupPlanner.RelayAt(FansHeaters, 5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GroupPlanner.RelayAt(FansHeaters, 0));
+    }
+
+    [Fact]
+    public void Should_SayWhichRelaysRun_WhenOnlySomeAre()
+    {
+        var group = View(new GroupRuntime { GroupId = 1, OnSinceUtc = T0, TurnedOnBy = "john@example.com" });
+
+        Assert.EndsWith("· only Fan 1", Status(group, State(1)), StringComparison.Ordinal);
+        Assert.EndsWith("· only Fans, Heater 2", Status(group, State(1, 2, 4)), StringComparison.Ordinal);
+        Assert.DoesNotContain("only", Status(group, State(1, 2, 3, 4)), StringComparison.Ordinal);
+        Assert.Equal("Out of order · turning off", Status(group, State(1, 3)));
+        Assert.Equal("RELAY 1 + 2 → 3 + 4", TestTexts.GroupStatus.Chain(group));
+        Assert.Equal(
+            [(21, 1, 1, "Fan 1"), (22, 2, 1, "Fan 2"), (23, 3, 2, "Heater 1"), (24, 4, 2, "Heater 2")],
+            group.Members.Select(m => (m.RelayId, m.Position, m.Step, m.RoleName)));
+    }
+
+    [Fact]
+    public void Should_CountDown_OnTheRelaysThatRunOn()
+    {
+        var stopping = View(new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60) });
+        Assert.Equal(["Keeps running for 1 min", "Keeps running for 1 min", "Off", "Off"], Notes(stopping, State(1, 2)));
+        Assert.Equal("Stopping · run-on: Fans for 1 min", Status(stopping, State(1, 2)));
+
+        var oneFan = stopping with { Runtime = new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60), StopRelayId = 21 } };
+        Assert.Equal(["Keeps running for 1 min", "On", "Off", "Off"], Notes(oneFan, State(1, 2)));
+        Assert.Equal("Stopping · run-on: Fan 1 for 1 min", Status(oneFan, State(1, 2)));
+
+        var starting = View(new GroupRuntime { GroupId = 1, Phase = GroupPhases.Starting, NextStepAtUtc = T0.AddSeconds(3) });
+        Assert.Equal(["On", "On", "Starts in 3 s", "Starts in 3 s"], Notes(starting, State(1, 2)));
+        Assert.Equal("Starting · Heaters in 3 s", Status(starting, State(1, 2)));
+    }
+
+    [Fact]
+    public void Should_NeedTheWholeStepAbove()
+    {
+        Assert.Equal("Fans", GroupPlanner.NeedsOn(FansHeaters, State(2), 3));
+        Assert.Null(GroupPlanner.NeedsOn(FansHeaters, State(1, 2), 3));
+        Assert.Null(GroupPlanner.NeedsOn(FansHeaters, State(), 2));
+    }
+
+    private GroupCommands Plan(BoardState state, DateTime now)
+    {
+        var commands = new GroupCommands();
+        GroupPlanner.Plan(FansHeaters, state, _runtime, now, commands);
+        return commands;
+    }
+
+    private static GroupView View(GroupRuntime runtime) => new(1, "Workshop heat", GroupIcons.Fan, 120, FansHeaters, runtime);
+
+    private static string Status(GroupView group, BoardState state) =>
+        TestTexts.GroupStatus.For(group, state, T0, t => t, who => who == "john@example.com" ? "John" : who);
+
+    private static List<string> Notes(GroupView group, BoardState state) =>
+        [.. Enumerable.Range(0, group.Members.Count).Select(i => TestTexts.GroupStatus.MemberNote(group, state, i, state.IsOn(group.Members[i].Channel), null, T0))];
+
+    private static string? Read(string? details, string name) =>
+        details is null ? null : JsonDocument.Parse(details).RootElement.GetProperty(name).GetString();
+
+    private static ChannelMask Mask(params int[] channels) => ChannelMask.Of(channels);
+
+    private static BoardState State(params int[] on) => new(true, ChannelMask.Of(on), ChannelMask.None, T0);
+}

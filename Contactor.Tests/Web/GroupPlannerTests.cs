@@ -16,22 +16,22 @@ public sealed class GroupPlannerTests
 
     // The fan heater: the fan (relay 1) first, the heat (relay 2) three seconds later; the fan runs on 5 minutes.
     // The relays' ids aren't their channels: the commands and the board's state go by the channel, the events by the id.
-    private static readonly IReadOnlyList<GroupMemberInfo> FanHeater =
+    private static readonly IReadOnlyList<GroupStepInfo> FanHeater =
     [
-        new(1, 11, 1, "Fan", 3, 300),
-        new(2, 12, 2, "Heat", 3, 0),
+        new("Fan", 3, 300, [new(11, 1, "Fan")]),
+        new("Heat", 3, 0, [new(12, 2, "Heat")]),
     ];
 
     // Three relays with different waits: ventilation, compressor, compressed air.
-    private static readonly IReadOnlyList<GroupMemberInfo> Spray =
+    private static readonly IReadOnlyList<GroupStepInfo> Spray =
     [
-        new(1, 15, 5, "Ventilation", 3, 120),
-        new(2, 16, 6, "Compressor", 10, 60),
-        new(3, 17, 7, "Tryckluft", 2, 0),
+        new("Ventilation", 3, 120, [new(15, 5, "Ventilation")]),
+        new("Compressor", 10, 60, [new(16, 6, "Compressor")]),
+        new("Tryckluft", 2, 0, [new(17, 7, "Tryckluft")]),
     ];
 
     private readonly GroupRuntime _runtime = new() { GroupId = 1 };
-    private IReadOnlyList<GroupMemberInfo> _members = FanHeater;
+    private IReadOnlyList<GroupStepInfo> _members = FanHeater;
 
     [Fact]
     public void Should_StartFromTheTop_EachStepAfterConfirmationAndItsDelay()

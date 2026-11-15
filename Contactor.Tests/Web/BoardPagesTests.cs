@@ -213,8 +213,8 @@ public sealed class BoardPagesTests
         var relays = await db.Relays.Where(r => r.BoardId == boards.BarnId).ToDictionaryAsync(r => r.Channel, r => r.Id, Cancel);
         var input = await db.Inputs.Where(i => i.BoardId == boards.BarnId && i.Channel == 1).Select(i => i.Id).SingleAsync(Cancel);
         var group = new RelayGroup { BoardId = boards.BarnId, Name = "Heater", SortOrder = 1 };
-        group.Members.Add(new RelayGroupMember { RelayId = relays[3], Position = 1, RoleName = "Fan" });
-        group.Members.Add(new RelayGroupMember { RelayId = relays[4], Position = 2, RoleName = "Heat" });
+        group.AddStep("Fan", relays[3]);
+        group.AddStep("Heat", relays[4]);
         db.RelayGroups.Add(group);
         await db.SaveChangesAsync(Cancel);
         db.Schedules.Add(new Schedule { GroupId = group.Id, Days = ScheduleDays.All, OnTime = new(6, 0), OffTime = new(7, 0), CreatedBy = John });

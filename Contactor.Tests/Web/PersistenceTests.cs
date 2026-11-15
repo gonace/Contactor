@@ -307,9 +307,9 @@ public sealed class PersistenceTests
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
             var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
-            group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan", StartDelaySec = 3 });
-            group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 10, RoleName = "Heat", StartDelaySec = 3 });
-            group.Members.Add(new RelayGroupMember { RelayId = 12, Position = 3, RoleName = "Lamp", StartDelaySec = 3 });
+            group.AddStep("Fan", 1, startDelaySec: 3);
+            group.AddStep("Heat", 2, startDelaySec: 3).Position = 10;
+            group.AddStep("Lamp", 12, startDelaySec: 3);
             db.RelayGroups.Add(group);
             db.Schedules.Add(new Schedule
             {
@@ -512,8 +512,8 @@ public sealed class PersistenceTests
             (runtime.LastTickUtc, runtime.LastContactUtc, runtime.LongGapEndedUtc) = (Earlier, Earlier.AddMinutes(5), Earlier.AddDays(-1));
             db.EventLog.Add(new EventLogEntry { TimestampUtc = Earlier, BoardId = board.Id, RelayId = 1, Actor = EventActors.System, Action = EventActions.On });
             var group = new RelayGroup { BoardId = board.Id, Name = "Fan heater", Icon = GroupIcons.Fan };
-            group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan", StartDelaySec = 3 });
-            group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat", StartDelaySec = 3 });
+            group.AddStep("Fan", 1, startDelaySec: 3);
+            group.AddStep("Heat", 2, startDelaySec: 3);
             db.RelayGroups.Add(group);
             await db.SaveChangesAsync(Cancel);
         }
@@ -538,6 +538,89 @@ public sealed class PersistenceTests
     }
 
     // A database as the version before the board's own row left it, with the rows the SQL adds, brought up to date.
+    // Before a group's relays were in steps: one relay per place.
+    private const string BeforeSteps = "20261115153057_AddInstallationLanguage";
+
+    [Fact]
+    public async Task Should_PutEachRelayOfAGroupInAStepOfItsOwn_WhenUpgraded()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.GetService<IMigrator>().MigrateAsync(BeforeSteps, cancellationToken: Cancel);
+        }
+
+        await ExecuteAsync(
+            database.ConnectionString,
+            """
+            INSERT INTO "RelayGroup" ("Id", "BoardId", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, 1, 'Fan heater', 'fan', 120, 1, 1), (2, 1, 'Spray', 'spray', NULL, 1, 2);
+            INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "Position", "RoleName", "StartDelaySec", "RunOnSec") VALUES
+                (1, 1, 1, 'Fan', 3, 300), (1, 2, 2, 'Heat', 3, 0), (2, 5, 1, 'Ventilation', 3, 120), (2, 6, 2, 'Compressor', 10, 60), (2, 7, 3, 'Air', 2, 0);
+            INSERT INTO "GroupRuntime" ("GroupId", "Phase", "TargetLevel", "PendingPosition", "PendingOn", "PendingSinceUtc", "NextStepAtUtc") VALUES
+                (1, 'stopping', 0, 1, 1, '2026-11-15 10:00:00', NULL), (2, 'starting', 3, NULL, 0, NULL, '2026-11-15 10:00:03');
+            """);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.MigrateAsync(Cancel);
+        }
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        var steps = await check.RelayGroupSteps.Include(s => s.Members).OrderBy(s => s.GroupId).ThenBy(s => s.Position).ToListAsync(Cancel);
+        Assert.Equal(
+            [(1, 1, "Fan", 3, 300, 1), (1, 2, "Heat", 3, 0, 2), (2, 1, "Ventilation", 3, 120, 5), (2, 2, "Compressor", 10, 60, 6), (2, 3, "Air", 2, 0, 7)],
+            steps.Select(s => (s.GroupId, s.Position, s.Name, s.StartDelaySec, s.RunOnSec, Assert.Single(s.Members).RelayId)));
+        Assert.All(steps, s => Assert.Equal((1, s.GroupId), (s.Members[0].Order, s.Members[0].GroupId)));
+        var runtimes = await check.GroupRuntimes.OrderBy(r => r.GroupId).ToListAsync(Cancel);
+        Assert.Equal(((int?)1, (int?)null, true, (int?)null), (runtimes[0].PendingStep, runtimes[0].PendingRelayId, runtimes[0].PendingOn, runtimes[0].StopRelayId));
+        Assert.Equal((GroupPhases.Starting, 3, (int?)null), (runtimes[1].Phase, runtimes[1].TargetLevel, runtimes[1].PendingStep));
+        Assert.Equal(0L, await ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
+    }
+
+    [Fact]
+    public async Task Should_GiveEachRelayAPlaceOfItsOwn_WhenMigratedBackFromSteps()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var heater = new RelayGroup { BoardId = 1, Name = "Workshop heat", Icon = GroupIcons.Fan };
+            heater.AddStep("Fans", [1, 2], runOnSec: 180);
+            heater.AddStep("Heaters", [3, 4], startDelaySec: 10);
+            var fanHeater = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan };
+            fanHeater.AddStep("Fan", 5, runOnSec: 300);
+            fanHeater.AddStep("Heat", 6);
+            db.RelayGroups.AddRange(heater, fanHeater);
+            await db.SaveChangesAsync(Cancel);
+            db.GroupRuntimes.Add(new GroupRuntime { GroupId = heater.Id, Phase = GroupPhases.Starting, TargetLevel = 2, PendingStep = 2, PendingOn = true });
+            db.GroupRuntimes.Add(new GroupRuntime { GroupId = fanHeater.Id, Phase = GroupPhases.Stopping, PendingStep = 2, PendingOn = false });
+            await db.SaveChangesAsync(Cancel);
+            await db.GetService<IMigrator>().MigrateAsync(BeforeSteps, cancellationToken: Cancel);
+        }
+
+        Assert.Equal(
+            "1:1:Relay 1:180:3|1:2:Relay 2:180:3|1:3:Relay 3:0:10|1:4:Relay 4:0:10|2:1:Fan:300:3|2:2:Heat:0:3",
+            await ScalarAsync(
+                database.ConnectionString,
+                """
+                SELECT group_concat(x, '|') FROM (SELECT "GroupId" || ':' || "Position" || ':' || "RoleName" || ':' || "RunOnSec" || ':' || "StartDelaySec" AS x
+                FROM "RelayGroupMember" ORDER BY "GroupId", "Position");
+                """));
+        Assert.Equal("1:-:0|2:2:0", await ScalarAsync(
+            database.ConnectionString,
+            "SELECT group_concat(x, '|') FROM (SELECT \"GroupId\" || ':' || coalesce(\"PendingPosition\", '-') || ':' || \"PendingOn\" AS x FROM \"GroupRuntime\" ORDER BY \"GroupId\");"));
+        Assert.Equal(0L, await ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM sqlite_master WHERE \"name\" = 'RelayGroupStep';"));
+        Assert.Equal(0L, await ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
+
+        // And up again: one relay per step, as any group made before.
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.MigrateAsync(Cancel);
+        }
+
+        Assert.Equal(6L, await ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM \"RelayGroupStep\";"));
+    }
+
     private static async Task<TestDatabase> UpgradeAsync(string sql)
     {
         var database = TestDatabase.Create();

@@ -119,7 +119,7 @@
                             <span class="number" aria-hidden="true">@(index + 1)</span>
                             <div class="step-text">
                                 <label class="label" for="@($"role-{member.RelayId}")">@Texts["Groups.New.RoleLabel", ChannelOf(member.RelayId)]</label>
-                                <input id="@($"role-{member.RelayId}")" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
+                                <input id="@($"role-{member.RelayId}")" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                             </div>
                             <div class="order">
                                 <button type="button" aria-label="@Texts["Groups.MoveUp", label]" disabled="@(index == 0)" @onclick="() => _wizard.Move(index, -1)">
@@ -175,15 +175,15 @@
             <dl class="plan">
                 <div>
                     <dt class="label">@Texts["Groups.New.WhenOn"]</dt>
-                    <dd>@Plan.Start(draft.Members)</dd>
+                    <dd>@Plan.Start(_wizard.MemberDrafts)</dd>
                 </div>
                 <div>
                     <dt class="label">@Texts["Groups.New.WhenOff"]</dt>
-                    <dd>@Plan.Stop(draft.Members)</dd>
+                    <dd>@Plan.Stop(_wizard.MemberDrafts)</dd>
                 </div>
                 <div>
                     <dt class="label">@Texts["Groups.New.Interlock.Label"]</dt>
-                    <dd>@Plan.Interlock(draft.Members)</dd>
+                    <dd>@Plan.Interlock(_wizard.MemberDrafts)</dd>
                 </div>
                 <div>
                     <dt class="label">@Texts["Groups.New.AutoOff"]</dt>
@@ -302,7 +302,7 @@
     // "GROUP · RELAY 1 → 2", or with two or more boards "GROUP · WORKSHOP 1 → 2", as the group's card shows it.
     private string PreviewLabel(GroupDraft draft)
     {
-        var channels = string.Join(" → ", draft.Members.Select(m => ChannelOf(m.RelayId)));
+        var channels = string.Join(" → ", draft.RelayIds.Select(ChannelOf));
         return RelayTexts["Relays.GroupLabel", BoardLabel is { } board ? $"{board} {channels}" : Texts["Groups.Chain", channels].Value];
     }
 

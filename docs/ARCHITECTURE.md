@@ -200,22 +200,32 @@ RelayGroup              (two or more relays that run as one, in a start order)
   IsActive        bool
   SortOrder       int
 
+RelayGroupStep          (one or more relays that switch together)
+  Id              int PK
+  GroupId         int FK         cascade delete
+  Position        int            1..n, unique per group; 1 starts first and stops last
+  Name            text           max 40; its name in the group, e.g. "Fans"
+  StartDelaySec   int            1–60 (default 3): wait after every relay of the step above is confirmed on
+  RunOnSec        int            0–1800 (default 0): keeps running after the step below has gone off
+
 RelayGroupMember
   GroupId         int FK         cascade delete
   RelayId         int FK UNIQUE  a relay is in at most one group
-  Position        int            1..n, unique per group; 1 starts first and stops last
-  RoleName        text           its name in the group, e.g. "Fan"
-  StartDelaySec   int            1–60 (default 3): wait after the relay above is confirmed on
-  RunOnSec        int            0–1800 (default 0): keeps running after the relay below has gone off
+  StepId          int FK         its step, in the same group (the key is the step's id and group), cascade delete
+  Order           int            1..n, unique per step: its place in the step
+                                 The migration AddGroupSteps made each relay of the groups made before a step of its
+                                 own, with its name in the group and its times.
 
 GroupRuntime            (internal; the sequence in progress, so it carries on after a restart)
   GroupId         int PK
   Phase           text           "idle" | "starting" | "stopping"
-  TargetLevel     int            how many relays from the top the sequence heads for
+  TargetLevel     int            how many steps from the top the sequence heads for
   NextStepAtUtc   datetime?      when the next step may go (start delay or run-on)
-  PendingPosition int?           a relay a command was sent for, not yet confirmed by the board
+  PendingStep     int?           the step a command was sent for, not yet confirmed by the board
+  PendingRelayId  int?           the one relay of that step it was for; null: the whole step
   PendingOn       bool
   PendingSinceUtc datetime?
+  StopRelayId     int?           a stop after one relay was turned off: that relay is the only one of its step that goes off
   OnSinceUtc, AutoOffAtUtc, TurnedOnBy   as in RelayRuntime, for the group
 
 Installation            (one row; none on a new installation)
@@ -309,13 +319,13 @@ InputAction             (a relay or a group an input switches, on the input's ow
 - A relay the scheduler turns on gets `RelayRuntime.TurnedOnBy = "schedule"` and no `AutoOffAtUtc`; its status line reads "On since 06:30 · schedule · off 08:00". An off relay whose schedule turns it on within 24 h reads "Schedule: on tomorrow 06:30".
 
 ### Relay groups
-A group runs its relays in a start order, e.g. a fan heater: the fan first, then the heat; heat off, the fan runs on, then the fan off. `GroupPlanner` has the rules (pure, tested without a board); `GroupSequencer` runs them for each board on its own (`BoardSequencer`: its own lock and loop, on every status of its board and every second), and saves `GroupRuntime`.
+A group runs its relays in steps, in a start order, e.g. a fan heater: the fan first, then the heat; heat off, the fan runs on, then the fan off. A step holds one or more relays that switch together (step 1 "Fans": Fan 1 + Fan 2; step 2 "Heaters"), and has the wait before it starts and its run-on; a group needs 2 relays or more, in one step or more. A relay's name in the group's events and status is its step's when it is the step's only relay, otherwise its own. `GroupPlanner` has the rules (pure, tested without a board); `GroupSequencer` runs them for each board on its own (`BoardSequencer`: its own lock and loop, on every status of its board and every second), and saves `GroupRuntime`.
 - **One board:** a group's relays are all on one board, the group's (`RelayGroup.BoardId`): a new group takes its first relay's board, `GroupsHandler` refuses relays on another, and "New group" only offers the first picked relay's board. Across boards is issue #204.
-- **Start:** from the top. The next relay only once the board's status confirms the one above is on **and** its `StartDelaySec` has passed. No confirmation within 5 s: the start stops, what runs keeps running, `group-start-failed`.
-- **Stop:** from the bottom. The lowest relay goes off at once; each one above after its `RunOnSec`, counted from when the one below is confirmed off. ON during a run-on carries on from where the group is, restarting nothing.
-- **Interlock:** a relay may only be on while every relay above it is. Checked first on **every** status of the group's board, whatever caused it (the app, the board's web page or buttons, its timers, a power cut), and at start and reconnect: everything below the gap goes off at once, the missing relay is started so it can run on, then the group stops as usual. Logged as `interlock-trip` with Actor `system`.
-- **One relay at a time** (on the Group screen): ON only when the relay above is on ("Needs Fan to be on"). OFF turns the relays below off at once, then this one runs on and stops. That gives "only the fan" without a special mode.
-- A relay in a group is only switched through its group (`RelayControl` refuses), has no auto-off or schedule of its own, and can't get a schedule while in it (its group can). A relay with its own schedules, or one an input controls, can't join a group. Which relays and their order, creating and deleting only change while the whole group is off.
+- **Start:** from the top, the relays of a step together. The next step only once the board's status confirms every relay of the one above is on **and** its `StartDelaySec` has passed. No confirmation within 5 s: the start stops, what runs keeps running, `group-start-failed`.
+- **Stop:** from the bottom, the relays of a step together. The lowest step goes off at once; each one above after its `RunOnSec`, counted from when every relay of the one below is confirmed off. "Turn off" during a run-on of one relay (below) keeps the run-on's time. ON during a run-on carries on from where the group is, restarting nothing.
+- **Interlock:** a relay may only be on while every relay of every step above it is (only the lowest step on may be partly on, e.g. only Fan 1). Checked first on **every** status of the group's board, whatever caused it (the app, the board's web page or buttons, its timers, a power cut), and at start and reconnect: everything below the gap goes off at once, the missing relays of the step are started so it can run on, then the group stops as usual. If one fan stops, both heaters go off. Logged as `interlock-trip` with Actor `system`.
+- **One relay at a time** (on the Group screen): ON only when every relay of the step above is on ("Needs Fans to be on"). OFF turns every relay below its step off at once, then this one runs on with its step's run-on and stops; the other relays of its step stay as they are. That gives "only the fan" (or "only Fan 1") without a special mode.
+- A relay in a group is only switched through its group (`RelayControl` refuses), has no auto-off or schedule of its own, and can't get a schedule while in it (its group can). A relay with its own schedules, or one an input controls, can't join a group. Which relays, their steps and their order, creating and deleting only change while the whole group is off.
 - **Schedules:** a group has schedules of its own, run by the scheduler by the same rules as a relay's (catch-up, ON wins on overlap, a missed OFF only stops what the schedule started, a person's start and auto-off win). OnTime starts the group in its order through `GroupSequencer`, with Actor `schedule` and no auto-off; OffTime stops it with its run-on times. The sequencer logs both as `group-on`/`group-off`. A group that is already partly on at OnTime (e.g. only the fan, switched by hand) is left as the person set it, with their auto-off; the OffTime still stops it.
 - **Auto-off** (`RelayGroup.MaxOnMinutes`) stops the whole group with its run-on times. **"All off"** stops each group with its run-on times and turns the other relays off at once.
 - **No board:** nothing is sent or queued for it; run-on times keep counting, and on its reconnect its interlock goes first, then what fell due. Another board's groups run on. A command the board hadn't confirmed gets a fresh 5 s to show; the relay a stop needs for its run-on (e.g. the fan after a trip) is sent once more, then given up (`group-start-failed`) if it still doesn't come on.
@@ -411,7 +421,7 @@ Mobile first (390 px), and it uses the space on a tablet and a desktop. All UI t
    - The link "New group" under the cards, then one button for inactive relays and inputs: "Show 2 inactive relays", "Show 1 inactive input", or "Show 3 inactive" for both, and "Hide inactive …". Inactive relays and inputs have a dashed border.
    - "Inputs", after the relays: one read-only card per active input on the board (`InputsHandler`); its text links to its screen: "INPUT 1", its name, "Open since 14:02" (since its latest `input-changed`), or else "Open since unknown" with an ⓘ right after it (`WhyUnknown.razor`), whose reason shows as a tooltip on hover, on keyboard focus, or when pressed (a second press or a tap elsewhere closes it). The board only reports what an input reads now, so the time is unknown for a change the app only noticed after a gap in contact, or when a long gap came after it (see `BoardRuntime.LongGapEndedUtc`). Beside it, a badge with its state, "Open" or "Closed" (green when closed). No button: the app can't switch an input.
    - The list has a section each for "Groups", "Relays" and "Inputs", in that order, each with a small heading and a grid of its own, so the cards line up and Tab goes row by row. With only relays (no groups and no input shown) there are no headings. "Relays" has no heading and no section when there is no relay card to show (every relay in a group, or the rest hidden as inactive).
-   - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · Fan keeps running for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
+   - One card per group, before the relays: its icon, "GROUP · RELAY 1 → 2", the name, a status line ("Starting · Heat in 3 s", "Starting · step 2 of 2", "Stopping · run-on: Fan for 4 min 59 s" (a countdown, every second; "42 s" under a minute), "On since 14:02 · John · off 16:02 · only Fan", "Schedule: on tomorrow 06:30") and one ON/OFF for the whole group, with a chip per relay in start order. A group's relays get no card of their own, and the counts in the heading count a group as one.
    - Tab bar at the bottom: Relays | Events | Settings, plus Debug for a person who has Debugging on.
    - **Two or more boards** (one board looks as above, with the board filter's one board and "+ Add a board", below):
      - The count in the heading covers every board ("16 of 74 on"), and "All off" makes way for the smaller "Turn off all boards", which asks first on the same page ("Turn off all 16 relays on 9 boards?", "Cancel" and a red "Turn off"), then turns off every board it can reach (`RelayControl.TurnOffAllBoardsAsync`) and says under the heading which it couldn't: "Couldn't reach Garage. Its relays are as they were.".

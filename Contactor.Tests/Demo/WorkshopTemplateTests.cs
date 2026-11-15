@@ -51,11 +51,11 @@ public sealed class WorkshopTemplateTests : IDisposable
         Assert.Equal(8, await db.RelayRuntimes.CountAsync(Cancel));
         Assert.All(await db.RelayRuntimes.ToListAsync(Cancel), r => Assert.Null(r.OnSinceUtc));
 
-        var group = await db.RelayGroups.Include(g => g.Members).SingleAsync(Cancel);
+        var group = await db.RelayGroups.Include(g => g.Steps).ThenInclude(s => s.Members).SingleAsync(Cancel);
         Assert.Equal(("Fan heater", 120, board.Id), (group.Name, group.MaxOnMinutes, group.BoardId));
-        var members = group.Members.OrderBy(m => m.Position).Select(m => (m.Position, Channel(relays, m.RelayId), m.RoleName, m.RunOnSec)).ToList();
-        Assert.Equal([(1, 1, "Fan", 120), (2, 2, "Heat", 0)], members);
-        Assert.Equal(3, group.Members.Single(m => m.Position == 2).StartDelaySec);
+        var steps = group.Steps.OrderBy(s => s.Position).Select(s => (s.Position, Channel(relays, Assert.Single(s.Members).RelayId), s.Name, s.RunOnSec)).ToList();
+        Assert.Equal([(1, 1, "Fan", 120), (2, 2, "Heat", 0)], steps);
+        Assert.Equal(3, group.Steps.Single(s => s.Position == 2).StartDelaySec);
         var runtime = await db.GroupRuntimes.SingleAsync(Cancel);
         Assert.Equal((group.Id, GroupPhases.Idle, (string?)null), (runtime.GroupId, runtime.Phase, runtime.TurnedOnBy));
 

@@ -11,19 +11,28 @@ public sealed class GroupRuntime
     /// <summary>One of <see cref="GroupPhases"/>.</summary>
     public string Phase { get; set; } = GroupPhases.Idle;
 
-    /// <summary>How many relays, from the top, the sequence is heading for: all of them when starting, 0 when stopping.</summary>
+    /// <summary>How many steps, from the top, the sequence is heading for: all of them when starting, 0 when stopping.</summary>
     public int TargetLevel { get; set; }
 
     /// <summary>When the next step may go: the start delay or the run-on time after the last confirmed step.</summary>
     public DateTime? NextStepAtUtc { get; set; }
 
-    /// <summary>The position of a relay a command was sent for and the board hasn't confirmed yet.</summary>
-    public int? PendingPosition { get; set; }
+    /// <summary>The position of the step a command was sent for and the board hasn't confirmed yet.</summary>
+    public int? PendingStep { get; set; }
+
+    /// <summary>The one relay of <see cref="PendingStep"/> the command was for; null when it was for the whole step.</summary>
+    public int? PendingRelayId { get; set; }
 
     /// <summary>Whether that command was ON.</summary>
     public bool PendingOn { get; set; }
 
     public DateTime? PendingSinceUtc { get; set; }
+
+    /// <summary>
+    /// While stopping to <see cref="TargetLevel"/> after one relay was turned off: that relay, the only one of the step
+    /// below the target that goes off. The other relays of its step stay as they are. Null stops whole steps.
+    /// </summary>
+    public int? StopRelayId { get; set; }
 
     public DateTime? OnSinceUtc { get; set; }
 

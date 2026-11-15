@@ -9,15 +9,46 @@ using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Groups;
 
-/// <summary>A group as it is created or saved; the members in start order.</summary>
-public sealed record GroupDraft(string Name, string Icon, int? MaxOnMinutes, IReadOnlyList<GroupMemberDraft> Members);
+/// <summary>A group as it is created or saved; the steps in start order.</summary>
+public sealed record GroupDraft(string Name, string Icon, int? MaxOnMinutes, IReadOnlyList<GroupStepDraft> Steps)
+{
+    /// <summary>A group with each relay in a step of its own, as "New group" makes one.</summary>
+    public GroupDraft(string name, string icon, int? maxOnMinutes, IReadOnlyList<GroupMemberDraft> members)
+        : this(name, icon, maxOnMinutes, OneRelayPerStep(members))
+    {
+    }
 
-/// <summary>A relay in a <see cref="GroupDraft"/>. An empty role name takes the relay's own name.</summary>
+    /// <summary>
+    /// The relays in start order, each with its step's name and times. Setting it puts each relay in a step of its own.
+    /// </summary>
+    public IReadOnlyList<GroupMemberDraft> Members
+    {
+        get => [.. (Steps ?? []).Where(s => s is not null).SelectMany(s => (s.RelayIds ?? []).Select(id => new GroupMemberDraft(id, s.Name, s.StartDelaySec, s.RunOnSec)))];
+        init => Steps = OneRelayPerStep(value);
+    }
+
+    /// <summary>Every relay of the draft, in start order.</summary>
+    public IEnumerable<int> RelayIds => Steps?.Where(s => s?.RelayIds is not null).SelectMany(s => s.RelayIds) ?? [];
+
+    private static IReadOnlyList<GroupStepDraft> OneRelayPerStep(IReadOnlyList<GroupMemberDraft> members)
+    {
+        return members is null ? null! : [.. members.Select(m => new GroupStepDraft(m.RoleName, [m.RelayId], m.StartDelaySec, m.RunOnSec))];
+    }
+}
+
+/// <summary>A step in a <see cref="GroupDraft"/>: its relays, in order. An empty name takes its first relay's name.</summary>
+public sealed record GroupStepDraft(
+    string? Name,
+    IReadOnlyList<int> RelayIds,
+    int StartDelaySec = RelayGroupStep.DefaultStartDelaySec,
+    int RunOnSec = RelayGroupStep.DefaultRunOnSec);
+
+/// <summary>A relay in its own step, as "New group" has them. An empty role name takes the relay's own name.</summary>
 public sealed record GroupMemberDraft(
     int RelayId,
     string? RoleName,
-    int StartDelaySec = RelayGroupMember.DefaultStartDelaySec,
-    int RunOnSec = RelayGroupMember.DefaultRunOnSec);
+    int StartDelaySec = RelayGroupStep.DefaultStartDelaySec,
+    int RunOnSec = RelayGroupStep.DefaultRunOnSec);
 
 /// <summary>A relay as "New group" offers it.</summary>
 /// <param name="GroupName">The group it is already in, or null.</param>
@@ -31,10 +62,10 @@ public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool 
 }
 
 /// <summary>
-/// Creates, changes and deletes relay groups, with the rules a group must keep: 2 relays up to the board's count, all on
-/// one board (the group's: a new group takes its first relay's; across boards is issue #204), each in at most one group,
-/// none with schedules of its own, and the waits within their limits. Which relays are in it and their order only
-/// change while the whole group is off, so no running sequence is pulled apart; the same goes for creating and
+/// Creates, changes and deletes relay groups, with the rules a group must keep: 2 relays up to the board's count, in
+/// steps of at least one relay each, all on one board (the group's: a new group takes its first relay's; across boards is issue #204), each in at most one group,
+/// none with schedules of its own, and the waits within their limits. Which relays are in it, their steps and their order
+/// only change while the whole group is off, so no running sequence is pulled apart; the same goes for creating and
 /// deleting. Every change is logged.
 /// </summary>
 public sealed class GroupsHandler
@@ -72,7 +103,7 @@ public sealed class GroupsHandler
     public async Task<IReadOnlyList<GroupView>> ListAsync(CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var groups = await db.RelayGroups.AsNoTracking().Include(g => g.Members).ThenInclude(m => m.Relay).OrderBy(g => g.SortOrder).ThenBy(g => g.Id).ToListAsync(cancellationToken);
+        var groups = await db.RelayGroups.AsNoTracking().Include(g => g.Steps).ThenInclude(s => s.Members).ThenInclude(m => m.Relay).OrderBy(g => g.SortOrder).ThenBy(g => g.Id).ToListAsync(cancellationToken);
         var runtimes = await db.GroupRuntimes.AsNoTracking().ToDictionaryAsync(r => r.GroupId, cancellationToken);
         return [.. groups.Select(g => ToView(g, runtimes.GetValueOrDefault(g.Id)))];
     }
@@ -81,7 +112,7 @@ public sealed class GroupsHandler
     public async Task<GroupView?> GetAsync(int groupId, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var group = await db.RelayGroups.AsNoTracking().Include(g => g.Members).ThenInclude(m => m.Relay).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+        var group = await db.RelayGroups.AsNoTracking().Include(g => g.Steps).ThenInclude(s => s.Members).ThenInclude(m => m.Relay).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
         if (group is null)
         {
             return null;
@@ -158,7 +189,7 @@ public sealed class GroupsHandler
             group.Name,
             group.Icon,
             group.MaxOnMinutes,
-            [.. group.Members.OrderBy(m => m.Position).Select(m => new GroupMemberView(m.RelayId, m.Relay!.Channel, m.Position, m.RoleName, m.StartDelaySec, m.RunOnSec))],
+            GroupSteps.Of(group),
             runtime ?? new GroupRuntime { GroupId = group.Id })
         {
             BoardId = group.BoardId,
@@ -173,10 +204,10 @@ public sealed class GroupsHandler
         ArgumentNullException.ThrowIfNull(draft);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         int? boardId = null;
-        if (draft.Members is [var first, ..])
+        if (draft.RelayIds.Take(1).ToList() is [var first])
         {
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-            boardId = await db.Relays.Where(r => r.Id == first.RelayId).Select(r => (int?)r.BoardId).SingleOrDefaultAsync(cancellationToken);
+            boardId = await db.Relays.Where(r => r.Id == first).Select(r => (int?)r.BoardId).SingleOrDefaultAsync(cancellationToken);
         }
 
         // Without a first relay that exists the draft is refused before anything else.
@@ -197,7 +228,7 @@ public sealed class GroupsHandler
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var relays = await RelaysOnBoardsAsync(db, cancellationToken);
         var error = await ValidateAsync(db, draft, relays, groupId: null, boardId, cancellationToken)
-            ?? AllOff(boardId, draft.Members.Select(m => m.RelayId), relays);
+            ?? AllOff(boardId, draft.RelayIds, relays);
         if (error is not null)
         {
             return (null, error);
@@ -211,13 +242,13 @@ public sealed class GroupsHandler
             MaxOnMinutes = draft.MaxOnMinutes,
             SortOrder = await db.RelayGroups.CountAsync(cancellationToken) + 1,
         };
-        AddMembers(group, draft, relays);
+        AddSteps(group, draft, relays);
         db.RelayGroups.Add(group);
         await db.SaveChangesAsync(cancellationToken);
 
         db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
         await ForgetRelayRunsAsync(db, group.Members.Select(m => m.RelayId), cancellationToken);
-        Log(db, group, userEmail, EventActions.GroupCreate, new { name = group.Name, steps = group.Members.Select(m => m.RoleName) });
+        Log(db, group, userEmail, EventActions.GroupCreate, new { name = group.Name, steps = group.Steps.Select(s => s.Name) });
         await RelayRuns.SaveAsync(db, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         _changes.Notify();
@@ -225,8 +256,8 @@ public sealed class GroupsHandler
     }
 
     /// <summary>
-    /// Saves a group. The name, icon, auto-off, role names and waits can change any time; which relays and their order
-    /// only while the whole group is off. Returns null when saved, otherwise the message to show.
+    /// Saves a group. The name, icon, auto-off, step names and waits can change any time; which relays, their steps and
+    /// their order only while the whole group is off. Returns null when saved, otherwise the message to show.
     /// </summary>
     public async Task<string?> SaveAsync(int groupId, GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
@@ -250,7 +281,7 @@ public sealed class GroupsHandler
     private async Task<string?> SaveCoreAsync(int groupId, GroupDraft draft, string userEmail, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var group = await db.RelayGroups.Include(g => g.Members).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+        var group = await db.RelayGroups.Include(g => g.Steps).ThenInclude(s => s.Members).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
         if (group is null)
         {
             return _texts["Groups.Gone"];
@@ -265,9 +296,12 @@ public sealed class GroupsHandler
             return error;
         }
 
-        var before = group.Members.OrderBy(m => m.Position).Select(m => m.RelayId).ToList();
-        var after = draft.Members.Select(m => m.RelayId).ToList();
-        if (!before.SequenceEqual(after))
+        var steps = group.Steps.OrderBy(s => s.Position).ToList();
+        var before = steps.SelectMany(s => s.Members.OrderBy(m => m.Order)).Select(m => m.RelayId).ToList();
+        var after = draft.RelayIds.ToList();
+        var sameSteps = steps.Count == draft.Steps.Count
+            && steps.Zip(draft.Steps).All(p => p.First.Members.OrderBy(m => m.Order).Select(m => m.RelayId).SequenceEqual(p.Second.RelayIds));
+        if (!sameSteps)
         {
             var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
             if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.BoardId, before.Concat(after), relays) is not null)
@@ -275,20 +309,22 @@ public sealed class GroupsHandler
                 return _texts["Groups.Save.TurnOffFirst"];
             }
 
-            // Replaced in two saves: the unique position per group would clash while rows move.
+            // Replaced in two saves: the unique positions would clash while rows move.
             db.RelayGroupMembers.RemoveRange(group.Members);
+            db.RelayGroupSteps.RemoveRange(group.Steps);
             await db.SaveChangesAsync(cancellationToken);
             group.Members.Clear();
-            AddMembers(group, draft, relays);
+            group.Steps.Clear();
+            AddSteps(group, draft, relays);
             await ForgetRelayRunsAsync(db, after.Except(before), cancellationToken);
         }
         else
         {
-            foreach (var (member, change) in group.Members.OrderBy(m => m.Position).Zip(draft.Members))
+            foreach (var (step, change) in steps.Zip(draft.Steps))
             {
-                member.RoleName = RoleName(change, relays);
-                member.StartDelaySec = change.StartDelaySec;
-                member.RunOnSec = change.RunOnSec;
+                step.Name = StepName(change, relays);
+                step.StartDelaySec = change.StartDelaySec;
+                step.RunOnSec = change.RunOnSec;
             }
         }
 
@@ -369,20 +405,44 @@ public sealed class GroupsHandler
             return _texts["Groups.Save.Limit"];
         }
 
-        if (draft.Members is null || draft.Members.Count < RelayGroup.MinMembers)
+        var ids = draft.RelayIds.ToList();
+        if (draft.Steps is null || ids.Count < RelayGroup.MinMembers)
         {
             return _texts["Groups.Save.TooFew", RelayGroup.MinMembers];
         }
 
+        if (draft.Steps.Any(s => s?.RelayIds is not { Count: > 0 }))
+        {
+            return _texts["Groups.Save.EmptyStep"];
+        }
+
         // More members than the board has relays means a repeat or a relay that isn't there; both are caught here or below.
-        if (draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
+        if (ids.Distinct().Count() != ids.Count)
         {
             return _texts["Groups.Save.Twice"];
         }
 
-        foreach (var member in draft.Members)
+        foreach (var step in draft.Steps)
         {
-            if (!relays.TryGetValue(member.RelayId, out var relay))
+            if ((step.Name?.Trim().Length ?? 0) > RelayGroupStep.NameMaxLength)
+            {
+                return _texts["Groups.Save.RoleTooLong", RelayGroupStep.NameMaxLength];
+            }
+
+            if (step.StartDelaySec is < RelayGroupStep.MinStartDelaySec or > RelayGroupStep.MaxStartDelaySec)
+            {
+                return _texts["Groups.Save.Wait", RelayGroupStep.MinStartDelaySec, RelayGroupStep.MaxStartDelaySec];
+            }
+
+            if (step.RunOnSec is < 0 or > RelayGroupStep.MaxRunOnSec)
+            {
+                return _texts["Groups.Save.RunOn", RelayGroupStep.MaxRunOnSec / 60];
+            }
+        }
+
+        foreach (var relayId in ids)
+        {
+            if (!relays.TryGetValue(relayId, out var relay))
             {
                 return _texts["Groups.Save.NoRelay"];
             }
@@ -394,28 +454,13 @@ public sealed class GroupsHandler
                 return _texts["Groups.Save.OneBoard"];
             }
 
-            if ((member.RoleName?.Trim().Length ?? 0) > RelayGroupMember.RoleNameMaxLength)
-            {
-                return _texts["Groups.Save.RoleTooLong", RelayGroupMember.RoleNameMaxLength];
-            }
-
-            if (member.StartDelaySec is < RelayGroupMember.MinStartDelaySec or > RelayGroupMember.MaxStartDelaySec)
-            {
-                return _texts["Groups.Save.Wait", RelayGroupMember.MinStartDelaySec, RelayGroupMember.MaxStartDelaySec];
-            }
-
-            if (member.RunOnSec is < 0 or > RelayGroupMember.MaxRunOnSec)
-            {
-                return _texts["Groups.Save.RunOn", RelayGroupMember.MaxRunOnSec / 60];
-            }
-
-            if (await db.Schedules.AnyAsync(s => s.RelayId == member.RelayId, cancellationToken))
+            if (await db.Schedules.AnyAsync(s => s.RelayId == relayId, cancellationToken))
             {
                 return _texts["Groups.Save.HasSchedules", relay.Name];
             }
 
             var input = await db.InputActions
-                .Where(a => a.RelayId == member.RelayId)
+                .Where(a => a.RelayId == relayId)
                 .Join(db.Inputs, a => a.InputId, i => i.Id, (a, i) => i.Name)
                 .FirstOrDefaultAsync(cancellationToken);
             if (input is not null)
@@ -424,7 +469,6 @@ public sealed class GroupsHandler
             }
         }
 
-        var ids = draft.Members.Select(m => m.RelayId).ToList();
         var taken = await db.RelayGroupMembers
             .Where(m => ids.Contains(m.RelayId) && m.GroupId != groupId)
             .Select(m => new { m.RelayId, Group = m.Group!.Name })
@@ -446,26 +490,24 @@ public sealed class GroupsHandler
         return on is null ? null : _texts["Groups.Save.RelayOn", on.Name].Value;
     }
 
-    private static void AddMembers(RelayGroup group, GroupDraft draft, Dictionary<int, Relay> relays)
+    private static void AddSteps(RelayGroup group, GroupDraft draft, Dictionary<int, Relay> relays)
     {
-        var position = 1;
-        foreach (var member in draft.Members)
+        foreach (var step in draft.Steps)
         {
-            group.Members.Add(new RelayGroupMember
-            {
-                RelayId = member.RelayId,
-                Position = position++,
-                RoleName = RoleName(member, relays),
-                StartDelaySec = member.StartDelaySec,
-                RunOnSec = member.RunOnSec,
-            });
+            group.AddStep(StepName(step, relays), step.RelayIds, step.StartDelaySec, step.RunOnSec);
         }
     }
 
-    private static string RoleName(GroupMemberDraft member, Dictionary<int, Relay> relays)
+    private static string StepName(GroupStepDraft step, Dictionary<int, Relay> relays)
     {
-        var name = member.RoleName?.Trim();
-        return string.IsNullOrEmpty(name) ? relays[member.RelayId].Name : name;
+        var name = step.Name?.Trim();
+        if (!string.IsNullOrEmpty(name))
+        {
+            return name;
+        }
+
+        var relayName = relays[step.RelayIds[0]].Name;
+        return relayName.Length > RelayGroupStep.NameMaxLength ? relayName[..RelayGroupStep.NameMaxLength] : relayName;
     }
 
     // A relay in a group has no run of its own: no auto-off, no "turned on by".

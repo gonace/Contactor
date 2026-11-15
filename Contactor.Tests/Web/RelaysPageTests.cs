@@ -67,8 +67,8 @@ public sealed class RelaysPageTests
             for (var g = 0; g < 4; g++)
             {
                 var group = new RelayGroup { BoardId = 1, Name = $"Group {g + 1}", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-                group.Members.Add(new RelayGroupMember { RelayId = (g * 2) + 1, Position = 1, RoleName = "Fan" });
-                group.Members.Add(new RelayGroupMember { RelayId = (g * 2) + 2, Position = 2, RoleName = "Heat" });
+                group.AddStep("Fan", (g * 2) + 1);
+                group.AddStep("Heat", (g * 2) + 2);
                 db.RelayGroups.Add(group);
             }
 
@@ -96,8 +96,8 @@ public sealed class RelaysPageTests
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
             var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-            group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
-            group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
+            group.AddStep("Fan", 1);
+            group.AddStep("Heat", 2);
             db.RelayGroups.Add(group);
             await db.Relays.Where(r => r.Id > 2).ExecuteUpdateAsync(r => r.SetProperty(x => x.IsActive, false), Cancel);
             await db.SaveChangesAsync(Cancel);
@@ -124,8 +124,8 @@ public sealed class RelaysPageTests
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
             var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-            group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan" });
-            group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
+            group.AddStep("Fan", 1);
+            group.AddStep("Heat", 2);
             db.RelayGroups.Add(group);
             await db.SaveChangesAsync(Cancel);
             db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });

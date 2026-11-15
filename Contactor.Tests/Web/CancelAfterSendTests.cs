@@ -417,7 +417,7 @@ public sealed class CancelAfterSendTests : IAsyncLifetime
         var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true, MaxOnMinutes = RelayGroup.DefaultMaxOnMinutes };
         for (var i = 0; i < members.Length; i++)
         {
-            group.Members.Add(new RelayGroupMember { RelayId = members[i].RelayId, Position = i + 1, RoleName = members[i].Role, StartDelaySec = 3 });
+            group.AddStep(members[i].Role, members[i].RelayId, startDelaySec: 3);
         }
 
         db.RelayGroups.Add(group);

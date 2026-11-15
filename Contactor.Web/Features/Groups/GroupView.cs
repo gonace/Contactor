@@ -11,23 +11,49 @@ namespace Contactor.Web.Features.Groups;
 /// <summary>A relay of a group, for the screens.</summary>
 /// <param name="RelayId">The relay, for links and the database.</param>
 /// <param name="Channel">Its channel on the board: what the board's state goes by, and the number the screens show.</param>
-public sealed record GroupMemberView(int RelayId, int Channel, int Position, string RoleName, int StartDelaySec, int RunOnSec);
+/// <param name="Position">Its place in the group's start order, from 1: the steps' relays one after another.</param>
+/// <param name="Step">Its step's place, from 1.</param>
+/// <param name="RoleName">Its name in the group: its step's when it is the step's only relay, otherwise its own.</param>
+/// <param name="StartDelaySec">Its step's wait before starting.</param>
+/// <param name="RunOnSec">Its step's run-on.</param>
+public sealed record GroupMemberView(int RelayId, int Channel, int Position, int Step, string RoleName, int StartDelaySec, int RunOnSec);
+
+/// <summary>A group's steps as the planner and the screens see them.</summary>
+public static class GroupSteps
+{
+    /// <summary>The steps in start order, each with its relays in order. The group comes with its steps, their members and their relays.</summary>
+    public static IReadOnlyList<GroupStepInfo> Of(RelayGroup group)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        return [.. group.Steps.OrderBy(s => s.Position).Select(s => new GroupStepInfo(
+            s.Name,
+            s.StartDelaySec,
+            s.RunOnSec,
+            [.. s.Members.OrderBy(m => m.Order).Select(m => new GroupRelayInfo(
+                m.RelayId,
+                m.Relay?.Channel ?? throw new InvalidOperationException("A group's members are read with their relays."),
+                m.Relay.Name))]))];
+    }
+}
 
 /// <summary>A group as the screens show it: its setup and where its sequence is. Whether relays are on comes from the board.</summary>
+/// <param name="Steps">Its steps in start order, as the planner sees them.</param>
 public sealed record GroupView(
     int Id,
     string Name,
     string Icon,
     int? MaxOnMinutes,
-    IReadOnlyList<GroupMemberView> Members,
+    IReadOnlyList<GroupStepInfo> Steps,
     GroupRuntime Runtime)
 {
     /// <summary>The group's board: all its relays are on it.</summary>
     public int BoardId { get; init; }
 
-    /// <summary>The members as the planner sees them.</summary>
-    public IReadOnlyList<GroupMemberInfo> Infos =>
-        [.. Members.Select(m => new GroupMemberInfo(m.Position, m.RelayId, m.Channel, m.RoleName, m.StartDelaySec, m.RunOnSec))];
+    /// <summary>Every relay of the group, in start order.</summary>
+    public IReadOnlyList<GroupMemberView> Members =>
+        [.. Steps.SelectMany((step, index) => step.Relays.Select(relay => (step, index, relay)))
+            .Select((m, i) => new GroupMemberView(
+                m.relay.RelayId, m.relay.Channel, i + 1, m.index + 1, GroupPlanner.NameOf(m.step, m.relay), m.step.StartDelaySec, m.step.RunOnSec))];
 
     /// <summary>
     /// The channel of the first relay of the group the board doesn't have (left from a board with more relays), or
@@ -38,8 +64,8 @@ public sealed record GroupView(
         return Members.Where(m => m.Channel > relayCount).Select(m => (int?)m.Channel).FirstOrDefault();
     }
 
-    /// <summary>"1 → 2": the relays' channels, in start order.</summary>
-    public string Channels => string.Join(" → ", Members.Select(m => m.Channel));
+    /// <summary>"1 + 2 → 3": the relays' channels, in start order, a step's joined by "+".</summary>
+    public string Channels => string.Join(" → ", Steps.Select(s => string.Join(" + ", s.Relays.Select(r => r.Channel))));
 
     /// <summary>The relays of the group, as a channel mask.</summary>
     public ChannelMask Mask => ChannelMask.Of(Members.Select(m => m.Channel));
@@ -52,7 +78,7 @@ public sealed record GroupView(
     {
         ArgumentNullException.ThrowIfNull(state);
         return Runtime.Phase == GroupPhases.Starting
-            || (Runtime.Phase != GroupPhases.Stopping && GroupPlanner.AnyOn(Infos, state));
+            || (Runtime.Phase != GroupPhases.Stopping && GroupPlanner.AnyOn(Steps, state));
     }
 }
 
@@ -84,8 +110,10 @@ public sealed class GroupStatusText
         ArgumentNullException.ThrowIfNull(toLocal);
         ArgumentNullException.ThrowIfNull(nameOf);
         var runtime = group.Runtime;
-        var level = GroupPlanner.Level(group.Infos, state);
-        var n = group.Members.Count;
+        var steps = group.Steps;
+        var level = GroupPlanner.Level(steps, state);
+        var reach = GroupPlanner.Reach(steps, state);
+        var n = steps.Count;
         if (n == 0)
         {
             return _texts["Groups.Status.Off"];
@@ -93,10 +121,10 @@ public sealed class GroupStatusText
 
         if (runtime.Phase == GroupPhases.Starting)
         {
-            // Waiting out the start delay before the next relay: count it down.
+            // Waiting out the start delay before the next step: count it down.
             if (level < n && runtime.NextStepAtUtc is { } nextStart && nextStart > nowUtc)
             {
-                return _texts["Groups.Status.StartingIn", group.Members[level].RoleName, Remaining(nextStart - nowUtc)];
+                return _texts["Groups.Status.StartingIn", steps[level].Name, Remaining(nextStart - nowUtc)];
             }
 
             return _texts["Groups.Status.StartingStep", Math.Clamp(level + 1, 1, n), n];
@@ -104,23 +132,25 @@ public sealed class GroupStatusText
 
         if (runtime.Phase == GroupPhases.Stopping)
         {
-            if (level >= 1 && runtime.NextStepAtUtc is { } next && next > nowUtc)
+            var running = GroupPlanner.RunningOn(steps, state, runtime);
+            if (running.Count > 0 && runtime.NextStepAtUtc is { } next && next > nowUtc)
             {
-                return _texts["Groups.Status.StoppingRunOn", group.Members[level - 1].RoleName, Remaining(next - nowUtc)];
+                var name = running.Count == 1 ? GroupPlanner.NameOf(steps[reach - 1], running[0]) : steps[reach - 1].Name;
+                return _texts["Groups.Status.StoppingRunOn", name, Remaining(next - nowUtc)];
             }
 
             return _texts["Groups.Status.Stopping"];
         }
 
-        if (!GroupPlanner.AnyOn(group.Infos, state))
+        if (reach == 0)
         {
             return outlook?.NextOnUtc is { } nextOn
                 ? _texts["Groups.Status.ScheduleOn", _relayStatus.When(toLocal(nextOn), toLocal(nowUtc))]
                 : _texts["Groups.Status.Off"];
         }
 
-        // A relay is on while the one above it is off, e.g. switched at the board: the interlock turns it off.
-        if (level == 0)
+        // A relay is on while a relay of a step above it is off, e.g. switched at the board: the interlock turns it off.
+        if (reach > level + 1)
         {
             return _texts["Groups.Status.OutOfOrder"];
         }
@@ -135,23 +165,32 @@ public sealed class GroupStatusText
             offAtUtc is { } off ? toLocal(off) : null,
             nowLocal);
 
-        // Only some of it runs, e.g. the fan alone.
-        return level < n
-            ? _texts["Groups.Status.Only", text, string.Join(_texts["Groups.List.Separator"], group.Members.Take(level).Select(m => m.RoleName))]
-            : text;
+        // Only some of it runs, e.g. the fan alone: the steps that are all on by their names, and of a step that is
+        // partly on, the relays that are.
+        if (level >= n)
+        {
+            return text;
+        }
+
+        var names = steps.Take(level).Select(s => s.Name)
+            .Concat(steps[level].Relays.Where(r => state.IsOn(r.Channel)).Select(r => GroupPlanner.NameOf(steps[level], r)));
+        return _texts["Groups.Status.Only", text, string.Join(_texts["Groups.List.Separator"], names)];
     }
 
     /// <summary>
     /// The state of the relay at <paramref name="index"/> (from 0, in start order) on the Group screen: "Keeps
-    /// running for 4 min 59 s", "On", "Starts in 3 s", "Needs Fan to be on" or "Off".
+    /// running for 4 min 59 s", "On", "Starts in 3 s", "Needs Fans to be on" or "Off".
     /// </summary>
+    /// <param name="blockedBy">The name of the step that must be on first, or null.</param>
     public string MemberNote(GroupView group, BoardState state, int index, bool on, string? blockedBy, DateTime nowUtc)
     {
         ArgumentNullException.ThrowIfNull(group);
         ArgumentNullException.ThrowIfNull(state);
         var runtime = group.Runtime;
-        var level = GroupPlanner.Level(group.Infos, state);
-        if (on && runtime.Phase == GroupPhases.Stopping && index == level - 1 && runtime.NextStepAtUtc is { } next && next > nowUtc)
+
+        // A relay added on the page and not saved yet isn't in the group's sequence.
+        var (step, relay) = index >= 0 && index < group.Members.Count ? GroupPlanner.RelayAt(group.Steps, index + 1) : (null, null);
+        if (on && relay is not null && runtime.NextStepAtUtc is { } next && next > nowUtc && GroupPlanner.RunningOn(group.Steps, state, runtime).Contains(relay))
         {
             return _texts["Groups.Member.KeepsRunning", Remaining(next - nowUtc)];
         }
@@ -161,7 +200,9 @@ public sealed class GroupStatusText
             return _texts["Groups.Member.On"];
         }
 
-        if (runtime.Phase == GroupPhases.Starting && index == level && runtime.NextStepAtUtc is { } start && start > nowUtc)
+        var level = GroupPlanner.Level(group.Steps, state);
+        if (runtime.Phase == GroupPhases.Starting && step is not null && level < group.Steps.Count && ReferenceEquals(group.Steps[level], step)
+            && runtime.NextStepAtUtc is { } start && start > nowUtc)
         {
             return _texts["Groups.Member.StartsIn", Remaining(start - nowUtc)];
         }

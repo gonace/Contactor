@@ -33,6 +33,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<RelayGroup> RelayGroups => Set<RelayGroup>();
 
+    public DbSet<RelayGroupStep> RelayGroupSteps => Set<RelayGroupStep>();
+
     public DbSet<RelayGroupMember> RelayGroupMembers => Set<RelayGroupMember>();
 
     public DbSet<GroupRuntime> GroupRuntimes => Set<GroupRuntime>();
@@ -101,6 +103,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<Board>(ConfigureBoard);
         modelBuilder.Entity<BoardRuntime>(ConfigureBoardRuntime);
         modelBuilder.Entity<RelayGroup>(ConfigureRelayGroup);
+        modelBuilder.Entity<RelayGroupStep>(ConfigureRelayGroupStep);
         modelBuilder.Entity<RelayGroupMember>(ConfigureRelayGroupMember);
         modelBuilder.Entity<GroupRuntime>(ConfigureGroupRuntime);
         modelBuilder.Entity<Installation>(ConfigureInstallation);
@@ -115,25 +118,40 @@ public sealed class ContactorDbContext : DbContext
         group.Property(g => g.Name).HasMaxLength(RelayGroup.NameMaxLength);
         group.Property(g => g.Icon).HasMaxLength(GroupIcons.MaxLength);
         group.HasOne<Board>().WithMany().HasForeignKey(g => g.BoardId).OnDelete(DeleteBehavior.Cascade);
+        group.HasMany(g => g.Steps).WithOne(s => s.Group).HasForeignKey(s => s.GroupId).OnDelete(DeleteBehavior.Cascade);
         group.HasMany(g => g.Members).WithOne(m => m.Group).HasForeignKey(m => m.GroupId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureRelayGroupStep(EntityTypeBuilder<RelayGroupStep> step)
+    {
+        step.ToTable("RelayGroupStep", t =>
+        {
+            t.HasCheckConstraint("CK_RelayGroupStep_Position", $"\"Position\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
+            t.HasCheckConstraint(
+                "CK_RelayGroupStep_StartDelaySec",
+                $"\"StartDelaySec\" BETWEEN {RelayGroupStep.MinStartDelaySec} AND {RelayGroupStep.MaxStartDelaySec}");
+            t.HasCheckConstraint("CK_RelayGroupStep_RunOnSec", $"\"RunOnSec\" BETWEEN 0 AND {RelayGroupStep.MaxRunOnSec}");
+        });
+        step.Property(s => s.Name).HasMaxLength(RelayGroupStep.NameMaxLength);
+        step.HasIndex(s => new { s.GroupId, s.Position }).IsUnique();
+
+        // What a member's step goes by, with its group, so a relay's step is always in the relay's group.
+        step.HasAlternateKey(s => new { s.Id, s.GroupId });
     }
 
     private static void ConfigureRelayGroupMember(EntityTypeBuilder<RelayGroupMember> member)
     {
         member.ToTable("RelayGroupMember", t =>
-        {
-            t.HasCheckConstraint("CK_RelayGroupMember_Position", $"\"Position\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
-            t.HasCheckConstraint(
-                "CK_RelayGroupMember_StartDelaySec",
-                $"\"StartDelaySec\" BETWEEN {RelayGroupMember.MinStartDelaySec} AND {RelayGroupMember.MaxStartDelaySec}");
-            t.HasCheckConstraint("CK_RelayGroupMember_RunOnSec", $"\"RunOnSec\" BETWEEN 0 AND {RelayGroupMember.MaxRunOnSec}");
-        });
+            t.HasCheckConstraint("CK_RelayGroupMember_Order", $"\"Order\" BETWEEN 1 AND {ChannelMask.MaxChannels}"));
         member.HasKey(m => new { m.GroupId, m.RelayId });
-        member.Property(m => m.RoleName).HasMaxLength(RelayGroupMember.RoleNameMaxLength);
 
-        // A relay is in at most one group, and a group has one relay per step.
+        // A relay is in at most one group, and has one place in its step.
         member.HasIndex(m => m.RelayId).IsUnique();
-        member.HasIndex(m => new { m.GroupId, m.Position }).IsUnique();
+        member.HasIndex(m => new { m.StepId, m.Order }).IsUnique();
+        member.HasOne(m => m.Step).WithMany(s => s.Members)
+            .HasForeignKey(m => new { m.StepId, m.GroupId })
+            .HasPrincipalKey(s => new { s.Id, s.GroupId })
+            .OnDelete(DeleteBehavior.Cascade);
         member.HasOne(m => m.Relay).WithMany().HasForeignKey(m => m.RelayId).OnDelete(DeleteBehavior.Restrict);
     }
 

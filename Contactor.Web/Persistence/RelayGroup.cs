@@ -1,9 +1,9 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// Two or more relays that run as one, in a start order: they start from the top, stop from the bottom, and a relay
-/// may only be on while the one above it is (the interlock). E.g. a fan heater: the fan first, then the heat; heat off,
-/// the fan runs on, then the fan off.
+/// Two or more relays that run as one, in steps: the steps start from the top, stop from the bottom, and a relay may
+/// only be on while every relay of every step above it is (the interlock). The relays of a step switch together. E.g. a
+/// fan heater: the fan first, then the heat; heat off, the fan runs on, then the fan off.
 /// </summary>
 public sealed class RelayGroup
 {
@@ -28,8 +28,49 @@ public sealed class RelayGroup
 
     public int SortOrder { get; set; }
 
-    /// <summary>In start order (<see cref="RelayGroupMember.Position"/>).</summary>
+    /// <summary>Its steps; in start order by <see cref="RelayGroupStep.Position"/>.</summary>
+    public List<RelayGroupStep> Steps { get; } = [];
+
+    /// <summary>Its relays, of every step.</summary>
     public List<RelayGroupMember> Members { get; } = [];
+
+    /// <summary>Adds a step below the others with the given relays, in that order.</summary>
+    public RelayGroupStep AddStep(
+        string name,
+        IReadOnlyList<int> relayIds,
+        int startDelaySec = RelayGroupStep.DefaultStartDelaySec,
+        int runOnSec = RelayGroupStep.DefaultRunOnSec)
+    {
+        ArgumentNullException.ThrowIfNull(relayIds);
+        var step = new RelayGroupStep
+        {
+            Group = this,
+            Position = Steps.Count == 0 ? 1 : Steps.Max(s => s.Position) + 1,
+            Name = name,
+            StartDelaySec = startDelaySec,
+            RunOnSec = runOnSec,
+        };
+        Steps.Add(step);
+        var order = 1;
+        foreach (var relayId in relayIds)
+        {
+            var member = new RelayGroupMember { Group = this, Step = step, RelayId = relayId, Order = order++ };
+            step.Members.Add(member);
+            Members.Add(member);
+        }
+
+        return step;
+    }
+
+    /// <summary>Adds a step of one relay below the others.</summary>
+    public RelayGroupStep AddStep(
+        string name,
+        int relayId,
+        int startDelaySec = RelayGroupStep.DefaultStartDelaySec,
+        int runOnSec = RelayGroupStep.DefaultRunOnSec)
+    {
+        return AddStep(name, [relayId], startDelaySec, runOnSec);
+    }
 }
 
 /// <summary>The icons a group can have (Font Awesome Free's names for them).</summary>
