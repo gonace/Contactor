@@ -59,6 +59,15 @@ public sealed class VisitorCopy
     public Task Stopped => _stopped.Task;
 
     /// <summary>
+    /// Whether it didn't start: making it failed, or one of its programs was given up. Then the copy is stopped too, but
+    /// the visitor is told it didn't start rather than that it ended, whichever of the two a request heard of first.
+    /// </summary>
+    public bool DidntStart =>
+        _started.Task.Exception?.InnerException is not null and not OperationCanceledException
+        || App.GaveUp.IsCompleted
+        || Simulator.GaveUp.IsCompleted;
+
+    /// <summary>
     /// When the visitor last clicked or pressed a key in either frame, as the page reports it, or loaded the page.
     /// Changed under <see cref="VisitorCopies"/>' lock.
     /// </summary>

@@ -18,6 +18,12 @@ public static class DemoPages
     /// <summary>The longest the page waits to report a click or a key.</summary>
     public static readonly TimeSpan ReportAtMost = TimeSpan.FromMinutes(1);
 
+    // "Didn't start": the frame's own page, and the page's, which the script shows instead of "ended" when that is what
+    // happened.
+    private const string NotStartedTitle = "Your copy of the demo didn't start";
+    private const string NotStartedText = "Something went wrong on our side.";
+    private const string NotStartedButton = "Try again";
+
     private static readonly string[] Fonts = ["ibm-plex-sans-latin-400-normal.woff2", "ibm-plex-sans-latin-600-normal.woff2"];
 
     private static readonly Lazy<byte[]> StylesheetBytes = new(() => Resource("demo.css"));
@@ -46,6 +52,9 @@ public static class DemoPages
         // A frame waits for the copy to start and then for its program to listen, each up to the start timeout; the
         // page gives up a little after both.
         var start = Seconds(options.StartTimeout * 2 + TimeSpan.FromSeconds(15));
+
+        // The waiting screen's "Reload" shows after 20 seconds by the stylesheet alone: a page whose script didn't load
+        // never loads its frames, and would otherwise wait for ever.
         var appInert = offersTemplate ? " inert" : "";
         return Document("Contactor demo", "demo", $"""
             <input type="radio" name="tab" id="tab-app" class="tab-input" checked>
@@ -73,6 +82,10 @@ public static class DemoPages
                         <div class="spinner" aria-hidden="true"></div>
                         <h2 id="demo-waiting-title">Getting your demo ready</h2>
                         <p class="muted" id="demo-waiting-text">One moment: your own copy of the app and a simulated relay board are starting. It takes a few seconds.</p>
+                        <div class="waiting-slow">
+                            <p class="muted">Taking long?</p>
+                            <a class="button" href="/">Reload</a>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -115,7 +128,7 @@ public static class DemoPages
             <main class="card">
                 {EndedContent("h1")}
             </main>
-            """);
+            """, bodyData: """data-demo-copy="ended" """);
     }
 
     /// <summary>In a frame whose copy didn't start.</summary>
@@ -123,13 +136,13 @@ public static class DemoPages
     {
         return Document("The demo didn't start", "message", $"""
             <main class="card">
-                <h1>Your copy of the demo didn't start</h1>
-                <p class="muted">Something went wrong on our side.</p>
+                <h1>{NotStartedTitle}</h1>
+                <p class="muted">{NotStartedText}</p>
                 <form method="post" action="{DemoRoutes.EndPath}" target="_top">
-                    <button type="submit">Try again</button>
+                    <button type="submit">{NotStartedButton}</button>
                 </form>
             </main>
-            """);
+            """, bodyData: """data-demo-copy="not-started" """);
     }
 
     /// <summary>
@@ -196,7 +209,7 @@ public static class DemoPages
     private static string EndedCard()
     {
         return $"""
-            <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="demo-ended-title" aria-describedby="demo-ended-text">
+            <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="demo-ended-title" aria-describedby="demo-ended-text" id="demo-ended-card" data-not-started-title="{NotStartedTitle}" data-not-started-text="{NotStartedText}" data-not-started-button="{NotStartedButton}">
                 {EndedContent("h2")}
             </div>
             """;

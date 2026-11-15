@@ -301,6 +301,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         await _copies.EndAsync("0123456789abcdef0123456789abcdef");
 
         Assert.True(mine.Stopped.IsCompleted);
+        Assert.False(mine.DidntStart);
         Assert.False(theirs.Stopped.IsCompleted);
         Assert.Equal(1, _copies.Count);
         Assert.Equal(VisitKind.Copy, _copies.Visit(theirs.VisitorId).Kind);
@@ -449,6 +450,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         await stop;
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => copy.Started);
+        Assert.False(copy.DidntStart);
         Assert.Empty(_starter.Runs);
         Assert.Empty(_folder.CopyFolders());
     }
@@ -469,6 +471,10 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         await Wait.UntilAsync(() => _copies.Taken == 0 && _folder.CopyFolders().Count == 0);
         Assert.All(_starter.RunsOf("simulator"), r => Assert.True(r.Stopped));
         await Assert.ThrowsAnyAsync<InvalidOperationException>(() => copy.App.Listening);
+
+        // A request that waited for it hears that it didn't start, not that it ended, though it is stopped too.
+        Assert.True(copy.Stopped.IsCompleted);
+        Assert.True(copy.DidntStart);
     }
 
     [Fact]
@@ -604,8 +610,9 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         var applying = copies.ApplyTemplateAsync(copy.VisitorId);
         database.Release.TrySetResult();
 
-        Assert.Equal(TemplateResult.None, await applying);
+        Assert.Equal(TemplateResult.DidntStart, await applying);
         Assert.True(copy.Stopped.IsCompleted);
+        Assert.True(copy.DidntStart);
         Assert.Empty(_starter.Runs);
     }
 

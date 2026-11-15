@@ -56,6 +56,12 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Contains("<noscript><style>.waiting, .demo-frames > iframe { display: none !important; } .demo-frames noscript { display: contents; }</style></noscript>", html, StringComparison.Ordinal);
         Assert.Contains("<div class=\"waiting\" id=\"demo-waiting\" role=\"status\" aria-live=\"polite\">", html, StringComparison.Ordinal);
         Assert.Contains("<h2 id=\"demo-waiting-title\">Getting your demo ready</h2>", html, StringComparison.Ordinal);
+
+        // Shown by the stylesheet after a while, so a page whose script didn't load isn't stuck on the waiting screen.
+        Assert.Matches("<div class=\"waiting-slow\">\\s*<p class=\"muted\">Taking long\\?</p>\\s*<a class=\"button\" href=\"/\">Reload</a>", html);
+
+        // The script says the copy didn't start, rather than that it ended, when that is what happened.
+        Assert.Contains("data-not-started-title=\"Your copy of the demo didn't start\" data-not-started-text=\"Something went wrong on our side.\" data-not-started-button=\"Try again\"", html, StringComparison.Ordinal);
         Assert.Contains($"data-zone-cookie=\"{VisitorTimeZone.CookieName}\"", html, StringComparison.Ordinal);
         Assert.Contains("reset when you're done", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Nobody else", html, StringComparison.Ordinal);
@@ -113,7 +119,9 @@ public sealed class DemoProxyTests : IAsyncDisposable
         using var response = await client.SendAsync(request, Cancel);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Contains("Your copy of the demo didn't start", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        var html = await response.Content.ReadAsStringAsync(Cancel);
+        Assert.Contains("Your copy of the demo didn't start", html, StringComparison.Ordinal);
+        Assert.Contains("data-demo-copy=\"not-started\"", html, StringComparison.Ordinal);
         Assert.Empty(Echo.Started);
     }
 
@@ -495,7 +503,9 @@ public sealed class DemoProxyTests : IAsyncDisposable
         using var response = await waiting;
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Contains("Your demo has ended", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        var html = await response.Content.ReadAsStringAsync(Cancel);
+        Assert.Contains("Your demo has ended", html, StringComparison.Ordinal);
+        Assert.Contains("data-demo-copy=\"ended\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
