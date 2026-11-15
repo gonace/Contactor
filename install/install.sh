@@ -33,6 +33,9 @@ NEEDS_GB=2
 ADVISED_GB=5
 # How long it waits for the app to answer, in seconds.
 WAIT_SECONDS=120
+# The last release whose app has no setup-status command. Asked in a container of that release or an older one, its
+# app would start a second time next to the running one; see has_setup_status.
+NO_SETUP_STATUS_UNTIL="2026.11.15"
 
 TMP=""
 BUSY=""
@@ -236,16 +239,21 @@ install_docker() {
     as_root sh "$TMP/get-docker.sh" < /dev/null > "$TMP/docker.log" 2>&1 || fail_with_log "Docker's installer failed." "$TMP/docker.log"
 }
 
-# Docker's Compose plugin, for a Docker that came without it (e.g. from the distribution's own packages).
+# Docker's Compose plugin, for a Docker that came without it (e.g. from the distribution's own packages):
+# docker-compose-plugin from Docker's packages, or docker-compose-v2 from Ubuntu's. Never the docker-compose package:
+# in Debian 12 and older that is Compose v1, which doesn't add "docker compose".
 install_compose() {
     command -v apt-get > /dev/null 2>&1 || fail "Docker Compose isn't installed: install Docker's compose plugin and run this command again."
     busy "Installing Docker Compose"
-    for package in docker-compose-plugin docker-compose-v2 docker-compose; do
-        if as_root apt-get install -y "$package" < /dev/null > "$TMP/compose.log" 2>&1 && docker_ compose version > /dev/null 2>&1; then
+    # A list that can't be updated (e.g. one broken source) may still have the package: what install says counts.
+    as_root apt-get update < /dev/null > "$TMP/compose.log" 2>&1 || true
+    for package in docker-compose-plugin docker-compose-v2; do
+        if as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$package" < /dev/null >> "$TMP/compose.log" 2>&1 \
+            && docker_ compose version > /dev/null 2>&1; then
             return 0
         fi
     done
-    fail_with_log "Couldn't install Docker Compose." "$TMP/compose.log"
+    fail_with_log "Couldn't install Docker Compose: install Docker's compose plugin and run this command again." "$TMP/compose.log"
 }
 
 ensure_docker() {
@@ -313,15 +321,48 @@ start() {
     ok "Contactor started"
 }
 
-# Waits until the app answers its health check. Fails, saying to run it again, when that takes too long.
+# Fails, showing the last lines of the app's log and how to see all of it.
+fail_with_app_log() {
+    unbusy
+    printf '  %s✗%s %s\n' "$RED" "$RESET" "$1" >&2
+    docker_ logs --tail 20 "$2" > "$TMP/app.log" 2>&1 || true
+    if [ -s "$TMP/app.log" ]; then
+        printf '    %sThe last lines of its log:%s\n' "$DIM" "$RESET" >&2
+        sed 's/^/      /' "$TMP/app.log" >&2
+    fi
+    printf '    To see more: sudo docker logs contactor\n' >&2
+    exit 1
+}
+
+# The container's state, restart count and health, e.g. "running 0 healthy" (no health: "running 0 ").
+state_of() {
+    docker_ inspect -f '{{.State.Status}} {{.RestartCount}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$1" 2> /dev/null || true
+}
+
+# Waits until the app answers its health check. Fails with the app's log when it stops or its health check fails,
+# and, saying to run it again, when it is still starting after WAIT_SECONDS.
 wait_ready() {
     cid="$1"
     waited=0
+    restarts="$(state_of "$cid" | awk '{ print $2 }')"
     busy "Waiting for Contactor to be ready (up to 2 minutes)"
     while [ "$waited" -lt "$WAIT_SECONDS" ]; do
-        if [ "$(docker_ inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2> /dev/null || true)" = "healthy" ]; then
+        # shellcheck disable=SC2046 # three words, split on purpose
+        set -- $(state_of "$cid")
+        if [ "${3:-}" = "healthy" ]; then
             unbusy
             return 0
+        fi
+        # It stopped: Docker restarted it since this began, is about to, or it stays stopped. (A stopped container's
+        # health check says unhealthy too, so this comes first.)
+        case "${1:-}" in
+            exited | dead | restarting) fail_with_app_log "Contactor didn't start: it stopped with an error." "$cid" ;;
+        esac
+        if [ -n "${2:-}" ] && [ -n "$restarts" ] && [ "$2" -gt "$restarts" ]; then
+            fail_with_app_log "Contactor didn't start: it stopped with an error." "$cid"
+        fi
+        if [ "${3:-}" = "unhealthy" ]; then
+            fail_with_app_log "Contactor is running, but it doesn't answer: its health check fails." "$cid"
         fi
         sleep 2
         waited=$((waited + 2))
@@ -350,12 +391,38 @@ lan_address() {
     echo "$address"
 }
 
-# The setup code the app wrote to its log since it last started, e.g. KRTW-48PX, or nothing.
+# The setup code the app wrote to its log since it last started, e.g. KRTW-48PX, or nothing. Only from the setup
+# code's own log line, as the console log writes it: the line with its category (SetupCode), then the message.
 setup_code() {
     cid="$1"
     since="$(docker_ inspect -f '{{.State.StartedAt}}' "$cid" 2> /dev/null || true)"
-    docker_ logs ${since:+--since "$since"} "$cid" 2>&1 \
-        | sed -n 's/.*The setup code is \([A-Z0-9]\{4\}-[A-Z0-9]\{4\}\).*/\1/p' | tail -n 1 || true
+    docker_ logs ${since:+--since "$since"} "$cid" 2>&1 | awk '
+        category && /^      Contactor is being set up\. The setup code is [A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]-[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]: type it in the setup guide$/ {
+            code = $0
+            sub(/^      Contactor is being set up\. The setup code is /, "", code)
+            sub(/:.*$/, "", code)
+        }
+        { category = /^warn: Contactor\.Web\.Features\.Setup\.SetupCode\[[0-9]*\]$/ }
+        END { print code }' || true
+}
+
+# Whether the app in the container has the setup-status command, from its version (the image label): a release
+# after NO_SETUP_STATUS_UNTIL, or a development build. An older app doesn't know the command and starts as usual, a
+# second time in the running container, so it is never asked.
+has_setup_status() {
+    release="$1"
+    case "$release" in
+        0.0.0-dev) return 0 ;;
+        '' | *[!0-9.]* | .* | *. | *..*) return 1 ;;
+    esac
+    awk -v a="$release" -v b="$NO_SETUP_STATUS_UNTIL" 'BEGIN {
+        n = split(a, x, "."); m = split(b, y, "."); k = n > m ? n : m
+        for (i = 1; i <= k; i++) {
+            p = i <= n ? x[i] + 0 : 0; q = i <= m ? y[i] + 0 : 0
+            if (p != q) { exit p > q ? 0 : 1 }
+        }
+        exit 1
+    }'
 }
 
 # The box: its rows are lines of text; "Open:" and "Setup code:" rows get their value highlighted.
@@ -392,7 +459,10 @@ box() {
 show() {
     cid="$1"
     again="$2"
-    status="$(docker_ exec "$cid" dotnet /app/Contactor.Web.dll setup-status 2> /dev/null || true)"
+    status=""
+    if has_setup_status "$(version_of "$cid")"; then
+        status="$(docker_ exec "$cid" dotnet /app/Contactor.Web.dll setup-status 2> /dev/null || true)"
+    fi
     state="$(printf '%s\n' "$status" | sed -n 1p)"
     # Only a plain address, so nothing else from the database reaches the terminal.
     public="$(printf '%s\n' "$status" | sed -n 2p | grep -E '^https://[A-Za-z0-9.-]+$' || true)"
@@ -420,6 +490,13 @@ show() {
     elif [ "$state" = "setup-guide" ]; then
         box "Contactor is running." "" "Open:        ${public:-$local_address}" "" \
             "The setup isn't finished yet: open that page" "to go on with it."
+    elif [ "$state" != "done" ]; then
+        # The app didn't say how far the setup is (e.g. an older image): only what is sure.
+        if [ -n "$again" ]; then
+            box "Contactor is running." "" "Open:        $local_address" "" "Nothing was changed."
+        else
+            box "Contactor is running." "" "Open:        $local_address"
+        fi
     elif [ -n "$again" ]; then
         box "Contactor is running and set up." "" "Open:        ${public:-$local_address}" "" "Nothing was changed."
     else
@@ -463,6 +540,10 @@ uninstall() {
     delete_data="$1"
     if as_root test -f "$DIR/.env"; then
         fail "Contactor was installed here with the earlier installer ($DIR/.env). This one can't remove it: nothing was changed."
+    fi
+    # Without Docker, nothing here can be running; a Docker that doesn't answer may still be running it.
+    if command -v docker > /dev/null 2>&1 && ! docker_ info > /dev/null 2>&1; then
+        fail "Docker doesn't answer: start it (sudo systemctl start docker) and run this again. Nothing was changed."
     fi
 
     if [ -f "$DIR/compose.yml" ] && docker_works; then
