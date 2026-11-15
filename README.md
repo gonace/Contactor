@@ -98,9 +98,7 @@ tests use the same simulator, so no hardware is needed.
 
 The public demo, where each visitor gets their own copy of the app and the simulator side by side, is
 `Contactor.Demo`: the AppHost runs it as `contactor-demo` on http://localhost:5070, linked from the dashboard, with
-copies of its own, not the resources above; without Aspire, `dotnet run --project Contactor.Demo` does the same after a
-build. A new copy
-offers to skip the setup guide with the Workshop template: a fan heater, lights, schedules and three days of events.
+copies of its own, not the resources above; the AppHost is where it is set up for development. A new copy offers to skip the setup guide with the Workshop template: a fan heater, lights, schedules and three days of events.
 Each copy runs in the visitor's own time zone, as their browser tells it (UTC without JavaScript). How to host it is in
 [`docs/DEMO.md`](docs/DEMO.md).
 

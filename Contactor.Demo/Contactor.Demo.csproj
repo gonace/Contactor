@@ -5,8 +5,6 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>Contactor.Demo</RootNamespace>
-    <!-- `dotnet run` from anywhere finds the paths in Properties/launchSettings.json from here. -->
-    <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
   </PropertyGroup>
 
   <ItemGroup>

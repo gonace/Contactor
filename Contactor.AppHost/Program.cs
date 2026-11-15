@@ -51,9 +51,10 @@ public static class Program
             .InDockerProject()
             .WaitFor(simulator);
 
-        // The public demo (docs/DEMO.md) on http://localhost:5070, as its launch profile says: each visitor gets their
-        // own copy of the app and the simulator, started from their build output, not the resources above. Aspire
-        // starts it without its launch profile's settings, so they are given here, with full paths.
+        // The public demo (docs/DEMO.md) on http://localhost:5070: each visitor gets their own copy of the app and the
+        // simulator, started from their build output, not the resources above. Aspire runs it with `dotnet run
+        // --no-launch-profile` and takes only its address from the launch profile; this is the one place its settings
+        // are given in development, with full paths.
         var root = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, ".."));
         string Output(string project) => Path.Combine(root, project, "bin", Configuration, "net10.0", project + ".dll");
         builder.AddProject<Projects.Contactor_Demo>("contactor-demo")
