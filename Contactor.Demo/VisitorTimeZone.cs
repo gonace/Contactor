@@ -55,7 +55,7 @@ public static class VisitorTimeZone
     // that aren't one (Factory's abbreviation is "-00", localtime is the machine's own zone, posixrules a template),
     // the copies of the database under posix/ and right/ (right/ counts leap seconds, so its clocks are off by them),
     // and the Windows names without a space (UTC-11, UTC+12…), which .NET converts. Not "has a Windows name": that
-    // leaves out real zones Windows has no name for, such as Antarctica/Troll, CET and the newest ones.
+    // leaves out real zones Windows has no name for, such as Antarctica/Troll and the newest ones, e.g. America/Coyhaique.
     private static bool IsIanaName(string name)
     {
         if (name is "Factory" or "localtime" or "posixrules"
