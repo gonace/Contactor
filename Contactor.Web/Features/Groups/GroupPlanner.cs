@@ -477,6 +477,13 @@ public static class GroupPlanner
             return null;
         }
 
+        // A step going off in a stop (its OFF on its way, or due now) counts as off already: a relay below it is refused,
+        // and that OFF is never replaced or called off, so nothing runs below it even for a moment.
+        if (GoingOffStep(steps, state, runtime, now) is { } goingOff && place > goingOff)
+        {
+            return new MemberRefusal(steps[goingOff - 1].Name);
+        }
+
         // Relays turned off one at a time are stopping: turning one of them on again brings back that one only, and the
         // others still go off as asked. Below their step nothing may come on, as it would lose its step above.
         if (runtime.Phase == GroupPhases.Stopping && StoppingStep(steps, runtime) is { } stopping)
@@ -729,6 +736,25 @@ public static class GroupPlanner
     {
         var stopping = StopRelaysIn(step, runtime);
         return [.. (stopping.Count > 0 ? stopping : step.Relays).Where(r => state.IsOn(r.Channel))];
+    }
+
+    // The position of the step a stop is turning off right now: its OFF sent and not yet confirmed, or due (no run-on
+    // left to wait for). Null when none is.
+    private static int? GoingOffStep(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime, DateTime now)
+    {
+        if (runtime.Phase != GroupPhases.Stopping)
+        {
+            return null;
+        }
+
+        if (runtime.PendingStep is { } pending)
+        {
+            return !runtime.PendingOn && pending >= 1 && pending <= steps.Count ? pending : null;
+        }
+
+        var reach = Reach(steps, state);
+        var due = runtime.NextStepAtUtc is not { } next || now >= next;
+        return due && reach >= 1 && !StopDone(steps, state, runtime, reach) ? reach : null;
     }
 
     // The position of the step whose relays were turned off one at a time and are stopping, or null.

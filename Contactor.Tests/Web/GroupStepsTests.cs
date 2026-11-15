@@ -358,6 +358,51 @@ public sealed class GroupStepsTests
         Assert.Equal([22], _runtime.StopRelayIds);
     }
 
+    // The group stops; the heaters are off and the fans' OFF is on its way, the board still showing them on. A heater
+    // turned on by hand is refused, and the fans' OFF still waits: the heater never runs without its fans.
+    [Fact]
+    public void Should_RefuseAHeater_WhileTheFansOffIsOnItsWay()
+    {
+        GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), _runtime, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+        Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
+
+        var heater = new GroupCommands();
+        Assert.Equal(new MemberRefusal("Fans"), GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 3, John, 120, T0.AddSeconds(181.5), heater));
+
+        Assert.True(heater.IsEmpty);
+        Assert.Equal((GroupPhases.Stopping, (int?)1, false), (_runtime.Phase, _runtime.PendingStep, _runtime.PendingOn));
+        Plan(State(), T0.AddSeconds(182));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    // The fans' run-on has ended, and their OFF is due on the next pass: a heater is refused all the same.
+    [Fact]
+    public void Should_RefuseAHeater_WhenTheFansOffIsDue()
+    {
+        GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), _runtime, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+
+        var heater = new GroupCommands();
+        Assert.Equal(new MemberRefusal("Fans"), GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 4, John, 120, T0.AddSeconds(181), heater));
+        Assert.True(heater.IsEmpty);
+        Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
+    }
+
+    // During the fans' run-on, a heater still calls the stop off, as a fan does: nothing is going off yet.
+    [Fact]
+    public void Should_CallOffTheStop_WhenAHeaterIsTurnedOnDuringTheFansRunOn()
+    {
+        GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), _runtime, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+
+        var heater = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 3, John, 120, T0.AddSeconds(60), heater));
+
+        Assert.Equal(Mask(3), heater.On);
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
     // A stop called off by turning a fan on again: the run gets the group's auto-off back.
     [Fact]
     public void Should_GiveTheAutoOffBack_WhenAStopIsCalledOff()

@@ -500,6 +500,21 @@ public sealed class GroupPlannerTests
         Assert.Empty(reconnected.Events);
     }
 
+    // One relay per step: the ventilation's OFF is on its way after the compressor's run-on; the compressor turned on
+    // again by hand is refused.
+    [Fact]
+    public void Should_RefuseARelay_BelowTheStepWhoseOffIsOnItsWay()
+    {
+        _members = Spray;
+        GroupPlanner.Stop(Spray, State(5, 6), _runtime, John, T0, new GroupCommands());
+        Plan(State(5), T0.AddSeconds(1));
+        Assert.Equal(Mask(5), Plan(State(5), T0.AddSeconds(121)).Off);
+
+        var commands = new GroupCommands();
+        Assert.Equal(new MemberRefusal("Ventilation"), GroupPlanner.MemberOn(Spray, State(5), _runtime, 2, John, null, T0.AddSeconds(121.5), commands));
+        Assert.True(commands.IsEmpty);
+    }
+
     [Fact]
     public void Should_StopNothing_WhenTheGroupIsOff()
     {
