@@ -321,6 +321,31 @@ public sealed class GroupPlannerTests
         Assert.Equal(Mask(1), Plan(State(1), T0.AddSeconds(305)).Off);
     }
 
+    // A stop that overtakes an ON on its way doesn't plan in that step. It sends only OFFs, which can't break the
+    // interlock, and the next step checks the interlock first, as always.
+    [Fact]
+    public void Should_TripTheInterlock_OnTheNextStep_AfterAStopOvertakesAnOn()
+    {
+        _members = Spray;
+        GroupPlanner.Start(Spray, State(), _runtime, John, null, T0, new GroupCommands());
+        Plan(State(5), T0.AddSeconds(1));
+        Assert.Equal(Mask(6), Plan(State(5), T0.AddSeconds(11)).On);
+
+        // The compressed air is turned on at the board while the compressor is on its way, and the group is stopped
+        // before the next step sees it: only the compressor gets an OFF.
+        var stop = new GroupCommands();
+        Assert.True(GroupPlanner.Stop(Spray, State(5, 7), _runtime, John, T0.AddSeconds(11.5), stop));
+        Assert.Equal((Mask(6), ChannelMask.None), (stop.Off, stop.On));
+        Assert.Equal([EventActions.GroupOff], stop.Events.Select(e => e.Action));
+
+        // The next step: the compressed air runs without the compressor, so the interlock trips.
+        var trip = Plan(State(5, 7), T0.AddSeconds(11.6));
+
+        Assert.Equal((Mask(7), Mask(6)), (trip.Off, trip.On));
+        var e = Assert.Single(trip.Events);
+        Assert.Equal((EventActions.InterlockTrip, (int?)16), (e.Action, e.RelayId));
+    }
+
     [Fact]
     public void Should_StopTheFan_WhenStoppedRightAfterItWasTurnedOn()
     {
