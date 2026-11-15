@@ -155,10 +155,6 @@
     <value>INPUT {0}</value>
     <comment>Over an input's name: {0} is its number on the board.</comment>
   </data>
-  <data name="Relays.StartOrder" xml:space="preserve">
-    <value>Relays in start order</value>
-    <comment>Read out by screen readers: a group's relays.</comment>
-  </data>
   <data name="Relays.Chip.Unknown" xml:space="preserve">
     <value> (unknown)</value>
     <comment>Read out by screen readers after a relay's name, before the board's first answer.</comment>

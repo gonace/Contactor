@@ -180,36 +180,48 @@ public sealed class GroupStatusText
     }
 
     /// <summary>
-    /// The state of the relay at <paramref name="index"/> (from 0, in start order) on the Group screen: "Keeps
-    /// running for 4 min 59 s", "On", "Starts in 3 s", "Needs Fans to be on" or "Off".
+    /// The state of the step at <paramref name="index"/> (from 0, in start order) on the Group screen: "Keeps running for
+    /// 4 min 59 s", "On", "Only Fan 1 on", "Starts in 3 s", "Needs Fans to be on", "Off · starts first" or "Off".
     /// </summary>
-    /// <param name="blockedBy">The name of the step that must be on first, or null.</param>
-    public string MemberNote(GroupView group, BoardState state, int index, bool on, string? blockedBy, DateTime nowUtc)
+    public string StepNote(GroupView group, BoardState state, int index, DateTime nowUtc)
     {
         ArgumentNullException.ThrowIfNull(group);
         ArgumentNullException.ThrowIfNull(state);
-        var runtime = group.Runtime;
+        var steps = group.Steps;
+        if (index < 0 || index >= steps.Count)
+        {
+            return _texts["Groups.Member.Off"];
+        }
 
-        // A relay added on the page and not saved yet isn't in the group's sequence.
-        var (step, relay) = index >= 0 && index < group.Members.Count ? GroupPlanner.RelayAt(group.Steps, index + 1) : (null, null);
-        if (on && relay is not null && runtime.NextStepAtUtc is { } next && next > nowUtc && GroupPlanner.RunningOn(group.Steps, state, runtime).Contains(relay))
+        var runtime = group.Runtime;
+        var step = steps[index];
+        var on = step.Relays.Where(r => state.IsOn(r.Channel)).ToList();
+        if (runtime.NextStepAtUtc is { } next && next > nowUtc && GroupPlanner.RunningOn(steps, state, runtime).Any(step.Relays.Contains))
         {
             return _texts["Groups.Member.KeepsRunning", Remaining(next - nowUtc)];
         }
 
-        if (on)
+        if (on.Count == step.Relays.Count && on.Count > 0)
         {
             return _texts["Groups.Member.On"];
         }
 
-        var level = GroupPlanner.Level(group.Steps, state);
-        if (runtime.Phase == GroupPhases.Starting && step is not null && level < group.Steps.Count && ReferenceEquals(group.Steps[level], step)
-            && runtime.NextStepAtUtc is { } start && start > nowUtc)
+        if (on.Count > 0)
+        {
+            return _texts["Groups.Step.Only", string.Join(_texts["Groups.List.Separator"], on.Select(r => r.Name))];
+        }
+
+        if (runtime.Phase == GroupPhases.Starting && GroupPlanner.Level(steps, state) == index && runtime.NextStepAtUtc is { } start && start > nowUtc)
         {
             return _texts["Groups.Member.StartsIn", Remaining(start - nowUtc)];
         }
 
-        return blockedBy is not null ? _texts["Groups.Member.Needs", blockedBy] : _texts["Groups.Member.Off"];
+        if (index > 0 && !GroupPlanner.IsFull(steps[index - 1], state))
+        {
+            return _texts["Groups.Member.Needs", steps[index - 1].Name];
+        }
+
+        return index == 0 ? _texts["Groups.Step.StartsFirst"] : _texts["Groups.Member.Off"];
     }
 
     /// <summary>"Can't run: relay 5 isn't on the board", by the relay's channel.</summary>

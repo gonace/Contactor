@@ -26,6 +26,7 @@
 @inject GroupStatusText GroupStatus
 @inject IStringLocalizer<GroupsTexts> Texts
 @inject IStringLocalizer<RelaysTexts> RelayTexts
+@inject IStringLocalizer<BoardsTexts> BoardTexts
 
 <PageTitle>@(Common["Common.PageTitle", _group?.Name ?? Common["Common.Screen.Group"].Value])</PageTitle>
 
@@ -86,60 +87,86 @@
 
                 <section class="members">
                     <div class="section-text">
-                        <h2>@Texts["Groups.Members"]</h2>
-                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? Texts["Groups.Members.HintOn", board.Name] : Texts["Groups.Members.Hint"])</p>
+                        <h2>@Texts["Groups.Steps"]</h2>
+                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? Texts["Groups.Steps.HintOn", board.Name] : Texts["Groups.Steps.Hint"])</p>
                     </div>
                     <ol class="steps">
-                        @for (var i = 0; i < _members.Count; i++)
+                        @for (var s = 0; s < _editor.Steps.Count; s++)
                         {
-                            var index = i;
-                            var member = _members[index];
-                            var on = State.IsOn(member.Channel);
-                            var blockedBy = BlockedBy(index);
-                            <li class="step @(on ? "on" : "") @(State.HasAnswered ? "" : "unknown")" @key="member.RelayId">
+                            var stepIndex = s;
+                            var step = _editor.Steps[stepIndex];
+                            var stepOn = State.HasAnswered && step.Relays.All(r => State.IsOn(r.Channel));
+                            <li class="step @(stepOn ? "on" : "") @(State.HasAnswered ? "" : "unknown")" @key="step">
                                 <div class="step-row">
-                                    <span class="number" aria-hidden="true">@(index + 1)</span>
+                                    <span class="number" aria-hidden="true">@(stepIndex + 1)</span>
                                     <div class="step-text">
-                                        <label class="label" for="@($"role-{member.RelayId}")">@RelayTexts["Relays.RelayLabel", member.Channel]</label>
-                                        <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
-                                        <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : StatusText.Waiting)</span>
+                                        <label class="label" for="@($"step-{stepIndex}")">@Texts["Groups.Step.Label", stepIndex + 1]</label>
+                                        <input id="@($"step-{stepIndex}")" class="role" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="step.Name" @bind:event="oninput" autocomplete="off" />
+                                        <span class="note">@(State.HasAnswered ? StepNote(stepIndex) : StatusText.Waiting)</span>
                                     </div>
                                     <div class="order">
-                                        <button type="button" aria-label="@Texts["Groups.MoveUp", member.RoleName]" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
+                                        <button type="button" aria-label="@Texts["Groups.MoveUp", step.Name]" disabled="@(!CanChangeMembers || stepIndex == 0)" @onclick="() => Move(stepIndex, -1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
                                         </button>
-                                        <button type="button" aria-label="@Texts["Groups.MoveDown", member.RoleName]" disabled="@(!CanChangeMembers || index == _members.Count - 1)" @onclick="() => Move(index, 1)">
+                                        <button type="button" aria-label="@Texts["Groups.MoveDown", step.Name]" disabled="@(!CanChangeMembers || stepIndex == _editor.Steps.Count - 1)" @onclick="() => Move(stepIndex, 1)">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
                                         </button>
                                     </div>
-                                    @if (State.HasAnswered)
+                                </div>
+                                <ul class="relays">
+                                    @foreach (var relay in step.Relays)
                                     {
-                                        <button type="button"
-                                                class="member-toggle"
-                                                data-vibrate
-                                                aria-pressed="@(on ? "true" : "false")"
-                                                aria-label="@Common[on ? "Common.TurnOff" : "Common.TurnOn", member.RoleName]"
-                                                disabled="@(!State.IsConnected || _busy || OrderChanged || Missing is not null || (!on && blockedBy is not null))"
-                                                @onclick="() => ToggleMemberAsync(member.RelayId, on)">@Common[on ? "Common.Switch.On" : "Common.Switch.Off"]</button>
+                                        var on = State.IsOn(relay.Channel);
+                                        var blockedBy = BlockedBy(relay.RelayId);
+                                        <li class="relay" @key="relay.RelayId">
+                                            <div class="relay-text">
+                                                <span class="label">@RelayTexts["Relays.RelayLabel", relay.Channel]</span>
+                                                <span class="relay-name">@relay.Name</span>
+                                                @if (CanChangeMembers && _editor.RelayCount > RelayGroup.MinMembers)
+                                                {
+                                                    <button type="button" class="remove" aria-label="@Texts["Groups.RemoveRelay", relay.Name]" @onclick="() => Remove(relay.RelayId)">@Texts["Groups.Remove"]</button>
+                                                }
+                                            </div>
+                                            @if (State.HasAnswered)
+                                            {
+                                                <button type="button"
+                                                        class="member-toggle"
+                                                        data-vibrate
+                                                        aria-pressed="@(on ? "true" : "false")"
+                                                        aria-label="@Common[on ? "Common.TurnOff" : "Common.TurnOn", relay.Name]"
+                                                        disabled="@(!State.IsConnected || _busy || OrderChanged || Missing is not null || (!on && blockedBy is not null))"
+                                                        @onclick="() => ToggleMemberAsync(relay.RelayId, on)">@Common[on ? "Common.Switch.On" : "Common.Switch.Off"]</button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="member-toggle unknown" aria-label="@Common["Common.NameAndState", relay.Name, StatusText.Waiting]" disabled>–</button>
+                                            }
+                                            @if (_memberError is { } error && error.RelayId == relay.RelayId)
+                                            {
+                                                <p class="error" role="alert">@error.Message</p>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                                @if (CanAdd)
+                                {
+                                    @if (_addingTo == stepIndex)
+                                    {
+                                        @AddPicker(stepIndex)
                                     }
                                     else
                                     {
-                                        <button type="button" class="member-toggle unknown" aria-label="@Common["Common.NameAndState", member.RoleName, StatusText.Waiting]" disabled>–</button>
+                                        <button type="button" class="add-button" @onclick="() => StartAdding(stepIndex)">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                                            @Texts["Groups.AddRelayToStep"]
+                                        </button>
                                     }
-                                </div>
-                                @if (CanChangeMembers && _members.Count > RelayGroup.MinMembers)
-                                {
-                                    <button type="button" class="remove" @onclick="() => Remove(index)">@Texts["Groups.Remove"]</button>
-                                }
-                                @if (_memberError is { } error && error.RelayId == member.RelayId)
-                                {
-                                    <p class="error" role="alert">@error.Message</p>
                                 }
                             </li>
-                            @if (index < _members.Count - 1)
+                            @if (stepIndex < _editor.Steps.Count - 1)
                             {
-                                var below = _members[index + 1];
-                                <li class="gap" aria-label="@Texts["Groups.Between", member.RoleName, below.RoleName]">
+                                var below = _editor.Steps[stepIndex + 1];
+                                <li class="gap" aria-label="@Texts["Groups.Between", step.Name, below.Name]">
                                     <label>
                                         @Texts["Groups.StartWait"]
                                         <select @bind="below.StartDelaySec">
@@ -151,8 +178,8 @@
                                     </label>
                                     <label>
                                         @Texts["Groups.RunOn"]
-                                        <select @bind="member.RunOnSec">
-                                            @foreach (var seconds in Choices(GroupsHandler.RunOnChoices, member.RunOnSec))
+                                        <select @bind="step.RunOnSec">
+                                            @foreach (var seconds in Choices(GroupsHandler.RunOnChoices, step.RunOnSec))
                                             {
                                                 <option value="@seconds">@(seconds == 0 ? Texts["Groups.RunOn.None"] : EventText.Seconds(seconds))</option>
                                             }
@@ -170,21 +197,19 @@
                     {
                         <p class="hint">@Texts["Groups.TurnOffToChange"]</p>
                     }
-                    else if (_members.Count < Capabilities.RelayCount && AddableRelays.Any())
+                    else if (CanAdd)
                     {
-                        <div class="add">
-                            <label for="add-relay" class="visually-hidden">@Texts["Groups.RelayToAdd"]</label>
-                            <select id="add-relay" @bind="_addRelayId">
-                                @foreach (var relay in AddableRelays)
-                                {
-                                    <option value="@relay.Id">@Texts["Groups.RelayOption", relay.Channel, relay.Name]</option>
-                                }
-                            </select>
-                            <button type="button" @onclick="AddRelay">
+                        @if (_addingTo == NewStep)
+                        {
+                            @AddPicker(NewStep)
+                        }
+                        else
+                        {
+                            <button type="button" class="add-button add-step" @onclick="() => StartAdding(NewStep)">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                                @Texts["Groups.AddRelay"]
+                                @Texts["Groups.AddStep"]
                             </button>
-                        </div>
+                        }
                     }
                 </section>
 
@@ -304,7 +329,11 @@
     private const int EventCount = 4;
 
     private GroupView? _group;
-    private List<EditMember> _members = [];
+    // Where "Add" puts a relay: a step's index, or a new step.
+    private const int NewStep = -1;
+
+    private GroupEditor _editor = new([]);
+    private int? _addingTo;
     private IReadOnlyList<Relay> _free = [];
     private Dictionary<string, string> _names = [];
     private List<EventRow> _events = [];
@@ -315,7 +344,6 @@
     private bool _busy;
     private string SomethingWentWrong => Common["Common.SomethingWrongTryAgain"];
 
-    private List<EditMember> _removed = [];
     private ITimer? _tick;
     private bool _changedElsewhere;
     private string? _toggleError;
@@ -336,21 +364,23 @@
 
     private int? Missing => _group?.MissingRelay(Capabilities.RelayCount);
 
-    // Which relays and their order only change while the whole group is off and still.
+    // Which relays, their steps and their order only change while the whole group is off and still.
     private bool CanChangeMembers => _group is not null
         && _group.Runtime.Phase == GroupPhases.Idle
         && State.IsConnected
-        && !State.Relays.Overlaps(ChannelMask.Of(_group.Members.Select(m => m.Channel).Concat(_members.Select(m => m.Channel))));
+        && !State.Relays.Overlaps(ChannelMask.Of(_group.Members.Select(m => m.Channel).Concat(_editor.Relays.Select(r => r.Channel))));
 
-    // One relay at a time follows the saved order; after a change, save first.
-    private bool OrderChanged => _group is not null && !_group.Members.Select(m => m.RelayId).SequenceEqual(_members.Select(m => m.RelayId));
+    // One relay at a time follows the saved steps; after a change to them, save first.
+    private bool OrderChanged => _group is not null && !_editor.HasSameRelays(_group.Steps);
 
     // Free relays, and the group's own that were taken out in the form and not saved yet.
-    private IEnumerable<(int Id, int Channel, string Name)> AddableRelays => _free
-        .Select(r => (Id: r.Id, r.Channel, r.Name))
-        .Concat(_removed.Select(m => (Id: m.RelayId, m.Channel, Name: m.RoleName)))
-        .Where(r => _members.All(m => m.RelayId != r.Id) && !State.IsOn(r.Channel))
+    private IEnumerable<EditRelay> AddableRelays => _free
+        .Select(r => new EditRelay(r.Id, r.Channel, r.Name))
+        .Concat(_editor.Removed)
+        .Where(r => !_editor.Contains(r.RelayId) && !State.IsOn(r.Channel))
         .OrderBy(r => r.Channel);
+
+    private bool CanAdd => CanChangeMembers && _editor.RelayCount < Capabilities.RelayCount && AddableRelays.Any();
 
     protected override async Task OnParametersSetAsync()
     {
@@ -395,26 +425,21 @@
         _tick?.Dispose();
     }
 
-    private static IEnumerable<(int RelayId, string RoleName, int StartDelaySec, int RunOnSec)> Saved(GroupView group)
-    {
-        return group.Members.Select(m => (m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec));
-    }
-
     private void SeedMembers(GroupView group)
     {
-        _members = [.. group.Members.Select(m => new EditMember(m.RelayId, m.Channel, m.RoleName, m.StartDelaySec, m.RunOnSec))];
-        _removed = [];
+        _editor = new GroupEditor(group.Steps);
+        _addingTo = null;
     }
 
     // What others can change while the page is open; the form fields keep what the user typed.
     private async Task LoadLiveAsync()
     {
         var before = _group;
-        var edited = before is not null && !Saved(before).SequenceEqual(_members.Select(m => (m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec)));
+        var edited = before is not null && !_editor.IsSameAs(before.Steps);
         _group = await Groups.GetAsync(Id, CancellationToken.None) ?? _group;
 
-        // Someone else changed the members: follow them, unless this form has changes of its own to them.
-        if (before is not null && _group is not null && !Saved(before).SequenceEqual(Saved(_group)))
+        // Someone else changed the steps: follow them, unless this form has changes of its own to them.
+        if (before is not null && _group is not null && !new GroupEditor(before.Steps).IsSameAs(_group.Steps))
         {
             if (edited)
             {
@@ -433,27 +458,34 @@
         _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, groupId: Id)];
         _schedules = [.. await Schedules.ListForGroupAsync(Id, CancellationToken.None)];
         _outlook = (await Outlook.GetGroupsAsync(CancellationToken.None)).GetValueOrDefault(Id);
-        if (_addRelayId == 0 || AddableRelays.All(r => r.Id != _addRelayId))
+        if (_addRelayId == 0 || AddableRelays.All(r => r.RelayId != _addRelayId))
         {
-            _addRelayId = AddableRelays.FirstOrDefault().Id;
+            _addRelayId = AddableRelays.FirstOrDefault()?.RelayId ?? 0;
         }
     }
 
-    // The name of the step above that must be all on first, or null. While the order is being changed, the relay
-    // above in the new order.
-    private string? BlockedBy(int index)
+    // The name of the step above that must be all on first for this relay, or null. Only for the steps as saved: after
+    // a change to them, save first.
+    private string? BlockedBy(int relayId)
+    {
+        if (OrderChanged || _group is null)
+        {
+            return null;
+        }
+
+        var position = _group.Members.Select(m => m.RelayId).ToList().IndexOf(relayId) + 1;
+        return position > 0 ? GroupPlanner.NeedsOn(_group.Steps, State, position) : null;
+    }
+
+    // The step's state in words; after a change to the steps, only on or off.
+    private string StepNote(int index)
     {
         if (!OrderChanged)
         {
-            return GroupPlanner.NeedsOn(_group!.Steps, State, index + 1);
+            return GroupStatus.StepNote(_group!, State, index, Clock.UtcNow);
         }
 
-        return index > 0 && !State.IsOn(_members[index - 1].Channel) ? _members[index - 1].RoleName : null;
-    }
-
-    private string NoteFor(int index, bool on, string? blockedBy)
-    {
-        return GroupStatus.MemberNote(_group!, State, index, on, blockedBy, Clock.UtcNow);
+        return _editor.Steps[index].Relays.All(r => State.IsOn(r.Channel)) ? Texts["Groups.Member.On"] : Texts["Groups.Member.Off"];
     }
 
     private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)
@@ -461,54 +493,61 @@
         return offered.Contains(current) ? offered : offered.Append(current).Order();
     }
 
-    private void Move(int index, int step)
+    private void Move(int stepIndex, int by)
     {
-        var to = index + step;
-        if (to < 0 || to >= _members.Count)
-        {
-            return;
-        }
-
-        (_members[index], _members[to]) = (_members[to], _members[index]);
+        _editor.Move(stepIndex, by);
+        _addingTo = null;
     }
 
-    private void Remove(int index)
+    private void Remove(int relayId)
     {
-        var member = _members[index];
-        _members.RemoveAt(index);
-        if (_group!.Members.Any(m => m.RelayId == member.RelayId))
-        {
-            _removed.Add(member);
-        }
+        _editor.Remove(relayId);
+        _addingTo = null;
+    }
 
-        if (_addRelayId == 0)
-        {
-            _addRelayId = AddableRelays.FirstOrDefault().Id;
-        }
+    private void StartAdding(int target)
+    {
+        _addingTo = target;
+        _addRelayId = AddableRelays.FirstOrDefault()?.RelayId ?? 0;
     }
 
     private void AddRelay()
     {
-        if (!AddableRelays.Any(r => r.Id == _addRelayId))
+        if (_addingTo is not { } target || AddableRelays.FirstOrDefault(r => r.RelayId == _addRelayId) is not { } relay)
         {
             return;
         }
 
-        // A relay taken out of this group comes back as it was.
-        var removed = _removed.FirstOrDefault(m => m.RelayId == _addRelayId);
-        if (removed is not null)
+        if (target == NewStep)
         {
-            _removed.Remove(removed);
-            _members.Add(removed);
+            _editor.AddStep(relay);
         }
         else
         {
-            var relay = _free.First(r => r.Id == _addRelayId);
-            _members.Add(new EditMember(relay.Id, relay.Channel, relay.Name, RelayGroupStep.DefaultStartDelaySec, RelayGroupStep.DefaultRunOnSec));
+            _editor.AddToStep(target, relay);
         }
 
-        _addRelayId = AddableRelays.FirstOrDefault().Id;
+        _addingTo = null;
+        _addRelayId = AddableRelays.FirstOrDefault()?.RelayId ?? 0;
     }
+
+    // The relay list "+ Add a relay to this step" and "+ Add a step" open.
+    private RenderFragment AddPicker(int target) => __builder =>
+    {
+        <div class="add">
+            <label for="@($"add-relay-{target}")" class="visually-hidden">@Texts["Groups.RelayToAdd"]</label>
+            <select id="@($"add-relay-{target}")" @bind="_addRelayId">
+                @foreach (var relay in AddableRelays)
+                {
+                    <option value="@relay.RelayId">@Texts["Groups.RelayOption", relay.Channel, relay.Name]</option>
+                }
+            </select>
+            <div class="add-buttons">
+                <button type="button" class="cancel" @onclick="() => _addingTo = null">@Common["Common.Cancel"]</button>
+                <button type="button" class="confirm" @onclick="AddRelay">@Common["Common.Add"]</button>
+            </div>
+        </div>
+    };
 
     private string? NameOf(string? email)
     {
@@ -553,7 +592,7 @@
         }
         catch (BoardClosedException)
         {
-            _toggleError = LiveBoard.BeingRemoved;
+            _toggleError = BoardTexts["Boards.BeingRemoved"];
         }
         catch (BoardNotConnectedException)
         {
@@ -589,7 +628,7 @@
         }
         catch (BoardClosedException)
         {
-            _memberError = (relayId, LiveBoard.BeingRemoved);
+            _memberError = (relayId, BoardTexts["Boards.BeingRemoved"]);
         }
         catch (BoardNotConnectedException)
         {
@@ -640,11 +679,7 @@
         _busy = true;
         try
         {
-            var draft = new GroupDraft(
-                _name,
-                _icon,
-                _maxOnMinutes,
-                [.. _members.Select(m => new GroupMemberDraft(m.RelayId, m.RoleName, m.StartDelaySec, m.RunOnSec))]);
+            var draft = new GroupDraft(_name, _icon, _maxOnMinutes, _editor.Drafts);
             _saveError = await Groups.SaveAsync(Id, draft, _user.Email, CancellationToken.None);
         }
         catch (Exception ex)
@@ -726,28 +761,5 @@
         {
             // The page closed while the update was on its way.
         }
-    }
-
-    // A member as the form edits it; the board's state goes by its channel, which is also the number shown.
-    private sealed class EditMember
-    {
-        public EditMember(int relayId, int channel, string roleName, int startDelaySec, int runOnSec)
-        {
-            RelayId = relayId;
-            Channel = channel;
-            RoleName = roleName;
-            StartDelaySec = startDelaySec;
-            RunOnSec = runOnSec;
-        }
-
-        public int RelayId { get; }
-
-        public int Channel { get; }
-
-        public string RoleName { get; set; }
-
-        public int StartDelaySec { get; set; }
-
-        public int RunOnSec { get; set; }
     }
 }
