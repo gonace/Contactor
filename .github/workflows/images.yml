@@ -115,18 +115,15 @@ jobs:
         run: bash scripts/images-sign.sh "$IMAGE"
 
   tag:
-    # Tags the commit every image was built from, so each version maps to its exact code.
+    # Tags the commit every image was built from, so each version maps to its exact code. Through the API, not git push:
+    # the workflow's token may not push a tag that brings in workflow files no earlier tag has.
     needs: [version, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Push the tag
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          git tag "v$VERSION" "$GITHUB_SHA"
-          git push origin "v$VERSION"
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/v$VERSION" -f "sha=$GITHUB_SHA"
