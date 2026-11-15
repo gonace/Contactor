@@ -137,7 +137,7 @@ public sealed class EventsHandlerTests : IAsyncLifetime
     [InlineData(2025, 12, 31, "WEDNESDAY 31 DEC 2025")]
     public void Should_NameOlderDays(int year, int month, int day, string heading)
     {
-        Assert.Equal(heading, EventsHandler.Heading(new DateTime(year, month, day), new DateTime(2026, 11, 4)));
+        Assert.Equal(heading, TestTexts.EventsHandler.Heading(new DateTime(year, month, day), new DateTime(2026, 11, 4)));
     }
 
     [Fact]

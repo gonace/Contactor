@@ -3,6 +3,7 @@
 @using System.Globalization
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Persistence
 @using Microsoft.EntityFrameworkCore
@@ -11,18 +12,16 @@
 @inject RelayChanges Changes
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
+@inject IStringLocalizer<DebugTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Debug"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>Debug</h1>
+        <h1>@Common["Common.Screen.Debug"]</h1>
         @if (Several)
         {
-            <p class="hint">
-                Everything sent to and from the relay boards since the app started, newest first. At most @BoardTrace.Capacity
-                lines; nothing is stored.
-            </p>
+            <p class="hint">@Texts["Debug.Hint.Several", BoardTrace.Capacity]</p>
             @* Which boards' traffic shows: this browser's, in its own cookie (RelaysEndpoints). *@
             <div class="boards-bar">
                 <BoardPicker Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" Showing="@ShowingText" />
@@ -30,10 +29,7 @@
         }
         else
         {
-            <p class="hint">
-                Everything sent to and from the relay board since the app started, newest first. At most @BoardTrace.Capacity
-                lines; nothing is stored. Board: <span class="mono">@Boards.FirstOrDefault()?.Endpoint</span>
-            </p>
+            <p class="hint"><Sentence Text="@Texts["Debug.Hint.One", BoardTrace.Capacity, "{1}"]"><Arg1><span class="mono">@Boards.FirstOrDefault()?.Endpoint</span></Arg1></Sentence></p>
             @if (Boards.Count == 1)
             {
                 @* One board: only the board and "+ Board" (BoardPicker). *@
@@ -44,15 +40,15 @@
         }
         @if (_routineLeftOut > 0)
         {
-            <p class="hint">@_routineLeftOut.ToString("N0", CultureInfo.InvariantCulture) routine @(_routineLeftOut == 1 ? "step" : "steps") left out, such as status checks that changed nothing.</p>
+            <p class="hint">@Texts.Plural("Debug.LeftOut", _routineLeftOut)</p>
         }
-        <button type="button" class="clear" disabled="@(_items.Count == 0)" @onclick="Clear">Clear</button>
+        <button type="button" class="clear" disabled="@(_items.Count == 0)" @onclick="Clear">@Texts["Debug.Clear"]</button>
     </header>
 
     <main class="list">
         @if (_items.Count == 0)
         {
-            <p class="empty">No traffic yet.</p>
+            <p class="empty">@Texts["Debug.Empty"]</p>
         }
 
         @foreach (var (board, item) in _items)
@@ -195,14 +191,14 @@
         };
     }
 
-    private static string Direction(BoardTraceItem item)
+    private string Direction(BoardTraceItem item)
     {
-        return item.Direction switch
+        return Texts[item.Direction switch
         {
-            BoardTraceDirection.Sent => "to the board",
-            BoardTraceDirection.Received => "from the board",
-            _ => "connection",
-        };
+            BoardTraceDirection.Sent => "Debug.ToBoard",
+            BoardTraceDirection.Received => "Debug.FromBoard",
+            _ => "Debug.Connection",
+        }];
     }
 
     // From a board's connection loop, a timer, or Clear.

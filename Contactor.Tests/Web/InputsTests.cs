@@ -222,7 +222,7 @@ public sealed class InputsTests
         Assert.Equal(2, ids.Count);
         Assert.Equal(ids.Count, ids.Distinct().Count());
         Assert.Contains("aria-label=\"Why is the time unknown for Door?\"", html, StringComparison.Ordinal);
-        Assert.Contains(EventText.WhyTimeUnknown, html, StringComparison.Ordinal);
+        Assert.Contains(TestTexts.Events.WhyTimeUnknown, html, StringComparison.Ordinal);
     }
 
     private static InputsHandler Handler(TestDatabase database)

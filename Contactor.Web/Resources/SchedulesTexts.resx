@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Schedules.EveryDay" xml:space="preserve">
+    <value>Every day</value>
+  </data>
+  <data name="Schedules.Run" xml:space="preserve">
+    <value>{0}–{1}</value>
+    <comment>Three or more days in a row: the first and the last, e.g. "Mon–Fri".</comment>
+  </data>
+  <data name="Schedules.Separator" xml:space="preserve">
+    <value>, </value>
+    <comment>Between days in a list.</comment>
+  </data>
+  <data name="Schedules.NoDays" xml:space="preserve">
+    <value>No days chosen</value>
+  </data>
+  <data name="Schedules.RunLong" xml:space="preserve">
+    <value>{0} to {1}</value>
+    <comment>E.g. "Monday to Friday".</comment>
+  </data>
+  <data name="Schedules.And" xml:space="preserve">
+    <value>{0} and {1}</value>
+    <comment>The last two days of a list, e.g. "Monday, Wednesday and Friday".</comment>
+  </data>
+  <data name="Schedules.NoDaysSentence" xml:space="preserve">
+    <value>No days chosen.</value>
+  </data>
+  <data name="Schedules.Summary.Relay" xml:space="preserve">
+    <value>{0}: the relay turns on at {1} and off at {2}.</value>
+    <comment>{0} is the days, {1} and {2} times.</comment>
+  </data>
+  <data name="Schedules.Summary.RelayNextDay" xml:space="preserve">
+    <value>{0}: the relay turns on at {1} and off at {2} the next day.</value>
+  </data>
+  <data name="Schedules.Summary.Group" xml:space="preserve">
+    <value>{0}: the group turns on at {1} and off at {2}.</value>
+  </data>
+  <data name="Schedules.Summary.GroupNextDay" xml:space="preserve">
+    <value>{0}: the group turns on at {1} and off at {2} the next day.</value>
+  </data>
+  <data name="Schedules.Times" xml:space="preserve">
+    <value>{0} – {1}</value>
+    <comment>A schedule's times in a list: on and off.</comment>
+  </data>
+  <data name="Schedules.Inline" xml:space="preserve">
+    <value>{0} {1}–{2}</value>
+    <comment>A schedule in an event: its days, then its times.</comment>
+  </data>
+  <data name="Schedules.Missing" xml:space="preserve">
+    <value>The schedule no longer exists.</value>
+  </data>
+  <data name="Schedules.GroupMissing" xml:space="preserve">
+    <value>The group doesn't exist.</value>
+  </data>
+  <data name="Schedules.RelayMissing" xml:space="preserve">
+    <value>The relay doesn't exist.</value>
+  </data>
+  <data name="Schedules.Days" xml:space="preserve">
+    <value>Which days?</value>
+  </data>
+  <data name="Schedules.Weekdays" xml:space="preserve">
+    <value>Weekdays</value>
+  </data>
+  <data name="Schedules.TurnOn" xml:space="preserve">
+    <value>Turn on</value>
+  </data>
+  <data name="Schedules.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+  </data>
+  <data name="Schedules.Save" xml:space="preserve">
+    <value>Save schedule</value>
+  </data>
+  <data name="Schedules.Delete" xml:space="preserve">
+    <value>Delete schedule</value>
+  </data>
+  <data name="Schedules.Delete.Title" xml:space="preserve">
+    <value>Delete the schedule?</value>
+  </data>
+  <data name="Schedules.EnterGroup" xml:space="preserve">
+    <value>Enter when the group turns on and off.</value>
+  </data>
+  <data name="Schedules.EnterRelay" xml:space="preserve">
+    <value>Enter when the relay turns on and off.</value>
+  </data>
+  <data name="Schedules.EnterBoth" xml:space="preserve">
+    <value>Enter a time for both turning on and turning off.</value>
+  </data>
+  <data name="Schedules.Save.NoDay" xml:space="preserve">
+    <value>Choose at least one day.</value>
+  </data>
+  <data name="Schedules.Save.SameTime" xml:space="preserve">
+    <value>Turning on and turning off can't be at the same time.</value>
+  </data>
+  <data name="Schedules.Save.NoTarget" xml:space="preserve">
+    <value>Choose a relay or a group.</value>
+  </data>
+  <data name="Schedules.Save.InGroup" xml:space="preserve">
+    <value>This relay is in a group. Add the schedule to the group.</value>
+  </data>
+</root>

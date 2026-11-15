@@ -1,6 +1,8 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Events;
 
@@ -29,13 +31,15 @@ public sealed class EventsHandler
 {
     public const int PageSize = 50;
 
-    private static readonly string[] Months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
+    private readonly EventText _text;
+    private readonly IStringLocalizer<EventsTexts> _texts;
 
-    public EventsHandler(IDbContextFactory<ContactorDbContext> dbFactory, LocalClock clock)
+    public EventsHandler(IDbContextFactory<ContactorDbContext> dbFactory, LocalClock clock, EventText text, IStringLocalizer<EventsTexts> texts)
     {
+        _text = text;
+        _texts = texts;
         _dbFactory = dbFactory;
         _clock = clock;
     }
@@ -117,7 +121,7 @@ public sealed class EventsHandler
         return [.. entries.Select(e =>
         {
             var boardName = several && e.BoardId is { } boardId && boardNames.GetValueOrDefault(boardId) is { Length: > 0 } name ? name : null;
-            var view = EventText.For(
+            var view = _text.For(
                 e,
                 e.RelayId is { } relayId ? relayNames.GetValueOrDefault(relayId) : null,
                 personNames.GetValueOrDefault(e.Actor),
@@ -143,26 +147,28 @@ public sealed class EventsHandler
         return Day(local, _clock.Now);
     }
 
-    /// <summary>"TODAY", "YESTERDAY", otherwise e.g. "MONDAY 2 NOV" (with the year when it isn't this year).</summary>
-    public static string Heading(DateTime day, DateTime today)
+    /// <summary>
+    /// "TODAY", "YESTERDAY", otherwise e.g. "MONDAY 2 NOV" (with the year when it isn't this year), with the language's
+    /// day and month names.
+    /// </summary>
+    public string Heading(DateTime day, DateTime today)
     {
-        return Day(day, today).ToUpper(CultureInfo.InvariantCulture);
+        return Day(day, today).ToUpper(CultureInfo.CurrentCulture);
     }
 
-    private static string Day(DateTime day, DateTime today)
+    private string Day(DateTime day, DateTime today)
     {
         var days = (today.Date - day.Date).Days;
         if (days == 0)
         {
-            return "Today";
+            return _texts["Events.Day.Today"];
         }
 
         if (days == 1)
         {
-            return "Yesterday";
+            return _texts["Events.Day.Yesterday"];
         }
 
-        var text = $"{day.DayOfWeek} {day.Day.ToString(CultureInfo.InvariantCulture)} {Months[day.Month - 1]}";
-        return day.Year == today.Year ? text : $"{text} {day.Year.ToString(CultureInfo.InvariantCulture)}";
+        return day.ToString(_texts[day.Year == today.Year ? "Events.Day.Format" : "Events.Day.YearFormat"], CultureInfo.CurrentCulture);
     }
 }

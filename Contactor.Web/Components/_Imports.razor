@@ -6,3 +6,9 @@
 @using Contactor.Web.Resources
 @* The shared texts, in every component; an area's own texts are injected where they are used. *@
 @inject IStringLocalizer<CommonTexts> Common
+@using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Schedules
+@* The event and schedule words several screens show, e.g. a length ("5 min") or a schedule's days ("Mon–Fri"). The
+   property has the class's name, so its static helpers (EventText.IsPersonActor) are reached the same way. *@
+@inject EventText EventText
+@inject ScheduleText ScheduleText

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Debug.Hint.Several" xml:space="preserve">
+    <value>Everything sent to and from the relay boards since the app started, newest first. At most {0} lines; nothing is stored.</value>
+    <comment>{0} is a number.</comment>
+  </data>
+  <data name="Debug.Hint.One" xml:space="preserve">
+    <value>Everything sent to and from the relay board since the app started, newest first. At most {0} lines; nothing is stored. Board: {1}</value>
+    <comment>{1} is the board's address, in a code font.</comment>
+  </data>
+  <data name="Debug.LeftOut_One" xml:space="preserve">
+    <value>{0:N0} routine step left out, such as status checks that changed nothing.</value>
+  </data>
+  <data name="Debug.LeftOut_Other" xml:space="preserve">
+    <value>{0:N0} routine steps left out, such as status checks that changed nothing.</value>
+  </data>
+  <data name="Debug.Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Debug.Empty" xml:space="preserve">
+    <value>No traffic yet.</value>
+  </data>
+  <data name="Debug.ToBoard" xml:space="preserve">
+    <value>to the board</value>
+    <comment>Read out by screen readers for an arrow.</comment>
+  </data>
+  <data name="Debug.FromBoard" xml:space="preserve">
+    <value>from the board</value>
+  </data>
+  <data name="Debug.Connection" xml:space="preserve">
+    <value>connection</value>
+  </data>
+</root>

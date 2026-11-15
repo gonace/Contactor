@@ -495,9 +495,9 @@ public sealed partial class EventsDebugBoardsPageTests
         var lost = new EventLogEntry { Actor = EventActors.System, Action = EventActions.ConnectionLost };
         var on = new EventLogEntry { Actor = EventActors.Schedule, Action = EventActions.On };
 
-        Assert.Equal("Garage", EventText.For(lost, null, null, boardName: "Garage").Who);
-        Assert.Equal("The board", EventText.For(lost, null, null).Who);
-        Assert.Equal("Schedule", EventText.For(on, "Fan", null, boardName: "Garage").Who);
+        Assert.Equal("Garage", TestTexts.Events.For(lost, null, null, boardName: "Garage").Who);
+        Assert.Equal("The board", TestTexts.Events.For(lost, null, null).Who);
+        Assert.Equal("Schedule", TestTexts.Events.For(on, "Fan", null, boardName: "Garage").Who);
         Assert.True(EventText.IsAboutBoard(lost));
         Assert.False(EventText.IsAboutBoard(on));
     }
