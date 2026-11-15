@@ -61,15 +61,15 @@ Settings → "Add a board" adds more.
 
 ## How it runs
 
-- On a Raspberry Pi (or any Linux machine with Docker) next to the board, with Docker Compose.
+- On a Raspberry Pi (or another Linux machine with Docker) on your own network, next to the board, with Docker Compose.
 - Every request goes through the sign-in chosen in the setup guide, e.g. Cloudflare Access with a one-time code by
   e-mail; no port is opened to the internet.
 - .NET 10, Blazor Server and SQLite. No JavaScript framework.
 
 ## Install
 
-On a Raspberry Pi with Raspberry Pi OS (64-bit), or any Linux machine with Ubuntu or Debian, run this as your normal
-user:
+On a machine on your own network, e.g. a Raspberry Pi with Raspberry Pi OS (64-bit), or another Linux machine with
+Ubuntu or Debian (not a rented cloud server), run this as your normal user:
 
 ```sh
 curl -fsSL https://github.com/gonace/Contactor/releases/latest/download/install.sh | sh
