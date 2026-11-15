@@ -161,6 +161,17 @@ public sealed class GitHubReleasesTests
         Assert.Equal(["Fix the clock", "A plain line"], changes);
     }
 
+    // The Release workflow writes an "Images" section at the end of the notes (Issue #314): a table and docker pull
+    // lines, never changes.
+    [Fact]
+    public void Should_LeaveOutTheImagesSection()
+    {
+        var changes = GitHubReleases.Changes(
+            "## What's Changed\n* Fix the clock by @someone in https://github.com/gonace/Contactor/pull/9\n\n<!-- images -->\n## Images\n\n| Image | Version | Digest |\n|---|---|---|\n| [ghcr.io/gonace/contactor](https://github.com/gonace/Contactor/pkgs/container/contactor) | `2026.11.15` | `sha256:aa` |\n\n```sh\ndocker pull ghcr.io/gonace/contactor@sha256:aa\n```");
+
+        Assert.Equal(["Fix the clock"], changes);
+    }
+
     [Fact]
     public void Should_ShortenAVeryLongChange_AndListAtMostThirty()
     {

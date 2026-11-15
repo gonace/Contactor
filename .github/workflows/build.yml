@@ -1,4 +1,4 @@
-name: Build
+name: Build & Test
 
 # On every pull request to main, on every merge into main, and by hand.
 on:
