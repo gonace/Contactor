@@ -241,10 +241,11 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                         // Only now that the ON went out: one that failed is still tried again at the next tick.
                         _retryRelays.Remove(relayId);
 
-                        // Since the ON went out, not the minute: a person's OFF is told apart from it by time (RelayRuns.End).
+                        // The event first: it is kept should the run's write fail. The run since the ON went out, not
+                        // the minute: a person's OFF is told apart from it by time (RelayRuns.End).
                         wentOut = true;
-                        await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, CancellationToken.None);
                         Log(db, progress.BoardId, now, relayId, EventActions.On, running.ScheduleId);
+                        await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, CancellationToken.None);
                         changed = true;
                         continue;
                     }
@@ -279,10 +280,10 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                         break;
                     }
 
+                    // The event first: it is kept should the run's write fail.
                     wentOut = true;
-                    await RelayRuns.EndAsync(db, relayId, sentUtc, CancellationToken.None);
-
                     Log(db, progress.BoardId, now, relayId, EventActions.Off, ended?.ScheduleId);
+                    await RelayRuns.EndAsync(db, relayId, sentUtc, CancellationToken.None);
                     changed = true;
                 }
                 catch (Exception ex) when (wentOut)

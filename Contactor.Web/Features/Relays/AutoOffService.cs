@@ -91,10 +91,13 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
         // went out is saved, and then the failure is thrown.
         List<int> turnedOff = [];
         ExceptionDispatchInfo? failed = null;
-        foreach (var runtime in due)
+        int? failedAt = null;
+        try
         {
-            try
+            foreach (var runtime in due)
             {
+                failedAt = runtime.RelayId;
+
                 // The board's state and the command go by the relay's channel; a relay the board doesn't have isn't on.
                 if (OnBoard(board, channels, runtime.RelayId) is { } channel && state.IsOn(channel))
                 {
@@ -141,24 +144,31 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
                 // ends; one saved meanwhile (someone turned it on again) stays.
                 await RelayRuns.EndOutsideAsync(db, runtime.RelayId, Record(turnedOff, cancellationToken));
             }
-            catch (Exception ex) when (turnedOff.Count > 0)
-            {
-                // An OFF or a database call failed after an OFF went out. Logged now, so it isn't lost should the save
-                // of what went out fail too; a cancel by the caller (mostly at shutdown) isn't a failure.
-                if (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-                {
-                    LogOffFailed(ex, runtime.RelayId, board.BoardId);
-                }
 
-                failed = ExceptionDispatchInfo.Capture(ex);
-                break;
+            // Not after the board was lost on the way: nothing happens without it.
+            failedAt = null;
+            if (board.State.IsConnected)
+            {
+                await EndRunsOfOffRelaysAsync(db, board, channels, state, [.. due.Select(r => r.RelayId)], Record(turnedOff, cancellationToken));
             }
         }
-
-        // Not after the board was lost on the way, nor after a failure: nothing happens without it.
-        if (board.State.IsConnected && failed is null)
+        catch (Exception ex) when (turnedOff.Count > 0)
         {
-            await EndRunsOfOffRelaysAsync(db, board, channels, state, [.. due.Select(r => r.RelayId)], Record(turnedOff, cancellationToken));
+            // An OFF or a database call failed after an OFF went out. Logged now, so it isn't lost should the save of
+            // what went out fail too; a cancel by the caller (mostly at shutdown) isn't a failure.
+            if (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                if (failedAt is { } relayId)
+                {
+                    LogOffFailed(ex, relayId, board.BoardId);
+                }
+                else
+                {
+                    LogEndRunsFailed(ex, board.BoardId);
+                }
+            }
+
+            failed = ExceptionDispatchInfo.Capture(ex);
         }
 
         if (db.ChangeTracker.HasChanges())
@@ -380,6 +390,9 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off failed at relay {RelayId} on relay board {BoardId}; the OFFs that went out before it are saved")]
     private partial void LogOffFailed(Exception exception, int relayId, int boardId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off could not end the runs of the relays that are off on relay board {BoardId}; the OFFs that went out are saved")]
+    private partial void LogEndRunsFailed(Exception exception, int boardId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is on with nobody's run: it gets its own auto-off")]
     private partial void LogOwnerless(int relayId);

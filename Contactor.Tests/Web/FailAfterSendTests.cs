@@ -177,7 +177,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.Equal((true, true), (_board.State.IsOn(2), _board.State.IsOn(5)));
         var run = await RunAsync(2);
         Assert.Equal((EventActors.Schedule, (DateTime?)OnTime.UtcDateTime), (run.TurnedOnBy, run.OnSinceUtc));
-        Assert.Equal([(2, EventActors.Schedule, EventActions.On)], await EventsAsync());
+        Assert.Equal([(2, EventActors.Schedule, EventActions.On), (5, EventActors.Schedule, EventActions.On)], await EventsAsync());
         Assert.Contains("Scheduler failed at relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
 
         // The next tick sends nothing: both relays are on.
@@ -220,6 +220,27 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.Empty(await AutoOff.CheckAsync(Cancel));
         Assert.Equal(sent, _board.Sent.Count);
         Assert.Null((await RunAsync(5)).OnSinceUtc);
+    }
+
+    [Fact]
+    public async Task Should_RecordTheAutoOffThatWentOut_WhenTheDatabaseFailsAfterTheLoop()
+    {
+        await Control.TurnOnAsync(2, Jane, Cancel);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
+
+        // Relay 2's OFF goes out and its run ends; reading the runs of the relays that are off fails.
+        _board.AfterOff = () =>
+        {
+            _queries.FailRunRead(skip: 1);
+            return Task.CompletedTask;
+        };
+
+        await Assert.ThrowsAsync<SqliteException>(() => AutoOff.CheckAsync(_database.Services.Live(), Cancel));
+
+        Assert.False(_board.State.IsOn(2));
+        Assert.Null((await RunAsync(2)).OnSinceUtc);
+        Assert.Equal([(2, Jane, EventActions.On), (2, EventActors.AutoOff, EventActions.Off)], await EventsAsync());
+        Assert.Contains("Auto-off could not end the runs of the relays that are off on relay board 1; the OFFs that went out are saved", _errors.Lines);
     }
 
     // A schedule's ON refused while the board was being removed is tried again at the next tick, also after that try
