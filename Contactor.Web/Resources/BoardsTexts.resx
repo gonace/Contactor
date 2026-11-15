@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Boards.Board" xml:space="preserve">
+    <value>Board</value>
+    <comment>The heading of a board's own card on its page.</comment>
+  </data>
+  <data name="Boards.Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Boards.Address" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="Boards.Port" xml:space="preserve">
+    <value>Port</value>
+  </data>
+  <data name="Boards.ModelLine" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>A board's model and its relays, e.g. "Velleman VM201 · 8 relays".</comment>
+  </data>
+  <data name="Boards.Relays_One" xml:space="preserve">
+    <value>{0} relay</value>
+  </data>
+  <data name="Boards.Relays_Other" xml:space="preserve">
+    <value>{0} relays</value>
+  </data>
+  <data name="Boards.AddressHint" xml:space="preserve">
+    <value>The relay board's IP address on the local network. Your router lists it among its connected devices.</value>
+  </data>
+  <data name="Boards.NoPassword" xml:space="preserve">
+    <value>The board has no password</value>
+  </data>
+  <data name="Boards.NoLogin" xml:space="preserve">
+    <value>The board has no login</value>
+  </data>
+  <data name="Boards.UserName" xml:space="preserve">
+    <value>User name</value>
+  </data>
+  <data name="Boards.Password" xml:space="preserve">
+    <value>Password</value>
+  </data>
+  <data name="Boards.Password.Unchanged" xml:space="preserve">
+    <value>unchanged</value>
+    <comment>In an empty password field: the saved password stays.</comment>
+  </data>
+  <data name="Boards.Password.None" xml:space="preserve">
+    <value>none</value>
+    <comment>In an empty password field: the board has no password.</comment>
+  </data>
+  <data name="Boards.Login.Hint" xml:space="preserve">
+    <value>The same as on the board's own web page. {0}</value>
+    <comment>{0} is what the model's login may contain.</comment>
+  </data>
+  <data name="Boards.Login.MaxLength" xml:space="preserve">
+    <value>At most {0} characters.</value>
+  </data>
+  <data name="Boards.Online" xml:space="preserve">
+    <value>Board online at {0}</value>
+    <comment>{0} is the board's address.</comment>
+  </data>
+  <data name="Boards.NoAddress" xml:space="preserve">
+    <value>The relay board has no address yet</value>
+  </data>
+  <data name="Boards.NoContact" xml:space="preserve">
+    <value>No contact with the relay board at {0}</value>
+  </data>
+  <data name="Boards.Saved" xml:space="preserve">
+    <value>Saved. The app reconnects to the board.</value>
+  </data>
+  <data name="Boards.NotChosen" xml:space="preserve">
+    <value>No relay board has been chosen yet.</value>
+  </data>
+  <data name="Boards.BeingRemoved" xml:space="preserve">
+    <value>The relay board is being removed.</value>
+  </data>
+  <data name="Boards.Save.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
+  </data>
+  <data name="Boards.Save.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+  <data name="Boards.Endpoint.NoHost" xml:space="preserve">
+    <value>Enter the relay board's address, e.g. 192.168.1.50.</value>
+  </data>
+  <data name="Boards.Endpoint.NotAnAddress" xml:space="preserve">
+    <value>{0} isn't an address. Enter e.g. 192.168.1.50.</value>
+    <comment>{0} is what was typed.</comment>
+  </data>
+  <data name="Boards.Endpoint.BadPort" xml:space="preserve">
+    <value>The port is a number from 1 to 65535.</value>
+  </data>
+  <data name="Boards.Page.Missing" xml:space="preserve">
+    <value>This relay board isn't in Contactor.</value>
+  </data>
+  <data name="Boards.Remove.Title" xml:space="preserve">
+    <value>Remove board</value>
+  </data>
+  <data name="Boards.Remove.Hint" xml:space="preserve">
+    <value>Takes the board out of Contactor. Its relays, groups, schedules, input actions and events are deleted. The board itself isn't changed.</value>
+  </data>
+  <data name="Boards.Remove.Button" xml:space="preserve">
+    <value>Remove {0}</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Boards.Remove.Ask" xml:space="preserve">
+    <value>Remove {0}?</value>
+  </data>
+  <data name="Boards.Remove.Deletes" xml:space="preserve">
+    <value>This deletes, and can't be undone:</value>
+  </data>
+  <data name="Boards.Remove.Groups_One" xml:space="preserve">
+    <value>{0} group</value>
+  </data>
+  <data name="Boards.Remove.Groups_Other" xml:space="preserve">
+    <value>{0} groups</value>
+  </data>
+  <data name="Boards.Remove.Schedules_One" xml:space="preserve">
+    <value>{0} schedule</value>
+  </data>
+  <data name="Boards.Remove.Schedules_Other" xml:space="preserve">
+    <value>{0} schedules</value>
+  </data>
+  <data name="Boards.Remove.InputActions_One" xml:space="preserve">
+    <value>{0} input action</value>
+  </data>
+  <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
+    <value>{0} input actions</value>
+  </data>
+  <data name="Boards.Remove.Events" xml:space="preserve">
+    <value>All of {0}'s events</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Boards.Remove.OffFirst" xml:space="preserve">
+    <value>Its relays are turned off first. If a group is running on, you can remove it once that's done.</value>
+  </data>
+  <data name="Boards.Remove.NoContact" xml:space="preserve">
+    <value>{0} has no contact. Any relay that's on stays on, and Contactor can't turn it off.</value>
+  </data>
+  <data name="Boards.Remove.Removing" xml:space="preserve">
+    <value>Removing…</value>
+  </data>
+  <data name="Boards.Remove.Confirm" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Boards.Remove.Failed" xml:space="preserve">
+    <value>Couldn't remove {0}. Nothing was removed.</value>
+  </data>
+  <data name="Boards.Remove.AlreadyRemoved" xml:space="preserve">
+    <value>This relay board was removed already.</value>
+  </data>
+  <data name="Boards.Remove.Lost" xml:space="preserve">
+    <value>{0} has lost contact, so its relays couldn't be turned off. Nothing was removed.</value>
+  </data>
+  <data name="Boards.Remove.RunsOn" xml:space="preserve">
+    <value>{0} runs on until {1}. Remove {2} when it's done.</value>
+    <comment>{0} is a group, {1} a time, {2} the board.</comment>
+  </data>
+  <data name="Boards.Remove.NotOff" xml:space="preserve">
+    <value>Some of {0}'s relays didn't turn off. Nothing was removed. Try again.</value>
+  </data>
+  <data name="Boards.New.Step" xml:space="preserve">
+    <value>STEP {0} OF {1}</value>
+  </data>
+  <data name="Boards.New.NameHint" xml:space="preserve">
+    <value>What you call it in Contactor, e.g. "Garage". You can change it later.</value>
+  </data>
+  <data name="Boards.New.Gone" xml:space="preserve">
+    <value>This relay board was removed meanwhile.</value>
+  </data>
+  <data name="Boards.New.Done" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="Boards.New.WithoutConnection" xml:space="preserve">
+    <value>Go on without a connection</value>
+  </data>
+  <data name="Boards.New.ChooseBoard" xml:space="preserve">
+    <value>Choose your relay board.</value>
+  </data>
+  <data name="Boards.Picker.Label" xml:space="preserve">
+    <value>BOARDS</value>
+  </data>
+  <data name="Boards.Picker.All" xml:space="preserve">
+    <value>All boards</value>
+  </data>
+  <data name="Boards.Picker.AllShort" xml:space="preserve">
+    <value>All</value>
+    <comment>Among the chips: every board.</comment>
+  </data>
+  <data name="Boards.Picker.Count_One" xml:space="preserve">
+    <value>{0} board</value>
+  </data>
+  <data name="Boards.Picker.Count_Other" xml:space="preserve">
+    <value>{0} boards</value>
+  </data>
+  <data name="Boards.Picker.OnCount" xml:space="preserve">
+    <value>{0} of {1} on</value>
+  </data>
+  <data name="Boards.Picker.AllHint" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>Under "All boards": Boards.Picker.OnCount, then Boards.Picker.Count.</comment>
+  </data>
+  <data name="Boards.Picker.NoContact" xml:space="preserve">
+    <value>No contact</value>
+  </data>
+  <data name="Boards.Picker.NoContactHidden" xml:space="preserve">
+    <value>: no contact</value>
+    <comment>Read out by screen readers after a board's name.</comment>
+  </data>
+  <data name="Boards.Picker.Show" xml:space="preserve">
+    <value>Boards to show</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Boards.Picker.AddChip" xml:space="preserve">
+    <value>Board</value>
+    <comment>The chip that adds a board, after a "+".</comment>
+  </data>
+  <data name="Boards.Picker.ShowAll" xml:space="preserve">
+    <value>Show all</value>
+  </data>
+  <data name="Boards.Model.Title" xml:space="preserve">
+    <value>Which relay board?</value>
+  </data>
+  <data name="Boards.Model.Intro" xml:space="preserve">
+    <value>Choose the brand first, then the model. Both are printed on the board.</value>
+  </data>
+  <data name="Boards.Model.Brand" xml:space="preserve">
+    <value>Brand</value>
+  </data>
+  <data name="Boards.Model.ChooseBrand" xml:space="preserve">
+    <value>Choose the brand</value>
+  </data>
+  <data name="Boards.Model.Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Boards.Model.BrandFirst" xml:space="preserve">
+    <value>Choose the brand first</value>
+  </data>
+  <data name="Boards.Model.ChooseModel" xml:space="preserve">
+    <value>Choose the model</value>
+  </data>
+  <data name="Boards.Model.NotListed" xml:space="preserve">
+    <value>Not on the list? Contactor only lists the boards it can switch.</value>
+  </data>
+  <data name="Boards.Model.BrandModels" xml:space="preserve">
+    <value>{0} model</value>
+    <comment>The list of a brand's models: {0} is the brand.</comment>
+  </data>
+  <data name="Boards.Model.Count_One" xml:space="preserve">
+    <value>{0} model</value>
+  </data>
+  <data name="Boards.Model.Count_Other" xml:space="preserve">
+    <value>{0} models</value>
+  </data>
+  <data name="Boards.Relays.Title" xml:space="preserve">
+    <value>Name your relays</value>
+  </data>
+  <data name="Boards.Relays.Intro" xml:space="preserve">
+    <value>Name each relay after what it switches. "Try" turns it on for {0} seconds, so you can hear which one it is. Untick the ones you don't use.</value>
+  </data>
+  <data name="Boards.Relays.TryNeedsContact" xml:space="preserve">
+    <value>"Try" works once the app has contact with the relay board.</value>
+  </data>
+  <data name="Boards.Relays.Try" xml:space="preserve">
+    <value>Try</value>
+  </data>
+  <data name="Boards.Relays.TryLabel" xml:space="preserve">
+    <value>Try relay {0}</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Boards.Relays.On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Boards.Relays.InUse" xml:space="preserve">
+    <value>In use</value>
+  </data>
+  <data name="Boards.Relays.InGroup" xml:space="preserve">
+    <value>In the group {0}, which switches it.</value>
+  </data>
+  <data name="Boards.Relays.NoContact" xml:space="preserve">
+    <value>No contact with the relay board. Try again in a moment.</value>
+  </data>
+  <data name="Boards.Where.Title" xml:space="preserve">
+    <value>Where is the board?</value>
+  </data>
+  <data name="Boards.Where.Intro" xml:space="preserve">
+    <value>{0} · its address on your network.</value>
+    <comment>{0} is the model's name.</comment>
+  </data>
+  <data name="Boards.Where.Hint" xml:space="preserve">
+    <value>Your router lists the board among its connected devices. Leave the port empty unless you changed it on the board.</value>
+  </data>
+  <data name="Boards.Where.Looking" xml:space="preserve">
+    <value>Looking for the board</value>
+  </data>
+  <data name="Boards.Where.At" xml:space="preserve">
+    <value>at {0}</value>
+  </data>
+  <data name="Boards.Where.NoAnswer" xml:space="preserve">
+    <value>No answer from {0}. Check that the board has power and a network cable, and that the address is right.</value>
+  </data>
+  <data name="Boards.Where.CheckAgain" xml:space="preserve">
+    <value>Check again</value>
+  </data>
+  <data name="Boards.Where.Online" xml:space="preserve">
+    <value>Board online</value>
+  </data>
+  <data name="Boards.Where.Found_One" xml:space="preserve">
+    <value>Found {0} relay at {1}</value>
+  </data>
+  <data name="Boards.Where.Found_Other" xml:space="preserve">
+    <value>Found {0} relays at {1}</value>
+  </data>
+  <data name="Boards.Where.Checked" xml:space="preserve">
+    <value>{0} · checked {1}</value>
+    <comment>{1} is a time with seconds.</comment>
+  </data>
+</root>

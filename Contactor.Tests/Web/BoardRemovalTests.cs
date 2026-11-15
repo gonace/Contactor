@@ -64,7 +64,7 @@ public sealed class BoardRemovalTests
         Assert.Null(await removal.PreviewAsync(boards.BarnId, Cancel));
 
         // A second phone that pressed Remove too.
-        Assert.Equal(BoardRemoval.AlreadyRemoved, await removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+        Assert.Equal(removal.AlreadyRemoved, await removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
     }
 
     // A failure part-way (here the last delete, the board's row) leaves every row, and the board runs again in its

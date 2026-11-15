@@ -1,6 +1,8 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Relays
 @using Microsoft.AspNetCore.Components.Forms
+@using Contactor.Web.Features.Languages
+@inject IStringLocalizer<BoardsTexts> Texts
 
 @* The board filter of Relays, Events and Debug: below 1024 px a row of chips under the heading, on a desktop a list
    in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the choice in the screen's own cookie
@@ -16,13 +18,13 @@
         @* Its own form: no chips on this page. Each board goes to Relays filtered to it. *@
         <form id="@GoFormId" method="post" action="@BoardFilterScreen.Relays.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
     }
-    <div class="list-label" id="boards-label">BOARDS</div>
+    <div class="list-label" id="boards-label">@Texts["Boards.Picker.Label"]</div>
     <div class="side-boards" role="group" aria-labelledby="boards-label">
         @if (Several)
         {
             <button type="submit" form="@form" name="show" value="@BoardFilter.AllValue" class="side-board all @(!Go && Filter.IsAll ? "picked" : null)" aria-pressed="@(Go ? null : Filter.IsAll ? "true" : "false")">
-                <span class="line"><span class="name">All boards</span></span>
-                <span class="hint">@(AnyAnswered ? $"{all.On} of {all.Active} on · " : "")@Boards.Count boards</span>
+                <span class="line"><span class="name">@Texts["Boards.Picker.All"]</span></span>
+                <span class="hint">@(AnyAnswered ? Texts["Boards.Picker.AllHint", Texts["Boards.Picker.OnCount", all.On, all.Active], Texts.Plural("Boards.Picker.Count", Boards.Count)] : Texts.Plural("Boards.Picker.Count", Boards.Count))</span>
             </button>
         }
         @foreach (var board in Boards)
@@ -33,10 +35,10 @@
             <button type="submit" form="@form" name="show" value="@(Go ? GoValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
                 <span class="line"><span class="name">@board.Name</span><span class="dot @(state.IsConnected ? null : "off")" aria-hidden="true"></span></span>
                 <span class="hint">
-                    @(state.HasAnswered ? $"{count.On} of {count.Active} on" : "")
+                    @(state.HasAnswered ? Texts["Boards.Picker.OnCount", count.On, count.Active] : "")
                     @if (!state.IsConnected)
                     {
-                        @(state.HasAnswered ? " · " : "")<span class="no-contact">No contact</span>
+                        @(state.HasAnswered ? " · " : "")<span class="no-contact">@Texts["Boards.Picker.NoContact"]</span>
                     }
                 </span>
                 @Lamps(board)
@@ -44,17 +46,17 @@
         }
         <a href="board/new" class="side-add">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            Add a board
+            @Common["Common.AddBoard"]
         </a>
     </div>
 }
 else
 {
     <form id="@FormId" method="post" action="@Screen.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
-    <div class="chips-row" role="group" aria-label="Boards to show">
+    <div class="chips-row" role="group" aria-label="@Texts["Boards.Picker.Show"]">
         @if (Several)
         {
-            <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">@(Plain ? "All boards" : "All")</button>
+            <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">@Texts[Plain ? "Boards.Picker.All" : "Boards.Picker.AllShort"]</button>
         }
         @foreach (var board in Boards)
         {
@@ -75,7 +77,7 @@ else
                     }
                     @if (!state.IsConnected)
                     {
-                        <span class="visually-hidden">: no contact</span>
+                        <span class="visually-hidden">@Texts["Boards.Picker.NoContactHidden"]</span>
                     }
                 </span>
                 @if (!Plain)
@@ -84,14 +86,14 @@ else
                 }
             </button>
         }
-        <a href="board/new" class="chip-add" aria-label="Add a board">
+        <a href="board/new" class="chip-add" aria-label="@Common["Common.AddBoard"]">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            Board
+            @Texts["Boards.Picker.AddChip"]
         </a>
     </div>
     @if (Showing is not null)
     {
-        <p class="showing">@Showing · <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="link">Show all</button></p>
+        <p class="showing">@Showing · <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="link">@Texts["Boards.Picker.ShowAll"]</button></p>
     }
 }
 

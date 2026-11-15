@@ -171,6 +171,17 @@ public sealed class BoardAddressHandlerTests
         Assert.DoesNotContain(logs.Messages, m => m.Contains(Password, StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(BoardEndpointError.NoHost, "", "Enter the relay board's address, e.g. 192.168.1.50.")]
+    [InlineData(BoardEndpointError.NotAnAddress, " 192.168.1.50/24 ", "192.168.1.50/24 isn't an address. Enter e.g. 192.168.1.50.")]
+    [InlineData(BoardEndpointError.BadPort, "192.168.1.50", "The port is a number from 1 to 65535.")]
+    public void Should_PutTheAddressError_InWords(BoardEndpointError error, string host, string text)
+    {
+        var handler = new BoardAddressHandler(null!, null!, null!, null!, TestTexts.For<Contactor.Web.Resources.BoardsTexts>());
+
+        Assert.Equal(text, handler.EndpointError(error, host));
+    }
+
     private static BoardAddressHandler Handler(BoardTestRig rig)
     {
         return rig.Database.Services.GetRequiredService<BoardAddressHandler>();

@@ -13,6 +13,7 @@
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject ILogger<BoardNew> Log
+@inject IStringLocalizer<BoardsTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.AddBoard"]])</PageTitle>
 
@@ -43,7 +44,7 @@
                 @Common["Common.Back"]
             </button>
         }
-        <span class="step-count">STEP @_step OF @StepCount</span>
+        <span class="step-count">@Texts["Boards.New.Step", _step, StepCount]</span>
     </header>
 
     <div class="progress" aria-hidden="true" inert="@_sheetOpen">
@@ -58,15 +59,15 @@
         {
             <BoardModelPicker @ref="_picker" @bind-Type="_type" Busy="Busy" OpenChanged="OnListOpened">
                 <div class="field">
-                    <label for="board-name">Name</label>
+                    <label for="board-name">@Texts["Boards.Name"]</label>
                     <input id="board-name" type="text" maxlength="@Board.NameMaxLength" autocomplete="off" placeholder="@DefaultName" @bind="_name" @bind:event="oninput" />
-                    <p class="hint">What you call it in Contactor, e.g. "Garage". You can change it later.</p>
+                    <p class="hint">@Texts["Boards.New.NameHint"]</p>
                 </div>
             </BoardModelPicker>
         }
         else if (Chosen is not { Model: not null } board)
         {
-            <p class="missing">This relay board was removed meanwhile.</p>
+            <p class="missing">@Texts["Boards.New.Gone"]</p>
         }
         else if (_step == StepWhere)
         {
@@ -94,11 +95,11 @@
         }
         else
         {
-            <button type="button" class="finish" disabled="@(Busy || gone)" @onclick="FinishAsync">Done</button>
+            <button type="button" class="finish" disabled="@(Busy || gone)" @onclick="FinishAsync">@Texts["Boards.New.Done"]</button>
         }
         @if (step == StepWhere && !gone)
         {
-            <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
+            <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">@Texts["Boards.New.WithoutConnection"]</button>
         }
         @if (step > StepBoard)
         {
@@ -229,14 +230,14 @@
 
         if (BoardCatalogue.Find(_type)?.Model is not { } model)
         {
-            _error = "Choose your relay board.";
+            _error = Texts["Boards.New.ChooseBoard"];
             return;
         }
 
         var name = _name.Trim();
         if (name.Length > Board.NameMaxLength)
         {
-            _error = $"The name can be at most {Board.NameMaxLength} characters.";
+            _error = Texts["Boards.Save.NameTooLong", Board.NameMaxLength];
             return;
         }
 
@@ -361,7 +362,7 @@
         }
 
         var error = await Removal.RemoveAsync(boardId, turnOffFirst: false, _user.Email, CancellationToken.None);
-        if (error is not null && error != BoardRemoval.AlreadyRemoved)
+        if (error is not null && error != Removal.AlreadyRemoved)
         {
             _error = error;
             return false;
@@ -382,7 +383,7 @@
     {
         // An exception that leaves the handler would end the page's live connection.
         Log.LogError(ex, "{What}", what);
-        _error = "Something went wrong. Try again.";
+        _error = Common["Common.SomethingWrongTryAgain"];
     }
 
     // A board added or removed elsewhere: the default name, or this board removed meanwhile.

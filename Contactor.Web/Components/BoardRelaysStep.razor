@@ -7,38 +7,40 @@
 @inject SetupHandler Setup
 @inject BoardRegistry Registry
 @inject ILogger<BoardRelaysStep> Log
+@inject IStringLocalizer<BoardsTexts> Texts
+@inject IStringLocalizer<RelaysTexts> RelayTexts
 
 @* "Name your relays": a name and "In use" for each relay of the board, and "Try". Shared by the setup guide (the first
    board) and "Add a board" (BoardNew); the page keeps the rows (LoadAsync) and saves them (SaveAsync). *@
 <div class="intro">
-    <h1 tabindex="-1" @ref="_heading">Name your relays</h1>
-    <p>Name each relay after what it switches. "Try" turns it on for @((int)SetupHandler.TryLength.TotalSeconds) seconds, so you can hear which one it is. Untick the ones you don't use.</p>
+    <h1 tabindex="-1" @ref="_heading">@Texts["Boards.Relays.Title"]</h1>
+    <p>@Texts["Boards.Relays.Intro", (int)SetupHandler.TryLength.TotalSeconds]</p>
 </div>
 @if (!Board.State.IsConnected)
 {
-    <p class="hint">"Try" works once the app has contact with the relay board.</p>
+    <p class="hint">@Texts["Boards.Relays.TryNeedsContact"]</p>
 }
 <ul class="relays">
     @foreach (var relay in Rows)
     {
         var on = Board.State.IsOn(relay.Channel);
         <li class="relay" @key="relay.Id">
-            <label class="label" for="@($"relay-{relay.Id}")">RELAY @relay.Channel</label>
+            <label class="label" for="@($"relay-{relay.Id}")">@RelayTexts["Relays.RelayLabel", relay.Channel]</label>
             <div class="row">
                 <input id="@($"relay-{relay.Id}")" type="text" maxlength="@Relay.NameMaxLength" autocomplete="off"
                        placeholder="@Relay.DefaultName(relay.Channel)" @bind="relay.Name" @bind:event="oninput" />
                 <button type="button" class="small try" aria-pressed="@(on ? "true" : "false")"
-                        aria-label="@($"Try relay {relay.Channel}")"
+                        aria-label="@Texts["Boards.Relays.TryLabel", relay.Channel]"
                         disabled="@(on || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
-                        @onclick="() => TryAsync(relay)">@(on ? "On" : "Try")</button>
+                        @onclick="() => TryAsync(relay)">@Texts[on ? "Boards.Relays.On" : "Boards.Relays.Try"]</button>
             </div>
             <label class="check" for="@($"use-{relay.Id}")">
                 <input id="@($"use-{relay.Id}")" type="checkbox" @bind="relay.IsActive" />
-                <span>In use</span>
+                <span>@Texts["Boards.Relays.InUse"]</span>
             </label>
             @if (relay.GroupName is not null)
             {
-                <p class="hint">In the group @relay.GroupName, which switches it.</p>
+                <p class="hint">@Texts["Boards.Relays.InGroup", relay.GroupName]</p>
             }
             @if (relay.Error is not null)
             {
@@ -121,20 +123,20 @@
         }
         catch (BoardClosedException)
         {
-            relay.Error = LiveBoard.BeingRemoved;
+            relay.Error = Texts["Boards.BeingRemoved"];
         }
         catch (BoardNotConnectedException)
         {
-            relay.Error = "No contact with the relay board. Try again in a moment.";
+            relay.Error = Texts["Boards.Relays.NoContact"];
         }
         catch (RelayInGroupException)
         {
-            relay.Error = RelayInGroupException.Text;
+            relay.Error = RelayTexts["Relays.InGroup"];
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "\"Try\" failed for relay {RelayId}", relay.Id);
-            relay.Error = "Something went wrong. Try again.";
+            relay.Error = Common["Common.SomethingWrongTryAgain"];
         }
         finally
         {

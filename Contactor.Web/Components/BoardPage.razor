@@ -2,6 +2,7 @@
 @implements IDisposable
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Identity
 @inject BoardRegistry Registry
 @inject BoardAddressHandler Handler
@@ -9,6 +10,7 @@
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject ILogger<BoardPage> Log
+@inject IStringLocalizer<BoardsTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", _name ?? Common["Common.Screen.RelayBoard"].Value])</PageTitle>
 
@@ -16,7 +18,7 @@
     <header class="header">
         <a href="settings" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            Settings
+            @Common["Common.Screen.Settings"]
         </a>
         @if (_name is not null)
         {
@@ -27,20 +29,20 @@
     <main class="content">
         @if (_loaded && (_name is null || Live is null))
         {
-            <p class="missing">@(_error ?? "This relay board isn't in Contactor.")</p>
+            <p class="missing">@(_error ?? Texts["Boards.Page.Missing"])</p>
         }
         else if (_name is not null)
         {
-            <BoardForm BoardId="Id" Title="Board" WithName="true" NameSaved="OnNameSaved" />
+            <BoardForm BoardId="Id" Title="@Texts["Boards.Board"]" WithName="true" NameSaved="OnNameSaved" />
 
             <section class="card remove-card">
-                <h2>Remove board</h2>
-                <p class="hint">Takes the board out of Contactor. Its relays, groups, schedules, input actions and events are deleted. The board itself isn't changed.</p>
+                <h2>@Texts["Boards.Remove.Title"]</h2>
+                <p class="hint">@Texts["Boards.Remove.Hint"]</p>
                 @if (_error is not null)
                 {
                     <p class="error" role="alert">@_error</p>
                 }
-                <button type="button" class="remove" disabled="@_busy" @onclick="AskAsync">Remove @_name</button>
+                <button type="button" class="remove" disabled="@_busy" @onclick="AskAsync">@Texts["Boards.Remove.Button", _name]</button>
             </section>
         }
     </main>
@@ -50,35 +52,35 @@
         var hasContact = HasContact;
         <div class="backdrop">
             <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title">
-                <h2 id="remove-title">Remove @preview.Name?</h2>
-                <p>This deletes, and can't be undone:</p>
+                <h2 id="remove-title">@Texts["Boards.Remove.Ask", preview.Name]</h2>
+                <p>@Texts["Boards.Remove.Deletes"]</p>
                 <ul>
-                    <li>@Count(preview.Relays, "relay", "relays")</li>
+                    <li>@Texts.Plural("Boards.Relays", preview.Relays)</li>
                     @if (preview.Groups > 0)
                     {
-                        <li>@Count(preview.Groups, "group", "groups")</li>
+                        <li>@Texts.Plural("Boards.Remove.Groups", preview.Groups)</li>
                     }
                     @if (preview.Schedules > 0)
                     {
-                        <li>@Count(preview.Schedules, "schedule", "schedules")</li>
+                        <li>@Texts.Plural("Boards.Remove.Schedules", preview.Schedules)</li>
                     }
                     @if (preview.InputActions > 0)
                     {
-                        <li>@Count(preview.InputActions, "input action", "input actions")</li>
+                        <li>@Texts.Plural("Boards.Remove.InputActions", preview.InputActions)</li>
                     }
-                    <li>All of @preview.Name's events</li>
+                    <li>@Texts["Boards.Remove.Events", preview.Name]</li>
                 </ul>
                 @if (hasContact)
                 {
-                    <p>Its relays are turned off first. If a group is running on, you can remove it once that's done.</p>
+                    <p>@Texts["Boards.Remove.OffFirst"]</p>
                 }
                 else
                 {
-                    <p class="warning" role="status">@preview.Name has no contact. Any relay that's on stays on, and Contactor can't turn it off.</p>
+                    <p class="warning" role="status">@Texts["Boards.Remove.NoContact", preview.Name]</p>
                 }
                 <div class="dialog-buttons">
                     <button type="button" class="cancel" disabled="@_busy" @onclick="Cancel">@Common["Common.Cancel"]</button>
-                    <button type="button" class="confirm" disabled="@_busy" @onclick="() => RemoveAsync(hasContact)">@(_busy ? "Removing…" : "Remove")</button>
+                    <button type="button" class="confirm" disabled="@_busy" @onclick="() => RemoveAsync(hasContact)">@Texts[_busy ? "Boards.Remove.Removing" : "Boards.Remove.Confirm"]</button>
                 </div>
             </div>
         </div>
@@ -117,11 +119,6 @@
     {
         Registry.StateChanged -= OnBoardChanged;
         Registry.BoardsChanged -= OnBoardsChanged;
-    }
-
-    private static string Count(int count, string one, string many)
-    {
-        return $"{count} {(count == 1 ? one : many)}";
     }
 
     private void OnNameSaved(string name)
@@ -163,7 +160,7 @@
 #pragma warning restore CA1031
         {
             Log.LogError(ex, "Relay board {BoardId} couldn't be removed", Id);
-            _error = $"Couldn't remove {_name}. Nothing was removed.";
+            _error = Texts["Boards.Remove.Failed", _name ?? ""];
         }
         finally
         {

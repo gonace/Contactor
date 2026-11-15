@@ -2,7 +2,9 @@ using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Boards;
 
@@ -21,13 +23,16 @@ public sealed class BoardAddressHandler
     private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
+    private readonly IStringLocalizer<BoardsTexts> _texts;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
         BoardRegistry registry,
         LocalClock clock,
-        RelayChanges changes)
+        RelayChanges changes,
+        IStringLocalizer<BoardsTexts> texts)
     {
+        _texts = texts;
         _dbFactory = dbFactory;
         _registry = registry;
         _clock = clock;
@@ -51,18 +56,18 @@ public sealed class BoardAddressHandler
         name = name?.Trim() ?? "";
         if (name.Length == 0)
         {
-            return "Enter a name.";
+            return _texts["Boards.Save.EnterName"];
         }
 
         if (name.Length > Board.NameMaxLength)
         {
-            return $"The name can be at most {Board.NameMaxLength} characters.";
+            return _texts["Boards.Save.NameTooLong", Board.NameMaxLength];
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         if (await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
-            return LiveBoard.NotChosen;
+            return _texts["Boards.NotChosen"];
         }
 
         if (board.Name == name)
@@ -113,12 +118,18 @@ public sealed class BoardAddressHandler
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         if (_registry.Find(boardId) is not { } connection)
         {
-            return LiveBoard.NotChosen;
+            return _texts["Boards.NotChosen"];
         }
 
         var current = await LoginInUseAsync(boardId, cancellationToken);
         var password = none ? "" : string.IsNullOrEmpty(newPassword) ? current.Password : newPassword;
         var login = new BoardLogin(none ? "" : username?.Trim() ?? "", password);
+        // Without a model there is no login to check: said in the app's language, as the other returns are.
+        if (connection.Model is null)
+        {
+            return _texts["Boards.NotChosen"];
+        }
+
         if (connection.CheckLogin(login) is { } error)
         {
             return error;
@@ -128,7 +139,7 @@ public sealed class BoardAddressHandler
         // The board's row can be removed after the check above.
         if (await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
-            return LiveBoard.NotChosen;
+            return _texts["Boards.NotChosen"];
         }
 
         if (BoardSetup.SavedEndpoint(board) is null)
@@ -187,13 +198,13 @@ public sealed class BoardAddressHandler
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         if (BoardEndpoint.TryCreate(host, port, out var error) is not { } endpoint)
         {
-            return error;
+            return EndpointError(error, host);
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         if (_registry.Find(boardId) is not { } connection || await RowAsync(db, boardId, cancellationToken) is not { } board)
         {
-            return LiveBoard.NotChosen;
+            return _texts["Boards.NotChosen"];
         }
 
         var saved = BoardSetup.SavedEndpoint(board);
@@ -225,6 +236,18 @@ public sealed class BoardAddressHandler
         _changes.Notify();
         return null;
     }
+
+    /// <summary>Why what was typed isn't a board's address, in words: "Enter the relay board's address, e.g. …".</summary>
+    public string EndpointError(BoardEndpointError? error, string? host)
+    {
+        return error switch
+        {
+            BoardEndpointError.NotAnAddress => _texts["Boards.Endpoint.NotAnAddress", host?.Trim() ?? ""],
+            BoardEndpointError.BadPort => _texts["Boards.Endpoint.BadPort"],
+            _ => _texts["Boards.Endpoint.NoHost"],
+        };
+    }
+
 }
 
 /// <summary>The board's login as the screen shows it: the user name, and only whether there is a password.</summary>

@@ -26,23 +26,24 @@ public sealed class BoardEndpointTests
     }
 
     [Theory]
-    [InlineData("", 9760, "Enter the relay board's address, e.g. 192.168.1.50.")]
-    [InlineData("   ", 9760, "Enter the relay board's address, e.g. 192.168.1.50.")]
-    [InlineData(null, 9760, "Enter the relay board's address, e.g. 192.168.1.50.")]
-    [InlineData("192.168.1.50/24", 9760, "192.168.1.50/24 isn't an address. Enter e.g. 192.168.1.50.")]
-    [InlineData("http://192.168.1.50", 9760, "http://192.168.1.50 isn't an address. Enter e.g. 192.168.1.50.")]
-    [InlineData("192.168.1.50", 0, "The port is a number from 1 to 65535.")]
-    [InlineData("192.168.1.50", 70000, "The port is a number from 1 to 65535.")]
-    public void Should_RefuseWhatIsNoAddress(string? host, int port, string message)
+    [InlineData("", 9760, BoardEndpointError.NoHost)]
+    [InlineData("   ", 9760, BoardEndpointError.NoHost)]
+    [InlineData(null, 9760, BoardEndpointError.NoHost)]
+    [InlineData("192.168.1.50/24", 9760, BoardEndpointError.NotAnAddress)]
+    [InlineData("http://192.168.1.50", 9760, BoardEndpointError.NotAnAddress)]
+    [InlineData("192.168.1.50", 0, BoardEndpointError.BadPort)]
+    [InlineData("192.168.1.50", 70000, BoardEndpointError.BadPort)]
+    public void Should_RefuseWhatIsNoAddress(string? host, int port, BoardEndpointError reason)
     {
         Assert.Null(BoardEndpoint.TryCreate(host, port, out var error));
-        Assert.Equal(message, error);
+        Assert.Equal(reason, error);
     }
 
     [Fact]
     public void Should_RefuseAHostTooLongForDns()
     {
-        Assert.Null(BoardEndpoint.TryCreate(new string('a', 254), 9760, out _));
+        Assert.Null(BoardEndpoint.TryCreate(new string('a', 254), 9760, out var error));
+        Assert.Equal(BoardEndpointError.NotAnAddress, error);
     }
 
     [Fact]

@@ -21,6 +21,7 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject RelayStatusText StatusText
 @inject IStringLocalizer<RelaysTexts> Texts
+@inject IStringLocalizer<BoardsTexts> BoardTexts
 
 <PageTitle>@(Common["Common.PageTitle", _relay?.Name ?? Common["Common.Screen.Relay"].Value])</PageTitle>
 
@@ -89,7 +90,7 @@
                         }
                         else if (_beingRemoved)
                         {
-                            <p class="error" role="alert">@LiveBoard.BeingRemoved</p>
+                            <p class="error" role="alert">@BoardTexts["Boards.BeingRemoved"]</p>
                         }
                         else
                         {
@@ -211,7 +212,7 @@
     private bool _wanted;
     private bool _inGroup;
 
-    // The press was refused because the relay's board is being removed (LiveBoard.BeingRemoved).
+    // The press was refused because the relay's board is being removed (BoardClosedException).
     private bool _beingRemoved;
     private string? _saveError;
     private string _name = "";

@@ -3,19 +3,21 @@
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @inject BoardAddressHandler Handler
 @inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
+@inject IStringLocalizer<BoardsTexts> Texts
 
 @* One board's card: on Settings with one board ("Relay board"), and on a board's own page ("Board", with its name). *@
 <form class="card" @onsubmit="SaveAsync">
-    <h2>@Title</h2>
-    <p class="hint">@(Model?.Name ?? "No model chosen") · @RelayCount @(RelayCount == 1 ? "relay" : "relays")</p>
+    <h2>@(Title ?? Common["Common.Screen.RelayBoard"])</h2>
+    <p class="hint">@Texts["Boards.ModelLine", Model?.Name ?? Common["Common.NoModel"], Texts.Plural("Boards.Relays", RelayCount)]</p>
 
     @if (WithName)
     {
         <div class="field">
-            <label for="board-name">Name</label>
+            <label for="board-name">@Texts["Boards.Name"]</label>
             <input id="board-name" type="text" class="name" autocomplete="off" maxlength="@Contactor.Web.Persistence.Board.NameMaxLength"
                    @bind="_name" @bind:event="oninput" />
         </div>
@@ -23,22 +25,22 @@
 
     <div class="fields">
         <div class="field">
-            <label for="host">Address</label>
+            <label for="host">@Texts["Boards.Address"]</label>
             <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
                    maxlength="253" placeholder="192.168.1.50" @bind="_host" @bind:event="oninput" />
         </div>
         <div class="field">
-            <label for="port">Port</label>
+            <label for="port">@Texts["Boards.Port"]</label>
             <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="@Model?.DefaultPort" @bind="_port" @bind:event="oninput" />
         </div>
     </div>
-    <p class="hint">The relay board's IP address on the local network. Your router lists it among its connected devices.</p>
+    <p class="hint">@Texts["Boards.AddressHint"]</p>
 
     @if (Model is { HasLogin: true } model)
     {
         <label for="no-login" class="check">
             <input id="no-login" type="checkbox" @bind="_noLogin" />
-            <span>@(model.PasswordOnly ? "The board has no password" : "The board has no login")</span>
+            <span>@Texts[model.PasswordOnly ? "Boards.NoPassword" : "Boards.NoLogin"]</span>
         </label>
         @if (!_noLogin)
         {
@@ -46,33 +48,33 @@
                 @if (!model.PasswordOnly)
                 {
                     <div class="field">
-                        <label for="username">User name</label>
+                        <label for="username">@Texts["Boards.UserName"]</label>
                         <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
                                maxlength="@model.LoginMaxLength" @bind="_username" @bind:event="oninput" />
                     </div>
                 }
                 <div class="field">
-                    <label for="password">Password</label>
+                    <label for="password">@Texts["Boards.Password"]</label>
                     <input id="password" type="password" autocomplete="new-password"
-                           maxlength="@model.LoginMaxLength" placeholder="@(_hasPassword ? "unchanged" : "none")"
+                           maxlength="@model.LoginMaxLength" placeholder="@Texts[_hasPassword ? "Boards.Password.Unchanged" : "Boards.Password.None"]"
                            @bind="_newPassword" @bind:event="oninput" />
                 </div>
             </div>
-            <p class="hint">@(model.PasswordOnly ? model.LoginHint : $"The same as on the board's own web page. {model.LoginHint ?? $"At most {model.LoginMaxLength} characters."}")</p>
+            <p class="hint">@(model.PasswordOnly ? model.LoginHint : Texts["Boards.Login.Hint", model.LoginHint ?? Texts["Boards.Login.MaxLength", model.LoginMaxLength].Value])</p>
         }
     }
 
     @if (State.IsConnected)
     {
-        <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>Board online at @Endpoint</p>
+        <p class="status online" role="status"><span class="dot" aria-hidden="true"></span>@Texts["Boards.Online", Endpoint]</p>
     }
     else if (!Endpoint.HasHost)
     {
-        <p class="status offline" role="status">The relay board has no address yet</p>
+        <p class="status offline" role="status">@Texts["Boards.NoAddress"]</p>
     }
     else
     {
-        <p class="status offline" role="status">No contact with the relay board at @Endpoint</p>
+        <p class="status offline" role="status">@Texts["Boards.NoContact", Endpoint]</p>
     }
 
     @if (_message is not null)
@@ -104,9 +106,9 @@
     [EditorRequired]
     public int BoardId { get; set; }
 
-    /// <summary>The card's heading.</summary>
+    /// <summary>The card's heading; without one, "Relay board".</summary>
     [Parameter]
-    public string Title { get; set; } = "Relay board";
+    public string? Title { get; set; }
 
     /// <summary>Whether the board's name can be changed here too (a board's own page).</summary>
     [Parameter]
@@ -172,7 +174,7 @@
 
         if (!int.TryParse(_port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
         {
-            (_message, _saved) = ("The port is a number from 1 to 65535.", false);
+            (_message, _saved) = (Handler.EndpointError(BoardEndpointError.BadPort, null), false);
             return;
         }
 
@@ -191,7 +193,7 @@
             error ??= Model is { HasLogin: true }
                 ? await Handler.SaveLoginAsync(BoardId, _username, _newPassword, _noLogin, _user.Email, CancellationToken.None)
                 : null;
-            (_message, _saved) = error is null ? ("Saved. The app reconnects to the board.", true) : (error, false);
+            (_message, _saved) = error is null ? (Texts["Boards.Saved"].Value, true) : (error, false);
             if (error is null)
             {
                 await LoadLoginAsync();
