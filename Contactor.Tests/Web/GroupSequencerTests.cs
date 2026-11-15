@@ -120,6 +120,18 @@ public sealed class GroupSequencerTests
     }
 
     [Fact]
+    public async Task Should_RefuseARelayOutsideTheGroup()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await CreateAsync(rig, FanHeater);
+
+        Assert.Equal(
+            "That relay isn't in the group.",
+            await rig.Groups.SetMemberAsync(await GroupIdAsync(rig), 5, on: true, John, Cancel));
+        Assert.False(rig.Client.State.IsOn(5));
+    }
+
+    [Fact]
     public async Task Should_NotQueueAnything_WithoutTheBoard()
     {
         await using var rig = await BoardTestRig.StartAsync();

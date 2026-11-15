@@ -231,6 +231,13 @@ public sealed class GroupTextTests
         Assert.False(FanHeater.IsOn(State()));
     }
 
+    [Fact]
+    public void Should_NameTheMissingRelay_AndTheChain()
+    {
+        Assert.Equal("Can't run: relay 5 isn't on the board", TestTexts.GroupStatus.MissingRelay(5));
+        Assert.Equal("RELAY 1 → 2", TestTexts.GroupStatus.Chain(FanHeater));
+    }
+
     private static string Status(GroupView group, BoardState state, RelayOutlook? outlook = null) =>
         TestTexts.GroupStatus.For(group, state, Now, utc => utc, email => email switch
         {
@@ -243,12 +250,4 @@ public sealed class GroupTextTests
 
     private static EventLogEntry Entry(string actor, string action, string? details) =>
         new() { TimestampUtc = Now, GroupId = 1, RelayId = 1, Actor = actor, Action = action, Details = details };
-
-    [Fact]
-    public void Should_NameTheMissingRelay_AndTheChain()
-    {
-        Assert.Equal("Can't run: relay 5 isn't on the board", TestTexts.GroupStatus.MissingRelay(5));
-        Assert.Equal("RELAY 1 → 2", TestTexts.GroupStatus.Chain(FanHeater));
-    }
-
 }
