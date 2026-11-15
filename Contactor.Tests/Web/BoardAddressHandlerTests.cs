@@ -65,6 +65,22 @@ public sealed class BoardAddressHandlerTests
         Assert.Equal(((DateTime?)autoOff, John), (after.AutoOffAtUtc, after.TurnedOnBy));
     }
 
+    // Another board may be at the new address: a change there is its own, not one the app asked the old board for.
+    [Fact]
+    public async Task Should_ExpectNoChange_AtANewAddress()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        await using var other = new Vm201Simulator();
+        other.Start();
+        rig.Live.Expected.Expect(ChannelMask.Of(2), on: true);
+
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, "127.0.0.1", rig.Simulator.Port, John, Cancel));
+        Assert.True(rig.Live.Expected.IsPending(2, on: true));
+
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, "127.0.0.1", other.Port, John, Cancel));
+        Assert.False(rig.Live.Expected.IsPending(2, on: true));
+    }
+
     [Fact]
     public async Task Should_LogNothing_WhenTheAddressIsTheSame()
     {
