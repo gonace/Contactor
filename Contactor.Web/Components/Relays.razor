@@ -26,6 +26,7 @@
 @inject RelayStatusText StatusText
 @inject BoardsText BoardsText
 @inject GroupStatusText GroupStatus
+@inject InputsText InputsText
 @inject IStringLocalizer<RelaysTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Relays"]])</PageTitle>
@@ -383,7 +384,7 @@
     // "Relays" only sets the relays apart from the groups or the inputs (its section is only there over cards).
     private bool ShowRelaysHeading => _groups.Count > 0 || VisibleInputs.Any();
 
-    private string InactiveButtonText => InactiveText.For(InactiveRelays, InactiveInputs, _showInactive);
+    private string InactiveButtonText => InputsText.Inactive(InactiveRelays, InactiveInputs, _showInactive);
 
     private string UpdatedText(BoardState state)
     {
@@ -522,7 +523,7 @@
     {
         var state = StateOf(input.BoardId);
         var closed = state.Inputs.Contains(input.Channel);
-        var status = InputStatusText.For(StatusText, input, closed, state.IsConnected, Clock.Now, Clock.ToLocal);
+        var status = InputsText.Status(input, closed, state.IsConnected, Clock.Now, Clock.ToLocal);
         <div class="card input @(input.IsActive ? "" : "inactive") @(state.HasAnswered ? "" : "unknown")" @key="@($"i{input.Id}")">
             @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
             <div class="text">

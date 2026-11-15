@@ -1,4 +1,6 @@
 using System.Globalization;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Updates;
 
@@ -64,11 +66,12 @@ public sealed record UpdateBoxView(
     string? StartedLine,
     string? LogId)
 {
-    /// <summary>The box for <paramref name="snapshot"/>, at <paramref name="clock"/>'s time.</summary>
-    public static UpdateBoxView For(UpdateSnapshot snapshot, LocalClock clock)
+    /// <summary>The box for <paramref name="snapshot"/>, at <paramref name="clock"/>'s time, in the app's language.</summary>
+    public static UpdateBoxView For(UpdateSnapshot snapshot, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(texts);
         var now = clock.UtcNow;
         var running = snapshot.Build.Version;
         if (!snapshot.Build.IsRelease)
@@ -80,7 +83,7 @@ public sealed record UpdateBoxView(
         var offered = newer.Count > 0 ? newer[0].Version : null;
         IReadOnlyList<Release> whatsNew = [.. newer.Where(r => r.Changes.Count > 0)];
         var noHelper = !snapshot.HelperInstalled;
-        var checkedLine = Checked(snapshot.Releases, clock);
+        var checkedLine = Checked(snapshot.Releases, clock, texts);
         var canUpdate = offered is not null && !noHelper;
 
         // Asked for, not taken by the helper yet: the first step.
@@ -88,11 +91,11 @@ public sealed record UpdateBoxView(
         {
             return Empty(UpdateBoxKind.Running, running, offered, [], null, noHelper) with
             {
-                Steps = StepsFor(UpdateSteps.Download, pending.To),
+                Steps = StepsFor(UpdateSteps.Download, pending.To, texts),
                 From = running,
                 To = pending.To,
                 CanCancel = true,
-                StartedLine = $"Started by {pending.By} at {Time(pending.AtUtc, clock)}. The relays stay as they are.",
+                StartedLine = texts["Updates.StartedBy", pending.By, Time(pending.AtUtc, clock)],
             };
         }
 
@@ -101,18 +104,20 @@ public sealed record UpdateBoxView(
             var stale = UpdateService.IsStale(status, now);
             if (status.IsRunning && !stale)
             {
-                var to = status.To ?? offered ?? "the new version";
+                var to = status.To ?? offered ?? texts["Updates.NewVersion"];
                 return Empty(UpdateBoxKind.Running, running, offered, [], null, noHelper) with
                 {
-                    Steps = StepsFor(status.Step ?? UpdateSteps.Download, to),
+                    Steps = StepsFor(status.Step ?? UpdateSteps.Download, to, texts),
                     From = status.From ?? running,
                     To = to,
                     CanCancel = status.Step is UpdateSteps.Download or UpdateSteps.Verify or UpdateSteps.Backup or UpdateSteps.Waiting,
-                    StartedLine = $"Started{(snapshot.StartedBy is { } by ? $" by {by}" : "")} at {Time(status.StartedUtc, clock)}. The relays stay as they are.",
+                    StartedLine = snapshot.StartedBy is { } by
+                        ? texts["Updates.StartedBy", by, Time(status.StartedUtc, clock)]
+                        : texts["Updates.Started", Time(status.StartedUtc, clock)],
                 };
             }
 
-            if (ResultFor(status, stale, offered, snapshot.StartedBy, clock) is { } result)
+            if (ResultFor(status, stale, offered, snapshot.StartedBy, clock, texts) is { } result)
             {
                 // A version newer still, after one that went through: offered as usual under the result.
                 var after = result.IsDone || !result.IsAlert;
@@ -130,8 +135,8 @@ public sealed record UpdateBoxView(
             return Empty(UpdateBoxKind.Result, running, offered, [], null, noHelper) with
             {
                 Result = new UpdateResultView(
-                    "The update didn't start",
-                    "The update helper on this machine didn't answer. Nothing was changed. Run the install command again to repair it, then try again.",
+                    texts["Updates.NoAnswer"],
+                    texts["Updates.NoAnswer.Text"],
                     IsAlert: true,
                     IsDone: false),
                 CanUpdate = canUpdate,
@@ -149,37 +154,38 @@ public sealed record UpdateBoxView(
     }
 
     // How the update ended, in plain words; null for one that has nothing to say (nothing newer, nothing offered).
-    private static UpdateResultView? ResultFor(HelperStatus status, bool stale, string? offered, string? by, LocalClock clock)
+    private static UpdateResultView? ResultFor(HelperStatus status, bool stale, string? offered, string? by, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
     {
-        var to = status.To ?? offered ?? "the new version";
+        string to = status.To ?? offered ?? texts["Updates.NewVersion"];
         if (stale)
         {
-            return Failure($"The update to {to} didn't finish", "Nothing was changed. Try again.");
+            return Failure(texts["Updates.Stale", to], texts["Updates.NothingChanged.TryAgain"]);
         }
 
+        var at = Time(status.ChangedUtc, clock);
         return status.State switch
         {
-            UpdateStates.Done => new UpdateResultView($"Updated to {to}", $"At {Time(status.ChangedUtc, clock)}{(by is null ? "" : $", by {by}")}.", IsAlert: false, IsDone: true),
+            UpdateStates.Done => new UpdateResultView(texts["Updates.Done", to], by is null ? texts["Updates.Done.At", at] : texts["Updates.Done.AtBy", at, by], IsAlert: false, IsDone: true),
             UpdateStates.WentBack => Failure(
-                $"The update to {to} didn't work",
-                $"Contactor went back to {status.From ?? "the version before"} at {Time(status.BackUtc ?? status.ChangedUtc, clock)}. Nothing was lost."),
+                texts["Updates.WentBack", to],
+                texts["Updates.WentBack.Text", status.From ?? texts["Updates.VersionBefore"], Time(status.BackUtc ?? status.ChangedUtc, clock)]),
             UpdateStates.Failed => status.Reason switch
             {
-                UpdateReasons.Download => Failure($"Couldn't download {to}", "Nothing was changed. Check the internet connection and try again."),
-                UpdateReasons.Signature => Failure($"{Capital(to)} didn't pass the check that it's ours", "So it wasn't installed. Nothing was changed. Try again later."),
-                UpdateReasons.Space => Failure($"Not enough room for {to}", Room(status)),
-                UpdateReasons.Backup => Failure("Couldn't back up before updating", "Nothing was changed. Try again in a while."),
-                UpdateReasons.Cancelled => new UpdateResultView("The update was cancelled", "Nothing was changed.", IsAlert: false, IsDone: false),
+                UpdateReasons.Download => Failure(texts["Updates.Download", to], texts["Updates.Download.Text"]),
+                UpdateReasons.Signature => Failure(Capital(texts["Updates.Signature", to]), texts["Updates.Signature.Text"]),
+                UpdateReasons.Space => Failure(texts["Updates.Space", to], Room(status, texts)),
+                UpdateReasons.Backup => Failure(texts["Updates.Backup"], texts["Updates.Backup.Text"]),
+                UpdateReasons.Cancelled => new UpdateResultView(texts["Updates.Cancelled"], texts["Updates.NothingChanged"], IsAlert: false, IsDone: false),
                 UpdateReasons.Switching => new UpdateResultView(
-                    "The update was stopped because the relays were still switching",
-                    "Try again later. Nothing was changed.",
+                    texts["Updates.Switching"],
+                    texts["Updates.Switching.Text"],
                     IsAlert: false,
                     IsDone: false),
-                UpdateReasons.Interrupted => Failure($"The update to {to} was interrupted", "Nothing was changed. Try again."),
-                _ => Failure($"The update to {to} didn't start", "Nothing was changed. Try again."),
+                UpdateReasons.Interrupted => Failure(texts["Updates.Interrupted", to], texts["Updates.NothingChanged.TryAgain"]),
+                _ => Failure(texts["Updates.Failed", to], texts["Updates.NothingChanged.TryAgain"]),
             },
             // The helper found nothing newer than what runs, while GitHub already lists a newer version.
-            UpdateStates.Current when offered is not null => new UpdateResultView($"{offered} can't be downloaded yet", "Nothing was changed. Try again later.", IsAlert: false, IsDone: false),
+            UpdateStates.Current when offered is not null => new UpdateResultView(texts["Updates.NotYet", offered], texts["Updates.NothingChanged.Later"], IsAlert: false, IsDone: false),
             _ => null,
         };
     }
@@ -189,25 +195,21 @@ public sealed record UpdateBoxView(
         return new UpdateResultView(title, text, IsAlert: true, IsDone: false);
     }
 
-    private static string Room(HelperStatus status)
+    private static string Room(HelperStatus status, IStringLocalizer<UpdatesTexts> texts)
     {
         return status is { NeedMegabytes: { } need, FreeMegabytes: { } free }
-            ? $"Nothing was changed. The update needs {Gigabytes(need)} of free disk space, and there's {Gigabytes(free)}. Make room and try again."
-            : "Nothing was changed. Make room on the disk and try again.";
+            ? texts["Updates.Space.Needs", texts["Updates.Gigabytes", need / 1024.0], texts["Updates.Gigabytes", free / 1024.0]]
+            : texts["Updates.Space.Text"];
     }
 
-    private static string Gigabytes(int megabytes)
-    {
-        return string.Create(CultureInfo.InvariantCulture, $"{megabytes / 1024.0:0.0} GB");
-    }
-
+    // A sentence that starts with a version, or with "the new version": a capital first letter.
     private static string Capital(string text)
     {
-        return text.Length > 0 && char.IsAsciiLetterLower(text[0]) ? char.ToUpperInvariant(text[0]) + text[1..] : text;
+        return text.Length > 0 && char.IsLower(text[0]) ? char.ToUpper(text[0], CultureInfo.CurrentCulture) + text[1..] : text;
     }
 
     // The steps, each done, under way or still to come.
-    private static IReadOnlyList<UpdateStepView> StepsFor(string current, string to)
+    private static IReadOnlyList<UpdateStepView> StepsFor(string current, string to, IStringLocalizer<UpdatesTexts> texts)
     {
         var at = current switch
         {
@@ -218,42 +220,43 @@ public sealed record UpdateBoxView(
         return [.. UpdateSteps.Shown.Select((step, i) => new UpdateStepView(
             step switch
             {
-                UpdateSteps.Download => $"Downloading {to}",
-                UpdateSteps.Verify => "Checking that it's ours",
+                UpdateSteps.Download => texts["Updates.Step.Download", to].Value,
+                UpdateSteps.Verify => texts["Updates.Step.Verify"],
                 // Just before the restart, while a group is starting or running on.
-                UpdateSteps.Backup when current == UpdateSteps.Waiting => "Waiting for the relays to finish switching",
-                UpdateSteps.Backup => "Backing up",
-                UpdateSteps.Restart => "Restarting",
-                _ => "Checking the new version",
+                UpdateSteps.Backup when current == UpdateSteps.Waiting => texts["Updates.Step.Waiting"],
+                UpdateSteps.Backup => texts["Updates.Step.Backup"],
+                UpdateSteps.Restart => texts["Updates.Step.Restart"],
+                _ => texts["Updates.Step.Check"],
             },
             i < at ? UpdateStepState.Done : i == at ? UpdateStepState.Now : UpdateStepState.Later))];
     }
 
     // "Checked today at 06:12.", or that it couldn't be checked.
-    private static string? Checked(ReleaseCheck releases, LocalClock clock)
+    private static string? Checked(ReleaseCheck releases, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
     {
         if (releases.Failed || releases.CheckedUtc is null)
         {
             return releases.CheckedUtc is { } last && releases.Releases.Count > 0
-                ? $"Couldn't check for updates. Last checked {Day(last, clock)} at {Time(last, clock)}."
-                : releases.Failed ? "Couldn't check for updates." : null;
+                ? texts["Updates.CheckFailedSince", Day(last, clock, texts), Time(last, clock)].Value
+                : releases.Failed ? texts["Updates.CheckFailed"].Value : null;
         }
 
-        return $"Checked {Day(releases.CheckedUtc.Value, clock)} at {Time(releases.CheckedUtc.Value, clock)}.";
+        return texts["Updates.Checked", Day(releases.CheckedUtc.Value, clock, texts), Time(releases.CheckedUtc.Value, clock)];
     }
 
-    private static string Day(DateTime utc, LocalClock clock)
+    private static string Day(DateTime utc, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
     {
         var local = clock.ToLocal(utc).Date;
         var today = clock.Now.Date;
         return (today - local).Days switch
         {
-            0 => "today",
-            1 => "yesterday",
-            _ => local.ToString("d MMMM", CultureInfo.InvariantCulture),
+            0 => texts["Updates.Today"],
+            1 => texts["Updates.Yesterday"],
+            _ => local.ToString(texts["Updates.DayFormat"], CultureInfo.CurrentCulture),
         };
     }
 
+    // Always 24 hours with ":", in every language.
     private static string Time(DateTime utc, LocalClock clock)
     {
         return clock.ToLocal(utc).ToString("HH:mm", CultureInfo.InvariantCulture);

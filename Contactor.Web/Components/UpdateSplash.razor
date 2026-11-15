@@ -1,6 +1,7 @@
 @implements IDisposable
 @using Contactor.Web.Features.Updates
 @inject UpdateService Updates
+@inject IStringLocalizer<UpdatesTexts> Texts
 
 @* Over every open page while an update restarts the app (UpdateService.IsRestarting): the page stays as it is while
    the app is away, and reloads by itself once it is back (reconnect.js). *@
@@ -9,10 +10,10 @@
     var to = Updates.Snapshot().Status?.To;
     <div class="update-splash" role="alertdialog" aria-modal="true" aria-labelledby="splash-title" aria-describedby="splash-text">
         <div class="splash-body">
-            <h1 id="splash-title">Contactor is updating</h1>
-            <p id="splash-text">@(to is null ? "To a new version" : $"To version {to}"). This takes about a minute, and the page comes back by itself.</p>
+            <h1 id="splash-title">@Texts["Updates.Splash.Title"]</h1>
+            <p id="splash-text">@(to is null ? Texts["Updates.Splash.ToNew"] : Texts["Updates.Splash.To", to])</p>
             <div class="bar" aria-hidden="true"><span></span></div>
-            <p>The relays stay as they are. Schedules and auto-offs catch up once it's back.</p>
+            <p>@Texts["Updates.Ask.Relays"]</p>
         </div>
     </div>
 }

@@ -1,4 +1,6 @@
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Inputs;
+using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -16,6 +18,8 @@ public static class EventsServiceCollectionExtensions
         // The events' words, which take a schedule's. AddLanguages also adds the localization; adding it twice is harmless.
         services.AddLocalization();
         services.TryAddSingleton<ScheduleText>();
+        services.TryAddSingleton<RelayStatusText>();
+        services.TryAddSingleton<InputsText>();
         services.TryAddSingleton<EventText>();
         services.AddSingleton<EventsHandler>();
         return services;

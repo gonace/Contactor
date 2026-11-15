@@ -1,4 +1,6 @@
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Relays;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Contactor.Web.Features.Inputs;
 
@@ -8,6 +10,11 @@ public static class InputsServiceCollectionExtensions
     public static IServiceCollection AddInputs(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        // The inputs' words, which take a relay status's times. AddLanguages also adds the localization; adding it twice
+        // is harmless.
+        services.AddLocalization();
+        services.TryAddSingleton<RelayStatusText>();
+        services.TryAddSingleton<InputsText>();
         services.AddSingleton<InputsHandler>();
         services.AddSingleton<InputActionsHandler>();
         services.AddSingleton<InputChangeFeed>();

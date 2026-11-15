@@ -453,6 +453,18 @@ public sealed class UpdateBoxViewTests
     }
 
     [Fact]
+    public void Should_NameTheDate_WhenCheckedDaysAgo_InTheLanguagesFormat()
+    {
+        var checkedAt = Now.AddDays(-3).AddHours(-4).AddMinutes(12);
+
+        Assert.Equal("Checked 9 November at 07:12.", View(Snapshot(releases: [Older], checkedUtc: checkedAt)).CheckedLine);
+        using (TestCulture.Formats("sv-SE"))
+        {
+            Assert.Equal("Checked 9 november at 07:12.", View(Snapshot(releases: [Older], checkedUtc: checkedAt)).CheckedLine);
+        }
+    }
+
+    [Fact]
     public void Should_SaySoWhenGitHubCantBeReached()
     {
         Assert.Equal("Couldn't check for updates.", View(Snapshot(releases: [], checkedUtc: null, failed: true)).CheckedLine);
@@ -641,7 +653,7 @@ public sealed class UpdateBoxViewTests
         Assert.Equal(new UpdateResultView("2026.11.20 can't be downloaded yet", "Nothing was changed. Try again later.", IsAlert: false, IsDone: false), view.Result);
     }
 
-    private UpdateBoxView View(UpdateSnapshot snapshot) => UpdateBoxView.For(snapshot, Clock);
+    private UpdateBoxView View(UpdateSnapshot snapshot) => UpdateBoxView.For(snapshot, Clock, TestTexts.For<Contactor.Web.Resources.UpdatesTexts>());
 
     private UpdateSnapshot Snapshot(
         IReadOnlyList<Release> releases,
@@ -1015,7 +1027,7 @@ public sealed class UpdateServiceTests
 
             var time = new ManualTimeProvider();
             source ??= new TestWebApp.TestReleases(releases ?? [new Release("2026.11.20", null, ["New"])]);
-            var service = new UpdateService(folder, source, database.Factory, build ?? new AppBuild("2026.11.14", null), time, NullLogger<UpdateService>.Instance);
+            var service = new UpdateService(folder, source, database.Factory, build ?? new AppBuild("2026.11.14", null), time, NullLogger<UpdateService>.Instance, TestTexts.For<Contactor.Web.Resources.UpdatesTexts>());
             var rig = new Rig(database, folder, service, time, ownsDatabase: true);
             await service.CheckAsync(Cancel);
             service.Poll();
@@ -1025,7 +1037,7 @@ public sealed class UpdateServiceTests
         // The same installation after a restart: its database and folder, a new service.
         public static Task<Rig> StartAsync(Rig before, IReleaseSource? source = null)
         {
-            var service = new UpdateService(before.Folder, source ?? new TestWebApp.TestReleases([]), before.Database.Factory, new AppBuild("2026.11.14", null), before.Time, NullLogger<UpdateService>.Instance);
+            var service = new UpdateService(before.Folder, source ?? new TestWebApp.TestReleases([]), before.Database.Factory, new AppBuild("2026.11.14", null), before.Time, NullLogger<UpdateService>.Instance, TestTexts.For<Contactor.Web.Resources.UpdatesTexts>());
             return Task.FromResult(new Rig(before.Database, before.Folder, service, before.Time, ownsDatabase: false));
         }
 

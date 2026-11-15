@@ -1,4 +1,6 @@
 using System.Reflection;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web;
 
@@ -19,10 +21,20 @@ public sealed record AppBuild(string Version, string? Commit)
 
     public bool IsRelease => Version != Development;
 
-    /// <summary>How the app shows it: "Version 2026.11.4 · 1fdaf34", or "Development version · 1fdaf34".</summary>
-    public string Text => IsRelease
-        ? $"Version {Version}{(ShortCommit is { } commit ? $" · {commit}" : "")}"
-        : $"Development version{(ShortCommit is { } dev ? $" · {dev}" : "")}";
+    /// <summary>
+    /// How the app shows it, in the app's language: "Version 2026.11.4 · 1fdaf34", or "Development version · 1fdaf34".
+    /// </summary>
+    public string Text(IStringLocalizer<CommonTexts> texts)
+    {
+        return ShortCommit is { } commit ? texts["Common.Version.Commit", Name(texts), commit].Value : Name(texts);
+    }
+
+    /// <summary>"Version 2026.11.4", or "Development version": without the commit.</summary>
+    public string Name(IStringLocalizer<CommonTexts> texts)
+    {
+        ArgumentNullException.ThrowIfNull(texts);
+        return IsRelease ? texts["Common.Version", Version] : texts["Common.Version.Development"];
+    }
 
     /// <summary>The commit shortened to 7 characters, as in the image tag <c>sha-&lt;commit&gt;</c>.</summary>
     public string? ShortCommit => Commit is { Length: > 7 } commit ? commit[..7] : Commit;

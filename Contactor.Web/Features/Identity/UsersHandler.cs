@@ -1,4 +1,6 @@
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 
@@ -15,9 +17,11 @@ public sealed class UsersHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly RelayChanges _changes;
+    private readonly IStringLocalizer<SettingsTexts> _texts;
 
-    public UsersHandler(IDbContextFactory<ContactorDbContext> dbFactory, RelayChanges changes)
+    public UsersHandler(IDbContextFactory<ContactorDbContext> dbFactory, RelayChanges changes, IStringLocalizer<SettingsTexts> texts)
     {
+        _texts = texts;
         _dbFactory = dbFactory;
         _changes = changes;
     }
@@ -36,19 +40,19 @@ public sealed class UsersHandler
         var name = displayName?.Trim() ?? "";
         if (name.Length == 0)
         {
-            return "Enter a name.";
+            return _texts["Settings.People.EnterName"];
         }
 
         if (name.Length > User.DisplayNameMaxLength)
         {
-            return $"The name can be at most {User.DisplayNameMaxLength} characters.";
+            return _texts["Settings.People.NameTooLong", User.DisplayNameMaxLength];
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var user = await db.Users.SingleOrDefaultAsync(u => u.Email == email, cancellationToken);
         if (user is null)
         {
-            return "That person no longer exists.";
+            return _texts["Settings.People.Gone"];
         }
 
         if (user.DisplayName != name)

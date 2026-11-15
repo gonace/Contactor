@@ -1,4 +1,5 @@
 @using Contactor.Web.Features.Inputs
+@inject InputsText Inputs
 
 @* An input's state as a badge: "Open", or "Closed" in green. Hidden from screen readers: the text beside it always
    says the state already. *@
@@ -8,7 +9,7 @@
 }
 else
 {
-    <span class="state @(Closed ? "closed" : null)" aria-hidden="true"><span class="dot"></span>@InputView.StateText(Closed)</span>
+    <span class="state @(Closed ? "closed" : null)" aria-hidden="true"><span class="dot"></span>@Inputs.State(Closed)</span>
 }
 
 @code {
