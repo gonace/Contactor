@@ -98,8 +98,8 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 - **Auto-off:** that it triggers, and not for relays turned on by a schedule.
 - **Identity:** valid and invalid JWT, wrong `aud`, and that the app refuses to start on a sign-in that doesn't fit its way in.
 - **CI:** the Build workflow runs `dotnet build` and `dotnet test` on every pull request to `main`, on every merge into `main` and by hand, and shows the results as a "Tests" check (`dorny/test-reporter`). A new push to a pull request cancels its older run. Run the related tests locally before pushing.
-- **While working, run only the related tests:** the tests you wrote and the tests of the code you changed (filter on those test classes or that folder's namespace), never the complete suite. The complete suite runs once, as the gate below, on the final commit; for a stack, once on its top part.
-- **While the Build workflow is disabled** (to save Actions minutes during heavy development): ignore the missing GitHub checks and don't bring them up. The gate is a full local run instead: a Release build and every test on a clean checkout of the pull request's latest commit (for a stack, its top part, with its base merged in), with the commit and the result in the pull request's description.
+- **While working, run only the related tests:** the tests you wrote and the tests of the code you changed (filter on those test classes or that folder's namespace), never the complete suite. The complete suite runs once, as the gate below, on the final commit. For a stack, it runs once on the top pull request, which holds every part below it.
+- **While the Build workflow is disabled** (to save Actions minutes during heavy development): ignore the missing GitHub checks and don't bring them up. The gate is a full local run instead: a Release build and every test on a clean checkout of the pull request's latest commit (for a stack, the top pull request's, with every part's base merged in), with the commit and the result in the pull request's description.
 
 ## Workflow
 
@@ -116,7 +116,7 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
   - the independent review covers the latest commit, and nothing it found is left open;
   - every review thread is resolved, except a thread whose finding the user explicitly decided not to act on, with that decision replied on the thread;
   - it has no `needs attention` label;
-  - GitHub shows every check done and green; while the Build workflow is disabled, the full local run (see Testing) on that commit passed instead, with the result in the pull request's description.
+  - GitHub shows every check done and green; while the Build workflow is disabled, the full local run (see Testing) on that commit passed instead, with the result in the pull request's description. In a stack, the top pull request's run counts for the parts below it.
   Check all four yourself before saying a pull request is ready; never on an agent's word or an older review.
 - A pull request with a finding or decision waiting on the user (a review finding the author disagrees with, or an open design question) gets the `needs attention` label. Remove the label once it's resolved.
 - Help the user keep the work fast and cheap: say so as soon as work is queuing up (jobs waiting on each other, overlapping files that will need merging), and propose a better order when one uses fewer tokens or queues less. Run one heavy job at a time (builds, the full test run) unless the jobs are small and independent.
