@@ -24,7 +24,7 @@ public sealed class Board
 
     /// <summary>
     /// The address set in the app (the Settings screen or the setup guide): an IP address or a host name. Null, with
-    /// <see cref="Port"/>, while the board's own settings apply (what install.sh asked for, e.g. <c>Vm201:Host</c>).
+    /// <see cref="Port"/>, while the board's own settings apply (environment variables, e.g. <c>Vm201__Host</c>).
     /// </summary>
     public string? Host { get; set; }
 

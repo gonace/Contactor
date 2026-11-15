@@ -29,9 +29,14 @@ alone, so nothing about our releases is sent anywhere else.
 1. Stop using it at once: set the two repository secrets to the reserve key. `COSIGN_PRIVATE_KEY` gets the
    contents of `contactor-reserve.key`, and `COSIGN_PASSWORD` gets its password. The Images workflow then signs
    with the reserve key.
-2. Make a new main key pair as above. Replace `contactor-main.pub` in this folder with its public half, and merge
-   that change into `main`.
+2. Make a new main key pair only, in the folder outside the repository:
+   `cosign generate-key-pair --output-key-prefix contactor-main`. Replace `contactor-main.pub` in this folder with
+   its public half, and merge that change into `main`.
 3. Set the two secrets to the new main key, and publish a release with the Images workflow.
+4. The reserve key was in the secrets, so it isn't offline anymore. Make a new reserve pair the same way
+   (`--output-key-prefix contactor-reserve`), replace `contactor-reserve.pub`, and keep its private half offline.
+
+A release signed before the change is checked with the old public key, from this folder's history in git.
 
 `scripts/images-sign.sh` signs only with a key whose public half is in this folder.
 

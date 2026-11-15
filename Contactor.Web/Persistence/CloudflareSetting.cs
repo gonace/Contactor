@@ -3,7 +3,7 @@ namespace Contactor.Web.Persistence;
 /// <summary>
 /// Cloudflare's settings as saved in the app (the setup guide): the tunnel and Cloudflare Access. One row. A setting
 /// left empty here comes from the app's settings (<c>Tunnel:Token</c>, <c>CloudflareAccess:TeamDomain</c> and
-/// <c>CloudflareAccess:Audience</c>, e.g. from <c>.env</c>), as before there was a row.
+/// <c>CloudflareAccess:Audience</c>, e.g. from environment variables), as before there was a row.
 /// </summary>
 public sealed class CloudflareSetting
 {
