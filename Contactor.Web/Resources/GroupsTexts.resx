@@ -336,4 +336,11 @@
     <value>relay {0}</value>
     <comment>A relay without a name in the group, by its number.</comment>
   </data>
+  <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
+    <value>Needs {0} to be on.</value>
+    <comment>Why a relay of a group can't be turned on: {0} is the name of the relay above it.</comment>
+  </data>
+  <data name="Groups.Refusal.NotInGroup" xml:space="preserve">
+    <value>That relay isn't in the group.</value>
+  </data>
 </root>
