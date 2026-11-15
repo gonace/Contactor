@@ -3,7 +3,10 @@ using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Features.Languages;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Inputs;
 
@@ -20,12 +23,6 @@ public sealed record InputView(int Id, int Channel, string Name, bool IsActive, 
 {
     /// <summary>The input's board.</summary>
     public int BoardId { get; init; }
-
-    /// <summary>"Closed" when the board reads the input as on, otherwise "Open".</summary>
-    public static string StateText(bool on)
-    {
-        return Input.StateText(on);
-    }
 }
 
 /// <summary>What the Input screen saves.</summary>
@@ -40,9 +37,11 @@ public sealed class InputsHandler
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardRegistry _registry;
     private readonly RelayChanges _changes;
+    private readonly IStringLocalizer<InputsTexts> _texts;
 
-    public InputsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes)
+    public InputsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes, IStringLocalizer<InputsTexts> texts)
     {
+        _texts = texts;
         _dbFactory = dbFactory;
         _registry = registry;
         _changes = changes;
@@ -76,19 +75,19 @@ public sealed class InputsHandler
         var name = settings.Name?.Trim() ?? "";
         if (name.Length == 0)
         {
-            return "Enter a name.";
+            return _texts["Inputs.Save.EnterName"];
         }
 
         if (name.Length > Input.NameMaxLength)
         {
-            return $"The name can be at most {Input.NameMaxLength} characters.";
+            return _texts["Inputs.Save.NameTooLong", Input.NameMaxLength];
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var input = await db.Inputs.SingleOrDefaultAsync(i => i.Id == settings.Id, cancellationToken);
         if (input is null || !_registry.HasInput(input.BoardId, input.Channel))
         {
-            return "The input doesn't exist.";
+            return _texts["Inputs.Missing"];
         }
 
         (input.Name, input.IsActive) = (name, settings.IsActive);
@@ -127,45 +126,71 @@ public sealed class InputsHandler
     }
 }
 
-/// <summary>The one button on Relays for inactive relays and inputs.</summary>
-public static class InactiveText
-{
-    /// <summary>"Show 2 inactive relays", "Show 1 inactive input", "Show 3 inactive" for both kinds, or "Hide inactive …".</summary>
-    public static string For(int relays, int inputs, bool shown)
-    {
-        var kind = relays > 0 && inputs > 0 ? "" : relays > 0 ? " relays" : " inputs";
-        if (shown)
-        {
-            return $"Hide inactive{kind}";
-        }
-
-        var count = relays + inputs;
-        return count == 1 ? $"Show 1 inactive{kind.TrimEnd('s')}" : $"Show {count} inactive{kind}";
-    }
-}
-
 /// <summary>An input's status line, and whether its "since" is unknown.</summary>
 public sealed record InputStatus(string Text, bool SinceUnknown);
 
-/// <summary>An input's status line: "Open since 14:02", or "Open since unknown" when the app didn't see the change.</summary>
-public static class InputStatusText
+/// <summary>
+/// The words about inputs, in the app's language: an input's state ("Closed", "Open"), its status line ("Open since
+/// 14:02"), the button for inactive relays and inputs on Relays, and what an input controls.
+/// </summary>
+public sealed class InputsText
 {
-    /// <summary>Why "since" can be unknown, for the ⓘ next to it.</summary>
-    public const string WhyUnknown =
-        "The board only tells the app what an input reads now, not since when. The app hasn't seen this input change since it was installed or last had no contact with the board for a while, e.g. after a crash or a power cut.";
+    private readonly IStringLocalizer<InputsTexts> _texts;
+    private readonly RelayStatusText _relayStatus;
 
+    public InputsText(IStringLocalizer<InputsTexts> texts, RelayStatusText relayStatus)
+    {
+        _texts = texts;
+        _relayStatus = relayStatus;
+    }
+
+    /// <summary>Why "since" can be unknown, for the ⓘ next to it.</summary>
+    public string WhyUnknown => _texts["Inputs.WhyUnknown"];
+
+    /// <summary>
+    /// How the events name an input whose row is gone, e.g. one of a removed board. Its id is not the number the
+    /// screens show, and its channel is gone with its row.
+    /// </summary>
+    public string Unknown => _texts["Inputs.Unknown"];
+
+    /// <summary>
+    /// An input is an electrical contact, so it is "Closed" (the board reads it as on) or "Open": the same words for
+    /// every input, on every screen and in Events.
+    /// </summary>
+    public string State(bool on)
+    {
+        return _texts[on ? "Inputs.Closed" : "Inputs.Open"];
+    }
+
+    /// <summary>"Show 2 inactive relays", "Show 1 inactive input", "Show 3 inactive" for both kinds, or "Hide inactive …".</summary>
+    public string Inactive(int relays, int inputs, bool shown)
+    {
+        var (hide, show) = relays > 0 && inputs > 0 ? ("Inputs.Hide.Both", "Inputs.Show.Both")
+            : relays > 0 ? ("Inputs.Hide.Relays", "Inputs.Show.Relays")
+            : ("Inputs.Hide.Inputs", "Inputs.Show.Inputs");
+        return shown ? _texts[hide] : _texts.Plural(show, relays + inputs);
+    }
+
+    /// <summary>"Group: Fan heater" or "Relay 4: Lighting", by the relay's channel.</summary>
+    public string Label(InputActionTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return target.GroupId is not null
+            ? _texts["Inputs.Target.Group", target.Name]
+            : _texts["Inputs.Target.Relay", target.Channel ?? 0, target.Name];
+    }
+
+    /// <summary>An input's status line: "Open since 14:02", or "Open since unknown" when the app didn't see the change.</summary>
     /// <param name="input">The input, with its latest logged change.</param>
     /// <param name="on">What the board reads now: on is closed.</param>
     /// <param name="connected">Whether the app has contact with the board now.</param>
     /// <param name="nowLocal">Now, in local time.</param>
     /// <param name="toLocal">Turns a UTC time into local time.</param>
-    /// <param name="relayStatus">The words of a relay's status, whose times an input's shares.</param>
-    public static InputStatus For(RelayStatusText relayStatus, InputView input, bool on, bool connected, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
+    public InputStatus Status(InputView input, bool on, bool connected, DateTime nowLocal, Func<DateTime, DateTime> toLocal)
     {
-        ArgumentNullException.ThrowIfNull(relayStatus);
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(toLocal);
-        var state = InputView.StateText(on);
+        var state = State(on);
 
         // The board reports a change the log doesn't have yet: the page redraws on the board's status a moment before
         // the change is logged. Just the state, until it is. Without contact the state shown may be stale, so not then.
@@ -176,7 +201,7 @@ public static class InputStatusText
 
         // Known for a change to the state the board reports now, which the app saw, with no long gap after it.
         return input.LastChange is { } change && change.On == on && change.Known
-            ? new InputStatus($"{state} since {relayStatus.When(toLocal(change.TimestampUtc), nowLocal)}", false)
-            : new InputStatus($"{state} since unknown", true);
+            ? new InputStatus(_texts["Inputs.Since", state, _relayStatus.When(toLocal(change.TimestampUtc), nowLocal)], false)
+            : new InputStatus(_texts["Inputs.SinceUnknown", state], true);
     }
 }

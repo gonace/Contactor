@@ -2,7 +2,9 @@ using Contactor.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Inputs;
 
@@ -10,9 +12,6 @@ namespace Contactor.Web.Features.Inputs;
 /// <param name="Channel">A relay's channel on the board, the number the screens show; null for a group.</param>
 public sealed record InputActionTarget(int? RelayId, int? Channel, int? GroupId, string Name)
 {
-    /// <summary>"Group: Fan heater" or "Relay 4: Lighting", by the relay's channel.</summary>
-    public string Label => GroupId is not null ? $"Group: {Name}" : $"Relay {Channel}: {Name}";
-
     /// <summary>
     /// Tells relays and groups apart on a page ("group:2", "relay:4"): names aren't unique, so two groups with one name
     /// must still have different keys.
@@ -43,9 +42,13 @@ public sealed class InputActionsHandler
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardRegistry _registry;
     private readonly RelayChanges _changes;
+    private readonly IStringLocalizer<InputsTexts> _texts;
+    private readonly InputsText _inputText;
 
-    public InputActionsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes)
+    public InputActionsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes, IStringLocalizer<InputsTexts> texts, InputsText inputText)
     {
+        _texts = texts;
+        _inputText = inputText;
         _dbFactory = dbFactory;
         _registry = registry;
         _changes = changes;
@@ -150,7 +153,7 @@ public sealed class InputActionsHandler
         var input = await db.Inputs.AsNoTracking().Where(i => i.Id == inputId).Select(i => new { i.BoardId, i.Channel }).SingleOrDefaultAsync(cancellationToken);
         if (input is null || !_registry.HasInput(input.BoardId, input.Channel))
         {
-            return "The input doesn't exist.";
+            return _texts["Inputs.Missing"];
         }
 
         // Checked against the database, not the page: a relay may have joined a group since the page was opened. Only
@@ -167,7 +170,7 @@ public sealed class InputActionsHandler
 
             if (seen.Any(t => t.IsSame(row.Target)))
             {
-                return $"{row.Target.Label} is in the list twice.";
+                return _texts["Inputs.Save.Twice", _inputText.Label(row.Target)];
             }
 
             seen.Add(row.Target);
@@ -182,7 +185,7 @@ public sealed class InputActionsHandler
         if (target.GroupId is { } groupId)
         {
             var groupBoard = await db.RelayGroups.Where(g => g.Id == groupId).Select(g => (int?)g.BoardId).SingleOrDefaultAsync(cancellationToken);
-            return groupBoard is { } other && other != boardId ? "That group is on another board: an input only controls its own board's." : "That group no longer exists.";
+            return _texts[groupBoard is { } other && other != boardId ? "Inputs.Save.GroupOtherBoard" : "Inputs.Save.GroupGone"];
         }
 
         var relay = target.RelayId is { } relayId
@@ -190,12 +193,12 @@ public sealed class InputActionsHandler
             : null;
         if (relay is not null && relay.BoardId != boardId)
         {
-            return "That relay is on another board: an input only controls its own board's.";
+            return _texts["Inputs.Save.RelayOtherBoard"];
         }
 
-        return relay is not null && _registry.HasRelay(relay.BoardId, relay.Channel) ? $"Relay {relay.Channel} is in a group now: add the group instead."
-            : target.Channel is { } shown ? $"The board has no relay {shown}."
-            : "The board has no such relay.";
+        return relay is not null && _registry.HasRelay(relay.BoardId, relay.Channel) ? _texts["Inputs.Save.RelayInGroup", relay.Channel]
+            : target.Channel is { } shown ? _texts["Inputs.Save.NoRelay", shown]
+            : _texts["Inputs.Save.NoSuchRelay"];
     }
 
     // The board's groups, then its relays in no group that it has (by their channels).

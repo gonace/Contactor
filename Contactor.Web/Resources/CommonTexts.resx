@@ -173,4 +173,23 @@
     <value>All events</value>
     <comment>A link to the Events screen.</comment>
   </data>
+  <data name="Common.Version" xml:space="preserve">
+    <value>Version {0}</value>
+    <comment>The running release, e.g. "Version 2026.11.4".</comment>
+  </data>
+  <data name="Common.Version.Development" xml:space="preserve">
+    <value>Development version</value>
+    <comment>A build that isn't a release.</comment>
+  </data>
+  <data name="Common.Version.Commit" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>The version and the commit it was built from, e.g. "Version 2026.11.4 · 1fdaf34".</comment>
+  </data>
+  <data name="Common.Download" xml:space="preserve">
+    <value>Download</value>
+    <comment>Downloads a file: a backup or an update's log.</comment>
+  </data>
+  <data name="Common.Saved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
 </root>

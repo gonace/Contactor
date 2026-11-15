@@ -512,7 +512,7 @@ public sealed partial class RelayChannelTests
         Assert.Null(error);
         var handler = database.Services.GetRequiredService<InputActionsHandler>();
         var targets = await handler.TargetsAsync(input, Cancel);
-        Assert.Equal(["Group: Heater", "Relay 3: Relay 3", "Relay 4: Relay 4"], targets.Select(t => t.Label));
+        Assert.Equal(["Group: Heater", "Relay 3: Relay 3", "Relay 4: Relay 4"], targets.Select(TestTexts.Inputs.Label));
         Assert.Null(await handler.SaveAsync(
             input,
             [

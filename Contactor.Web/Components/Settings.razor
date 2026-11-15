@@ -15,13 +15,14 @@
 @inject LocalClock Clock
 @inject BoardTrafficSetting Debugging
 @inject AppLanguage Language
+@inject IStringLocalizer<SettingsTexts> Texts
 @inject RelayStatusText RelayStatus
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Settings"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>Settings</h1>
+        <h1>@Common["Common.Screen.Settings"]</h1>
     </header>
 
     <main class="content">
@@ -31,21 +32,21 @@
         {
             @* One board: its card as it always was. *@
             <div class="board-stack">
-                <BoardForm BoardId="only.BoardId" Title="Relay board" @key="only.BoardId" />
+                <BoardForm BoardId="only.BoardId" Title="@Common["Common.Screen.RelayBoard"]" @key="only.BoardId" />
                 @AddBoard
             </div>
         }
         else
         {
             <section class="card">
-                <h2>Relay boards</h2>
+                <h2>@Texts["Settings.Boards"]</h2>
                 @if (Boards.Count == 0)
                 {
-                    <p class="hint">There's no relay board in Contactor. Add one to switch its relays here.</p>
+                    <p class="hint">@Common["Common.NoBoard"]</p>
                 }
                 else
                 {
-                    <p class="hint">Tap a board to change its name, address or login, or to remove it.</p>
+                    <p class="hint">@Texts["Settings.Boards.Hint"]</p>
                     <div class="board-rows">
                         @foreach (var board in Boards)
                         {
@@ -73,8 +74,8 @@
         }
 
         <section class="card">
-            <h2>People</h2>
-            <p class="hint">The names shown in the app and under Events.</p>
+            <h2>@Texts["Settings.People"]</h2>
+            <p class="hint">@Texts["Settings.People.Hint"]</p>
             @foreach (var person in _people)
             {
                 <form class="person" @key="person.Email" @onsubmit="() => RenameAsync(person)">
@@ -95,15 +96,15 @@
         </section>
 
         <section class="card">
-            <h2>Backups</h2>
-            <p class="hint">The app copies everything every night at 02:30 and keeps the latest 14. Download one now and then and keep it somewhere else.</p>
+            <h2>@Texts["Settings.Backups"]</h2>
+            <p class="hint">@Texts["Settings.Backups.Hint"]</p>
             @if (_latest is { } latest)
             {
-                <p class="latest">Latest: @RelayStatus.When(Clock.ToLocal(latest.LastWriteTimeUtc), Clock.Now) · @Size(latest.Length)</p>
+                <p class="latest">@Texts["Settings.Backups.Latest", RelayStatus.When(Clock.ToLocal(latest.LastWriteTimeUtc), Clock.Now), Size(latest.Length)]</p>
             }
             else
             {
-                <p class="latest">No copy yet.</p>
+                <p class="latest">@Texts["Settings.Backups.None"]</p>
             }
 
             @if (_backupMessage is not null)
@@ -112,21 +113,21 @@
             }
 
             <div class="buttons">
-                <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">Make a copy now</button>
+                <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">@Texts["Settings.Backups.Make"]</button>
                 @if (_latest is not null)
                 {
-                    <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">Download</a>
+                    <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">@Common["Common.Download"]</a>
                 }
             </div>
         </section>
 
         <section class="card">
-            <h2>Debugging</h2>
+            <h2>@Texts["Settings.Debugging"]</h2>
             <label for="debugging" class="check">
                 <input id="debugging" type="checkbox" checked="@_debugging" disabled="@(_user is null)" @onchange="SetDebuggingAsync" />
-                <span>Show the traffic to the relay board</span>
+                <span>@Texts["Settings.Debugging.Check"]</span>
             </label>
-            <p class="hint">Only for you. Every message to and from the board shows for a moment at the bottom of the page, and the whole list under the Debug tab.</p>
+            <p class="hint">@Texts["Settings.Debugging.Hint"]</p>
         </section>
     </main>
 
@@ -139,15 +140,15 @@
     private IReadOnlyList<LiveBoard> Boards => Registry.All;
 
     // "+ Add a board": the setup guide's board steps (BoardNew).
-    private static RenderFragment AddBoard => __builder =>
+    private RenderFragment AddBoard => __builder =>
     {
         <a href="board/new" class="add-board">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            Add a board
+            @Common["Common.AddBoard"]
         </a>
     };
 
-    private static readonly string VersionText = AppBuild.Current.Text;
+    private string VersionText => AppBuild.Current.Text(Common);
 
     private SignedInUser? _user;
     private List<Person> _people = [];
@@ -176,21 +177,23 @@
     }
 
     // "Velleman VM201 · 8 relays · 192.168.1.50"
-    private static string BoardLine(LiveBoard board)
+    private string BoardLine(LiveBoard board)
     {
-        var relays = board.Capabilities.RelayCount;
-        var line = $"{board.Model?.Name ?? "No model chosen"} · {relays} {(relays == 1 ? "relay" : "relays")}";
-        return board.Endpoint.HasHost ? $"{line} · {board.Endpoint.Host}" : line;
+        var model = board.Model?.Name ?? Common["Common.NoModel"];
+        var relays = Texts.Plural("Settings.Relays", board.Capabilities.RelayCount);
+        return board.Endpoint.HasHost
+            ? Texts["Settings.BoardLine.Host", model, relays, board.Endpoint.Host]
+            : Texts["Settings.BoardLine", model, relays];
     }
 
     private string StatusText(LiveBoard board)
     {
         var state = board.State;
-        return state.IsConnected ? "Online"
-            : !board.Endpoint.HasHost ? "No address yet"
-            : !state.HasAnswered ? "No contact yet"
-            : state.LastContactUtc is { } last ? $"No contact since {RelayStatus.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)}"
-            : "No contact";
+        return state.IsConnected ? Texts["Settings.Online"]
+            : !board.Endpoint.HasHost ? Texts["Settings.NoAddress"]
+            : !state.HasAnswered ? Texts["Settings.NoContactYet"]
+            : state.LastContactUtc is { } last ? Texts["Settings.NoContactSince", RelayStatus.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)]
+            : Texts["Settings.NoContact"];
     }
 
     private async Task LoadPeopleAsync()
@@ -210,7 +213,7 @@
         try
         {
             var error = await Users.RenameAsync(person.Email, person.Name, CancellationToken.None);
-            (person.Message, person.Saved) = error is null ? ("Saved.", true) : (error, false);
+            (person.Message, person.Saved) = error is null ? (Common["Common.Saved"].Value, true) : (error, false);
             if (error is null)
             {
                 person.Name = person.Name.Trim();
@@ -234,11 +237,11 @@
         {
             await Backup.RunAsync(CancellationToken.None);
             _latest = await Backup.LatestAsync(CancellationToken.None);
-            (_backupMessage, _backupSaved) = ("Copy made.", true);
+            (_backupMessage, _backupSaved) = (Texts["Settings.Backups.Made"].Value, true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
         {
-            (_backupMessage, _backupSaved) = ("The copy couldn't be made. Try again in a while.", false);
+            (_backupMessage, _backupSaved) = (Texts["Settings.Backups.Failed"].Value, false);
         }
         finally
         {
@@ -258,11 +261,11 @@
         await Debugging.SetAsync(_user.Email, _debugging, CancellationToken.None);
     }
 
-    private static string Size(long bytes)
+    private string Size(long bytes)
     {
         return bytes < 1024 * 1024
-            ? $"{Math.Max(1, bytes / 1024).ToString(CultureInfo.InvariantCulture)} kB"
-            : $"{(bytes / (1024.0 * 1024.0)).ToString("0.0", CultureInfo.InvariantCulture)} MB";
+            ? Texts["Settings.Kilobytes", Math.Max(1, bytes / 1024)]
+            : Texts["Settings.Megabytes", bytes / (1024.0 * 1024.0)];
     }
 
     // From a board's read loop: the list's online and no-contact lines.

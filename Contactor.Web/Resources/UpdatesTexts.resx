@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Updates.Title" xml:space="preserve">
+    <value>Updates</value>
+  </data>
+  <data name="Updates.Development" xml:space="preserve">
+    <value>This is a development version of Contactor. It isn't updated from here.</value>
+  </data>
+  <data name="Updates.Updating" xml:space="preserve">
+    <value>Updating from {0} to {1}.</value>
+    <comment>{0} and {1} are versions, in bold.</comment>
+  </data>
+  <data name="Updates.Step.Now" xml:space="preserve">
+    <value>{0}…</value>
+    <comment>The step under way.</comment>
+  </data>
+  <data name="Updates.Step.Download" xml:space="preserve">
+    <value>Downloading {0}</value>
+  </data>
+  <data name="Updates.Step.Verify" xml:space="preserve">
+    <value>Checking that it's ours</value>
+  </data>
+  <data name="Updates.Step.Waiting" xml:space="preserve">
+    <value>Waiting for the relays to finish switching</value>
+  </data>
+  <data name="Updates.Step.Backup" xml:space="preserve">
+    <value>Backing up</value>
+  </data>
+  <data name="Updates.Step.Restart" xml:space="preserve">
+    <value>Restarting</value>
+  </data>
+  <data name="Updates.Step.Check" xml:space="preserve">
+    <value>Checking the new version</value>
+  </data>
+  <data name="Updates.StartedBy" xml:space="preserve">
+    <value>Started by {0} at {1}. The relays stay as they are.</value>
+  </data>
+  <data name="Updates.Started" xml:space="preserve">
+    <value>Started at {0}. The relays stay as they are.</value>
+  </data>
+  <data name="Updates.Newest" xml:space="preserve">
+    <value>You have the newest version, {0}.</value>
+    <comment>{0} is the version, in bold.</comment>
+  </data>
+  <data name="Updates.Have" xml:space="preserve">
+    <value>You have version {0}.</value>
+    <comment>{0} is the version, in bold.</comment>
+  </data>
+  <data name="Updates.ShowLog" xml:space="preserve">
+    <value>Show what happened</value>
+  </data>
+  <data name="Updates.Log" xml:space="preserve">
+    <value>What happened</value>
+  </data>
+  <data name="Updates.NoLog" xml:space="preserve">
+    <value>There is no log of this update.</value>
+  </data>
+  <data name="Updates.Available" xml:space="preserve">
+    <value>Version {0} is available</value>
+  </data>
+  <data name="Updates.WhatsNew" xml:space="preserve">
+    <value>What's new</value>
+  </data>
+  <data name="Updates.DayFormat" xml:space="preserve">
+    <value>d MMMM</value>
+    <comment>A .NET date format for a release's day, e.g. "20 November". Not a sentence: change only the order and the parts.</comment>
+  </data>
+  <data name="Updates.NoHelper" xml:space="preserve">
+    <value>Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose. Installed with the install command? Run it again: it adds what "Update now" needs.</value>
+  </data>
+  <data name="Updates.NoHelper.Short" xml:space="preserve">
+    <value>Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose.</value>
+  </data>
+  <data name="Updates.Now" xml:space="preserve">
+    <value>Update now</value>
+  </data>
+  <data name="Updates.Now.Hint" xml:space="preserve">
+    <value>Contactor restarts. That takes about a minute. The relays stay as they are, and schedules catch up afterwards.</value>
+  </data>
+  <data name="Updates.Ask" xml:space="preserve">
+    <value>Update to {0}?</value>
+  </data>
+  <data name="Updates.Ask.Restart" xml:space="preserve">
+    <value>Contactor restarts. That takes about a minute, and the app doesn't answer meanwhile.</value>
+  </data>
+  <data name="Updates.Ask.Relays" xml:space="preserve">
+    <value>The relays stay as they are. Schedules and auto-offs catch up once it's back.</value>
+  </data>
+  <data name="Updates.Update" xml:space="preserve">
+    <value>Update</value>
+  </data>
+  <data name="Updates.Splash.Title" xml:space="preserve">
+    <value>Contactor is updating</value>
+  </data>
+  <data name="Updates.Splash.ToNew" xml:space="preserve">
+    <value>To a new version. This takes about a minute, and the page comes back by itself.</value>
+  </data>
+  <data name="Updates.Splash.To" xml:space="preserve">
+    <value>To version {0}. This takes about a minute, and the page comes back by itself.</value>
+  </data>
+  <data name="Updates.NewVersion" xml:space="preserve">
+    <value>the new version</value>
+  </data>
+  <data name="Updates.VersionBefore" xml:space="preserve">
+    <value>the version before</value>
+  </data>
+  <data name="Updates.NothingChanged" xml:space="preserve">
+    <value>Nothing was changed.</value>
+  </data>
+  <data name="Updates.NothingChanged.TryAgain" xml:space="preserve">
+    <value>Nothing was changed. Try again.</value>
+  </data>
+  <data name="Updates.NothingChanged.Later" xml:space="preserve">
+    <value>Nothing was changed. Try again later.</value>
+  </data>
+  <data name="Updates.NoAnswer" xml:space="preserve">
+    <value>The update didn't start</value>
+  </data>
+  <data name="Updates.NoAnswer.Text" xml:space="preserve">
+    <value>The update helper on this machine didn't answer. Nothing was changed. Run the install command again to repair it, then try again.</value>
+  </data>
+  <data name="Updates.Stale" xml:space="preserve">
+    <value>The update to {0} didn't finish</value>
+  </data>
+  <data name="Updates.Done" xml:space="preserve">
+    <value>Updated to {0}</value>
+  </data>
+  <data name="Updates.Done.At" xml:space="preserve">
+    <value>At {0}.</value>
+  </data>
+  <data name="Updates.Done.AtBy" xml:space="preserve">
+    <value>At {0}, by {1}.</value>
+  </data>
+  <data name="Updates.WentBack" xml:space="preserve">
+    <value>The update to {0} didn't work</value>
+  </data>
+  <data name="Updates.WentBack.Text" xml:space="preserve">
+    <value>Contactor went back to {0} at {1}. Nothing was lost.</value>
+  </data>
+  <data name="Updates.Download" xml:space="preserve">
+    <value>Couldn't download {0}</value>
+  </data>
+  <data name="Updates.Download.Text" xml:space="preserve">
+    <value>Nothing was changed. Check the internet connection and try again.</value>
+  </data>
+  <data name="Updates.Signature" xml:space="preserve">
+    <value>{0} didn't pass the check that it's ours</value>
+    <comment>{0} is a version, or Updates.NewVersion with a capital.</comment>
+  </data>
+  <data name="Updates.Signature.Text" xml:space="preserve">
+    <value>So it wasn't installed. Nothing was changed. Try again later.</value>
+  </data>
+  <data name="Updates.Space" xml:space="preserve">
+    <value>Not enough room for {0}</value>
+  </data>
+  <data name="Updates.Space.Needs" xml:space="preserve">
+    <value>Nothing was changed. The update needs {0} of free disk space, and there's {1}. Make room and try again.</value>
+  </data>
+  <data name="Updates.Space.Text" xml:space="preserve">
+    <value>Nothing was changed. Make room on the disk and try again.</value>
+  </data>
+  <data name="Updates.Gigabytes" xml:space="preserve">
+    <value>{0:0.0} GB</value>
+  </data>
+  <data name="Updates.Backup" xml:space="preserve">
+    <value>Couldn't back up before updating</value>
+  </data>
+  <data name="Updates.Backup.Text" xml:space="preserve">
+    <value>Nothing was changed. Try again in a while.</value>
+  </data>
+  <data name="Updates.Cancelled" xml:space="preserve">
+    <value>The update was cancelled</value>
+  </data>
+  <data name="Updates.Switching" xml:space="preserve">
+    <value>The update was stopped because the relays were still switching</value>
+  </data>
+  <data name="Updates.Switching.Text" xml:space="preserve">
+    <value>Try again later. Nothing was changed.</value>
+  </data>
+  <data name="Updates.Interrupted" xml:space="preserve">
+    <value>The update to {0} was interrupted</value>
+  </data>
+  <data name="Updates.Failed" xml:space="preserve">
+    <value>The update to {0} didn't start</value>
+  </data>
+  <data name="Updates.NotYet" xml:space="preserve">
+    <value>{0} can't be downloaded yet</value>
+  </data>
+  <data name="Updates.CheckFailedSince" xml:space="preserve">
+    <value>Couldn't check for updates. Last checked {0} at {1}.</value>
+    <comment>{0} is a day: Updates.Today, Updates.Yesterday or a date.</comment>
+  </data>
+  <data name="Updates.CheckFailed" xml:space="preserve">
+    <value>Couldn't check for updates.</value>
+  </data>
+  <data name="Updates.Checked" xml:space="preserve">
+    <value>Checked {0} at {1}.</value>
+    <comment>{0} is a day: Updates.Today, Updates.Yesterday or a date.</comment>
+  </data>
+  <data name="Updates.Today" xml:space="preserve">
+    <value>today</value>
+  </data>
+  <data name="Updates.Yesterday" xml:space="preserve">
+    <value>yesterday</value>
+  </data>
+  <data name="Updates.Refused.Development" xml:space="preserve">
+    <value>This is a development version: it isn't updated from here.</value>
+  </data>
+  <data name="Updates.Refused.NoHelper" xml:space="preserve">
+    <value>Contactor can't update itself on this machine.</value>
+  </data>
+  <data name="Updates.Refused.Running" xml:space="preserve">
+    <value>An update is already under way.</value>
+  </data>
+  <data name="Updates.Refused.Newest" xml:space="preserve">
+    <value>You have the newest version.</value>
+  </data>
+  <data name="Updates.Refused.Switching" xml:space="preserve">
+    <value>A group is starting or running on. Update once it's done.</value>
+  </data>
+</root>

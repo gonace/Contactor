@@ -1,5 +1,6 @@
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Resources;
@@ -24,7 +25,9 @@ internal static class TestTexts
 
     public static ScheduleText Schedules { get; } = new(For<SchedulesTexts>());
 
-    public static EventText Events { get; } = new(For<EventsTexts>(), Schedules);
+    public static InputsText Inputs { get; } = new(For<InputsTexts>(), RelayStatus);
+
+    public static EventText Events { get; } = new(For<EventsTexts>(), Schedules, Inputs);
 
     /// <summary>The Events screen's handler, for what it says without its database: the days' headings.</summary>
     public static EventsHandler EventsHandler { get; } = new(null!, null!, Events, For<EventsTexts>());

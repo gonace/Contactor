@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Inputs.Closed" xml:space="preserve">
+    <value>Closed</value>
+    <comment>An input that the board reads as on.</comment>
+  </data>
+  <data name="Inputs.Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="Inputs.Unknown" xml:space="preserve">
+    <value>An input</value>
+    <comment>An input that is no longer on the board, in place of its name.</comment>
+  </data>
+  <data name="Inputs.Since" xml:space="preserve">
+    <value>{0} since {1}</value>
+    <comment>{0} is Inputs.Closed or Inputs.Open, {1} a time.</comment>
+  </data>
+  <data name="Inputs.SinceUnknown" xml:space="preserve">
+    <value>{0} since unknown</value>
+  </data>
+  <data name="Inputs.WhyUnknown" xml:space="preserve">
+    <value>The board only tells the app what an input reads now, not since when. The app hasn't seen this input change since it was installed or last had no contact with the board for a while, e.g. after a crash or a power cut.</value>
+  </data>
+  <data name="Inputs.Hide.Both" xml:space="preserve">
+    <value>Hide inactive</value>
+  </data>
+  <data name="Inputs.Hide.Relays" xml:space="preserve">
+    <value>Hide inactive relays</value>
+  </data>
+  <data name="Inputs.Hide.Inputs" xml:space="preserve">
+    <value>Hide inactive inputs</value>
+  </data>
+  <data name="Inputs.Show.Both_One" xml:space="preserve">
+    <value>Show {0} inactive</value>
+  </data>
+  <data name="Inputs.Show.Both_Other" xml:space="preserve">
+    <value>Show {0} inactive</value>
+  </data>
+  <data name="Inputs.Show.Relays_One" xml:space="preserve">
+    <value>Show {0} inactive relay</value>
+  </data>
+  <data name="Inputs.Show.Relays_Other" xml:space="preserve">
+    <value>Show {0} inactive relays</value>
+  </data>
+  <data name="Inputs.Show.Inputs_One" xml:space="preserve">
+    <value>Show {0} inactive input</value>
+  </data>
+  <data name="Inputs.Show.Inputs_Other" xml:space="preserve">
+    <value>Show {0} inactive inputs</value>
+  </data>
+  <data name="Inputs.Target.Group" xml:space="preserve">
+    <value>Group: {0}</value>
+    <comment>A group an input controls.</comment>
+  </data>
+  <data name="Inputs.Target.Relay" xml:space="preserve">
+    <value>Relay {0}: {1}</value>
+    <comment>A relay an input controls: its number and name.</comment>
+  </data>
+  <data name="Inputs.Missing" xml:space="preserve">
+    <value>The input doesn't exist.</value>
+  </data>
+  <data name="Inputs.NameLabel" xml:space="preserve">
+    <value>INPUT {0} · NAME</value>
+  </data>
+  <data name="Inputs.Active" xml:space="preserve">
+    <value>{0}: shown in the list. Untick it for inputs that aren't wired to anything.</value>
+    <comment>{0} is Inputs.ActiveWord, in bold.</comment>
+  </data>
+  <data name="Inputs.ActiveWord" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="Inputs.Now" xml:space="preserve">
+    <value>NOW</value>
+  </data>
+  <data name="Inputs.WhyUnknownLabel" xml:space="preserve">
+    <value>Why is the time unknown?</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Inputs.Stale" xml:space="preserve">
+    <value>No contact with the relay board: this may be out of date.</value>
+  </data>
+  <data name="Inputs.Controls" xml:space="preserve">
+    <value>Groups and relays</value>
+  </data>
+  <data name="Inputs.Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Inputs.AddLabel" xml:space="preserve">
+    <value>Add a group or relay</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Inputs.NothingToAdd" xml:space="preserve">
+    <value>There is nothing more to add: this input controls every group and relay.</value>
+  </data>
+  <data name="Inputs.Add" xml:space="preserve">
+    <value>+ Add a group or relay</value>
+  </data>
+  <data name="Inputs.Controls.Hint" xml:space="preserve">
+    <value>Like pressing the button at that moment: a group starts and stops in its order, with its run-on, and auto-off still applies. Only changes the app sees as they happen do anything.</value>
+  </data>
+  <data name="Inputs.NoEvents" xml:space="preserve">
+    <value>This input hasn't changed yet.</value>
+  </data>
+  <data name="Inputs.Closes" xml:space="preserve">
+    <value>CLOSES</value>
+  </data>
+  <data name="Inputs.Opens" xml:space="preserve">
+    <value>OPENS</value>
+  </data>
+  <data name="Inputs.WhenCloses" xml:space="preserve">
+    <value>{0}: when the input closes</value>
+    <comment>Read out by screen readers: {0} is a group or relay.</comment>
+  </data>
+  <data name="Inputs.WhenOpens" xml:space="preserve">
+    <value>{0}: when the input opens</value>
+  </data>
+  <data name="Inputs.TurnOn" xml:space="preserve">
+    <value>Turn on</value>
+  </data>
+  <data name="Inputs.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+  </data>
+  <data name="Inputs.Nothing" xml:space="preserve">
+    <value>Nothing</value>
+  </data>
+  <data name="Inputs.Save.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
+  </data>
+  <data name="Inputs.Save.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+  <data name="Inputs.Save.Twice" xml:space="preserve">
+    <value>{0} is in the list twice.</value>
+    <comment>{0} is a group or relay, e.g. "Relay 4: Lighting".</comment>
+  </data>
+  <data name="Inputs.Save.GroupOtherBoard" xml:space="preserve">
+    <value>That group is on another board: an input only controls its own board's.</value>
+  </data>
+  <data name="Inputs.Save.GroupGone" xml:space="preserve">
+    <value>That group no longer exists.</value>
+  </data>
+  <data name="Inputs.Save.RelayOtherBoard" xml:space="preserve">
+    <value>That relay is on another board: an input only controls its own board's.</value>
+  </data>
+  <data name="Inputs.Save.RelayInGroup" xml:space="preserve">
+    <value>Relay {0} is in a group now: add the group instead.</value>
+  </data>
+  <data name="Inputs.Save.NoRelay" xml:space="preserve">
+    <value>The board has no relay {0}.</value>
+  </data>
+  <data name="Inputs.Save.NoSuchRelay" xml:space="preserve">
+    <value>The board has no such relay.</value>
+  </data>
+</root>

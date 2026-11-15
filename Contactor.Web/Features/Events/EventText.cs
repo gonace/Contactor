@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Contactor.Web.Components;
+using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
 using Contactor.Web.Resources;
@@ -42,11 +43,13 @@ public sealed class EventText
 {
     private readonly IStringLocalizer<EventsTexts> _texts;
     private readonly ScheduleText _schedules;
+    private readonly InputsText _inputs;
 
-    public EventText(IStringLocalizer<EventsTexts> texts, ScheduleText schedules)
+    public EventText(IStringLocalizer<EventsTexts> texts, ScheduleText schedules, InputsText inputs)
     {
         _texts = texts;
         _schedules = schedules;
+        _inputs = inputs;
     }
 
     /// <summary>Why an input's change has "time unknown" on the Events screen.</summary>
@@ -79,7 +82,7 @@ public sealed class EventText
         var isPerson = IsPersonActor(entry.Actor);
         var byInput = EventActors.TryInput(entry.Actor, out var inputId);
         var who = isPerson ? personName ?? entry.Actor
-            : byInput ? personName ?? Input.Unknown
+            : byInput ? personName ?? _inputs.Unknown
             : IsAboutBoard(entry) ? boardName ?? _texts["Events.Who.Board"]
             : WhoFor(entry);
         var badge = byInput ? "I"
@@ -103,8 +106,8 @@ public sealed class EventText
     // One the app only noticed after a gap has its time marked unknown.
     private EventView InputChange(EventLogEntry entry, string? inputName)
     {
-        var name = inputName ?? Input.Unknown;
-        return new EventView(false, "I", $"{name}:", Line("Events.Input", Input.StateText(Bool(entry.Details, "on") == true)), null, TimeUnknown: InputNoticed(entry.Details));
+        var name = inputName ?? _inputs.Unknown;
+        return new EventView(false, "I", $"{name}:", Line("Events.Input", _inputs.State(Bool(entry.Details, "on") == true)), null, TimeUnknown: InputNoticed(entry.Details));
     }
 
     // An update from Settings: "John started the update to 2026.11.20", "Contactor updated to 2026.11.20", the red
@@ -241,7 +244,7 @@ public sealed class EventText
             EventActors.AutoOff => _texts["Events.Short.AutoOff"],
             EventActors.External => _texts["Events.Short.Outside"],
             EventActors.System => _texts["Events.Short.System"],
-            _ when EventActors.TryInput(actor, out _) => personName ?? Input.Unknown,
+            _ when EventActors.TryInput(actor, out _) => personName ?? _inputs.Unknown,
             _ => personName ?? actor,
         };
     }

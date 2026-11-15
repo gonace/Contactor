@@ -14,6 +14,8 @@
 @inject LocalClock Clock
 @inject NavigationManager Navigation
 @inject RelayStatusText StatusText
+@inject InputsText InputsText
+@inject IStringLocalizer<InputsTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", _input?.Name ?? Common["Common.Screen.Input"].Value])</PageTitle>
 
@@ -21,7 +23,7 @@
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            Relays
+            @Common["Common.Screen.Relays"]
         </a>
         @if (_input is not null)
         {
@@ -33,7 +35,7 @@
     @if (_loaded && _input is null)
     {
         <main class="content">
-            <p class="missing">The input doesn't exist.</p>
+            <p class="missing">@Texts["Inputs.Missing"]</p>
         </main>
     }
     else if (_input is not null)
@@ -41,11 +43,11 @@
         <form id="input-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">INPUT @_input.Channel · NAME</label>
+                    <label for="name" class="label">@Texts["Inputs.NameLabel", _input.Channel]</label>
                     <input id="name" type="text" maxlength="@Input.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                     <label for="active" class="check">
                         <input id="active" type="checkbox" @bind="_isActive" />
-                        <span><strong>Active</strong>: shown in the list. Untick it for inputs that aren't wired to anything.</span>
+                        <span><Sentence Text="@Texts["Inputs.Active"]"><Arg0><strong>@Texts["Inputs.ActiveWord"]</strong></Arg0></Sentence></span>
                     </label>
                 </div>
 
@@ -53,12 +55,12 @@
                 <section class="status @(!State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
                     <div class="now-row">
                         <div>
-                            <p class="label">NOW</p>
+                            <p class="label">@Texts["Inputs.Now"]</p>
                             <p class="now">
                                 @(State.HasAnswered ? Status.Text : StatusText.Waiting)
                                 @if (State.HasAnswered && Status.SinceUnknown)
                                 {
-                                    <WhyUnknown Label="Why is the time unknown?" For="Id" />
+                                    <WhyUnknown Label="@Texts["Inputs.WhyUnknownLabel"]" For="Id" />
                                 }
                             </p>
                         </div>
@@ -66,19 +68,19 @@
                     </div>
                     @if (State.HasAnswered && !State.IsConnected)
                     {
-                        <p class="hint">No contact with the relay board: this may be out of date.</p>
+                        <p class="hint">@Texts["Inputs.Stale"]</p>
                     }
                 </section>
 
                 @* The relays and groups this input switches when it closes or opens. *@
                 <section class="controls">
-                    <h2>Groups and relays</h2>
+                    <h2>@Texts["Inputs.Controls"]</h2>
                     @foreach (var row in _actions)
                     {
                         <div class="control" @key="row.Target.Key">
                             <div class="control-head">
-                                <strong>@row.Target.Label</strong>
-                                <button type="button" class="remove" @onclick="() => Remove(row)">Remove</button>
+                                <strong>@InputsText.Label(row.Target)</strong>
+                                <button type="button" class="remove" @onclick="() => Remove(row)">@Texts["Inputs.Remove"]</button>
                             </div>
                             @ChoiceRow(row, closes: true)
                             @ChoiceRow(row, closes: false)
@@ -86,32 +88,32 @@
                     }
                     @if (_adding)
                     {
-                        <div class="pick" role="group" aria-label="Add a group or relay">
+                        <div class="pick" role="group" aria-label="@Texts["Inputs.AddLabel"]">
                             @if (Available.Count == 0)
                             {
-                                <p class="hint">There is nothing more to add: this input controls every group and relay.</p>
+                                <p class="hint">@Texts["Inputs.NothingToAdd"]</p>
                             }
                             @foreach (var target in Available)
                             {
-                                <button type="button" @key="target.Key" @onclick="() => Add(target)">@target.Label</button>
+                                <button type="button" @key="target.Key" @onclick="() => Add(target)">@InputsText.Label(target)</button>
                             }
                         </div>
                     }
                     else
                     {
-                        <button type="button" class="add" @onclick="() => _adding = true">+ Add a group or relay</button>
+                        <button type="button" class="add" @onclick="() => _adding = true">@Texts["Inputs.Add"]</button>
                     }
-                    <p class="hint">Like pressing the button at that moment: a group starts and stops in its order, with its run-on, and auto-off still applies. Only changes the app sees as they happen do anything.</p>
+                    <p class="hint">@Texts["Inputs.Controls.Hint"]</p>
                 </section>
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>Events</h2>
-                        <a href="events">All events</a>
+                        <h2>@Common["Common.Screen.Events"]</h2>
+                        <a href="events">@Common["Common.AllEvents"]</a>
                     </div>
                     @if (_events.Count == 0)
                     {
-                        <p class="hint">This input hasn't changed yet.</p>
+                        <p class="hint">@Texts["Inputs.NoEvents"]</p>
                     }
                     else
                     {
@@ -177,13 +179,12 @@
     private RenderFragment ChoiceRow(InputActionRow row, bool closes) => __builder =>
     {
         var current = closes ? row.WhenClosed : row.WhenOpened;
-        var when = closes ? "CLOSES" : "OPENS";
-        <div class="choice" role="group" aria-label="@($"{row.Target.Label}: when the input {when.ToLowerInvariant()}")">
-            <span class="label">@when</span>
+        <div class="choice" role="group" aria-label="@Texts[closes ? "Inputs.WhenCloses" : "Inputs.WhenOpens", InputsText.Label(row.Target)]">
+            <span class="label">@Texts[closes ? "Inputs.Closes" : "Inputs.Opens"]</span>
             <div class="seg">
-                <button type="button" aria-pressed="@(current == true ? "true" : "false")" @onclick="() => Set(row, closes, true)">Turn on</button>
-                <button type="button" aria-pressed="@(current == false ? "true" : "false")" @onclick="() => Set(row, closes, false)">Turn off</button>
-                <button type="button" aria-pressed="@(current is null ? "true" : "false")" @onclick="() => Set(row, closes, null)">Nothing</button>
+                <button type="button" aria-pressed="@(current == true ? "true" : "false")" @onclick="() => Set(row, closes, true)">@Texts["Inputs.TurnOn"]</button>
+                <button type="button" aria-pressed="@(current == false ? "true" : "false")" @onclick="() => Set(row, closes, false)">@Texts["Inputs.TurnOff"]</button>
+                <button type="button" aria-pressed="@(current is null ? "true" : "false")" @onclick="() => Set(row, closes, null)">@Texts["Inputs.Nothing"]</button>
             </div>
         </div>
     };
@@ -209,7 +210,7 @@
         _actions.Remove(row);
     }
 
-    private InputStatus Status => InputStatusText.For(StatusText, _input!, IsClosed, State.IsConnected, Clock.Now, Clock.ToLocal);
+    private InputStatus Status => InputsText.Status(_input!, IsClosed, State.IsConnected, Clock.Now, Clock.ToLocal);
 
     protected override async Task OnParametersSetAsync()
     {

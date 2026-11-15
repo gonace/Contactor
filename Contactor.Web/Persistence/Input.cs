@@ -32,23 +32,11 @@ public sealed class Input
     public bool NotifyOnClose { get; set; }
 
     /// <summary>
-    /// How the events name an input whose row is gone, e.g. one of a removed board. Its id is not the number the
-    /// screens show, and its channel is gone with its row.
+    /// The name an input is seeded with, until someone gives it one: "Input 2", after its channel. Saved as a name, so
+    /// it stays in the language it was made in.
     /// </summary>
-    public const string Unknown = "An input";
-
-    /// <summary>The name an input is seeded with, until someone gives it one: "Input 2", after its channel.</summary>
     public static string DefaultName(int channel)
     {
         return $"Input {channel}";
-    }
-
-    /// <summary>
-    /// An input is an electrical contact, so it is "Closed" (the board reads it as on) or "Open": the same words for
-    /// every input, on every screen and in Events.
-    /// </summary>
-    public static string StateText(bool on)
-    {
-        return on ? "Closed" : "Open";
     }
 }

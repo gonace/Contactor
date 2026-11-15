@@ -5,23 +5,24 @@
 @inject UpdateService Updates
 @inject LocalClock Clock
 @inject CurrentUser CurrentUser
+@inject IStringLocalizer<UpdatesTexts> Texts
 
 @* Settings → Updates: the running version, the newest release with what's new, "Update now" and how the update goes.
    The update helper on the host does the work (UpdateService). *@
 @{
-    var view = UpdateBoxView.For(Updates.Snapshot(), Clock);
+    var view = UpdateBoxView.For(Updates.Snapshot(), Clock, Texts);
 }
 <section class="card updates" aria-labelledby="updates-title">
-    <h2 id="updates-title">Updates</h2>
+    <h2 id="updates-title">@Texts["Updates.Title"]</h2>
 
     @switch (view.Kind)
     {
         case UpdateBoxKind.Development:
-            <p class="lead">This is a development version of Contactor. It isn't updated from here.</p>
+            <p class="lead">@Texts["Updates.Development"]</p>
             break;
 
         case UpdateBoxKind.Running:
-            <p class="lead">Updating from <strong>@view.From</strong> to <strong>@view.To</strong>.</p>
+            <p class="lead"><Sentence Text="@Texts["Updates.Updating"]"><Arg0><strong>@view.From</strong></Arg0><Arg1><strong>@view.To</strong></Arg1></Sentence></p>
             <ol class="steps">
                 @foreach (var step in view.Steps)
                 {
@@ -40,7 +41,7 @@
                                 <span class="later-dot"></span>
                             }
                         </span>
-                        <span>@(step.State == UpdateStepState.Now ? $"{step.Text}…" : step.Text)</span>
+                        <span>@(step.State == UpdateStepState.Now ? Texts["Updates.Step.Now", step.Text] : step.Text)</span>
                     </li>
                 }
             </ol>
@@ -55,11 +56,11 @@
             <p class="lead">
                 @if (view.Offered is null)
                 {
-                    <text>You have the newest version, <strong>@view.Running</strong>.</text>
+                    <Sentence Text="@Texts["Updates.Newest"]"><Arg0><strong>@view.Running</strong></Arg0></Sentence>
                 }
                 else
                 {
-                    <text>You have version <strong>@view.Running</strong>.</text>
+                    <Sentence Text="@Texts["Updates.Have"]"><Arg0><strong>@view.Running</strong></Arg0></Sentence>
                 }
             </p>
 
@@ -93,13 +94,13 @@
                 {
                     @if (_log is null || _logId != logId)
                     {
-                        <button type="button" class="secondary" disabled="@_busy" @onclick="() => ShowLogAsync(logId)">Show what happened</button>
+                        <button type="button" class="secondary" disabled="@_busy" @onclick="() => ShowLogAsync(logId)">@Texts["Updates.ShowLog"]</button>
                     }
                     else
                     {
                         <div class="log-head">
-                            <span>What happened</span>
-                            <a class="download" href="@UpdateEndpoints.LogLink(logId)" download data-enhance-nav="false">Download</a>
+                            <span>@Texts["Updates.Log"]</span>
+                            <a class="download" href="@UpdateEndpoints.LogLink(logId)" download data-enhance-nav="false">@Common["Common.Download"]</a>
                         </div>
                         <pre class="log" tabindex="0">@_log</pre>
                     }
@@ -110,11 +111,11 @@
             {
                 <div class="available" role="status">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
-                    Version @offered is available
+                    @Texts["Updates.Available", offered]
                 </div>
                 @if (view.WhatsNew.Count > 0)
                 {
-                    <h3 class="whats-new">What's new</h3>
+                    <h3 class="whats-new">@Texts["Updates.WhatsNew"]</h3>
                     @foreach (var release in view.WhatsNew)
                     {
                         <article class="release" @key="release.Version">
@@ -122,7 +123,7 @@
                                 <strong>@release.Version</strong>
                                 @if (release.Date is { } date)
                                 {
-                                    <span>@date.ToString("d MMMM", CultureInfo.InvariantCulture)</span>
+                                    <span>@date.ToString(Texts["Updates.DayFormat"], CultureInfo.CurrentCulture)</span>
                                 }
                             </div>
                             <ul>
@@ -136,12 +137,12 @@
                 }
                 @if (view.NoHelper)
                 {
-                    <p class="hint">Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose. Installed with the install command? Run it again: it adds what "Update now" needs.</p>
+                    <p class="hint">@Texts["Updates.NoHelper"]</p>
                 }
                 else if (view.Result is null)
                 {
-                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">Update now</button>
-                    <p class="hint">Contactor restarts. That takes about a minute. The relays stay as they are, and schedules catch up afterwards.</p>
+                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">@Texts["Updates.Now"]</button>
+                    <p class="hint">@Texts["Updates.Now.Hint"]</p>
                 }
             }
             else if (view.Kind == UpdateBoxKind.Current && view.CheckedLine is { } checkedLine)
@@ -151,7 +152,7 @@
 
             @if (view.Offered is null && view.NoHelper && view.Kind == UpdateBoxKind.Current)
             {
-                <p class="hint">Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose.</p>
+                <p class="hint">@Texts["Updates.NoHelper.Short"]</p>
             }
             break;
     }
@@ -162,16 +163,16 @@
     }
 </section>
 
-@if (_asking && UpdateBoxView.For(Updates.Snapshot(), Clock) is { Offered: { } to, CanUpdate: true })
+@if (_asking && UpdateBoxView.For(Updates.Snapshot(), Clock, Texts) is { Offered: { } to, CanUpdate: true })
 {
     <div class="backdrop">
         <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="update-title">
-            <h2 id="update-title">Update to @to?</h2>
-            <p>Contactor restarts. That takes about a minute, and the app doesn't answer meanwhile.</p>
-            <p>The relays stay as they are. Schedules and auto-offs catch up once it's back.</p>
+            <h2 id="update-title">@Texts["Updates.Ask", to]</h2>
+            <p>@Texts["Updates.Ask.Restart"]</p>
+            <p>@Texts["Updates.Ask.Relays"]</p>
             <div class="dialog-buttons">
                 <button type="button" class="cancel" disabled="@_busy" @onclick="() => _asking = false">@Common["Common.Cancel"]</button>
-                <button type="button" class="confirm" disabled="@_busy" @onclick="UpdateAsync">Update</button>
+                <button type="button" class="confirm" disabled="@_busy" @onclick="UpdateAsync">@Texts["Updates.Update"]</button>
             </div>
         </div>
     </div>
@@ -243,7 +244,7 @@
     private async Task ShowLogAsync(string id)
     {
         _logId = id;
-        _log = await UpdateLog.ReadAsync(Updates.Folder.LogsFolder, id, CancellationToken.None) ?? "There is no log of this update.";
+        _log = await UpdateLog.ReadAsync(Updates.Folder.LogsFolder, id, CancellationToken.None) ?? Texts["Updates.NoLog"];
     }
 
     private void OnChanged(object? sender, EventArgs e)

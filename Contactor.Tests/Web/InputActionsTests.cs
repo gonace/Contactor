@@ -222,9 +222,9 @@ public sealed class InputActionsTests
         var rows = await rig.Handler.ListAsync(1, Cancel);
         var targets = await rig.Handler.TargetsAsync(1, Cancel);
 
-        Assert.Equal(["Group: Heater", "Relay 4: Relay 4"], rows.Select(r => r.Target.Label));
+        Assert.Equal(["Group: Heater", "Relay 4: Relay 4"], rows.Select(r => TestTexts.Inputs.Label(r.Target)));
         Assert.Equal((false, true), (rows[1].WhenClosed, rows[1].WhenOpened));
-        Assert.Equal(["Group: Heater", "Relay 3: Relay 3", "Relay 4: Relay 4"], targets.Select(t => t.Label));
+        Assert.Equal(["Group: Heater", "Relay 3: Relay 3", "Relay 4: Relay 4"], targets.Select(TestTexts.Inputs.Label));
     }
 
     [Fact]
@@ -299,7 +299,7 @@ public sealed class InputActionsTests
 
         Assert.Null(await rig.Groups.DeleteAsync(groupId, John, Cancel));
 
-        Assert.Equal(["Relay 3: Relay 3"], (await rig.Handler.ListAsync(1, Cancel)).Select(r => r.Target.Label));
+        Assert.Equal(["Relay 3: Relay 3"], (await rig.Handler.ListAsync(1, Cancel)).Select(r => TestTexts.Inputs.Label(r.Target)));
     }
 
     // Only a change the app saw happen acts: one noticed after a gap (here: at start) is never handed on.

@@ -2,7 +2,9 @@ using System.Data.Common;
 using System.Text.Json;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Updates;
 
@@ -94,6 +96,7 @@ public sealed partial class UpdateService : BackgroundService
     private readonly AppBuild _build;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<UpdateService> _logger;
+    private readonly IStringLocalizer<UpdatesTexts> _texts;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Lock _lock = new();
 
@@ -113,8 +116,10 @@ public sealed partial class UpdateService : BackgroundService
         IDbContextFactory<ContactorDbContext> dbFactory,
         AppBuild build,
         TimeProvider timeProvider,
-        ILogger<UpdateService> logger)
+        ILogger<UpdateService> logger,
+        IStringLocalizer<UpdatesTexts> texts)
     {
+        _texts = texts;
         _folder = folder;
         _source = source;
         _dbFactory = dbFactory;
@@ -177,22 +182,22 @@ public sealed partial class UpdateService : BackgroundService
             var snapshot = Snapshot();
             if (!_build.IsRelease)
             {
-                return "This is a development version: it isn't updated from here.";
+                return _texts["Updates.Refused.Development"];
             }
 
             if (!snapshot.HelperInstalled)
             {
-                return "Contactor can't update itself on this machine.";
+                return _texts["Updates.Refused.NoHelper"];
             }
 
             if (snapshot.Pending is not null || snapshot.Status is { IsRunning: true } status && !IsStale(status))
             {
-                return "An update is already under way.";
+                return _texts["Updates.Refused.Running"];
             }
 
             if (snapshot.Newer is not [var newest, ..])
             {
-                return "You have the newest version.";
+                return _texts["Updates.Refused.Newest"];
             }
 
             var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -201,7 +206,7 @@ public sealed partial class UpdateService : BackgroundService
                 await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
                 if (await db.GroupRuntimes.AnyAsync(r => r.Phase != GroupPhases.Idle, cancellationToken))
                 {
-                    return "A group is starting or running on. Update once it's done.";
+                    return _texts["Updates.Refused.Switching"];
                 }
 
                 // The event first: an update is never asked for without it.
