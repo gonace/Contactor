@@ -31,9 +31,13 @@ public static class Program
         // The image, run as on a real installation: Production, everything it keeps in /data (a Docker volume, so the
         // database and Tailscale's state survive a restart; delete the volume to start over). Aspire gives it the
         // simulator's address as a container reaches it, and sends its telemetry to the dashboard. Docker Desktop shows
-        // the container under "contactor", as "contactor-web", the name of its image too.
+        // the container under "contactor", as "contactor-web", the name of its image too. The image is always tagged
+        // "dev": Aspire otherwise gives each build a new tag, so every run left one more image of about 445 MB behind.
+        // A new build takes the tag from the one before, which stays as an untagged image (the README says how to remove
+        // those).
         var board = simulator.GetEndpoint("vm201");
         builder.AddDockerfile("contactor-web", Path.Combine(builder.AppHostDirectory, ".."))
+            .WithImageTag("dev")
             .WithHttpEndpoint(port: AppPort, targetPort: AppPort, name: "http", isProxied: false)
             .WithVolume("contactor-dev", "/data")
             .WithEnvironment("Vm201__Host", board.Property(EndpointProperty.Host))
