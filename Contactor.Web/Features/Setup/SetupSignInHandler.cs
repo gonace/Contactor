@@ -55,7 +55,10 @@ public sealed class SetupSignInHandler : IDisposable
         _tailscaleNetwork = tailscaleNetwork;
     }
 
-    /// <summary>Where Part 1 goes on: a new installation starts at the way in; one whose sign-in was reset at the sign-in.</summary>
+    /// <summary>
+    /// Where Part 1 goes on: a new installation starts at the way in; one whose sign-in was reset at the sign-in, except
+    /// a Cloudflare one without a saved tunnel address, which goes on at the way in (<see cref="NeedsAddress"/>).
+    /// </summary>
     public SetupPart1Step Step => _access.Current is null || NeedsAddress ? SetupPart1Step.WayIn
         : _signIn.Current is null ? SetupPart1Step.SignIn
         : SetupPart1Step.Done;

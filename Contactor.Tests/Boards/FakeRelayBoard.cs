@@ -260,7 +260,10 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
-    /// <summary>Every command that reached the board while it was connected: its relays and whether ON, in order.</summary>
+    /// <summary>
+    /// Every ON or OFF command that reached the board while it was connected, refused ones included: its relays and
+    /// whether ON, in order. Pulses are in <see cref="Pulses"/>.
+    /// </summary>
     public IReadOnlyList<(ChannelMask Relays, bool On)> Sent
     {
         get

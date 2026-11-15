@@ -339,6 +339,30 @@ public sealed class GroupScheduleTests
         Assert.Equal(((int?)3, (int?)null, ScheduleDays.Weekdays, new TimeOnly(6, 30)), (schedule.RelayId, schedule.GroupId, schedule.Days, schedule.OnTime));
     }
 
+    // A group's scheduled start while the board is closed for its removal is refused; once the board opens again (the
+    // removal didn't go ahead), the next tick starts it. Without that retry, a minute after the window began starts
+    // nothing.
+    [Fact]
+    public async Task Should_StartTheGroupAtTheNextTick_AfterTheBoardOpensAgain()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var groupId = await CreateAsync(rig);
+        await AddScheduleAsync(rig, groupId, 14, 5, 15, 0);
+        await rig.Scheduler.TickAsync(Cancel);
+
+        await rig.Live.CloseAsync();
+        await TickAtAsync(rig, 14, 5);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(0, rig.Client.State.Outputs);
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.GroupId == groupId && e.Action == EventActions.GroupOn);
+
+        rig.Live.Reopen();
+        await TickAtAsync(rig, 14, 6);
+
+        await StartedAsync(rig);
+        Assert.Equal(EventActors.Schedule, (await RuntimeAsync(rig, groupId)).TurnedOnBy);
+    }
+
     // The fan is confirmed, its 3 s pass, then the heat, confirmed too: as the sequencer does every second.
     private static async Task StartedAsync(BoardTestRig rig)
     {

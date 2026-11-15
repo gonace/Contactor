@@ -2,7 +2,9 @@ namespace Contactor.AppHost;
 
 public static class ResourceBuilderExtensions
 {
-    /// <summary>The Docker project every container belongs to, so Docker Desktop shows them as one group.</summary>
+    /// <summary>
+    /// The Docker project the AppHost's containers belong to, so Docker Desktop shows them as one group.
+    /// </summary>
     public const string DockerProject = "contactor";
 
     /// <summary>Labels the container the way Docker Compose does, which groups it under <see cref="DockerProject"/>.</summary>

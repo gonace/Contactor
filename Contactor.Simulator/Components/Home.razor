@@ -2,7 +2,9 @@
 @implements IDisposable
 @using System.Globalization
 @using Contactor.Boards
+@using Microsoft.Extensions.Options
 @inject SimulatedBoards Simulator
+@inject IOptions<SimulatorOptions> Options
 
 <PageTitle>Contactor simulator</PageTitle>
 
@@ -10,9 +12,9 @@
     <header class="top">
         <div class="title">
             <h1>Contactor simulator</h1>
-            <span class="count">@BoardCount · listening on 127.0.0.1</span>
+            <span class="count">@BoardCount</span>
         </div>
-        <span class="mono">Point the app at 127.0.0.1 and the board's port</span>
+        <span class="mono">Point the app at @_address and the board's port</span>
     </header>
 
     <div class="body">
@@ -25,7 +27,7 @@
                     <button type="button" class="board @(board.Id == Selected?.Id ? "selected" : null)" aria-current="@(board.Id == Selected?.Id ? "true" : null)"
                             @key="board.Id" @onclick="() => _selectedId = board.Id">
                         <span class="line">
-                            <span class="name">@Short(board)</span>
+                            <span class="name">@Short(board) · @Address(board)</span>
                             <span class="dot @(state.Clients.Count > 0 ? "on" : null)" aria-hidden="true"></span>
                         </span>
                         <span class="hint">@Status(board) · @(board.FromSettings ? "from the settings" : "added here")@LoginText(board)</span>
@@ -43,7 +45,11 @@
                 }
             </nav>
 
-            <form class="add" @onsubmit="Add">
+            @* Below 1024 px "Add a board" folds away behind this button; wider, the form is always shown and this is not. *@
+            <button type="button" class="fold add-fold" aria-expanded="@(_addOpen ? "true" : "false")" aria-controls="add"
+                    @onclick="() => _addOpen = !_addOpen">+ Add a board</button>
+
+            <form id="add" class="add @(_addOpen ? "open" : null)" @onsubmit="Add">
                 <span class="label">ADD A BOARD</span>
                 <label for="model" class="visually-hidden">Model</label>
                 <select id="model" @bind="_newType" @bind:after="OnModelChanged">
@@ -85,7 +91,7 @@
                 <section class="card controls">
                     <div class="head">
                         <div class="title">
-                            <h2>@current.Board.Model.Name · port @current.Board.Port</h2>
+                            <h2>@current.Board.Model.Name · @Address(current)</h2>
                             <span class="connection @(state.Clients.Count > 0 ? "on" : null)">
                                 <span class="dot" aria-hidden="true"></span>@Connection(current)
                             </span>
@@ -99,7 +105,7 @@
                     <div class="split">
                         <div class="relays-box">
                             <span class="hint">Relays: click one to switch it, like the board's own buttons</span>
-                            <div class="relays" style="grid-template-columns: repeat(@Math.Min(capabilities.RelayCount, 8).ToString(CultureInfo.InvariantCulture), minmax(0, 1fr))">
+                            <div class="relays" style="--columns: @Math.Min(capabilities.RelayCount, 8).ToString(CultureInfo.InvariantCulture); --narrow-columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
                                 @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                 {
                                     var number = relay;
@@ -133,7 +139,11 @@
                     </div>
                 </section>
 
-                <section class="card traffic">
+                @* Below 1024 px the traffic folds away behind this button; wider, it is always shown and this is not. *@
+                <button type="button" class="fold traffic-fold" aria-expanded="@(_trafficOpen ? "true" : "false")" aria-controls="traffic"
+                        @onclick="() => _trafficOpen = !_trafficOpen">Traffic · newest first</button>
+
+                <section id="traffic" class="card traffic @(_trafficOpen ? "open" : null)">
                     <div class="traffic-head">
                         <div class="title">
                             <h3>Traffic</h3>
@@ -156,7 +166,7 @@
                         }
                         @if (current.Traffic.Count == 0)
                         {
-                            <p class="hint empty">@(state.Clients.Count == 0 ? $"Nothing yet. Set the app's board to 127.0.0.1, port {current.Board.Port}{(current.Username switch { null => "", "" => ", its password", var username => $", user {username}" })}." : "Nothing new.")</p>
+                            <p class="hint empty">@(state.Clients.Count == 0 ? $"Nothing yet. Set the app's board to {_address}, port {current.Board.Port}{(current.Username switch { null => "", "" => ", its password", var username => $", user {username}" })}." : "Nothing new.")</p>
                         }
                     </div>
                 </section>
@@ -164,7 +174,7 @@
             else
             {
                 <section class="card none">
-                    <p class="hint">No board selected. Add one on the left.</p>
+                    <p class="hint">No board selected. Add one under "Add a board".</p>
                 </section>
             }
         </main>
@@ -179,6 +189,9 @@
     private string _newUsername = "";
     private string _newPassword = "";
     private string? _addError;
+    private string _address = SimulatorOptions.DefaultAppAddress;
+    private bool _addOpen;
+    private bool _trafficOpen;
 
     private RunningBoard? Selected => _boards.FirstOrDefault(b => b.Id == _selectedId) ?? _boards.FirstOrDefault();
 
@@ -186,6 +199,7 @@
 
     protected override void OnInitialized()
     {
+        _address = string.IsNullOrWhiteSpace(Options.Value.AppAddress) ? SimulatorOptions.DefaultAppAddress : Options.Value.AppAddress.Trim();
         _boards = Simulator.Boards;
         _newPort = NextFreePort();
         Simulator.Changed += OnChanged;
@@ -238,7 +252,14 @@
 
     private static string Short(RunningBoard board)
     {
-        return $"{board.Board.Model.Id.ToUpperInvariant()} · {board.Board.Port.ToString(CultureInfo.InvariantCulture)}";
+        return board.Board.Model.Id.ToUpperInvariant();
+    }
+
+    // Where the app reaches the board, e.g. "host.docker.internal:9760"; an IPv6 address in brackets, "[::1]:9760".
+    private string Address(RunningBoard board)
+    {
+        var host = _address.Contains(':', StringComparison.Ordinal) && !_address.StartsWith('[') ? $"[{_address}]" : _address;
+        return $"{host}:{board.Board.Port.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static string Status(RunningBoard board)

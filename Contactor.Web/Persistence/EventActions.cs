@@ -22,6 +22,9 @@ public static class EventActions
     public const string BoardRelayModesNotReset = "board-relay-modes-not-reset";
     public const string BoardAddressChanged = "board-address-changed";
     public const string BoardLoginChanged = "board-login-changed";
+
+    /// <summary>A board's new name. Details: <c>{"from":"Barn","to":"Garage"}</c>.</summary>
+    public const string BoardRenamed = "board-renamed";
     public const string GroupOn = "group-on";
     public const string GroupOff = "group-off";
     public const string GroupStartFailed = "group-start-failed";

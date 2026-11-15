@@ -169,18 +169,25 @@
     // The boards' list of a page without the filter: its counts, when there is a list to show.
     private async Task LoadCountsAsync()
     {
-        if (SideList is not null || Registry.All.Count < 2)
-        {
-            return;
-        }
-
+        var boards = Registry.All;
+        var list = SideList is null && boards.Count > 1;
         lock (_lock)
         {
-            foreach (var board in Registry.All)
+            // Only the boards there are now: a removed board's entry goes.
+            _shown.Clear();
+            if (list)
             {
-                var state = board.State;
-                _shown[board.BoardId] = (state.IsConnected, state.HasAnswered, state.Relays);
+                foreach (var board in boards)
+                {
+                    var state = board.State;
+                    _shown[board.BoardId] = (state.IsConnected, state.HasAnswered, state.Relays);
+                }
             }
+        }
+
+        if (!list)
+        {
+            return;
         }
 
         await using var db = await DbFactory.CreateDbContextAsync();
