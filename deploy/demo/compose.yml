@@ -1,12 +1,16 @@
-# The public demo (docs/DEMO.md): Contactor.Demo, with a copy of the app and the simulator for each visitor, behind a
-# Cloudflare tunnel. Copy this file to /opt/contactor-demo, next to /opt/contactor-demo/.env (readable by root only),
-# which holds the tunnel's token, and start it with docker compose up -d. No port is published: cloudflared
-# connects out to Cloudflare and forwards the demo's hostname to http://demo:8080.
+# The public demo (docs/DEMO.md): Contactor.Demo, with a copy of the app and the simulator for each visitor, reached
+# through a route on an existing Cloudflare tunnel whose connector runs elsewhere on the LAN:
+# <hostname> → http://<this machine>:8080. Copy this file and Caddyfile to /opt/contactor-demo and start it with
+# docker compose up -d. No token or other secret is kept here.
 #
-#   demo ──(network "demo": internal, no route out, not even to this machine)── cloudflared ──(network "outside")── Cloudflare
+#   tunnel's connector (LAN) ──▶ :8080 on this machine ──▶ forwarder ──(network "demo": internal, no route out,
+#                                                                       not even to this machine)── demo
 #
 # A visitor can type any board address in their copy of the app. The demo container is on the "demo" network only, so
-# from it nothing but cloudflared can be reached.
+# from it nothing but the forwarder can be reached, and the forwarder only forwards to the demo.
+#
+# Port 8080 is published on this machine's addresses for the tunnel's connector only. Never forward it from the router.
+# To let only the connector in, allow its address to port 8080 in the Proxmox firewall and drop the rest.
 name: contactor-demo
 
 x-logging: &logging
@@ -21,7 +25,7 @@ services:
     image: ${DEMO_IMAGE:-ghcr.io/gonace/contactor-demo:latest}
     restart: unless-stopped
     environment:
-      # cloudflared's address below: only a request from there may say that the visitor came in over HTTPS, so their
+      # The forwarder's address below: only a request from there may say that the visitor came in over HTTPS, so their
       # cookie is marked Secure. Change both together.
       Demo__TunnelAddress: 172.30.60.2
     networks:
@@ -45,30 +49,39 @@ services:
     stop_grace_period: 40s
     logging: *logging
 
-  cloudflared:
-    # The same version as in the app's image (Dockerfile); raise them together.
-    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+  forwarder:
+    # Caddy, only as a reverse proxy to the demo (Caddyfile, next to this file). Raise the version and its digest
+    # together.
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     restart: unless-stopped
-    command: ["tunnel", "--no-autoupdate", "run"]
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set it in .env, see docs/DEMO.md}
-      # Its metrics for its own health check only, not for the demo on the shared network.
-      TUNNEL_METRICS: 127.0.0.1:20241
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "8080:8080"
     networks:
       demo:
         ipv4_address: 172.30.60.2
-      outside: {}
+      lan: {}
     depends_on:
       demo:
         condition: service_healthy
+    # Not root: port 8080 needs no privilege.
+    user: "65534:65534"
+    environment:
+      # Caddy's own files (nothing worth keeping with certificates off) in /tmp, as the container is read-only.
+      XDG_DATA_HOME: /tmp/data
+      XDG_CONFIG_HOME: /tmp/config
     mem_limit: 256m
+    pids_limit: 256
     read_only: true
+    tmpfs:
+      - /tmp
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:20241", "ready"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/"]
       interval: 1m
       timeout: 10s
       retries: 3
@@ -80,8 +93,8 @@ networks:
   # The demo's only network. internal: no route out. gateway_mode_ipv4 isolated (Docker 28 or later): this machine
   # has no address on it either, so the demo can't reach its services. An older Docker ignores the setting and keeps an
   # address here: docs/DEMO.md says to use Docker 28 or later and to check once, after the first start, that this
-  # machine has no address on the network. The demo takes an address from ip_range, so cloudflared's is always
-  # free. If the subnet clashes with one of this machine's networks, pick another and change cloudflared's address in
+  # machine has no address on the network. The demo takes an address from ip_range, so the forwarder's is always
+  # free. If the subnet clashes with one of this machine's networks, pick another and change the forwarder's address in
   # both places above.
   demo:
     internal: true
@@ -93,8 +106,8 @@ networks:
       config:
         - subnet: 172.30.60.0/28
           ip_range: 172.30.60.8/29
-  # cloudflared's way to Cloudflare.
-  outside: {}
+  # The forwarder's side towards this machine's port 8080, where the tunnel's connector comes in.
+  lan: {}
 
 volumes:
   copies:

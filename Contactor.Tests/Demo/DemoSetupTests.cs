@@ -45,7 +45,7 @@ public sealed class DemoSetupTests : IDisposable
         options.IdleWarning = TimeSpan.FromSeconds(1);
         options.MaxBoards = 0;
         options.CopyEnvironment = "Staging";
-        options.TunnelAddress = "cloudflared";
+        options.TunnelAddress = "forwarder";
 
         var result = new DemoOptionsValidation().Validate(null, options);
 
