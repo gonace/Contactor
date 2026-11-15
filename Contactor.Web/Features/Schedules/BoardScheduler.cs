@@ -184,9 +184,9 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
             var interrupted = false;
 
             // Once a command went out, it is recorded whatever happens to the caller now: a cancel (mostly at
-            // shutdown) or a later command that fails (e.g. a timeout) would leave the board's change without its run
-            // and event. A failure after a command went out stops there, what went out is saved, and then the failure
-            // is thrown.
+            // shutdown), a later command that fails (e.g. a timeout) or a database call that fails would leave the
+            // board's change without its run and event. A failure after a command went out stops there, what went out
+            // is saved, and then the failure is thrown.
             var wentOut = false;
             ExceptionDispatchInfo? failed = null;
 
@@ -198,41 +198,32 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     continue;
                 }
 
-                var relayWindows = windows.Where(w => w.RelayId == relayId).ToList();
-                var running = relayWindows.Where(w => w.Contains(now)).OrderByDescending(w => w.OffUtc).FirstOrDefault();
-                var isOn = state.IsOn(channel);
-                runtimes.TryGetValue(relayId, out var runtime);
-
-                if (running is not null)
+                try
                 {
-                    // On outside the app during its schedule's window (e.g. the schedule's own ON reported as failed,
-                    // or the board's button just before): it is the schedule's, and goes off at the OffTime, not after
-                    // an auto-off of its own.
-                    if (isOn && runtime?.TurnedOnBy == EventActors.External)
-                    {
-                        await RelayRuns.TakeOverForScheduleAsync(db, relayId, wentOut ? CancellationToken.None : cancellationToken);
-                        changed = true;
-                    }
+                    var relayWindows = windows.Where(w => w.RelayId == relayId).ToList();
+                    var running = relayWindows.Where(w => w.Contains(now)).OrderByDescending(w => w.OffUtc).FirstOrDefault();
+                    var isOn = state.IsOn(channel);
+                    runtimes.TryGetValue(relayId, out var runtime);
 
-                    var startedNow = running.OnUtc > from && running.OnUtc <= now;
-                    var retry = _retryRelays.Remove(relayId);
-                    if (!isOn && (startedNow || reconcile || retry))
+                    if (running is not null)
                     {
-                        Sent sent;
-                        try
+                        // On outside the app during its schedule's window (e.g. the schedule's own ON reported as
+                        // failed, or the board's button just before): it is the schedule's, and goes off at the
+                        // OffTime, not after an auto-off of its own.
+                        if (isOn && runtime?.TurnedOnBy == EventActors.External)
                         {
-                            sent = await SendAsync(channel, on: true, cancellationToken);
-                        }
-                        catch (Exception ex) when (wentOut)
-                        {
-                            // SendAsync forgot its expectation: whatever the board did shows as an external change.
-                            // Logged now, so it isn't lost should the save of what went out fail too.
-                            LogFailedAfterSend(ex, relayId, cancellationToken);
-                            failed = ExceptionDispatchInfo.Capture(ex);
-                            interrupted = true;
-                            break;
+                            await RelayRuns.TakeOverForScheduleAsync(db, relayId, wentOut ? CancellationToken.None : cancellationToken);
+                            changed = true;
                         }
 
+                        var startedNow = running.OnUtc > from && running.OnUtc <= now;
+                        if (isOn || !(startedNow || reconcile || _retryRelays.Contains(relayId)))
+                        {
+                            _retryRelays.Remove(relayId);
+                            continue;
+                        }
+
+                        var sent = await SendAsync(channel, on: true, cancellationToken);
                         if (sent == Sent.Closed)
                         {
                             // Refused while the board is being removed: this relay alone is tried again at the next
@@ -247,66 +238,64 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                             break;
                         }
 
-                        // Since the ON went out, not the minute: a person's OFF is told apart from it by time (RelayRuns.End).
+                        // Only now that the ON went out: one that failed is still tried again at the next tick.
+                        _retryRelays.Remove(relayId);
+
+                        // The event first: it is kept should the run's write fail. The run since the ON went out, not
+                        // the minute: a person's OFF is told apart from it by time (RelayRuns.End).
                         wentOut = true;
-                        await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, CancellationToken.None);
                         Log(db, progress.BoardId, now, relayId, EventActions.On, running.ScheduleId);
+                        await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, CancellationToken.None);
                         changed = true;
+                        continue;
                     }
 
-                    continue;
-                }
-
-                _retryRelays.Remove(relayId);
-                if (!isOn)
-                {
-                    continue;
-                }
-
-                var ended = relayWindows.Where(w => w.OffUtc > from && w.OffUtc <= now).OrderByDescending(w => w.OffUtc).FirstOrDefault();
-                var turnedOnBySchedule = runtime?.TurnedOnBy == Actor;
-                if (ended is null)
-                {
-                    // On by a schedule that no longer runs it: deleted, paused or moved during its run, or its OFF
-                    // is older than the catch-up reaches. Nothing else would ever turn it off (it has no auto-off).
-                    if (!turnedOnBySchedule)
+                    _retryRelays.Remove(relayId);
+                    if (!isOn)
                     {
                         continue;
                     }
-                }
-                else if (now - ended.OffUtc > OnTimeTolerance && !turnedOnBySchedule)
-                {
-                    // Someone turned it on by hand; a missed OFF must not turn it off.
-                    continue;
-                }
 
-                var sentUtc = _clock.UtcNow;
-                Sent off;
-                try
-                {
-                    off = await SendAsync(channel, on: false, cancellationToken);
+                    var ended = relayWindows.Where(w => w.OffUtc > from && w.OffUtc <= now).OrderByDescending(w => w.OffUtc).FirstOrDefault();
+                    var turnedOnBySchedule = runtime?.TurnedOnBy == Actor;
+                    if (ended is null)
+                    {
+                        // On by a schedule that no longer runs it: deleted, paused or moved during its run, or its OFF
+                        // is older than the catch-up reaches. Nothing else would ever turn it off (it has no auto-off).
+                        if (!turnedOnBySchedule)
+                        {
+                            continue;
+                        }
+                    }
+                    else if (now - ended.OffUtc > OnTimeTolerance && !turnedOnBySchedule)
+                    {
+                        // Someone turned it on by hand; a missed OFF must not turn it off.
+                        continue;
+                    }
+
+                    var sentUtc = _clock.UtcNow;
+                    if (await SendAsync(channel, on: false, cancellationToken) != Sent.Done)
+                    {
+                        interrupted = true;
+                        break;
+                    }
+
+                    // The event first: it is kept should the run's write fail.
+                    wentOut = true;
+                    Log(db, progress.BoardId, now, relayId, EventActions.Off, ended?.ScheduleId);
+                    await RelayRuns.EndAsync(db, relayId, sentUtc, CancellationToken.None);
+                    changed = true;
                 }
                 catch (Exception ex) when (wentOut)
                 {
-                    // SendAsync forgot its expectation: whatever the board did shows as an external change.
-                    // Logged now, so it isn't lost should the save of what went out fail too.
+                    // A command or a database call failed after a command went out. SendAsync forgot a failed
+                    // command's expectation: whatever the board did shows as an external change. Logged now, so it
+                    // isn't lost should the save of what went out fail too.
                     LogFailedAfterSend(ex, relayId, cancellationToken);
                     failed = ExceptionDispatchInfo.Capture(ex);
                     interrupted = true;
                     break;
                 }
-
-                if (off != Sent.Done)
-                {
-                    interrupted = true;
-                    break;
-                }
-
-                wentOut = true;
-                await RelayRuns.EndAsync(db, relayId, sentUtc, CancellationToken.None);
-
-                Log(db, progress.BoardId, now, relayId, EventActions.Off, ended?.ScheduleId);
-                changed = true;
             }
 
             // The relays' runs are saved first: whatever happens to the groups, a relay this tick switched keeps its
@@ -537,6 +526,6 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Scheduler could not switch relay {RelayId} on relay board {BoardId}; the commands that went out before it are saved")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Scheduler failed at relay {RelayId} on relay board {BoardId}; the commands that went out before it are saved")]
     private partial void LogCommandFailed(Exception exception, int relayId, int boardId);
 }
