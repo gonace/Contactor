@@ -59,7 +59,9 @@ public sealed class GroupPagesTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
 
-        Assert.Contains("Relays in start order", html, StringComparison.Ordinal);
+        Assert.Contains("Steps in start order", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 1 · NAME", html, StringComparison.Ordinal);
+        Assert.Contains("Off · starts first", html, StringComparison.Ordinal);
         Assert.Matches("type=\"radio\"[^>]*value=\"fan\" checked", html);
         Assert.Matches("value=\"Fan\"[\\s\\S]*value=\"Heat\"", html);
         Assert.Contains("Needs Fan to be on", html, StringComparison.Ordinal);
@@ -67,7 +69,49 @@ public sealed class GroupPagesTests
         Assert.Contains("On stop, run on", html, StringComparison.Ordinal);
         Assert.Contains("TURN ON THE GROUP", html, StringComparison.Ordinal);
         Assert.Contains("The app's interlock only works while the app runs.", html, StringComparison.Ordinal);
-        Assert.Contains("No contact with the relay board. The relays and their order", html, StringComparison.Ordinal);
+        Assert.Contains("No contact with the relay board. The steps and their relays", html, StringComparison.Ordinal);
+    }
+
+    // Two fans in one step, two heaters in the next: one card per step on the group's page, one chip per step on its
+    // card, each relay with its own ON/OFF.
+    [Fact]
+    public async Task Should_ShowAGroupsSteps_WithTheirRelays()
+    {
+        await using var app = CreateApp();
+        using var http = app.CreateClient();
+        await http.GetStringAsync("/", Cancel);
+        var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+        int id;
+        await using (var db = await factory.CreateDbContextAsync(Cancel))
+        {
+            foreach (var (relayId, name) in new[] { (1, "Fan 1"), (2, "Fan 2"), (3, "Heater 1"), (4, "Heater 2") })
+            {
+                (await db.Relays.SingleAsync(r => r.Id == relayId, Cancel)).Name = name;
+            }
+
+            var group = new RelayGroup { BoardId = 1, Name = "Workshop heat", Icon = GroupIcons.Flame, MaxOnMinutes = 120 };
+            group.AddStep("Fans", [1, 2], runOnSec: 180);
+            group.AddStep("Heaters", [3, 4]);
+            db.RelayGroups.Add(group);
+            await db.SaveChangesAsync(Cancel);
+            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
+            await db.SaveChangesAsync(Cancel);
+            id = group.Id;
+        }
+
+        var list = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+        var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
+
+        Assert.Contains("GROUP · RELAY 1 + 2 → 3 + 4", list, StringComparison.Ordinal);
+        Assert.Matches("class=\"chip \"[^>]*><span class=\"dot\"[^>]*></span>Fans<span class=\"visually-hidden\"[^>]*> \\(off\\)", list);
+        Assert.Contains("aria-label=\"Steps in start order\"", list, StringComparison.Ordinal);
+        Assert.Contains(">Heaters<", list, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Fan 1<", list, StringComparison.Ordinal);
+
+        Assert.Matches("STEP 1 · NAME[\\s\\S]*value=\"Fans\"[\\s\\S]*Fan 1[\\s\\S]*Fan 2[\\s\\S]*STEP 2 · NAME[\\s\\S]*value=\"Heaters\"[\\s\\S]*Heater 1[\\s\\S]*Heater 2", page);
+        Assert.Contains("Needs Fans to be on", page, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Turn on Heater 2\"", page, StringComparison.Ordinal);
+        Assert.Equal(1, page.Split("On start, wait").Length - 1);
     }
 
     [Fact]

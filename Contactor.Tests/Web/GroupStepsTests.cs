@@ -554,16 +554,31 @@ public sealed class GroupStepsTests
     public void Should_CountDown_OnTheRelaysThatRunOn()
     {
         var stopping = View(new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60) });
-        Assert.Equal(["Keeps running for 1 min", "Keeps running for 1 min", "Off", "Off"], Notes(stopping, State(1, 2)));
+        Assert.Equal(["Keeps running for 1 min", "Off"], Notes(stopping, State(1, 2)));
         Assert.Equal("Stopping · run-on for 1 min: Fans", Status(stopping, State(1, 2)));
 
         var oneFan = stopping with { Runtime = new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60), StopRelayIds = [21] } };
-        Assert.Equal(["Keeps running for 1 min", "On", "Off", "Off"], Notes(oneFan, State(1, 2)));
+        Assert.Equal(["Keeps running for 1 min", "Off"], Notes(oneFan, State(1, 2)));
         Assert.Equal("Stopping · run-on for 1 min: Fan 1", Status(oneFan, State(1, 2)));
 
         var starting = View(new GroupRuntime { GroupId = 1, Phase = GroupPhases.Starting, NextStepAtUtc = T0.AddSeconds(3) });
-        Assert.Equal(["On", "On", "Starts in 3 s", "Starts in 3 s"], Notes(starting, State(1, 2)));
+        Assert.Equal(["On", "Starts in 3 s"], Notes(starting, State(1, 2)));
         Assert.Equal("Starting · Heaters in 3 s", Status(starting, State(1, 2)));
+    }
+
+    [Fact]
+    public void Should_SayWhichRelaysOfAStepAreOn_OnTheGroupScreen()
+    {
+        var group = View(new GroupRuntime { GroupId = 1 });
+
+        Assert.Equal(["Only Fan 1 on", "Needs Fans to be on"], Notes(group, State(1)));
+        Assert.Equal(["On", "Only Heater 2 on"], Notes(group, State(1, 2, 4)));
+        Assert.Equal(["Off · starts first", "Needs Fans to be on"], Notes(group, State()));
+
+        // Two of three relays of a step on.
+        GroupStepInfo threeFans = new("Fans", 3, 0, [new(21, 1, "Fan 1"), new(22, 2, "Fan 2"), new(25, 5, "Fan 3")]);
+        var three = group with { Steps = [threeFans, FansHeaters[1]] };
+        Assert.Equal(["Only Fan 1, Fan 2 on", "Needs Fans to be on"], Notes(three, State(1, 2)));
     }
 
     [Fact]
@@ -590,7 +605,7 @@ public sealed class GroupStepsTests
         TestTexts.GroupStatus.For(group, state, T0, t => t, who => who == "john@example.com" ? "John" : who);
 
     private static List<string> Notes(GroupView group, BoardState state) =>
-        [.. Enumerable.Range(0, group.Members.Count).Select(i => TestTexts.GroupStatus.MemberNote(group, state, i, state.IsOn(group.Members[i].Channel), null, T0))];
+        [.. Enumerable.Range(0, group.Steps.Count).Select(i => TestTexts.GroupStatus.StepNote(group, state, i, T0))];
 
     private static string? Read(string? details, string name) =>
         details is null ? null : JsonDocument.Parse(details).RootElement.GetProperty(name).GetString();
