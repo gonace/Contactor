@@ -15,8 +15,9 @@ Visitor ─▶ Cloudflare ─▶ your tunnel's connector (LAN) ─▶ <machine>:
 - **forwarder** (Caddy's own image): publishes port 8080 on the machine and only forwards it to the demo, with the
   tunnel's `X-Forwarded-Proto`. Its settings are in `deploy/demo/Caddyfile`.
 
-Port 8080 is open on the machine's LAN address for the tunnel's connector only. Never forward it from the router. To
-let only the connector in, allow its address to port 8080 in the Proxmox firewall and drop the rest.
+Port 8080 is open on the machine's LAN address for the tunnel's connector only. Never forward it from the router.
+Docker's published ports pass by the machine's own firewall, so the Proxmox firewall lets only the connector in (see
+The firewall, in Install).
 
 There is no sign-in in front: the demo is public.
 
@@ -80,6 +81,12 @@ The forwarder starts once the demo is healthy, after a few seconds.
 4. Open your hostname. The page shows the simulator and the app, with "Skip setup: start from a template".
 5. Choose **Workshop**. The app shows the relays, and switching one shows in the simulator too.
 
+**The firewall:** in Proxmox, select the VM → **Firewall → Add**: direction **in**, action **ACCEPT**, protocol
+**tcp**, source the tunnel's connector's address, destination port **8080**. Add one more for SSH (port 22) from where
+you log in. Then **Firewall → Options → Firewall: Yes** and **Input Policy: DROP**. The VM's network device needs
+**Firewall** ticked too (Hardware → Network Device). Check that your hostname still opens, and that port 8080 doesn't
+answer from another machine (`curl -m 5 http://<machine's LAN address>:8080` from there times out).
+
 Logs: `sudo docker compose logs -f demo` and `sudo docker compose logs -f forwarder`.
 
 ## 3. Upgrade
@@ -87,7 +94,7 @@ Logs: `sudo docker compose logs -f demo` and `sudo docker compose logs -f forwar
 Each release publishes the demo's image with the app's, with the same version.
 
 ```sh
-cd /opt/contactor-demo && sudo docker compose pull && sudo docker compose up -d
+cd /opt/contactor-demo && sudo docker compose pull && sudo docker compose up -d --remove-orphans
 ```
 
 The visitors' copies end when the demo starts again. When a release changes `deploy/demo/compose.yml` or
@@ -115,5 +122,5 @@ With more visitors, give the container more memory too (`mem_limit`, about 250 M
 
 **If the network clashes:** when `docker compose up` can't create the demo's network because the networks overlap, the subnet
 `172.30.60.0/28` is in use on the machine. Pick another, e.g. `172.30.61.0/28`, and change the subnet, the
-`ip_range`, the forwarder's `ipv4_address` and `Demo__TunnelAddress` in `compose.yml` to match, and grep for the new
-subnet in Check it.
+`ip_range`, the demo's and the forwarder's `ipv4_address` and `Demo__TunnelAddress` in `compose.yml`, and the demo's
+address in `Caddyfile`, to match, and grep for the new subnet in Check it.

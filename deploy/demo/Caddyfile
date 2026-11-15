@@ -8,9 +8,10 @@
 
 # Everything on 8080 goes to the demo, WebSockets included (the app is Blazor Server). Caddy would set
 # X-Forwarded-Proto to its own scheme, http; the demo gets the one the tunnel's connector sent instead, so a visitor
-# who came in over HTTPS gets a Secure cookie. Without one, the demo gets none and takes the request as http.
+# who came in over HTTPS gets a Secure cookie. Without one, the demo gets none and takes the request as http. The demo's
+# fixed address (compose.yml), not its name: a name could be answered by the LAN's DNS while the demo restarts.
 :8080 {
-	reverse_proxy demo:8080 {
+	reverse_proxy 172.30.60.3:8080 {
 		header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
 	}
 }

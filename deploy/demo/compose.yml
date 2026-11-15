@@ -10,7 +10,8 @@
 # from it nothing but the forwarder can be reached, and the forwarder only forwards to the demo.
 #
 # Port 8080 is published on this machine's addresses for the tunnel's connector only. Never forward it from the router.
-# To let only the connector in, allow its address to port 8080 in the Proxmox firewall and drop the rest.
+# Docker's published ports pass by this machine's own firewall, so let only the connector in with the Proxmox firewall
+# (docs/DEMO.md).
 name: contactor-demo
 
 x-logging: &logging
@@ -29,7 +30,10 @@ services:
       # cookie is marked Secure. Change both together.
       Demo__TunnelAddress: 172.30.60.2
     networks:
-      - demo
+      demo:
+        # A fixed address, which the forwarder's Caddyfile names: never a name looked up in DNS, so while the demo
+        # restarts, a host the LAN's DNS calls "demo" can't take its place.
+        ipv4_address: 172.30.60.3
     # The visitors' copies, each in a folder of its own, deleted when the copy ends (and at start, if the demo didn't stop
     # cleanly). Nothing in it needs to be kept.
     volumes:
@@ -93,9 +97,9 @@ networks:
   # The demo's only network. internal: no route out. gateway_mode_ipv4 isolated (Docker 28 or later): this machine
   # has no address on it either, so the demo can't reach its services. An older Docker ignores the setting and keeps an
   # address here: docs/DEMO.md says to use Docker 28 or later and to check once, after the first start, that this
-  # machine has no address on the network. The demo takes an address from ip_range, so the forwarder's is always
-  # free. If the subnet clashes with one of this machine's networks, pick another and change the forwarder's address in
-  # both places above.
+  # machine has no address on the network. The demo and the forwarder have fixed addresses outside ip_range. If the
+  # subnet clashes with one of this machine's networks, pick another and change both addresses here, in
+  # Demo__TunnelAddress and in the Caddyfile.
   demo:
     internal: true
     # No IPv6 either, so a daemon's default can't give this machine an IPv6 address here.
