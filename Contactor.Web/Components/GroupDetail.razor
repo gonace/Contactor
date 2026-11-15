@@ -101,7 +101,7 @@
                                     <span class="number" aria-hidden="true">@(index + 1)</span>
                                     <div class="step-text">
                                         <label class="label" for="@($"role-{member.RelayId}")">@RelayTexts["Relays.RelayLabel", member.Channel]</label>
-                                        <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
+                                        <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
                                         <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : StatusText.Waiting)</span>
                                     </div>
                                     <div class="order">
@@ -439,15 +439,21 @@
         }
     }
 
-    // The relay above that must be on first, or null.
-    private EditMember? BlockedBy(int index)
+    // The name of the step above that must be all on first, or null. While the order is being changed, the relay
+    // above in the new order.
+    private string? BlockedBy(int index)
     {
-        return index > 0 && !State.IsOn(_members[index - 1].Channel) ? _members[index - 1] : null;
+        if (!OrderChanged)
+        {
+            return GroupPlanner.NeedsOn(_group!.Steps, State, index + 1);
+        }
+
+        return index > 0 && !State.IsOn(_members[index - 1].Channel) ? _members[index - 1].RoleName : null;
     }
 
-    private string NoteFor(int index, bool on, EditMember? blockedBy)
+    private string NoteFor(int index, bool on, string? blockedBy)
     {
-        return GroupStatus.MemberNote(_group!, State, index, on, blockedBy?.RoleName, Clock.UtcNow);
+        return GroupStatus.MemberNote(_group!, State, index, on, blockedBy, Clock.UtcNow);
     }
 
     private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)
@@ -498,7 +504,7 @@
         else
         {
             var relay = _free.First(r => r.Id == _addRelayId);
-            _members.Add(new EditMember(relay.Id, relay.Channel, relay.Name, RelayGroupMember.DefaultStartDelaySec, RelayGroupMember.DefaultRunOnSec));
+            _members.Add(new EditMember(relay.Id, relay.Channel, relay.Name, RelayGroupStep.DefaultStartDelaySec, RelayGroupStep.DefaultRunOnSec));
         }
 
         _addRelayId = AddableRelays.FirstOrDefault().Id;

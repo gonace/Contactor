@@ -144,8 +144,8 @@ public sealed class GroupPagesTests
         var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(Cancel);
         var group = new RelayGroup { BoardId = 1, Name = "Fan heater – Lathe", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-        group.Members.Add(new RelayGroupMember { RelayId = 1, Position = 1, RoleName = "Fan", RunOnSec = 300 });
-        group.Members.Add(new RelayGroupMember { RelayId = 2, Position = 2, RoleName = "Heat" });
+        group.AddStep("Fan", 1, runOnSec: 300);
+        group.AddStep("Heat", 2);
         db.RelayGroups.Add(group);
         await db.SaveChangesAsync(Cancel);
         db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });

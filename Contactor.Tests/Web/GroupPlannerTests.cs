@@ -16,22 +16,22 @@ public sealed class GroupPlannerTests
 
     // The fan heater: the fan (relay 1) first, the heat (relay 2) three seconds later; the fan runs on 5 minutes.
     // The relays' ids aren't their channels: the commands and the board's state go by the channel, the events by the id.
-    private static readonly IReadOnlyList<GroupMemberInfo> FanHeater =
+    private static readonly IReadOnlyList<GroupStepInfo> FanHeater =
     [
-        new(1, 11, 1, "Fan", 3, 300),
-        new(2, 12, 2, "Heat", 3, 0),
+        new("Fan", 3, 300, [new(11, 1, "Fan")]),
+        new("Heat", 3, 0, [new(12, 2, "Heat")]),
     ];
 
     // Three relays with different waits: ventilation, compressor, compressed air.
-    private static readonly IReadOnlyList<GroupMemberInfo> Spray =
+    private static readonly IReadOnlyList<GroupStepInfo> Spray =
     [
-        new(1, 15, 5, "Ventilation", 3, 120),
-        new(2, 16, 6, "Compressor", 10, 60),
-        new(3, 17, 7, "Tryckluft", 2, 0),
+        new("Ventilation", 3, 120, [new(15, 5, "Ventilation")]),
+        new("Compressor", 10, 60, [new(16, 6, "Compressor")]),
+        new("Tryckluft", 2, 0, [new(17, 7, "Tryckluft")]),
     ];
 
     private readonly GroupRuntime _runtime = new() { GroupId = 1 };
-    private IReadOnlyList<GroupMemberInfo> _members = FanHeater;
+    private IReadOnlyList<GroupStepInfo> _members = FanHeater;
 
     [Fact]
     public void Should_StartFromTheTop_EachStepAfterConfirmationAndItsDelay()
@@ -183,8 +183,10 @@ public sealed class GroupPlannerTests
             Assert.Equal(["Heat"], details.RootElement.GetProperty("off").EnumerateArray().Select(x => x.GetString()));
         }
 
-        // The same old status again before the board reports back: nothing new.
-        Assert.True(Plan(State(2), T0.AddSeconds(1)).IsEmpty);
+        // The same old status again before the board reports back: the heat's OFF again, nothing new logged and the
+        // fan's ON not sent twice.
+        var again = Plan(State(2), T0.AddSeconds(1));
+        Assert.Equal((Mask(2), ChannelMask.None, 0), (again.Off, again.On, again.Events.Count));
 
         // The fan runs on, then stops.
         Assert.Equal(EventActions.RunOnStart, Plan(State(1), T0.AddSeconds(2)).Events[0].Action);
@@ -429,6 +431,88 @@ public sealed class GroupPlannerTests
 
         Assert.Equal(EventActions.RunOnStart, Plan(State(1), T0.AddMinutes(3)).Events[0].Action);
         Assert.Equal(T0.AddMinutes(8), _runtime.NextStepAtUtc);
+    }
+
+    // The group stops; during the compressor's run-on the compressor is turned off by hand. The stop goes on to the
+    // ventilation: it isn't left on for ever.
+    [Fact]
+    public void Should_KeepTheGroupsStop_WhenARelayAboveIsTurnedOffDuringIt()
+    {
+        _members = Spray;
+        GroupPlanner.Stop(Spray, State(5, 6, 7), _runtime, John, T0, new GroupCommands());
+        Plan(State(5, 6), T0.AddSeconds(1));
+
+        GroupPlanner.MemberOff(Spray, State(5, 6), _runtime, 2, John, T0.AddSeconds(10), new GroupCommands());
+
+        Assert.Equal(0, _runtime.TargetLevel);
+        Assert.Equal(Mask(6), Plan(State(5, 6), T0.AddSeconds(61)).Off);
+        Plan(State(5), T0.AddSeconds(62));
+        Assert.Equal(Mask(5), Plan(State(5), T0.AddSeconds(182)).Off);
+        Plan(State(), T0.AddSeconds(183));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    // The compressor is on at the board while the ventilation is off: a person's ON for the compressed air below it is
+    // refused, and the interlock trips first.
+    [Fact]
+    public void Should_CheckTheInterlockFirst_WhenARelayIsTurnedOnByHand()
+    {
+        var commands = new GroupCommands();
+
+        var refusal = GroupPlanner.MemberOn(Spray, State(6), _runtime, 3, John, null, T0, commands);
+
+        Assert.Equal(new MemberRefusal("Ventilation"), refusal);
+        Assert.Equal((Mask(6), Mask(5)), (commands.Off, commands.On));
+        Assert.Equal(EventActions.InterlockTrip, Assert.Single(commands.Events).Action);
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
+    }
+
+    [Fact]
+    public void Should_NotCallOffATrip_WhenARelayIsTurnedOnDuringIt()
+    {
+        _members = Spray;
+        Plan(State(6), T0);
+
+        // The board hasn't reported the trip yet: the ventilation's ON is on its way.
+        var early = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(Spray, State(6), _runtime, 1, John, null, T0.AddSeconds(1), early));
+        Assert.Equal((Mask(6), ChannelMask.None, 0), (early.Off, early.On, early.Events.Count));
+        Assert.Equal((GroupPhases.Stopping, 0), (_runtime.Phase, _runtime.TargetLevel));
+
+        // The ventilation on, the compressor not yet off: turning the compressor on doesn't call the trip's stop off.
+        var late = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(Spray, State(5, 6), _runtime, 2, John, null, T0.AddSeconds(2), late));
+        Assert.True(late.IsEmpty);
+        Assert.Equal((GroupPhases.Stopping, 0), (_runtime.Phase, _runtime.TargetLevel));
+    }
+
+    // A trip's ON was on its way when the connection dropped (or the app restarted); the sequencer gives it a fresh
+    // timeout, and the board shows the heat on again without the fan. The heat goes off at once all the same.
+    [Fact]
+    public void Should_TurnOffBelowTheGap_WhileATripIsBeingHandled()
+    {
+        Plan(State(2), T0);
+        _runtime.PendingSinceUtc = T0.AddMinutes(1);
+
+        var reconnected = Plan(State(2), T0.AddMinutes(1).AddSeconds(1));
+
+        Assert.Equal((Mask(2), ChannelMask.None), (reconnected.Off, reconnected.On));
+        Assert.Empty(reconnected.Events);
+    }
+
+    // One relay per step: the ventilation's OFF is on its way after the compressor's run-on; the compressor turned on
+    // again by hand is refused.
+    [Fact]
+    public void Should_RefuseARelay_BelowTheStepWhoseOffIsOnItsWay()
+    {
+        _members = Spray;
+        GroupPlanner.Stop(Spray, State(5, 6), _runtime, John, T0, new GroupCommands());
+        Plan(State(5), T0.AddSeconds(1));
+        Assert.Equal(Mask(5), Plan(State(5), T0.AddSeconds(121)).Off);
+
+        var commands = new GroupCommands();
+        Assert.Equal(new MemberRefusal("Ventilation"), GroupPlanner.MemberOn(Spray, State(5), _runtime, 2, John, null, T0.AddSeconds(121.5), commands));
+        Assert.True(commands.IsEmpty);
     }
 
     [Fact]

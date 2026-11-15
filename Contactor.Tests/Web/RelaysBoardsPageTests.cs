@@ -422,8 +422,8 @@ public sealed partial class RelaysBoardsPageTests
     {
         await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
         var group = new RelayGroup { BoardId = boards.BarnId, Name = "Barn fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-        group.Members.Add(new RelayGroupMember { RelayId = await RelayIdAsync(boards, boards.BarnId, 1), Position = 1, RoleName = "Fan" });
-        group.Members.Add(new RelayGroupMember { RelayId = await RelayIdAsync(boards, boards.BarnId, 2), Position = 2, RoleName = "Heat" });
+        group.AddStep("Fan", await RelayIdAsync(boards, boards.BarnId, 1));
+        group.AddStep("Heat", await RelayIdAsync(boards, boards.BarnId, 2));
         db.RelayGroups.Add(group);
         await db.SaveChangesAsync(Cancel);
         db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
@@ -551,8 +551,8 @@ public sealed partial class RelaysBoardsPageTests
     {
         await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
         var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-        group.Members.Add(new RelayGroupMember { RelayId = await RelayIdAsync(boards, 1, 1), Position = 1, RoleName = "Fan" });
-        group.Members.Add(new RelayGroupMember { RelayId = await RelayIdAsync(boards, 1, 2), Position = 2, RoleName = "Heat" });
+        group.AddStep("Fan", await RelayIdAsync(boards, 1, 1));
+        group.AddStep("Heat", await RelayIdAsync(boards, 1, 2));
         db.RelayGroups.Add(group);
         await db.SaveChangesAsync(Cancel);
         db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });

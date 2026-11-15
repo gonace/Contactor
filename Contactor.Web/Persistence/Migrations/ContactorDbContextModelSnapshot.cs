@@ -175,15 +175,22 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Property<bool>("PendingOn")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int?>("PendingPosition")
+                    b.Property<int?>("PendingRelayId")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime?>("PendingSinceUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("PendingStep")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Phase")
                         .IsRequired()
                         .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("StopRelayIds")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("TargetLevel")
@@ -382,18 +389,10 @@ namespace Contactor.Web.Persistence.Migrations
                     b.Property<int>("RelayId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("Position")
+                    b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("RoleName")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("RunOnSec")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StartDelaySec")
+                    b.Property<int>("StepId")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("GroupId", "RelayId");
@@ -401,16 +400,52 @@ namespace Contactor.Web.Persistence.Migrations
                     b.HasIndex("RelayId")
                         .IsUnique();
 
-                    b.HasIndex("GroupId", "Position")
+                    b.HasIndex("StepId", "GroupId");
+
+                    b.HasIndex("StepId", "Order")
                         .IsUnique();
 
                     b.ToTable("RelayGroupMember", null, t =>
                         {
-                            t.HasCheckConstraint("CK_RelayGroupMember_Position", "\"Position\" BETWEEN 1 AND 64");
+                            t.HasCheckConstraint("CK_RelayGroupMember_Order", "\"Order\" BETWEEN 1 AND 64");
+                        });
+                });
 
-                            t.HasCheckConstraint("CK_RelayGroupMember_RunOnSec", "\"RunOnSec\" BETWEEN 0 AND 1800");
+            modelBuilder.Entity("Contactor.Web.Persistence.RelayGroupStep", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
 
-                            t.HasCheckConstraint("CK_RelayGroupMember_StartDelaySec", "\"StartDelaySec\" BETWEEN 1 AND 60");
+                    b.Property<int>("GroupId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RunOnSec")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StartDelaySec")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "Position")
+                        .IsUnique();
+
+                    b.ToTable("RelayGroupStep", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_RelayGroupStep_Position", "\"Position\" BETWEEN 1 AND 64");
+
+                            t.HasCheckConstraint("CK_RelayGroupStep_RunOnSec", "\"RunOnSec\" BETWEEN 0 AND 1800");
+
+                            t.HasCheckConstraint("CK_RelayGroupStep_StartDelaySec", "\"StartDelaySec\" BETWEEN 1 AND 60");
                         });
                 });
 
@@ -616,9 +651,29 @@ namespace Contactor.Web.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Contactor.Web.Persistence.RelayGroupStep", "Step")
+                        .WithMany("Members")
+                        .HasForeignKey("StepId", "GroupId")
+                        .HasPrincipalKey("Id", "GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("Group");
 
                     b.Navigation("Relay");
+
+                    b.Navigation("Step");
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.RelayGroupStep", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.RelayGroup", "Group")
+                        .WithMany("Steps")
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Group");
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.RelayRuntime", b =>
@@ -653,6 +708,13 @@ namespace Contactor.Web.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.RelayGroup", b =>
+                {
+                    b.Navigation("Members");
+
+                    b.Navigation("Steps");
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.RelayGroupStep", b =>
                 {
                     b.Navigation("Members");
                 });

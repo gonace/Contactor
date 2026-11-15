@@ -91,9 +91,12 @@ function seed() {
 
     db.prepare('INSERT INTO "RelayGroup" ("Id", "BoardId", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, 1, ?, \'fan\', 120, 1, 1)')
         .run('Fan heater – Lathe');
-    const member = db.prepare('INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "Position", "RoleName", "StartDelaySec", "RunOnSec") VALUES (1, ?, ?, ?, 3, ?)');
-    member.run(relay(1), 1, 'Fan', 300);
-    member.run(relay(2), 2, 'Heat', 0);
+    const step = db.prepare('INSERT INTO "RelayGroupStep" ("Id", "GroupId", "Position", "Name", "StartDelaySec", "RunOnSec") VALUES (?, 1, ?, ?, 3, ?)');
+    step.run(1, 1, 'Fan', 300);
+    step.run(2, 2, 'Heat', 0);
+    const member = db.prepare('INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "StepId", "Order") VALUES (1, ?, ?, 1)');
+    member.run(relay(1), 1);
+    member.run(relay(2), 2);
     db.prepare('INSERT INTO "GroupRuntime" ("GroupId", "Phase", "TargetLevel", "PendingOn") VALUES (1, \'idle\', 0, 0)').run();
 
     const schedule = db.prepare('INSERT INTO "Schedule" ("RelayId", "GroupId", "Days", "OnTime", "OffTime", "IsEnabled", "CreatedBy") VALUES (?, ?, ?, ?, ?, 1, ?)');

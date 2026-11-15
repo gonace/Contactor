@@ -33,6 +33,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly CancellationTokenSource _ended = new();
     private bool _wasConnected;
+
+    // The relays an OFF was sent for that the board's status doesn't show yet, as of the pass under way. Under _gate.
+    private ChannelMask _offOnItsWay;
     private int _reconnected;
     private int _disposed;
 
@@ -106,6 +109,12 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         return group.Members.All(IsOnBoard);
     }
 
+    // A relay's name in the events: its step's when it is the step's only relay, otherwise its own.
+    private static string NameOf(RelayGroupMember member)
+    {
+        return member.Step!.Members.Count == 1 ? member.Step.Name : member.Relay!.Name;
+    }
+
     private bool IsOnBoard(RelayGroupMember member)
     {
         return member.Relay!.BoardId == BoardId && Channel(member) <= _board.Capabilities.RelayCount;
@@ -138,13 +147,13 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await RunAsync(
-            (group, members, state, runtime, now, commands) =>
+            (group, steps, state, runtime, now, commands) =>
             {
                 if (group.Id == groupId)
                 {
                     // A schedule's OffTime is the end of the run it starts; it gets no auto-off.
                     var maxOnMinutes = actor == EventActors.Schedule ? null : group.MaxOnMinutes;
-                    GroupPlanner.Start(members, state, runtime, actor, maxOnMinutes, now, commands);
+                    GroupPlanner.Start(steps, state, runtime, actor, maxOnMinutes, now, commands, _offOnItsWay);
                 }
 
                 return null;
@@ -157,11 +166,11 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await RunAsync(
-            (group, members, state, runtime, now, commands) =>
+            (group, steps, state, runtime, now, commands) =>
             {
                 if (group.Id == groupId)
                 {
-                    GroupPlanner.Stop(members, state, runtime, actor, now, commands);
+                    GroupPlanner.Stop(steps, state, runtime, actor, now, commands);
                 }
 
                 return null;
@@ -174,9 +183,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await RunAsync(
-            (group, members, state, runtime, now, commands) =>
+            (group, steps, state, runtime, now, commands) =>
             {
-                GroupPlanner.Stop(members, state, runtime, actor, now, commands);
+                GroupPlanner.Stop(steps, state, runtime, actor, now, commands);
                 return null;
             },
             cancellationToken);
@@ -192,15 +201,16 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         // In words for the person who asked: the request runs in their own flow, so in the app's language.
         string? refusal = _texts["Groups.Refusal.NotInGroup"];
         await RunAsync(
-            (group, members, state, runtime, now, commands) =>
+            (group, steps, state, runtime, now, commands) =>
             {
                 if (group.Id != groupId)
                 {
                     return null;
                 }
 
-                var member = members.FirstOrDefault(m => m.RelayId == relayId);
-                if (member is null)
+                // Its position in the group's start order, from 1.
+                var position = GroupPlanner.Relays(steps).Select(r => r.Relay.RelayId).ToList().IndexOf(relayId) + 1;
+                if (position == 0)
                 {
                     return null;
                 }
@@ -208,13 +218,13 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 refusal = null;
                 if (on)
                 {
-                    refusal = GroupPlanner.MemberOn(members, state, runtime, member.Position, actor, group.MaxOnMinutes, now, commands) is { } why
+                    refusal = GroupPlanner.MemberOn(steps, state, runtime, position, actor, group.MaxOnMinutes, now, commands, _offOnItsWay) is { } why
                         ? _texts["Groups.Refusal.NeedsOn", why.NeedsOn].Value
                         : null;
                 }
                 else
                 {
-                    GroupPlanner.MemberOff(members, state, runtime, member.Position, actor, now, commands);
+                    GroupPlanner.MemberOff(steps, state, runtime, position, actor, now, commands);
                 }
 
                 return refusal;
@@ -292,6 +302,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         try
         {
             var state = _board.State;
+
+            // A relay the app sent an OFF for still shows on until the board's status catches up: it counts as off for
+            // what may come on, so a status from before the OFF never lets a relay below it on.
+            _offOnItsWay = ChannelMask.Of(state.Relays.Channels.Where(c => _expected.IsPending(c, on: false)));
             if (!state.IsConnected || Volatile.Read(ref _disposed) == 1)
             {
                 if (request is not null)
@@ -305,7 +319,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
             var reconnected = Interlocked.Exchange(ref _reconnected, 0) == 1;
             var now = _clock.UtcNow;
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-            var groups = await db.RelayGroups.Include(g => g.Members).ThenInclude(m => m.Relay)
+            var groups = await db.RelayGroups.Include(g => g.Steps).ThenInclude(s => s.Members).ThenInclude(m => m.Relay)
                 .Where(g => g.BoardId == BoardId)
                 .OrderBy(g => g.Id)
                 .ToListAsync(cancellationToken);
@@ -336,50 +350,48 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 // until it is changed or deleted. Only this board's: a channel here means a relay on this board.
                 if (!IsOnBoard(group))
                 {
-                    var on = group.Members.Where(m => m.Relay!.BoardId == BoardId && state.IsOn(Channel(m))).OrderBy(m => m.Position).ToList();
+                    var inOrder = group.Members.OrderBy(m => m.Step!.Position).ThenBy(m => m.Order).ToList();
+                    var on = inOrder.Where(m => m.Relay!.BoardId == BoardId && state.IsOn(Channel(m))).ToList();
                     all.Off |= ChannelMask.Of(on.Select(Channel));
                     runtime.Phase = GroupPhases.Idle;
                     runtime.TargetLevel = 0;
                     runtime.NextStepAtUtc = null;
-                    runtime.PendingPosition = null;
+                    runtime.PendingStep = null;
+                    runtime.PendingRelayId = null;
                     runtime.PendingOn = false;
                     runtime.PendingSinceUtc = null;
+                    runtime.StopRelayIds = [];
                     runtime.OnSinceUtc = null;
                     runtime.AutoOffAtUtc = null;
                     runtime.TurnedOnBy = null;
                     if (on.Count > 0 && shutOff.Add(group.Id) && !_shutOffLogged.Contains(group.Id))
                     {
                         // Sent again on every step until the board confirms it, but logged once.
-                        // "Fan turned off because Heat was off": the relay the board doesn't have can't be on.
-                        var missing = group.Members.Where(m => !IsOnBoard(m)).OrderBy(m => m.Position).First();
-                        var details = JsonSerializer.Serialize(new { missing = missing.RoleName, off = on.Select(m => m.RoleName) });
+                        // "Fan turned off. Heat must be on first.": the relay the board doesn't have can't be on.
+                        var missing = inOrder.First(m => !IsOnBoard(m));
+                        var details = JsonSerializer.Serialize(new { missing = NameOf(missing), off = on.Select(NameOf) });
                         events.Add((group.Id, new GroupEvent(EventActions.InterlockTrip, missing.RelayId, EventActors.System, details)));
                     }
 
                     continue;
                 }
 
-                var members = group.Members
-                    .OrderBy(m => m.Position)
-                    .Select(m => new GroupMemberInfo(m.Position, m.RelayId, Channel(m), m.RoleName, m.StartDelaySec, m.RunOnSec))
-                    .ToList();
-                if (reconnected && runtime.PendingPosition is { } pending)
+                var steps = GroupSteps.Of(group);
+                var lostStep = (int?)null;
+                if (reconnected && runtime.PendingStep is { } pending)
                 {
                     // A command from before the connection dropped (or the app restarted) was done or lost. The board
                     // gets a fresh timeout to show it; a confirmation then times the next step as usual, so no
-                    // start delay or run-on is skipped. The relay a stop (a trip) needs for its run-on, e.g. the fan
-                    // after the heat, is sent once more in case its ON was lost: turning on a relay above never breaks
-                    // the interlock.
+                    // start delay or run-on is skipped.
                     runtime.PendingSinceUtc = now;
-                    if (runtime.PendingOn && runtime.Phase == GroupPhases.Stopping && members.FirstOrDefault(m => m.Position == pending) is { } lost)
+                    if (runtime.PendingOn && runtime.Phase == GroupPhases.Stopping)
                     {
-                        all.On |= ChannelMask.Of(lost.Channel);
-                        runOn |= ChannelMask.Of(lost.Channel);
+                        lostStep = pending;
                     }
                 }
 
                 var commands = new GroupCommands();
-                if (request is not null && request(group, members, state, runtime, now, commands) is not null && commands.IsEmpty)
+                if (request is not null && request(group, steps, state, runtime, now, commands) is not null && commands.IsEmpty)
                 {
                     // Refused: nothing for this group this time.
                     continue;
@@ -387,10 +399,26 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 if (commands.IsEmpty)
                 {
-                    GroupPlanner.Plan(members, state, runtime, now, commands);
+                    GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay);
                 }
 
-                GroupPlanner.GiveOwnerlessAutoOff(members, state, runtime, group.MaxOnMinutes, now);
+                GroupPlanner.GiveOwnerlessAutoOff(steps, state, runtime, group.MaxOnMinutes, now);
+
+                // The relays a stop (a trip) needs for its run-on, e.g. the fans after the heaters, are sent once more
+                // in case their ON was lost; after the interlock has had its say, only while every step above them is
+                // still all on (a relay above may have gone off during the outage), and never a relay this pass turns
+                // off.
+                if (lostStep is { } step && step >= 1 && step <= steps.Count
+                    && runtime.Phase == GroupPhases.Stopping && runtime.PendingOn && runtime.PendingStep == step
+                    && GroupPlanner.Level(steps, state) >= step - 1)
+                {
+                    var lost = ChannelMask.Of(steps[step - 1].Relays
+                        .Where(r => runtime.PendingRelayId is not { } id || r.RelayId == id)
+                        .Select(r => r.Channel))
+                        .Except(commands.Off)
+                        .Except(all.Off);
+                    commands.On |= lost;
+                }
 
                 all.Off |= commands.Off;
                 all.On |= commands.On;
@@ -569,7 +597,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
     private delegate string? GroupRequest(
         RelayGroup group,
-        IReadOnlyList<GroupMemberInfo> members,
+        IReadOnlyList<GroupStepInfo> steps,
         BoardState state,
         GroupRuntime runtime,
         DateTime now,

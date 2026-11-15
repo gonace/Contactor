@@ -30,11 +30,12 @@ public sealed class GroupWizard
         _ => false,
     };
 
-    public GroupDraft Draft => new(
-        Name,
-        Icon,
-        RelayGroup.DefaultMaxOnMinutes,
-        [.. _members.Select(m => new GroupMemberDraft(m.RelayId, m.RoleName.Trim(), m.StartDelaySec, m.RunOnSec))]);
+    /// <summary>The group to create: each relay in a step of its own.</summary>
+    public GroupDraft Draft => new(Name, Icon, RelayGroup.DefaultMaxOnMinutes, MemberDrafts);
+
+    /// <summary>The picked relays in start order, each with its name in the group and its times.</summary>
+    public IReadOnlyList<GroupMemberDraft> MemberDrafts =>
+        [.. _members.Select(m => new GroupMemberDraft(m.RelayId, m.RoleName.Trim(), m.StartDelaySec, m.RunOnSec))];
 
     /// <summary>1 for the first in the start order, or 0 when not picked.</summary>
     public int OrderOf(int relayId)
@@ -80,7 +81,7 @@ public sealed class GroupWizard
             return;
         }
 
-        var role = relayName.Length > RelayGroupMember.RoleNameMaxLength ? relayName[..RelayGroupMember.RoleNameMaxLength] : relayName;
+        var role = relayName.Length > RelayGroupStep.NameMaxLength ? relayName[..RelayGroupStep.NameMaxLength] : relayName;
         _members.Add(new WizardMember(relayId, role) { BoardId = boardId });
     }
 
@@ -136,7 +137,7 @@ public sealed class WizardMember
 
     public string RoleName { get; set; }
 
-    public int StartDelaySec { get; set; } = RelayGroupMember.DefaultStartDelaySec;
+    public int StartDelaySec { get; set; } = RelayGroupStep.DefaultStartDelaySec;
 
-    public int RunOnSec { get; set; } = RelayGroupMember.DefaultRunOnSec;
+    public int RunOnSec { get; set; } = RelayGroupStep.DefaultRunOnSec;
 }

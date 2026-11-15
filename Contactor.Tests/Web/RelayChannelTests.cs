@@ -392,7 +392,7 @@ public sealed partial class RelayChannelTests
             Assert.Equal(ChannelMask.Of([1, 2]), view.Mask);
             Assert.Null(view.MissingRelay(rig.Simulator.Model.Capabilities.RelayCount));
             Assert.True(view.IsOn(Board(rig).State));
-            Assert.Equal(1, GroupPlanner.Level(view.Infos, Board(rig).State));
+            Assert.Equal(1, GroupPlanner.Level(view.Steps, Board(rig).State));
         }
     }
 
@@ -408,7 +408,7 @@ public sealed partial class RelayChannelTests
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
             var runtime = await db.GroupRuntimes.SingleAsync(r => r.GroupId == groupId, Cancel);
-            (runtime.Phase, runtime.TargetLevel, runtime.PendingPosition, runtime.PendingOn, runtime.PendingSinceUtc) =
+            (runtime.Phase, runtime.TargetLevel, runtime.PendingStep, runtime.PendingOn, runtime.PendingSinceUtc) =
                 (GroupPhases.Stopping, 0, 1, true, BoardTestRig.Start);
             await db.SaveChangesAsync(Cancel);
         }
@@ -619,7 +619,7 @@ public sealed partial class RelayChannelTests
             "Fan heater",
             GroupIcons.Fan,
             120,
-            [new GroupMemberView(108, 1, 1, "Fan", 3, 300), new GroupMemberView(107, 2, 2, "Heat", 3, 0), new GroupMemberView(42, 9, 3, "Mist", 3, 0)],
+            [new GroupStepInfo("Fan", 3, 300, [new(108, 1, "Fan")]), new GroupStepInfo("Heat", 3, 0, [new(107, 2, "Heat")]), new GroupStepInfo("Mist", 3, 0, [new(42, 9, "Mist")])],
             new GroupRuntime { GroupId = 1 });
 
         Assert.Equal("RELAY 1 → 2 → 9", TestTexts.GroupStatus.Chain(group));

@@ -16,7 +16,7 @@ public sealed class GroupTextTests
         "Fan heater",
         GroupIcons.Fan,
         120,
-        [new GroupMemberView(11, 1, 1, "Fan", 3, 300), new GroupMemberView(12, 2, 2, "Heat", 3, 0)],
+        [new GroupStepInfo("Fan", 3, 300, [new(11, 1, "Fan")]), new GroupStepInfo("Heat", 3, 0, [new(12, 2, "Heat")])],
         new GroupRuntime { GroupId = 1 });
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with
         {
-            Members = [.. FanHeater.Members, new GroupMemberView(13, 3, 3, "Mist", 3, 0)],
+            Steps = [.. FanHeater.Steps, new GroupStepInfo("Mist", 3, 0, [new(13, 3, "Mist")])],
         };
         var starting = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
         var stopping = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(60) } };
@@ -173,7 +173,7 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };
 
-        Assert.Equal("Stopping · Fan keeps running for 4 min 1 s", Status(group, State(1)));
+        Assert.Equal("Stopping · run-on for 4 min 1 s: Fan", Status(group, State(1)));
         Assert.Equal("Stopping", Status(group, State()));
     }
 
@@ -196,7 +196,7 @@ public sealed class GroupTextTests
     [Fact]
     public void Should_ShowAGroupWithoutRelaysAsOff()
     {
-        var empty = FanHeater with { Members = [], Runtime = new GroupRuntime { Phase = GroupPhases.Starting } };
+        var empty = FanHeater with { Steps = [], Runtime = new GroupRuntime { Phase = GroupPhases.Starting } };
 
         Assert.Equal("Off", Status(empty, State()));
     }

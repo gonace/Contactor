@@ -261,7 +261,7 @@ public sealed partial class BoardRemoval : IDisposable
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var groups = await db.RelayGroups.AsNoTracking()
             .Where(g => g.BoardId == live.BoardId)
-            .Include(g => g.Members).ThenInclude(m => m.Relay)
+            .Include(g => g.Steps).ThenInclude(s => s.Members).ThenInclude(m => m.Relay)
             .ToListAsync(cancellationToken);
         var ids = groups.Select(g => g.Id).ToList();
         var runtimes = await db.GroupRuntimes.AsNoTracking()
@@ -277,21 +277,22 @@ public sealed partial class BoardRemoval : IDisposable
                 continue;
             }
 
-            var members = group.Members.OrderBy(m => m.Position).ToList();
+            var steps = GroupSteps.Of(group);
 
-            // The lowest relay that is, or is about to be, on: it runs on next, then each one above it.
-            var level = 0;
-            while (level < members.Count && state.IsOn(members[level].Relay!.Channel))
+            // The lowest step that is, or is about to be, on (a step partly on, below the steps all on, counts): it runs
+            // on next, then each one above it.
+            var level = GroupPlanner.Level(steps, state);
+            if (GroupPlanner.Reach(steps, state) == level + 1)
             {
                 level++;
             }
 
-            var low = Math.Max(level, runtime.PendingOn ? runtime.PendingPosition ?? 0 : 0);
-            low = Math.Min(low, members.Count);
-            var above = members.Take(Math.Max(low - 1, 0)).Sum(m => m.RunOnSec);
+            var low = Math.Max(level, runtime.PendingOn ? runtime.PendingStep ?? 0 : 0);
+            low = Math.Min(low, steps.Count);
+            var above = steps.Take(Math.Max(low - 1, 0)).Sum(s => s.RunOnSec);
             var off = runtime.NextStepAtUtc is { } next
                 ? Max(next, now).AddSeconds(above)
-                : now.AddSeconds(above + (low > 0 ? members[low - 1].RunOnSec : 0));
+                : now.AddSeconds(above + (low > 0 ? steps[low - 1].RunOnSec : 0));
             stopping.Add(new Stopping(group.Name, off));
         }
 

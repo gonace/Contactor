@@ -500,8 +500,8 @@ public sealed class InputActionsTests
 
             await using var db = await Database.Factory.CreateDbContextAsync(Cancel);
             var group = new RelayGroup { BoardId = 1, Name = "Heater", Icon = GroupIcons.All[0] };
-            group.Members.Add(new RelayGroupMember { RelayId = first, Position = 1, RoleName = "A" });
-            group.Members.Add(new RelayGroupMember { RelayId = second, Position = 2, RoleName = "B" });
+            group.AddStep("A", first);
+            group.AddStep("B", second);
             db.RelayGroups.Add(group);
             await db.SaveChangesAsync(Cancel);
             return group.Id;

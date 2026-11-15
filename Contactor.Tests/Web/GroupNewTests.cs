@@ -24,7 +24,7 @@ public sealed class GroupNewTests
     [Fact]
     public void Should_DescribeTheStopFromTheBottom_WithTheRunOn()
     {
-        Assert.Equal("Lamp off → Heat off → Fan keeps running for 5 min, then off", TestTexts.GroupPlan.Stop(FanHeater));
+        Assert.Equal("Lamp off → Heat off → Run-on for 5 min: Fan, then off", TestTexts.GroupPlan.Stop(FanHeater));
     }
 
     [Fact]

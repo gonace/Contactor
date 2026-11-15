@@ -431,8 +431,11 @@
         var state = StateOf(group.BoardId);
         var groupOn = group.IsOn(state);
         var missing = group.MissingRelay(Registry.Find(group.BoardId)?.Capabilities.RelayCount ?? 0);
-        var level = GroupPlanner.Level(group.Infos, state);
-        var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && level > 0);
+        var level = GroupPlanner.Level(group.Steps, state);
+        var reach = GroupPlanner.Reach(group.Steps, state);
+
+        // Lit while any of it runs in order, e.g. only Fan 1; not while a relay is on out of order.
+        var lit = group.Runtime.Phase == GroupPhases.Starting || (groupOn && reach > 0 && reach <= level + 1);
         @* With several boards the label names the group's board: "GROUP · WORKSHOP 1 → 2". *@
         var chain = Several ? $"{BoardNameOf(group.BoardId).ToUpperInvariant()} {group.Channels}" : GroupStatus.Chain(group);
         <div class="card group @(lit && state.HasAnswered ? "on" : null) @(group.Runtime.Phase == GroupPhases.Stopping && state.HasAnswered ? "stopping" : null) @(state.HasAnswered ? null : "unknown")" @key="@($"g{group.Id}")">

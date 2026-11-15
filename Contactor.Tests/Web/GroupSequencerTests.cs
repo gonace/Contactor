@@ -263,7 +263,7 @@ public sealed class GroupSequencerTests
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0);
         Assert.Null(await rig.GroupSetup.SaveAsync(id, reversed, John, Cancel));
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Equal([2, 1], await db.RelayGroupMembers.OrderBy(m => m.Position).Select(m => m.RelayId).ToListAsync(Cancel));
+        Assert.Equal([2, 1], await db.RelayGroupMembers.OrderBy(m => m.Step!.Position).Select(m => m.RelayId).ToListAsync(Cancel));
     }
 
     [Fact]
@@ -319,7 +319,7 @@ public sealed class GroupSequencerTests
             var runtime = await db.GroupRuntimes.SingleAsync(r => r.GroupId == id, Cancel);
             runtime.Phase = GroupPhases.Stopping;
             runtime.TargetLevel = 0;
-            runtime.PendingPosition = 1;
+            runtime.PendingStep = 1;
             runtime.PendingOn = true;
             runtime.PendingSinceUtc = BoardTestRig.Start;
             await db.SaveChangesAsync(Cancel);
@@ -344,16 +344,43 @@ public sealed class GroupSequencerTests
         await using var rig = await BoardTestRig.StartAsync();
         var id = await CreateAsync(rig, FanHeater);
 
-        foreach (var member in new[]
+        foreach (var step in new[]
         {
-            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 2, RoleName = "Same step" },
-            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 3, RoleName = "A", StartDelaySec = 0 },
-            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 3, RoleName = "A", RunOnSec = 1801 },
-            new RelayGroupMember { GroupId = id, RelayId = 3, Position = 65, RoleName = "A" },
+            new RelayGroupStep { GroupId = id, Position = 2, Name = "Same step" },
+            new RelayGroupStep { GroupId = id, Position = 3, Name = "A", StartDelaySec = 0 },
+            new RelayGroupStep { GroupId = id, Position = 3, Name = "A", RunOnSec = 1801 },
+            new RelayGroupStep { GroupId = id, Position = 65, Name = "A" },
         })
         {
             await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
-            db.RelayGroupMembers.Add(member);
+            db.RelayGroupSteps.Add(step);
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+        }
+
+        // A relay's place in its step, and its step in its own group.
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var fan = await db.RelayGroupSteps.SingleAsync(s => s.GroupId == id && s.Position == 1, Cancel);
+            db.RelayGroupMembers.Add(new RelayGroupMember { GroupId = id, StepId = fan.Id, RelayId = 3, Order = 1 });
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+        }
+
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var fan = await db.RelayGroupSteps.SingleAsync(s => s.GroupId == id && s.Position == 1, Cancel);
+            db.RelayGroupMembers.Add(new RelayGroupMember { GroupId = id, StepId = fan.Id, RelayId = 3, Order = 65 });
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+        }
+
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var other = new RelayGroup { BoardId = 1, Name = "Annan", Icon = GroupIcons.Bolt };
+            other.AddStep("A", 4);
+            other.AddStep("B", 5);
+            db.RelayGroups.Add(other);
+            await db.SaveChangesAsync(Cancel);
+            var fan = await db.RelayGroupSteps.SingleAsync(s => s.GroupId == id && s.Position == 1, Cancel);
+            db.RelayGroupMembers.Add(new RelayGroupMember { GroupId = other.Id, StepId = fan.Id, RelayId = 3, Order = 2 });
             await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
         }
     }
@@ -380,11 +407,160 @@ public sealed class GroupSequencerTests
         await CreateAsync(rig, FanHeater);
         await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
         var other = new RelayGroup { BoardId = 1, Name = "Annan", Icon = GroupIcons.Bolt };
-        other.Members.Add(new RelayGroupMember { RelayId = 2, Position = 1, RoleName = "A" });
-        other.Members.Add(new RelayGroupMember { RelayId = 3, Position = 2, RoleName = "B" });
+        other.AddStep("A", 2);
+        other.AddStep("B", 3);
         db.RelayGroups.Add(other);
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+    }
+
+    // Two fans in one step, then two heaters in the next.
+    private static GroupDraft FansHeaters => new(
+        "Workshop heat",
+        GroupIcons.Fan,
+        120,
+        [new GroupStepDraft("Fans", [1, 2], 3, 180), new GroupStepDraft("Heaters", [3, 4], 3, 0)]);
+
+    [Fact]
+    public async Task Should_SwitchTheRelaysOfAStepTogether_OnTheBoard()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var id = await CreateAsync(rig, FansHeaters);
+
+        await rig.Groups.StartGroupAsync(id, John, Cancel);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1) && rig.Client.State.IsOn(2));
+        Assert.False(rig.Client.State.IsOn(3) || rig.Client.State.IsOn(4));
+        await rig.Groups.StepAsync(Cancel);
+        rig.Time.Now += TimeSpan.FromSeconds(3);
+        await rig.Groups.StepAsync(Cancel);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b1111);
+
+        // One heater by hand: the other stays on, the fans too.
+        Assert.Null(await rig.Groups.SetMemberAsync(id, 3, on: false, John, Cancel));
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b1011);
+
+        // A fan stopped at the board: both heaters off at once, and the fan back on to run on.
+        await rig.Simulator.SetOutputsAsync((byte)(Vm201Channel.Mask(1) | Vm201Channel.Mask(4)));
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b1001);
+        await rig.Groups.StepAsync(Cancel);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0011);
+        var trip = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.InterlockTrip);
+        Assert.Equal("""{"missing":"Relay 2","off":["Relay 4"]}""", trip.Details);
+    }
+
+    [Fact]
+    public async Task Should_RefuseAHeater_UntilBothFansAreOn_OnTheBoard()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var id = await CreateAsync(rig, FansHeaters);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, 1, on: true, John, Cancel));
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
+
+        Assert.Equal("Needs Fans to be on.", await rig.Groups.SetMemberAsync(id, 3, on: true, John, Cancel));
+        Assert.False(rig.Client.State.IsOn(3));
+    }
+
+    [Fact]
+    public async Task Should_SendTheFansOnceMore_WhenATripsOnWasLostInAReconnect()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var id = await CreateAsync(rig, FansHeaters);
+
+        // A trip turned the heaters off and sent the fans' ON, which was lost with the connection.
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.GroupRuntimes.SingleAsync(r => r.GroupId == id, Cancel);
+            (runtime.Phase, runtime.TargetLevel, runtime.PendingStep, runtime.PendingOn, runtime.PendingSinceUtc) =
+                (GroupPhases.Stopping, 0, 1, true, BoardTestRig.Start);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        _ = rig.Groups;
+        rig.Simulator.DropConnections();
+        await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsConnected);
+        rig.Time.Now += TimeSpan.FromMinutes(1);
+        await rig.Groups.StepAsync(Cancel);
+
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0011);
+    }
+
+    // A trip was waiting for the middle step's ON when the connection dropped; meanwhile the relay above went off at the
+    // board. Its ON isn't sent again below that gap.
+    [Fact]
+    public async Task Should_NotSendATripsLostOn_BelowAStepThatIsOff()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var id = await CreateAsync(rig, FansHeaters with { Steps = [new GroupStepDraft("A", [1]), new GroupStepDraft("B", [2, 3]), new GroupStepDraft("C", [4])] });
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.GroupRuntimes.SingleAsync(r => r.GroupId == id, Cancel);
+            (runtime.Phase, runtime.TargetLevel, runtime.PendingStep, runtime.PendingOn, runtime.PendingSinceUtc) =
+                (GroupPhases.Stopping, 0, 2, true, BoardTestRig.Start);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        _ = rig.Groups;
+        rig.Simulator.DropConnections();
+        await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsConnected);
+        rig.Time.Now += TimeSpan.FromMinutes(1);
+        await rig.Groups.StepAsync(Cancel);
+        await rig.Groups.StepAsync(Cancel);
+
+        Assert.Equal(0, rig.Simulator.Outputs);
+    }
+
+    [Fact]
+    public async Task Should_SaveSteps_AndChangeThemOnlyWhileTheGroupIsOff()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var id = await CreateAsync(rig, FansHeaters with { Steps = [new GroupStepDraft(" ", [1, 2]), new GroupStepDraft("Heaters", [3, 4])] });
+        var view = (await rig.GroupSetup.GetAsync(id, Cancel))!;
+
+        // A step without a name takes its first relay's.
+        Assert.Equal(["Relay 1", "Heaters"], view.Steps.Select(s => s.Name));
+        Assert.Equal([[1, 2], [3, 4]], view.Steps.Select(s => s.Relays.Select(r => r.Channel).ToArray()));
+        var created = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.GroupCreate);
+        Assert.Contains("\"steps\":[\"Relay 1\",\"Heaters\"]", created.Details, StringComparison.Ordinal);
+
+        // A relay moved to another step is a change of order: only while off.
+        var moved = FansHeaters with { Steps = [new GroupStepDraft("Fans", [1]), new GroupStepDraft("Heaters", [2, 3, 4])] };
+        await rig.Simulator.SetOutputsAsync(Vm201Channel.Mask(1));
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsOn(1));
+        Assert.StartsWith("Turn off the group", await rig.GroupSetup.SaveAsync(id, moved, John, Cancel), StringComparison.Ordinal);
+
+        // Names and times can change while it runs.
+        Assert.Null(await rig.GroupSetup.SaveAsync(id, FansHeaters with { Steps = [new GroupStepDraft("Fans", [1, 2], 3, 300), new GroupStepDraft("Heat", [3, 4])] }, John, Cancel));
+        view = (await rig.GroupSetup.GetAsync(id, Cancel))!;
+        Assert.Equal([("Fans", 300), ("Heat", 0)], view.Steps.Select(s => (s.Name, s.RunOnSec)));
+
+        await rig.Simulator.SetOutputsAsync(0);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0);
+        Assert.Null(await rig.GroupSetup.SaveAsync(id, moved, John, Cancel));
+        view = (await rig.GroupSetup.GetAsync(id, Cancel))!;
+        Assert.Equal([[1], [2, 3, 4]], view.Steps.Select(s => s.Relays.Select(r => r.Channel).ToArray()));
+    }
+
+    [Fact]
+    public async Task Should_RefuseAStepWithoutRelays()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+
+        Assert.Equal(
+            "Each step needs at least one relay.",
+            (await rig.GroupSetup.CreateAsync(FansHeaters with { Steps = [new GroupStepDraft("Fans", [1, 2]), new GroupStepDraft("Heaters", [])] }, John, Cancel)).Error);
+        Assert.Equal(
+            "A relay can only be in the group once.",
+            (await rig.GroupSetup.CreateAsync(FansHeaters with { Steps = [new GroupStepDraft("Fans", [1, 2]), new GroupStepDraft("Heaters", [2, 3])] }, John, Cancel)).Error);
+        Assert.Equal(
+            "The name in the group can be at most 40 characters.",
+            (await rig.GroupSetup.CreateAsync(FansHeaters with { Steps = [new GroupStepDraft(new string('F', 41), [1, 2])] }, John, Cancel)).Error);
+
+        // One step of two relays is a group.
+        var (id, error) = await rig.GroupSetup.CreateAsync(FansHeaters with { Steps = [new GroupStepDraft("Fans", [1, 2])] }, John, Cancel);
+        Assert.Null(error);
+        Assert.NotNull(id);
     }
 
     private static async Task<int> CreateAsync(BoardTestRig rig, GroupDraft draft)

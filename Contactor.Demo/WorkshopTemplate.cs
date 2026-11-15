@@ -105,8 +105,8 @@ public static class WorkshopTemplate
             MaxOnMinutes = RelayGroup.DefaultMaxOnMinutes,
             SortOrder = 1,
         };
-        group.Members.Add(new RelayGroupMember { RelayId = fan.Id, Position = 1, RoleName = fan.Name, RunOnSec = FanRunOnSec });
-        group.Members.Add(new RelayGroupMember { RelayId = heat.Id, Position = 2, RoleName = heat.Name, StartDelaySec = HeatStartDelaySec });
+        group.AddStep(fan.Name, fan.Id, runOnSec: FanRunOnSec);
+        group.AddStep(heat.Name, heat.Id, startDelaySec: HeatStartDelaySec);
         db.RelayGroups.Add(group);
 
         var ventilation = new Schedule
@@ -153,13 +153,13 @@ public static class WorkshopTemplate
         runtime.LastContactUtc = nowUtc;
 
         var ids = new WorkshopIds(board.Id, group.Id, fan.Id, Channel(relays, 3).Id, lights.Id, ventilation.RelayId!.Value, outdoor.RelayId!.Value, door.Id, ventilation.Id, outdoor.Id);
-        var members = group.Members
-            .OrderBy(m => m.Position)
-            .Select(m => new GroupMemberInfo(m.Position, m.RelayId, 0, m.RoleName, m.StartDelaySec, m.RunOnSec))
+        var steps = group.Steps
+            .OrderBy(s => s.Position)
+            .Select(s => new GroupStepInfo(s.Name, s.StartDelaySec, s.RunOnSec, [.. s.Members.Select(m => new GroupRelayInfo(m.RelayId, 0, s.Name))]))
             .ToList();
 
         // One at a time, so the ids follow the times: the app takes the door's last event as its state.
-        foreach (var entry in Events(ids, GroupPlanner.Chain(members), zone, nowUtc))
+        foreach (var entry in Events(ids, GroupPlanner.Chain(steps), zone, nowUtc))
         {
             db.EventLog.Add(entry);
             await db.SaveChangesAsync(cancellationToken);

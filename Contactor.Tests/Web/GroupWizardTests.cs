@@ -106,7 +106,7 @@ public sealed class GroupWizardTests
 
         wizard.Toggle(1, new string('Å', 60), Board);
 
-        Assert.Equal(RelayGroupMember.RoleNameMaxLength, wizard.Members[0].RoleName.Length);
+        Assert.Equal(RelayGroupStep.NameMaxLength, wizard.Members[0].RoleName.Length);
     }
 
     private static GroupWizard AtStepTwo()

@@ -290,9 +290,9 @@ public sealed class BoardRemovalTests
         {
             var relays = await db.Relays.Where(r => r.BoardId == boards.BarnId).ToDictionaryAsync(r => r.Channel, r => r.Id, Cancel);
             var group = new RelayGroup { BoardId = boards.BarnId, Name = "Booth", SortOrder = 1 };
-            group.Members.Add(new RelayGroupMember { RelayId = relays[1], Position = 1, RoleName = "Fan", StartDelaySec = 1, RunOnSec = 600 });
-            group.Members.Add(new RelayGroupMember { RelayId = relays[2], Position = 2, RoleName = "Pump", StartDelaySec = 1, RunOnSec = 300 });
-            group.Members.Add(new RelayGroupMember { RelayId = relays[3], Position = 3, RoleName = "Heat", StartDelaySec = 1 });
+            group.AddStep("Fan", relays[1], startDelaySec: 1, runOnSec: 600);
+            group.AddStep("Pump", relays[2], startDelaySec: 1, runOnSec: 300);
+            group.AddStep("Heat", relays[3], startDelaySec: 1);
             db.RelayGroups.Add(group);
             await db.SaveChangesAsync(Cancel);
             groupId = group.Id;
@@ -456,8 +456,8 @@ public sealed class BoardRemovalTests
         var relays = await db.Relays.Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Id, Cancel);
         var input = await db.Inputs.Where(i => i.BoardId == boardId && i.Channel == 1).Select(i => i.Id).SingleAsync(Cancel);
         var group = new RelayGroup { BoardId = boardId, Name = "Heater", SortOrder = 1 };
-        group.Members.Add(new RelayGroupMember { RelayId = relays[3], Position = 1, RoleName = "Fan", StartDelaySec = 1, RunOnSec = runOnSec });
-        group.Members.Add(new RelayGroupMember { RelayId = relays[4], Position = 2, RoleName = "Heat", StartDelaySec = 1 });
+        group.AddStep("Fan", relays[3], startDelaySec: 1, runOnSec: runOnSec);
+        group.AddStep("Heat", relays[4], startDelaySec: 1);
         db.RelayGroups.Add(group);
         await db.SaveChangesAsync(Cancel);
         db.Schedules.Add(new Schedule { RelayId = relays[2], Days = ScheduleDays.All, OnTime = new(6, 0), OffTime = new(7, 0), CreatedBy = John });

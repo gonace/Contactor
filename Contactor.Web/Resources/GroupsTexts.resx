@@ -23,8 +23,8 @@
     <value>Starting · step {0} of {1}</value>
   </data>
   <data name="Groups.Status.StoppingRunOn" xml:space="preserve">
-    <value>Stopping · {0} keeps running for {1}</value>
-    <comment>{0} is a relay's name in the group, {1} the time left.</comment>
+    <value>Stopping · run-on for {1}: {0}</value>
+    <comment>{0} is what runs on: a step's name, e.g. "Fans", or one relay's, {1} the time left.</comment>
   </data>
   <data name="Groups.Status.Stopping" xml:space="preserve">
     <value>Stopping</value>
@@ -73,7 +73,7 @@
     <comment>When the group turns on: {0} is the start so far, {1} a wait, {2} the next relay.</comment>
   </data>
   <data name="Groups.Plan.RunsOn" xml:space="preserve">
-    <value>{0} keeps running for {1}, then off</value>
+    <value>Run-on for {1}: {0}, then off</value>
   </data>
   <data name="Groups.Plan.Off" xml:space="preserve">
     <value>{0} off</value>
@@ -132,6 +132,9 @@
   </data>
   <data name="Groups.Save.TooFew" xml:space="preserve">
     <value>Choose at least {0} relays.</value>
+  </data>
+  <data name="Groups.Save.EmptyStep" xml:space="preserve">
+    <value>Each step needs at least one relay.</value>
   </data>
   <data name="Groups.Save.Twice" xml:space="preserve">
     <value>A relay can only be in the group once.</value>
