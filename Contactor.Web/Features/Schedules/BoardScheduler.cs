@@ -486,7 +486,7 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
         catch
         {
             // Cancelled, or failed some other way: nothing is logged, so whatever the board did shows as an external
-            // change, as for RelayControl's commands. Only a command that went out keeps its expectation.
+            // change, as for RelayControl's commands. Only a command the board took keeps its expectation.
             _expected.Forget(mask, on);
             throw;
         }
