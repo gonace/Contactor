@@ -2,7 +2,9 @@ using Contactor.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Groups;
 
@@ -22,14 +24,17 @@ public sealed class GroupSequencer : BackgroundService, IBoardWatcher
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
     private readonly BoardParts<BoardSequencer> _boards;
+    private readonly IStringLocalizer<GroupsTexts> _texts;
 
     public GroupSequencer(
         IDbContextFactory<ContactorDbContext> dbFactory,
         LocalClock clock,
         RelayChanges changes,
         TimeProvider timeProvider,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IStringLocalizer<GroupsTexts> texts)
     {
+        _texts = texts;
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _dbFactory = dbFactory;
         _clock = clock;
@@ -55,7 +60,7 @@ public sealed class GroupSequencer : BackgroundService, IBoardWatcher
     public IAsyncDisposable Watch(LiveBoard board)
     {
         ArgumentNullException.ThrowIfNull(board);
-        var sequencer = new BoardSequencer(board, _dbFactory, _clock, _changes, _timeProvider, _loggerFactory.CreateLogger<BoardSequencer>());
+        var sequencer = new BoardSequencer(board, _dbFactory, _clock, _changes, _timeProvider, _loggerFactory.CreateLogger<BoardSequencer>(), _texts);
         _boards.Add(sequencer);
         return new Watching(_boards, sequencer);
     }

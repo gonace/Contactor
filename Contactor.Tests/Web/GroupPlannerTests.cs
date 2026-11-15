@@ -218,7 +218,7 @@ public sealed class GroupPlannerTests
 
         var refusal = GroupPlanner.MemberOn(FanHeater, State(), _runtime, 2, John, null, T0, commands);
 
-        Assert.Equal("Needs Fan to be on.", refusal);
+        Assert.Equal(new MemberRefusal("Fan"), refusal);
         Assert.True(commands.IsEmpty);
     }
 

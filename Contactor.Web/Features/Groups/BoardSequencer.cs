@@ -4,7 +4,9 @@ using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Groups;
 
@@ -26,6 +28,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     private readonly RelayChanges _changes;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<BoardSequencer> _logger;
+    private readonly IStringLocalizer<GroupsTexts> _texts;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly CancellationTokenSource _ended = new();
@@ -43,8 +46,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         LocalClock clock,
         RelayChanges changes,
         TimeProvider timeProvider,
-        ILogger<BoardSequencer> logger)
+        ILogger<BoardSequencer> logger,
+        IStringLocalizer<GroupsTexts> texts)
     {
+        _texts = texts;
         _board = board;
         _dbFactory = dbFactory;
         _clock = clock;
@@ -184,7 +189,8 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     public async Task<string?> SetMemberAsync(int groupId, int relayId, bool on, string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
-        string? refusal = "That relay isn't in the group.";
+        // In words for the person who asked: the request runs in their own flow, so in the app's language.
+        string? refusal = _texts["Groups.Refusal.NotInGroup"];
         await RunAsync(
             (group, members, state, runtime, now, commands) =>
             {
@@ -202,7 +208,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 refusal = null;
                 if (on)
                 {
-                    refusal = GroupPlanner.MemberOn(members, state, runtime, member.Position, actor, group.MaxOnMinutes, now, commands);
+                    refusal = GroupPlanner.MemberOn(members, state, runtime, member.Position, actor, group.MaxOnMinutes, now, commands) is { } why
+                        ? _texts["Groups.Refusal.NeedsOn", why.NeedsOn].Value
+                        : null;
                 }
                 else
                 {

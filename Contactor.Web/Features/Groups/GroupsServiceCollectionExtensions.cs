@@ -8,7 +8,11 @@ public static class GroupsServiceCollectionExtensions
     public static IServiceCollection AddGroups(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        // The texts of the handler and the text services; registered with the languages too, and once is enough.
+        services.AddLocalization();
         services.AddSingleton<GroupsHandler>();
+        services.AddSingleton<GroupStatusText>();
+        services.AddSingleton<GroupPlanText>();
         services.AddSingleton<GroupSequencer>();
         services.AddSingleton<IBoardWatcher>(sp => sp.GetRequiredService<GroupSequencer>());
         services.AddHostedService(sp => sp.GetRequiredService<GroupSequencer>());

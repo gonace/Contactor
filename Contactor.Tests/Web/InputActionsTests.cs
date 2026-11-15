@@ -284,7 +284,7 @@ public sealed class InputActionsTests
         var candidates = await rig.Groups.CandidatesAsync(Cancel);
         var (_, error) = await rig.Groups.CreateAsync(Draft(1, 2), John, Cancel);
 
-        Assert.Equal("Controlled by Door", candidates[0].Note);
+        Assert.Equal("Controlled by Door", TestTexts.GroupPlan.Note(candidates[0]));
         Assert.False(candidates[0].IsFree);
         Assert.Equal("Relay 1 is controlled by the input Door. Remove it there first.", error);
         Assert.DoesNotContain(await rig.Groups.FreeRelaysAsync(Cancel), r => r.Id == 1);

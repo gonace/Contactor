@@ -4,6 +4,9 @@ using Contactor.Web.Persistence;
 
 namespace Contactor.Web.Features.Groups;
 
+/// <summary>Why a relay of a group can't be turned on: the relay above it, by its name in the group, is off.</summary>
+public sealed record MemberRefusal(string NeedsOn);
+
 /// <summary>A relay in a group, as the planner sees it.</summary>
 /// <param name="Position">1 starts first and stops last.</param>
 /// <param name="RelayId">The relay, for the events.</param>
@@ -373,7 +376,7 @@ public static class GroupPlanner
     /// Turns one relay on, within the interlock: only when the relay above it is on. Returns why not, or
     /// null when done.
     /// </summary>
-    public static string? MemberOn(
+    public static MemberRefusal? MemberOn(
         IReadOnlyList<GroupMemberInfo> members,
         BoardState state,
         GroupRuntime runtime,
@@ -392,7 +395,7 @@ public static class GroupPlanner
         var member = members[position - 1];
         if (position > 1 && !state.IsOn(members[position - 2].Channel))
         {
-            return $"Needs {members[position - 2].RoleName} to be on.";
+            return new MemberRefusal(members[position - 2].RoleName);
         }
 
         if (state.IsOn(member.Channel))

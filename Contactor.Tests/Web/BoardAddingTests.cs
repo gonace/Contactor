@@ -24,6 +24,9 @@ public sealed class BoardAddingTests
 {
     private const string John = TwoBoards.John;
 
+    // What "Which relays?" says under the other boards once a relay is picked.
+    private const string OneBoardText = "A group's relays are all on one board.";
+
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     private static BoardModel Model(string type) => BoardCatalogue.Find(type)!.Model;
@@ -385,19 +388,19 @@ public sealed class BoardAddingTests
 
         Assert.True(await page.HasAsync(attributes => attributes.GetValueOrDefault("class")?.ToString() == "board-name" && PageRenderer.WithText(firstName)(attributes)));
         Assert.True(await page.HasAsync(attributes => attributes.GetValueOrDefault("class")?.ToString() == "board-name" && PageRenderer.WithText("Barn")(attributes)));
-        Assert.DoesNotContain(GroupsHandler.OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain(OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
         var barnLight = Pick(await RelayIdAsync(boards, boards.BarnId, 1));
         var barnRelay2 = Pick(await RelayIdAsync(boards, boards.BarnId, 2));
         var firstRelay = Pick(await RelayIdAsync(boards, 1, 1));
         Assert.False(await DisabledAsync(page, firstRelay));
 
         await page.ClickAsync(barnLight);
-        Assert.Contains(GroupsHandler.OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Contains(OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
         Assert.True(await DisabledAsync(page, firstRelay));
         Assert.False(await DisabledAsync(page, barnRelay2));
 
         await page.ClickAsync(barnLight);
-        Assert.DoesNotContain(GroupsHandler.OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain(OneBoardText, await page.TextAsync(), StringComparison.Ordinal);
         Assert.False(await DisabledAsync(page, firstRelay));
 
         await page.ClickAsync(barnLight);
