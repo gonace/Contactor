@@ -451,6 +451,95 @@ public sealed class FailedCommandTests : IAsyncLifetime
         await AssertNoExternalEventAsync();
     }
 
+    // A schedule's ON cancelled before it reached the board leaves no expectation: the relay coming on at the board
+    // right after is logged as changed there, not taken for the schedule's.
+    [Fact]
+    public async Task Should_LogExternal_WhenAScheduleOnWasCancelledBeforeItWentOut()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        using var caller = new CancellationTokenSource();
+        _board.BeforeOn = () => CancelBeforeItGoesOut(caller);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Scheduler.TickAsync(caller.Token));
+
+        await AssertLoggedAsExternalAsync(2, on: true);
+    }
+
+    // A schedule's OFF that fails other than with a lost board leaves no expectation either.
+    [Fact]
+    public async Task Should_LogExternal_WhenAScheduleOffFailedBeforeItWentOut()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        await Scheduler.TickAsync(Cancel);
+        await WaitForEventsAsync(1);
+        _time.Now = OffTime;
+        _board.BeforeOff = FailBeforeItGoesOut;
+
+        await Assert.ThrowsAsync<TimeoutException>(() => Scheduler.TickAsync(Cancel));
+
+        await AssertLoggedAsExternalAsync(2, on: false);
+    }
+
+    [Fact]
+    public async Task Should_LogExternal_WhenAnAutoOffWasCancelledBeforeItWentOut()
+    {
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        await WaitForEventsAsync(1);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
+        using var caller = new CancellationTokenSource();
+        _board.BeforeOff = () => CancelBeforeItGoesOut(caller);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => AutoOff.CheckAsync(caller.Token));
+
+        await AssertLoggedAsExternalAsync(3, on: false);
+    }
+
+    [Fact]
+    public async Task Should_LogExternal_WhenAnAutoOffFailedBeforeItWentOut()
+    {
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        await WaitForEventsAsync(1);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
+        _board.BeforeOff = FailBeforeItGoesOut;
+
+        await Assert.ThrowsAsync<TimeoutException>(() => AutoOff.CheckAsync(Cancel));
+
+        await AssertLoggedAsExternalAsync(3, on: false);
+    }
+
+    // The caller cancels while the command waits to go out, as a board's client does before it sends: nothing reaches
+    // the board.
+    private Task CancelBeforeItGoesOut(CancellationTokenSource caller)
+    {
+        _board.BeforeOn = null;
+        _board.BeforeOff = null;
+        caller.Cancel();
+        throw new OperationCanceledException(caller.Token);
+    }
+
+    // A failure other than a lost board, before the command reaches the board.
+    private Task FailBeforeItGoesOut()
+    {
+        _board.BeforeOff = null;
+        throw new TimeoutException("No answer.");
+    }
+
+    // Nothing reached the board and no change is expected: the relay switching at the board right after is logged as
+    // changed there.
+    private async Task AssertLoggedAsExternalAsync(int relayId, bool on)
+    {
+        Assert.Equal(!on, _board.State.IsOn(relayId));
+        Assert.False(_database.Services.Live().Expected.IsPending(relayId, on));
+        _board.SetRelay(relayId, on);
+        var action = on ? EventActions.On : EventActions.Off;
+        var events = await WaitForEventsAsync(e => e.Any(x => x.RelayId == relayId && x.Action == action));
+        Assert.Equal(EventActors.External, events.Single(e => e.RelayId == relayId && e.Action == action).Actor);
+    }
+
     // 14:05 and 14:10 local on the test's day; it starts at 14:02.
     private static DateTimeOffset OnTime => new(2026, 11, 4, 13, 5, 0, TimeSpan.Zero);
 
