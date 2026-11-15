@@ -93,47 +93,27 @@ The earlier way, with `deploy/install.sh`, is in [docs/DEPLOY.md](docs/DEPLOY.md
 Needs the .NET 10 SDK.
 
 ```sh
-dotnet build Contactor.slnx
-dotnet test --solution Contactor.slnx
+dotnet build
+dotnet test
 ```
 
-Run everything locally with Aspire (the dashboard opens on http://localhost:15280):
+Run everything locally with Aspire, which also needs Docker Desktop (once: `dotnet tool install -g Aspire.Cli --version
+13.5.4`):
 
 ```sh
-dotnet run --project Contactor.AppHost
+aspire run
 ```
 
-It needs Docker Desktop. The AppHost starts a VM201 simulator on port 9760, which the app reaches at
-`host.docker.internal`, and the app as its image, built from the
-`Dockerfile` with cloudflared and Tailscale inside, as on a real installation, on http://localhost:8080; Docker Desktop
-shows its container under `contactor`, and `docker compose ls` lists a running `contactor` project while the AppHost
-runs. This is harmless. Each run builds the image as `contactor-web:dev`. When the image changed, the build before it
-stays in Docker as an untagged `<none>` image. `docker image prune` removes these, and every other untagged image. What
-the app keeps is in the Docker volume `contactor-dev`; delete it to start over. A new database starts with the setup
-guide, behind the setup code in the app's log: choose any way in and sign-in there, as on a real installation. For quick
-work on this computer only, `dotnet run --project Contactor.Web` runs the app on its own, with a local database file,
-against the simulator started with `dotnet run --project Contactor.Simulator`. The simulator's page, linked from the
-dashboard, shows the board's relays and every packet, and switches relays as the board's own buttons would. Stop and
-start the simulator in the dashboard to test a lost connection to the board. The tests use the same simulator, so no
-hardware is needed.
+The dashboard links to everything it starts:
+- **The app** on http://localhost:8080, built from the `Dockerfile` as on a real installation. Its data is in the
+  Docker volume `contactor-dev`; delete it to start over. A new database starts with the setup guide, behind the setup
+  code in the app's log.
+- **The simulator**, a VM201 the app talks to, with a page to switch its relays and see its traffic. Stop and start
+  it in the dashboard to test a lost connection to the board. No hardware needed; the tests use it too.
+- **The demo** on http://localhost:5070, as on [the public demo](https://contactor.obscured.app). How to host it is in
+  [`docs/DEMO.md`](docs/DEMO.md).
 
-The public demo, where each visitor gets their own copy of the app and the simulator side by side, is
-`Contactor.Demo`: the AppHost runs it as `contactor-demo` on http://localhost:5070, linked from the dashboard, with
-copies of its own, not the resources above; the AppHost is where it is set up for development. A new copy offers to skip the setup guide with the Workshop template: a fan heater, lights, schedules and three days of events.
-Each copy runs in the visitor's own time zone, as their browser tells it (UTC without JavaScript). How to host it is in
-[`docs/DEMO.md`](docs/DEMO.md).
-
-`docs/ARCHITECTURE.md` describes the architecture and the rules the app follows, and `AGENTS.md` how to work in this repository. Each board's protocol or routes are in the `README.md` of its project, e.g. `Contactor.Boards.Vm201/README.md`.
-
-### Screenshots
-
-The pictures above are taken by a script, with made-up data: it starts the simulator and the app on a temporary
-database, fills it, and photographs the screens at phone size. It needs Node 22 or later and Playwright with
-Chromium.
-
-```sh
-node scripts/screenshots/take.mjs
-```
+`docs/ARCHITECTURE.md` describes how the app is built, and `AGENTS.md` how to work in this repository.
 
 ## Licence
 
