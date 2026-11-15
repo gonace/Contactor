@@ -55,7 +55,8 @@ public readonly record struct DemoRoute(DemoTarget Target, PathString Path);
 /// <item><c>/demo/simulator/…</c> is the simulator, without the prefix; the proxy points its page's
 /// <c>&lt;base href&gt;</c> there, so its files and its live connection come back the same way.</item>
 /// <item>Everything else is the app's, except what the app only answers on its own machine (the proxy connects from
-/// there): <c>/healthz</c>, <c>/setup/reload</c> and the development checks.</item>
+/// there): <c>/healthz</c>, <c>/setup/reload</c> and the development checks. A GET of <c>/healthz</c> is the demo's
+/// own (<see cref="DemoServiceCollectionExtensions.HealthPath"/>), for its own machine only.</item>
 /// </list>
 /// </summary>
 public static class DemoRoutes

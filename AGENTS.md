@@ -52,7 +52,7 @@ Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
 Contactor.Simulator/      # Development: simulated boards, each on its own port, with a page to drive them and see their traffic
-Contactor.Demo/           # The public demo: a proxy that gives each visitor their own app and simulator, each a process on 127.0.0.1, and the Workshop template ("Skip setup")
+Contactor.Demo/           # The public demo: a proxy that gives each visitor their own app and simulator, each a process on 127.0.0.1, and the Workshop template ("Skip setup"). Dockerfile: its image (ghcr.io/gonace/contactor-demo)
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
@@ -67,23 +67,25 @@ Contactor.Tests/          # The only test project
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
   compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
+  demo/compose.yml          # The public demo and its cloudflared, on a network with no route out; no published ports
   install.sh                # Run on the Pi: settings to /opt/contactor/.env, data folder, ghcr.io login, first start
   upgrade.sh                # Pulls, checks the cosign signature, restarts, waits until healthy
   autoupdate-install.sh     # systemd timer: upgrade every night 03:00–04:00
   cosign/                   # Public signing keys and how to make them
 docs/DEPLOY.md              # Installation steps
+docs/DEMO.md                # Hosting the public demo
 docs/ARCHITECTURE.md        # How the app is built and what it does: architecture, boards, data model, rules, screens, operations
 docs/screenshots/           # The README's screenshots, taken by scripts/screenshots/take.mjs
 scripts/
   screenshots/take.mjs      # Takes them: simulator, app and made-up data on a temporary database, Playwright
   release-version.sh        # YYYY.M.D[.N]
-  images-build.sh           # Build and push the image with docker buildx; prints the digest to sign
-  images-publish.sh         # Publish and sign the image from your computer
+  images-build.sh           # Build and push an image with docker buildx; prints the digest to sign
+  images-publish.sh         # Publish and sign the images (the app's and the demo's) from your computer
   images-sign.sh            # cosign, by digest
 LICENSE                     # MIT
 THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence texts in licenses/ (in the image: /licenses)
 .github/workflows/build.yml # build + test (pull requests, merges to main, by hand)
-.github/workflows/images.yml # publish and sign the image (by hand)
+.github/workflows/images.yml # publish and sign the images, the app's and the demo's (by hand)
 .github/pull_request_template.md # What every pull request description has
 .agents/writing.md          # How to write pull requests, issues and comments
 .agents/review.md           # The independent review's checklist

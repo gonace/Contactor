@@ -1,0 +1,96 @@
+# The public demo (docs/DEMO.md): Contactor.Demo, with a copy of the app and the simulator for each visitor, behind a
+# Cloudflare tunnel. Copy this file to /opt/contactor-demo, next to /opt/contactor-demo/.env (readable by root only),
+# which holds the tunnel's token. No port is published: cloudflared connects out to Cloudflare and forwards the demo's
+# hostname to http://demo:8080.
+#
+#   demo ──(network "demo": internal, no route out, not even to this machine)── cloudflared ──(network "outside")── Cloudflare
+#
+# A visitor can type any board address in their copy of the app. The demo container is on the "demo" network only, so
+# from it nothing but cloudflared can be reached.
+name: contactor-demo
+
+x-logging: &logging
+  # Docker keeps logs forever by default; this caps them at 30 MB per container.
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  demo:
+    image: ${DEMO_IMAGE:-ghcr.io/gonace/contactor-demo:latest}
+    restart: unless-stopped
+    environment:
+      # cloudflared's address below: only a request from there may say that the visitor came in over HTTPS, so their
+      # cookie is marked Secure. Change both together.
+      Demo__TunnelAddress: 172.30.60.2
+    networks:
+      - demo
+    # The visitors' copies, each in a folder of its own, deleted when the copy ends (and at start, if the demo didn't stop
+    # cleanly). Nothing in it needs to be kept.
+    volumes:
+      - copies:/data
+    # About 250 MB per visitor, 10 visitors at most, and the demo itself.
+    mem_limit: 3g
+    # Each copy is two .NET processes with their threads.
+    pids_limit: 2048
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Time for the demo to stop every copy.
+    stop_grace_period: 30s
+    logging: *logging
+
+  cloudflared:
+    # The same version as in the app's image (Dockerfile); raise them together.
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set it in .env, see docs/DEMO.md}
+      # Its metrics for its own health check only, not for the demo on the shared network.
+      TUNNEL_METRICS: 127.0.0.1:20241
+    networks:
+      demo:
+        ipv4_address: 172.30.60.2
+      outside: {}
+    depends_on:
+      demo:
+        condition: service_healthy
+    mem_limit: 256m
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:20241", "ready"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+    logging: *logging
+
+networks:
+  # The demo's only network. internal: no route out. gateway_mode_ipv4 isolated (Docker 28 or later): this machine
+  # has no address on it either, so the demo can't reach its services. The demo takes an address from ip_range, so
+  # cloudflared's is always free. If the subnet clashes with one of this machine's networks, pick another and change
+  # cloudflared's address in both places above.
+  demo:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+    ipam:
+      config:
+        - subnet: 172.30.60.0/28
+          ip_range: 172.30.60.8/29
+  # cloudflared's way to Cloudflare.
+  outside: {}
+
+volumes:
+  copies:

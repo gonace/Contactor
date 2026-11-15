@@ -3,6 +3,7 @@ using Contactor.Demo;
 using Contactor.Tests.Web;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -530,6 +531,56 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("172.30.60.2", "https", true)]
+    [InlineData("::ffff:172.30.60.2", "https", true)]
+    [InlineData("172.30.60.2", "http", false)]
+    [InlineData("172.30.60.2", null, false)]
+    [InlineData("172.30.60.3", "https", false)]
+    [InlineData("127.0.0.1", "https", false)]
+    public async Task Should_MarkTheCookieSecure_OnlyWhenTheTunnelSaysTheVisitorCameOverHttps(string from, string? proto, bool secure)
+    {
+        await StartAsync(tunnel: "172.30.60.2");
+
+        var context = await PageFromAsync(from, proto);
+
+        var cookie = context.Response.Headers.SetCookie.ToString();
+        Assert.StartsWith(VisitorCookie.Name + "=", cookie, StringComparison.Ordinal);
+        Assert.Equal(secure, cookie.Contains("secure", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("172.30.60.2")]
+    [InlineData("127.0.0.1")]
+    public async Task Should_BelieveNoOne_AboutHttps_WithoutATunnelAddress(string from)
+    {
+        await StartAsync();
+
+        var context = await PageFromAsync(from, "https");
+
+        Assert.DoesNotContain("secure", context.Response.Headers.SetCookie.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", HttpStatusCode.OK)]
+    [InlineData("::1", HttpStatusCode.OK)]
+    [InlineData("172.30.60.2", HttpStatusCode.NotFound)]
+    public async Task Should_AnswerTheHealthCheck_OnItsOwnMachineOnly(string from, HttpStatusCode status)
+    {
+        await StartAsync(tunnel: "172.30.60.2");
+
+        var context = await _app!.GetTestServer().SendAsync(c =>
+        {
+            c.Request.Method = HttpMethods.Get;
+            c.Request.Path = DemoServiceCollectionExtensions.HealthPath;
+            c.Connection.RemoteIpAddress = IPAddress.Parse(from);
+        }, Cancel);
+
+        Assert.Equal((int)status, context.Response.StatusCode);
+        Assert.Equal(0, Copies.KeptCount);
+        Assert.Equal(0, Copies.Taken);
+    }
+
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     private VisitorCopies Copies => _app!.Services.GetRequiredService<VisitorCopies>();
@@ -538,7 +589,24 @@ public sealed class DemoProxyTests : IAsyncDisposable
 
     private EchoStarter Echo => (EchoStarter)_app!.Services.GetRequiredService<IProgramStarter>();
 
-    private async Task<HttpClient> StartAsync(int maxVisitors = 10, bool listens = true)
+    // The page from a connection of this address, with this X-Forwarded-Proto.
+    private async Task<HttpContext> PageFromAsync(string from, string? proto)
+    {
+        return await _app!.GetTestServer().SendAsync(c =>
+        {
+            c.Request.Method = HttpMethods.Get;
+            c.Request.Path = "/";
+            c.Request.Headers["Sec-Fetch-Dest"] = "document";
+            if (proto is not null)
+            {
+                c.Request.Headers["X-Forwarded-Proto"] = proto;
+            }
+
+            c.Connection.RemoteIpAddress = IPAddress.Parse(from);
+        }, Cancel);
+    }
+
+    private async Task<HttpClient> StartAsync(int maxVisitors = 10, bool listens = true, string tunnel = "")
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
         builder.WebHost.UseTestServer();
@@ -549,6 +617,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
             ["Demo:SimulatorPath"] = _folder.SimulatorPath,
             ["Demo:DataRoot"] = _folder.DataRoot,
             ["Demo:MaxVisitors"] = maxVisitors.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["Demo:TunnelAddress"] = tunnel,
         });
         builder.Services.AddSingleton<TimeProvider>(_time);
         builder.Services.AddSingleton<IProgramStarter>(new EchoStarter { Listens = listens });

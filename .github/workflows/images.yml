@@ -75,6 +75,28 @@ jobs:
           IMAGE: ${{ steps.publish.outputs.image }}
         run: bash scripts/images-sign.sh "$IMAGE"
 
+      - name: Publish the demo's image
+        id: publish-demo
+        # The same as the app's, from Contactor.Demo/Dockerfile, with the same version.
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/contactor-demo"
+          digest=$(bash scripts/images-build.sh "$image" "$VERSION" "$GITHUB_SHA" Contactor.Demo/Dockerfile)
+          echo "Published $image@$digest ($VERSION)"
+          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the demo's image
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.publish-demo.outputs.image }}
+        run: bash scripts/images-sign.sh "$IMAGE"
+
       - name: Tag the commit
         # So each version maps to its exact code.
         env:

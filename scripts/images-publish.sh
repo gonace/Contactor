@@ -3,7 +3,8 @@
 # minutes: it computes the release version (YYYY.M.D in UTC, plus .N for a later release the same day, see
 # release-version.sh), builds and runs every test (nothing is published unless they pass), builds and pushes the image
 # (linux/arm64 and linux/amd64, images-build.sh) tagged with the version, `latest` and `sha-<commit>`, signs it by the
-# digest the build pushed (images-sign.sh), then pushes the tag v<version> to the commit it published. Run it from a
+# digest the build pushed (images-sign.sh), does the same for the demo's image (contactor-demo, from
+# Contactor.Demo/Dockerfile), then pushes the tag v<version> to the commit it published. Run it from a
 # clean checkout of main, with the .NET SDK, Docker (with buildx) and cosign installed. It asks for a
 # classic GitHub token with write:packages, the cosign private key's file (~/contactor-keys/contactor-main.key
 # unless you name another) and its password; none of them is shown or saved. COSIGN_PRIVATE_KEY (the key itself) and
@@ -14,6 +15,8 @@ set -euo pipefail
 
 readonly OWNER=gonace
 readonly REPOSITORY=gonace/contactor
+readonly DEMO_REPOSITORY=gonace/contactor-demo
+readonly DEMO_DOCKERFILE=Contactor.Demo/Dockerfile
 readonly BRANCH=main
 readonly DEFAULT_KEY=~/contactor-keys/contactor-main.key
 
@@ -61,8 +64,17 @@ echo "Published ghcr.io/$repository@$digest"
 bash scripts/images-sign.sh "ghcr.io/$repository@$digest" \
     || fail "$repository:$version is published but not signed, so the Raspberry Pi won't take it; sign ghcr.io/$repository@$digest with scripts/images-sign.sh."
 
+# The demo's image, from the same commit and with the same version. The app's is out already: if this fails, publish
+# and sign the demo's by hand (images-build.sh with Contactor.Demo/Dockerfile, images-sign.sh), then push the tag.
+echo "== $DEMO_REPOSITORY ($version, latest, sha-$sha)"
+demo_digest=$(bash scripts/images-build.sh "ghcr.io/$DEMO_REPOSITORY" "$version" "$commit" "$DEMO_DOCKERFILE") \
+    || fail "$repository:$version is published and signed, but the demo's image isn't; nothing was tagged."
+echo "Published ghcr.io/$DEMO_REPOSITORY@$demo_digest"
+bash scripts/images-sign.sh "ghcr.io/$DEMO_REPOSITORY@$demo_digest" \
+    || fail "$DEMO_REPOSITORY:$version is published but not signed; sign ghcr.io/$DEMO_REPOSITORY@$demo_digest with scripts/images-sign.sh. Nothing was tagged."
+
 # Tags the commit the image was built from, so the version maps to its exact code.
 git tag "v$version" HEAD || fail "could not tag v$version."
 git push --quiet origin "v$version" || fail "could not push the tag v$version; push it with: git push origin v$version"
 
-echo "Published and signed $version (sha-$sha), and tagged v$version. The Raspberry Pi takes it on its next nightly update, between 03:00 and 04:00."
+echo "Published and signed $version (sha-$sha) of the app and the demo, and tagged v$version. The Raspberry Pi takes it on its next nightly update, between 03:00 and 04:00."

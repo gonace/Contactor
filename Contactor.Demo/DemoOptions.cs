@@ -1,3 +1,4 @@
+using System.Net;
 using Contactor.Web;
 using Microsoft.Extensions.Options;
 
@@ -58,6 +59,13 @@ public sealed class DemoOptions
     /// days are in it.
     /// </summary>
     public string TimeZone { get; set; } = LocalClock.DefaultTimeZone;
+
+    /// <summary>
+    /// The address the tunnel (cloudflared) connects to the demo from, its own address on the demo's network. Only a
+    /// request from there may say that the visitor came in over HTTPS (<c>X-Forwarded-Proto</c>), so the visitor's
+    /// cookie is marked Secure. Empty: nobody may.
+    /// </summary>
+    public string TunnelAddress { get; set; } = "";
 }
 
 /// <summary>Makes relative paths in <see cref="DemoOptions"/> absolute, from the demo's content root.</summary>
@@ -141,6 +149,11 @@ public sealed class DemoOptionsValidation : IValidateOptions<DemoOptions>
         if (!IsTimeZone(options.TimeZone))
         {
             errors.Add($"Demo:TimeZone isn't a time zone this machine knows, e.g. {LocalClock.DefaultTimeZone}.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.TunnelAddress) && !IPAddress.TryParse(options.TunnelAddress, out _))
+        {
+            errors.Add("Demo:TunnelAddress is empty or an IP address, e.g. 172.30.60.2.");
         }
 
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);

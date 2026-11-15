@@ -1,8 +1,9 @@
 # Third-party notices
 
-Contactor is licensed under the MIT License (see `LICENSE`). It includes, or its container image bundles, the
+Contactor is licensed under the MIT License (see `LICENSE`). It includes, or its container images bundle, the
 following works of others, each under its own licence. The licence texts are in `licenses/` in the repository and in
-`/licenses` in the image, next to `LICENSE` and this file.
+`/licenses` in each image, next to `LICENSE` and this file. The demo's image (`Contactor.Demo/Dockerfile`) bundles all
+of them except cloudflared and Tailscale, and also YARP.
 
 ## IBM Plex Sans and IBM Plex Mono
 
@@ -44,5 +45,7 @@ following works of others, each under its own licence. The licence texts are in 
   License: `Polly-BSD-3-Clause.txt`.
 - **SQLitePCLRaw** (`SQLitePCLRaw.*`): Copyright 2014-2024 SourceGear, LLC. Apache License 2.0: `Apache-2.0.txt`.
   It bundles SQLite (`libe_sqlite3`), which is in the public domain.
+- **YARP** (`Yarp.ReverseProxy`, the demo's image only): Copyright (c) .NET Foundation and Contributors. MIT License:
+  `YARP-MIT.txt`.
 - **.NET and the `Microsoft.*` packages:** Copyright (c) .NET Foundation and Contributors, and Microsoft Corporation;
   MIT License. The .NET runtime's own notices come with Microsoft's base image (`mcr.microsoft.com/dotnet/aspnet`).
