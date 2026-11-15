@@ -28,6 +28,11 @@ alone, so nothing about our releases is sent anywhere else.
 
 ## If the main key is lost or leaks
 
+The update helper brings itself up to date from each new release it checked (Issue #325), and it runs as root.
+So anyone who has a signing key and can also push to `ghcr.io/gonace/contactor` can get root on every installation
+that then presses "Update now". A key that leaks must be replaced before the next release. Replacing it later
+can't undo a helper that a bad release already replaced.
+
 An installation's update helper trusts only the keys in its own copy of `install/contactor-updater.sh`. It gets new
 keys with the next "Update now": after a healthy update it brings itself up to date from the copy in the new image
 (Issue #325). A helper from before that change doesn't, so such an installation gets them only when someone runs the

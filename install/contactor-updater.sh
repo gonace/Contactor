@@ -25,7 +25,7 @@
 #
 # For testing only (scripts/updater-test.sh): CONTACTOR_DIR, CONTACTOR_REPOSITORY, CONTACTOR_COSIGN,
 # CONTACTOR_COSIGN_KEYS (public keys, separated by empty lines), CONTACTOR_UPDATER_STATE, CONTACTOR_UPDATER_PATH (where
-# this helper is installed), CONTACTOR_UNITS (where its units are), CONTACTOR_HEALTH_SECONDS,
+# this helper is installed), CONTACTOR_UNITS (where its units are), CONTACTOR_READER, CONTACTOR_HEALTH_SECONDS,
 # CONTACTOR_BOOT_ID (this start's id), CONTACTOR_STUCK_SECONDS, CONTACTOR_WAIT_SECONDS and CONTACTOR_TEST_STOP_AT (stops the run dead at a
 # step, as a power cut would). They come from the service's own
 # environment, which only root can set, never from the app.
@@ -42,6 +42,8 @@ readonly JOURNAL=$STATE/journal
 readonly SELF=${CONTACTOR_UPDATER_PATH:-/usr/local/sbin/contactor-updater}
 readonly UNITS=${CONTACTOR_UNITS:-/etc/systemd/system}
 readonly IMAGE_UPDATER=/app/updater
+# The container update_helper makes to read them: by name, so one a killed run left behind is removed the next time.
+readonly READER=${CONTACTOR_READER:-contactor-updater-read}
 readonly REPOSITORY=${CONTACTOR_REPOSITORY:-ghcr.io/gonace/contactor}
 # The image's user, who owns the data folder.
 readonly APP_UID=1654
@@ -804,9 +806,9 @@ good_unit() {
     [[ -f "$1" && ! -L "$1" && -s "$1" ]] && grep -qx '\[Unit\]' "$1" && grep -q 'contactor-updater' "$1"
 }
 
-# The version line of helper $1, e.g. 2.
+# The version line of helper $1, e.g. 2; nothing when there is no such file or line. Never fails.
 helper_version_of() {
-    sed -n 's/^readonly HELPER_VERSION=\([0-9]*\)$/\1/p' "$1" 2> /dev/null | head -n 1
+    { sed -n 's/^readonly HELPER_VERSION=\([0-9]\{1,9\}\)$/\1/p' -- "$1" 2> /dev/null || true; } | head -n 1
 }
 
 # Puts $1 in place of $2 with mode $3, if $4 (good_helper or good_unit) passes the copy: in one step (a new file in the
@@ -852,14 +854,18 @@ update_helper() {
     rm -f -- "$SELF".new.* "$UNITS"/contactor-updater.service.new.* "$UNITS"/contactor-updater.path.new.*
     rm -rf -- "$TMP/updater"
     mkdir -m 700 "$TMP/updater" || return 0
-    if ! cid=$(timeout 120 docker create --pull never --network none "$image" 2> /dev/null) || [[ -z "$cid" ]]; then
+    # With its anonymous volumes (the image's VOLUME /data), also when docker create was stopped after it made it.
+    docker rm -f -v "$READER" > /dev/null 2>&1 || true
+    if ! cid=$(timeout 120 docker create --name "$READER" --pull never --network none "$image" 2> /dev/null) \
+        || [[ -z "$cid" ]]; then
+        docker rm -f -v "$READER" > /dev/null 2>&1 || true
         log "Couldn't look for a new update helper in ${TO:-the new version}; this one stays."
         return 0
     fi
     for file in contactor-updater.sh contactor-updater.service contactor-updater.path; do
         timeout 120 docker cp "$cid:$IMAGE_UPDATER/$file" "$TMP/updater/$file" > /dev/null 2>&1 || true
     done
-    docker rm -v "$cid" > /dev/null 2>&1 || true
+    docker rm -f -v "$READER" > /dev/null 2>&1 || true
 
     file=$TMP/updater/contactor-updater.sh
     if [[ ! -e "$file" && ! -L "$file" ]]; then
@@ -872,7 +878,7 @@ update_helper() {
     fi
     to=$(helper_version_of "$file")
     from=$(helper_version_of "$SELF")
-    if [[ -n "$from" ]] && ((10#$to < 10#$from)); then
+    if [[ -n "$from" && -n "$to" ]] && ((10#$to < 10#$from)); then
         log "The update helper in ${TO:-the new version} (version $to) is older than this one ($from); this one stays."
         return 0
     fi

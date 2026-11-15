@@ -36,6 +36,8 @@ readonly STATE=$WORK/state
 # The helper and its units as install.sh puts them on the machine: the helper brings these up to date itself.
 readonly INSTALLED=$WORK/sbin/contactor-updater
 readonly UNITS=$WORK/units
+# The container the helper makes to read a new image's copies of itself.
+readonly READER=contactor-updater-test-read
 FAILED=0
 # The machine's start, as the helper sees it: a power cut starts it again.
 BOOT=test-start-1
@@ -43,6 +45,7 @@ BOOT=test-start-1
 cleanup() {
     docker compose --project-directory "$DIR" -f "$DIR/compose.yml" down --timeout 1 > /dev/null 2>&1 || true
     docker rm -f "$REGISTRY_CONTAINER" > /dev/null 2>&1 || true
+    docker rm -f -v "$READER" > /dev/null 2>&1 || true
     rm -rf -- "$WORK"
 }
 trap cleanup EXIT
@@ -66,7 +69,7 @@ request() { printf '%s\n' "$1" | as_app sh -c 'cat > "$1"' sh "$DIR/data/updates
 helper() {
     env CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" \
         CONTACTOR_COSIGN_KEYS="$(cat "$WORK/keys/cosign.pub")" CONTACTOR_UPDATER_STATE="$STATE" \
-        CONTACTOR_UPDATER_PATH="$INSTALLED" CONTACTOR_UNITS="$UNITS" \
+        CONTACTOR_UPDATER_PATH="$INSTALLED" CONTACTOR_UNITS="$UNITS" CONTACTOR_READER="$READER" PATH="$WORK/bin:$PATH" \
         CONTACTOR_HEALTH_SECONDS="${HEALTH_SECONDS:-60}" CONTACTOR_BOOT_ID="$BOOT" CONTACTOR_STUCK_SECONDS=1 \
         "$@" bash "$INSTALLED" >> "$WORK/helper.log" 2>&1
 }
@@ -186,7 +189,10 @@ for version in 2026.11.14:good:v1 2026.11.20:good:v2 2026.11.21:bad:v3 2026.11.2
     IFS=: read -r number mode tag copies <<< "$version"
     build "$number" "$mode" "$tag" "$copies"
 done
-mkdir -p "$WORK/sbin" "$UNITS"
+mkdir -p "$WORK/sbin" "$UNITS" "$WORK/bin"
+# The helper never reloads this machine's own systemd: a stand-in notes what it was asked.
+printf '#!/bin/sh\necho "$*" >> "%s"\n' "$WORK/systemctl.log" > "$WORK/bin/systemctl"
+chmod 755 "$WORK/bin/systemctl"
 cp "$HELPER" "$INSTALLED"
 cp "$ROOT/install/contactor-updater.service" "$ROOT/install/contactor-updater.path" "$UNITS/"
 chmod 755 "$INSTALLED"
@@ -429,6 +435,12 @@ check "no half-written file is left" test -z "$(find "$WORK/sbin" "$UNITS" -name
 check "the new helper stays executable" test -x "$INSTALLED"
 log_file=$(find "$DIR/data/updates/logs" -name "update-*.log" | sort | tail -n 1)
 check "the log says so" grep -q "The update helper is brought up to date (version $HELPER_VERSION to 901)" "$log_file"
+if [[ -d /run/systemd/system ]]; then
+    check "systemd is asked to read the new units (the test's stand-in)" grep -qx daemon-reload "$WORK/systemctl.log"
+else
+    check "without systemd, systemctl isn't asked" test ! -e "$WORK/systemctl.log"
+fi
+check "the container that read the image is gone" test -z "$(docker ps -aq --filter "name=^$READER\$")"
 helper
 check "the next run is the new helper" grep -qx 'version=901' "$DIR/data/updates/helper"
 
@@ -483,6 +495,98 @@ check "after the next start it says done" test "$(status_of state)-$(status_of t
 check "the installed helper is the image's own copy" cmp -s "$INSTALLED" "$WORK/variants/newer2/contactor-updater.sh"
 check "the units are the image's own copies" cmp -s "$UNITS/contactor-updater.service" "$WORK/variants/newer2/contactor-updater.service"
 check "no container it made to read the image is left" test "$(docker ps -aq --filter "ancestor=$(image_id "$V15")" | wc -l)" = 1
+
+say "update_helper on its own: what the image holds, a missing helper, leftovers"
+# Runs only update_helper, as after a healthy update, on image $1 (by digest), against the installation in
+# $WORK/direct; says how it ended, so a run that stops halfway shows.
+direct() {
+    # shellcheck disable=SC2016 # expanded by the inner shell
+    env PATH="$WORK/bin:$PATH" CONTACTOR_DIR="$DIR" CONTACTOR_REPOSITORY="$REPOSITORY" CONTACTOR_COSIGN="$COSIGN" \
+        CONTACTOR_COSIGN_KEYS=unused CONTACTOR_UPDATER_STATE="$WORK/direct/state" CONTACTOR_READER="$READER" \
+        CONTACTOR_UPDATER_PATH="$WORK/direct/sbin/contactor-updater" CONTACTOR_UNITS="$WORK/direct/units" \
+        bash -c 'source <(sed "\$d" "$1"); TMP=$(mktemp -d); TO=test; update_helper "$2"; echo "update_helper returned $?"' \
+        sh "$HELPER" "$1" > "$WORK/direct.log" 2>&1 || true
+}
+# An installation of this helper and its units in $WORK/direct.
+direct_install() {
+    rm -rf "$WORK/direct"
+    mkdir -p "$WORK/direct/sbin" "$WORK/direct/units" "$WORK/direct/state"
+    cp "$HELPER" "$WORK/direct/sbin/contactor-updater"
+    cp "$ROOT/install/contactor-updater.service" "$ROOT/install/contactor-updater.path" "$WORK/direct/units/"
+}
+direct_state() { find "$WORK/direct/sbin" "$WORK/direct/units" -type f -exec md5sum {} + | sort; }
+# The copies $1 (see variants) in $WORK/direct-image/root/app/updater, to change before direct_image.
+direct_root() {
+    rm -rf "$WORK/direct-image"
+    mkdir -p "$WORK/direct-image/root/app/updater"
+    cp "$WORK/variants/$1/"* "$WORK/direct-image/root/app/updater/"
+}
+# An image with what is in $WORK/direct-image/root, tagged $1 and pushed; prints it by digest.
+direct_image() {
+    printf 'FROM busybox:1.36\nCOPY root/ /\n' > "$WORK/direct-image/Dockerfile"
+    docker build --quiet -t "$REPOSITORY:$1" "$WORK/direct-image" > /dev/null
+    docker push --quiet "$REPOSITORY:$1" > /dev/null
+    docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$REPOSITORY:$1" | grep "^$REPOSITORY@" | head -n 1
+}
+
+direct_install
+before=$(direct_state)
+direct_root newer
+rm "$WORK/direct-image/root/app/updater/contactor-updater.sh"
+ln -s /bin/sh "$WORK/direct-image/root/app/updater/contactor-updater.sh"
+direct "$(direct_image direct-link)"
+check "a link as the image's helper: refused, nothing replaced" \
+    test "$(direct_state)" = "$before" -a "$(grep -c "didn't pass the check" "$WORK/direct.log")" = 1
+direct_root newer
+rm "$WORK/direct-image/root/app/updater/contactor-updater.sh"
+mkdir "$WORK/direct-image/root/app/updater/contactor-updater.sh"
+cp "$WORK/variants/newer/contactor-updater.sh" "$WORK/direct-image/root/app/updater/contactor-updater.sh/"
+direct "$(direct_image direct-folder)"
+check "a folder as the image's helper: refused, nothing replaced" \
+    test "$(direct_state)" = "$before" -a "$(grep -c "didn't pass the check" "$WORK/direct.log")" = 1
+
+direct_root newer
+printf '[Service]\nExecStart=/bin/true\n' > "$WORK/direct-image/root/app/updater/contactor-updater.service"
+direct "$(direct_image direct-unit)"
+check "a good helper with a unit that fails its check: the helper goes in" \
+    cmp -s "$WORK/direct/sbin/contactor-updater" "$WORK/variants/newer/contactor-updater.sh"
+check "that unit stays as it was" cmp -s "$WORK/direct/units/contactor-updater.service" "$ROOT/install/contactor-updater.service"
+check "the other unit goes in" cmp -s "$WORK/direct/units/contactor-updater.path" "$WORK/variants/newer/contactor-updater.path"
+check "the log says which unit was refused" grep -q "contactor-updater.service in test didn't pass the check" "$WORK/direct.log"
+
+direct_install
+rm "$WORK/direct/sbin/contactor-updater"
+touch "$WORK/direct/sbin/contactor-updater.new.Ab12Cd" "$WORK/direct/units/contactor-updater.service.new.Ef34Gh"
+# What a run that was stopped while it made its container leaves behind.
+docker create --name "$READER" busybox:1.36 > /dev/null
+direct_root newer2
+direct "$(direct_image direct-missing)"
+check "no helper in place: it doesn't stop halfway" grep -qx 'update_helper returned 0' "$WORK/direct.log"
+check "and the new helper goes in" cmp -s "$WORK/direct/sbin/contactor-updater" "$WORK/variants/newer2/contactor-updater.sh"
+check "the log says from an unknown version" grep -q 'brought up to date (version ? to 903)' "$WORK/direct.log"
+check "half-written copies a power cut left are removed" test -z "$(find "$WORK/direct" -name '*.new.*')"
+check "a container a stopped run left behind is removed too" test -z "$(docker ps -aq --filter "name=^$READER\$")"
+for tag in direct-link direct-folder direct-unit direct-missing; do
+    docker image rm "$REPOSITORY:$tag" > /dev/null 2>&1 || true
+done
+
+say "install.sh --uninstall removes the helper's own copies"
+mkdir -p "$WORK/uninstall/sbin" "$WORK/uninstall/units"
+for file in sbin/contactor-updater units/contactor-updater.service units/contactor-updater.path; do
+    for suffix in "" .previous .new .new.Ab12Cd; do
+        touch "$WORK/uninstall/$file$suffix"
+    done
+done
+{
+    printf 'HELPER=%s\nUNITS=%s\nHELPER_STATE=%s\nDATA=%s\nAPP_UID=1654\n' "$WORK/uninstall/sbin/contactor-updater" \
+        "$WORK/uninstall/units" "$WORK/uninstall/state" "$WORK/uninstall/data"
+    # shellcheck disable=SC2016 # for the inner shell
+    printf '%s\n' 'as_root() { "$@"; }' 'has_systemd() { false; }' 'ok() { :; }'
+    sed -n '/^remove_helper() {/,/^}/p' "$ROOT/install/install.sh"
+    printf 'remove_helper\n'
+} > "$WORK/uninstall.sh"
+sh "$WORK/uninstall.sh"
+check "nothing of the helper is left" test -z "$(find "$WORK/uninstall" -type f)"
 
 say "Secrets across the 2000-character cut"
 stripped=$(printf '%s Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after\n' "$(head -c 1990 /dev/zero | tr '\0' a)" \
