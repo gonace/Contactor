@@ -98,7 +98,8 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 - **Auto-off:** that it triggers, and not for relays turned on by a schedule.
 - **Identity:** valid and invalid JWT, wrong `aud`, and that the app refuses to start on a sign-in that doesn't fit its way in.
 - **CI:** the Build workflow runs `dotnet build` and `dotnet test` on every pull request to `main`, on every merge into `main` and by hand, and shows the results as a "Tests" check (`dorny/test-reporter`). A new push to a pull request cancels its older run. Run the related tests locally before pushing.
-- **While the Build workflow is disabled** (to save Actions minutes during heavy development): ignore the missing GitHub checks and don't bring them up. The gate is a full local run instead: a Release build and every test on a clean checkout of the pull request's latest commit, with the commit and the result in the pull request's description.
+- **While working, run only the related tests:** the tests you wrote and the tests of the code you changed (filter on those test classes or that folder's namespace), never the complete suite. The complete suite runs once, as the gate below, on the final commit; for a stack, once on its top part.
+- **While the Build workflow is disabled** (to save Actions minutes during heavy development): ignore the missing GitHub checks and don't bring them up. The gate is a full local run instead: a Release build and every test on a clean checkout of the pull request's latest commit (for a stack, its top part, with its base merged in), with the commit and the result in the pull request's description.
 
 ## Workflow
 
