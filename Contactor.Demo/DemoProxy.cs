@@ -205,7 +205,7 @@ public sealed partial class DemoProxy : IDisposable
 
     // "Skip setup: start from a template", the page's form: fills the cookie's own copy, never another's, then shows the
     // page again (303), whose app frame opens on the relays. To a fetch: 204 when applied, 409 when the copy was left as
-    // it was, 404 without a copy.
+    // it was, 404 without a copy, 503 when it didn't start.
     private async Task TemplateAsync(HttpContext context)
     {
         NoStore(context.Response);
@@ -227,6 +227,7 @@ public sealed partial class DemoProxy : IDisposable
         {
             TemplateResult.Applied => StatusCodes.Status204NoContent,
             TemplateResult.Refused => StatusCodes.Status409Conflict,
+            TemplateResult.DidntStart => StatusCodes.Status503ServiceUnavailable,
             _ => StatusCodes.Status404NotFound,
         });
     }
@@ -312,10 +313,9 @@ public sealed partial class DemoProxy : IDisposable
         }
         catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
         {
-            // Ended while the request waited for it: the visitor sees that, not an error. A copy that failed to start
-            // is stopped too, but says it didn't start.
-            var failed = copy.Started.Exception?.InnerException is not null and not OperationCanceledException;
-            await NoCopyAsync(context, copy.Stopped.IsCompleted && !failed ? DemoPages.Ended() : DemoPages.NotStarted());
+            // Ended while the request waited for it: the visitor sees that, not an error. A copy that failed to start,
+            // or whose program was given up, is stopped too, but says it didn't start.
+            await NoCopyAsync(context, copy.Stopped.IsCompleted && !copy.DidntStart ? DemoPages.Ended() : DemoPages.NotStarted());
             return;
         }
 

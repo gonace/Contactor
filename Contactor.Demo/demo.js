@@ -4,8 +4,8 @@
 // keeps the visitor's copy: it tells the demo at most every data-report seconds. After data-idle seconds without one,
 // a popup counts down data-warning seconds; with no click or key by then, it asks the demo to end the copy. The demo
 // keeps it when the visitor used it since in another tab: then the popup goes and the count starts over. Otherwise the
-// copy ends and the page says so. The demo itself deletes a copy whose pages stopped reporting, so this script only
-// shows what the demo does anyway.
+// copy ends and the page says so; or that it didn't start, when that is what happened. The demo itself deletes a copy
+// whose pages stopped reporting, so this script only shows what the demo does anyway.
 (() => {
     "use strict";
     const body = document.body;
@@ -35,7 +35,7 @@
         reportTimer = null;
         lastReport = Date.now();
         fetch(body.dataset.activity, { method: "POST", credentials: "same-origin" })
-            .then((response) => { if (response.status === 404) { end(); } })
+            .then((response) => { if (response.status === 404) { end(false); } })
             .catch(() => { /* Offline for a moment: the next click tries again. */ });
     }
 
@@ -114,18 +114,26 @@
                     lastActive = Date.now();
                     hidePopup();
                 } else if (response.ok || response.status === 404) {
-                    end();
+                    end(false);
                 }
             })
             .catch(() => { timingOut = false; });
     }
 
-    function end() {
+    // The copy is gone: it ended, or didn't start (`didntStart`), and the page says which.
+    function end(didntStart) {
         if (over) {
             return;
         }
 
         over = true;
+        if (didntStart) {
+            const card = document.getElementById("demo-ended-card");
+            document.getElementById("demo-ended-title").textContent = card.dataset.notStartedTitle;
+            document.getElementById("demo-ended-text").textContent = card.dataset.notStartedText;
+            document.getElementById("demo-ended-start").textContent = card.dataset.notStartedButton;
+        }
+
         clearTimeout(reportTimer);
         clearTimeout(waitTimer);
         popup.hidden = true;
@@ -176,7 +184,7 @@
     }
 
     // The waiting screen: shown until every frame in `loading` has loaded, everything behind it inert meanwhile. When
-    // that takes longer than a frame can wait for the copy, the page says the demo ended, with "Start again".
+    // that takes longer than a frame can wait for the copy, the page says it didn't start, with "Try again".
     let loading = new Set();
     let waitTimer = null;
     function wait(title, text) {
@@ -190,7 +198,7 @@
         }
 
         clearTimeout(waitTimer);
-        waitTimer = setTimeout(end, Number(body.dataset.start) * 1000);
+        waitTimer = setTimeout(() => end(true), Number(body.dataset.start) * 1000);
     }
 
     function loaded(frame) {
@@ -210,10 +218,23 @@
         }
     }
 
+    // A frame that shows the demo's own "ended" or "didn't start" (data-demo-copy) has no copy behind it: the whole page
+    // says so instead.
+    function gone(frame) {
+        try {
+            const copy = frame.contentDocument.body.dataset.demoCopy;
+            if (copy === "ended" || copy === "not-started") {
+                end(copy === "not-started");
+            }
+        } catch {
+            // Not this site's, or no document: nothing to read.
+        }
+    }
+
     listen(document, null);
     for (const frame of frames) {
         const attach = () => { try { listen(frame.contentDocument, frame); } catch { /* Not this site's: nothing to hear. */ } };
-        frame.addEventListener("load", () => { attach(); loaded(frame); });
+        frame.addEventListener("load", () => { attach(); loaded(frame); gone(frame); });
     }
 
     try {
@@ -256,7 +277,13 @@
                 appFrame.src = appFrame.dataset.src;
             };
             fetch(template.action, { method: "POST", credentials: "same-origin", body: new URLSearchParams(new FormData(template)) })
-                .then((response) => { if (response.status === 404) { end(); } else { reload(); } })
+                .then((response) => {
+                    if (response.status === 404 || response.status === 503) {
+                        end(response.status === 503);
+                    } else {
+                        reload();
+                    }
+                })
                 .catch(reload);
         });
     }

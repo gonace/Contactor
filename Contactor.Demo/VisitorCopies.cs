@@ -39,6 +39,9 @@ public enum TemplateResult
 
     /// <summary>The visitor has no copy: it ended, or never was.</summary>
     None,
+
+    /// <summary>The visitor's copy didn't start (<see cref="VisitorCopy.DidntStart"/>), and is stopped.</summary>
+    DidntStart,
 }
 
 /// <summary>What a request to a copy finds.</summary>
@@ -313,8 +316,10 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         }
         catch (Exception)
         {
-            // It didn't start, or ended meanwhile: it is being stopped, and nothing is left to fill.
-            return TemplateResult.None;
+            // It didn't start, or ended meanwhile: it is being stopped, and nothing is left to fill. Which of the two,
+            // once its start has ended: a start that fails stops the copy first, so the stop may come first here.
+            await copy.Started.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            return copy.DidntStart ? TemplateResult.DidntStart : TemplateResult.None;
         }
 
         var applied = false;
@@ -327,8 +332,8 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         }
         catch (Exception) when (copy.Stopped.IsCompleted)
         {
-            // It ended meanwhile: nothing is left to fill.
-            return TemplateResult.None;
+            // It ended meanwhile, or a program of it was given up: nothing is left to fill.
+            return copy.DidntStart ? TemplateResult.DidntStart : TemplateResult.None;
         }
         catch (Exception ex)
         {
