@@ -19,7 +19,7 @@ public interface IReleaseSource
 }
 
 /// <summary>
-/// Reads the releases from GitHub's public API (<see cref="UpdateOptions.ReleasesUrl"/>), without a login. The Images
+/// Reads the releases from GitHub's public API (<see cref="UpdateOptions.ReleasesUrl"/>), without a login. The Release
 /// workflow makes a release for each published and signed version, with notes made from the titles of the pull
 /// requests merged since the one before; pull requests labelled <c>internal</c> are left out of them
 /// (<c>.github/release.yml</c>).
