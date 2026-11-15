@@ -48,13 +48,21 @@
     <value>The group</value>
     <comment>In bold before Events.Group.StartFailed.</comment>
   </data>
-  <data name="Events.TheGroup" xml:space="preserve">
-    <value>the group</value>
-    <comment>A group that is gone, in place of its name.</comment>
+  <data name="Events.RemovedGroup" xml:space="preserve">
+    <value>a removed group</value>
+    <comment>A group that is no longer in the app, in place of its name, when the event saved none.</comment>
+  </data>
+  <data name="Events.RemovedRelay" xml:space="preserve">
+    <value>a removed relay</value>
+    <comment>A relay that is no longer in the app, in place of its name.</comment>
+  </data>
+  <data name="Events.RemovedInput" xml:space="preserve">
+    <value>A removed input</value>
+    <comment>An input that is no longer in the app, in place of its name, in bold at the start of the line.</comment>
   </data>
   <data name="Events.TheRelay" xml:space="preserve">
     <value>the relay</value>
-    <comment>A relay that is gone, in place of its name.</comment>
+    <comment>A group's relay when the event names none, in place of its name.</comment>
   </data>
   <data name="Events.TheRelayAbove" xml:space="preserve">
     <value>the relay above</value>
@@ -256,6 +264,14 @@
   </data>
   <data name="Events.Board.Address" xml:space="preserve">
     <value>{0} set the relay board's address to {1}</value>
+  </data>
+  <data name="Events.Board.Removed" xml:space="preserve">
+    <value>{0} removed relay board {1} ({2})</value>
+    <comment>{1} is the board's name, {2} its model, e.g. "Velleman VM204".</comment>
+  </data>
+  <data name="Events.Board.RemovedNoModel" xml:space="preserve">
+    <value>{0} removed relay board {1}</value>
+    <comment>A board without a model yet: {1} is its name.</comment>
   </data>
   <data name="Events.Other" xml:space="preserve">
     <value>{0} {1}</value>

@@ -56,10 +56,16 @@ public sealed class EventText
     public string WhyTimeUnknown => _texts["Events.WhyTimeUnknown"];
 
     /// <param name="entry">The event.</param>
-    /// <param name="relayName">The relay's current name, or null for events without a relay.</param>
+    /// <param name="relayName">
+    /// The relay's current name, or null for events without a relay; null for an event's relay that is no longer in the
+    /// app, which shows as "a removed relay".
+    /// </param>
     /// <param name="personName">The display name of the person behind it, when the actor is an e-mail, or the input's name when it is an input.</param>
-    /// <param name="groupName">The group's current name, for a group's events; null for others or a deleted group.</param>
-    /// <param name="inputName">The input's current name, for an input's changes; null for others.</param>
+    /// <param name="groupName">
+    /// The group's current name, for a group's events; null for others or a removed group, which shows the name saved
+    /// in the event, otherwise "a removed group".
+    /// </param>
+    /// <param name="inputName">The input's current name, for an input's changes; null for others or a removed input.</param>
     /// <param name="boardName">
     /// The board's name, with two or more boards: an event about the board itself names it ("Workshop had its own
     /// timers turned off"); null for "The board".
@@ -82,31 +88,34 @@ public sealed class EventText
         var isPerson = IsPersonActor(entry.Actor);
         var byInput = EventActors.TryInput(entry.Actor, out var inputId);
         var who = isPerson ? personName ?? entry.Actor
-            : byInput ? personName ?? _inputs.Unknown
+            : byInput ? personName ?? _texts["Events.RemovedInput"]
             : IsAboutBoard(entry) ? boardName ?? _texts["Events.Who.Board"]
             : WhoFor(entry);
         var badge = byInput ? "I"
             : !isPerson ? "A"
             : who.Length > 0 ? who[..1].ToUpper(CultureInfo.CurrentCulture)
             : "?";
-        var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? _texts["Events.TheGroup"];
-        if (group is not null && GroupText(entry, relayName, group) is { } text)
+        var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? _texts["Events.RemovedGroup"];
+
+        // A relay id with no name is a relay no longer in the app, e.g. of a removed board: never its id.
+        var relay = relayName ?? (entry.RelayId is null ? null : _texts["Events.RemovedRelay"].Value);
+        if (group is not null && GroupText(entry, relay, group) is { } text)
         {
             return new EventView(isPerson, badge, who, text.Line, text.Target, text.IsAlert);
         }
 
         // A group's schedule names the group where a relay's names the relay.
-        var (line, target) = LineFor(entry, relayName ?? group);
+        var (line, target) = LineFor(entry, relay ?? group);
 
         // In red, like a safety shut-off: a board whose inputs may switch relays past the app.
         return new EventView(isPerson, badge, who, line, target, IsAlert: entry.Action == EventActions.BoardRelayModesNotReset);
     }
 
-    // "Door: Open". An input that is on is closed. Without its name (an input no longer on the board): "An input: Closed".
+    // "Door: Open". An input that is on is closed. Without its name (an input no longer in the app): "A removed input: Closed".
     // One the app only noticed after a gap has its time marked unknown.
     private EventView InputChange(EventLogEntry entry, string? inputName)
     {
-        var name = inputName ?? _inputs.Unknown;
+        var name = inputName ?? _texts["Events.RemovedInput"];
         return new EventView(false, "I", $"{name}:", Line("Events.Input", _inputs.State(Bool(entry.Details, "on") == true)), null, TimeUnknown: InputNoticed(entry.Details));
     }
 
@@ -304,11 +313,22 @@ public sealed class EventText
             EventActions.BoardRenamed => Text(entry.Details, "from") is { } oldName
                 ? (Line("Events.Board.RenamedFrom", oldName, Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null)
                 : (Line("Events.Board.Renamed", Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null),
+            EventActions.BoardRemoved => (BoardRemoved(entry.Details), null),
             EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from
                 ? (Line("Events.Board.AddressFrom", from, Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null)
                 : (Line("Events.Board.Address", Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null),
             _ => (Line("Events.Other", entry.Action), relayName),
         };
+    }
+
+    // "removed relay board Garage (Velleman VM204)", from what the event saved: the board's row is gone.
+    private string BoardRemoved(string? details)
+    {
+        var model = Text(details, "model") is { Length: > 0 } saved ? saved : null;
+        var name = Text(details, "name") is { Length: > 0 } named ? named : null;
+        return name is not null && model is not null
+            ? Line("Events.Board.Removed", name, model)
+            : Line("Events.Board.RemovedNoModel", name ?? model ?? _texts["Events.Unknown"]);
     }
 
     // "added schedule Mon–Fri 06:30–08:00", or the plain words when the details can't be read.

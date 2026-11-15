@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
@@ -26,6 +27,7 @@ public sealed record BoardRemovalPreview(int BoardId, string Name, int Relays, i
 /// (<see cref="RelayControl.TurnAllOffAsync"/>), its groups stopping in their order with their run-on times. Once the
 /// board shows every relay off, within <see cref="OffWait"/>, its live board is stopped and let go
 /// (<see cref="BoardRegistry.RemoveAsync"/>) and everything about it is deleted in one transaction, its events included.
+/// The same transaction logs who removed it, with no board, so that event stays: its name and model are saved in it.
 /// A group still running on stops it: nothing is removed, the board is opened again, and the person is told when the
 /// run-on ends. A board without contact is removed as it is: whatever is on stays on. The board itself isn't changed.
 /// The last board can be removed too: the app then has none until one is added (<see cref="BoardRegistry.AddBoardAsync(BoardModel, string?, CancellationToken)"/>).
@@ -115,9 +117,11 @@ public sealed partial class BoardRemoval : IDisposable
         try
         {
             string? name;
+            string? type;
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
-                name = await db.Boards.Where(b => b.Id == boardId).Select(b => b.Name).SingleOrDefaultAsync(cancellationToken);
+                var row = await db.Boards.Where(b => b.Id == boardId).Select(b => new { b.Name, b.Type }).SingleOrDefaultAsync(cancellationToken);
+                (name, type) = (row?.Name, row?.Type);
             }
 
             if (name is null)
@@ -153,7 +157,7 @@ public sealed partial class BoardRemoval : IDisposable
                 removed = true;
                 try
                 {
-                    await DeleteAsync(_dbFactory, boardId, cancellationToken);
+                    await DeleteAsync(_dbFactory, boardId, Removed(name, type, userEmail), cancellationToken);
                 }
                 catch
                 {
@@ -190,6 +194,19 @@ public sealed partial class BoardRemoval : IDisposable
         {
             _gate.Release();
         }
+    }
+
+    // "John removed relay board Garage (Velleman VM204)": an event with no board, so it outlives the board's own.
+    private EventLogEntry Removed(string name, string? type, string userEmail)
+    {
+        var model = BoardCatalogue.Find(type)?.Model.Name;
+        return new EventLogEntry
+        {
+            TimestampUtc = _clock.UtcNow,
+            Actor = userEmail,
+            Action = EventActions.BoardRemoved,
+            Details = model is null ? JsonSerializer.Serialize(new { name }) : JsonSerializer.Serialize(new { name, model }),
+        };
     }
 
     private string LostText(string name)
@@ -309,8 +326,9 @@ public sealed partial class BoardRemoval : IDisposable
 
     // Everything about the board, in one transaction, children before what they point to: the foreign keys from an
     // input action, a group member and a relay's runtime and schedules to a relay are Restrict, so nothing is left to a
-    // cascade. Also what takes a board that couldn't be added all the way back out (BoardRegistry.AddBoardAsync).
-    internal static async Task DeleteAsync(IDbContextFactory<ContactorDbContext> dbFactory, int boardId, CancellationToken cancellationToken)
+    // cascade. Also what takes a board that couldn't be added all the way back out (BoardRegistry.AddBoardAsync), which
+    // logs nothing. A removal's own event (removed) is saved in the same transaction, after the board's events go.
+    internal static async Task DeleteAsync(IDbContextFactory<ContactorDbContext> dbFactory, int boardId, EventLogEntry? removed, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -327,6 +345,12 @@ public sealed partial class BoardRemoval : IDisposable
         await db.BoardRuntimes.Where(r => r.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
         await KeepNextBoardsAddressAsync(db, boardId, cancellationToken);
         await db.Boards.Where(b => b.Id == boardId).ExecuteDeleteAsync(cancellationToken);
+        if (removed is not null)
+        {
+            db.EventLog.Add(removed);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
     }
 
