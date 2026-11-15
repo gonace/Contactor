@@ -115,11 +115,29 @@ internal sealed class FakePorts : IFreePorts
     }
 }
 
-/// <summary>Makes no database; remembers the folders it was asked for.</summary>
+/// <summary>Makes no database; remembers the folders it was asked for, and which got the template.</summary>
 internal sealed class FakeCopyDatabase : ICopyDatabase
 {
     private readonly Lock _lock = new();
     private readonly List<string> _folders = [];
+    private readonly List<string> _templates = [];
+
+    /// <summary>What applying the template says: false as for a database the visitor took further.</summary>
+    public bool Applies { get; set; } = true;
+
+    /// <summary>Called while the template is applied, e.g. to see that the app doesn't run, with its cancellation.</summary>
+    public Func<CancellationToken, Task>? WhileApplying { get; set; }
+
+    public IReadOnlyList<string> Templates
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _templates];
+            }
+        }
+    }
 
     public IReadOnlyList<string> Folders
     {
@@ -146,6 +164,21 @@ internal sealed class FakeCopyDatabase : ICopyDatabase
 
         File.WriteAllText(Path.Combine(dataFolder, "contactor.db"), "");
         return Task.CompletedTask;
+    }
+
+    public async Task<bool> ApplyTemplateAsync(string dataFolder, CancellationToken cancellationToken)
+    {
+        if (WhileApplying is { } whileApplying)
+        {
+            await whileApplying(cancellationToken);
+        }
+
+        lock (_lock)
+        {
+            _templates.Add(dataFolder);
+        }
+
+        return Applies;
     }
 }
 

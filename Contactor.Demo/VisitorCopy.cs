@@ -54,6 +54,12 @@ public sealed class VisitorCopy
     /// </summary>
     internal DateTimeOffset LastActive => _lastActive;
 
+    /// <summary>
+    /// Whether the page still offers "Skip setup": from the copy's start, a new installation whose app opens on the setup
+    /// guide, until the visitor chooses the template or the setup. Changed under <see cref="VisitorCopies"/>' lock.
+    /// </summary>
+    internal bool OffersTemplate { get; private set; } = true;
+
     public SupervisedProgram Part(CopyPart part)
     {
         return part == CopyPart.App ? App : Simulator;
@@ -74,6 +80,14 @@ public sealed class VisitorCopy
     internal bool HasExpired(DateTimeOffset now, TimeSpan idle, TimeSpan maxLifetime)
     {
         return now - _lastActive >= idle || now - StartedAt >= maxLifetime;
+    }
+
+    /// <summary>Takes the offer away; false when it was gone already, so only one choice ever acts on it.</summary>
+    internal bool TakeTemplateOffer()
+    {
+        var offered = OffersTemplate;
+        OffersTemplate = false;
+        return offered;
     }
 
     internal void SetStarted()

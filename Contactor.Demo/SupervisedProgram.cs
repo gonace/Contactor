@@ -6,7 +6,8 @@ namespace Contactor.Demo;
 /// <see cref="RestartsAtOnce"/> times in <see cref="RestartWindow"/>, then after a wait that doubles each time, up to
 /// <see cref="MaxRestartWait"/>. A program that exits before it ever listens, <see cref="MaxFailedStarts"/> times in a
 /// row, that doesn't listen within the start timeout, or that exits <see cref="MaxRestarts"/> times in
-/// <see cref="RestartWindow"/>, is given up: <see cref="GaveUp"/> completes and the copy is stopped.
+/// <see cref="RestartWindow"/>, is given up: <see cref="GaveUp"/> completes and the copy is stopped. The demo can also stop
+/// it, change its data and start it again (<see cref="RestartAsync"/>), for "Skip setup".
 /// </summary>
 public sealed partial class SupervisedProgram : IAsyncDisposable
 {
@@ -31,11 +32,19 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
     private readonly TimeProvider _time;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _stop = new();
+
+    // One restart at a time; a stop waits for one under way, so nothing starts the program after it was stopped.
+    private readonly SemaphoreSlim _restarting = new(1, 1);
+    private readonly Lock _loopLock = new();
     private readonly TaskCompletionSource _gaveUp = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource _listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task _loop = Task.CompletedTask;
+
+    // The current runs' own stop, cancelled by a restart as well as by StopAsync.
+    private CancellationTokenSource? _run;
     private int _starts;
     private int _stopped;
+    private int _disposed;
 
     public SupervisedProgram(ProgramStart start, IProgramStarter starter, TimeSpan startTimeout, TimeProvider time, ILogger logger)
     {
@@ -62,7 +71,81 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
 
     public void Start()
     {
-        _loop = RunAsync(_stop.Token);
+        lock (_loopLock)
+        {
+            StartLoopLocked();
+        }
+    }
+
+    /// <summary>
+    /// Stops the program, runs <paramref name="whileStopped"/>, e.g. to change its data, and starts it again, also when
+    /// <paramref name="whileStopped"/> throws. Requests wait meanwhile for the new run to listen (<see cref="Listening"/>).
+    /// Throws <see cref="OperationCanceledException"/> when the program is stopped for good before or during it: then
+    /// it isn't started again, and <paramref name="whileStopped"/>'s token is cancelled.
+    /// </summary>
+    public async Task RestartAsync(Func<CancellationToken, Task> whileStopped, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(whileStopped);
+        await _restarting.WaitAsync(cancellationToken);
+        try
+        {
+            Task loop;
+            CancellationTokenSource? run;
+            var next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_loopLock)
+            {
+                _stop.Token.ThrowIfCancellationRequested();
+
+                // From now on requests wait for the next run; the one that runs now is no longer theirs.
+                Volatile.Write(ref _listening, next);
+                loop = _loop;
+                run = _run;
+            }
+
+            if (run is not null)
+            {
+                await run.CancelAsync();
+            }
+
+            await loop;
+
+            // A run that exited by itself just before gave requests one of its own to wait for: they wait for the next too.
+            if (Interlocked.Exchange(ref _listening, next) is var other && other != next)
+            {
+                _ = next.Task.ContinueWith(
+                    t => _ = t.IsCompletedSuccessfully ? other.TrySetResult() : other.TrySetCanceled(CancellationToken.None),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            }
+
+            try
+            {
+                await whileStopped(_stop.Token);
+            }
+            finally
+            {
+                lock (_loopLock)
+                {
+                    run?.Dispose();
+                    _run = null;
+                    if (!_stop.IsCancellationRequested)
+                    {
+                        StartLoopLocked();
+                    }
+                    else
+                    {
+                        Volatile.Read(ref _listening).TrySetCanceled(CancellationToken.None);
+                    }
+                }
+            }
+
+            _stop.Token.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            _restarting.Release();
+        }
     }
 
     /// <summary>Stops the program and everything it started, and waits until it has exited.</summary>
@@ -73,13 +156,34 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
             await _stop.CancelAsync();
         }
 
-        await _loop;
+        // A restart under way ends first: it starts nothing once stopped.
+        await _restarting.WaitAsync();
+        _restarting.Release();
+        Task loop;
+        lock (_loopLock)
+        {
+            loop = _loop;
+        }
+
+        await loop;
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
         await StopAsync();
+        lock (_loopLock)
+        {
+            _run?.Dispose();
+            _run = null;
+        }
+
         _stop.Dispose();
+        _restarting.Dispose();
     }
 
     /// <summary>
@@ -99,6 +203,14 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
         return wait < MaxRestartWait ? wait : MaxRestartWait;
     }
 
+    // Under _loopLock.
+    private void StartLoopLocked()
+    {
+        _run = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+        _loop = RunAsync(_run.Token);
+    }
+
+    // Until stop: the program's own stop, or a restart's.
     private async Task RunAsync(CancellationToken stop)
     {
         var failedStarts = 0;
@@ -156,7 +268,8 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
         }
         finally
         {
-            if (stop.IsCancellationRequested)
+            // Not for a restart, which already gave requests the next run to wait for.
+            if (_stop.IsCancellationRequested)
             {
                 // Stopped: nothing waits for it any more, also not after it listened.
                 var stopped = new TaskCompletionSource();

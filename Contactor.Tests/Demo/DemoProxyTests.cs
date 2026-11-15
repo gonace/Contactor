@@ -45,7 +45,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = await response.Content.ReadAsStringAsync(Cancel);
         Assert.Contains("<iframe class=\"frame-simulator\" title=\"Simulator\" src=\"/demo/simulator/\"></iframe>", html, StringComparison.Ordinal);
-        Assert.Contains("<iframe class=\"frame-app\" title=\"Contactor\" src=\"/?demo-frame\"></iframe>", html, StringComparison.Ordinal);
+        Assert.Contains("<iframe class=\"frame-app\" title=\"Contactor\" src=\"/?demo-frame\" inert></iframe>", html, StringComparison.Ordinal);
         Assert.Contains("reset when you're done", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Nobody else", html, StringComparison.Ordinal);
         Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\" data-activity=\"/demo/activity\" data-timeout=\"/demo/timeout\"", html, StringComparison.Ordinal);
@@ -285,6 +285,81 @@ public sealed class DemoProxyTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_OfferTheTemplate_OverTheApp_UntilTheVisitorGoesThroughTheSetup()
+    {
+        var client = await StartAsync();
+        var id = await PageAsync(client);
+        var first = await GetAsync(client, "/", id, document: true);
+        await GetAsync(client, "/?demo-frame", id);
+
+        Assert.Contains("Skip setup: start from a template", first, StringComparison.Ordinal);
+        Assert.Contains("src=\"/?demo-frame\" inert>", first, StringComparison.Ordinal);
+        Assert.Contains("<form method=\"post\" action=\"/demo/template\" target=\"_top\"", first, StringComparison.Ordinal);
+        Assert.Contains("<input type=\"hidden\" name=\"template\" value=\"workshop\">", first, StringComparison.Ordinal);
+        Assert.Contains("Go through the setup myself", first, StringComparison.Ordinal);
+
+        // The script's fetch, from the page.
+        using var setup = Post("/demo/setup", id);
+        setup.Headers.Add("Sec-Fetch-Site", "same-origin");
+        setup.Headers.Add("Sec-Fetch-Dest", "empty");
+        using var declined = await client.SendAsync(setup, Cancel);
+
+        Assert.Equal(HttpStatusCode.NoContent, declined.StatusCode);
+        var again = await GetAsync(client, "/", id, document: true);
+        Assert.DoesNotContain("Skip setup", again, StringComparison.Ordinal);
+        Assert.Contains("<iframe class=\"frame-app\" title=\"Contactor\" src=\"/?demo-frame\"></iframe>", again, StringComparison.Ordinal);
+        Assert.Empty(Database.Templates);
+    }
+
+    [Fact]
+    public async Task Should_ApplyTheTemplate_FromThePagesForm_AndShowThePageAgain()
+    {
+        var client = await StartAsync();
+        var mine = await NewVisitorAsync(client);
+        var theirs = await NewVisitorAsync(client);
+
+        using var response = await client.SendAsync(TemplateForm(mine, "workshop"), Cancel);
+
+        Assert.Equal(HttpStatusCode.SeeOther, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.ToString());
+        Assert.Single(Database.Templates);
+        Assert.DoesNotContain("Skip setup", await GetAsync(client, "/", mine, document: true), StringComparison.Ordinal);
+        Assert.Contains("Skip setup", await GetAsync(client, "/", theirs, document: true), StringComparison.Ordinal);
+
+        // The app is started again, and the frame reaches it.
+        Assert.Equal(3, Echo.Started.Count(s => s.Name == "app"));
+        Assert.StartsWith("app ", await GetAsync(client, "/?demo-frame", mine), StringComparison.Ordinal);
+
+        // Once only.
+        using var twice = await client.SendAsync(TemplateForm(mine, "workshop"), Cancel);
+        Assert.Equal(HttpStatusCode.SeeOther, twice.StatusCode);
+        Assert.Single(Database.Templates);
+    }
+
+    [Theory]
+    [InlineData("cross-site", "workshop", HttpStatusCode.Forbidden)]
+    [InlineData("same-origin", "garage", HttpStatusCode.BadRequest)]
+    [InlineData("same-origin", "", HttpStatusCode.BadRequest)]
+    public async Task Should_ApplyNoTemplate_FromAnotherSite_OrThatIsntOne(string site, string template, HttpStatusCode status)
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+        using var request = TemplateForm(id, template);
+        request.Headers.Remove("Sec-Fetch-Site");
+        request.Headers.Add("Sec-Fetch-Site", site);
+        using var setup = Post("/demo/setup", id);
+        setup.Headers.Add("Sec-Fetch-Site", "cross-site");
+
+        using var response = await client.SendAsync(request, Cancel);
+        using var setupResponse = await client.SendAsync(setup, Cancel);
+
+        Assert.Equal(status, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, setupResponse.StatusCode);
+        Assert.Empty(Database.Templates);
+        Assert.Contains("Skip setup", await GetAsync(client, "/", id, document: true), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Should_EndOnlyTheVisitorsOwnCopy_AndStartAgainWithANewOne()
     {
         var client = await StartAsync();
@@ -459,6 +534,8 @@ public sealed class DemoProxyTests : IAsyncDisposable
 
     private VisitorCopies Copies => _app!.Services.GetRequiredService<VisitorCopies>();
 
+    private FakeCopyDatabase Database => (FakeCopyDatabase)_app!.Services.GetRequiredService<ICopyDatabase>();
+
     private EchoStarter Echo => (EchoStarter)_app!.Services.GetRequiredService<IProgramStarter>();
 
     private async Task<HttpClient> StartAsync(int maxVisitors = 10, bool listens = true)
@@ -504,9 +581,15 @@ public sealed class DemoProxyTests : IAsyncDisposable
         return id;
     }
 
-    private static async Task<string> GetAsync(HttpClient client, string path, string id)
+    private static async Task<string> GetAsync(HttpClient client, string path, string id, bool document = false)
     {
-        using var response = await client.SendAsync(Get(path, id), Cancel);
+        using var request = Get(path, id);
+        if (document)
+        {
+            request.Headers.Add("Sec-Fetch-Dest", "document");
+        }
+
+        using var response = await client.SendAsync(request, Cancel);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await response.Content.ReadAsStringAsync(Cancel);
     }
@@ -524,6 +607,16 @@ public sealed class DemoProxyTests : IAsyncDisposable
         var request = Post("/demo/timeout", id);
         request.Headers.Add("Sec-Fetch-Site", "same-origin");
         request.Headers.Add("Sec-Fetch-Dest", "empty");
+        return request;
+    }
+
+    // "Skip setup": the page's form.
+    private static HttpRequestMessage TemplateForm(string id, string template)
+    {
+        var request = Post("/demo/template", id);
+        request.Headers.Add("Sec-Fetch-Site", "same-origin");
+        request.Headers.Add("Sec-Fetch-Dest", "document");
+        request.Content = new FormUrlEncodedContent([new KeyValuePair<string, string>("template", template)]);
         return request;
     }
 

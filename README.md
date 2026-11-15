@@ -97,7 +97,8 @@ board's own buttons would. Stop and start the simulator in the dashboard to test
 tests use the same simulator, so no hardware is needed.
 
 The public demo, where each visitor gets their own copy of the app and the simulator side by side, is
-`Contactor.Demo`: after a build, `dotnet run --project Contactor.Demo` serves it on http://localhost:5070.
+`Contactor.Demo`: after a build, `dotnet run --project Contactor.Demo` serves it on http://localhost:5070. A new copy
+offers to skip the setup guide with the Workshop template: a fan heater, lights, schedules and three days of events.
 
 `docs/ARCHITECTURE.md` describes the architecture and the rules the app follows, and `AGENTS.md` how to work in this repository. Each board's protocol or routes are in the `README.md` of its project, e.g. `Contactor.Boards.Vm201/README.md`.
 

@@ -58,6 +58,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Equal([copy.DataFolder], _database.Folders);
         Assert.Contains(copy.DataFolder, app.Environment["ConnectionStrings__Default"], StringComparison.Ordinal);
         Assert.Equal("0", app.Environment["DOTNET_gcServer"]);
+        Assert.Equal("Europe/Stockholm", app.Environment["TimeZone"]);
         Assert.Equal(copy.Visitor, app.Visitor);
         Assert.Equal(6, copy.Visitor.Length);
     }
@@ -96,7 +97,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Equal(0, _copies.KeptCount);
 
         // The page again: the copy, and no new id.
-        Assert.Equal(new Visit(VisitKind.Copy), _copies.Visit(id));
+        Assert.Equal(new Visit(VisitKind.Copy, OffersTemplate: true), _copies.Visit(id));
     }
 
     [Fact]
@@ -118,7 +119,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
     {
         var id = _copies.Visit(null).NewId!;
 
-        Assert.Equal(new Visit(VisitKind.Kept), _copies.Visit(id));
+        Assert.Equal(new Visit(VisitKind.Kept, OffersTemplate: true), _copies.Visit(id));
         Assert.Equal(1, _copies.KeptCount);
     }
 
@@ -469,6 +470,112 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.True(File.Exists(Path.Combine(_folder.DataRoot, "note.txt")));
     }
 
+    [Fact]
+    public async Task Should_ApplyTheTemplate_WithTheAppStopped_AndStartItAgain()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        await copy.App.Listening;
+        var first = Assert.Single(_starter.RunsOf("app"));
+        var simulator = Assert.Single(_starter.RunsOf("simulator"));
+        var appRunning = true;
+        _database.WhileApplying = _ =>
+        {
+            appRunning = !first.HasExited || _starter.RunsOf("app").Count > 1;
+            return Task.CompletedTask;
+        };
+
+        var result = await _copies.ApplyTemplateAsync(copy.VisitorId);
+
+        Assert.Equal(TemplateResult.Applied, result);
+        Assert.False(appRunning);
+        Assert.Equal([copy.DataFolder], _database.Templates);
+        Assert.True(first.Stopped);
+        Assert.Equal(2, _starter.RunsOf("app").Count);
+        await copy.App.Listening;
+
+        // The visitor's simulated board, its relays and the boards they added, go on as they are.
+        Assert.False(simulator.HasExited);
+        Assert.Single(_starter.RunsOf("simulator"));
+        Assert.False(_copies.Visit(copy.VisitorId).OffersTemplate);
+    }
+
+    [Fact]
+    public async Task Should_ApplyTheTemplate_OnlyOnce_AndNotAfterTheSetup()
+    {
+        var applied = Start(_copies);
+        await applied.Started;
+        Assert.Equal(TemplateResult.Applied, await _copies.ApplyTemplateAsync(applied.VisitorId));
+
+        // Twice, e.g. from two tabs: the second finds it chosen.
+        Assert.Equal(TemplateResult.Refused, await _copies.ApplyTemplateAsync(applied.VisitorId));
+
+        var declined = Start(_copies);
+        await declined.Started;
+        Assert.True(_copies.Visit(declined.VisitorId).OffersTemplate);
+        Assert.True(_copies.DeclineTemplate(declined.VisitorId));
+        Assert.False(_copies.Visit(declined.VisitorId).OffersTemplate);
+        Assert.Equal(TemplateResult.Refused, await _copies.ApplyTemplateAsync(declined.VisitorId));
+
+        Assert.Equal([applied.DataFolder], _database.Templates);
+        Assert.Single(_starter.RunsOf("app"), r => r.Start.Environment["ConnectionStrings__Default"].Contains(declined.DataFolder, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_StartTheAppAgainAsItWas_WhenTheVisitorGotFurtherInTheSetup()
+    {
+        _database.Applies = false;
+        var copy = Start(_copies);
+        await copy.Started;
+
+        Assert.Equal(TemplateResult.Refused, await _copies.ApplyTemplateAsync(copy.VisitorId));
+
+        Assert.Equal(2, _starter.RunsOf("app").Count);
+        await copy.App.Listening;
+        Assert.False(_copies.Visit(copy.VisitorId).OffersTemplate);
+    }
+
+    [Fact]
+    public async Task Should_ApplyNoTemplate_WithoutTheVisitorsOwnCopy()
+    {
+        var other = Start(_copies);
+        await other.Started;
+        var kept = _copies.Visit(null).NewId!;
+
+        Assert.Equal(TemplateResult.None, await _copies.ApplyTemplateAsync(kept));
+        Assert.Equal(TemplateResult.None, await _copies.ApplyTemplateAsync("0123456789abcdef0123456789abcdef"));
+        Assert.False(_copies.DeclineTemplate(kept));
+
+        await _copies.EndAsync(other.VisitorId);
+        Assert.Equal(TemplateResult.None, await _copies.ApplyTemplateAsync(other.VisitorId));
+
+        Assert.Empty(_database.Templates);
+        Assert.Single(_starter.RunsOf("app"));
+    }
+
+    [Fact]
+    public async Task Should_StartNothingAgain_WhenTheCopyEndsWhileTheTemplateIsApplied()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _database.WhileApplying = async token =>
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        };
+
+        var applying = _copies.ApplyTemplateAsync(copy.VisitorId);
+        await entered.Task;
+        await _copies.EndAsync(copy.VisitorId);
+
+        Assert.Equal(TemplateResult.None, await applying);
+        Assert.Single(_starter.RunsOf("app"));
+        Assert.All(_starter.Runs, r => Assert.True(r.HasExited));
+        Assert.Empty(_folder.CopyFolders());
+        Assert.Empty(_database.Templates);
+    }
+
     // A visitor as a browser is one: the page, then its frames.
     private static VisitorCopy Start(VisitorCopies copies)
     {
@@ -506,6 +613,11 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
             Entered.TrySetResult();
             await Release.Task;
             File.WriteAllText(Path.Combine(dataFolder, "contactor.db"), "");
+        }
+
+        public Task<bool> ApplyTemplateAsync(string dataFolder, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
         }
     }
 }

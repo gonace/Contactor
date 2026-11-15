@@ -26,6 +26,12 @@ public enum DemoTarget
     /// </summary>
     Timeout,
 
+    /// <summary>"Skip setup: start from a template" (a POST).</summary>
+    Template,
+
+    /// <summary>"Go through the setup myself" (a POST).</summary>
+    Setup,
+
     /// <summary>The visitor's own app.</summary>
     App,
 
@@ -62,6 +68,8 @@ public static class DemoRoutes
     public const string ActivityPath = "/demo/activity";
     public const string EndPath = "/demo/end";
     public const string TimeoutPath = "/demo/timeout";
+    public const string TemplatePath = "/demo/template";
+    public const string SetupPath = "/demo/setup";
 
     /// <summary>The app frame's address: its query tells the app's <c>/</c> from the page also where a browser doesn't say.</summary>
     public const string AppFrame = "/?demo-frame";
@@ -113,6 +121,16 @@ public static class DemoRoutes
         if (HttpMethods.IsPost(request.Method) && path.Equals(TimeoutPath, StringComparison.OrdinalIgnoreCase))
         {
             return new DemoRoute(DemoTarget.Timeout, path);
+        }
+
+        if (HttpMethods.IsPost(request.Method) && path.Equals(TemplatePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return new DemoRoute(DemoTarget.Template, path);
+        }
+
+        if (HttpMethods.IsPost(request.Method) && path.Equals(SetupPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return new DemoRoute(DemoTarget.Setup, path);
         }
 
         if (path.StartsWithSegments(Prefix, StringComparison.OrdinalIgnoreCase) || ForItsMachine(path, AppOnlyForItsMachine))

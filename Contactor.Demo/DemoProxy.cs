@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Yarp.ReverseProxy.Forwarder;
@@ -14,6 +15,9 @@ namespace Contactor.Demo;
 /// </summary>
 public sealed partial class DemoProxy : IDisposable
 {
+    // The template's form is one short field.
+    private const int MaxFormBytes = 1024;
+
     private static readonly ForwarderRequestConfig RequestConfig = new() { ActivityTimeout = TimeSpan.FromMinutes(2) };
 
     private readonly VisitorCopies _copies;
@@ -67,6 +71,12 @@ public sealed partial class DemoProxy : IDisposable
             case DemoTarget.Timeout:
                 await TimeoutAsync(context);
                 break;
+            case DemoTarget.Template:
+                await TemplateAsync(context);
+                break;
+            case DemoTarget.Setup:
+                Setup(context);
+                break;
             case DemoTarget.App:
             case DemoTarget.Simulator:
                 await ForwardAsync(context, route);
@@ -105,7 +115,7 @@ public sealed partial class DemoProxy : IDisposable
             VisitorCookie.Give(context, id);
         }
 
-        await HtmlAsync(context, StatusCodes.Status200OK, DemoPages.Page(_options));
+        await HtmlAsync(context, StatusCodes.Status200OK, DemoPages.Page(_options, visit.OffersTemplate));
     }
 
     // The page, or a frame of it: "busy" and its "Try again now". Anything else just gets the status.
@@ -191,6 +201,90 @@ public sealed partial class DemoProxy : IDisposable
 
         var ended = VisitorCookie.Read(context.Request) is not { } visitorId || await _copies.EndIfIdleAsync(visitorId);
         context.Response.StatusCode = ended ? StatusCodes.Status204NoContent : StatusCodes.Status409Conflict;
+    }
+
+    // "Skip setup: start from a template", the page's form: fills the cookie's own copy, never another's, then shows the
+    // page again (303), whose app frame opens on the relays. To a fetch: 204 when applied, 409 when the copy was left as
+    // it was, 404 without a copy.
+    private async Task TemplateAsync(HttpContext context)
+    {
+        NoStore(context.Response);
+        if (!DemoRoutes.IsFromThisSite(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (!await IsWorkshopAsync(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        // Not cancelled with the request: once the app is stopped, it is filled and started again whatever the browser does.
+        var result = VisitorCookie.Read(context.Request) is { } visitorId ? await _copies.ApplyTemplateAsync(visitorId) : TemplateResult.None;
+        AfterChoice(context, result switch
+        {
+            TemplateResult.Applied => StatusCodes.Status204NoContent,
+            TemplateResult.Refused => StatusCodes.Status409Conflict,
+            _ => StatusCodes.Status404NotFound,
+        });
+    }
+
+    // "Go through the setup myself": the page doesn't offer the template again for the cookie's copy.
+    private void Setup(HttpContext context)
+    {
+        NoStore(context.Response);
+        if (!DemoRoutes.IsFromThisSite(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        var declined = VisitorCookie.Read(context.Request) is { } visitorId && _copies.DeclineTemplate(visitorId);
+        AfterChoice(context, declined ? StatusCodes.Status204NoContent : StatusCodes.Status404NotFound);
+    }
+
+    // A form gets the page again, which shows what came of it; a fetch gets the status.
+    private static void AfterChoice(HttpContext context, int status)
+    {
+        if (DemoRoutes.IsDocument(context.Request, post: true))
+        {
+            context.Response.StatusCode = StatusCodes.Status303SeeOther;
+            context.Response.Headers.Location = "/";
+        }
+        else
+        {
+            context.Response.StatusCode = status;
+        }
+    }
+
+    // The only template so far. A form sends it by name, so a later one is another value. Only a small plain form is
+    // read: nothing a visitor sends here is kept, so nothing big is taken in.
+    private static async Task<bool> IsWorkshopAsync(HttpRequest request)
+    {
+        if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var type)
+            || !type.MediaType.Equals("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } size)
+        {
+            size.MaxRequestBodySize = MaxFormBytes;
+        }
+
+        try
+        {
+            var form = await request.ReadFormAsync(
+                new FormOptions { ValueCountLimit = 4, KeyLengthLimit = 32, ValueLengthLimit = 64, BufferBodyLengthLimit = MaxFormBytes },
+                request.HttpContext.RequestAborted);
+            return form["template"] == WorkshopTemplate.Id;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or BadHttpRequestException)
+        {
+            return false;
+        }
     }
 
     private async Task ForwardAsync(HttpContext context, DemoRoute route)

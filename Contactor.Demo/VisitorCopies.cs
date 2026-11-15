@@ -20,7 +20,26 @@ public enum VisitKind
 }
 
 /// <param name="NewId">The id to give the browser, when it needs a new one.</param>
-public readonly record struct Visit(VisitKind Kind, string? NewId = null);
+/// <param name="OffersTemplate">
+/// Whether the page offers "Skip setup": for a copy that is still new (and one about to start), not once the visitor
+/// chose.
+/// </param>
+public readonly record struct Visit(VisitKind Kind, string? NewId = null, bool OffersTemplate = false);
+
+/// <summary>What became of "Skip setup: start from a template".</summary>
+public enum TemplateResult
+{
+    /// <summary>The copy's app runs with the template now.</summary>
+    Applied,
+
+    /// <summary>
+    /// Nothing changed: the visitor chose already (in another tab, say), or got further in the setup guide meanwhile.
+    /// </summary>
+    Refused,
+
+    /// <summary>The visitor has no copy: it ended, or never was.</summary>
+    None,
+}
 
 /// <summary>What a request to a copy finds.</summary>
 public enum UseKind
@@ -155,7 +174,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             {
                 // Loading the page starts the page's count from now, so it counts as activity here too.
                 entry.Copy.Active(now);
-                return new Visit(VisitKind.Copy);
+                return new Visit(VisitKind.Copy, OffersTemplate: entry.Copy.OffersTemplate);
             }
 
             if (_closed || TakenLocked >= _options.MaxVisitors)
@@ -166,7 +185,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             if (visitorId is not null && _kept.Remove(visitorId))
             {
                 _kept.Add(visitorId, now);
-                return new Visit(VisitKind.Kept);
+                return new Visit(VisitKind.Kept, OffersTemplate: true);
             }
 
             var id = VisitorCookie.NewId();
@@ -176,7 +195,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             }
 
             _kept.Add(id, now);
-            return new Visit(VisitKind.Kept, id);
+            return new Visit(VisitKind.Kept, id, OffersTemplate: true);
         }
     }
 
@@ -239,6 +258,78 @@ public sealed partial class VisitorCopies : IAsyncDisposable
 
             return false;
         }
+    }
+
+    /// <summary>
+    /// "Go through the setup myself": the page doesn't offer the template again for this copy. False when the visitor
+    /// has no copy.
+    /// </summary>
+    public bool DeclineTemplate(string visitorId)
+    {
+        lock (_lock)
+        {
+            if (!_copies.TryGetValue(visitorId, out var entry))
+            {
+                return false;
+            }
+
+            entry.Copy.TakeTemplateOffer();
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// "Skip setup: start from a template": once per copy, while it is new. Stops the copy's app, fills its database
+    /// with the Workshop template (<see cref="ICopyDatabase.ApplyTemplateAsync"/>) and starts it again; requests wait
+    /// for it meanwhile. A copy whose visitor got further in the setup guide is left as it is (and started again). Only
+    /// the cookie's own copy, never another's.
+    /// </summary>
+    public async Task<TemplateResult> ApplyTemplateAsync(string visitorId)
+    {
+        VisitorCopy copy;
+        CancellationToken stopped;
+        lock (_lock)
+        {
+            if (!_copies.TryGetValue(visitorId, out var entry))
+            {
+                return TemplateResult.None;
+            }
+
+            if (!entry.Copy.TakeTemplateOffer())
+            {
+                return TemplateResult.Refused;
+            }
+
+            // Taken while the copy runs: its source is disposed once it has stopped.
+            copy = entry.Copy;
+            stopped = entry.Cancel.Token;
+        }
+
+        var applied = false;
+        try
+        {
+            // Its database is made, and its app started, before it is changed.
+            await copy.Started.WaitAsync(stopped);
+
+            // Cancelled when the app is stopped for good, which a stop of the copy does before it deletes its folder.
+            await copy.App.RestartAsync(
+                async appStopped => applied = await _database.ApplyTemplateAsync(copy.DataFolder, appStopped),
+                stopped);
+        }
+        catch (Exception) when (copy.Stopped.IsCompleted)
+        {
+            // It ended meanwhile, or didn't start: nothing is left to fill.
+            return TemplateResult.None;
+        }
+        catch (Exception ex)
+        {
+            // The app runs again all the same, with the setup guide.
+            LogTemplateFailed(_logger, copy.Visitor, ex);
+            return TemplateResult.Refused;
+        }
+
+        LogTemplate(_logger, copy.Visitor, applied);
+        return applied ? TemplateResult.Applied : TemplateResult.Refused;
     }
 
     /// <summary>"Start again": stops the visitor's copy and deletes its data, whatever their other tabs do.</summary>
@@ -364,6 +455,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             ["ConnectionStrings__Default"] = _database.ConnectionString(dataFolder),
             ["Vm201__Host"] = Host,
             ["Vm201__Port"] = board,
+            ["TimeZone"] = _options.TimeZone,
             ["DOTNET_gcServer"] = "0",
             ["Logging__LogLevel__Default"] = "Warning",
         }, ProgramProbe.App);
@@ -527,6 +619,12 @@ public sealed partial class VisitorCopies : IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "The copy of visitor {Visitor} didn't stop cleanly")]
     private static partial void LogStopFailed(ILogger logger, string visitor, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Skip setup for visitor {Visitor}: template applied {Applied}")]
+    private static partial void LogTemplate(ILogger logger, string visitor, bool applied);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Couldn't apply the template to the copy of visitor {Visitor}")]
+    private static partial void LogTemplateFailed(ILogger logger, string visitor, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Couldn't delete {Folder}")]
     private static partial void LogDeleteFailed(ILogger logger, string folder, Exception exception);

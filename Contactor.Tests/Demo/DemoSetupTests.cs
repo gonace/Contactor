@@ -29,6 +29,7 @@ public sealed class DemoSetupTests : IDisposable
         Assert.Equal(TimeSpan.FromHours(2), options.MaxLifetime);
         Assert.Equal(20, options.MaxBoards);
         Assert.Equal("Production", options.CopyEnvironment);
+        Assert.Equal("Europe/Stockholm", options.TimeZone);
         Assert.True(new DemoOptionsValidation().Validate(null, _folder.Options()).Succeeded);
     }
 
@@ -44,6 +45,7 @@ public sealed class DemoSetupTests : IDisposable
         options.IdleWarning = TimeSpan.FromSeconds(1);
         options.MaxBoards = 0;
         options.CopyEnvironment = "Staging";
+        options.TimeZone = "Mars/Olympus_Mons";
 
         var result = new DemoOptionsValidation().Validate(null, options);
 
@@ -57,6 +59,7 @@ public sealed class DemoSetupTests : IDisposable
         Assert.Contains(failures, f => f.StartsWith("Demo:IdleWarning", StringComparison.Ordinal));
         Assert.Contains(failures, f => f.StartsWith("Demo:MaxBoards", StringComparison.Ordinal));
         Assert.Contains(failures, f => f.StartsWith("Demo:CopyEnvironment", StringComparison.Ordinal));
+        Assert.Contains(failures, f => f.StartsWith("Demo:TimeZone", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -92,7 +95,7 @@ public sealed class DemoSetupTests : IDisposable
     [Fact]
     public async Task Should_MakeTheCopysDatabase_OnlyOnThisNetwork_WithNoSignIn()
     {
-        var database = new AppCopyDatabase();
+        var database = new AppCopyDatabase(TimeProvider.System, Microsoft.Extensions.Options.Options.Create(new DemoOptions()));
         var dataFolder = Path.Combine(_folder.DataRoot, VisitorCookie.NewId());
         Directory.CreateDirectory(dataFolder);
 
@@ -118,7 +121,7 @@ public sealed class DemoSetupTests : IDisposable
         var css = System.Text.Encoding.UTF8.GetString(DemoPages.Stylesheet());
 
         var outsideTokens = css.Split('\n').Where(l => colour.IsMatch(l) && !token.IsMatch(l)).ToList();
-        var pages = string.Concat(DemoPages.Page(new DemoOptions()), DemoPages.Busy(), DemoPages.Ended(), DemoPages.NotStarted());
+        var pages = string.Concat(DemoPages.Page(new DemoOptions(), offersTemplate: true), DemoPages.Busy(), DemoPages.Ended(), DemoPages.NotStarted());
 
         Assert.Empty(outsideTokens);
         Assert.Contains("@media (prefers-color-scheme: dark)", css, StringComparison.Ordinal);

@@ -175,5 +175,24 @@
         attach();
     }
 
+    // "Skip setup": "Go through the setup myself" hides the offer at once and tells the demo; the template's form goes
+    // as it is (the page comes back with the app filled in), saying meanwhile that it is on its way.
+    const offer = document.getElementById("demo-template");
+    if (offer !== null) {
+        const setup = document.getElementById("demo-setup-form");
+        setup.addEventListener("submit", (event) => {
+            event.preventDefault();
+            fetch(setup.action, { method: "POST", credentials: "same-origin" }).catch(() => { /* It offers it again on a reload. */ });
+            offer.remove();
+            const app = document.querySelector(".frame-app");
+            app.inert = false;
+            app.focus();
+        });
+        document.getElementById("demo-template-form").addEventListener("submit", () => {
+            document.getElementById("demo-template-text").textContent = "Setting up the workshop. This takes a few seconds.";
+            setTimeout(() => { for (const button of offer.querySelectorAll("button")) { button.disabled = true; } }, 0);
+        });
+    }
+
     setInterval(tick, 1000);
 })();

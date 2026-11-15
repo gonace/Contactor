@@ -47,6 +47,84 @@ public sealed class SupervisedProgramTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_Restart_WithTheProgramStoppedInBetween()
+    {
+        _starter.Listens = false;
+        _program.Start();
+        await Wait.UntilAsync(() => _starter.Runs.Count == 1);
+        var first = _starter.Runs[0];
+        first.Listen();
+        await _program.Listening;
+        var stoppedMeanwhile = false;
+
+        await _program.RestartAsync(
+            _ =>
+            {
+                stoppedMeanwhile = first.Stopped && _starter.Runs.Count == 1;
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(stoppedMeanwhile);
+        await Wait.UntilAsync(() => _starter.Runs.Count == 2);
+
+        // Requests wait for the new run.
+        var waiting = _program.Listening;
+        Assert.False(waiting.IsCompleted);
+        _starter.Runs[1].Listen();
+        await waiting;
+        Assert.False(_program.GaveUp.IsCompleted);
+    }
+
+    [Fact]
+    public async Task Should_StartAgain_AlsoWhenTheWorkInBetweenFails()
+    {
+        _program.Start();
+        await _program.Listening;
+
+        await Assert.ThrowsAsync<IOException>(() => _program.RestartAsync(_ => throw new IOException("disk"), TestContext.Current.CancellationToken));
+
+        await Wait.UntilAsync(() => _starter.Runs.Count == 2);
+        await _program.Listening;
+        Assert.False(_starter.Runs[1].HasExited);
+    }
+
+    [Fact]
+    public async Task Should_StartNothing_WhenStoppedDuringARestart()
+    {
+        _program.Start();
+        await _program.Listening;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = false;
+
+        var restart = _program.RestartAsync(
+            async token =>
+            {
+                entered.TrySetResult();
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    cancelled = true;
+                    throw;
+                }
+            },
+            TestContext.Current.CancellationToken);
+        await entered.Task;
+        var waiting = _program.Listening;
+
+        await _program.StopAsync();
+
+        Assert.True(cancelled);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => restart);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        Assert.Single(_starter.Runs);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _program.RestartAsync(_ => Task.CompletedTask, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task Should_LetRequestsWait_ForTheRestartedProgram()
     {
         _starter.Listens = false;

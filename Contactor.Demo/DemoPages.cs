@@ -28,7 +28,11 @@ public static class DemoPages
     private static readonly Lazy<string> ScriptVersion = new(() => Version(ScriptBytes.Value));
 
     /// <param name="options">The idle timeout and the count down, which the page's script follows.</param>
-    public static string Page(DemoOptions options)
+    /// <param name="offersTemplate">
+    /// Whether the visitor's app is still new, on its setup guide: then "Skip setup" covers the app's frame (not the
+    /// simulator's), which can't be used until the visitor chose.
+    /// </param>
+    public static string Page(DemoOptions options, bool offersTemplate = false)
     {
         ArgumentNullException.ThrowIfNull(options);
         var idle = Seconds(options.IdleTimeout);
@@ -51,7 +55,8 @@ public static class DemoPages
             </header>
             <main class="demo-frames">
                 <iframe class="frame-simulator" title="Simulator" src="{DemoRoutes.SimulatorPrefix}/"></iframe>
-                <iframe class="frame-app" title="Contactor" src="{DemoRoutes.AppFrame}"></iframe>
+                <iframe class="frame-app" title="Contactor" src="{DemoRoutes.AppFrame}"{(offersTemplate ? " inert" : "")}></iframe>
+                {(offersTemplate ? TemplateOffer() : "")}
             </main>
             <div class="overlay" id="demo-idle" hidden>
                 <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="demo-idle-title" aria-describedby="demo-idle-text">
@@ -139,6 +144,30 @@ public static class DemoPages
     public static byte[] Font(PathString name)
     {
         return HasFont(name) ? Resource("fonts" + name.Value) : throw new ArgumentException("Not one of the fonts.", nameof(name));
+    }
+
+    // Over the app's frame only: the simulator stays usable. Two forms, so it works without the script; the script only
+    // hides it at once for "Go through the setup myself", and says that the template is on its way.
+    private static string TemplateOffer()
+    {
+        return $$"""
+            <section class="template-offer" id="demo-template" aria-labelledby="demo-template-title">
+                <div class="card">
+                    <h2 id="demo-template-title">Skip setup: start from a template</h2>
+                    <p class="muted" id="demo-template-text" aria-live="polite">The app is new, so it opens on its setup guide. Skip it with a ready-made workshop, or set it up yourself.</p>
+                    <form method="post" action="{{DemoRoutes.TemplatePath}}" target="_top" id="demo-template-form">
+                        <input type="hidden" name="template" value="{{WorkshopTemplate.Id}}">
+                        <button type="submit" class="template-choice">
+                            <span class="template-name">Workshop</span>
+                            <span class="template-text">A fan heater, an air compressor, lights, ventilation and an outdoor light, used for three days by Alex and Sam.</span>
+                        </button>
+                    </form>
+                    <form method="post" action="{{DemoRoutes.SetupPath}}" target="_top" id="demo-setup-form">
+                        <button type="submit" class="secondary">Go through the setup myself</button>
+                    </form>
+                </div>
+            </section>
+            """;
     }
 
     private static string EndedCard()

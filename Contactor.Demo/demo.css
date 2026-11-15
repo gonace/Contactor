@@ -144,6 +144,7 @@ body.demo {
 }
 
 .demo-frames {
+    position: relative;
     flex: 1;
     display: flex;
     min-height: 0;
@@ -158,8 +159,58 @@ body.demo {
 }
 
 #tab-app:checked ~ .demo-frames .frame-simulator,
-#tab-simulator:checked ~ .demo-frames .frame-app {
+#tab-simulator:checked ~ .demo-frames .frame-app,
+#tab-simulator:checked ~ .demo-frames .template-offer {
     display: none;
+}
+
+/* "Skip setup": over the app's frame only, the app dimmed behind; the simulator stays usable. */
+.template-offer {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
+    background: var(--backdrop);
+}
+
+.template-offer form {
+    margin: 0;
+}
+
+.template-offer button {
+    width: 100%;
+}
+
+.template-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 16px 20px;
+    text-align: left;
+}
+
+.template-name {
+    font-size: 18px;
+}
+
+.template-text {
+    font-size: 14px;
+    font-weight: 400;
+}
+
+button.secondary {
+    background: var(--chip);
+    color: var(--ink);
+}
+
+button:disabled {
+    cursor: progress;
+    opacity: 0.6;
 }
 
 /* Desktop: the simulator on the left third, the app on the right two thirds, no tabs. */
@@ -182,6 +233,15 @@ body.demo {
     #tab-app:checked ~ .demo-frames .frame-simulator,
     #tab-simulator:checked ~ .demo-frames .frame-app {
         display: block;
+    }
+
+    #tab-simulator:checked ~ .demo-frames .template-offer {
+        display: flex;
+    }
+
+    /* The app's two thirds. */
+    .template-offer {
+        left: calc(100% / 3);
     }
 
     .demo-frames .frame-simulator {
