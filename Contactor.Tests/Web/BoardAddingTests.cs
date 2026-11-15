@@ -17,7 +17,7 @@ namespace Contactor.Tests.Web;
 
 /// <summary>
 /// "Add a board" (<see cref="BoardRegistry.AddBoardAsync(BoardModel, string?, CancellationToken)"/> and its steps,
-/// <c>/board/new</c>): a new board's row and rows by channel, its safety services, never install.sh's address, a name
+/// <c>/board/new</c>): a new board's row and rows by channel, its safety services, never the settings' address, a name
 /// made unique, Cancel leaving nothing behind, and the last board removed and a board added after that.
 /// </summary>
 public sealed class BoardAddingTests
@@ -29,7 +29,7 @@ public sealed class BoardAddingTests
     private static BoardModel Model(string type) => BoardCatalogue.Find(type)!.Model;
 
     // A second VM201 at another address, and a VM204: each a row of its own, last in the list, with its relays and
-    // inputs by channel, and no address or login until one is typed, not install.sh's (Vm201:Host, 127.0.0.1:1 here).
+    // inputs by channel, and no address or login until one is typed, not the settings' (Vm201:Host, 127.0.0.1:1 here).
     [Fact]
     public async Task Should_AddBoards_OfTheSameAndAnotherModel_WithRowsByChannel_AndNeverInstallShsAddress()
     {
@@ -176,7 +176,7 @@ public sealed class BoardAddingTests
             Assert.Contains("\"boards\":[]", await health.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
         }
 
-        // The board added now is the only one, so the first: still without install.sh's address, which was the removed
+        // The board added now is the only one, so the first: still without the settings' address, which was the removed
         // board's.
         var added = await registry.AddBoardAsync(Model("vm201"), null, Cancel);
         Assert.Equal("Velleman VM201", added.Name);
@@ -215,7 +215,7 @@ public sealed class BoardAddingTests
         }
     }
 
-    // The steps: model and name, then "Where is the board?" (the new board is made now, without install.sh's address),
+    // The steps: model and name, then "Where is the board?" (the new board is made now, without the settings' address),
     // then "Name your relays", and "Done" goes to Relays.
     [Fact]
     public async Task Should_AddABoard_ThroughItsSteps()
@@ -568,7 +568,7 @@ public sealed class BoardAddingTests
     }
 
     // The setup guide's board steps, now shared with "Add a board", still set up the first board as before: its model,
-    // install.sh's address for it, its relays' names, and "All set".
+    // the settings' address for it, its relays' names, and "All set".
     [Fact]
     public async Task Should_SetUpTheFirstBoard_ThroughTheGuidesSharedSteps()
     {
