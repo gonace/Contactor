@@ -487,7 +487,10 @@ public sealed class SetupTests
     [Fact]
     public async Task Should_GiveATriedRelayAnAutoOff_AtTheEndOfTheTry()
     {
-        await using var rig = await Rig.StartAsync();
+        // The try's turn-off waits on this clock, so it can't come before the auto-off is saved.
+        var time = new ManualTimeProvider();
+        Assert.Equal(Now, time.GetUtcNow().UtcDateTime);
+        await using var rig = await Rig.StartAsync(time: time);
 
         await rig.Setup.TryAsync(3, "john@example.com", Cancel);
 
@@ -498,6 +501,8 @@ public sealed class SetupTests
             Assert.Equal(Now + SetupHandler.TryAutoOffAfter, runtime.AutoOffAtUtc);
         }
 
+        Assert.True(rig.Board.State.IsOn(3));
+        time.Advance(SetupHandler.TryLength);
         await WaitUntilAsync(() => !rig.Board.State.IsOn(3));
     }
 
@@ -984,7 +989,8 @@ public sealed class SetupTests
 
         public SetupHandler Setup => Database.Services.GetRequiredService<SetupHandler>();
 
-        public static async Task<Rig> StartAsync(ILoggerProvider? logs = null, bool startRecorder = false, PulseAbility? pulse = null)
+        // The clock is fixed at Now, with real timers, unless the test brings its own.
+        public static async Task<Rig> StartAsync(ILoggerProvider? logs = null, bool startRecorder = false, PulseAbility? pulse = null, TimeProvider? time = null)
         {
             var board = new FakeRelayBoard(pulse: pulse);
             var database = TestDatabase.Create((services, configuration) =>
@@ -995,7 +1001,7 @@ public sealed class SetupTests
                 }
 
                 services.AddLocalClock(configuration);
-                services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(Now)));
+                services.AddSingleton<TimeProvider>(time ?? new FixedTimeProvider(new DateTimeOffset(Now)));
                 services.AddBoards(configuration);
                 services.AddEvents(configuration);
                 services.AddRelays(configuration);
