@@ -51,13 +51,13 @@ public sealed class WorkshopAppTests
         }
 
         var client = app.CreateClient();
-        await Wait.UntilAsync(() => Connected(client));
+        await UntilAsync(() => ConnectedAsync(client));
 
         // The board's first answer is handled, and its own timers turned off, as on any start.
-        await Wait.UntilAsync(() => Logged(app, EventActions.BoardTimersDisabled, eventsBefore));
+        await UntilAsync(() => LoggedAsync(app, EventActions.BoardTimersDisabled, eventsBefore));
         var expected = on.Aggregate(0, (mask, channel) => mask | (1 << (channel - 1)));
-        await Wait.UntilAsync(() => simulator.Outputs == expected);
-        await Wait.UntilAsync(() => on.Length == 0 || Logged(app, EventActions.On, eventsBefore));
+        await UntilAsync(() => Task.FromResult(simulator.Outputs == expected));
+        await UntilAsync(async () => on.Length == 0 || await LoggedAsync(app, EventActions.On, eventsBefore));
 
         var page = await client.GetStringAsync("/", Cancel);
         Assert.Contains("Fan heater", page, StringComparison.Ordinal);
@@ -79,11 +79,27 @@ public sealed class WorkshopAppTests
         Assert.Equal(expected, simulator.Outputs);
     }
 
-    private static bool Connected(HttpClient client)
+    // The whole app starts here, with the rest of the tests running beside it: a longer deadline than Wait's, and no
+    // thread blocked while it waits.
+    private static async Task UntilAsync(Func<Task<bool>> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(90);
+        while (!await condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                Assert.Fail("The condition was not met.");
+            }
+
+            await Task.Delay(50, Cancel);
+        }
+    }
+
+    private static async Task<bool> ConnectedAsync(HttpClient client)
     {
         try
         {
-            var json = client.GetStringAsync("/healthz", Cancel).GetAwaiter().GetResult();
+            var json = await client.GetStringAsync("/healthz", Cancel);
             using var health = JsonDocument.Parse(json);
             return health.RootElement.GetProperty("boardConnected").GetBoolean();
         }
@@ -93,10 +109,10 @@ public sealed class WorkshopAppTests
         }
     }
 
-    private static bool Logged(TestWebApp app, string action, int afterId)
+    private static async Task<bool> LoggedAsync(TestWebApp app, string action, int afterId)
     {
-        using var db = Open(app);
-        return db.EventLog.Any(e => e.Id > afterId && e.Action == action);
+        await using var db = Open(app);
+        return await db.EventLog.AnyAsync(e => e.Id > afterId && e.Action == action, Cancel);
     }
 
     private static ContactorDbContext Open(TestWebApp app)
