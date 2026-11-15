@@ -326,7 +326,7 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
 
         var fetch = keys.GetAsync(access, refresh: false, Cancel);
         Assert.True(held.Fetching.Wait(TimeSpan.FromSeconds(10), Cancel), "The fetch never started.");
-        await Wait.UntilAsync(() => time.PendingTimers == 1);
+        await Wait.UntilAsync(() => time.WaitsOnly(CloudflareAccessKeys.FetchTimeout));
         Assert.False(fetch.IsCompleted);
         time.Advance(CloudflareAccessKeys.FetchTimeout);
 
@@ -450,8 +450,15 @@ public sealed class CloudflareAccessTokenValidatorTests : IDisposable
             return keys.GetAsync(a, refresh: false, Cancel);
         }, Cancel);
         Assert.True(clock.Held.Wait(TimeSpan.FromSeconds(10), Cancel), "The request never reached the clock.");
-        await keys.GetAsync(new CloudflareAccessSettings(TeamB, AccessTokens.Audience), refresh: false, Cancel);
-        clock.Release.Set();
+        try
+        {
+            await keys.GetAsync(new CloudflareAccessSettings(TeamB, AccessTokens.Audience), refresh: false, Cancel);
+        }
+        finally
+        {
+            // Also when team B's request fails: the held request isn't left waiting.
+            clock.Release.Set();
+        }
 
         Assert.All(await held, k => Assert.Equal(TeamA, k.KeyId));
     }

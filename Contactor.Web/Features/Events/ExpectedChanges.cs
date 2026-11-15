@@ -81,6 +81,18 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>
+    /// Drops every expectation: the board moved to a new address, where another board may be, and a change there is not
+    /// the app's own.
+    /// </summary>
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _expected.Clear();
+        }
+    }
+
+    /// <summary>
     /// Whether a command for this change went out in the last few seconds and the board hasn't shown it yet: the
     /// board's state may still show the relay as it was.
     /// </summary>

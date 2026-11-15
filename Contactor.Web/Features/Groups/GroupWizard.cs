@@ -54,15 +54,9 @@ public sealed class GroupWizard
         return BoardId is not { } picked || picked == boardId;
     }
 
-    /// <summary>Picks a relay last in the order, or unpicks it. A relay picked again keeps its name and waits.</summary>
-    public void Toggle(int relayId, string relayName)
-    {
-        Toggle(relayId, relayName, boardId: 0);
-    }
-
     /// <summary>
-    /// As <see cref="Toggle(int, string)"/>, for a relay on this board; one on another board than the picked relays'
-    /// isn't picked.
+    /// Picks a relay on this board last in the order, or unpicks it. A relay picked again keeps its name and waits. One
+    /// on another board than the picked relays' isn't picked.
     /// </summary>
     public void Toggle(int relayId, string relayName, int boardId)
     {

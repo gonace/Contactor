@@ -17,8 +17,9 @@ public sealed class BoardTraceWatch : IDisposable
     /// <param name="registry">The boards.</param>
     /// <param name="added">A new item in a board's trace, with its board.</param>
     /// <param name="changed">
-    /// Anything a board's trace list shows changed: a new item, the routine count, a Clear, or a board added or removed. Null to
-    /// hear only <paramref name="added"/>.
+    /// Anything a board's trace list shows changed: a new item, the routine count or a Clear. A board added or removed
+    /// is <see cref="BoardRegistry.BoardsChanged"/>, which a page hears on its own. Null to hear only
+    /// <paramref name="added"/>.
     /// </param>
     public BoardTraceWatch(BoardRegistry registry, Action<LiveBoard, BoardTraceItem>? added, Action? changed = null)
     {
@@ -48,7 +49,6 @@ public sealed class BoardTraceWatch : IDisposable
     private void OnBoardsChanged(object? sender, EventArgs e)
     {
         ListenToNew();
-        _changed?.Invoke();
     }
 
     private void ListenToNew()

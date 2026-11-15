@@ -80,6 +80,7 @@ public sealed class Vm208SimulatedBoardTests
     [InlineData("Application/X-WWW-Form-Urlencoded", "index=1&state=1&interface=-1&socket=0", false)]
     [InlineData("text/plain", "index=1&state=1&interface=-1&socket=0", true)]
     [InlineData("text/plain; charset=UTF-8", "index=1&state=1&interface=-1&socket=0", true)]
+    [InlineData("text/plain ", "index=1&state=1&interface=-1&socket=0", true)]
     [InlineData("Text/Plain", "index=1&state=1&interface=-1&socket=0", false)]
     [InlineData("text/plain", "&index=1&state=1&interface=-1&socket=0", false)]
     [InlineData("text/plain", "{\"index\":1}", false)]

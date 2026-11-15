@@ -29,6 +29,13 @@ public sealed record BoardCapabilities(int RelayCount, int InputCount, bool Repo
 /// <summary>The lengths a board can pulse a relay for: from <paramref name="Shortest"/> to <paramref name="Longest"/>, in steps of <paramref name="Step"/>.</summary>
 public sealed record PulseAbility(TimeSpan Shortest, TimeSpan Longest, TimeSpan Step)
 {
+    /// <summary>
+    /// For a board whose lengths a range and a step can't say exactly, e.g. the VM201's: whether it can send a length
+    /// in the range. Null when the range and the step say it all.
+    /// </summary>
+    public Func<TimeSpan, bool>? Exact { get; init; }
+
     /// <summary>Whether the board can pulse for exactly <paramref name="length"/>.</summary>
-    public bool CanDo(TimeSpan length) => length >= Shortest && length <= Longest && length.Ticks % Step.Ticks == 0;
+    public bool CanDo(TimeSpan length) =>
+        length >= Shortest && length <= Longest && length.Ticks % Step.Ticks == 0 && (Exact is null || Exact(length));
 }

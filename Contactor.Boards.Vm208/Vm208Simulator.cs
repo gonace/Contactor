@@ -376,13 +376,15 @@ public sealed class Vm208Simulator : ISimulatedBoard
         return Respond(HttpStatusCode.NotFound, "", "Not found", isError: true);
     }
 
-    // The Content-Type as ESPAsyncWebServer keeps it (AsyncWebServerRequest::_parseReqHeader): a header whose name
-    // matches in any case, its value from two characters after the colon, up to a ';'. The last one wins.
+    // The Content-Type as ESPAsyncWebServer keeps it (AsyncWebServerRequest::_parseReqHeader): the line trimmed first
+    // (WebRequest.cpp, _temp.trim()), a header whose name matches in any case, its value from two characters after the
+    // colon, up to a ';'. The last one wins.
     private static string ContentType(IEnumerable<string> headerLines)
     {
         var contentType = "";
-        foreach (var line in headerLines)
+        foreach (var raw in headerLines)
         {
+            var line = raw.Trim();
             var colon = line.IndexOf(':', StringComparison.Ordinal);
             if (colon > 0 && line[..colon].Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
             {
