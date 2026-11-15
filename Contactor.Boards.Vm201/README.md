@@ -82,7 +82,7 @@ relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
 - `Vm201Client`:
   - Holds one persistent connection. On failure: reconnect with exponential backoff (1 s → max 30 s).
   - Exposes `Vm201State` (Outputs byte, TimerMask, Input, `IsConnected`, `LastContactUtc`) and an event or `IObservable` when the status changes.
-  - Commands (`TurnOnAsync(mask)`, `TurnOffAsync(mask)`, `PulseAsync(mask, length)`, `RequestStatusAsync()`, `DisableBoardTimersAsync(mask)`) are serialized through a `Channel<T>`, so only one writer is used at a time.
+  - Commands (`TurnOnAsync(mask)`, `TurnOffAsync(mask)`, `PulseAsync(mask, length)`, `RequestStatusAsync()`, `DisableBoardTimersAsync(mask)`) are serialized through a `Channel<T>`, so only one writer is used at a time, in the order they were sent. A command cancelled before the writer takes it is not sent, and its caller gets `OperationCanceledException`. A cancel after that comes too late: the command goes out, and its caller gets the write's own result.
   - `PulseAsync` sends the whole mask in one CMD_PULSE. A length goes out exactly or not at all (`Vm201Pulse`): whole seconds up to 99 s, else whole minutes up to 99 min, else whole hours up to 99 h. Any other length, such as 100 s or 90.5 s, throws `ArgumentOutOfRangeException` before anything is sent.
   - Timeouts: connect 5 s, login 5 s.
   - `SetEndpoint` and `SetLogin` change the address and login while it runs: the current connection, attempt or wait ends at once. The web app applies the address and login saved on its `Board` row before the first connection. `Vm201Login` is a class, not a record, so its password can't leak through a generated `ToString`.

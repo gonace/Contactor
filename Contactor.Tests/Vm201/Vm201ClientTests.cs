@@ -335,6 +335,169 @@ public sealed class Vm201ClientTests
         await WaitUntilAsync(() => run.Client.State.IsOn(2));
     }
 
+    [Fact]
+    public async Task Should_NotSend_WhenCommandIsCancelledWhileTheConnectionIsBusy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, ct);
+        await gate.Held.WaitAsync(WaitTimeout, ct);
+        using var cts = new CancellationTokenSource();
+        var cancelled = run.Client.TurnOnAsync(0x02, cts.Token);
+        await cts.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        gate.Release();
+        await hold;
+        await SendMarkerAsync(run.Client, simulator);
+
+        Assert.Equal([(Vm201Command.Off, WriterGate.HoldMask), (Vm201Command.On, Marker)], Sent(simulator));
+        Assert.Equal(Marker, simulator.Outputs);
+    }
+
+    [Fact]
+    public async Task Should_NotSend_WhenCommandIsCancelledBeforeTheCall()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.Client.TurnOnAsync(0x02, cts.Token));
+        await SendMarkerAsync(run.Client, simulator);
+
+        Assert.Equal([(Vm201Command.On, Marker)], Sent(simulator));
+    }
+
+    [Fact]
+    public async Task Should_ReportSuccess_WhenCancelledAfterTheWriterTookTheCommand()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        using var cts = new CancellationTokenSource();
+        var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, cts.Token);
+        await gate.Held.WaitAsync(WaitTimeout, ct);
+        await cts.CancelAsync();
+        gate.Release();
+
+        await hold;
+        await SendMarkerAsync(run.Client, simulator);
+        Assert.Equal([(Vm201Command.Off, WriterGate.HoldMask), (Vm201Command.On, Marker)], Sent(simulator));
+    }
+
+    [Fact]
+    public async Task Should_ThrowCancelled_WhenCancelledBeforeTheCallWhileNeverConnected()
+    {
+        var client = CreateClient(port: 1);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.TurnOnAsync(0x01, cts.Token));
+    }
+
+    [Fact]
+    public async Task Should_SendTheOtherCommandsInOrder_WhenOneIsCancelledInTheQueue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, ct);
+        await gate.Held.WaitAsync(WaitTimeout, ct);
+        using var cts = new CancellationTokenSource();
+        var first = run.Client.TurnOnAsync(0x01, ct);
+        var cancelled = run.Client.TurnOnAsync(0x02, cts.Token);
+        var third = run.Client.DisableBoardTimersAsync(0x04, ct);
+        var fourth = run.Client.TurnOffAsync(0x01, ct);
+        await cts.CancelAsync();
+        gate.Release();
+        await Task.WhenAll(hold, first, third, fourth);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        await SendMarkerAsync(run.Client, simulator);
+
+        Assert.Equal(
+            [
+                (Vm201Command.Off, WriterGate.HoldMask),
+                (Vm201Command.On, (byte)0x01),
+                (Vm201Command.TimerDisable, (byte)0x04),
+                (Vm201Command.Off, (byte)0x01),
+                (Vm201Command.On, Marker),
+            ],
+            Sent(simulator));
+    }
+
+    [Fact]
+    public async Task Should_ReportWhatWasSent_WhenCancelledWhileTheWriterTakesTheCommand()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        List<byte> reportedSent = [];
+        for (var i = 1; i <= 100; i++)
+        {
+            var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, ct);
+            await gate.Held.WaitAsync(WaitTimeout, ct);
+            using var cts = new CancellationTokenSource();
+            var command = run.Client.DisableBoardTimersAsync((byte)i, cts.Token);
+
+            // The writer takes the command as soon as it is released, while the caller cancels it.
+            var release = Task.Run(gate.Release, ct);
+            cts.Cancel();
+            await release;
+            await hold;
+            try
+            {
+                await command;
+                reportedSent.Add((byte)i);
+            }
+            catch (OperationCanceledException)
+            {
+                // Not sent; the check below proves it.
+            }
+        }
+
+        await SendMarkerAsync(run.Client, simulator);
+
+        var received = Sent(simulator).Where(p => p.Command == Vm201Command.TimerDisable).Select(p => p.Mask);
+        Assert.Equal(reportedSent, received);
+    }
+
+    // Relay 7: no test above uses it for anything else.
+    private const byte Marker = 0x40;
+
+    // Every command sent before the marker has reached the simulator once the marker has: the client sends in order.
+    private static async Task SendMarkerAsync(Vm201Client client, Vm201Simulator simulator)
+    {
+        await client.TurnOnAsync(Marker, TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.On && p.Data.Span[0] == Marker));
+    }
+
+    // The commands the simulator got with a mask, in order; the keep-alive's status requests are left out.
+    private static List<(byte Command, byte Mask)> Sent(Vm201Simulator simulator)
+    {
+        return [.. simulator.ReceivedCommands
+            .Where(p => p.Command is Vm201Command.On or Vm201Command.Off or Vm201Command.TimerDisable)
+            .Select(p => (p.Command, p.Data.Span[0]))];
+    }
+
     private static Vm201Client CreateClient(int port, string username = "", string password = "", int keepAliveSeconds = 15)
     {
         var options = new Vm201Options
@@ -394,6 +557,41 @@ public sealed class Vm201ClientTests
             await _cts.CancelAsync();
             await _task.WaitAsync(WaitTimeout);
             _cts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Holds the client's writer: the trace of a sent <see cref="HoldMask"/> OFF is raised on the writer, so the writer
+    /// waits there until <see cref="Release"/>, and the commands behind it wait in the queue.
+    /// </summary>
+    private sealed class WriterGate : IDisposable
+    {
+        public const byte HoldMask = 0x80;
+
+        private readonly SemaphoreSlim _release = new(0);
+
+        public SemaphoreSlim Held { get; } = new(0);
+
+        public void Traced(object? sender, Vm201TraceEntry entry)
+        {
+            if (entry.Kind == Vm201TraceKind.Sent && entry.Command == Vm201Command.Off && entry.Data.SequenceEqual([HoldMask]))
+            {
+                Held.Release();
+
+                // Bounded, so a failing test ends instead of holding the client for ever.
+                _release.Wait(WaitTimeout);
+            }
+        }
+
+        public void Release()
+        {
+            _release.Release();
+        }
+
+        public void Dispose()
+        {
+            _release.Dispose();
+            Held.Dispose();
         }
     }
 

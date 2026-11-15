@@ -8,7 +8,8 @@ namespace Contactor.Boards.Vm201;
 /// <summary>
 /// Holds exactly one connection to the VM201 board, logs in, tracks the status the board pushes and reconnects with
 /// exponential backoff. Commands go through one channel per connection, so only one writer touches the socket.
-/// Commands are never queued while disconnected: they fail at once with <see cref="BoardNotConnectedException"/>.
+/// Commands are never queued while disconnected: they fail at once with <see cref="BoardNotConnectedException"/>. A
+/// command cancelled before the writer takes it is not sent.
 /// </summary>
 public sealed class Vm201Client
 {
@@ -249,6 +250,9 @@ public sealed class Vm201Client
 
     private async Task SendAsync(byte[] packet, CancellationToken cancellationToken)
     {
+        // A cancelled command is never queued, so it can't reach the board after the caller gave up on it.
+        cancellationToken.ThrowIfCancellationRequested();
+
         var session = Volatile.Read(ref _session);
         if (session is null || !State.IsConnected)
         {
@@ -261,7 +265,13 @@ public sealed class Vm201Client
             throw new BoardNotConnectedException("The VM201 connection is closing or busy; the command was not sent.");
         }
 
-        await write.Completion!.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // A cancel while the command waits in the queue drops it: the writer skips it and the caller sees the cancel.
+        // Once the writer has taken it, the cancel comes too late: the caller waits for the write's own outcome, so it
+        // is never told "cancelled" for a command the board gets. That wait ends with the write or with the connection.
+        using var registration = cancellationToken.UnsafeRegister(
+            static (state, token) => ((PendingWrite)state!).TryCancel(token),
+            write);
+        await write.Completion!.Task.ConfigureAwait(false);
     }
 
     /// <summary>
@@ -427,8 +437,15 @@ public sealed class Vm201Client
     {
         await foreach (var write in session.Commands.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
         {
+            if (!write.TryTake())
+            {
+                // Its caller cancelled it while it waited; it is not sent.
+                continue;
+            }
+
             try
             {
+                // The Sent trace's handlers run inside this call, so before the caller's task completes.
                 await SendAsync(stream, write.Packet, cancellationToken).ConfigureAwait(false);
                 write.Completion?.TrySetResult();
             }
@@ -635,7 +652,43 @@ public sealed class Vm201Client
         }
     }
 
-    private sealed record PendingWrite(byte[] Packet, TaskCompletionSource? Completion);
+    /// <summary>
+    /// A command in the queue. Exactly one side claims it: the writer (<see cref="TryTake"/>), which then sends it, or
+    /// the caller's cancel (<see cref="TryCancel"/>), which drops it.
+    /// </summary>
+    private sealed class PendingWrite
+    {
+        private const int Queued = 0;
+        private const int Taken = 1;
+        private const int Cancelled = 2;
+        private int _state = Queued;
+
+        public PendingWrite(byte[] packet, TaskCompletionSource? completion)
+        {
+            Packet = packet;
+            Completion = completion;
+        }
+
+        public byte[] Packet { get; }
+
+        /// <summary>Null for a keep-alive, which nobody waits for.</summary>
+        public TaskCompletionSource? Completion { get; }
+
+        /// <summary>The writer takes it to send it; false if its caller cancelled it first.</summary>
+        public bool TryTake()
+        {
+            return Interlocked.CompareExchange(ref _state, Taken, Queued) == Queued;
+        }
+
+        /// <summary>Drops it while it still waits in the queue; does nothing once the writer has taken it.</summary>
+        public void TryCancel(CancellationToken cancellationToken)
+        {
+            if (Interlocked.CompareExchange(ref _state, Cancelled, Queued) == Queued)
+            {
+                Completion?.TrySetCanceled(cancellationToken);
+            }
+        }
+    }
 
     private sealed class Session
     {
