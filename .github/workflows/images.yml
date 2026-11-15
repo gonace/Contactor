@@ -22,6 +22,8 @@ jobs:
     permissions:
       contents: write
       packages: write
+      # The test report is a check run on the commit.
+      checks: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -37,8 +39,18 @@ jobs:
         run: dotnet build Contactor.slnx --configuration Release
 
       - name: Test
-        # Nothing is published unless every test passes: the Raspberry Pi takes a new image the same night.
-        run: dotnet test --solution Contactor.slnx --no-build --configuration Release
+        # Nothing is published unless every test passes: the Raspberry Pi takes a new image the same night. xunit
+        # writes a TRX file per run into TestResults for the report below.
+        run: dotnet test --solution Contactor.slnx --no-build --configuration Release --results-directory TestResults -- --report-xunit-trx
+
+      - name: Release test report
+        # Also after a failed test, so the failing tests show on the run and the commit; the release still stops.
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
+        with:
+          name: Release tests
+          path: TestResults/*.trx
+          reporter: dotnet-trx
 
       - name: Compute the version
         id: version
