@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Boards.DAEnetIP2v2;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
@@ -55,6 +56,11 @@ public static class SimulatorCatalogue
             model,
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Waveshare board takes no login.",
             (_, _, logger, time) => new WaveshareSimulator(model, logger) { TimeProvider = time })),
+        .. DAEnetIP2v2Models.All.Select(model => new SimulatorModel(
+            model,
+            (username, password) => username.Length <= 64 && password.Length <= 64 ? null : "The user name and password can be at most 64 characters.",
+            (username, password, logger, _) => new DAEnetIP2v2Simulator(model, username, password, logger),
+            SuggestedPort: 8182)),
         .. DevantechModels.All.Select(model => new SimulatorModel(
             model,
             (username, password) => username.Length > 0

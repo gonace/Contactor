@@ -1,9 +1,11 @@
 using Contactor.Boards;
+using Contactor.Boards.DAEnetIP2v2;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
 using Contactor.Boards.Waveshare;
+using Contactor.Web.Features.DAEnetIP2v2;
 using Contactor.Web.Features.Devantech;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Features.Vm204;
@@ -45,6 +47,8 @@ public static class BoardCatalogue
         new(DevantechModels.Eth008, DevantechBoards.Create),
         new(DevantechModels.Eth484, DevantechBoards.Create),
         new(DevantechModels.Eth8020, DevantechBoards.Create),
+        new(DAEnetIP2v2Models.Relay8, DAEnetIP2v2Boards.Create),
+        new(DAEnetIP2v2Models.Relay16, DAEnetIP2v2Boards.Create),
     ];
 
     /// <summary>The brands in alphabetical order, each with its models in the catalogue's order.</summary>

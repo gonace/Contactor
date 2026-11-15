@@ -44,6 +44,7 @@ Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
 Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel, BoardPoller. No dependencies.
 Contactor.Boards.Devantech/ # The Devantech ETH002-B, ETH008-B, ETH484-B and ETH8020-B: binary TCP commands, client, simulator and its adapters (DevantechBoard, DevantechConnection, DevantechTraffic). No web/EF. README.md: its protocol
+Contactor.Boards.DAEnetIP2v2/ # Denkovi DAEnetIP2v2 8- and 16-relay kits: HTTP client, simulator and adapters. No web/EF. README.md: its routes and hardware checks
 Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF. README.md: its protocol
 Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF. README.md: its routes
 Contactor.Boards.Vm208/     # The VM208: HTTP client, simulator and its adapters (Vm208Board, Vm208Connection, Vm208Traffic). No web/EF. README.md: its routes
