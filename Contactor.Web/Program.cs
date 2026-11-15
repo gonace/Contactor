@@ -37,6 +37,11 @@ public sealed partial class Program
             return SetupStatus.Run(args);
         }
 
+        if (AppCommands.RefuseUnknown(args, Console.Error) is { } exitCode)
+        {
+            return exitCode;
+        }
+
         var builder = WebApplication.CreateBuilder(args);
         builder.WebHost.ListenForTailscaleServe(builder.Configuration);
         builder.AddServiceDefaults();

@@ -1,6 +1,7 @@
 using Contactor.Web.Features.Setup;
 using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
+using Microsoft.Data.Sqlite;
 
 namespace Contactor.Tests.Web;
 
@@ -63,6 +64,36 @@ public sealed class SetupStatusTests
 
         Assert.Equal((0, "done\nhttps://relays.example.com\n", ""), (result.ExitCode, result.Output, result.Error));
         Assert.DoesNotContain("secret-token", result.Output, StringComparison.Ordinal);
+    }
+
+    // A tunnel set up from its token alone has no saved address: the script shows the machine's own.
+    [Fact]
+    public async Task Should_SayNoAddress_ForATunnelWithoutASavedAddress()
+    {
+        await using var database = await WithAsync(
+            new Installation { AccessType = "cloudflare", SignInType = "cloudflare-access", SetupDoneUtc = DateTime.UtcNow },
+            new CloudflareSetting { TunnelToken = "secret-token" });
+
+        var result = Status(database, new FakeTailscale(null));
+
+        Assert.Equal((0, "done\n", ""), (result.ExitCode, result.Output, result.Error));
+    }
+
+    // A database file the app hasn't brought up to date yet, e.g. while it is starting for the first time.
+    [Fact]
+    public async Task Should_SayTheDatabaseCantBeRead_BeforeItsMigrations()
+    {
+        await using var database = TestDatabase.Create();
+        Directory.CreateDirectory(Path.GetDirectoryName(database.FilePath)!);
+        await using (var connection = new SqliteConnection(database.ConnectionString))
+        {
+            await connection.OpenAsync(Cancel);
+        }
+
+        var result = Status(database, new FakeTailscale(null));
+
+        Assert.Equal((1, ""), (result.ExitCode, result.Output));
+        Assert.StartsWith("setup-status: the database can't be read yet (", result.Error, StringComparison.Ordinal);
     }
 
     // Only on this network: the address is the machine's own, which the script knows.
