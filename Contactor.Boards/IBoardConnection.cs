@@ -31,8 +31,8 @@ public interface IBoardConnection
     /// </summary>
     void SetLogin(BoardLogin login);
 
-    /// <summary>Why the board can't take this login, in words for the person who typed it, or null when it can.</summary>
-    string? CheckLogin(BoardLogin login);
+    /// <summary>Why the board can't take this login, or null when it can; the app puts it in words.</summary>
+    LoginProblem? CheckLogin(BoardLogin login);
 
     /// <summary>Connects, and reconnects whenever the connection is lost, until cancelled.</summary>
     Task RunAsync(CancellationToken cancellationToken);

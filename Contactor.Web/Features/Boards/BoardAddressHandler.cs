@@ -24,15 +24,18 @@ public sealed class BoardAddressHandler
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly IStringLocalizer<BoardsTexts> _texts;
+    private readonly BoardLoginText _login;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
         BoardRegistry registry,
         LocalClock clock,
         RelayChanges changes,
-        IStringLocalizer<BoardsTexts> texts)
+        IStringLocalizer<BoardsTexts> texts,
+        BoardLoginText login)
     {
         _texts = texts;
+        _login = login;
         _dbFactory = dbFactory;
         _registry = registry;
         _clock = clock;
@@ -130,9 +133,9 @@ public sealed class BoardAddressHandler
             return _texts["Boards.NotChosen"];
         }
 
-        if (connection.CheckLogin(login) is { } error)
+        if (connection.CheckLogin(login) is { } problem)
         {
-            return error;
+            return _login.Problem(problem);
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);

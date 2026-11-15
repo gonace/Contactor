@@ -33,10 +33,10 @@ public sealed class Vm201Connection : IBoardConnection
     {
         ArgumentNullException.ThrowIfNull(login);
         _client.SetLogin(Vm201Login.TryCreate(login.Username, login.Password, out var error)
-            ?? throw new ArgumentException(error, nameof(login)));
+            ?? throw new ArgumentException(error?.ToString(), nameof(login)));
     }
 
-    public string? CheckLogin(BoardLogin login)
+    public LoginProblem? CheckLogin(BoardLogin login)
     {
         ArgumentNullException.ThrowIfNull(login);
         Vm201Login.TryCreate(login.Username, login.Password, out var error);

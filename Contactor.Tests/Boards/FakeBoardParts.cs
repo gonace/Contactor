@@ -92,7 +92,7 @@ internal sealed class FakeConnection : IBoardConnection, IDisposable
         Login = login;
     }
 
-    public string? CheckLogin(BoardLogin login)
+    public LoginProblem? CheckLogin(BoardLogin login)
     {
         return null;
     }

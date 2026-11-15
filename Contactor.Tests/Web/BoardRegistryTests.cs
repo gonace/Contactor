@@ -39,7 +39,7 @@ public sealed class BoardRegistryTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.RefreshAsync(Cancel));
         Assert.Throws<InvalidOperationException>(() => board.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760)));
         Assert.Throws<InvalidOperationException>(() => board.SetLogin(BoardLogin.None));
-        Assert.Equal("No relay board has been chosen yet.", board.CheckLogin(BoardLogin.None));
+        Assert.Equal("No relay board has been chosen yet.", Assert.Throws<InvalidOperationException>(() => board.CheckLogin(BoardLogin.None)).Message);
     }
 
     [Fact]

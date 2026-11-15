@@ -268,9 +268,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         (Active ?? throw new InvalidOperationException(NotChosen)).Connection.SetLogin(login);
     }
 
-    public string? CheckLogin(BoardLogin login)
+    public LoginProblem? CheckLogin(BoardLogin login)
     {
-        return Active is { } active ? active.Connection.CheckLogin(login) : NotChosen;
+        return (Active ?? throw new InvalidOperationException(NotChosen)).Connection.CheckLogin(login);
     }
 
     /// <summary>

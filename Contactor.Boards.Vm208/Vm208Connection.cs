@@ -36,16 +36,14 @@ public sealed class Vm208Connection : IBoardConnection
     {
         if (CheckLogin(login) is { } error)
         {
-            throw new ArgumentException(error, nameof(login));
+            throw new ArgumentException(error.ToString(), nameof(login));
         }
     }
 
-    public string? CheckLogin(BoardLogin login)
+    public LoginProblem? CheckLogin(BoardLogin login)
     {
         ArgumentNullException.ThrowIfNull(login);
-        return login.IsNone
-            ? null
-            : "The VM208 takes no login: its password only protects its own web pages.";
+        return login.IsNone ? null : new LoginProblem(LoginProblemKind.NoLoginWebPages, Board: "VM208");
     }
 
     public Task RunAsync(CancellationToken cancellationToken)

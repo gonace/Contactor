@@ -8,8 +8,8 @@ namespace Contactor.Boards;
 /// <param name="DefaultPort">The TCP port it listens on unless someone changed it.</param>
 /// <param name="LoginMaxLength">The longest user name and password it takes; 0 when it has no login.</param>
 /// <param name="LoginHint">
-/// What its user name and password may contain, in plain words for the Settings screen, e.g. "At most 8 characters:
-/// letters a–z, digits and plain symbols."; null when the length is the only rule.
+/// What its user name and password may contain, which the app puts in words for the Settings screen, e.g. "At most 8
+/// characters: letters a–z, digits and plain symbols."; null when the length is the only rule.
 /// </param>
 /// <param name="PasswordOnly">
 /// Whether its login is a password alone, without a user name: the screens then ask for the password only.
@@ -21,7 +21,7 @@ public sealed record BoardModel(
     BoardCapabilities Capabilities,
     int DefaultPort,
     int LoginMaxLength,
-    string? LoginHint = null,
+    LoginHint? LoginHint = null,
     bool PasswordOnly = false)
 {
     /// <summary>Its name as people know it, with the brand, e.g. "Velleman VM201".</summary>

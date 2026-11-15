@@ -22,21 +22,21 @@ public sealed class Vm201Login : IEquatable<Vm201Login>
     public bool IsNone => Username.Length == 0 && Password.Length == 0;
 
     /// <summary>A login from what someone typed, or null with the reason when the board can't take it.</summary>
-    public static Vm201Login? TryCreate(string? username, string? password, out string? error)
+    public static Vm201Login? TryCreate(string? username, string? password, out LoginProblem? error)
     {
         username ??= "";
         password ??= "";
-        foreach (var (value, what) in new[] { (username, "The user name"), (password, "The password") })
+        foreach (var (value, what) in new[] { (username, LoginField.UserName), (password, LoginField.Password) })
         {
             if (value.Length > Vm201Command.CredentialMaxLength)
             {
-                error = $"{what} can be at most {Vm201Command.CredentialMaxLength} characters on the relay board.";
+                error = new LoginProblem(LoginProblemKind.TooLong, what, Vm201Command.CredentialMaxLength);
                 return null;
             }
 
             if (value.Any(c => c is < (char)0x20 or > (char)0x7E))
             {
-                error = $"{what} can only contain letters a–z, digits and plain symbols.";
+                error = new LoginProblem(LoginProblemKind.PlainCharacters, what);
                 return null;
             }
         }

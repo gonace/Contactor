@@ -325,4 +325,53 @@
     <value>{0} · checked {1}</value>
     <comment>{1} is a time with seconds.</comment>
   </data>
+  <data name="Boards.LoginHint.PlainSymbols" xml:space="preserve">
+    <value>At most {0} characters: letters a–z, digits and plain symbols.</value>
+  </data>
+  <data name="Boards.LoginHint.ListedSymbols" xml:space="preserve">
+    <value>At most {0} characters, {1} for both together: letters a–z, digits and {2}.</value>
+    <comment>{2} is the symbols the board takes, with spaces between them.</comment>
+  </data>
+  <data name="Boards.LoginHint.TcpPassword" xml:space="preserve">
+    <value>The TCP password from the board's configuration page, not the login of its web page. At most {0} characters: letters, digits and plain symbols, no spaces.</value>
+  </data>
+  <data name="Boards.Login.TooLong.UserName" xml:space="preserve">
+    <value>The user name can be at most {0} characters on the relay board.</value>
+  </data>
+  <data name="Boards.Login.TooLong.Password" xml:space="preserve">
+    <value>The password can be at most {0} characters on the relay board.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.UserName" xml:space="preserve">
+    <value>The user name can only contain letters a–z, digits and plain symbols.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.Password" xml:space="preserve">
+    <value>The password can only contain letters a–z, digits and plain symbols.</value>
+  </data>
+  <data name="Boards.Login.ListedCharacters.UserName" xml:space="preserve">
+    <value>The user name can only contain letters a–z, digits and {0} on the relay board.</value>
+    <comment>{0} is the symbols the board takes.</comment>
+  </data>
+  <data name="Boards.Login.ListedCharacters.Password" xml:space="preserve">
+    <value>The password can only contain letters a–z, digits and {0} on the relay board.</value>
+  </data>
+  <data name="Boards.Login.TooLongTogether" xml:space="preserve">
+    <value>The user name and password can be at most {0} characters together on the relay board.</value>
+  </data>
+  <data name="Boards.Login.PasswordOnly" xml:space="preserve">
+    <value>The {0} takes a password only, no user name.</value>
+    <comment>{0} names the board, e.g. "Devantech board".</comment>
+  </data>
+  <data name="Boards.Login.PasswordTooLong" xml:space="preserve">
+    <value>The password can be at most {0} characters.</value>
+  </data>
+  <data name="Boards.Login.PasswordCharacters" xml:space="preserve">
+    <value>The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.</value>
+  </data>
+  <data name="Boards.Login.NoLoginWebPages" xml:space="preserve">
+    <value>The {0} takes no login: its password only protects its own web pages.</value>
+    <comment>{0} names the board, e.g. "VM208".</comment>
+  </data>
+  <data name="Boards.Login.NoLoginWebPage" xml:space="preserve">
+    <value>The {0} takes no login: its password only protects its own web page.</value>
+  </data>
 </root>
