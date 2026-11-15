@@ -84,7 +84,9 @@ The forwarder starts once the demo is healthy, after a few seconds.
 **The firewall:** in Proxmox, select the VM → **Firewall → Add**: direction **in**, action **ACCEPT**, protocol
 **tcp**, source the tunnel's connector's address, destination port **8080**. Add one more for SSH (port 22) from where
 you log in. Then **Firewall → Options → Firewall: Yes** and **Input Policy: DROP**. The VM's network device needs
-**Firewall** ticked too (Hardware → Network Device). Check that your hostname still opens, and that port 8080 doesn't
+**Firewall** ticked too (Hardware → Network Device), and a VM's rules only work when the firewall is on for the
+datacenter too (**Datacenter → Firewall → Options → Firewall: Yes**). If you turn that on now, first check the
+datacenter's own rules and input policy, so you keep access to Proxmox's web interface and SSH. Check that your hostname still opens, and that port 8080 doesn't
 answer from another machine (`curl -m 5 http://<machine's LAN address>:8080` from there times out).
 
 Logs: `sudo docker compose logs -f demo` and `sudo docker compose logs -f forwarder`.
