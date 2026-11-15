@@ -484,9 +484,9 @@ public sealed partial class EventsDebugBoardsPageTests
     [Fact]
     public void Should_SayWhichBoardsShow()
     {
-        Assert.Equal("Showing Barn", BoardsText.Showing(["Barn"]));
-        Assert.Equal("Showing Workshop and Paint shop", BoardsText.Showing(["Workshop", "Paint shop"]));
-        Assert.Equal("Showing Garage, Barn and Office", BoardsText.Showing(["Garage", "Barn", "Office"]));
+        Assert.Equal("Showing Barn", TestTexts.Boards.Showing(["Barn"]));
+        Assert.Equal("Showing Workshop and Paint shop", TestTexts.Boards.Showing(["Workshop", "Paint shop"]));
+        Assert.Equal("Showing Garage, Barn and Office", TestTexts.Boards.Showing(["Garage", "Barn", "Office"]));
     }
 
     [Fact]

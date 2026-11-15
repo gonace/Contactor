@@ -22,6 +22,7 @@
 @inject NavigationManager Navigation
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject ILogger<GroupDetail> Log
+@inject RelayStatusText StatusText
 
 <PageTitle>@(Common["Common.PageTitle", _group?.Name ?? Common["Common.Screen.Group"].Value])</PageTitle>
 
@@ -62,14 +63,14 @@
                 {
                     @* Before the board's first answer: unknown, all grey. *@
                     <section class="status unknown">
-                        <p>@RelayStatusText.Waiting</p>
-                        <button type="button" class="toggle unknown" aria-label="@RelayStatusText.Waiting" disabled>–</button>
+                        <p>@StatusText.Waiting</p>
+                        <button type="button" class="toggle unknown" aria-label="@StatusText.Waiting" disabled>–</button>
                     </section>
                 }
                 else
                 {
                 <section class="status @(GroupOn ? "on" : "") @(_group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : "")">
-                    <p>@(Missing is { } missing ? GroupView.MissingRelayText(missing) : GroupStatusText.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook))</p>
+                    <p>@(Missing is { } missing ? GroupView.MissingRelayText(missing) : GroupStatusText.For(StatusText, _group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook))</p>
                     <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy || Missing is not null)" @onclick="ToggleGroupAsync">
                         @(GroupOn ? "TURN OFF THE GROUP" : "TURN ON THE GROUP")
                     </button>
@@ -98,7 +99,7 @@
                                     <div class="step-text">
                                         <label class="label" for="@($"role-{member.RelayId}")">RELAY @member.Channel</label>
                                         <input id="@($"role-{member.RelayId}")" class="role" type="text" maxlength="@RelayGroupMember.RoleNameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
-                                        <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : RelayStatusText.Waiting)</span>
+                                        <span class="note">@(State.HasAnswered ? NoteFor(index, on, blockedBy) : StatusText.Waiting)</span>
                                     </div>
                                     <div class="order">
                                         <button type="button" aria-label="@($"Move {member.RoleName} up")" disabled="@(!CanChangeMembers || index == 0)" @onclick="() => Move(index, -1)">
@@ -120,7 +121,7 @@
                                     }
                                     else
                                     {
-                                        <button type="button" class="member-toggle unknown" aria-label="@($"{member.RoleName}: {RelayStatusText.Waiting}")" disabled>–</button>
+                                        <button type="button" class="member-toggle unknown" aria-label="@($"{member.RoleName}: {StatusText.Waiting}")" disabled>–</button>
                                     }
                                 </div>
                                 @if (CanChangeMembers && _members.Count > RelayGroup.MinMembers)

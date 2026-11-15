@@ -19,6 +19,8 @@
 @inject ScheduleOutlook Outlook
 @inject NavigationManager Navigation
 @inject IDbContextFactory<ContactorDbContext> DbFactory
+@inject RelayStatusText StatusText
+@inject IStringLocalizer<RelaysTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", _relay?.Name ?? Common["Common.Screen.Relay"].Value])</PageTitle>
 
@@ -26,7 +28,7 @@
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            Relays
+            @Common["Common.Screen.Relays"]
         </a>
         @if (_relay is not null)
         {
@@ -38,7 +40,7 @@
     @if (_loaded && _relay is null)
     {
         <main class="content">
-            <p class="missing">The relay doesn't exist.</p>
+            <p class="missing">@Texts["Relays.Missing"]</p>
         </main>
     }
     else if (_relay is not null)
@@ -46,13 +48,13 @@
         <form id="relay-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="field">
-                    <label for="name" class="label">RELAY @_channel · NAME</label>
+                    <label for="name" class="label">@Texts["Relays.Detail.NameLabel", _channel]</label>
                     <input id="name" type="text" maxlength="@Relay.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
                     @if (_group is null)
                     {
                         <label for="active" class="check">
                             <input id="active" type="checkbox" @bind="_isActive" />
-                            <span><strong>Active</strong>: shown in the list. Untick it for relays that aren't used.</span>
+                            <span><Sentence Text="@Texts["Relays.Detail.Active"]"><Arg0><strong>@Texts["Relays.Detail.ActiveWord"]</strong></Arg0></Sentence></span>
                         </label>
                     }
                 </div>
@@ -60,8 +62,8 @@
                 @if (_group is { } group)
                 {
                     <section class="in-group">
-                        <p>This relay is in the group <strong>@group.Name</strong> and is switched from there, in the group's order.</p>
-                        <a href="group/@group.Id">Open the group</a>
+                        <p><Sentence Text="@Texts["Relays.Detail.InGroup"]"><Arg0><strong>@group.Name</strong></Arg0></Sentence></p>
+                        <a href="group/@group.Id">@Texts["Relays.Detail.OpenGroup"]</a>
                     </section>
                 }
                 else
@@ -70,20 +72,20 @@
                 {
                     @* Before the board's first answer: unknown, all grey. *@
                     <section class="status unknown">
-                        <p>@RelayStatusText.Waiting</p>
-                        <button type="button" class="toggle unknown" aria-label="@RelayStatusText.Waiting" disabled>–</button>
+                        <p>@StatusText.Waiting</p>
+                        <button type="button" class="toggle unknown" aria-label="@StatusText.Waiting" disabled>–</button>
                     </section>
                 }
                 else
                 {
                 <section class="status @(IsOn ? "on" : "")">
                     <p>@StatusSentence</p>
-                    <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleAsync">@(IsOn ? "TURN OFF" : "TURN ON")</button>
+                    <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleAsync">@Texts[IsOn ? "Relays.Detail.TurnOff" : "Relays.Detail.TurnOn"]</button>
                     @if (_toggleFailed)
                     {
                         @if (_inGroup)
                         {
-                            <p class="error" role="alert">@RelayInGroupException.Text</p>
+                            <p class="error" role="alert">@Texts["Relays.InGroup"]</p>
                         }
                         else if (_beingRemoved)
                         {
@@ -99,28 +101,28 @@
                 }
 
                 <section class="limits">
-                    <h2>Turn off automatically after</h2>
+                    <h2>@Texts["Relays.Detail.Limit"]</h2>
                     <div class="choices">
                         @foreach (var limit in RelaySettingsHandler.Limits)
                         {
                             <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@LimitLabel(limit)</button>
                         }
                     </div>
-                    <p class="hint">Applies when someone turns the relay on by hand.</p>
+                    <p class="hint">@Texts["Relays.Detail.LimitHint"]</p>
                     @if (IsOn && RelaySettingsHandler.WouldTurnOffAtOnce(_runtime, _maxOnMinutes, Clock.UtcNow) && _maxOnMinutes != _relay.MaxOnMinutes)
                     {
-                        <p class="warning">The relay has been on longer than that and turns off when you save.</p>
+                        <p class="warning">@Texts["Relays.Detail.LimitNow"]</p>
                     }
                 </section>
 
                 <section class="schedules">
                     <div class="section-head">
-                        <h2>Schedules</h2>
-                        <a href="relay/@Id/schedule/new">Add</a>
+                        <h2>@Texts["Relays.Detail.Schedules"]</h2>
+                        <a href="relay/@Id/schedule/new">@Common["Common.Add"]</a>
                     </div>
                     @if (_schedules.Count == 0)
                     {
-                        <p class="hint">No schedules. Add one to turn the relay on at set times.</p>
+                        <p class="hint">@Texts["Relays.Detail.NoSchedules"]</p>
                     }
                     @foreach (var schedule in _schedules)
                     {
@@ -134,7 +136,7 @@
                                     aria-pressed="@(schedule.IsEnabled ? "true" : "false")"
                                     aria-label="@($"{ScheduleText.ShortDays(schedule.Days)} {ScheduleText.Times(schedule.OnTime, schedule.OffTime)}")"
                                     disabled="@_busy"
-                                    @onclick="() => SetEnabledAsync(schedule)">@(schedule.IsEnabled ? "Active" : "Paused")</button>
+                                    @onclick="() => SetEnabledAsync(schedule)">@Common[schedule.IsEnabled ? "Common.Schedule.Active" : "Common.Schedule.Paused"]</button>
                         </div>
                     }
                 </section>
@@ -142,12 +144,12 @@
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>Events</h2>
-                        <a href="events">All events</a>
+                        <h2>@Common["Common.Screen.Events"]</h2>
+                        <a href="events">@Common["Common.AllEvents"]</a>
                     </div>
                     @if (_events.Count == 0)
                     {
-                        <p class="hint">Nothing has happened to this relay yet.</p>
+                        <p class="hint">@Texts["Relays.Detail.NoEvents"]</p>
                     }
                     else
                     {
@@ -155,7 +157,7 @@
                             @foreach (var row in _events)
                             {
                                 <div class="row @(row.View.IsAlert ? "alert" : null)" @key="row.Id">
-                                    <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
+                                    <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture)</span>
                                     <span class="badge @(row.View.IsPerson ? "person" : "automatic")" aria-hidden="true">@row.View.Badge</span>
                                     <div class="text">
                                         <EventWhat Row="row" />
@@ -231,7 +233,8 @@
             var onSince = _runtime?.OnSinceUtc is { } since ? Clock.ToLocal(since) : (DateTime?)null;
             var offAtUtc = _runtime?.TurnedOnBy == EventActors.Schedule ? _outlook?.RunningUntilUtc : _runtime?.AutoOffAtUtc;
             var autoOff = offAtUtc is { } offAt ? Clock.ToLocal(offAt) : (DateTime?)null;
-            return RelayStatusText.Sentence(IsOn, onSince, NameOf(_runtime?.TurnedOnBy), autoOff, Clock.Now);
+            var (by, name) = WhoTurnedOn(_runtime?.TurnedOnBy);
+            return StatusText.Sentence(IsOn, onSince, by, name, autoOff, Clock.Now);
         }
     }
 
@@ -280,34 +283,22 @@
         _outlook = (await Outlook.GetAsync(CancellationToken.None)).GetValueOrDefault(Id);
     }
 
-    private string? NameOf(string? email)
+    // Who turned the relay on, for the status sentence: the viewer, a schedule, outside the app, or someone by name.
+    private (TurnedOnBy By, string? Name) WhoTurnedOn(string? email)
     {
-        if (email is null)
+        return email switch
         {
-            return null;
-        }
-
-        if (email == _user?.Email)
-        {
-            return "you";
-        }
-
-        if (email == EventActors.Schedule)
-        {
-            return "schedule";
-        }
-
-        if (email == EventActors.External)
-        {
-            return "outside the app";
-        }
-
-        return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
+            null => (TurnedOnBy.Nobody, null),
+            _ when email == _user?.Email => (TurnedOnBy.You, null),
+            EventActors.Schedule => (TurnedOnBy.Schedule, null),
+            EventActors.External => (TurnedOnBy.Outside, null),
+            _ => (TurnedOnBy.Person, _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email)),
+        };
     }
 
-    private static string LimitLabel(int? minutes)
+    private string LimitLabel(int? minutes)
     {
-        return minutes is { } m ? $"{m / 60} h" : "Never";
+        return minutes is { } m ? Common["Common.Hours", m / 60] : Common["Common.Never"];
     }
 
     private Task ToggleAsync()

@@ -112,4 +112,65 @@
   <data name="Common.Language.NotSaved" xml:space="preserve">
     <value>The language couldn't be saved. Try again.</value>
   </data>
+  <data name="Common.SomethingWrongTryAgain" xml:space="preserve">
+    <value>Something went wrong. Try again.</value>
+  </data>
+  <data name="Common.BoardNotResponding" xml:space="preserve">
+    <value>The board isn't responding. Try again.</value>
+  </data>
+  <data name="Common.NoBoard" xml:space="preserve">
+    <value>There's no relay board in Contactor. Add one to switch its relays here.</value>
+  </data>
+  <data name="Common.AddBoard" xml:space="preserve">
+    <value>Add a board</value>
+    <comment>The button that opens Common.Screen.AddBoard.</comment>
+  </data>
+  <data name="Common.NoModel" xml:space="preserve">
+    <value>No model chosen</value>
+    <comment>A board whose model isn't chosen yet, where the model's name goes.</comment>
+  </data>
+  <data name="Common.TurnOn" xml:space="preserve">
+    <value>Turn on {0}</value>
+    <comment>Read out by screen readers on a switch: {0} is the relay's or group's name.</comment>
+  </data>
+  <data name="Common.TurnOff" xml:space="preserve">
+    <value>Turn off {0}</value>
+    <comment>As Common.TurnOn.</comment>
+  </data>
+  <data name="Common.Switch.On" xml:space="preserve">
+    <value>ON</value>
+    <comment>On a switch that is on.</comment>
+  </data>
+  <data name="Common.Switch.Off" xml:space="preserve">
+    <value>OFF</value>
+    <comment>On a switch that is off.</comment>
+  </data>
+  <data name="Common.NameAndState" xml:space="preserve">
+    <value>{0}: {1}</value>
+    <comment>Read out by screen readers: a relay's name and its state.</comment>
+  </data>
+  <data name="Common.Add" xml:space="preserve">
+    <value>Add</value>
+    <comment>Adds a schedule.</comment>
+  </data>
+  <data name="Common.Never" xml:space="preserve">
+    <value>Never</value>
+    <comment>An automatic turn-off that never comes.</comment>
+  </data>
+  <data name="Common.Hours" xml:space="preserve">
+    <value>{0} h</value>
+    <comment>A number of hours, e.g. "2 h".</comment>
+  </data>
+  <data name="Common.Schedule.Active" xml:space="preserve">
+    <value>Active</value>
+    <comment>A schedule that runs.</comment>
+  </data>
+  <data name="Common.Schedule.Paused" xml:space="preserve">
+    <value>Paused</value>
+    <comment>A schedule that is paused.</comment>
+  </data>
+  <data name="Common.AllEvents" xml:space="preserve">
+    <value>All events</value>
+    <comment>A link to the Events screen.</comment>
+  </data>
 </root>

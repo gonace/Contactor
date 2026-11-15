@@ -13,6 +13,7 @@
 @inject RelayChanges Changes
 @inject LocalClock Clock
 @inject NavigationManager Navigation
+@inject RelayStatusText StatusText
 
 <PageTitle>@(Common["Common.PageTitle", _input?.Name ?? Common["Common.Screen.Input"].Value])</PageTitle>
 
@@ -54,7 +55,7 @@
                         <div>
                             <p class="label">NOW</p>
                             <p class="now">
-                                @(State.HasAnswered ? Status.Text : RelayStatusText.Waiting)
+                                @(State.HasAnswered ? Status.Text : StatusText.Waiting)
                                 @if (State.HasAnswered && Status.SinceUnknown)
                                 {
                                     <WhyUnknown Label="Why is the time unknown?" For="Id" />
@@ -208,7 +209,7 @@
         _actions.Remove(row);
     }
 
-    private InputStatus Status => InputStatusText.For(_input!, IsClosed, State.IsConnected, Clock.Now, Clock.ToLocal);
+    private InputStatus Status => InputStatusText.For(StatusText, _input!, IsClosed, State.IsConnected, Clock.Now, Clock.ToLocal);
 
     protected override async Task OnParametersSetAsync()
     {

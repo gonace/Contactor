@@ -1,29 +1,55 @@
 using System.Globalization;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Relays;
 
-/// <summary>
-/// The status line under a relay's name, e.g. "On since 14:02 · Jane · off 16:02".
-/// </summary>
-public static class RelayStatusText
+/// <summary>Who turned a relay on, for the Relay screen's status card.</summary>
+public enum TurnedOnBy
 {
+    /// <summary>Not known, e.g. it was turned on at the board.</summary>
+    Nobody,
+
+    /// <summary>The person looking at the screen.</summary>
+    You,
+
+    Schedule,
+
+    /// <summary>Outside the app, e.g. with the board's own web page.</summary>
+    Outside,
+
+    /// <summary>Someone else, by name.</summary>
+    Person,
+}
+
+/// <summary>
+/// A relay's status in words, in the app's language: the line under its name ("On since 14:02 · Jane · off 16:02"),
+/// the Relay screen's sentences and the times in them.
+/// </summary>
+public sealed class RelayStatusText
+{
+    private readonly IStringLocalizer<RelaysTexts> _texts;
+
+    public RelayStatusText(IStringLocalizer<RelaysTexts> texts)
+    {
+        _texts = texts;
+    }
+
     /// <summary>In place of every state before the board's first answer since the app started.</summary>
-    public const string Waiting = "Waiting for the board";
+    public string Waiting => _texts["Relays.Status.Waiting"];
 
     /// <summary>Under a relay whose press the board didn't confirm, with "Try again" and "Leave it".</summary>
-    public const string Unconfirmed = "The board didn't answer. The relay may or may not have switched.";
-
-    private static readonly string[] Months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    public string Unconfirmed => _texts["Relays.Status.Unconfirmed"];
 
     /// <param name="isOn">What the board last reported.</param>
     /// <param name="onSinceLocal">When the app turned it on, or null if it was turned on another way.</param>
-    /// <param name="turnedOnBy">Who turned it on: "you" for the viewer, otherwise their name.</param>
+    /// <param name="turnedOnBy">Who turned it on, in words: "you" for the viewer, otherwise their name.</param>
     /// <param name="autoOffAtLocal">When auto-off turns it off, or null for never.</param>
     /// <param name="nowLocal">Now, in local time.</param>
     /// <param name="offSinceLocal">When it was last turned off, or null if that isn't in the log.</param>
-    /// <param name="turnedOffBy">Who turned it off: "you", a name, "schedule", "auto-off" or "outside the app".</param>
+    /// <param name="turnedOffBy">Who turned it off, in words: "you", a name, "schedule", "auto-off" or "outside the app".</param>
     /// <param name="nextScheduleOnLocal">When a schedule next turns it on (within 24 h), or null.</param>
-    public static string For(
+    public string For(
         bool isOn,
         DateTime? onSinceLocal,
         string? turnedOnBy,
@@ -38,84 +64,82 @@ public static class RelayStatusText
             // What happens next is more useful than what happened last.
             if (nextScheduleOnLocal is not null)
             {
-                return $"Schedule: on {When(nextScheduleOnLocal.Value, nowLocal)}";
+                return _texts["Relays.Status.ScheduleOn", When(nextScheduleOnLocal.Value, nowLocal)];
             }
 
             if (offSinceLocal is null)
             {
-                return "Off";
+                return _texts["Relays.Status.Off"];
             }
 
-            var off = $"Off since {When(offSinceLocal.Value, nowLocal)}";
-            return string.IsNullOrEmpty(turnedOffBy) ? off : $"{off} · {turnedOffBy}";
+            var off = When(offSinceLocal.Value, nowLocal);
+            return string.IsNullOrEmpty(turnedOffBy)
+                ? _texts["Relays.Status.OffSince", off]
+                : _texts["Relays.Status.OffSinceBy", off, turnedOffBy];
         }
 
         if (onSinceLocal is null)
         {
-            return "On";
+            return _texts["Relays.Status.On"];
         }
 
-        var text = $"On since {When(onSinceLocal.Value, nowLocal)}";
-        if (!string.IsNullOrEmpty(turnedOnBy))
+        var since = When(onSinceLocal.Value, nowLocal);
+        var by = !string.IsNullOrEmpty(turnedOnBy);
+        if (autoOffAtLocal is null)
         {
-            text += $" · {turnedOnBy}";
+            return by ? _texts["Relays.Status.OnSinceBy", since, turnedOnBy!] : _texts["Relays.Status.OnSince", since];
         }
 
-        if (autoOffAtLocal is not null)
-        {
-            text += $" · off {When(autoOffAtLocal.Value, nowLocal)}";
-        }
-
-        return text;
+        var offAt = When(autoOffAtLocal.Value, nowLocal);
+        return by ? _texts["Relays.Status.OnSinceByOff", since, turnedOnBy!, offAt] : _texts["Relays.Status.OnSinceOff", since, offAt];
     }
 
     /// <summary>
     /// The status card on the Relay screen, in whole sentences: "On since 14:02, by Jane. Turns off 16:02." or
     /// "Off right now.".
     /// </summary>
-    /// <param name="turnedOnBy">"you" for the viewer, otherwise their name.</param>
-    public static string Sentence(bool isOn, DateTime? onSinceLocal, string? turnedOnBy, DateTime? autoOffAtLocal, DateTime nowLocal)
+    /// <param name="by">Who turned it on.</param>
+    /// <param name="name">Their name, for <see cref="TurnedOnBy.Person"/>; with none, the sentence names nobody.</param>
+    public string Sentence(bool isOn, DateTime? onSinceLocal, TurnedOnBy by, string? name, DateTime? autoOffAtLocal, DateTime nowLocal)
     {
         if (!isOn)
         {
-            return "Off right now.";
+            return _texts["Relays.Sentence.Off"];
         }
 
         if (onSinceLocal is null)
         {
-            return "On right now.";
+            return _texts["Relays.Sentence.On"];
         }
 
-        var text = $"On since {When(onSinceLocal.Value, nowLocal)}";
-        text += turnedOnBy switch
+        var since = When(onSinceLocal.Value, nowLocal);
+        string text = by switch
         {
-            null or "" => "",
-            "you" => ", by you",
-            "schedule" => ", by a schedule",
-            "outside the app" => ", outside the app",
-            _ => $", by {turnedOnBy}",
+            TurnedOnBy.You => _texts["Relays.Sentence.OnSinceByYou", since],
+            TurnedOnBy.Schedule => _texts["Relays.Sentence.OnSinceBySchedule", since],
+            TurnedOnBy.Outside => _texts["Relays.Sentence.OnSinceOutside", since],
+            TurnedOnBy.Person when !string.IsNullOrEmpty(name) => _texts["Relays.Sentence.OnSinceBy", since, name],
+            _ => _texts["Relays.Sentence.OnSince", since],
         };
 
-        text += ".";
-        if (autoOffAtLocal is not null)
-        {
-            text += $" Turns off {When(autoOffAtLocal.Value, nowLocal)}.";
-        }
-
-        return text;
+        return autoOffAtLocal is { } offAt ? _texts["Relays.Sentence.TurnsOff", text, When(offAt, nowLocal)] : text;
     }
 
-    /// <summary>"14:02" today, "yesterday 14:02", "tomorrow 06:30", otherwise "3 Nov 14:02".</summary>
-    public static string When(DateTime local, DateTime nowLocal)
+    /// <summary>
+    /// "14:02" today, "yesterday 14:02", "tomorrow 06:30", otherwise "3 Nov 14:02": always 24 hours, with the
+    /// language's month names.
+    /// </summary>
+    public string When(DateTime local, DateTime nowLocal)
     {
-        var time = local.ToString("HH:mm", CultureInfo.InvariantCulture);
+        var culture = CultureInfo.CurrentCulture;
+        var time = local.ToString("HH:mm", culture);
         var days = (local.Date - nowLocal.Date).Days;
         return days switch
         {
             0 => time,
-            -1 => $"yesterday {time}",
-            1 => $"tomorrow {time}",
-            _ => $"{local.Day} {Months[local.Month - 1]} {time}",
+            -1 => _texts["Relays.When.Yesterday", time],
+            1 => _texts["Relays.When.Tomorrow", time],
+            _ => _texts["Relays.When.Date", local.ToString(_texts["Relays.When.DateFormat"], culture), time],
         };
     }
 }
