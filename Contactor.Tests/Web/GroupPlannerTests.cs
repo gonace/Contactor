@@ -450,6 +450,40 @@ public sealed class GroupPlannerTests
         Assert.Equal(GroupPhases.Idle, _runtime.Phase);
     }
 
+    // The compressor is on at the board while the ventilation is off: a person's ON for the compressed air below it is
+    // refused, and the interlock trips first.
+    [Fact]
+    public void Should_CheckTheInterlockFirst_WhenARelayIsTurnedOnByHand()
+    {
+        var commands = new GroupCommands();
+
+        var refusal = GroupPlanner.MemberOn(Spray, State(6), _runtime, 3, John, null, T0, commands);
+
+        Assert.Equal(new MemberRefusal("Ventilation"), refusal);
+        Assert.Equal((Mask(6), Mask(5)), (commands.Off, commands.On));
+        Assert.Equal(EventActions.InterlockTrip, Assert.Single(commands.Events).Action);
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
+    }
+
+    [Fact]
+    public void Should_NotCallOffATrip_WhenARelayIsTurnedOnDuringIt()
+    {
+        _members = Spray;
+        Plan(State(6), T0);
+
+        // The board hasn't reported the trip yet: the ventilation's ON is on its way.
+        var early = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(Spray, State(6), _runtime, 1, John, null, T0.AddSeconds(1), early));
+        Assert.True(early.IsEmpty);
+        Assert.Equal((GroupPhases.Stopping, 0), (_runtime.Phase, _runtime.TargetLevel));
+
+        // The ventilation on, the compressor not yet off: turning the compressor on doesn't call the trip's stop off.
+        var late = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(Spray, State(5, 6), _runtime, 2, John, null, T0.AddSeconds(2), late));
+        Assert.True(late.IsEmpty);
+        Assert.Equal((GroupPhases.Stopping, 0), (_runtime.Phase, _runtime.TargetLevel));
+    }
+
     [Fact]
     public void Should_StopNothing_WhenTheGroupIsOff()
     {

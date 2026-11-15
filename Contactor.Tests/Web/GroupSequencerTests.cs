@@ -485,6 +485,32 @@ public sealed class GroupSequencerTests
         await BoardTestRig.WaitUntilAsync(() => rig.Client.State.Outputs == 0b0011);
     }
 
+    // A trip was waiting for the middle step's ON when the connection dropped; meanwhile the relay above went off at the
+    // board. Its ON isn't sent again below that gap.
+    [Fact]
+    public async Task Should_NotSendATripsLostOn_BelowAStepThatIsOff()
+    {
+        await using var rig = await BoardTestRig.StartAsync();
+        var id = await CreateAsync(rig, FansHeaters with { Steps = [new GroupStepDraft("A", [1]), new GroupStepDraft("B", [2, 3]), new GroupStepDraft("C", [4])] });
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var runtime = await db.GroupRuntimes.SingleAsync(r => r.GroupId == id, Cancel);
+            (runtime.Phase, runtime.TargetLevel, runtime.PendingStep, runtime.PendingOn, runtime.PendingSinceUtc) =
+                (GroupPhases.Stopping, 0, 2, true, BoardTestRig.Start);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        _ = rig.Groups;
+        rig.Simulator.DropConnections();
+        await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
+        await BoardTestRig.WaitUntilAsync(() => rig.Client.State.IsConnected);
+        rig.Time.Now += TimeSpan.FromMinutes(1);
+        await rig.Groups.StepAsync(Cancel);
+        await rig.Groups.StepAsync(Cancel);
+
+        Assert.Equal(0, rig.Simulator.Outputs);
+    }
+
     [Fact]
     public async Task Should_SaveSteps_AndChangeThemOnlyWhileTheGroupIsOff()
     {

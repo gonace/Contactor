@@ -203,48 +203,9 @@ public static class GroupPlanner
         var level = Level(steps, state);
         var reach = Reach(steps, state);
 
-        // 1. The interlock, before anything else. Only the lowest step on may be partly on: below a step that isn't
-        // all on, nothing may be.
-        if (reach > level + 1)
+        // 1. The interlock, before anything else.
+        if (Interlock(steps, state, runtime, now, commands))
         {
-            var missing = level + 1;
-            var step = steps[missing - 1];
-            var handling = runtime.Phase == GroupPhases.Stopping && runtime.PendingStep == missing && runtime.PendingRelayId is null && runtime.PendingOn;
-            if (handling && now - (runtime.PendingSinceUtc ?? now) < ConfirmTimeout)
-            {
-                // This trip is being handled; the board hasn't reported it yet.
-                return;
-            }
-
-            List<string> turnedOff = [];
-            for (var p = missing + 1; p <= n; p++)
-            {
-                foreach (var relay in steps[p - 1].Relays.Where(On))
-                {
-                    commands.Off |= ChannelMask.Of(relay.Channel);
-                    turnedOff.Add(NameOf(steps[p - 1], relay));
-                }
-            }
-
-            var off = step.Relays.Where(r => !On(r)).ToList();
-            commands.On |= Mask(off);
-            runtime.Phase = GroupPhases.Stopping;
-            runtime.TargetLevel = 0;
-            runtime.NextStepAtUtc = null;
-            runtime.AutoOffAtUtc = null;
-            runtime.StopRelayId = null;
-            SetPending(runtime, missing, relayId: null, on: true, now);
-            if (handling)
-            {
-                // Still broken after the timeout (e.g. a relay that doesn't answer): sent again, logged once.
-                return;
-            }
-
-            commands.Events.Add(new GroupEvent(
-                EventActions.InterlockTrip,
-                RelayIdOf(off),
-                EventActors.System,
-                JsonSerializer.Serialize(new { missing = NameOf(step, off), off = turnedOff })));
             return;
         }
 
@@ -497,9 +458,23 @@ public static class GroupPlanner
         ArgumentNullException.ThrowIfNull(commands);
         var (step, relay) = RelayAt(steps, position);
         var place = IndexOf(steps, step) + 1;
+
+        // The interlock first, as on every status: a relay below a gap is refused, and the trip goes on.
+        var level = Level(steps, state);
+        if (Interlock(steps, state, runtime, now, commands))
+        {
+            return place > level + 1 ? new MemberRefusal(steps[level].Name) : null;
+        }
+
         if (NeedsOn(steps, state, position) is { } needs)
         {
             return new MemberRefusal(needs);
+        }
+
+        // A trip's run-on relays on their way: the trip's stop isn't called off, and nothing more is turned on.
+        if (runtime.Phase == GroupPhases.Stopping && runtime.PendingOn)
+        {
+            return null;
         }
 
         if (state.IsOn(relay.Channel))
@@ -561,6 +536,9 @@ public static class GroupPlanner
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(commands);
         var (step, relay) = RelayAt(steps, position);
+
+        // The interlock first, as on every status; a trip stops the whole group, which this relay's OFF then keeps.
+        Interlock(steps, state, runtime, now, commands);
         if (!state.IsOn(relay.Channel))
         {
             return;
@@ -612,6 +590,58 @@ public static class GroupPlanner
             steps = steps.Select(s => s.Name).ToArray(),
             delays = steps.Skip(1).Select(s => s.StartDelaySec).ToArray(),
         });
+    }
+
+    // The interlock: only the lowest step on may be partly on; below a step that isn't all on, nothing may be. A broken
+    // one turns off everything below the gap and starts the missing relays, so their step runs on, then stops. Returns
+    // whether it was broken.
+    private static bool Interlock(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime, DateTime now, GroupCommands commands)
+    {
+        var level = Level(steps, state);
+        if (Reach(steps, state) <= level + 1)
+        {
+            return false;
+        }
+
+        var missing = level + 1;
+        var step = steps[missing - 1];
+        var handling = runtime.Phase == GroupPhases.Stopping && runtime.PendingStep == missing && runtime.PendingRelayId is null && runtime.PendingOn;
+        if (handling && now - (runtime.PendingSinceUtc ?? now) < ConfirmTimeout)
+        {
+            // This trip is being handled; the board hasn't reported it yet.
+            return true;
+        }
+
+        List<string> turnedOff = [];
+        for (var p = missing + 1; p <= steps.Count; p++)
+        {
+            foreach (var relay in steps[p - 1].Relays.Where(r => state.IsOn(r.Channel)))
+            {
+                commands.Off |= ChannelMask.Of(relay.Channel);
+                turnedOff.Add(NameOf(steps[p - 1], relay));
+            }
+        }
+
+        var off = step.Relays.Where(r => !state.IsOn(r.Channel)).ToList();
+        commands.On |= Mask(off);
+        runtime.Phase = GroupPhases.Stopping;
+        runtime.TargetLevel = 0;
+        runtime.NextStepAtUtc = null;
+        runtime.AutoOffAtUtc = null;
+        runtime.StopRelayId = null;
+        SetPending(runtime, missing, relayId: null, on: true, now);
+        if (handling)
+        {
+            // Still broken after the timeout (e.g. a relay that doesn't answer): sent again, logged once.
+            return true;
+        }
+
+        commands.Events.Add(new GroupEvent(
+            EventActions.InterlockTrip,
+            RelayIdOf(off),
+            EventActors.System,
+            JsonSerializer.Serialize(new { missing = NameOf(step, off), off = turnedOff })));
+        return true;
     }
 
     // A step the board confirmed: when the next one may go.

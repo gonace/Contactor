@@ -370,21 +370,16 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
 
                 var steps = GroupSteps.Of(group);
+                var lostStep = (int?)null;
                 if (reconnected && runtime.PendingStep is { } pending)
                 {
                     // A command from before the connection dropped (or the app restarted) was done or lost. The board
                     // gets a fresh timeout to show it; a confirmation then times the next step as usual, so no
-                    // start delay or run-on is skipped. The relays a stop (a trip) needs for its run-on, e.g. the fan
-                    // after the heat, are sent once more in case their ON was lost: turning on a step above never
-                    // breaks the interlock.
+                    // start delay or run-on is skipped.
                     runtime.PendingSinceUtc = now;
-                    if (runtime.PendingOn && runtime.Phase == GroupPhases.Stopping && pending >= 1 && pending <= steps.Count)
+                    if (runtime.PendingOn && runtime.Phase == GroupPhases.Stopping)
                     {
-                        var lost = ChannelMask.Of(steps[pending - 1].Relays
-                            .Where(r => runtime.PendingRelayId is not { } id || r.RelayId == id)
-                            .Select(r => r.Channel));
-                        all.On |= lost;
-                        runOn |= lost;
+                        lostStep = pending;
                     }
                 }
 
@@ -401,6 +396,22 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
 
                 GroupPlanner.GiveOwnerlessAutoOff(steps, state, runtime, group.MaxOnMinutes, now);
+
+                // The relays a stop (a trip) needs for its run-on, e.g. the fans after the heaters, are sent once more
+                // in case their ON was lost; after the interlock has had its say, only while every step above them is
+                // still all on (a relay above may have gone off during the outage), and never a relay this pass turns
+                // off.
+                if (lostStep is { } step && step >= 1 && step <= steps.Count
+                    && runtime.Phase == GroupPhases.Stopping && runtime.PendingOn && runtime.PendingStep == step
+                    && GroupPlanner.Level(steps, state) >= step - 1)
+                {
+                    var lost = ChannelMask.Of(steps[step - 1].Relays
+                        .Where(r => runtime.PendingRelayId is not { } id || r.RelayId == id)
+                        .Select(r => r.Channel))
+                        .Except(commands.Off)
+                        .Except(all.Off);
+                    commands.On |= lost;
+                }
 
                 all.Off |= commands.Off;
                 all.On |= commands.On;
