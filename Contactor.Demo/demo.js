@@ -2,8 +2,10 @@
 // browser's time zone in a short-lived cookie, which the copy runs in; then "Getting your demo ready" covers both
 // frames until each has loaded. A click or a key anywhere, in the page or in either frame (both are this site's own),
 // keeps the visitor's copy: it tells the demo at most every data-report seconds. After data-idle seconds without one,
-// a popup counts down data-warning seconds; with no click or key by then, it asks the demo to end the copy. The demo
-// keeps it when the visitor used it since in another tab: then the popup goes and the count starts over. Otherwise the
+// it asks the demo when the copy was last used, in any of the visitor's tabs; only when that too was data-idle seconds
+// ago does a popup count down data-warning seconds, and otherwise it counts from then. With no click or key by the end
+// of the count down, it asks the demo to end the copy. The demo keeps it when the visitor used it since in another tab,
+// and says when: then the popup goes and the count starts from then. Otherwise the
 // copy ends and the page says so; or that it didn't start, or that something went wrong with it, when that is what
 // happened. The demo itself deletes a copy
 // whose pages stopped reporting, so this script only shows what the demo does anyway.
@@ -23,8 +25,15 @@
     let lastActive = Date.now();
     let lastReport = Date.now();
     let reportTimer = null;
+    let checking = false;
     let timingOut = false;
     let over = false;
+
+    // The count down's end that gets no usable answer is asked again, after 1, 2, 4… seconds (at most data-report),
+    // until it has tried this many times: by then the demo has deleted the copy itself.
+    const timeoutTries = 5;
+    let timeoutFailures = 0;
+    let timeoutAgainAt = 0;
 
     // Where the visitor was when the popup opened, to go back there when it goes: an element of the page or of a
     // frame, and the frame the visitor last used, when that element is gone (the frame went to another page).
@@ -46,6 +55,8 @@
         }
 
         lastActive = Date.now();
+        timeoutFailures = 0;
+        timeoutAgainAt = 0;
         hidePopup();
         if (reportTimer === null) {
             reportTimer = setTimeout(report, Math.max(0, lastReport + reportEvery - Date.now()));
@@ -104,21 +115,80 @@
         }, 0);
     }
 
-    // The count down ran out: the demo ends the copy (204), or keeps it for another tab that used it since (409).
-    // Anything else (offline, an error on the way) tries again at the next tick.
+    // The demo's answer {"quiet": seconds}: how long ago the copy was last used, in any of the visitor's tabs. This tab
+    // counts from then when that is later than its own last click. False when the answer says nothing usable.
+    function heardOf(answer) {
+        const quiet = answer !== null && typeof answer === "object" ? answer.quiet : undefined;
+        if (typeof quiet !== "number" || !Number.isFinite(quiet) || quiet < 0) {
+            return false;
+        }
+
+        lastActive = Math.max(lastActive, Date.now() - quiet * 1000);
+        return true;
+    }
+
+    // This tab was quiet for data-idle: is the copy? Another tab may be in use. The popup shows only when the copy too
+    // was quiet that long, so it is about to end; or when the demo doesn't answer, to warn rather than not.
+    function check() {
+        checking = true;
+        fetch(body.dataset.quiet, { method: "POST", credentials: "same-origin" })
+            .then((response) => {
+                if (response.status === 404) {
+                    end("ended");
+                } else if (response.ok) {
+                    return response.json().then(heardOf);
+                }
+
+                return undefined;
+            })
+            .catch(() => { /* No answer: it warns all the same. */ })
+            .finally(() => {
+                checking = false;
+                if (!over && popup.hidden && Date.now() - lastActive >= idle) {
+                    showPopup();
+                    tick();
+                }
+            });
+    }
+
+    // The count down ran out: the demo ends the copy (204), or keeps it for another tab that used it since (409, with
+    // when). Anything else (offline, an error on the way) is asked again a little later, a few times.
     function timeOut() {
         timingOut = true;
         fetch(body.dataset.timeout, { method: "POST", credentials: "same-origin" })
             .then((response) => {
-                timingOut = false;
                 if (response.status === 409) {
-                    lastActive = Date.now();
-                    hidePopup();
-                } else if (response.ok || response.status === 404) {
-                    end("ended");
+                    return response.json().then(heardOf, () => false).then((heard) => {
+                        if (!heard) {
+                            lastActive = Date.now();
+                        }
+
+                        timeoutFailures = 0;
+                        hidePopup();
+                    });
                 }
+
+                if (response.ok || response.status === 404) {
+                    end("ended");
+                } else {
+                    timeoutFailed();
+                }
+
+                return undefined;
             })
-            .catch(() => { timingOut = false; });
+            .catch(timeoutFailed)
+            .finally(() => { timingOut = false; });
+    }
+
+    function timeoutFailed() {
+        timeoutFailures++;
+        if (timeoutFailures >= timeoutTries) {
+            end("ended");
+            return;
+        }
+
+        const wait = Math.min(reportEvery, 1000 * 2 ** (timeoutFailures - 1));
+        timeoutAgainAt = Date.now() + (Number.isFinite(wait) ? Math.max(1000, wait) : 1000);
     }
 
     // The copy is gone, and the page says how (`how`, as data-demo-copy says it): it "ended", it didn't start
@@ -153,16 +223,24 @@
             return;
         }
 
-        const quiet = Date.now() - lastActive;
-        if (quiet >= idle) {
-            const seconds = Math.max(0, Math.ceil((idle + warning - quiet) / 1000));
-            left.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
-            if (popup.hidden) {
-                showPopup();
-            }
+        const now = Date.now();
+        const quiet = now - lastActive;
+        if (quiet < idle) {
+            return;
         }
 
-        if (quiet >= idle + warning && !timingOut) {
+        // Asks the demo first; the answer shows the popup, or moves this tab's count on.
+        if (popup.hidden) {
+            if (!checking) {
+                check();
+            }
+
+            return;
+        }
+
+        const seconds = Math.max(0, Math.ceil((idle + warning - quiet) / 1000));
+        left.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+        if (quiet >= idle + warning && !timingOut && now >= timeoutAgainAt) {
             timeOut();
         }
     }

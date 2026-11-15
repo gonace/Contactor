@@ -26,6 +26,12 @@ public enum DemoTarget
     /// </summary>
     Timeout,
 
+    /// <summary>
+    /// The page asks how long ago the visitor's copy was used, in any of their tabs, before it warns that it is about to
+    /// end (a POST).
+    /// </summary>
+    Quiet,
+
     /// <summary>"Skip setup: start from a template" (a POST).</summary>
     Template,
 
@@ -69,6 +75,7 @@ public static class DemoRoutes
     public const string ActivityPath = "/demo/activity";
     public const string EndPath = "/demo/end";
     public const string TimeoutPath = "/demo/timeout";
+    public const string QuietPath = "/demo/quiet";
     public const string TemplatePath = "/demo/template";
     public const string SetupPath = "/demo/setup";
 
@@ -122,6 +129,11 @@ public static class DemoRoutes
         if (HttpMethods.IsPost(request.Method) && path.Equals(TimeoutPath, StringComparison.OrdinalIgnoreCase))
         {
             return new DemoRoute(DemoTarget.Timeout, path);
+        }
+
+        if (HttpMethods.IsPost(request.Method) && path.Equals(QuietPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return new DemoRoute(DemoTarget.Quiet, path);
         }
 
         if (HttpMethods.IsPost(request.Method) && path.Equals(TemplatePath, StringComparison.OrdinalIgnoreCase))

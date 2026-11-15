@@ -65,7 +65,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Contains($"data-zone-cookie=\"{VisitorTimeZone.CookieName}\"", html, StringComparison.Ordinal);
         Assert.Contains("reset when you're done", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Nobody else", html, StringComparison.Ordinal);
-        Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\" data-start=\"135\" data-activity=\"/demo/activity\" data-timeout=\"/demo/timeout\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\" data-start=\"135\" data-activity=\"/demo/activity\" data-timeout=\"/demo/timeout\" data-quiet=\"/demo/quiet\"", html, StringComparison.Ordinal);
         Assert.Matches("<script src=\"/demo/demo.js\\?v=[0-9a-f]{12}\" defer></script>", html);
         Assert.Contains("role=\"alertdialog\"", html, StringComparison.Ordinal);
         Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
@@ -324,13 +324,16 @@ public sealed class DemoProxyTests : IAsyncDisposable
         using var end = Bare("/demo/end", id);
         _time.Advance(TimeSpan.FromMinutes(6));
         using var timeout = Bare("/demo/timeout", id);
+        using var quiet = Bare("/demo/quiet", id);
         if (header.Length > 0)
         {
             activity.Headers.Add(header, value);
             end.Headers.Add(header, value);
             timeout.Headers.Add(header, value);
+            quiet.Headers.Add(header, value);
         }
 
+        using var quietResponse = await client.SendAsync(quiet, Cancel);
         using var activityResponse = await client.SendAsync(activity, Cancel);
         using var endResponse = await client.SendAsync(end, Cancel);
         using var timeoutResponse = await client.SendAsync(timeout, Cancel);
@@ -338,6 +341,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.Forbidden, activityResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, endResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, timeoutResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, quietResponse.StatusCode);
         Assert.Equal(1, Copies.Count);
         _time.Advance(TimeSpan.FromMinutes(1));
         Assert.Equal(1, await Copies.StopExpiredAsync());
@@ -473,9 +477,37 @@ public sealed class DemoProxyTests : IAsyncDisposable
 
         using var kept = await client.SendAsync(Timeout(id), Cancel);
 
+        // The page hears when the other tab was used, and counts from then.
         Assert.Equal(HttpStatusCode.Conflict, kept.StatusCode);
+        Assert.Equal("application/json", kept.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("{\"quiet\":420}", await kept.Content.ReadAsStringAsync(Cancel));
         Assert.Equal(1, Copies.Count);
         Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(Post("/demo/activity", id), Cancel)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Should_SayHowLongTheCopyWasQuiet_BeforeThePageWarns()
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+        _time.Advance(TimeSpan.FromMinutes(3));
+        using var active = await client.SendAsync(Post("/demo/activity", id), Cancel);
+        _time.Advance(TimeSpan.FromSeconds(12.9));
+
+        using var quiet = await client.SendAsync(Post("/demo/quiet", id), Cancel);
+
+        Assert.Equal(HttpStatusCode.OK, quiet.StatusCode);
+        Assert.Equal("application/json", quiet.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("{\"quiet\":12}", await quiet.Content.ReadAsStringAsync(Cancel));
+        Assert.Equal("no-store", quiet.Headers.CacheControl?.ToString());
+
+        // Asking keeps nothing: the copy still ends idle and warning after the click.
+        _time.Advance(TimeSpan.FromMinutes(17) - TimeSpan.FromSeconds(12.9));
+        Assert.Equal(1, await Copies.StopExpiredAsync());
+        using var gone = await client.SendAsync(Post("/demo/quiet", id), Cancel);
+        Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+        using var none = await client.SendAsync(Post("/demo/quiet", null), Cancel);
+        Assert.Equal(HttpStatusCode.NotFound, none.StatusCode);
     }
 
     [Fact]

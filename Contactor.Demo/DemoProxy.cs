@@ -71,6 +71,9 @@ public sealed partial class DemoProxy : IDisposable
             case DemoTarget.Timeout:
                 await TimeoutAsync(context);
                 break;
+            case DemoTarget.Quiet:
+                await QuietAsync(context);
+                break;
             case DemoTarget.Template:
                 await TemplateAsync(context);
                 break;
@@ -189,7 +192,8 @@ public sealed partial class DemoProxy : IDisposable
     }
 
     // The page's count down ran out: 204 when the copy ended (or was gone already), so the page says so; 409 when the
-    // visitor used it since in another tab, so the page keeps it and counts again.
+    // visitor used it since in another tab, with how long ago ({"quiet": seconds}), so the page keeps it and counts from
+    // then.
     private async Task TimeoutAsync(HttpContext context)
     {
         NoStore(context.Response);
@@ -199,8 +203,48 @@ public sealed partial class DemoProxy : IDisposable
             return;
         }
 
-        var ended = VisitorCookie.Read(context.Request) is not { } visitorId || await _copies.EndIfIdleAsync(visitorId);
-        context.Response.StatusCode = ended ? StatusCodes.Status204NoContent : StatusCodes.Status409Conflict;
+        var countDown = VisitorCookie.Read(context.Request) is { } visitorId
+            ? await _copies.EndIfIdleAsync(visitorId)
+            : new CountDown(true, TimeSpan.Zero);
+        if (countDown.Ended)
+        {
+            context.Response.StatusCode = StatusCodes.Status204NoContent;
+            return;
+        }
+
+        context.Response.StatusCode = StatusCodes.Status409Conflict;
+        await QuietAnswerAsync(context.Response, countDown.Quiet);
+    }
+
+    // Before the page warns that the copy is about to end: how long ago it was used in any of the visitor's tabs
+    // ({"quiet": seconds}), or 404 when there is no copy any more.
+    private async Task QuietAsync(HttpContext context)
+    {
+        NoStore(context.Response);
+        if (!DemoRoutes.IsFromThisSite(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (VisitorCookie.Read(context.Request) is not { } visitorId || _copies.Quiet(visitorId) is not { } quiet)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        await QuietAnswerAsync(context.Response, quiet);
+    }
+
+    // Whole seconds, rounded down: the page may warn a moment late, never early.
+    private static async Task QuietAnswerAsync(HttpResponse response, TimeSpan quiet)
+    {
+        var seconds = Math.Max(0, (long)quiet.TotalSeconds);
+        var bytes = Encoding.UTF8.GetBytes(string.Create(CultureInfo.InvariantCulture, $$"""{"quiet":{{seconds}}}"""));
+        response.ContentType = "application/json";
+        response.ContentLength = bytes.Length;
+        await response.Body.WriteAsync(bytes, response.HttpContext.RequestAborted);
     }
 
     // "Skip setup: start from a template", the page's form: fills the cookie's own copy, never another's, then shows the

@@ -108,7 +108,7 @@ public static class DemoPages
             // Without the script: no waiting screen, and the frames in <noscript> load as they are, laid out as the
             // page's own (only then, or its text would show).
             head: """<noscript><style>.waiting, .demo-frames > iframe { display: none !important; } .demo-frames noscript { display: contents; }</style></noscript>""",
-            bodyData: $"""data-idle="{idle}" data-warning="{warning}" data-report="{report}" data-start="{start}" data-activity="{DemoRoutes.ActivityPath}" data-timeout="{DemoRoutes.TimeoutPath}" data-zone-cookie="{VisitorTimeZone.CookieName}" """);
+            bodyData: $"""data-idle="{idle}" data-warning="{warning}" data-report="{report}" data-start="{start}" data-activity="{DemoRoutes.ActivityPath}" data-timeout="{DemoRoutes.TimeoutPath}" data-quiet="{DemoRoutes.QuietPath}" data-zone-cookie="{VisitorTimeZone.CookieName}" """);
     }
 
     public static string Busy()

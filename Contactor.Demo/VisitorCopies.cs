@@ -47,6 +47,12 @@ public enum TemplateResult
     WentWrong,
 }
 
+/// <summary>
+/// What a page's count down came to: the visitor's copy <paramref name="Ended"/> (or there was none), or it was kept,
+/// used <paramref name="Quiet"/> ago in another tab.
+/// </summary>
+public readonly record struct CountDown(bool Ended, TimeSpan Quiet);
+
 /// <summary>What a request to a copy finds.</summary>
 public enum UseKind
 {
@@ -366,9 +372,9 @@ public sealed partial class VisitorCopies : IAsyncDisposable
     /// earlier one that much before; and that is at most half the idle timeout. So a tab with a click within the idle
     /// timeout keeps the copy. The tab whose count down ran out was quiet for the idle timeout and the count down
     /// together, and was heard of at most that delay late; that is at most half the count down, so it ends the copy.
-    /// True when nothing of the visitor's is left (it ended, or there was none); false when it was kept.
+    /// Says whether nothing of the visitor's is left (it ended, or there was none), or how long ago the copy was used.
     /// </summary>
-    public Task<bool> EndIfIdleAsync(string visitorId)
+    public Task<CountDown> EndIfIdleAsync(string visitorId)
     {
         Task stop;
         lock (_lock)
@@ -376,9 +382,10 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             var now = _time.GetUtcNow();
             if (_copies.TryGetValue(visitorId, out var entry))
             {
-                if (now - entry.Copy.LastActive < _options.IdleTimeout)
+                var quiet = now - entry.Copy.LastActive;
+                if (quiet < _options.IdleTimeout)
                 {
-                    return Task.FromResult(false);
+                    return Task.FromResult(new CountDown(false, quiet));
                 }
 
                 stop = StopLocked(entry, "its page counted down");
@@ -387,7 +394,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             {
                 if (_kept.TryGetValue(visitorId, out var keptAt) && now - keptAt < _options.IdleTimeout)
                 {
-                    return Task.FromResult(false);
+                    return Task.FromResult(new CountDown(false, now - keptAt));
                 }
 
                 _kept.Remove(visitorId);
@@ -396,6 +403,25 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         }
 
         return EndedAsync(stop);
+    }
+
+    /// <summary>
+    /// How long ago the demo last heard of the visitor's copy being used, in any of their tabs (a click, a key or a page
+    /// load), without counting this as a use: a page asks before it warns that the copy is about to end. Null when the
+    /// visitor has no copy, nor a place kept for one.
+    /// </summary>
+    public TimeSpan? Quiet(string visitorId)
+    {
+        lock (_lock)
+        {
+            var now = _time.GetUtcNow();
+            if (_copies.TryGetValue(visitorId, out var entry))
+            {
+                return now - entry.Copy.LastActive;
+            }
+
+            return _kept.TryGetValue(visitorId, out var keptAt) ? now - keptAt : null;
+        }
     }
 
     /// <summary>
@@ -461,10 +487,10 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         };
     }
 
-    private static async Task<bool> EndedAsync(Task stop)
+    private static async Task<CountDown> EndedAsync(Task stop)
     {
         await stop;
-        return true;
+        return new CountDown(true, TimeSpan.Zero);
     }
 
     private Entry Create(string visitorId, TimeZoneInfo timeZone)

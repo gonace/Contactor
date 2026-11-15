@@ -23,6 +23,9 @@ public sealed class DemoRoutesTests
     [InlineData("GET", "/demo/simulator/_blazor", "?id=1", "", DemoTarget.Simulator, "/_blazor")]
     [InlineData("GET", "/Demo/Simulator/app.css", "", "style", DemoTarget.Simulator, "/app.css")]
     [InlineData("GET", "/demo/demo.css", "?v=1", "style", DemoTarget.Stylesheet, "/demo/demo.css")]
+    [InlineData("POST", "/demo/quiet", "", "empty", DemoTarget.Quiet, "/demo/quiet")]
+    [InlineData("POST", "/demo/timeout", "", "empty", DemoTarget.Timeout, "/demo/timeout")]
+    [InlineData("GET", "/demo/quiet", "", "", DemoTarget.NotFound, "/demo/quiet")]
     public void Should_SendEachRequest_WhereItBelongs(string method, string path, string query, string destination, DemoTarget target, string forwarded)
     {
         var route = DemoRoutes.Find(Request(method, path, query, destination));

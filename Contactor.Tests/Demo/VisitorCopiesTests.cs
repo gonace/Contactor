@@ -318,7 +318,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.True(_copies.Active(copy.VisitorId));
         _time.Advance(TimeSpan.FromMinutes(1));
 
-        Assert.False(await _copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.False((await _copies.EndIfIdleAsync(copy.VisitorId)).Ended);
         Assert.False(copy.Stopped.IsCompleted);
         Assert.Equal(1, _copies.Count);
     }
@@ -337,13 +337,14 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         _time.Advance(reportEvery);
         Assert.True(_copies.Active(copy.VisitorId));
 
-        // Tab A's count down runs out when B's last click is a moment short of the idle timeout.
+        // Tab A's count down runs out when B's last click is a moment short of the idle timeout: A hears when that was.
         _time.Advance(TimeSpan.FromMinutes(15) - TimeSpan.FromSeconds(1));
-        Assert.False(await _copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.Equal(TimeSpan.FromMinutes(15) - TimeSpan.FromSeconds(1), _copies.Quiet(copy.VisitorId));
+        Assert.Equal(new CountDown(false, TimeSpan.FromMinutes(15) - TimeSpan.FromSeconds(1)), await _copies.EndIfIdleAsync(copy.VisitorId));
 
         // Nothing from any tab for the idle timeout: the count down ends it.
         _time.Advance(TimeSpan.FromSeconds(1));
-        Assert.True(await _copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.True((await _copies.EndIfIdleAsync(copy.VisitorId)).Ended);
         Assert.True(copy.Stopped.IsCompleted);
         Assert.Equal(0, _copies.Taken);
         Assert.Empty(_folder.CopyFolders());
@@ -383,9 +384,27 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.True(copies.Active(copy.VisitorId));
         _time.Advance(options.IdleTimeout + options.IdleWarning - reportEvery);
 
-        Assert.True(await copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.True((await copies.EndIfIdleAsync(copy.VisitorId)).Ended);
         Assert.True(copy.Stopped.IsCompleted);
         Assert.Equal(0, copies.Count);
+    }
+
+    [Fact]
+    public async Task Should_SayHowLongACopyWasQuiet_WithoutKeepingIt()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        _time.Advance(TimeSpan.FromMinutes(5));
+        Assert.True(_copies.Active(copy.VisitorId));
+        _time.Advance(TimeSpan.FromMinutes(11));
+
+        // Asking is no use of the copy: it still ends idle and warning after the click.
+        Assert.Equal(TimeSpan.FromMinutes(11), _copies.Quiet(copy.VisitorId));
+        _time.Advance(TimeSpan.FromMinutes(6) - TimeSpan.FromSeconds(1));
+        Assert.Equal(0, await _copies.StopExpiredAsync());
+        _time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(1, await _copies.StopExpiredAsync());
+        Assert.Null(_copies.Quiet(copy.VisitorId));
     }
 
     [Fact]
@@ -408,15 +427,18 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         var visit = _copies.Visit(null);
         var id = visit.NewId!;
         _time.Advance(TimeSpan.FromMinutes(14));
-        Assert.False(await _copies.EndIfIdleAsync(id));
+        Assert.Equal(TimeSpan.FromMinutes(14), _copies.Quiet(id));
+        Assert.Equal(new CountDown(false, TimeSpan.FromMinutes(14)), await _copies.EndIfIdleAsync(id));
         Assert.Equal(1, _copies.KeptCount);
         _time.Advance(TimeSpan.FromMinutes(1));
-        Assert.True(await _copies.EndIfIdleAsync(id));
+        Assert.True((await _copies.EndIfIdleAsync(id)).Ended);
         Assert.Equal(0, _copies.KeptCount);
         Assert.Equal(UseKind.None, _copies.Use(id).Kind);
 
         // Nothing at all: nothing is left.
-        Assert.True(await _copies.EndIfIdleAsync("0123456789abcdef0123456789abcdef"));
+        Assert.True((await _copies.EndIfIdleAsync("0123456789abcdef0123456789abcdef")).Ended);
+        Assert.Null(_copies.Quiet(id));
+        Assert.Null(_copies.Quiet("0123456789abcdef0123456789abcdef"));
     }
 
     [Fact]
