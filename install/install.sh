@@ -505,12 +505,6 @@ show() {
 }
 
 install() {
-    # One made by the earlier installer (deploy/install.sh), with its settings in .env and its data elsewhere. Its
-    # folder is root's only, so it is looked at as root.
-    if as_root test -f "$DIR/.env"; then
-        fail "Contactor was installed here with the earlier installer ($DIR/.env). This one can't move it over yet: nothing was changed."
-    fi
-
     # Installed and running: only the address and the setup code are shown again.
     if [ -f "$DIR/compose.yml" ] && [ -d "$DATA" ] && docker_works && docker_ compose version > /dev/null 2>&1; then
         cid="$(container)"
@@ -538,9 +532,6 @@ install() {
 
 uninstall() {
     delete_data="$1"
-    if as_root test -f "$DIR/.env"; then
-        fail "Contactor was installed here with the earlier installer ($DIR/.env). This one can't remove it: nothing was changed."
-    fi
     # Without Docker, nothing here can be running; a Docker that doesn't answer may still be running it.
     if command -v docker > /dev/null 2>&1 && ! docker_ info > /dev/null 2>&1; then
         fail "Docker doesn't answer: start it (sudo systemctl start docker) and run this again. Nothing was changed."
