@@ -165,6 +165,9 @@ public sealed class GroupSequencerTests
         Assert.Equal(
             "A relay can only be in the group once.",
             (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fan"), new(1, "Heat")] }, John, Cancel)).Error);
+        Assert.Equal(
+            "That relay doesn't exist.",
+            (await setup.CreateAsync(FanHeater with { Members = [new(1, "Fan"), new(999, "Heat")] }, John, Cancel)).Error);
 
         await CreateAsync(rig, FanHeater);
         Assert.Equal(

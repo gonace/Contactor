@@ -239,16 +239,10 @@
     {
         _user = await CurrentUser.GetAsync();
         _relay = await Settings.GetAsync(Id, CancellationToken.None);
-        _channel = 0;
-        BoardId = null;
+        _channel = _relay?.Channel ?? 0;
+        BoardId = _relay?.BoardId;
         if (_relay is not null)
         {
-            await using (var db = await DbFactory.CreateDbContextAsync())
-            {
-                var place = await db.Relays.AsNoTracking().Where(r => r.Id == Id).Select(r => new { r.BoardId, r.Channel }).SingleAsync();
-                (BoardId, _channel) = (place.BoardId, place.Channel);
-            }
-
             _name = _relay.Name;
             _isActive = _relay.IsActive;
             _maxOnMinutes = _relay.MaxOnMinutes;
