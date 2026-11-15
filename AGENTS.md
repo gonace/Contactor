@@ -65,6 +65,9 @@ Contactor.Tests/          # The only test project
   Vm208/                    # JSON, trace words, connection + client against the simulator
   Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
+install/
+  install.sh                # The one-command install (curl … | sh), attached to each GitHub Release
+  compose.yml               # The generic compose file it puts in /opt/contactor, attached to each release too
 deploy/
   compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
   demo/compose.yml          # The public demo, on a network with no route out, and its forwarder on port 8080 for an existing tunnel's connector
@@ -86,7 +89,7 @@ scripts/
 LICENSE                     # MIT
 THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence texts in licenses/ (in the image: /licenses)
 .github/workflows/build.yml # build + test (pull requests, merges to main, by hand)
-.github/workflows/images.yml # publish and sign the images, the app's and the demo's (by hand)
+.github/workflows/images.yml # publish and sign the images, the app's and the demo's, and attach install/ to the release (by hand)
 .github/pull_request_template.md # What every pull request description has
 .agents/writing.md          # How to write pull requests, issues and comments
 .agents/review.md           # The independent review's checklist

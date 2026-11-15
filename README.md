@@ -66,8 +66,27 @@ Settings → "Add a board" adds more.
   e-mail; no port is opened to the internet.
 - .NET 10, Blazor Server and SQLite. No JavaScript framework.
 
-See [docs/DEPLOY.md](docs/DEPLOY.md) to set it up. A single Docker image that installs in a click is
-[issue #3](https://github.com/gonace/Contactor/issues/3).
+## Install
+
+On a Raspberry Pi with Raspberry Pi OS (64-bit), or any Linux machine with Ubuntu or Debian, run this as your normal
+user:
+
+```sh
+curl -fsSL https://github.com/gonace/Contactor/releases/latest/download/install.sh | sh
+```
+
+It asks nothing. It installs Docker if it isn't installed, puts Contactor in `/opt/contactor` and starts it. It uses
+sudo for that, so it can ask for your password. At the end it shows the address to open and the setup code: type the
+code on that page, and the setup guide does the rest. Run the command again to see them again. It changes nothing that
+works.
+
+Port 8080 is for your own network only: never forward it from the router. From outside, people come in through
+Cloudflare or Tailscale, which you choose in the setup guide.
+
+To remove Contactor, add `--uninstall`: `... | sh -s -- --uninstall`. Your data stays in `/opt/contactor/data`, and
+installing again takes it back. `--uninstall --delete-data` deletes that too.
+
+The earlier way, with `deploy/install.sh`, is in [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Development
 

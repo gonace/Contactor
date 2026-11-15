@@ -32,6 +32,11 @@ public sealed partial class Program
             return SignInReset.Run(args);
         }
 
+        if (args is [SetupStatus.Command, ..])
+        {
+            return SetupStatus.Run(args);
+        }
+
         var builder = WebApplication.CreateBuilder(args);
         builder.WebHost.ListenForTailscaleServe(builder.Configuration);
         builder.AddServiceDefaults();

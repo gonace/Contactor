@@ -129,3 +129,21 @@ jobs:
         run: |
           git tag "v$VERSION" "$GITHUB_SHA"
           git push origin "v$VERSION"
+
+      - name: Attach the install files to the release
+        # The one-command install (install/install.sh) and the compose.yml it downloads, attached to the release of
+        # this tag. install.sh gets the tag, so it downloads this release's compose.yml and the two always match. The
+        # release is made only when it isn't there yet; its notes are written by hand, and a new run replaces only
+        # these two files.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p release
+          sed "s/^RELEASE=\"\"$/RELEASE=\"v$VERSION\"/" install/install.sh > release/install.sh
+          grep -qx "RELEASE=\"v$VERSION\"" release/install.sh || { echo "install.sh has no RELEASE=\"\" line to fill in." >&2; exit 1; }
+          cp install/compose.yml release/compose.yml
+          if ! gh release view "v$VERSION" > /dev/null 2>&1; then
+            gh release create "v$VERSION" --verify-tag --title "$VERSION" --notes ""
+          fi
+          gh release upload "v$VERSION" release/install.sh release/compose.yml --clobber
