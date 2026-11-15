@@ -14,7 +14,9 @@ public static class Program
     // The port the image listens on, published as the same port on this computer.
     private const int AppPort = 8080;
 
-    // Where a container reaches this computer, as Docker Desktop names it.
+    // Where a container reaches this computer, as Docker Desktop names it. The app's Vm201__Host is the name Aspire gets
+    // from the container runtime, which is this one on Docker Desktop, the runtime the AppHost needs. Another runtime
+    // can use another name (Podman: host.containers.internal), and the simulator's page then shows this one.
     private const string ContainerHost = "host.docker.internal";
 
     // The build the demo starts its copies of the app and the simulator from: the AppHost's own, which builds them
