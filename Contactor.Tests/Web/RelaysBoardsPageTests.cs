@@ -13,7 +13,8 @@ namespace Contactor.Tests.Web;
 /// <summary>
 /// The relay screen with two boards, as the server first renders it: the first board (8 relays, 1 input) and Barn
 /// (4 relays, 2 inputs), each in memory. A section per board with its own "All off", "Turn off all boards", which asks
-/// first, and the board filter, kept in a cookie. With one board the screen is as it always was (RelaysPageTests).
+/// first, and the board filter, kept in a cookie. With one board the screen is as it always was (RelaysPageTests), with
+/// the board filter showing only the board and "+ Board".
 /// </summary>
 public sealed partial class RelaysBoardsPageTests
 {
@@ -311,14 +312,19 @@ public sealed partial class RelaysBoardsPageTests
     }
 
     [Fact]
-    public async Task Should_ShowTheBoardFilter_OnlyWithSeveralBoards()
+    public async Task Should_ShowOneBoard_WithoutSectionsOrAllBoards()
     {
         await using var app = new TestWebApp("Development", configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
         using var http = app.CreateClient();
 
         var html = await PageAsync(http);
 
-        Assert.DoesNotContain("board-filter", html, StringComparison.Ordinal);
+        // The filter has only the board, picked, and "+ Board": no "All" and no "Showing".
+        Assert.Matches("class=\"chip-filter picked \" aria-pressed=\"true\"", html);
+        Assert.DoesNotContain("chip-filter all", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("side-board all", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Showing", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Turn off all boards", html, StringComparison.Ordinal);
         Assert.DoesNotContain("board-name", html, StringComparison.Ordinal);
         Assert.Contains("class=\"all-off\"", html, StringComparison.Ordinal);
         Assert.Contains("Board online", html, StringComparison.Ordinal);

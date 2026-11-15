@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Contactor.Web.Features.Relays;
 
 /// <summary>
-/// A screen with a board filter, with two or more boards: Relays, Events and Debug, each remembered on its own.
+/// A screen with a board filter: Relays, Events and Debug, each remembered on its own.
 /// </summary>
 /// <param name="CookieName">The cookie that keeps the screen's picked boards: their ids, e.g. <c>1-3</c>.</param>
 /// <param name="FormPath">Where the screen's filter is sent (<see cref="RelaysEndpoints"/>).</param>
@@ -30,7 +30,7 @@ public sealed record BoardFilters(BoardFilter Relays, BoardFilter Events, BoardF
 }
 
 /// <summary>
-/// Which boards a screen shows, with two or more boards: all of them (<see cref="All"/>), or the ones picked.
+/// Which boards a screen shows: all of them (<see cref="All"/>), or the ones picked.
 /// Remembered per browser and screen in a cookie (<see cref="BoardFilterScreen.CookieName"/>), set by
 /// <see cref="RelaysEndpoints"/> and read on the server when the page is made, so the page never shows every board
 /// first. A board that is gone is left out; when no picked board is left, every board shows.

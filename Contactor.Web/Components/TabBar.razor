@@ -108,18 +108,18 @@
 
     /// <summary>
     /// What a page shows in the desktop's side menu under the tabs: the board filter of Relays, Events and Debug. Any
-    /// other page with two or more boards gets the boards anyway, each a way to Relays showing that board.
+    /// other page gets the boards anyway, each a way to Relays showing that board; with no board there is no list.
     /// </summary>
     [Parameter]
     public RenderFragment? SideList { get; set; }
 
-    // "3 of 8 on" for the boards' list on a page without the filter; loaded when there are two or more boards.
+    // "3 of 8 on" for the boards' list on a page without the filter; loaded when there is a board.
     private BoardCounts _counts = BoardCounts.None;
 
     // What the list shows of each board's state, so a status that changes none of it doesn't redraw the page.
     private readonly Dictionary<int, (bool Connected, bool Answered, ChannelMask Relays)> _shown = [];
 
-    private RenderFragment? List => SideList ?? (Registry.All.Count > 1 ? GoList : null);
+    private RenderFragment? List => SideList ?? (Registry.All.Count > 0 ? GoList : null);
 
     private RenderFragment GoList => __builder =>
     {
@@ -170,7 +170,7 @@
     private async Task LoadCountsAsync()
     {
         var boards = Registry.All;
-        var list = SideList is null && boards.Count > 1;
+        var list = SideList is null && boards.Count > 0;
         lock (_lock)
         {
             // Only the boards there are now: a removed board's entry goes.
@@ -198,7 +198,7 @@
     // has no filter of its own.
     private void OnRelaysChanged(object? sender, EventArgs e)
     {
-        if (SideList is null && Registry.All.Count > 1)
+        if (SideList is null && Registry.All.Count > 0)
         {
             _ = RefreshListAsync(reload: true);
         }
@@ -214,7 +214,7 @@
     // the list shows redraws it: a status that changes nothing (a poll's answer) doesn't.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
-        if (SideList is not null || Registry.All.Count < 2)
+        if (SideList is not null || Registry.All.Count == 0)
         {
             return;
         }

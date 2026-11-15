@@ -185,7 +185,7 @@ public sealed class BoardAddingTests
     }
 
     // "+ Add a board": in Settings under the one board's card, at the end of the list of several, at the end of the
-    // filter's chips, and in the side menu's list on Relays, Events and Debug.
+    // filter's chips, and in the side menu's list on Relays, Events and Debug, with one board too.
     [Fact]
     public async Task Should_OfferAddABoard_WhereTheDesignPutsIt()
     {
@@ -195,8 +195,11 @@ public sealed class BoardAddingTests
             var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
             Assert.Matches("(?s)class=\"board-stack\".*id=\"host\".*href=\"board/new\" class=\"add-board\"", settings);
 
-            // One board: no filter, so the relays don't offer it; Settings is the place.
-            Assert.DoesNotContain("board/new", WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel)), StringComparison.Ordinal);
+            // One board: the side menu has it too, and the relays' chips.
+            Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", settings);
+            var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+            Assert.Matches("(?s)class=\"chips-row\".*href=\"board/new\" class=\"chip-add\"", relays);
+            Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", relays);
         }
 
         await using var boards = await TwoBoards.StartAsync();
@@ -428,7 +431,7 @@ public sealed class BoardAddingTests
 
     // With two boards the desktop's side menu lists them on every page: on a page without the filter (Settings, a
     // relay's page) each board posts the Relays screen's own form with that board alone, which goes to Relays showing
-    // it; "+ Add a board" ends the list. Relays keeps its filter, and one board has no list.
+    // it; "+ Add a board" ends the list. Relays keeps its filter. One board has the list too, without "All boards".
     [Fact]
     public async Task Should_ListTheBoards_InTheSideMenu_OnEveryPage()
     {
@@ -450,7 +453,10 @@ public sealed class BoardAddingTests
 
         await using var one = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
         using var client = one.CreateClient();
-        Assert.DoesNotContain("side-boards", WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel)), StringComparison.Ordinal);
+        var alone = WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel));
+        Assert.Matches("(?s)class=\"side-boards\".*form=\"board-go\" name=\"show\" value=\"1\".*href=\"board/new\" class=\"side-add\"", alone);
+        Assert.DoesNotContain("All boards", alone, StringComparison.Ordinal);
+        Assert.DoesNotContain("aria-pressed", alone[alone.IndexOf("side-boards", StringComparison.Ordinal)..], StringComparison.Ordinal);
     }
 
     // The side menu's list on a page without the filter shows a board's new name at once.

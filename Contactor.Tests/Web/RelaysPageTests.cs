@@ -52,7 +52,7 @@ public sealed class RelaysPageTests
         Assert.DoesNotContain("id=\"groups-heading\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("id=\"inputs-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("aria-labelledby", html, StringComparison.Ordinal);
+        Assert.DoesNotMatch("<section[^>]*aria-labelledby", html);
     }
 
     // With every relay in a group there is no relay card, so no "Relays" heading and no empty grid.
