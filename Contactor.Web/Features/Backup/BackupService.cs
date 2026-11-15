@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
 
@@ -24,7 +25,8 @@ public sealed class BackupOptions
 
 /// <summary>
 /// Copies the database once a night with SQLite's <c>VACUUM INTO</c>, which gives a consistent copy while the app
-/// keeps writing (a file copy of a WAL database can catch it half-written), and keeps the latest copies.
+/// keeps writing (a file copy of a WAL database can catch it half-written), and keeps the latest copies. Right after
+/// the nightly copy it removes the events older than a year (<see cref="EventRetention"/>), so the copy still holds them.
 /// </summary>
 public sealed partial class BackupService : BackgroundService
 {
@@ -34,6 +36,7 @@ public sealed partial class BackupService : BackgroundService
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BackupOptions _options;
     private readonly LocalClock _clock;
+    private readonly EventRetention _retention;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<BackupService> _logger;
 
@@ -41,6 +44,7 @@ public sealed partial class BackupService : BackgroundService
         IDbContextFactory<ContactorDbContext> dbFactory,
         IOptions<BackupOptions> options,
         LocalClock clock,
+        EventRetention retention,
         TimeProvider timeProvider,
         ILogger<BackupService> logger)
     {
@@ -48,6 +52,7 @@ public sealed partial class BackupService : BackgroundService
         _dbFactory = dbFactory;
         _options = options.Value;
         _clock = clock;
+        _retention = retention;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -98,18 +103,40 @@ public sealed partial class BackupService : BackgroundService
             try
             {
                 await Task.Delay(UntilNext(), _timeProvider, stoppingToken);
-                await RunAsync(stoppingToken);
+                await RunNightAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
             }
-#pragma warning disable CA1031 // A failed backup must not stop the next one; it is logged.
-            catch (Exception ex)
+        }
+    }
+
+    // The copy first, then the cleanup, so tonight's copy still holds the events it removes. Each failure is logged and
+    // tried again the next night; neither stops the other. A failed copy still lets the cleanup run: the copies of the
+    // nights before hold what it removes.
+    private async Task RunNightAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await RunAsync(stoppingToken);
+        }
+#pragma warning disable CA1031 // A failed backup must not stop the cleanup or the next night; it is logged.
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
 #pragma warning restore CA1031
-            {
-                LogFailed(ex);
-            }
+        {
+            LogFailed(ex);
+        }
+
+        try
+        {
+            await _retention.RemoveOldAsync(stoppingToken);
+        }
+#pragma warning disable CA1031 // A failed cleanup must not stop the next night; it is logged.
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+#pragma warning restore CA1031
+        {
+            LogCleanupFailed(ex);
         }
     }
 
@@ -144,6 +171,9 @@ public sealed partial class BackupService : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not back up the database")]
     private partial void LogFailed(Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not remove the events older than a year; trying again next night")]
+    private partial void LogCleanupFailed(Exception exception);
 }
 
 public static class BackupServiceCollectionExtensions
@@ -155,6 +185,7 @@ public static class BackupServiceCollectionExtensions
             .Bind(configuration.GetSection(BackupOptions.SectionName))
             .Validate(o => o.Keep is >= 1 and <= 365, "Backup:Keep must be 1–365.")
             .ValidateOnStart();
+        services.AddSingleton<EventRetention>();
         services.AddSingleton<BackupService>();
         services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
         return services;
