@@ -256,7 +256,7 @@ public sealed class GroupPlanText
         return text;
     }
 
-    /// <summary>"Heat off → Fan keeps running for 5 min, then off": from the bottom, each with its run-on.</summary>
+    /// <summary>"Heat off → Run-on for 5 min: Fan, then off": from the bottom, each with its run-on.</summary>
     public string Stop(IReadOnlyList<GroupMemberDraft> members)
     {
         ArgumentNullException.ThrowIfNull(members);

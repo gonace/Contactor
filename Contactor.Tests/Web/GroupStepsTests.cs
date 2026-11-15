@@ -283,11 +283,11 @@ public sealed class GroupStepsTests
     {
         var stopping = View(new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60) });
         Assert.Equal(["Keeps running for 1 min", "Keeps running for 1 min", "Off", "Off"], Notes(stopping, State(1, 2)));
-        Assert.Equal("Stopping · run-on: Fans for 1 min", Status(stopping, State(1, 2)));
+        Assert.Equal("Stopping · run-on for 1 min: Fans", Status(stopping, State(1, 2)));
 
         var oneFan = stopping with { Runtime = new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60), StopRelayId = 21 } };
         Assert.Equal(["Keeps running for 1 min", "On", "Off", "Off"], Notes(oneFan, State(1, 2)));
-        Assert.Equal("Stopping · run-on: Fan 1 for 1 min", Status(oneFan, State(1, 2)));
+        Assert.Equal("Stopping · run-on for 1 min: Fan 1", Status(oneFan, State(1, 2)));
 
         var starting = View(new GroupRuntime { GroupId = 1, Phase = GroupPhases.Starting, NextStepAtUtc = T0.AddSeconds(3) });
         Assert.Equal(["On", "On", "Starts in 3 s", "Starts in 3 s"], Notes(starting, State(1, 2)));

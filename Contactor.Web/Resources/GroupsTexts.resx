@@ -23,7 +23,7 @@
     <value>Starting · step {0} of {1}</value>
   </data>
   <data name="Groups.Status.StoppingRunOn" xml:space="preserve">
-    <value>Stopping · run-on: {0} for {1}</value>
+    <value>Stopping · run-on for {1}: {0}</value>
     <comment>{0} is what runs on: a step's name, e.g. "Fans", or one relay's, {1} the time left.</comment>
   </data>
   <data name="Groups.Status.Stopping" xml:space="preserve">
@@ -73,7 +73,7 @@
     <comment>When the group turns on: {0} is the start so far, {1} a wait, {2} the next relay.</comment>
   </data>
   <data name="Groups.Plan.RunsOn" xml:space="preserve">
-    <value>Run-on: {0} for {1}, then off</value>
+    <value>Run-on for {1}: {0}, then off</value>
   </data>
   <data name="Groups.Plan.Off" xml:space="preserve">
     <value>{0} off</value>

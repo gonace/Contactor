@@ -360,7 +360,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     if (on.Count > 0 && shutOff.Add(group.Id) && !_shutOffLogged.Contains(group.Id))
                     {
                         // Sent again on every step until the board confirms it, but logged once.
-                        // "Fan turned off because Heat was off": the relay the board doesn't have can't be on.
+                        // "Fan turned off. Heat must be on first.": the relay the board doesn't have can't be on.
                         var missing = inOrder.First(m => !IsOnBoard(m));
                         var details = JsonSerializer.Serialize(new { missing = NameOf(missing), off = on.Select(NameOf) });
                         events.Add((group.Id, new GroupEvent(EventActions.InterlockTrip, missing.RelayId, EventActors.System, details)));

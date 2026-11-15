@@ -147,7 +147,7 @@ public sealed class GroupTextTests
     {
         var group = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(241) } };
 
-        Assert.Equal("Stopping · run-on: Fan for 4 min 1 s", Status(group, State(1)));
+        Assert.Equal("Stopping · run-on for 4 min 1 s: Fan", Status(group, State(1)));
         Assert.Equal("Stopping", Status(group, State()));
     }
 
