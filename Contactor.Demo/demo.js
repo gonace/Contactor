@@ -38,7 +38,7 @@
     // How long the check and the count down's end wait for an answer: a request that hangs counts as no answer, so the
     // tab doesn't wait until the next click. Without AbortSignal.timeout (an older browser), they wait as before.
     const answerWithin = 10000;
-    const answerSignal = () => typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(answerWithin) : undefined;
+    const answerSignal = () => typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(answerWithin) : undefined;
 
     // Where the visitor was when the popup opened, to go back there when it goes: an element of the page or of a
     // frame, and the frame the visitor last used, when that element is gone (the frame went to another page).
