@@ -508,7 +508,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     {
         try
         {
-            await BoardRemoval.DeleteAsync(_dbFactory, boardId, removed: null, CancellationToken.None);
+            await BoardRemoval.DeleteAsync(_dbFactory, boardId, removedBy: null, CancellationToken.None);
         }
 #pragma warning disable CA1031 // The failure to add is the one thrown; this one is logged.
         catch (Exception ex)

@@ -130,7 +130,7 @@ public sealed class EventTextTests
     }
 
     // An input no longer in the app (a removed board's) has no name to show, and its id is not the number the screens
-    // show. The relay's status line keeps its own short words.
+    // show. The relay's status line says the same.
     [Fact]
     public void Should_NameAnInputPlainly_WithoutItsName()
     {
@@ -139,7 +139,7 @@ public sealed class EventTextTests
 
         Assert.Equal(new EventView(false, "I", "A removed input:", "{0} Closed", null), TestTexts.Events.For(entry, relayName: null, personName: null));
         var on = Entry(EventActors.ForInput(201), EventActions.On, details: null, relayId: 4);
-        Assert.Equal(("A removed input", "An input"), (TestTexts.Events.For(on, "Lighting", personName: null).Who, TestTexts.Events.ShortWho(on.Actor, personName: null)));
+        Assert.Equal(("A removed input", "A removed input"), (TestTexts.Events.For(on, "Lighting", personName: null).Who, TestTexts.Events.ShortWho(on.Actor, personName: null)));
     }
 
     // A relay or group id with no name left (a removed board's) shows plain words, or the name the event saved; one

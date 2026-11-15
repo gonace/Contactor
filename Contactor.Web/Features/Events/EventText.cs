@@ -253,7 +253,7 @@ public sealed class EventText
             EventActors.AutoOff => _texts["Events.Short.AutoOff"],
             EventActors.External => _texts["Events.Short.Outside"],
             EventActors.System => _texts["Events.Short.System"],
-            _ when EventActors.TryInput(actor, out _) => personName ?? _inputs.Unknown,
+            _ when EventActors.TryInput(actor, out _) => personName ?? _texts["Events.RemovedInput"],
             _ => personName ?? actor,
         };
     }

@@ -395,6 +395,51 @@ public sealed class BoardRemovalTests
         Assert.Contains(row, await boards.App.Services.GetRequiredService<EventsHandler>().GetAsync(EventFilter.People, null, 50, Cancel, boards: [1]));
     }
 
+    // The deletes and the removal's event are saved together: an event that can't be saved leaves every row of the board.
+    [Fact]
+    public async Task Should_RemoveNothing_WhenTheRemovalsEventCantBeSaved()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        await SeedAsync(boards, boards.BarnId);
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "CREATE TRIGGER no_removal BEFORE INSERT ON \"EventLog\" WHEN NEW.\"Action\" = 'board-removed' BEGIN SELECT RAISE(ABORT, 'x'); END;", Cancel);
+        }
+
+        var before = await CountAsync(boards, boards.BarnId);
+        await Assert.ThrowsAnyAsync<Exception>(() => boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        // Its events too; the board running again may log more of its own meanwhile.
+        var after = await CountAsync(boards, boards.BarnId);
+        Assert.Equal(before with { Events = 0 }, after with { Events = 0 });
+        Assert.True(after.Events >= before.Events);
+        await using (var check = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.True(await check.Boards.AnyAsync(b => b.Id == boards.BarnId, Cancel));
+        }
+
+        Assert.NotNull(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId));
+    }
+
+    // The event names the board as it is at the delete, after its relays are off: here renamed meanwhile.
+    [Fact]
+    public async Task Should_NameTheBoard_AsItIsAtTheDelete()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        registry.BoardsChanged += (_, _) =>
+        {
+            using var db = boards.Factory.CreateDbContext();
+            db.Boards.Where(b => b.Id == boards.BarnId).ExecuteUpdate(b => b.SetProperty(x => x.Name, "Garage"));
+        };
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        await using var check = await boards.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal("""{"name":"Garage"}""", (await check.EventLog.SingleAsync(e => e.Action == EventActions.BoardRemoved, Cancel)).Details);
+    }
+
     // Events that stay (from another board, or about no board) and name a removed board's relay, group or input by id
     // never show the id: the name the event saved, otherwise plain words. Those that still resolve are as before.
     [Fact]

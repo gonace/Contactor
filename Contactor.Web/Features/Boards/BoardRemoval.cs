@@ -110,18 +110,30 @@ public sealed partial class BoardRemoval : IDisposable
     /// relays turned off first. Returns null when removed, otherwise the message to show; nothing is removed then, and
     /// the board works as before.
     /// </summary>
-    public async Task<string?> RemoveAsync(int boardId, bool turnOffFirst, string userEmail, CancellationToken cancellationToken)
+    public Task<string?> RemoveAsync(int boardId, bool turnOffFirst, string userEmail, CancellationToken cancellationToken)
+    {
+        return RemoveAsync(boardId, turnOffFirst, userEmail, logged: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// Takes out a board "Add a board" made, on its "Cancel": as <see cref="RemoveAsync(int, bool, string, CancellationToken)"/>
+    /// without asking first, and without logging a removal, since the board was never added.
+    /// </summary>
+    public Task<string?> CancelAddingAsync(int boardId, string userEmail, CancellationToken cancellationToken)
+    {
+        return RemoveAsync(boardId, turnOffFirst: false, userEmail, logged: false, cancellationToken);
+    }
+
+    private async Task<string?> RemoveAsync(int boardId, bool turnOffFirst, string userEmail, bool logged, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         await _gate.WaitAsync(cancellationToken);
         try
         {
             string? name;
-            string? type;
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
-                var row = await db.Boards.Where(b => b.Id == boardId).Select(b => new { b.Name, b.Type }).SingleOrDefaultAsync(cancellationToken);
-                (name, type) = (row?.Name, row?.Type);
+                name = await db.Boards.Where(b => b.Id == boardId).Select(b => b.Name).SingleOrDefaultAsync(cancellationToken);
             }
 
             if (name is null)
@@ -157,7 +169,7 @@ public sealed partial class BoardRemoval : IDisposable
                 removed = true;
                 try
                 {
-                    await DeleteAsync(_dbFactory, boardId, Removed(name, type, userEmail), cancellationToken);
+                    await DeleteAsync(_dbFactory, boardId, logged ? new RemovedBy(userEmail, _clock.UtcNow) : null, cancellationToken);
                 }
                 catch
                 {
@@ -194,19 +206,6 @@ public sealed partial class BoardRemoval : IDisposable
         {
             _gate.Release();
         }
-    }
-
-    // "John removed relay board Garage (Velleman VM204)": an event with no board, so it outlives the board's own.
-    private EventLogEntry Removed(string name, string? type, string userEmail)
-    {
-        var model = BoardCatalogue.Find(type)?.Model.Name;
-        return new EventLogEntry
-        {
-            TimestampUtc = _clock.UtcNow,
-            Actor = userEmail,
-            Action = EventActions.BoardRemoved,
-            Details = model is null ? JsonSerializer.Serialize(new { name }) : JsonSerializer.Serialize(new { name, model }),
-        };
     }
 
     private string LostText(string name)
@@ -321,17 +320,24 @@ public sealed partial class BoardRemoval : IDisposable
         return a > b ? a : b;
     }
 
+    // Who removed the board, and when: what its removal event says.
+    internal sealed record RemovedBy(string UserEmail, DateTime AtUtc);
+
     // A group that is stopping, and when its last relay goes off.
     private sealed record Stopping(string Name, DateTime Off);
 
     // Everything about the board, in one transaction, children before what they point to: the foreign keys from an
     // input action, a group member and a relay's runtime and schedules to a relay are Restrict, so nothing is left to a
     // cascade. Also what takes a board that couldn't be added all the way back out (BoardRegistry.AddBoardAsync), which
-    // logs nothing. A removal's own event (removed) is saved in the same transaction, after the board's events go.
-    internal static async Task DeleteAsync(IDbContextFactory<ContactorDbContext> dbFactory, int boardId, EventLogEntry? removed, CancellationToken cancellationToken)
+    // logs nothing, as "Cancel" on "Add a board" does. A removal's own event (removedBy) is saved in the same
+    // transaction, with the board's name and model as they are then: the deletes and the event go together or not at all.
+    internal static async Task DeleteAsync(IDbContextFactory<ContactorDbContext> dbFactory, int boardId, RemovedBy? removedBy, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var board = removedBy is null
+            ? null
+            : await db.Boards.AsNoTracking().Where(b => b.Id == boardId).Select(b => new { b.Name, b.Type }).SingleOrDefaultAsync(cancellationToken);
         var of = new Of(db, boardId);
         await of.InputActions.ExecuteDeleteAsync(cancellationToken);
         await of.Schedules.ExecuteDeleteAsync(cancellationToken);
@@ -345,9 +351,18 @@ public sealed partial class BoardRemoval : IDisposable
         await db.BoardRuntimes.Where(r => r.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
         await KeepNextBoardsAddressAsync(db, boardId, cancellationToken);
         await db.Boards.Where(b => b.Id == boardId).ExecuteDeleteAsync(cancellationToken);
-        if (removed is not null)
+        if (removedBy is not null && board is not null)
         {
-            db.EventLog.Add(removed);
+            // "John removed relay board Garage (Velleman VM204)": with no board, so it outlives the board's own events.
+            var name = board.Name;
+            var model = BoardCatalogue.Find(board.Type)?.Model.Name;
+            db.EventLog.Add(new EventLogEntry
+            {
+                TimestampUtc = removedBy.AtUtc,
+                Actor = removedBy.UserEmail,
+                Action = EventActions.BoardRemoved,
+                Details = model is null ? JsonSerializer.Serialize(new { name }) : JsonSerializer.Serialize(new { name, model }),
+            });
             await db.SaveChangesAsync(cancellationToken);
         }
 

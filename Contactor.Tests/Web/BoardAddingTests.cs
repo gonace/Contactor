@@ -288,6 +288,9 @@ public sealed class BoardAddingTests
         Assert.Equal(2, await db.Boards.CountAsync(Cancel));
         Assert.False(await db.Relays.AnyAsync(r => r.BoardId != 1 && r.BoardId != boards.BarnId, Cancel));
         Assert.False(await db.EventLog.AnyAsync(e => e.BoardId != null && e.BoardId != 1 && e.BoardId != boards.BarnId, Cancel));
+
+        // The board was never added, so neither "Cancel" nor the other model logs a removal.
+        Assert.False(await db.EventLog.AnyAsync(e => e.Action == EventActions.BoardRemoved, Cancel));
     }
 
     // An open Relays page shows a board added while it is open, with its relays: it is told again once the board has
@@ -372,6 +375,7 @@ public sealed class BoardAddingTests
         await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
         Assert.False(await db.Boards.AnyAsync(b => b.Id == made.BoardId, Cancel));
         Assert.False(await db.Relays.AnyAsync(r => r.BoardId == made.BoardId, Cancel));
+        Assert.False(await db.EventLog.AnyAsync(e => e.Action == EventActions.BoardRemoved, Cancel));
     }
 
     // New group's "Which relays?" with two boards: a section per board under its name; once a relay is picked, the
