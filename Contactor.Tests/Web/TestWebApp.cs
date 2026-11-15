@@ -15,6 +15,7 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
+using Contactor.Web.Features.Updates;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Tests.Web;
@@ -126,6 +127,9 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         {
             services.AddSingleton<IStartupFilter>(new RemoteAddressStartupFilter(this));
 
+            // No test asks GitHub for releases; one that needs some brings its own.
+            services.AddSingleton<IReleaseSource>(new TestReleases([]));
+
             // In Development, Cloudflare Access's place says who everyone is, as the test asks. Production tests sign
             // in with real tokens.
             if (_environment == "Development")
@@ -182,6 +186,31 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         {
             Directory.Delete(_folder, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// The services for an app that runs <paramref name="version"/> and finds <paramref name="releases"/> on GitHub.
+    /// </summary>
+    public static Action<IServiceCollection> WithReleases(string version, params Release[] releases)
+    {
+        return services =>
+        {
+            services.AddSingleton(new AppBuild(version, "0123456789abcdef"));
+            services.AddSingleton<IReleaseSource>(new TestReleases(releases));
+        };
+    }
+
+    // The releases a test's app finds on GitHub.
+    internal sealed class TestReleases : IReleaseSource
+    {
+        private readonly IReadOnlyList<Release> _releases;
+
+        public TestReleases(IReadOnlyList<Release> releases)
+        {
+            _releases = releases;
+        }
+
+        public Task<IReadOnlyList<Release>> GetAsync(CancellationToken cancellationToken) => Task.FromResult(_releases);
     }
 
     // The board a test runs in the app's place (WithBoard).

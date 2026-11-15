@@ -13,6 +13,7 @@ using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Features.Setup;
 using Contactor.Web.Features.Tailscale;
+using Contactor.Web.Features.Updates;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Web;
@@ -37,6 +38,11 @@ public sealed partial class Program
             return SetupStatus.Run(args);
         }
 
+        if (args is [UpdateBackup.Command, ..])
+        {
+            return UpdateBackup.Run(args);
+        }
+
         if (AppCommands.RefuseUnknown(args, Console.Error) is { } exitCode)
         {
             return exitCode;
@@ -57,6 +63,7 @@ public sealed partial class Program
         builder.Services.AddInputs(builder.Configuration);
         builder.Services.AddSchedules(builder.Configuration);
         builder.Services.AddBackup(builder.Configuration);
+        builder.Services.AddUpdates(builder.Configuration);
         builder.Services.AddSetup(builder.Configuration);
         builder.Services.AddAccess(builder.Configuration);
         builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -86,6 +93,7 @@ public sealed partial class Program
         app.MapHealthGroup();
         app.MapSetupGroup();
         app.MapBackupGroup();
+        app.MapUpdatesGroup();
         app.MapRelaysGroup();
         app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
         app.Run();

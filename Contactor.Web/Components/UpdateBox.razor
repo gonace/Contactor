@@ -1,0 +1,265 @@
+@implements IDisposable
+@using System.Globalization
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Updates
+@inject UpdateService Updates
+@inject LocalClock Clock
+@inject CurrentUser CurrentUser
+
+@* Settings → Updates: the running version, the newest release with what's new, "Update now" and how the update goes.
+   The update helper on the host does the work (UpdateService). *@
+@{
+    var view = UpdateBoxView.For(Updates.Snapshot(), Clock);
+}
+<section class="card updates" aria-labelledby="updates-title">
+    <h2 id="updates-title">Updates</h2>
+
+    @switch (view.Kind)
+    {
+        case UpdateBoxKind.Development:
+            <p class="lead">This is a development version of Contactor. It isn't updated from here.</p>
+            break;
+
+        case UpdateBoxKind.Running:
+            <p class="lead">Updating from <strong>@view.From</strong> to <strong>@view.To</strong>.</p>
+            <ol class="steps">
+                @foreach (var step in view.Steps)
+                {
+                    <li class="step @step.State.ToString().ToLowerInvariant()" aria-current="@(step.State == UpdateStepState.Now ? "step" : null)">
+                        <span class="mark" aria-hidden="true">
+                            @if (step.State == UpdateStepState.Done)
+                            {
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>
+                            }
+                            else if (step.State == UpdateStepState.Now)
+                            {
+                                <span class="spinner"></span>
+                            }
+                            else
+                            {
+                                <span class="later-dot"></span>
+                            }
+                        </span>
+                        <span>@(step.State == UpdateStepState.Now ? $"{step.Text}…" : step.Text)</span>
+                    </li>
+                }
+            </ol>
+            @if (view.CanCancel)
+            {
+                <button type="button" class="secondary" disabled="@_busy" @onclick="CancelAsync">Cancel</button>
+            }
+            <p class="hint">@view.StartedLine</p>
+            break;
+
+        default:
+            <p class="lead">
+                @if (view.Offered is null)
+                {
+                    <text>You have the newest version, <strong>@view.Running</strong>.</text>
+                }
+                else
+                {
+                    <text>You have version <strong>@view.Running</strong>.</text>
+                }
+            </p>
+
+            @if (view.Result is { } result)
+            {
+                <div class="@(result.IsAlert ? "result alert" : "result")" role="status">
+                    <span class="icon" aria-hidden="true">
+                        @if (result.IsDone)
+                        {
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>
+                        }
+                        else if (result.IsAlert)
+                        {
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+                        }
+                        else
+                        {
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path></svg>
+                        }
+                    </span>
+                    <span class="result-text">
+                        <strong>@result.Title</strong>
+                        <span>@result.Text</span>
+                    </span>
+                </div>
+                @if (!result.IsDone && view.CanUpdate)
+                {
+                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">Try again</button>
+                }
+                @if (view.LogId is { } logId)
+                {
+                    @if (_log is null || _logId != logId)
+                    {
+                        <button type="button" class="secondary" disabled="@_busy" @onclick="() => ShowLogAsync(logId)">Show what happened</button>
+                    }
+                    else
+                    {
+                        <div class="log-head">
+                            <span>What happened</span>
+                            <a class="download" href="@UpdateEndpoints.LogLink(logId)" download data-enhance-nav="false">Download</a>
+                        </div>
+                        <pre class="log" tabindex="0">@_log</pre>
+                    }
+                }
+            }
+
+            @if (view.Offered is { } offered && (view.Result is null || !view.Result.IsAlert))
+            {
+                <div class="available" role="status">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
+                    Version @offered is available
+                </div>
+                @if (view.WhatsNew.Count > 0)
+                {
+                    <h3 class="whats-new">What's new</h3>
+                    @foreach (var release in view.WhatsNew)
+                    {
+                        <article class="release" @key="release.Version">
+                            <div class="release-head">
+                                <strong>@release.Version</strong>
+                                @if (release.Date is { } date)
+                                {
+                                    <span>@date.ToString("d MMMM", CultureInfo.InvariantCulture)</span>
+                                }
+                            </div>
+                            <ul>
+                                @foreach (var change in release.Changes)
+                                {
+                                    <li>@change</li>
+                                }
+                            </ul>
+                        </article>
+                    }
+                }
+                @if (view.NoHelper)
+                {
+                    <p class="hint">Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose. Installed with the install command? Run it again: it adds what "Update now" needs.</p>
+                }
+                else if (view.Result is null)
+                {
+                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">Update now</button>
+                    <p class="hint">Contactor restarts. That takes about a minute. The relays stay as they are, and schedules catch up afterwards.</p>
+                }
+            }
+            else if (view.Kind == UpdateBoxKind.Current && view.CheckedLine is { } checkedLine)
+            {
+                <p class="hint">@checkedLine</p>
+            }
+
+            @if (view.Offered is null && view.NoHelper && view.Kind == UpdateBoxKind.Current)
+            {
+                <p class="hint">Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose.</p>
+            }
+            break;
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error</p>
+    }
+</section>
+
+@if (_asking && UpdateBoxView.For(Updates.Snapshot(), Clock) is { Offered: { } to, CanUpdate: true })
+{
+    <div class="backdrop">
+        <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="update-title">
+            <h2 id="update-title">Update to @to?</h2>
+            <p>Contactor restarts. That takes about a minute, and the app doesn't answer meanwhile.</p>
+            <p>The relays stay as they are. Schedules and auto-offs catch up once it's back.</p>
+            <div class="dialog-buttons">
+                <button type="button" class="cancel" disabled="@_busy" @onclick="() => _asking = false">Cancel</button>
+                <button type="button" class="confirm" disabled="@_busy" @onclick="UpdateAsync">Update</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private SignedInUser? _user;
+    private bool _asking;
+    private bool _busy;
+    private string? _error;
+    private string? _log;
+    private string? _logId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await CurrentUser.GetAsync();
+        Updates.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Updates.Changed -= OnChanged;
+    }
+
+    private void Ask()
+    {
+        _error = null;
+        _asking = true;
+    }
+
+    private async Task UpdateAsync()
+    {
+        if (_busy || _user is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _error = await Updates.RequestAsync(_user, CancellationToken.None);
+            _asking = false;
+            _log = null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Updates.CancelAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ShowLogAsync(string id)
+    {
+        _logId = id;
+        _log = await UpdateLog.ReadAsync(Updates.Folder.LogsFolder, id, CancellationToken.None) ?? "There is no log of this update.";
+    }
+
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

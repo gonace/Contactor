@@ -4,16 +4,18 @@
 #   curl -fsSL https://github.com/gonace/Contactor/releases/latest/download/install.sh | sh
 #
 # It asks nothing. It checks the machine, installs Docker if it isn't installed, puts compose.yml and the data folder
-# in /opt/contactor, starts the app and shows the address to open, with the setup code while the setup isn't finished.
+# in /opt/contactor, starts the app, puts the update helper in place (for "Update now" in Settings) and shows the
+# address to open, with the setup code while the setup isn't finished.
 # The board, how people reach the app and how they sign in are chosen in the setup guide. Run it as your normal user:
 # it uses sudo for what needs it (Docker and /opt/contactor). Safe to run again: it repairs only what is missing and
-# changes nothing that works, and it shows the address and the setup code again.
+# changes nothing that works, brings the update helper up to date, and shows the address and the setup code again.
 #
-#   ... | sh -s -- --uninstall                stops and removes the app; keeps /opt/contactor/data
+#   ... | sh -s -- --uninstall                stops and removes the app and the helper; keeps /opt/contactor/data
 #   ... | sh -s -- --uninstall --delete-data  removes that too
 #
-# Attached to each GitHub Release with that release's compose.yml, which it downloads, so the two always match.
-# For testing only: CONTACTOR_IMAGE runs another image, and CONTACTOR_DOWNLOADS is where compose.yml is downloaded from.
+# Attached to each GitHub Release with that release's compose.yml and update helper (contactor-updater.sh and its
+# systemd units), which it downloads, so they always match. For testing only: CONTACTOR_IMAGE runs another image, and
+# CONTACTOR_DOWNLOADS is where those files are downloaded from.
 #
 # Plain POSIX sh, so it runs with dash too. Everything is in functions, called on the last line: a download cut off
 # halfway runs nothing.
@@ -25,6 +27,10 @@ RELEASE=""
 REPOSITORY="https://github.com/gonace/Contactor"
 DIR="/opt/contactor"
 DATA="/opt/contactor/data"
+# The update helper: the only part of Contactor outside /opt/contactor (see contactor-updater.sh).
+HELPER="/usr/local/sbin/contactor-updater"
+UNITS="/etc/systemd/system"
+HELPER_STATE="/var/lib/contactor-updater"
 # The image's user (the .NET images' "app" user), who must own the data folder.
 APP_UID=1654
 # Free disk space, in GB: below NEEDS_GB it stops, below ADVISED_GB it warns. The image is about 300 MB; the rest is
@@ -39,6 +45,8 @@ NO_SETUP_STATUS_UNTIL="2026.11.15"
 
 TMP=""
 BUSY=""
+# Set when this run brought an existing update helper up to date, so it doesn't say "Nothing was changed".
+HELPER_UPDATED=""
 
 # Colours only on a terminal that has them.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
@@ -270,6 +278,105 @@ ensure_docker() {
     ok "Docker $(docker_ version -f '{{.Server.Version}}' 2> /dev/null || echo "")"
 }
 
+# Where this release's files are downloaded from.
+downloads() {
+    if [ -n "${CONTACTOR_DOWNLOADS:-}" ]; then
+        echo "$CONTACTOR_DOWNLOADS"
+    elif [ -n "$RELEASE" ]; then
+        echo "$REPOSITORY/releases/download/$RELEASE"
+    else
+        echo "$REPOSITORY/releases/latest/download"
+    fi
+}
+
+# Whether systemd runs this machine, which the update helper needs.
+has_systemd() {
+    [ -d /run/systemd/system ] && command -v systemctl > /dev/null 2>&1
+}
+
+# Whether the update helper is updating Contactor right now.
+updating() {
+    has_systemd && as_root systemctl is-active --quiet contactor-updater.service 2> /dev/null
+}
+
+# Puts this release's update helper in place, or brings it up to date: the script and its two systemd units. A file
+# that is already the same stays as it is. Each is replaced in one step, so a helper that is running keeps reading
+# its own copy.
+ensure_helper() {
+    if ! has_systemd; then
+        warn "No update helper: this machine doesn't run systemd, so \"Update now\" in Settings isn't available."
+        return 0
+    fi
+    for tool in setpriv flock; do
+        if ! command -v "$tool" > /dev/null 2>&1; then
+            warn "No update helper: $tool isn't installed (util-linux), so \"Update now\" in Settings isn't available."
+            return 0
+        fi
+    done
+    from="$(downloads)"
+    changed=""
+    existed=""
+    if [ -f "$HELPER" ]; then
+        existed=1
+    fi
+    for file in contactor-updater.sh contactor-updater.service contactor-updater.path; do
+        download "$from/$file" "$TMP/$file" || fail "Couldn't download $file from $from."
+        grep -q 'contactor-updater' "$TMP/$file" || fail "What came from $from/$file isn't Contactor's update helper."
+        case "$file" in
+            *.sh) target="$HELPER" mode=755 ;;
+            *) target="$UNITS/$file" mode=644 ;;
+        esac
+        if ! as_root cmp -s "$TMP/$file" "$target"; then
+            as_root cp "$TMP/$file" "$target.new"
+            as_root chmod "$mode" "$target.new"
+            as_root mv -f "$target.new" "$target"
+            changed=1
+        fi
+    done
+    if [ -n "$changed" ]; then
+        as_root systemctl daemon-reload
+    fi
+    as_root systemctl enable --quiet contactor-updater.service contactor-updater.path > "$TMP/helper.log" 2>&1 \
+        || fail_with_log "Couldn't set up the update helper." "$TMP/helper.log"
+    as_root systemctl restart contactor-updater.path > "$TMP/helper.log" 2>&1 \
+        || fail_with_log "Couldn't start the update helper." "$TMP/helper.log"
+    # Once now, so the app knows it is there (it also finishes an update a power cut left halfway).
+    as_root systemctl start contactor-updater.service > "$TMP/helper.log" 2>&1 \
+        || fail_with_log "The update helper didn't run." "$TMP/helper.log"
+    if [ -n "$changed" ] && [ -n "$existed" ]; then
+        HELPER_UPDATED=1
+        ok "Update helper brought up to date"
+    else
+        ok "Update helper installed"
+    fi
+}
+
+# Removes the update helper, if it is here.
+remove_helper() {
+    found=""
+    for target in "$HELPER" "$UNITS/contactor-updater.service" "$UNITS/contactor-updater.path"; do
+        if [ -e "$target" ]; then
+            found=1
+        fi
+    done
+    if [ -z "$found" ]; then
+        return 0
+    fi
+    if has_systemd; then
+        as_root systemctl disable --now contactor-updater.path contactor-updater.service > /dev/null 2>&1 || true
+    fi
+    as_root rm -f "$HELPER" "$UNITS/contactor-updater.service" "$UNITS/contactor-updater.path"
+    as_root rm -rf -- "$HELPER_STATE"
+    if has_systemd; then
+        as_root systemctl daemon-reload > /dev/null 2>&1 || true
+    fi
+    # What tells the app the helper is here. As the app's user, who owns that folder.
+    if [ -d "$DATA" ]; then
+        as_root setpriv --reuid="$APP_UID" --regid="$APP_UID" --clear-groups -- rm -f "$DATA/updates/helper" 2> /dev/null || true
+    fi
+    ok "Update helper removed"
+}
+
 # compose.yml and the data folder, where they are missing. An existing compose.yml stays as it is.
 ensure_files() {
     kept=""
@@ -279,13 +386,7 @@ ensure_files() {
     as_root mkdir -p "$DIR"
     as_root chmod 755 "$DIR"
     if [ ! -f "$DIR/compose.yml" ]; then
-        if [ -n "${CONTACTOR_DOWNLOADS:-}" ]; then
-            from="$CONTACTOR_DOWNLOADS"
-        elif [ -n "$RELEASE" ]; then
-            from="$REPOSITORY/releases/download/$RELEASE"
-        else
-            from="$REPOSITORY/releases/latest/download"
-        fi
+        from="$(downloads)"
         download "$from/compose.yml" "$TMP/compose.yml" || fail "Couldn't download compose.yml from $from."
         grep -q 'contactor' "$TMP/compose.yml" || fail "What came from $from/compose.yml isn't Contactor's compose.yml."
         as_root cp "$TMP/compose.yml" "$DIR/compose.yml"
@@ -492,12 +593,12 @@ show() {
             "The setup isn't finished yet: open that page" "to go on with it."
     elif [ "$state" != "done" ]; then
         # The app didn't say how far the setup is (e.g. an older image): only what is sure.
-        if [ -n "$again" ]; then
+        if [ -n "$again" ] && [ -z "$HELPER_UPDATED" ]; then
             box "Contactor is running." "" "Open:        $local_address" "" "Nothing was changed."
         else
             box "Contactor is running." "" "Open:        $local_address"
         fi
-    elif [ -n "$again" ]; then
+    elif [ -n "$again" ] && [ -z "$HELPER_UPDATED" ]; then
         box "Contactor is running and set up." "" "Open:        ${public:-$local_address}" "" "Nothing was changed."
     else
         box "Contactor is running and set up." "" "Open:        ${public:-$local_address}"
@@ -511,7 +612,11 @@ install() {
         fail "Contactor was installed here with the earlier installer ($DIR/.env). This one can't move it over yet: nothing was changed."
     fi
 
-    # Installed and running: only the address and the setup code are shown again.
+    if updating; then
+        fail "Contactor is being updated from its Settings right now. Run this command again in a few minutes."
+    fi
+
+    # Installed and running: only the address and the setup code are shown again, once the update helper is up to date.
     if [ -f "$DIR/compose.yml" ] && [ -d "$DATA" ] && docker_works && docker_ compose version > /dev/null 2>&1; then
         cid="$(container)"
         if [ -n "$cid" ] && [ "$(docker_ inspect -f '{{.State.Running}}' "$cid" 2> /dev/null || true)" = "true" ]; then
@@ -519,6 +624,7 @@ install() {
             version="$(version_of "$cid")"
             wait_ready "$cid"
             ok "Contactor${version:+ $version} is running"
+            ensure_helper
             show "$cid" again
             return 0
         fi
@@ -533,6 +639,7 @@ install() {
     cid="$(container)"
     [ -n "$cid" ] || fail "Contactor didn't start: see sudo docker logs contactor"
     wait_ready "$cid"
+    ensure_helper
     show "$cid" ""
 }
 
@@ -540,6 +647,9 @@ uninstall() {
     delete_data="$1"
     if as_root test -f "$DIR/.env"; then
         fail "Contactor was installed here with the earlier installer ($DIR/.env). This one can't remove it: nothing was changed."
+    fi
+    if updating; then
+        fail "Contactor is being updated from its Settings right now. Run this again in a few minutes. Nothing was changed."
     fi
     # Without Docker, nothing here can be running; a Docker that doesn't answer may still be running it.
     if command -v docker > /dev/null 2>&1 && ! docker_ info > /dev/null 2>&1; then
@@ -558,6 +668,7 @@ uninstall() {
         ok "Contactor isn't running here"
     fi
     as_root rm -f "$DIR/compose.yml"
+    remove_helper
 
     if [ -n "$delete_data" ]; then
         if [ -e "$DATA" ] || [ -L "$DATA" ]; then

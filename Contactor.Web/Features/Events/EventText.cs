@@ -18,7 +18,8 @@ namespace Contactor.Web.Features.Events;
 /// An input's change the app only noticed after a gap in contact: the event's time is when it was noticed, not when it
 /// happened, so the screens add "time unknown" with the reason (<see cref="EventText.WhyTimeUnknown"/>).
 /// </param>
-public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false, bool TimeUnknown = false);
+/// <param name="Log">An update's log ("Show what happened"), relative to the app's base; null for other events.</param>
+public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false, bool TimeUnknown = false, string? Log = null);
 
 /// <summary>
 /// Turns stored events into the text of the Events screen.
@@ -44,6 +45,13 @@ public static class EventText
         if (entry.Action == EventActions.InputChanged)
         {
             return InputChange(entry, inputName);
+        }
+
+        if (Update(entry) is { } update)
+        {
+            var person = IsPersonActor(entry.Actor);
+            var name = person ? personName ?? entry.Actor : "Contactor";
+            return update with { IsPerson = person, Badge = person && name.Length > 0 ? name[..1].ToUpper(CultureInfo.InvariantCulture) : "A", Who = name };
         }
 
         var isPerson = IsPersonActor(entry.Actor);
@@ -75,6 +83,37 @@ public static class EventText
     {
         var name = inputName ?? Input.Unknown;
         return new EventView(false, "I", $"{name}:", Input.StateText(Bool(entry.Details, "on") == true), null, TimeUnknown: InputNoticed(entry.Details));
+    }
+
+    // An update from Settings: "John started the update to 2026.11.20", "Contactor updated to 2026.11.20", the red
+    // "Contactor went back to 2026.11.14: the update to 2026.11.20 didn't work", with its log. Null for other events.
+    private static EventView? Update(EventLogEntry entry)
+    {
+        var to = Text(entry.Details, "to") ?? "a new version";
+        var log = Text(entry.Details, "id") is { } id && Updates.HelperStatus.IsId(id) ? Updates.UpdateEndpoints.LogLink(id) : null;
+        var (what, alert) = entry.Action switch
+        {
+            EventActions.UpdateRequested => ($"started the update to {to}", false),
+            EventActions.UpdateDone => ($"updated to {to}", false),
+            EventActions.UpdateWentBack => ($"went back to {Text(entry.Details, "from") ?? "the version before"}: the update to {to} didn't work", true),
+            EventActions.UpdateFailed when Text(entry.Details, "reason") == Updates.UpdateReasons.Cancelled => ($"didn't update to {to}: the update was cancelled", false),
+            EventActions.UpdateFailed => ($"didn't update to {to}: {FailedBecause(Text(entry.Details, "reason"))}. Nothing was changed", true),
+            _ => ((string?)null, false),
+        };
+        return what is null ? null : new EventView(false, "A", "", what, null, alert, Log: entry.Action == EventActions.UpdateRequested ? null : log);
+    }
+
+    private static string FailedBecause(string? reason)
+    {
+        return reason switch
+        {
+            Updates.UpdateReasons.Download => "it couldn't be downloaded",
+            Updates.UpdateReasons.Signature => "it didn't pass the check that it's ours",
+            Updates.UpdateReasons.Space => "there wasn't enough room",
+            Updates.UpdateReasons.Backup => "the database couldn't be backed up",
+            Updates.UpdateReasons.Interrupted => "it was interrupted",
+            _ => "it didn't start",
+        };
     }
 
     // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running

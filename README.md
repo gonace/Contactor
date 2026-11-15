@@ -78,7 +78,8 @@ curl -fsSL https://github.com/gonace/Contactor/releases/latest/download/install.
 It asks nothing. It installs Docker if it isn't installed, puts Contactor in `/opt/contactor` and starts it. It uses
 sudo for that, so it can ask for your password. At the end it shows the address to open and the setup code: type the
 code on that page, and the setup guide does the rest. Run the command again to see them again. It changes nothing that
-works.
+works. To update Contactor later, press "Update now" in its Settings: it goes back by itself if the new version doesn't
+start.
 
 Port 8080 is for your own network only: never forward it from the router. From outside, people come in through
 Cloudflare or Tailscale, which you choose in the setup guide.

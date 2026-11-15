@@ -110,6 +110,11 @@ button:active:not(:disabled) {
     box-shadow: 0 6px 18px rgba(29, 27, 24, 0.25);
 }
 
+/* While an update restarts the app, its splash says so instead (UpdateSplash). */
+body:has(.update-splash) .reconnect {
+    display: none !important;
+}
+
 .reconnect.components-reconnect-show,
 .reconnect.components-reconnect-retrying,
 .reconnect.components-reconnect-failed {

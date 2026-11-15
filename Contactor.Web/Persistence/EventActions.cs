@@ -34,4 +34,16 @@ public static class EventActions
     public const string GroupCreate = "group-create";
     public const string GroupEdit = "group-edit";
     public const string GroupDelete = "group-delete";
+
+    /// <summary>"Update now" in Settings. Details: <c>{"from":"2026.11.14","to":"2026.11.20"}</c>.</summary>
+    public const string UpdateRequested = "update-requested";
+
+    /// <summary>An update that went through. Details: <c>{"id":"20261115-140200","from":…,"to":…}</c>, the id naming its log.</summary>
+    public const string UpdateDone = "update-done";
+
+    /// <summary>An update whose new version didn't come up: Contactor went back to the one before. Details as for <see cref="UpdateDone"/>, with <c>reason</c>.</summary>
+    public const string UpdateWentBack = "update-went-back";
+
+    /// <summary>An update that stopped before the restart: nothing was changed. Details as for <see cref="UpdateWentBack"/>.</summary>
+    public const string UpdateFailed = "update-failed";
 }
