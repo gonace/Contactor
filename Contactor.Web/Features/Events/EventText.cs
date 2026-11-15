@@ -1,7 +1,10 @@
 using System.Globalization;
 using System.Text.Json;
+using Contactor.Web.Components;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Events;
 
@@ -9,7 +12,10 @@ namespace Contactor.Web.Features.Events;
 /// <param name="IsPerson">A person (filled badge with their initial) rather than something automatic (dashed badge).</param>
 /// <param name="Badge">The letter in the badge.</param>
 /// <param name="Who">Shown in bold, e.g. "Jane" or "Schedule".</param>
-/// <param name="What">Follows it, e.g. "turned on".</param>
+/// <param name="Line">
+/// The whole line, with <c>{0}</c> where <see cref="Who"/> goes, e.g. "{0} turned on", so a language puts the name where
+/// its word order needs it (<see cref="Sentence"/>). Any other brace in it is doubled.
+/// </param>
 /// <param name="Target">The line below, usually the relay's name; null when there is none.</param>
 /// <param name="IsAlert">
 /// Shown in red: a safety shut-off, a group that couldn't start, or a board whose relays couldn't be set to normal mode.
@@ -19,16 +25,32 @@ namespace Contactor.Web.Features.Events;
 /// happened, so the screens add "time unknown" with the reason (<see cref="EventText.WhyTimeUnknown"/>).
 /// </param>
 /// <param name="Log">An update's log ("Show what happened"), relative to the app's base; null for other events.</param>
-public sealed record EventView(bool IsPerson, string Badge, string Who, string What, string? Target, bool IsAlert = false, bool TimeUnknown = false, string? Log = null);
+public sealed record EventView(bool IsPerson, string Badge, string Who, string Line, string? Target, bool IsAlert = false, bool TimeUnknown = false, string? Log = null)
+{
+    /// <summary>The line as plain text, with the name in it: "Jane turned on".</summary>
+    public string Text => string.Concat(Sentence.Parts(Line).Select(p => p.Words ?? (p.Arg == 0 ? Who : "")));
+
+    /// <summary>The line without the name, as plain text: "turned on".</summary>
+    public string What => string.Concat(Sentence.Parts(Line).Select(p => p.Words ?? "")).Trim();
+}
 
 /// <summary>
-/// Turns stored events into the text of the Events screen.
+/// Turns stored events into the text of the Events screen, in the app's language, and the lengths and short names
+/// other screens show the same way.
 /// </summary>
-public static class EventText
+public sealed class EventText
 {
+    private readonly IStringLocalizer<EventsTexts> _texts;
+    private readonly ScheduleText _schedules;
+
+    public EventText(IStringLocalizer<EventsTexts> texts, ScheduleText schedules)
+    {
+        _texts = texts;
+        _schedules = schedules;
+    }
+
     /// <summary>Why an input's change has "time unknown" on the Events screen.</summary>
-    public const string WhyTimeUnknown =
-        "The app had no contact with the board when this input changed, so it only noticed the change at this time. It may have happened any time before.";
+    public string WhyTimeUnknown => _texts["Events.WhyTimeUnknown"];
 
     /// <param name="entry">The event.</param>
     /// <param name="relayName">The relay's current name, or null for events without a relay.</param>
@@ -39,7 +61,7 @@ public static class EventText
     /// The board's name, with two or more boards: an event about the board itself names it ("Workshop had its own
     /// timers turned off"); null for "The board".
     /// </param>
-    public static EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, string? inputName = null, string? boardName = null)
+    public EventView For(EventLogEntry entry, string? relayName, string? personName, string? groupName = null, string? inputName = null, string? boardName = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         if (entry.Action == EventActions.InputChanged)
@@ -50,110 +72,110 @@ public static class EventText
         if (Update(entry) is { } update)
         {
             var person = IsPersonActor(entry.Actor);
-            var name = person ? personName ?? entry.Actor : "Contactor";
-            return update with { IsPerson = person, Badge = person && name.Length > 0 ? name[..1].ToUpper(CultureInfo.InvariantCulture) : "A", Who = name };
+            var name = person ? personName ?? entry.Actor : _texts["Events.Who.Contactor"];
+            return update with { IsPerson = person, Badge = person && name.Length > 0 ? name[..1].ToUpper(CultureInfo.CurrentCulture) : "A", Who = name };
         }
 
         var isPerson = IsPersonActor(entry.Actor);
         var byInput = EventActors.TryInput(entry.Actor, out var inputId);
         var who = isPerson ? personName ?? entry.Actor
             : byInput ? personName ?? Input.Unknown
-            : IsAboutBoard(entry) ? boardName ?? "The board"
+            : IsAboutBoard(entry) ? boardName ?? _texts["Events.Who.Board"]
             : WhoFor(entry);
         var badge = byInput ? "I"
             : !isPerson ? "A"
-            : who.Length > 0 ? who[..1].ToUpper(CultureInfo.InvariantCulture)
+            : who.Length > 0 ? who[..1].ToUpper(CultureInfo.CurrentCulture)
             : "?";
-        var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? "the group";
+        var group = entry.GroupId is null ? null : groupName ?? Text(entry.Details, "name") ?? _texts["Events.TheGroup"];
         if (group is not null && GroupText(entry, relayName, group) is { } text)
         {
-            return new EventView(isPerson, badge, who, text.What, text.Target, text.IsAlert);
+            return new EventView(isPerson, badge, who, text.Line, text.Target, text.IsAlert);
         }
 
         // A group's schedule names the group where a relay's names the relay.
-        var (what, target) = WhatFor(entry, relayName ?? group);
+        var (line, target) = LineFor(entry, relayName ?? group);
 
         // In red, like a safety shut-off: a board whose inputs may switch relays past the app.
-        return new EventView(isPerson, badge, who, what, target, IsAlert: entry.Action == EventActions.BoardRelayModesNotReset);
+        return new EventView(isPerson, badge, who, line, target, IsAlert: entry.Action == EventActions.BoardRelayModesNotReset);
     }
 
     // "Door: Open". An input that is on is closed. Without its name (an input no longer on the board): "An input: Closed".
     // One the app only noticed after a gap has its time marked unknown.
-    private static EventView InputChange(EventLogEntry entry, string? inputName)
+    private EventView InputChange(EventLogEntry entry, string? inputName)
     {
         var name = inputName ?? Input.Unknown;
-        return new EventView(false, "I", $"{name}:", Input.StateText(Bool(entry.Details, "on") == true), null, TimeUnknown: InputNoticed(entry.Details));
+        return new EventView(false, "I", $"{name}:", Line("Events.Input", Input.StateText(Bool(entry.Details, "on") == true)), null, TimeUnknown: InputNoticed(entry.Details));
     }
 
     // An update from Settings: "John started the update to 2026.11.20", "Contactor updated to 2026.11.20", the red
     // "Contactor went back to 2026.11.14: the update to 2026.11.20 didn't work", with its log. Null for other events.
-    private static EventView? Update(EventLogEntry entry)
+    private EventView? Update(EventLogEntry entry)
     {
-        var to = Text(entry.Details, "to") ?? "a new version";
+        var to = Text(entry.Details, "to") ?? _texts["Events.Update.NewVersion"];
         var log = Text(entry.Details, "id") is { } id && Updates.HelperStatus.IsId(id) ? Updates.UpdateEndpoints.LogLink(id) : null;
-        var (what, alert) = entry.Action switch
+        var (line, alert) = entry.Action switch
         {
-            EventActions.UpdateRequested => ($"started the update to {to}", false),
-            EventActions.UpdateDone => ($"updated to {to}", false),
-            EventActions.UpdateWentBack => ($"went back to {Text(entry.Details, "from") ?? "the version before"}: the update to {to} didn't work", true),
-            EventActions.UpdateCurrent => ($"found nothing newer than {Text(entry.Details, "from") ?? "the version it runs"} to download", false),
-            EventActions.UpdateFailed when Text(entry.Details, "reason") == Updates.UpdateReasons.Cancelled => ($"didn't update to {to}: the update was cancelled", false),
-            EventActions.UpdateFailed when Text(entry.Details, "reason") == Updates.UpdateReasons.Switching => ($"didn't update to {to}: the relays were still switching. Nothing was changed", false),
-            EventActions.UpdateFailed => ($"didn't update to {to}: {FailedBecause(Text(entry.Details, "reason"))}. Nothing was changed", true),
+            EventActions.UpdateRequested => (Line("Events.Update.Requested", to), false),
+            EventActions.UpdateDone => (Line("Events.Update.Done", to), false),
+            EventActions.UpdateWentBack => (Line("Events.Update.WentBack", Text(entry.Details, "from") ?? _texts["Events.Update.VersionBefore"], to), true),
+            EventActions.UpdateCurrent => (Line("Events.Update.Current", Text(entry.Details, "from") ?? _texts["Events.Update.VersionItRuns"]), false),
+            EventActions.UpdateFailed when Text(entry.Details, "reason") == Updates.UpdateReasons.Cancelled => (Line("Events.Update.Cancelled", to), false),
+            EventActions.UpdateFailed when Text(entry.Details, "reason") == Updates.UpdateReasons.Switching => (Line("Events.Update.Switching", to), false),
+            EventActions.UpdateFailed => (Line("Events.Update.Failed", to, FailedBecause(Text(entry.Details, "reason"))), true),
             _ => ((string?)null, false),
         };
-        return what is null ? null : new EventView(false, "A", "", what, null, alert, Log: entry.Action == EventActions.UpdateRequested ? null : log);
+        return line is null ? null : new EventView(false, "A", "", line, null, alert, Log: entry.Action == EventActions.UpdateRequested ? null : log);
     }
 
-    private static string FailedBecause(string? reason)
+    private string FailedBecause(string? reason)
     {
         return reason switch
         {
-            Updates.UpdateReasons.Download => "it couldn't be downloaded",
-            Updates.UpdateReasons.Signature => "it didn't pass the check that it's ours",
-            Updates.UpdateReasons.Space => "there wasn't enough room",
-            Updates.UpdateReasons.Backup => "the database couldn't be backed up",
-            Updates.UpdateReasons.Interrupted => "it was interrupted",
-            _ => "it didn't start",
+            Updates.UpdateReasons.Download => _texts["Events.Update.Because.Download"],
+            Updates.UpdateReasons.Signature => _texts["Events.Update.Because.Signature"],
+            Updates.UpdateReasons.Space => _texts["Events.Update.Because.Space"],
+            Updates.UpdateReasons.Backup => _texts["Events.Update.Because.Backup"],
+            Updates.UpdateReasons.Interrupted => _texts["Events.Update.Because.Interrupted"],
+            _ => _texts["Events.Update.Because.Other"],
         };
     }
 
-    // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan keeps running
-    // for 5 min", the red "Safety shut-off: Heat turned off because Fan was off". A relay of a group switched on its own is an
-    // ordinary on/off and returns null.
-    private static (string What, string? Target, bool IsAlert)? GroupText(EventLogEntry entry, string? relayName, string groupName)
+    // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on: Fan for 5 min",
+    // the red "Safety shut-off: Heat turned off, with Fan off". A step's name may be plural ("Fans"), so no verb agrees
+    // with it. A relay of a group switched on its own is an ordinary on/off and returns null.
+    private (string Line, string? Target, bool IsAlert)? GroupText(EventLogEntry entry, string? relayName, string groupName)
     {
-        var role = Text(entry.Details, "role") ?? relayName ?? "the relay";
+        var role = Text(entry.Details, "role") ?? relayName ?? _texts["Events.TheRelay"];
         return entry.Action switch
         {
-            EventActions.GroupOn => ("turned on the group", Chain(entry.Details) is { } chain ? $"{groupName} · {chain}" : groupName, false),
-            EventActions.GroupOff when entry.Actor == EventActors.AutoOff => ($"turned off the group after {Duration(Number(entry.Details, "afterMinutes"))}", groupName, false),
-            EventActions.GroupOff => ("turned off the group", groupName, false),
-            EventActions.RunOnStart => ($"{role} keeps running for {Seconds(Number(entry.Details, "seconds"))}", groupName, false),
-            EventActions.RunOnEnd => ($"{role} off", groupName, false),
-            EventActions.InterlockTrip => (TripText(entry.Details), groupName, true),
-            EventActions.GroupStartFailed => ($"couldn't start {Text(entry.Details, "role") ?? role}", groupName, true),
-            EventActions.GroupCreate => ("created the group", groupName, false),
-            EventActions.GroupEdit => ("changed the group", groupName, false),
-            EventActions.GroupDelete => ("deleted the group", groupName, false),
+            EventActions.GroupOn => (Line("Events.Group.On"), Chain(entry.Details) is { } chain ? _texts["Events.Group.Target", groupName, chain] : groupName, false),
+            EventActions.GroupOff when entry.Actor == EventActors.AutoOff => (Line("Events.Group.OffAfter", Duration(Number(entry.Details, "afterMinutes"))), groupName, false),
+            EventActions.GroupOff => (Line("Events.Group.Off"), groupName, false),
+            EventActions.RunOnStart => (Line("Events.Group.RunOnStart", role, Seconds(Number(entry.Details, "seconds"))), groupName, false),
+            EventActions.RunOnEnd => (Line("Events.Group.RunOnEnd", role), groupName, false),
+            EventActions.InterlockTrip => (TripLine(entry.Details), groupName, true),
+            EventActions.GroupStartFailed => (Line("Events.Group.StartFailed", Text(entry.Details, "role") ?? role), groupName, true),
+            EventActions.GroupCreate => (Line("Events.Group.Create"), groupName, false),
+            EventActions.GroupEdit => (Line("Events.Group.Edit"), groupName, false),
+            EventActions.GroupDelete => (Line("Events.Group.Delete"), groupName, false),
             _ => null,
         };
     }
 
-    // "Heat turned off because Fan was off", from {"missing":"Fan","off":["Heat"]}.
-    private static string TripText(string? details)
+    // "Heat turned off, with Fan off", from {"missing":"Fan","off":["Heat"]}.
+    private string TripLine(string? details)
     {
-        var missing = Text(details, "missing") ?? "the relay above";
+        var missing = Text(details, "missing") ?? _texts["Events.TheRelayAbove"];
         var off = Read(details, "off") is { ValueKind: JsonValueKind.Array } array
             ? array.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToList()
             : [];
         return off.Count == 0
-            ? $"{missing} was started"
-            : $"{string.Join(" and ", off)} turned off because {missing} was off";
+            ? Line("Events.Group.TripStarted", missing)
+            : Line("Events.Group.Trip", string.Join(_texts["Events.List.And"], off), missing);
     }
 
     // "Fan → 3 s → Heat", from {"steps":["Fan","Heat"],"delays":[3]}.
-    private static string? Chain(string? details)
+    private string? Chain(string? details)
     {
         if (Read(details, "steps") is not { ValueKind: JsonValueKind.Array } steps)
         {
@@ -179,14 +201,25 @@ public static class EventText
     }
 
     /// <summary>"30 s", "1 min 30 s", "5 min", "2 h" or "90 min": the same format as a countdown.</summary>
-    public static string Seconds(int? seconds)
+    public string Seconds(int? seconds)
     {
         return seconds switch
         {
-            null or < 0 => "a while",
-            < 60 => $"{seconds} s",
+            null or < 0 => _texts["Events.Length.AWhile"],
+            < 60 => _texts["Events.Length.Seconds", seconds],
             _ when seconds % 60 == 0 => Duration(seconds / 60),
-            _ => $"{seconds / 60} min {seconds % 60} s",
+            _ => _texts["Events.Length.MinutesSeconds", seconds / 60, seconds % 60],
+        };
+    }
+
+    /// <summary>"2 h" for whole hours, otherwise "90 min".</summary>
+    public string Duration(int? minutes)
+    {
+        return minutes switch
+        {
+            null or <= 0 => _texts["Events.Length.AWhile"],
+            _ when minutes % 60 == 0 => _texts["Events.Length.Hours", minutes / 60],
+            _ => _texts["Events.Length.Minutes", minutes],
         };
     }
 
@@ -198,15 +231,15 @@ public static class EventText
     }
 
     /// <summary>The short form for the relay screen's status line, e.g. "Off since 12:15 · schedule".</summary>
-    public static string ShortWho(string actor, string? personName)
+    public string ShortWho(string actor, string? personName)
     {
         ArgumentNullException.ThrowIfNull(actor);
         return actor switch
         {
-            EventActors.Schedule => "schedule",
-            EventActors.AutoOff => "auto-off",
-            EventActors.External => "outside the app",
-            EventActors.System => "the system",
+            EventActors.Schedule => _texts["Events.Short.Schedule"],
+            EventActors.AutoOff => _texts["Events.Short.AutoOff"],
+            EventActors.External => _texts["Events.Short.Outside"],
+            EventActors.System => _texts["Events.Short.System"],
             _ when EventActors.TryInput(actor, out _) => personName ?? Input.Unknown,
             _ => personName ?? actor,
         };
@@ -224,58 +257,58 @@ public static class EventText
             or EventActions.BoardRelayModesNotReset;
     }
 
-    private static string WhoFor(EventLogEntry entry)
+    private string WhoFor(EventLogEntry entry)
     {
         return entry.Action switch
         {
-            EventActions.RunOnStart => "Run-on:",
-            EventActions.RunOnEnd => "Run-on done:",
-            EventActions.InterlockTrip => "Safety shut-off:",
-            EventActions.GroupStartFailed => "The group",
+            EventActions.RunOnStart => _texts["Events.Who.RunOn"],
+            EventActions.RunOnEnd => _texts["Events.Who.RunOnDone"],
+            EventActions.InterlockTrip => _texts["Events.Who.SafetyShutOff"],
+            EventActions.GroupStartFailed => _texts["Events.Who.TheGroup"],
             _ => entry.Actor switch
             {
-                EventActors.Schedule => "Schedule",
-                EventActors.AutoOff => "Auto-off",
-                EventActors.External => "Outside the app",
-                _ => "System",
+                EventActors.Schedule => _texts["Events.Who.Schedule"],
+                EventActors.AutoOff => _texts["Events.Who.AutoOff"],
+                EventActors.External => _texts["Events.Who.Outside"],
+                _ => _texts["Events.Who.System"],
             },
         };
     }
 
-    private static (string What, string? Target) WhatFor(EventLogEntry entry, string? relayName)
+    private (string Line, string? Target) LineFor(EventLogEntry entry, string? relayName)
     {
         return entry.Action switch
         {
-            EventActions.On => ("turned on", relayName),
-            EventActions.Off when entry.Actor == EventActors.AutoOff => ($"turned off after {Duration(Number(entry.Details, "afterMinutes"))}", relayName),
-            EventActions.Off => ("turned off", relayName),
-            EventActions.Pulse => ($"tried for {PulseLength(Number(entry.Details, "milliseconds"))}", relayName),
-            EventActions.Rename => ($"renamed {Text(entry.Details, "from") ?? relayName} to", Text(entry.Details, "to") ?? relayName),
-            EventActions.Activate => ("made the relay active", relayName),
-            EventActions.Deactivate => ("made the relay inactive", relayName),
-            EventActions.ScheduleAdd => (WithSchedule("added schedule", "added a schedule", entry.Details), relayName),
-            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is false => (WithSchedule("paused schedule", "paused a schedule", entry.Details), relayName),
-            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is true => (WithSchedule("resumed schedule", "resumed a schedule", entry.Details), relayName),
-            EventActions.ScheduleEdit => (WithSchedule("changed schedule to", "changed a schedule", entry.Details), relayName),
-            EventActions.ScheduleDelete => (WithSchedule("deleted schedule", "deleted a schedule", entry.Details), relayName),
-            EventActions.ConnectionLost => ("lost contact with the app", null),
-            EventActions.ConnectionRestored => ("reconnected", null),
-            EventActions.BoardTimersDisabled => ("had its own timers turned off", null),
-            EventActions.BoardRelayModesReset => ("had its relays set to normal mode, so its inputs don't switch them", null),
-            EventActions.BoardRelayModesNotReset => ("couldn't have its relays set to normal mode, so its inputs may switch them", null),
-            EventActions.BoardLoginChanged => ("changed the relay board's login", null),
+            EventActions.On => (Line("Events.On"), relayName),
+            EventActions.Off when entry.Actor == EventActors.AutoOff => (Line("Events.OffAfter", Duration(Number(entry.Details, "afterMinutes"))), relayName),
+            EventActions.Off => (Line("Events.Off"), relayName),
+            EventActions.Pulse => (Line("Events.Pulse", PulseLength(Number(entry.Details, "milliseconds"))), relayName),
+            EventActions.Rename => (Line("Events.Rename", Text(entry.Details, "from") ?? relayName ?? ""), Text(entry.Details, "to") ?? relayName),
+            EventActions.Activate => (Line("Events.Activate"), relayName),
+            EventActions.Deactivate => (Line("Events.Deactivate"), relayName),
+            EventActions.ScheduleAdd => (WithSchedule("Events.Schedule.Added", "Events.Schedule.AddedOne", entry.Details), relayName),
+            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is false => (WithSchedule("Events.Schedule.Paused", "Events.Schedule.PausedOne", entry.Details), relayName),
+            EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is true => (WithSchedule("Events.Schedule.Resumed", "Events.Schedule.ResumedOne", entry.Details), relayName),
+            EventActions.ScheduleEdit => (WithSchedule("Events.Schedule.Changed", "Events.Schedule.ChangedOne", entry.Details), relayName),
+            EventActions.ScheduleDelete => (WithSchedule("Events.Schedule.Deleted", "Events.Schedule.DeletedOne", entry.Details), relayName),
+            EventActions.ConnectionLost => (Line("Events.Board.Lost"), null),
+            EventActions.ConnectionRestored => (Line("Events.Board.Restored"), null),
+            EventActions.BoardTimersDisabled => (Line("Events.Board.TimersOff"), null),
+            EventActions.BoardRelayModesReset => (Line("Events.Board.ModesReset"), null),
+            EventActions.BoardRelayModesNotReset => (Line("Events.Board.ModesNotReset"), null),
+            EventActions.BoardLoginChanged => (Line("Events.Board.Login"), null),
             EventActions.BoardRenamed => Text(entry.Details, "from") is { } oldName
-                ? ($"renamed the relay board from {oldName} to {Text(entry.Details, "to") ?? "?"}", null)
-                : ($"renamed the relay board to {Text(entry.Details, "to") ?? "?"}", null),
+                ? (Line("Events.Board.RenamedFrom", oldName, Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null)
+                : (Line("Events.Board.Renamed", Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null),
             EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from
-                ? ($"changed the relay board's address from {from} to {Text(entry.Details, "to") ?? "?"}", null)
-                : ($"set the relay board's address to {Text(entry.Details, "to") ?? "?"}", null),
-            _ => (entry.Action, relayName),
+                ? (Line("Events.Board.AddressFrom", from, Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null)
+                : (Line("Events.Board.Address", Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null),
+            _ => (Line("Events.Other", entry.Action), relayName),
         };
     }
 
     // "added schedule Mon–Fri 06:30–08:00", or the plain words when the details can't be read.
-    private static string WithSchedule(string words, string fallback, string? details)
+    private string WithSchedule(string key, string fallbackKey, string? details)
     {
         var days = Number(details, "days");
         var on = Text(details, "on");
@@ -284,21 +317,18 @@ public static class EventText
             || !TimeOnly.TryParseExact(on, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var onTime)
             || !TimeOnly.TryParseExact(off, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var offTime))
         {
-            return fallback;
+            return Line(fallbackKey);
         }
 
-        return $"{words} {ScheduleText.Inline((ScheduleDays)days.Value, onTime, offTime)}";
+        return Line(key, _schedules.Inline((ScheduleDays)days.Value, onTime, offTime));
     }
 
-    /// <summary>"2 h" for whole hours, otherwise "90 min".</summary>
-    public static string Duration(int? minutes)
+    // The line of an event: the text of key with "{0}" kept where the name goes, and the values after it. A value's own
+    // braces are doubled, so a name like "{0}" never becomes a place for the name.
+    private string Line(string key, params string[] values)
     {
-        return minutes switch
-        {
-            null or <= 0 => "a while",
-            _ when minutes % 60 == 0 => $"{minutes / 60} h",
-            _ => $"{minutes} min",
-        };
+        object[] arguments = ["{0}", .. values.Select(v => v.Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal))];
+        return _texts[key, arguments];
     }
 
     /// <summary>When a "pulse" event's pulse ended: the board turned the relay off by itself then.</summary>
@@ -311,13 +341,13 @@ public static class EventText
     }
 
     // As Seconds, and "0.5 s" for a pulse that isn't whole seconds.
-    private static string PulseLength(int? milliseconds)
+    private string PulseLength(int? milliseconds)
     {
         return milliseconds switch
         {
-            null or <= 0 => "a moment",
+            null or <= 0 => _texts["Events.Length.AMoment"],
             _ when milliseconds % 1000 == 0 => Seconds(milliseconds / 1000),
-            _ => string.Create(CultureInfo.InvariantCulture, $"{milliseconds.Value / 1000.0:0.#} s"),
+            _ => _texts["Events.Length.Seconds", (milliseconds.Value / 1000.0).ToString("0.#", CultureInfo.CurrentCulture)],
         };
     }
 

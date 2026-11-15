@@ -22,7 +22,7 @@ public sealed class GroupTextTests
     [Fact]
     public void Should_TellWhoStartedTheGroup_AndInWhatOrder()
     {
-        var view = EventText.For(
+        var view = TestTexts.Events.For(
             Entry("john@example.com", EventActions.GroupOn, """{"steps":["Fan","Heat"],"delays":[3]}"""),
             relayName: null,
             personName: "John",
@@ -32,14 +32,14 @@ public sealed class GroupTextTests
     }
 
     [Theory]
-    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on:", "Fan keeps running for 5 min")]
+    [InlineData(EventActions.RunOnStart, """{"seconds":300,"role":"Fan"}""", "Run-on:", "Fan for 5 min")]
     [InlineData(EventActions.RunOnEnd, """{"role":"Fan"}""", "Run-on done:", "Fan off")]
     [InlineData(EventActions.GroupOff, """{"afterMinutes":120}""", "Auto-off", "turned off the group after 2 h")]
     public void Should_DescribeWhatTheGroupDidByItself(string action, string details, string who, string what)
     {
         var actor = action == EventActions.GroupOff ? EventActors.AutoOff : EventActors.System;
 
-        var view = EventText.For(Entry(actor, action, details), "Relay 1", null, "Fan heater");
+        var view = TestTexts.Events.For(Entry(actor, action, details), "Relay 1", null, "Fan heater");
 
         Assert.Equal((who, what, "Fan heater", "A"), (view.Who, view.What, view.Target, view.Badge));
         Assert.False(view.IsAlert);
@@ -48,19 +48,41 @@ public sealed class GroupTextTests
     [Fact]
     public void Should_ShowASafetyShutOffInRed()
     {
-        var view = EventText.For(
+        var view = TestTexts.Events.For(
             Entry(EventActors.System, EventActions.InterlockTrip, """{"missing":"Fan","off":["Heat"]}"""),
             "Relay 1",
             null,
             "Fan heater");
 
-        Assert.Equal(("Safety shut-off:", "Heat turned off because Fan was off", true), (view.Who, view.What, view.IsAlert));
+        Assert.Equal(("Safety shut-off:", "Heat turned off, with Fan off", true), (view.Who, view.What, view.IsAlert));
+    }
+
+    // A step's name may be plural ("Fans", Issue #326): no verb in the line agrees with it.
+    [Theory]
+    [InlineData(EventActions.RunOnStart, """{"seconds":180,"role":"Fans"}""", "Run-on: Fans for 3 min")]
+    [InlineData(EventActions.RunOnEnd, """{"role":"Fans"}""", "Run-on done: Fans off")]
+    [InlineData(EventActions.InterlockTrip, """{"missing":"Fans","off":["Heaters","Lamp"]}""", "Safety shut-off: Heaters and Lamp turned off, with Fans off")]
+    [InlineData(EventActions.InterlockTrip, """{"missing":"Fans","off":[]}""", "Safety shut-off: Fans turned on")]
+    public void Should_ReadRight_ForAPluralStepName(string action, string details, string text)
+    {
+        var view = TestTexts.Events.For(Entry(EventActors.System, action, details), "Relay 1", null, "Fan heater");
+
+        Assert.Equal(text, view.Text);
+    }
+
+    [Fact]
+    public void Should_KeepANamesBraces_OutOfTheLinesPlaceholders()
+    {
+        var view = TestTexts.Events.For(Entry("john@example.com", EventActions.Rename, """{"from":"{0} {1}","to":"Lamp"}"""), "Lamp", "{0}");
+
+        Assert.Equal("{0} renamed {0} {1} to", view.Text);
+        Assert.Equal(("renamed {0} {1} to", "Lamp"), (view.What, view.Target));
     }
 
     [Fact]
     public void Should_ShowAStartThatFailedInRed()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.GroupStartFailed, """{"step":2,"role":"Heat"}"""), "Relay 2", null, "Fan heater");
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.GroupStartFailed, """{"step":2,"role":"Heat"}"""), "Relay 2", null, "Fan heater");
 
         Assert.Equal(("The group", "couldn't start Heat", true), (view.Who, view.What, view.IsAlert));
     }
@@ -68,7 +90,7 @@ public sealed class GroupTextTests
     [Fact]
     public void Should_NameADeletedGroup_FromItsEvent()
     {
-        var view = EventText.For(Entry("john@example.com", EventActions.GroupDelete, """{"name":"Painting"}"""), null, "John", groupName: null);
+        var view = TestTexts.Events.For(Entry("john@example.com", EventActions.GroupDelete, """{"name":"Painting"}"""), null, "John", groupName: null);
 
         Assert.Equal(("deleted the group", "Painting"), (view.What, view.Target));
     }
@@ -76,15 +98,15 @@ public sealed class GroupTextTests
     [Fact]
     public void Should_ReadMalformedDetailsWithoutFailing()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.InterlockTrip, "{not json"), null, null, "Fan heater");
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.InterlockTrip, "{not json"), null, null, "Fan heater");
 
-        Assert.Equal("the relay above was started", view.What);
+        Assert.Equal("the relay above turned on", view.What);
     }
 
     [Fact]
     public void Should_ShowAPlainOnForARelayOfAGroup()
     {
-        var view = EventText.For(Entry("john@example.com", EventActions.On, null), "Relay 1", "John", "Fan heater");
+        var view = TestTexts.Events.For(Entry("john@example.com", EventActions.On, null), "Relay 1", "John", "Fan heater");
 
         Assert.Equal(("turned on", "Relay 1"), (view.What, view.Target));
     }
@@ -186,7 +208,7 @@ public sealed class GroupTextTests
     [InlineData(-1, "a while")]
     public void Should_WriteSecondsForPeople(int seconds, string expected)
     {
-        Assert.Equal(expected, EventText.Seconds(seconds));
+        Assert.Equal(expected, TestTexts.Events.Seconds(seconds));
     }
 
     [Fact]
@@ -219,7 +241,7 @@ public sealed class GroupTextTests
     [InlineData(7200, "2 h")]
     public void Should_CountDownTheTimeLeft(double seconds, string expected)
     {
-        Assert.Equal(expected, GroupStatusText.Remaining(TimeSpan.FromSeconds(seconds)));
+        Assert.Equal(expected, TestTexts.GroupStatus.Remaining(TimeSpan.FromSeconds(seconds)));
     }
 
     [Fact]

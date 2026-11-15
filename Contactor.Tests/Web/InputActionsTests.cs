@@ -373,12 +373,12 @@ public sealed class InputActionsTests
     [Fact]
     public void Should_NameTheInput_InEvents()
     {
-        var groupOff = EventText.For(new EventLogEntry { Actor = Door, Action = EventActions.GroupOff, GroupId = 1 }, null, "Door", "Fan heater");
-        var on = EventText.For(new EventLogEntry { Actor = Door, Action = EventActions.On, RelayId = 4 }, "Lighting", null);
+        var groupOff = TestTexts.Events.For(new EventLogEntry { Actor = Door, Action = EventActions.GroupOff, GroupId = 1 }, null, "Door", "Fan heater");
+        var on = TestTexts.Events.For(new EventLogEntry { Actor = Door, Action = EventActions.On, RelayId = 4 }, "Lighting", null);
 
-        Assert.Equal(new EventView(false, "I", "Door", "turned off the group", "Fan heater"), groupOff);
-        Assert.Equal(new EventView(false, "I", "An input", "turned on", "Lighting"), on);
-        Assert.Equal("Door", EventText.ShortWho(Door, "Door"));
+        Assert.Equal(new EventView(false, "I", "Door", "{0} turned off the group", "Fan heater"), groupOff);
+        Assert.Equal(new EventView(false, "I", "An input", "{0} turned on", "Lighting"), on);
+        Assert.Equal("Door", TestTexts.Events.ShortWho(Door, "Door"));
     }
 
     [Theory]

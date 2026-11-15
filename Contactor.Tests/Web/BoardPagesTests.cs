@@ -110,7 +110,7 @@ public sealed class BoardPagesTests
         await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
         var entry = Assert.Single(await db.EventLog.AsNoTracking().Where(e => e.Action == EventActions.BoardRenamed).ToListAsync(Cancel));
         Assert.Equal((boards.BarnId, (int?)null, John), (entry.BoardId!.Value, entry.RelayId, entry.Actor));
-        Assert.Equal("renamed the relay board from Barn to Garage", Contactor.Web.Features.Events.EventText.For(entry, null, "John").What);
+        Assert.Equal("renamed the relay board from Barn to Garage", TestTexts.Events.For(entry, null, "John").What);
     }
 
     // "Remove Barn" only asks, listing what goes; Cancel changes nothing; "Remove" turns its relays off, removes it and

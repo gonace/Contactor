@@ -1,4 +1,6 @@
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Schedules;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Contactor.Web.Features.Events;
 
@@ -11,6 +13,10 @@ public static class EventsServiceCollectionExtensions
         services.AddSingleton<BoardEventRecorder>();
         services.AddSingleton<IBoardWatcher>(sp => sp.GetRequiredService<BoardEventRecorder>());
         services.AddHostedService(sp => sp.GetRequiredService<BoardEventRecorder>());
+        // The events' words, which take a schedule's; registered with the languages too, and once is enough.
+        services.AddLocalization();
+        services.TryAddSingleton<ScheduleText>();
+        services.TryAddSingleton<EventText>();
         services.AddSingleton<EventsHandler>();
         return services;
     }

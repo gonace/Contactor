@@ -1,4 +1,5 @@
 using Contactor.Demo;
+using Contactor.Tests.Web;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Persistence;
 using Microsoft.Data.Sqlite;
@@ -106,7 +107,7 @@ public sealed class WorkshopTemplateTests : IDisposable
         var relays = await db.Relays.ToDictionaryAsync(r => r.Id, r => r.Name, Cancel);
         var texts = events.Select(e => Text(e, names, relays)).ToList();
         Assert.Contains("Alex turned on the group · Fan heater · Fan → 3 s → Heat", texts);
-        Assert.Contains("Run-on: Fan keeps running for 2 min · Fan heater", texts);
+        Assert.Contains("Run-on: Fan for 2 min · Fan heater", texts);
         Assert.Contains("Run-on done: Fan off · Fan heater", texts);
         Assert.Contains("Auto-off turned off the group after 2 h · Fan heater", texts);
         Assert.Contains(texts, t => t is "Sam turned on · Air compressor" or "Alex turned on · Air compressor");
@@ -238,13 +239,13 @@ public sealed class WorkshopTemplateTests : IDisposable
     private static string Text(EventLogEntry entry, Dictionary<string, string> names, Dictionary<int, string> relays)
     {
         var person = names.GetValueOrDefault(entry.Actor) ?? (EventActors.TryInput(entry.Actor, out _) ? "Door" : null);
-        var view = EventText.For(
+        var view = TestTexts.Events.For(
             entry,
             entry.RelayId is { } relayId ? relays[relayId] : null,
             person,
             entry.GroupId is null ? null : WorkshopTemplate.GroupName,
             entry.InputId is null ? null : "Door");
-        return view.Target is null ? $"{view.Who} {view.What}" : $"{view.Who} {view.What} · {view.Target}";
+        return view.Target is null ? view.Text : $"{view.Text} · {view.Target}";
     }
 
     private async Task<string> FilledAsync(DateTimeOffset now)
