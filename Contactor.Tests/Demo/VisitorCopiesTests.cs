@@ -58,9 +58,26 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Equal([copy.DataFolder], _database.Folders);
         Assert.Contains(copy.DataFolder, app.Environment["ConnectionStrings__Default"], StringComparison.Ordinal);
         Assert.Equal("0", app.Environment["DOTNET_gcServer"]);
-        Assert.Equal("Europe/Stockholm", app.Environment["TimeZone"]);
+        Assert.Equal("UTC", app.Environment["TimeZone"]);
         Assert.Equal(copy.Visitor, app.Visitor);
         Assert.Equal(6, copy.Visitor.Length);
+    }
+
+    [Fact]
+    public async Task Should_RunTheCopy_AndItsTemplate_InTheVisitorsTimeZone_FromItsStartToItsEnd()
+    {
+        var newYork = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var id = _copies.Visit(null).NewId!;
+        var copy = _copies.Use(id, newYork).Copy!;
+        await copy.Started;
+
+        // The frames' later requests, also from a browser that moved meanwhile, find the copy as it is.
+        Assert.Same(copy, _copies.Use(id, TimeZoneInfo.Utc).Copy);
+        Assert.Equal(TemplateResult.Applied, await _copies.ApplyTemplateAsync(id));
+
+        Assert.Equal("America/New_York", copy.TimeZone.Id);
+        Assert.All(_starter.RunsOf("app"), r => Assert.Equal("America/New_York", r.Start.Environment["TimeZone"]));
+        Assert.Equal(["America/New_York"], _database.TemplateTimeZones);
     }
 
     [Fact]
@@ -576,6 +593,22 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Empty(_database.Templates);
     }
 
+    [Fact]
+    public async Task Should_ApplyNoTemplate_ToACopyThatDidntStart()
+    {
+        var database = new GatedCopyDatabase { Fails = true };
+        await using var copies = Copies(maxVisitors: 3, database);
+        var copy = Start(copies);
+        await database.Entered.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        var applying = copies.ApplyTemplateAsync(copy.VisitorId);
+        database.Release.TrySetResult();
+
+        Assert.Equal(TemplateResult.None, await applying);
+        Assert.True(copy.Stopped.IsCompleted);
+        Assert.Empty(_starter.Runs);
+    }
+
     // A visitor as a browser is one: the page, then its frames.
     private static VisitorCopy Start(VisitorCopies copies)
     {
@@ -608,14 +641,22 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
             return "Data Source=" + Path.Combine(dataFolder, "contactor.db");
         }
 
+        /// <summary>Whether making the database fails once released.</summary>
+        public bool Fails { get; init; }
+
         public async Task PrepareAsync(string dataFolder, CancellationToken cancellationToken)
         {
             Entered.TrySetResult();
             await Release.Task;
+            if (Fails)
+            {
+                throw new IOException("disk");
+            }
+
             File.WriteAllText(Path.Combine(dataFolder, "contactor.db"), "");
         }
 
-        public Task<bool> ApplyTemplateAsync(string dataFolder, CancellationToken cancellationToken)
+        public Task<bool> ApplyTemplateAsync(string dataFolder, TimeZoneInfo timeZone, CancellationToken cancellationToken)
         {
             return Task.FromResult(true);
         }

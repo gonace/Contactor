@@ -3,7 +3,6 @@ using Contactor.Web.Features.Identity;
 using Contactor.Web.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Contactor.Demo;
 
@@ -16,10 +15,11 @@ public interface ICopyDatabase
     Task PrepareAsync(string dataFolder, CancellationToken cancellationToken);
 
     /// <summary>
-    /// "Skip setup": fills the copy's database with the Workshop template, while its app doesn't run. False, and nothing
-    /// changed, when the database isn't as a new copy has it any more (the visitor got further in the setup guide).
+    /// "Skip setup": fills the copy's database with the Workshop template, while its app doesn't run, with its days in
+    /// the copy's <paramref name="timeZone"/>. False, and nothing changed, when the database isn't as a new copy has it
+    /// any more (the visitor got further in the setup guide).
     /// </summary>
-    Task<bool> ApplyTemplateAsync(string dataFolder, CancellationToken cancellationToken);
+    Task<bool> ApplyTemplateAsync(string dataFolder, TimeZoneInfo timeZone, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -33,13 +33,10 @@ public sealed class AppCopyDatabase : ICopyDatabase
     public const string FileName = "contactor.db";
 
     private readonly TimeProvider _time;
-    private readonly TimeZoneInfo _zone;
 
-    public AppCopyDatabase(TimeProvider time, IOptions<DemoOptions> options)
+    public AppCopyDatabase(TimeProvider time)
     {
-        ArgumentNullException.ThrowIfNull(options);
         _time = time;
-        _zone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZone);
     }
 
     public string ConnectionString(string dataFolder)
@@ -58,8 +55,9 @@ public sealed class AppCopyDatabase : ICopyDatabase
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> ApplyTemplateAsync(string dataFolder, CancellationToken cancellationToken)
+    public async Task<bool> ApplyTemplateAsync(string dataFolder, TimeZoneInfo timeZone, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(timeZone);
         await using var provider = Services(dataFolder);
         var factory = provider.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using (var db = await factory.CreateDbContextAsync(cancellationToken))
@@ -70,7 +68,7 @@ public sealed class AppCopyDatabase : ICopyDatabase
             }
         }
 
-        await WorkshopTemplate.FillAsync(provider, _zone, _time.GetUtcNow().UtcDateTime, cancellationToken);
+        await WorkshopTemplate.FillAsync(provider, timeZone, _time.GetUtcNow().UtcDateTime, cancellationToken);
         return true;
     }
 

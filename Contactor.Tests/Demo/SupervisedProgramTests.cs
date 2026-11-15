@@ -143,6 +143,43 @@ public sealed class SupervisedProgramTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_LetRequestsWait_ForTheRestartedProgram_WhenRestartedOnItsFirstStart()
+    {
+        _starter.Listens = false;
+        _program.Start();
+        await Wait.UntilAsync(() => _starter.Runs.Count == 1);
+        var waiting = _program.Listening;
+
+        await _program.RestartAsync(_ => Task.CompletedTask, TestContext.Current.CancellationToken);
+        await Wait.UntilAsync(() => _starter.Runs.Count == 2);
+        Assert.False(waiting.IsCompleted);
+        _starter.Runs[1].Listen();
+
+        await Wait.UntilAsync(() => waiting.IsCompletedSuccessfully);
+    }
+
+    [Fact]
+    public async Task Should_LetRequestsWait_ForTheRestartedProgram_WhenRestartedWhileItWaitsToStartAgain()
+    {
+        _program.Start();
+        for (var run = 1; run <= SupervisedProgram.RestartsAtOnce + 1; run++)
+        {
+            await Wait.UntilAsync(() => _starter.Runs.Count == run);
+            await _program.Listening;
+            _starter.Runs[^1].Exit(0);
+        }
+
+        await Wait.UntilAsync(() => _time.Waits(TimeSpan.FromSeconds(1)));
+        var waiting = _program.Listening;
+        Assert.False(waiting.IsCompleted);
+
+        await _program.RestartAsync(_ => Task.CompletedTask, TestContext.Current.CancellationToken);
+
+        await Wait.UntilAsync(() => _starter.Runs.Count == SupervisedProgram.RestartsAtOnce + 2);
+        await Wait.UntilAsync(() => waiting.IsCompletedSuccessfully);
+    }
+
+    [Fact]
     public async Task Should_GiveUp_WhenItExitsBeforeListening_ThreeTimesInARow()
     {
         _starter.Listens = false;

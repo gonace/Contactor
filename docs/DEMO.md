@@ -101,7 +101,6 @@ The demo's limits are settings, under `environment:` of the `demo` service in `c
 | `Demo__IdleWarning` | `00:02:00` | How long the page counts down before the copy ends. |
 | `Demo__MaxLifetime` | `02:00:00` | How long a copy lasts at most. |
 | `Demo__MaxBoards` | `20` | Boards per visitor in the simulator. |
-| `Demo__TimeZone` | `Europe/Stockholm` | The copies' time zone, for their schedules and the Workshop template. |
 | `Demo__TunnelAddress` | `172.30.60.2` (in `compose.yml`) | cloudflared's address on the demo's network: only it may say that the visitor came in over HTTPS. |
 
 With more visitors, give the container more memory too (`mem_limit`, about 250 MB per visitor and 500 MB more).

@@ -96,8 +96,9 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
             {
                 _stop.Token.ThrowIfCancellationRequested();
 
-                // From now on requests wait for the next run; the one that runs now is no longer theirs.
-                Volatile.Write(ref _listening, next);
+                // From now on requests wait for the next run; the one that runs now is no longer theirs. Requests that
+                // already wait (on its first start, or while it waits to start again) wait for the next run too.
+                WaitForNext(Interlocked.Exchange(ref _listening, next), next);
                 loop = _loop;
                 run = _run;
             }
@@ -110,14 +111,7 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
             await loop;
 
             // A run that exited by itself just before gave requests one of its own to wait for: they wait for the next too.
-            if (Interlocked.Exchange(ref _listening, next) is var other && other != next)
-            {
-                _ = next.Task.ContinueWith(
-                    t => _ = t.IsCompletedSuccessfully ? other.TrySetResult() : other.TrySetCanceled(CancellationToken.None),
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
-            }
+            WaitForNext(Interlocked.Exchange(ref _listening, next), next);
 
             try
             {
@@ -278,6 +272,21 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
                 Volatile.Write(ref _listening, stopped);
             }
         }
+    }
+
+    // Completes `waiting` as `next` completes, unless it is `next` itself or already complete.
+    private static void WaitForNext(TaskCompletionSource waiting, TaskCompletionSource next)
+    {
+        if (waiting == next || waiting.Task.IsCompleted)
+        {
+            return;
+        }
+
+        _ = next.Task.ContinueWith(
+            t => _ = t.IsCompletedSuccessfully ? waiting.TrySetResult() : waiting.TrySetCanceled(CancellationToken.None),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private void GiveUp(Exception exception)

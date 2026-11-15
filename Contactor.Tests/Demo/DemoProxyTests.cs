@@ -47,9 +47,19 @@ public sealed class DemoProxyTests : IAsyncDisposable
         var html = await response.Content.ReadAsStringAsync(Cancel);
         Assert.Contains("<iframe class=\"frame-simulator\" title=\"Simulator\" src=\"/demo/simulator/\"></iframe>", html, StringComparison.Ordinal);
         Assert.Contains("<iframe class=\"frame-app\" title=\"Contactor\" src=\"/?demo-frame\" inert></iframe>", html, StringComparison.Ordinal);
+
+        // With the script, the frames load once it has sent the time zone, under "Getting your demo ready"; without it,
+        // the ones in <noscript> above load at once, and the waiting screen doesn't show.
+        Assert.Contains("<iframe class=\"frame-simulator\" title=\"Simulator\" data-src=\"/demo/simulator/\"></iframe>", html, StringComparison.Ordinal);
+        Assert.Contains("<iframe class=\"frame-app\" title=\"Contactor\" data-src=\"/?demo-frame\" inert></iframe>", html, StringComparison.Ordinal);
+        Assert.Matches("<noscript>\\s*<iframe class=\"frame-simulator\"", html);
+        Assert.Contains("<noscript><style>.waiting, .demo-frames > iframe { display: none !important; } .demo-frames noscript { display: contents; }</style></noscript>", html, StringComparison.Ordinal);
+        Assert.Contains("<div class=\"waiting\" id=\"demo-waiting\" role=\"status\" aria-live=\"polite\">", html, StringComparison.Ordinal);
+        Assert.Contains("<h2 id=\"demo-waiting-title\">Getting your demo ready</h2>", html, StringComparison.Ordinal);
+        Assert.Contains($"data-zone-cookie=\"{VisitorTimeZone.CookieName}\"", html, StringComparison.Ordinal);
         Assert.Contains("reset when you're done", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Nobody else", html, StringComparison.Ordinal);
-        Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\" data-activity=\"/demo/activity\" data-timeout=\"/demo/timeout\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\" data-start=\"135\" data-activity=\"/demo/activity\" data-timeout=\"/demo/timeout\"", html, StringComparison.Ordinal);
         Assert.Matches("<script src=\"/demo/demo.js\\?v=[0-9a-f]{12}\" defer></script>", html);
         Assert.Contains("role=\"alertdialog\"", html, StringComparison.Ordinal);
         Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
@@ -71,6 +81,40 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Equal($"app {VisitorCookie.ForLog(id)} /?demo-frame cookie=[]", app);
         Assert.Equal(1, Copies.Count);
         Assert.Equal(2, Echo.Started.Count);
+    }
+
+    [Theory]
+    [InlineData("America%2FNew_York", "America/New_York")]
+    [InlineData("..%2F..%2Fetc%2Fpasswd", "UTC")]
+    [InlineData(null, "UTC")]
+    public async Task Should_StartTheCopy_InTheTimeZoneThePageSent(string? cookie, string timeZone)
+    {
+        var client = await StartAsync();
+        var id = await PageAsync(client);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/?demo-frame");
+        request.Headers.Add("Cookie", $"{VisitorCookie.Name}={id}" + (cookie is null ? "" : $"; {VisitorTimeZone.CookieName}={cookie}"));
+
+        using var response = await client.SendAsync(request, Cancel);
+
+        // Only the copy's start reads it; the app never gets the cookie.
+        Assert.Equal($"app {VisitorCookie.ForLog(id)} /?demo-frame cookie=[]", await response.Content.ReadAsStringAsync(Cancel));
+        Assert.Equal(timeZone, Echo.Started.Single(s => s.Name == "app").Environment["TimeZone"]);
+    }
+
+    [Fact]
+    public async Task Should_SayTheCopyDidntStart_InTheFrame_WhenItFailedToStart()
+    {
+        var client = await StartAsync();
+        Database.Fails = true;
+        var id = await PageAsync(client);
+        using var request = Get("/?demo-frame", id);
+        request.Headers.Add("Sec-Fetch-Dest", "iframe");
+
+        using var response = await client.SendAsync(request, Cancel);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Contains("Your copy of the demo didn't start", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Empty(Echo.Started);
     }
 
     [Fact]

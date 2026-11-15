@@ -1,5 +1,4 @@
 using System.Net;
-using Contactor.Web;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Demo;
@@ -53,12 +52,6 @@ public sealed class DemoOptions
 
     /// <summary>How long the app or the simulator may take to start listening before the copy is given up.</summary>
     public TimeSpan StartTimeout { get; set; } = TimeSpan.FromSeconds(60);
-
-    /// <summary>
-    /// The copies' time zone (the app's <c>TimeZone</c> setting): their schedules run in it, and the Workshop template's
-    /// days are in it.
-    /// </summary>
-    public string TimeZone { get; set; } = LocalClock.DefaultTimeZone;
 
     /// <summary>
     /// The address the tunnel (cloudflared) connects to the demo from, its own address on the demo's network. Only a
@@ -146,35 +139,12 @@ public sealed class DemoOptionsValidation : IValidateOptions<DemoOptions>
             errors.Add("Demo:StartTimeout is from 00:00:01 to 00:10:00.");
         }
 
-        if (!IsTimeZone(options.TimeZone))
-        {
-            errors.Add($"Demo:TimeZone isn't a time zone this machine knows, e.g. {LocalClock.DefaultTimeZone}.");
-        }
-
         if (!string.IsNullOrWhiteSpace(options.TunnelAddress) && !IPAddress.TryParse(options.TunnelAddress, out _))
         {
             errors.Add("Demo:TunnelAddress is empty or an IP address, e.g. 172.30.60.2.");
         }
 
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
-    }
-
-    private static bool IsTimeZone(string? id)
-    {
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            return false;
-        }
-
-        try
-        {
-            TimeZoneInfo.FindSystemTimeZoneById(id);
-            return true;
-        }
-        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
-        {
-            return false;
-        }
     }
 
     private static void CheckProgram(List<string> errors, string setting, string path)

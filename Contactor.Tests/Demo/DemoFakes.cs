@@ -120,7 +120,7 @@ internal sealed class FakeCopyDatabase : ICopyDatabase
 {
     private readonly Lock _lock = new();
     private readonly List<string> _folders = [];
-    private readonly List<string> _templates = [];
+    private readonly List<(string Folder, string TimeZone)> _templates = [];
 
     /// <summary>What applying the template says: false as for a database the visitor took further.</summary>
     public bool Applies { get; set; } = true;
@@ -128,13 +128,26 @@ internal sealed class FakeCopyDatabase : ICopyDatabase
     /// <summary>Called while the template is applied, e.g. to see that the app doesn't run, with its cancellation.</summary>
     public Func<CancellationToken, Task>? WhileApplying { get; set; }
 
+    /// <summary>The data folders the template was applied to.</summary>
     public IReadOnlyList<string> Templates
     {
         get
         {
             lock (_lock)
             {
-                return [.. _templates];
+                return [.. _templates.Select(t => t.Folder)];
+            }
+        }
+    }
+
+    /// <summary>The time zones the template's days were in, by data folder.</summary>
+    public IReadOnlyList<string> TemplateTimeZones
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _templates.Select(t => t.TimeZone)];
             }
         }
     }
@@ -155,8 +168,16 @@ internal sealed class FakeCopyDatabase : ICopyDatabase
         return "Data Source=" + Path.Combine(dataFolder, "contactor.db");
     }
 
+    /// <summary>Whether making a database fails, as on a full disk.</summary>
+    public bool Fails { get; set; }
+
     public Task PrepareAsync(string dataFolder, CancellationToken cancellationToken)
     {
+        if (Fails)
+        {
+            throw new IOException("disk");
+        }
+
         lock (_lock)
         {
             _folders.Add(dataFolder);
@@ -166,7 +187,7 @@ internal sealed class FakeCopyDatabase : ICopyDatabase
         return Task.CompletedTask;
     }
 
-    public async Task<bool> ApplyTemplateAsync(string dataFolder, CancellationToken cancellationToken)
+    public async Task<bool> ApplyTemplateAsync(string dataFolder, TimeZoneInfo timeZone, CancellationToken cancellationToken)
     {
         if (WhileApplying is { } whileApplying)
         {
@@ -175,7 +196,7 @@ internal sealed class FakeCopyDatabase : ICopyDatabase
 
         lock (_lock)
         {
-            _templates.Add(dataFolder);
+            _templates.Add((dataFolder, timeZone.Id));
         }
 
         return Applies;

@@ -290,7 +290,7 @@ public sealed partial class DemoProxy : IDisposable
     private async Task ForwardAsync(HttpContext context, DemoRoute route)
     {
         var visitorId = VisitorCookie.Read(context.Request);
-        var use = visitorId is null ? new Use(UseKind.None) : _copies.Use(visitorId);
+        var use = visitorId is null ? new Use(UseKind.None) : _copies.Use(visitorId, VisitorTimeZone.Read(context.Request));
         if (use.Kind == UseKind.Busy)
         {
             await BusyAsync(context, page: false);
@@ -312,8 +312,10 @@ public sealed partial class DemoProxy : IDisposable
         }
         catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
         {
-            // Ended while the request waited for it: the visitor sees that, not an error.
-            await NoCopyAsync(context, copy.Stopped.IsCompleted ? DemoPages.Ended() : DemoPages.NotStarted());
+            // Ended while the request waited for it: the visitor sees that, not an error. A copy that failed to start
+            // is stopped too, but says it didn't start.
+            var failed = copy.Started.Exception?.InnerException is not null and not OperationCanceledException;
+            await NoCopyAsync(context, copy.Stopped.IsCompleted && !failed ? DemoPages.Ended() : DemoPages.NotStarted());
             return;
         }
 
@@ -362,7 +364,7 @@ public sealed partial class DemoProxy : IDisposable
     [LoggerMessage(Level = LogLevel.Information, Message = "A request to the {Part} of visitor {Visitor} failed: {Error}")]
     private static partial void LogForwardFailed(ILogger logger, string visitor, CopyPart part, ForwarderError error);
 
-    /// <summary>Requests to the app: as they came, without the demo's cookie, which is none of the copy's business.</summary>
+    /// <summary>Requests to the app: as they came, without the demo's cookies, which are none of the copy's business.</summary>
     private class AppTransformer : HttpTransformer
     {
         public static AppTransformer Instance { get; } = new();
@@ -386,7 +388,8 @@ public sealed partial class DemoProxy : IDisposable
 
             var kept = values
                 .SelectMany(v => v.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-                .Where(c => !c.StartsWith(VisitorCookie.Name + "=", StringComparison.Ordinal))
+                .Where(c => !c.StartsWith(VisitorCookie.Name + "=", StringComparison.Ordinal)
+                    && !c.StartsWith(VisitorTimeZone.CookieName + "=", StringComparison.Ordinal))
                 .ToList();
             request.Headers.Remove(HeaderNames.Cookie);
             if (kept.Count > 0)
