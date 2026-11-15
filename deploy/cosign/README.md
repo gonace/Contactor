@@ -36,8 +36,11 @@ keys only when someone runs `install.sh` again. So:
    signs with the reserve key, which every installation trusts.
 2. Make a new main key pair only, in the folder outside the repository:
    `cosign generate-key-pair --output-key-prefix contactor-main`. Replace `contactor-main.pub` in this folder and
-   the old main key in `COSIGN_KEYS` with its public half. Merge that change into `main`, and publish a release.
-3. When every installation has run `install.sh` again, set the two secrets to the new main key.
+   the old main key in `COSIGN_KEYS` with its public half. Merge that change into `main`, and publish a release
+   whose notes ask everyone to run the install command again. Until an installation has, it still trusts the old
+   main key.
+3. Once you expect most installations to have run it, set the two secrets to the new main key. One that hasn't then
+   refuses the next update ("isn't signed with our key") and stays on its version until `install.sh` is run again.
 4. The reserve key was in the secrets, so it isn't offline anymore. Make a new reserve pair the same way
    (`--output-key-prefix contactor-reserve`), replace `contactor-reserve.pub` and the old reserve key in
    `COSIGN_KEYS`, and keep its private half offline.
