@@ -1,0 +1,36 @@
+# Contactor with Docker Compose: the app, with cloudflared and Tailscale inside it, started only when the setup guide
+# chooses them. install.sh puts this file in /opt/contactor; anywhere else, put it in a folder of its own and run
+# docker compose up -d there. Nothing in it is specific to an installation: the board, how people reach the app and how
+# they sign in are chosen in the setup guide and kept in the database, in data/. The first start writes a setup code to
+# the app's log (docker logs contactor); open http://<this machine>:8080 and type it to start the setup guide.
+#
+# Port 8080 is for this network only: never forward it from the router. From outside, people come in through
+# Cloudflare or Tailscale, which the app connects out to itself.
+name: contactor
+
+services:
+  contactor:
+    image: ${CONTACTOR_IMAGE:-ghcr.io/gonace/contactor:latest}
+    container_name: contactor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    # Everything the app keeps: the database, its backups, the event log, the app's keys and Tailscale's state. Next to
+    # this file, so it stays when the container is removed. The app runs as the image's user (1654), who must own it:
+    # install.sh makes it so; by hand, mkdir data && sudo chown 1654:1654 data before the first start.
+    volumes:
+      - ./data:/data
+    healthcheck:
+      # The image's own: no shell or curl in the image, so the app asks its own /healthz.
+      test: ["CMD", "dotnet", "/app/Contactor.Web.dll", "healthcheck"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 1m
+      start_interval: 5s
+    logging:
+      # Docker keeps logs forever by default; this caps them at 30 MB.
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

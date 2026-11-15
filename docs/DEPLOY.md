@@ -1,5 +1,7 @@
 # Deploying Contactor
 
+> **New:** install with one command instead, as the [README](../README.md#install) says. This page is the earlier way.
+
 Contactor runs on a Raspberry Pi next to the relay board, with Docker Compose: one container, in which the app also
 runs `cloudflared`, which connects out to Cloudflare. No port is opened on the router or published on the Raspberry Pi. Everyone signs
 in through Cloudflare Access on a hostname of your own.
