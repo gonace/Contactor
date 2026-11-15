@@ -33,6 +33,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contactor.Simulator\Contactor.Simulator.csproj" />
+    <!-- The demo builds Contactor.Web and Contactor.Simulator too, whose output it starts for each visitor. -->
+    <ProjectReference Include="..\Contactor.Demo\Contactor.Demo.csproj" />
   </ItemGroup>
 
 </Project>
