@@ -604,13 +604,13 @@ installer() {
     {
         sed '$d' "$ROOT/install/install.sh"
         printf 'DIR=%s\nDATA=%s\nHELPER=%s\nUNITS=%s\nHELPER_STATE=%s\nCOSIGN=%s\n' "$folder/opt" "$folder/opt/data" \
-            "$folder/sbin/contactor-updater" "$folder/units" "$folder/state" "$COSIGN"
+            "$folder/sbin/contactor-updater" "$folder/units" "$folder/state" "${INSTALL_COSIGN:-$COSIGN}"
         printf 'COSIGN_KEYS="%s"\n' "$(cat "$WORK/keys/cosign.pub")"
         # shellcheck disable=SC2016 # for the inner shell
         printf '%s\n' 'as_root() { "$@"; }' 'has_systemd() { true; }' 'show() { echo "(the box)"; }' \
-            'TMP=$(mktemp -d)' 'trap cleanup EXIT' 'install'
+            'TMP=$(mktemp -d)' 'trap cleanup EXIT' "trap 'exit 130' INT" 'install'
     } > "$WORK/installer.sh"
-    env PATH="$WORK/stand-ins:$WORK/bin:$PATH" TMPDIR="$WORK" CONTACTOR_IMAGE="$REPOSITORY:latest" \
+    env ${INSTALL_COSIGN:+INSTALL_COSIGN="$INSTALL_COSIGN"} PATH="$WORK/stand-ins:$WORK/bin:$PATH" TMPDIR="$WORK" CONTACTOR_IMAGE="$REPOSITORY:latest" \
         sh "$WORK/installer.sh" > "$WORK/install.log" 2>&1 || result=$?
     cat "$WORK/install.log" >> "$WORK/installs.log"
     return "$result"
@@ -621,7 +621,7 @@ for tool in curl wget; do
 done
 cat > "$WORK/stand-ins/docker" << EOF
 #!/bin/sh
-echo "\$1" >> "$WORK/docker.log"
+echo "\$1 \$2" >> "$WORK/docker.log"
 if [ "\$1" = cp ] && [ -e "$WORK/fail-cp" ]; then
     echo "Error response from daemon: write /var/lib/docker/tmp: no space left on device" >&2
     exit 1
@@ -673,7 +673,7 @@ release v10 > /dev/null
 rm -f "$INST/sbin/contactor-updater" "$WORK/docker.log"
 check "install.sh runs again" installer "$INST"
 check "it puts the running image's helper back" cmp -s "$INST/sbin/contactor-updater" "$WORK/variants/newer2/contactor-updater.sh"
-check "it pulled nothing" bash -c "! grep -qx pull '$WORK/docker.log'"
+check "it pulled, tagged and removed no image" bash -c "! grep -Eq '^(pull|tag|rmi|image (pull|tag|rm))( |\$)' '$WORK/docker.log'"
 check "compose.yml stays as it was" grep -qx '# (test) changed by hand' "$INST/opt/compose.yml"
 check "the same container runs on" test "$(docker inspect -f '{{.Id}}' contactor)" = "$before"
 check "nothing was downloaded with curl or wget" test ! -e "$WORK/downloads.log"
@@ -697,6 +697,63 @@ fi
 rm -f "$WORK/fail-cp"
 check "nothing of the helper changed" test "$(installed)" = "$before"
 check "no container it made to read the image is left" test -z "$(docker ps -aq --filter "name=^contactor-install-read\$")"
+
+say "install.sh again, with a newer helper in place whose units are gone: the units are put back"
+rm -f "$INST/units/contactor-updater.path"
+check "install.sh runs again" installer "$INST"
+check "the path unit is back, from the running image" cmp -s "$INST/units/contactor-updater.path" "$WORK/variants/newer2/contactor-updater.path"
+check "the newer helper stays" grep -qx 'readonly HELPER_VERSION=999' "$INST/sbin/contactor-updater"
+
+# Runs the app in $INST on image $1 (by digest), as an update would leave it.
+run_on() {
+    docker pull --quiet "$1" > /dev/null
+    CONTACTOR_IMAGE=$1 docker compose --project-directory "$INST/opt" -f "$INST/opt/compose.yml" up -d --pull never > /dev/null 2>&1
+}
+
+say "install.sh again, while the app runs an image that isn't signed: the helper isn't taken from it"
+run_on "$V4_UNSIGNED"
+before=$(installed)
+check "install.sh runs again" installer "$INST"
+check "it says the image isn't signed" grep -q "Contactor 2026.11.22 isn't signed with Contactor's key: the update helper isn't installed or brought up to date from it." "$WORK/install.log"
+check "nothing of the helper changed" test "$(installed)" = "$before"
+
+say "install.sh again, while the app runs a signed image without a helper: the one in place stays"
+V13=$(release v13)
+run_on "$V13"
+check "install.sh runs again" installer "$INST"
+check "it says the one in place stays" grep -q "Contactor 2026.12.1 brings no update helper: the one in place stays." "$WORK/install.log"
+check "nothing of the helper changed" test "$(installed)" = "$before"
+rm -f "$INST/sbin/contactor-updater" "$INST/units/"*
+check "with no helper in place, install.sh runs again" installer "$INST"
+check "it says what to do" grep -q "Run the install command with --uninstall (your data is kept), then the install command again." "$WORK/install.log"
+docker compose --project-directory "$INST/opt" -f "$INST/opt/compose.yml" down --timeout 1 > /dev/null 2>&1
+
+say "install.sh: a new installation when the signature can't be checked stops, and removes what it downloaded"
+docker image rm "$REPOSITORY:latest" "$V13" > /dev/null 2>&1 || true
+release v15 > /dev/null
+if INSTALL_COSIGN=$REGISTRY/no-such-cosign:1 installer "$WORK/inst3"; then
+    fail "install.sh installed without checking the signature"
+else
+    check "it says it couldn't check" grep -q "Couldn't check the signature (no connection?). Nothing was installed." "$WORK/install.log"
+fi
+check "nothing is in its folder" test ! -e "$WORK/inst3/opt"
+check "the image it downloaded is removed again" test -z "$(image_id "$REPOSITORY:latest")"
+# A cosign that takes a while and then fails, to stop install.sh with Ctrl-C during the check.
+mkdir -p "$WORK/slow-cosign"
+printf 'FROM busybox:1.36\nENTRYPOINT ["sh", "-c", "sleep 4; exit 1", "--"]\n' > "$WORK/slow-cosign/Dockerfile"
+docker build --quiet -t contactor-updater-test-slow-cosign "$WORK/slow-cosign" > /dev/null
+: > "$WORK/docker.log"
+INSTALL_COSIGN=contactor-updater-test-slow-cosign installer "$WORK/inst3" &
+install_run=$!
+for _ in $(seq 1 150); do
+    grep -q '^run ' "$WORK/docker.log" && break
+    sleep 0.2
+done
+pkill -INT -f "^sh $WORK/installer.sh" || true
+wait "$install_run" || true
+check "stopped during the check, it removes the image it downloaded" test -z "$(image_id "$REPOSITORY:latest")"
+check "and nothing is in its folder" test ! -e "$WORK/inst3/opt"
+docker image rm contactor-updater-test-slow-cosign > /dev/null 2>&1 || true
 
 say "install.sh: a new installation of a signed image without compose.yml stops, and says why"
 docker compose --project-directory "$INST/opt" -f "$INST/opt/compose.yml" down --timeout 1 > /dev/null 2>&1

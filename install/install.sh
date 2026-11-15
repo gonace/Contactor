@@ -66,6 +66,8 @@ WAIT_SECONDS=120
 NO_SETUP_STATUS_UNTIL="2026.11.15"
 
 TMP=""
+# The image this run downloaded, until its signature is checked: removed again when the check fails or is stopped.
+UNCHECKED_ID=""
 # The root-only folder the files read from an image go to (see from_image).
 IMAGE_TMP=""
 BUSY=""
@@ -139,6 +141,9 @@ fail_with_log() {
 }
 
 cleanup() {
+    if [ -n "$UNCHECKED_ID" ]; then
+        docker_ image rm -f "$UNCHECKED_ID" > /dev/null 2>&1 || true
+    fi
     if [ -n "$TMP" ]; then
         rm -rf -- "$TMP"
     fi
@@ -394,15 +399,16 @@ digest_of() {
         | awk -v name="$digest_name" 'index($0, name) == 1' | head -n 1 || true
 }
 
-# Whether image $1 (by digest) is signed with one of COSIGN_KEYS, as the update helper checks it (its signed()). What
-# cosign said is in $TMP/cosign.log.
+# Whether image $1 (by digest) is signed with one of COSIGN_KEYS, as the update helper checks it (its signed()):
+# 0 when it is, 1 when it isn't, 2 when it couldn't be checked (cosign couldn't be downloaded or couldn't reach the
+# registry). What cosign said is in $TMP/cosign.log.
 signed() {
-    if [ -z "$(image_id "$COSIGN")" ]; then
-        docker_ pull --quiet "$COSIGN" > "$TMP/cosign.log" 2>&1 \
-            || fail_with_log "Couldn't download cosign, which checks Contactor's signature." "$TMP/cosign.log"
-    fi
     : > "$TMP/cosign.log"
+    if [ -z "$(image_id "$COSIGN")" ] && ! docker_ pull --quiet "$COSIGN" > "$TMP/cosign.log" 2>&1; then
+        return 2
+    fi
     key=""
+    unsigned=""
     while IFS= read -r line; do
         if [ -z "$line" ]; then
             continue
@@ -415,6 +421,10 @@ signed() {
                     verify --key env://COSIGN_KEY --insecure-ignore-tlog=true "$1" > "$TMP/cosign.try" 2>&1; then
                     return 0
                 fi
+                # Only these say the image has no signature of this key; anything else is a check that didn't work.
+                if grep -qi -e 'no signatures found' -e 'no matching signatures' "$TMP/cosign.try"; then
+                    unsigned=1
+                fi
                 if [ ! -s "$TMP/cosign.log" ]; then
                     grep -v -e 'Skipping tlog verification' -e '^$' "$TMP/cosign.try" > "$TMP/cosign.log" || true
                 fi
@@ -424,7 +434,10 @@ signed() {
     done << EOF
 $COSIGN_KEYS
 EOF
-    return 1
+    if [ -n "$unsigned" ]; then
+        return 1
+    fi
+    return 2
 }
 
 # The version line of helper $1, e.g. 2; nothing when there is no such file or line.
@@ -432,10 +445,12 @@ helper_version_of() {
     { as_root sed -n 's/^readonly HELPER_VERSION=\([0-9]\{1,9\}\)$/\1/p' "$1" 2> /dev/null || true; } | head -n 1
 }
 
-# Puts the update helper of image $1 (the one the app runs, by ID or digest) in place, or brings it up to date: the
-# script and its two systemd units, from the image's /app/updater. Nothing is downloaded. A file that is already the
-# same stays as it is, and a helper older than the one in place never replaces it (it brings itself up to date after
-# each update).
+# Puts the update helper of image $1 (by ID or digest) in place, or brings it up to date: the script and its two
+# systemd units, from the image's /app/updater. With $2 "check" (the image the app runs, on a run again), its
+# signature is checked first, by the digest it was pulled under in the repository of image $3; one that isn't signed,
+# or can't be checked, leaves the helper in place. Nothing is downloaded but cosign. A file that is already the same
+# stays as it is, and a helper older than the one in place never replaces it (it brings itself up to date after each
+# update), though missing units are put back.
 ensure_helper() {
     helper_image="$1"
     if ! has_systemd; then
@@ -449,6 +464,28 @@ ensure_helper() {
         fi
     done
     helper_version="$(version_of "$helper_image")"
+    if [ "${2:-}" = check ]; then
+        running_ref="$(digest_of "$helper_image" "${3:-}")"
+        result=2
+        if [ -n "$running_ref" ]; then
+            result=0
+            signed "$running_ref" || result=$?
+            if [ "$result" = 0 ]; then
+                helper_image="$running_ref"
+            fi
+        fi
+        case "$result" in
+            0) ;;
+            1)
+                warn "Contactor${helper_version:+ $helper_version} isn't signed with Contactor's key: the update helper isn't installed or brought up to date from it."
+                return 0
+                ;;
+            *)
+                warn "Couldn't check Contactor${helper_version:+ $helper_version}'s signature (no connection?): the update helper isn't installed or brought up to date."
+                return 0
+                ;;
+        esac
+    fi
     from_image "$helper_image" "$IMAGE_UPDATER/contactor-updater.sh" "$IMAGE_UPDATER/contactor-updater.service" \
         "$IMAGE_UPDATER/contactor-updater.path"
     if ! in_image "$IMAGE_TMP/contactor-updater.sh"; then
@@ -457,6 +494,7 @@ ensure_helper() {
             warn "Contactor${helper_version:+ $helper_version} brings no update helper: the one in place stays."
         else
             warn "No update helper: Contactor${helper_version:+ $helper_version} doesn't bring one, so \"Update now\" in Settings isn't available."
+            more "Run the install command with --uninstall (your data is kept), then the install command again."
         fi
         return 0
     fi
@@ -492,7 +530,8 @@ ensure_helper() {
             *.sh) target="$HELPER" mode=755 ;;
             *) target="$UNITS/$file" mode=644 ;;
         esac
-        if [ -z "$install_units" ]; then
+        # A newer helper in place stays; only a unit that is missing is put back.
+        if [ -z "$install_units" ] && { [ "$file" = contactor-updater.sh ] || as_root test -e "$target"; }; then
             continue
         fi
         if ! as_root cmp -s "$IMAGE_TMP/$file" "$target"; then
@@ -571,24 +610,24 @@ ensure_image() {
     else
         image="${CONTACTOR_IMAGE:-$IMAGE}"
     fi
-    pulled=""
     if [ -z "$(image_id "$image")" ]; then
         busy "Downloading Contactor"
         docker_ pull --quiet "$image" > "$TMP/pull.log" 2>&1 || fail_with_log "Couldn't download Contactor ($image)." "$TMP/pull.log"
-        pulled=1
+        # From here on, until the check passes, it is removed again when this script stops (cleanup).
+        UNCHECKED_ID="$(image_id "$image")"
         ok "Downloading Contactor $(version_of "$image")"
     fi
     IMAGE_REF="$(digest_of "$(image_id "$image")" "$image")"
+    [ -n "$IMAGE_REF" ] \
+        || fail "Contactor ($image) wasn't downloaded from its registry, so its signature can't be checked. Nothing was installed."
     busy "Checking Contactor's signature"
-    if [ -z "$IMAGE_REF" ] || ! signed "$IMAGE_REF"; then
-        if [ -n "$pulled" ]; then
-            docker_ image rm -f "$(image_id "$image")" > /dev/null 2>&1 || true
-        fi
-        if [ -z "$IMAGE_REF" ]; then
-            fail "Contactor ($image) wasn't downloaded from its registry, so its signature can't be checked. Nothing was changed."
-        fi
-        fail_with_log "Contactor ($IMAGE_REF) isn't signed with Contactor's key, so it isn't installed. Nothing was changed." "$TMP/cosign.log"
-    fi
+    result=0
+    signed "$IMAGE_REF" || result=$?
+    case "$result" in
+        0) UNCHECKED_ID="" ;;
+        1) fail_with_log "Contactor ($IMAGE_REF) isn't signed with Contactor's key, so it isn't installed. Nothing was changed." "$TMP/cosign.log" ;;
+        *) fail_with_log "Couldn't check the signature (no connection?). Nothing was installed." "$TMP/cosign.log" ;;
+    esac
     ok "Contactor $(version_of "$IMAGE_REF") is signed with Contactor's key"
 }
 
@@ -832,8 +871,8 @@ install() {
             version="$(version_of "$cid")"
             wait_ready "$cid"
             ok "Contactor${version:+ $version} is running"
-            # From the image it runs, which was checked when it was installed or updated.
-            ensure_helper "$(docker_ inspect -f '{{.Image}}' "$cid")"
+            # From the image it runs, once its signature is checked.
+            ensure_helper "$(docker_ inspect -f '{{.Image}}' "$cid")" check "$(docker_ inspect -f '{{.Config.Image}}' "$cid")"
             show "$cid" again
             return 0
         fi
