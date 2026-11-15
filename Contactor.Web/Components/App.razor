@@ -1,6 +1,8 @@
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
+@inject AppLanguage Language
 <!DOCTYPE html>
-<html lang="en">
+<html lang="@Language.Current.Code">
 <head>
     <meta charset="utf-8" />
     @* No zoom: the app is laid out for a phone with big buttons, and zooming in by mistake hides them. Android follows
@@ -29,14 +31,14 @@
             DebugBoards="@HttpContext.Request.Cookies[BoardFilterScreen.Debug.CookieName]" />
     @* Blazor shows this when the page's live connection breaks on an error it can't recover from. *@
     <div id="blazor-error-ui" role="alert">
-        Something went wrong. <a href="" class="reload">Reload the page</a>
+        @Common["Common.SomethingWrong"] <a href="" class="reload">@Common["Common.ReloadPage"]</a>
     </div>
     @* Replaces Blazor's own reconnect dialog with a bar in the app's style (Blazor finds it by its id, and
        reconnect.js handles what happens next). *@
     <div id="components-reconnect-modal" class="reconnect" role="status" aria-live="polite" data-nosnippet>
-        <span class="reconnect-trying">Reconnecting…</span>
-        <span class="reconnect-failed">No connection to the app.</span>
-        <button type="button" id="components-reconnect-button" class="reconnect-failed">Try again</button>
+        <span class="reconnect-trying">@Common["Common.Reconnecting"]</span>
+        <span class="reconnect-failed">@Common["Common.NoConnection"]</span>
+        <button type="button" id="components-reconnect-button" class="reconnect-failed">@Common["Common.TryAgain"]</button>
     </div>
     <script src="_framework/blazor.web.js"></script>
     <script src="@Assets["reconnect.js"]"></script>

@@ -5,6 +5,7 @@
 @using Contactor.Web.Features.Backup
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @inject RelayChanges Changes
 @inject UsersHandler Users
@@ -13,8 +14,9 @@
 @inject CurrentUser CurrentUser
 @inject LocalClock Clock
 @inject BoardTrafficSetting Debugging
+@inject AppLanguage Language
 
-<PageTitle>Settings · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Settings"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -62,6 +64,13 @@
             </section>
         }
 
+        @if (Language.HasChoice)
+        {
+            <section class="card">
+                <LanguagePicker />
+            </section>
+        }
+
         <section class="card">
             <h2>People</h2>
             <p class="hint">The names shown in the app and under Events.</p>
@@ -73,7 +82,7 @@
                         <div class="row">
                             <input id="@($"name-{person.Index}")" type="text" maxlength="@Contactor.Web.Persistence.User.DisplayNameMaxLength"
                                    autocomplete="off" @bind="person.Name" @bind:event="oninput" />
-                            <button type="submit" class="small" disabled="@_busy">Save</button>
+                            <button type="submit" class="small" disabled="@_busy">@Common["Common.Save"]</button>
                         </div>
                     </div>
                     @if (person.Message is not null)

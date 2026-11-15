@@ -1,0 +1,40 @@
+@using Contactor.Web.Features.Languages
+@inject AppLanguage Language
+
+@* The app's one language, on the setup guide's first page and in Settings. Saved at once, as a choice needs no Save:
+   every open page then reloads in it (LanguageWatch). Only shown with two or more languages to choose from. *@
+@if (Language.HasChoice)
+{
+    <div class="language">
+        <label for="language">@Common["Common.Language"]</label>
+        <select id="language" disabled="@_busy" @onchange="ChooseAsync">
+            @foreach (var language in Language.All)
+            {
+                <option value="@language.Code" lang="@language.Code" selected="@(language.Code == Language.Current.Code)">@language.Name</option>
+            }
+        </select>
+        <p class="hint">@Common["Common.Language.Hint"]</p>
+    </div>
+}
+
+@code {
+    private bool _busy;
+
+    private async Task ChooseAsync(ChangeEventArgs e)
+    {
+        if (_busy || e.Value is not string code)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Language.ChooseAsync(code, CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

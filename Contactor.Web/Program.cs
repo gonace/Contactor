@@ -9,6 +9,7 @@ using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Inputs;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Features.Setup;
@@ -66,6 +67,7 @@ public sealed partial class Program
         builder.Services.AddUpdates(builder.Configuration);
         builder.Services.AddSetup(builder.Configuration);
         builder.Services.AddAccess(builder.Configuration);
+        builder.Services.AddLanguages(builder.Configuration);
         builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
         var app = builder.Build();
@@ -75,6 +77,7 @@ public sealed partial class Program
         app.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<SignInChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.CheckSignInFitsWayIn();
+        app.Services.GetRequiredService<AppLanguage>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.ApplyCloudflareSettingsAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.ApplyTailscaleSettingsAsync(CancellationToken.None).GetAwaiter().GetResult();
         if (app.Services.GetRequiredService<SignInChoice>().Current is null)
@@ -82,6 +85,8 @@ public sealed partial class Program
             app.Services.GetRequiredService<SetupCode>().Renew();
         }
 
+        // The app's one language, for every request and every page's live connection; first, so even a refusal has it.
+        app.UseRequestLocalization();
         app.UseSignIn();
         app.UseAntiforgery();
         app.MapStaticAssets();

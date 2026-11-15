@@ -10,7 +10,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BoardPage> Log
 
-<PageTitle>@(_name ?? "Relay board") · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", _name ?? Common["Common.Screen.RelayBoard"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -77,7 +77,7 @@
                     <p class="warning" role="status">@preview.Name has no contact. Any relay that's on stays on, and Contactor can't turn it off.</p>
                 }
                 <div class="dialog-buttons">
-                    <button type="button" class="cancel" disabled="@_busy" @onclick="Cancel">Cancel</button>
+                    <button type="button" class="cancel" disabled="@_busy" @onclick="Cancel">@Common["Common.Cancel"]</button>
                     <button type="button" class="confirm" disabled="@_busy" @onclick="() => RemoveAsync(hasContact)">@(_busy ? "Removing…" : "Remove")</button>
                 </div>
             </div>

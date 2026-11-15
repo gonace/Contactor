@@ -4,7 +4,7 @@
    On the Relays screen's cards and the Relay screen's status card. *@
 <p class="unconfirmed-text" role="alert">@RelayStatusText.Unconfirmed</p>
 <div class="unconfirmed-actions">
-    <button type="button" class="try-again" disabled="@(!CanTryAgain)" @onclick="OnTryAgain">Try again</button>
+    <button type="button" class="try-again" disabled="@(!CanTryAgain)" @onclick="OnTryAgain">@Common["Common.TryAgain"]</button>
     <button type="button" class="leave-it" @onclick="OnLeave">Leave it</button>
 </div>
 

@@ -19,7 +19,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<SetupGuide> Log
 
-<PageTitle>Setup · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Setup"]])</PageTitle>
 
 <div class="screen">
     @* While a list of "Which relay board?" is open, everything but the list and its field takes no focus or clicks
@@ -30,7 +30,7 @@
             var shown = _step;
             <button type="button" class="back" disabled="@Busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                Back
+                @Common["Common.Back"]
             </button>
         }
         else
@@ -139,7 +139,7 @@
         else if (_step < StepDone)
         {
             var shown = _step;
-            <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">Next</button>
+            <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">@Common["Common.Next"]</button>
             @if (_step == StepWhere)
             {
                 <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
@@ -182,6 +182,8 @@
             <h1 tabindex="-1" @ref="_heading">How do people reach the app?</h1>
             <p>Where should people be able to open Contactor?</p>
         </div>
+        @* First, so a new installation is set up in its own language; only with two or more languages. *@
+        <LanguagePicker />
         <div class="choices" role="radiogroup" aria-label="Ways in">
             @foreach (var way in AccessCatalogue.All)
             {

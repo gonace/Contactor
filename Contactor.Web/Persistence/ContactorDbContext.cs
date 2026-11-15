@@ -238,6 +238,7 @@ public sealed class ContactorDbContext : DbContext
         installation.Property(i => i.Id).ValueGeneratedNever();
         installation.Property(i => i.AccessType).HasMaxLength(Installation.MethodTypeMaxLength);
         installation.Property(i => i.SignInType).HasMaxLength(Installation.MethodTypeMaxLength);
+        installation.Property(i => i.Language).HasMaxLength(Installation.LanguageMaxLength);
     }
 
     private static void ConfigureCloudflareSetting(EntityTypeBuilder<CloudflareSetting> setting)

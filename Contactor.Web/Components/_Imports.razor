@@ -2,3 +2,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using static Microsoft.AspNetCore.Components.Web.RenderMode
 @using Contactor.Web.Components
+@using Microsoft.Extensions.Localization
+@using Contactor.Web.Resources
+@* The shared texts, in every component; an area's own texts are injected where they are used. *@
+@inject IStringLocalizer<CommonTexts> Common

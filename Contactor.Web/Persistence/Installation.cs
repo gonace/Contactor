@@ -1,13 +1,14 @@
 namespace Contactor.Web.Persistence;
 
 /// <summary>
-/// The installation itself: how people reach the app and sign in, and whether the setup guide has been done. One row;
+/// The installation itself: how people reach the app and sign in, its language, and whether the setup guide has been done. One row;
 /// while it doesn't exist every page opens on the setup guide. The board is a <see cref="Board"/>.
 /// </summary>
 public sealed class Installation
 {
     public const int SingletonId = 1;
     public const int MethodTypeMaxLength = 32;
+    public const int LanguageMaxLength = 16;
 
     public int Id { get; set; } = SingletonId;
 
@@ -26,4 +27,10 @@ public sealed class Installation
 
     /// <summary>When the setup guide was finished; null while every page should open on it.</summary>
     public DateTime? SetupDoneUtc { get; set; }
+
+    /// <summary>
+    /// The app's one language for everyone, by its code in the catalogue of languages (e.g. <c>en</c>). Null: not
+    /// chosen, so English.
+    /// </summary>
+    public string? Language { get; set; }
 }

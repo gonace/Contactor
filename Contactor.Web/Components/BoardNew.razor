@@ -14,7 +14,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BoardNew> Log
 
-<PageTitle>Add a board · Contactor</PageTitle>
+<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.AddBoard"]])</PageTitle>
 
 <div class="screen">
     <header class="header" inert="@_sheetOpen">
@@ -24,14 +24,14 @@
             {
                 <a href="settings" class="back">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                    Cancel
+                    @Common["Common.Cancel"]
                 </a>
             }
             else
             {
                 <button type="button" class="back" disabled="@Busy" @onclick="CancelAsync">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                    Cancel
+                    @Common["Common.Cancel"]
                 </button>
             }
         }
@@ -40,7 +40,7 @@
             var shown = _step;
             <button type="button" class="back" disabled="@Busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                Back
+                @Common["Common.Back"]
             </button>
         }
         <span class="step-count">STEP @_step OF @StepCount</span>
@@ -90,7 +90,7 @@
         }
         @if (step < StepRelays)
         {
-            <button type="button" disabled="@(Busy || gone || (step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(step)">Next</button>
+            <button type="button" disabled="@(Busy || gone || (step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(step)">@Common["Common.Next"]</button>
         }
         else
         {
@@ -102,7 +102,7 @@
         }
         @if (step > StepBoard)
         {
-            <button type="button" class="link" disabled="@Busy" @onclick="CancelAsync">Cancel</button>
+            <button type="button" class="link" disabled="@Busy" @onclick="CancelAsync">@Common["Common.Cancel"]</button>
         }
     </div>
 </div>
