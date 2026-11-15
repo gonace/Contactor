@@ -537,6 +537,26 @@ public sealed class PersistenceTests
         Assert.Equal(0L, await ScalarAsync(cs, "SELECT COUNT(*) FROM sqlite_master WHERE \"name\" IN ('Board', 'BoardRuntime');"));
     }
 
+    [Fact]
+    public async Task Should_KeepTheRelaysAStopTurnsOff()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { BoardId = 1, Name = "Workshop heat", Icon = GroupIcons.Fan };
+            group.AddStep("Fans", [1, 2]);
+            db.RelayGroups.Add(group);
+            await db.SaveChangesAsync(Cancel);
+            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id, Phase = GroupPhases.Stopping, StopRelayIds = [2, 1] });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal([2, 1], (await check.GroupRuntimes.SingleAsync(Cancel)).StopRelayIds);
+        Assert.Equal("[2,1]", await ScalarAsync(database.ConnectionString, "SELECT \"StopRelayIds\" FROM \"GroupRuntime\";"));
+    }
+
     // Before a group's relays were in steps: one relay per place.
     private const string BeforeSteps = "20261115153057_AddInstallationLanguage";
 
