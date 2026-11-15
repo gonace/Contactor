@@ -13,12 +13,17 @@ public static class Program
     // The port the image listens on, published as the same port on this computer.
     private const int AppPort = 8080;
 
+    // Where a container reaches this computer, as Docker Desktop names it.
+    private const string ContainerHost = "host.docker.internal";
+
     public static void Main(string[] args)
     {
         var builder = DistributedApplication.CreateBuilder(args);
 
-        // The simulator's page is its http endpoint, linked from the dashboard; the board itself is its own port.
+        // The simulator's page is its http endpoint, linked from the dashboard; the board itself is its own port. The app
+        // runs in a container and reaches the simulator on this computer at host.docker.internal, so the page says so.
         var simulator = builder.AddProject<Projects.Contactor_Simulator>("simulator")
+            .WithEnvironment("Simulator__AppAddress", ContainerHost)
             .WithEnvironment("Simulator__Boards__0__Type", "vm201")
             .WithEndpoint(port: Vm201Port, scheme: "tcp", name: "vm201", env: "Simulator__Boards__0__Port", isProxied: false)
             .WithHttpHealthCheck("/health");

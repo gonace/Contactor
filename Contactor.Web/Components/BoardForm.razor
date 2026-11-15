@@ -180,7 +180,7 @@
         try
         {
             // The name first: a name that can't be saved stops the rest, and one saved shows at once.
-            var error = WithName ? await Handler.RenameAsync(BoardId, _name, CancellationToken.None) : null;
+            var error = WithName ? await Handler.RenameAsync(BoardId, _name, _user.Email, CancellationToken.None) : null;
             if (WithName && error is null)
             {
                 _name = _name.Trim();

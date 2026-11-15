@@ -24,7 +24,8 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     /// <summary>How often a board without an address looks for one saved since.</summary>
     public static readonly TimeSpan AddressCheck = TimeSpan.FromSeconds(1);
 
-    private const string NotChosen = "No relay board has been chosen yet.";
+    /// <summary>What a board says, and saving its settings, before its model is chosen or when there is no such board.</summary>
+    public const string NotChosen = "No relay board has been chosen yet.";
 
     /// <summary>What a command to turn a relay on says while the board is being removed (<see cref="CloseAsync"/>).</summary>
     public const string BeingRemoved = "The relay board is being removed.";
@@ -238,10 +239,21 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         return Chosen().Board.RefreshAsync(cancellationToken);
     }
 
-    /// <summary>Throws <see cref="InvalidOperationException"/> before a model is chosen: it has no address to change.</summary>
+    /// <summary>
+    /// Moves the board to <paramref name="endpoint"/>. At a new address the changes the app just asked the old one for
+    /// are no longer expected (<see cref="Expected"/>): another board may be there, and its changes are its own.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Before a model is chosen: it has no address to change.</exception>
     public void SetEndpoint(BoardEndpoint endpoint)
     {
-        (Active ?? throw new InvalidOperationException(NotChosen)).Connection.SetEndpoint(endpoint);
+        ArgumentNullException.ThrowIfNull(endpoint);
+        var connection = (Active ?? throw new InvalidOperationException(NotChosen)).Connection;
+        var moved = connection.Endpoint != endpoint;
+        connection.SetEndpoint(endpoint);
+        if (moved)
+        {
+            Expected.Clear();
+        }
     }
 
     /// <summary>Throws <see cref="InvalidOperationException"/> before a model is chosen: it has no login to change.</summary>
@@ -360,7 +372,8 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     /// <summary>
     /// Makes <paramref name="board"/> this board's model, which the live board owns from now on. The model before it
     /// stops: at once if it isn't running, otherwise its run ends and disposes it. Throws for a model built for another
-    /// board's row, and once disposed (and disposes <paramref name="board"/> then).
+    /// board's row, and the caller still owns <paramref name="board"/> then. Throws once disposed too, and disposes
+    /// <paramref name="board"/> then.
     /// </summary>
     public async Task ReplaceAsync(ActiveBoard board)
     {

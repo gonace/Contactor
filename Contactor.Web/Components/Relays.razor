@@ -275,15 +275,32 @@
     // Two or more boards: a section per board, the filter, and "Turn off all boards". One board looks as it always did.
     private bool Several => Boards.Count > 1;
 
-    // With one board: that board. Before the app has a board, none (no relays, never answers).
-    private LiveBoard? OnlyOne => Boards.Count == 1 ? Boards[0] : null;
+    // With one board: that board. Before the app has a board, none (no relays, never answers). One read of the list:
+    // a board added or removed between two reads can't make it throw.
+    private LiveBoard? OnlyOne => Boards is [var only] ? only : null;
 
     private int? OnlyBoardId => OnlyOne?.BoardId;
 
     // The one board's state; with several boards each card takes its own board's (StateOf).
     private BoardState State => OnlyOne?.State ?? BoardState.Initial;
 
-    private BoardFilter Filter => (PickedBoards?.Relays ?? BoardFilter.All).For([.. Boards.Select(b => b.BoardId)]);
+    // Made again only when the boards or the picked filter change: it is read for each relay.
+    private BoardFilter Filter
+    {
+        get
+        {
+            var boards = Boards;
+            var picked = PickedBoards?.Relays ?? BoardFilter.All;
+            if (_filter is not { } cached || !ReferenceEquals(cached.Boards, boards) || !ReferenceEquals(cached.Picked, picked))
+            {
+                _filter = cached = (boards, picked, picked.For([.. boards.Select(b => b.BoardId)]));
+            }
+
+            return cached.Filter;
+        }
+    }
+
+    private (IReadOnlyList<LiveBoard> Boards, BoardFilter Picked, BoardFilter Filter)? _filter;
 
     private IReadOnlyList<LiveBoard> ShownBoards => [.. Boards.Where(b => Filter.Shows(b.BoardId))];
 

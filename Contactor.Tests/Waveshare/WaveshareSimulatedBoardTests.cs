@@ -1,7 +1,6 @@
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Waveshare;
-using Contactor.Tests.Vm208;
 
 namespace Contactor.Tests.Waveshare;
 

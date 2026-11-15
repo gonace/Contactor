@@ -391,7 +391,7 @@ public sealed class GroupsHandler
         {
             if (!relays.TryGetValue(member.RelayId, out var relay))
             {
-                return $"Relay {member.RelayId} doesn't exist.";
+                return "That relay doesn't exist.";
             }
 
             // One board: the group's order and interlock are checked on each of its board's statuses, and the board

@@ -49,7 +49,7 @@ public static class EventText
         var isPerson = IsPersonActor(entry.Actor);
         var byInput = EventActors.TryInput(entry.Actor, out var inputId);
         var who = isPerson ? personName ?? entry.Actor
-            : byInput ? personName ?? Input.DefaultName(inputId)
+            : byInput ? personName ?? Input.Unknown
             : IsAboutBoard(entry) ? boardName ?? "The board"
             : WhoFor(entry);
         var badge = byInput ? "I"
@@ -69,11 +69,11 @@ public static class EventText
         return new EventView(isPerson, badge, who, what, target, IsAlert: entry.Action == EventActions.BoardRelayModesNotReset);
     }
 
-    // "Door: Open". An input that is on is closed. Without its name (an input no longer on the board): "Input 1: Closed".
+    // "Door: Open". An input that is on is closed. Without its name (an input no longer on the board): "An input: Closed".
     // One the app only noticed after a gap has its time marked unknown.
     private static EventView InputChange(EventLogEntry entry, string? inputName)
     {
-        var name = inputName ?? Input.DefaultName(entry.InputId ?? 1);
+        var name = inputName ?? Input.Unknown;
         return new EventView(false, "I", $"{name}:", Input.StateText(Bool(entry.Details, "on") == true), null, TimeUnknown: InputNoticed(entry.Details));
     }
 
@@ -166,7 +166,7 @@ public static class EventText
             EventActors.AutoOff => "auto-off",
             EventActors.External => "outside the app",
             EventActors.System => "the system",
-            _ when EventActors.TryInput(actor, out var inputId) => personName ?? Input.DefaultName(inputId),
+            _ when EventActors.TryInput(actor, out _) => personName ?? Input.Unknown,
             _ => personName ?? actor,
         };
     }
@@ -223,6 +223,9 @@ public static class EventText
             EventActions.BoardRelayModesReset => ("had its relays set to normal mode, so its inputs don't switch them", null),
             EventActions.BoardRelayModesNotReset => ("couldn't have its relays set to normal mode, so its inputs may switch them", null),
             EventActions.BoardLoginChanged => ("changed the relay board's login", null),
+            EventActions.BoardRenamed => Text(entry.Details, "from") is { } oldName
+                ? ($"renamed the relay board from {oldName} to {Text(entry.Details, "to") ?? "?"}", null)
+                : ($"renamed the relay board to {Text(entry.Details, "to") ?? "?"}", null),
             EventActions.BoardAddressChanged => Text(entry.Details, "from") is { } from
                 ? ($"changed the relay board's address from {from} to {Text(entry.Details, "to") ?? "?"}", null)
                 : ($"set the relay board's address to {Text(entry.Details, "to") ?? "?"}", null),

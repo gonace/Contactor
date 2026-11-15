@@ -253,7 +253,11 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         {
             (watch.Problem, watch.Link) = await ServeAsync(settings, cancellationToken);
             watch.Served = watch.Problem is null;
-            if (!watch.Served)
+            if (watch.Link is { } link)
+            {
+                LogProblemWithLink(watch.Problem!, link);
+            }
+            else if (!watch.Served)
             {
                 LogProblem(watch.Problem!);
             }
@@ -369,12 +373,12 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     }
 
     // Tailscale Serve over HTTPS needs HTTPS turned on for the Tailscale network; tailscale then gives a link to do so,
-    // which the guide shows as a link of its own.
+    // which the guide shows as a link of its own. A link it can't read (e.g. far too long) is said as tailscale wrote it.
     private static (string Problem, Uri? Link) ServeProblem(TailscaleCommandResult result, TailscaleNetworkSettings settings)
     {
-        if (EnableLink().IsMatch(result.Output))
+        if (HttpsLink(result.Output) is { } link)
         {
-            return ("Turn on HTTPS for your Tailscale network, with Funnel left off. Contactor goes on by itself.", HttpsLink(result.Output));
+            return ("Turn on HTTPS for your Tailscale network, with Funnel left off. Contactor goes on by itself.", link);
         }
 
         return result.TimedOut
@@ -441,6 +445,9 @@ public sealed partial class TailscaleNetwork : IAccessMethod
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Tailscale: {Problem}")]
     private partial void LogProblem(string problem);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Tailscale: {Problem} {Link}")]
+    private partial void LogProblemWithLink(string problem, Uri link);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "tailscaled stopped with exit code {ExitCode}; starting it again in {Seconds} s")]
     private partial void LogStopped(int exitCode, double seconds);

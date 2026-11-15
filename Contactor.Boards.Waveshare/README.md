@@ -188,6 +188,8 @@ When `Host` is empty, the setup guide asks for the address.
 - How many TCP clients the board accepts at once, and if a second client closes the first.
 - That the board never sends data that the app did not ask for.
 - If the mode registers stay after a power cut, and how a relay in linkage mode answers function 05.
+- What a relay that is on does when the app sets its mode back to normal at connect: does it keep its state? The app
+  must turn nothing off at start.
 - That the 16CH has no inputs, and that the 16CH and the 30CH answer as above.
 - How the board handles a poll every 2 s for days.
 - The pulse ("flash on"): its address on each model (0x0200 + relay − 1), the longest time (0x7FFF), that the board
