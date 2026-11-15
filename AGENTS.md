@@ -53,7 +53,7 @@ Contactor.Web/            # Blazor app, EF Core, background services, identity
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
 Contactor.Simulator/      # Development: simulated boards, each on its own port, with a page to drive them and see their traffic
 Contactor.Demo/           # The public demo: a proxy that gives each visitor their own app and simulator, each a process on 127.0.0.1, and the Workshop template ("Skip setup"). Dockerfile: its image (ghcr.io/gonace/contactor-demo)
-Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
+Contactor.AppHost/        # Aspire: runs everything locally (aspire run)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
   Boards/                   # ChannelMask, BoardPoller, board adapters
@@ -108,6 +108,7 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 - **CI:** the Build workflow runs `dotnet build` and `dotnet test` on every pull request to `main`, on every merge into `main` and by hand, and shows the results as a "Tests" check (`dorny/test-reporter`). A new push to a pull request cancels its older run. Run the related tests locally before pushing.
 - **While working, run only the related tests:** the tests you wrote and the tests of the code you changed (filter on those test classes or that folder's namespace), never the complete suite. The complete suite runs once, as the gate below, on the final commit. For a stack, it runs once on the top pull request, which holds every part below it.
 - **While the Build workflow is disabled** (to save Actions minutes during heavy development): ignore the missing GitHub checks and don't bring them up. The gate is a full local run instead: a Release build and every test on a clean checkout of the pull request's latest commit (for a stack, the top pull request's, once each part has the branch below it merged in and the bottom part the latest `main`), with the commit and the result in the pull request's description.
+- **Screenshots:** the README's pictures (`docs/screenshots/`) are taken by `node scripts/screenshots/take.mjs` (Node 22 or later, Playwright with Chromium): it starts the simulator and the app on a temporary database with made-up data and photographs the screens. Take them again when a screen they show changes.
 
 ## Workflow
 
