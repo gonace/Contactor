@@ -147,6 +147,10 @@
     <value>GROUP · {0}</value>
     <comment>Over a group's name: {0} is its relays' numbers, e.g. "1 → 2".</comment>
   </data>
+  <data name="Relays.DefaultName" xml:space="preserve">
+    <value>Relay {0}</value>
+    <comment>A relay's name until someone gives it one: {0} is its number on the board.</comment>
+  </data>
   <data name="Relays.RelayLabel" xml:space="preserve">
     <value>RELAY {0}</value>
     <comment>Over a relay's name: {0} is its number on the board.</comment>

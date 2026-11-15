@@ -40,6 +40,8 @@ public sealed class BoardRegistryTests
         Assert.Throws<InvalidOperationException>(() => board.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760)));
         Assert.Throws<InvalidOperationException>(() => board.SetLogin(BoardLogin.None));
         Assert.Equal("No relay board has been chosen yet.", Assert.Throws<InvalidOperationException>(() => board.CheckLogin(BoardLogin.None)).Message);
+        Assert.False(board.TryCheckLogin(new BoardLogin("admin", "secret"), out var problem));
+        Assert.Null(problem);
     }
 
     [Fact]

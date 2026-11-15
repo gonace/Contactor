@@ -48,7 +48,7 @@ public sealed class DevantechConnection : IBoardConnection
     {
         ArgumentNullException.ThrowIfNull(login);
         return login.Username.Length > 0
-            ? new LoginProblem(LoginProblemKind.PasswordOnly, LoginField.UserName, Board: "Devantech board")
+            ? new LoginProblem(LoginProblemKind.PasswordOnly, LoginField.UserName, Board: "Devantech")
             : DevantechModels.CheckPassword(login.Password);
     }
 

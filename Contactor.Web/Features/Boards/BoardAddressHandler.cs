@@ -127,13 +127,14 @@ public sealed class BoardAddressHandler
         var current = await LoginInUseAsync(boardId, cancellationToken);
         var password = none ? "" : string.IsNullOrEmpty(newPassword) ? current.Password : newPassword;
         var login = new BoardLogin(none ? "" : username?.Trim() ?? "", password);
-        // Without a model there is no login to check: said in the app's language, as the other returns are.
-        if (connection.Model is null)
+        // Without a model there is no login to check, also when the board is removed meanwhile: said in the app's
+        // language, as the other returns are.
+        if (!connection.TryCheckLogin(login, out var problem))
         {
             return _texts["Boards.NotChosen"];
         }
 
-        if (connection.CheckLogin(login) is { } problem)
+        if (problem is not null)
         {
             return _login.Problem(problem);
         }

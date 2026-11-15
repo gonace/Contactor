@@ -114,7 +114,9 @@ public sealed class TailscaleNetworkTests
         var tailscale = new FakeTailscale { LogIn = new TailscaleCommandResult(-1, "", TimedOut: true) };
         await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
 
-        await WaitUntilAsync(() => tailscale.LogIns.Count == 1 && time.PendingTimers == 1);
+        await WaitUntilAsync(() => tailscale.LogIns.Count == 1 && time.PendingTimers == 1 && network.Network.Status.Problem is not null);
+        Assert.Equal(UiText.Of<SetupTexts>("Setup.Tailscale.KeyTimedOut"), network.Network.Status.Problem);
+        Assert.Equal("Tailscale didn't take the auth key: Tailscale didn't answer in time.", network.Network.Status.Problem?.English());
         tailscale.LogIn = new TailscaleCommandResult(0, "");
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
 

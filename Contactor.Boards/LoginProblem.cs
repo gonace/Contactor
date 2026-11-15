@@ -15,7 +15,7 @@ public enum LoginProblemKind
     /// <summary>The user name and the password together are longer than the board takes.</summary>
     TooLongTogether,
 
-    /// <summary>The board takes a password only, and a user name was given.</summary>
+    /// <summary>The board takes a password only, and a user name was given: "The <c>Board</c> board takes …".</summary>
     PasswordOnly,
 
     /// <summary>The password alone is longer than the board takes.</summary>
@@ -24,10 +24,10 @@ public enum LoginProblemKind
     /// <summary>The password has a character other than letters, digits and plain symbols, or a space.</summary>
     PasswordCharacters,
 
-    /// <summary>The board takes no login: its password only protects its own web pages.</summary>
+    /// <summary>The board takes no login: its password only protects its own web pages. "The <c>Board</c> takes …".</summary>
     NoLoginWebPages,
 
-    /// <summary>The board takes no login: its password only protects its own web page.</summary>
+    /// <summary>The board takes no login: its password only protects its own web page. "The <c>Board</c> board takes …".</summary>
     NoLoginWebPage,
 }
 
@@ -44,7 +44,10 @@ public enum LoginField
 /// </summary>
 /// <param name="MaxLength">The longest the board takes, for the "too long" kinds.</param>
 /// <param name="Symbols">The symbols the board takes, for <see cref="LoginProblemKind.ListedCharacters"/>.</param>
-/// <param name="Board">How the board is named, for the kinds that name it, e.g. "VM208" or "Devantech board".</param>
+/// <param name="Board">
+/// The board's brand or model, a proper noun that every language keeps as it is, for the kinds that name it, e.g. "VM208"
+/// or "Devantech"; the word "board" is in the sentence.
+/// </param>
 public sealed record LoginProblem(LoginProblemKind Kind, LoginField Field = LoginField.Password, int MaxLength = 0, string Symbols = "", string Board = "")
 {
     public override string ToString()
@@ -56,11 +59,11 @@ public sealed record LoginProblem(LoginProblemKind Kind, LoginField Field = Logi
             LoginProblemKind.PlainCharacters => $"{what} can only contain letters a–z, digits and plain symbols.",
             LoginProblemKind.ListedCharacters => $"{what} can only contain letters a–z, digits and {Symbols} on the relay board.",
             LoginProblemKind.TooLongTogether => $"The user name and password can be at most {MaxLength} characters together on the relay board.",
-            LoginProblemKind.PasswordOnly => $"The {Board} takes a password only, no user name.",
+            LoginProblemKind.PasswordOnly => $"The {Board} board takes a password only, no user name.",
             LoginProblemKind.PasswordTooLong => $"The password can be at most {MaxLength} characters.",
             LoginProblemKind.PasswordCharacters => "The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.",
             LoginProblemKind.NoLoginWebPages => $"The {Board} takes no login: its password only protects its own web pages.",
-            _ => $"The {Board} takes no login: its password only protects its own web page.",
+            _ => $"The {Board} board takes no login: its password only protects its own web page.",
         };
     }
 }

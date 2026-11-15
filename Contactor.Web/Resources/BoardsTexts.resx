@@ -358,7 +358,7 @@
     <value>The user name and password can be at most {0} characters together on the relay board.</value>
   </data>
   <data name="Boards.Login.PasswordOnly" xml:space="preserve">
-    <value>The {0} takes a password only, no user name.</value>
+    <value>The {0} board takes a password only, no user name.</value>
     <comment>{0} names the board, e.g. "Devantech board".</comment>
   </data>
   <data name="Boards.Login.PasswordTooLong" xml:space="preserve">
@@ -372,6 +372,6 @@
     <comment>{0} names the board, e.g. "VM208".</comment>
   </data>
   <data name="Boards.Login.NoLoginWebPage" xml:space="preserve">
-    <value>The {0} takes no login: its password only protects its own web page.</value>
+    <value>The {0} board takes no login: its password only protects its own web page.</value>
   </data>
 </root>

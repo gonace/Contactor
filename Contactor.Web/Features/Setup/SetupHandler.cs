@@ -3,17 +3,23 @@ using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Contactor.Web.Resources;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Setup;
 
-/// <summary>A relay as the setup guide shows it: its channel, its name, whether it is in use, and its group, if any.</summary>
-public sealed record SetupRelay(int Id, int Channel, string Name, bool IsActive, string? GroupName)
+/// <summary>
+/// A relay as the setup guide shows it: its channel, its name, whether it is in use, its group, if any, and the name an
+/// empty field gives it, in the app's language (<paramref name="DefaultName"/>, "Relay 3").
+/// </summary>
+public sealed record SetupRelay(int Id, int Channel, string Name, bool IsActive, string? GroupName, string DefaultName)
 {
-    /// <summary>Whether it still has the name it was seeded with, so the guide shows that as a hint, not a value.</summary>
-    public bool HasDefaultName => Name == Relay.DefaultName(Channel);
+    /// <summary>
+    /// Whether it still has a default name, the one it was seeded with or the one in the app's language, so the guide
+    /// shows that as a hint, not a value.
+    /// </summary>
+    public bool HasDefaultName => Name == DefaultName || Name == Relay.DefaultName(Channel);
 }
 
 /// <summary>A relay's name and "In use" as typed in the setup guide.</summary>
@@ -43,6 +49,7 @@ public sealed class SetupHandler
     private readonly TimeProvider _time;
     private readonly ILogger<SetupHandler> _logger;
     private readonly IStringLocalizer<SetupTexts> _texts;
+    private readonly IStringLocalizer<RelaysTexts> _relayTexts;
 
     // Once done it stays done, so the relay list needn't ask the database on every visit.
     private volatile bool _done;
@@ -56,9 +63,11 @@ public sealed class SetupHandler
         LocalClock clock,
         TimeProvider time,
         ILogger<SetupHandler> logger,
-        IStringLocalizer<SetupTexts> texts)
+        IStringLocalizer<SetupTexts> texts,
+        IStringLocalizer<RelaysTexts> relayTexts)
     {
         _texts = texts;
+        _relayTexts = relayTexts;
         _dbFactory = dbFactory;
         _choice = choice;
         _registry = registry;
@@ -122,7 +131,7 @@ public sealed class SetupHandler
             .OrderBy(r => r.Channel)
             .ToListAsync(cancellationToken))
             .Where(r => _registry.HasRelay(r.BoardId, r.Channel));
-        return [.. relays.Select(r => new SetupRelay(r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id)))];
+        return [.. relays.Select(r => new SetupRelay(r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), DefaultName(r.Channel)))];
     }
 
     /// <summary>
@@ -139,7 +148,7 @@ public sealed class SetupHandler
                 continue;
             }
 
-            var name = string.IsNullOrWhiteSpace(choice.Name) ? Relay.DefaultName(channel) : choice.Name;
+            var name = string.IsNullOrWhiteSpace(choice.Name) ? DefaultName(channel) : choice.Name;
             if (await _relays.SaveAsync(current with { Name = name, IsActive = choice.IsActive }, userEmail, cancellationToken) is { } error)
             {
                 return _texts["Setup.RelayError", channel, error];
@@ -147,6 +156,12 @@ public sealed class SetupHandler
         }
 
         return null;
+    }
+
+    // The name an empty field gives a relay, in the app's language, as its placeholder shows it.
+    private string DefaultName(int channel)
+    {
+        return _relayTexts["Relays.DefaultName", channel];
     }
 
     /// <summary>

@@ -45,7 +45,7 @@ public sealed class WaveshareConnection : IBoardConnection
     public LoginProblem? CheckLogin(BoardLogin login)
     {
         ArgumentNullException.ThrowIfNull(login);
-        return login.IsNone ? null : new LoginProblem(LoginProblemKind.NoLoginWebPage, Board: "Waveshare board");
+        return login.IsNone ? null : new LoginProblem(LoginProblemKind.NoLoginWebPage, Board: "Waveshare");
     }
 
     public Task RunAsync(CancellationToken cancellationToken)

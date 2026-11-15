@@ -28,7 +28,7 @@
             <label class="label" for="@($"relay-{relay.Id}")">@RelayTexts["Relays.RelayLabel", relay.Channel]</label>
             <div class="row">
                 <input id="@($"relay-{relay.Id}")" type="text" maxlength="@Relay.NameMaxLength" autocomplete="off"
-                       placeholder="@Relay.DefaultName(relay.Channel)" @bind="relay.Name" @bind:event="oninput" />
+                       placeholder="@relay.DefaultName" @bind="relay.Name" @bind:event="oninput" />
                 <button type="button" class="small try" aria-pressed="@(on ? "true" : "false")"
                         aria-label="@Texts["Boards.Relays.TryLabel", relay.Channel]"
                         disabled="@(on || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
@@ -176,6 +176,7 @@
             Name = relay.HasDefaultName ? "" : relay.Name;
             IsActive = relay.IsActive;
             GroupName = relay.GroupName;
+            DefaultName = relay.DefaultName;
         }
 
         public int Id { get; }
@@ -189,11 +190,14 @@
 
         public string? GroupName { get; }
 
+        /// <summary>The name an empty field gives it, in the app's language: the field's placeholder.</summary>
+        public string DefaultName { get; }
+
         public bool Trying { get; set; }
 
         public string? Error { get; set; }
 
         /// <summary>Its name as a summary shows it.</summary>
-        public string Shown => string.IsNullOrWhiteSpace(Name) ? Relay.DefaultName(Channel) : Name.Trim();
+        public string Shown => string.IsNullOrWhiteSpace(Name) ? DefaultName : Name.Trim();
     }
 }
