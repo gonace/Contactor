@@ -84,11 +84,12 @@ namespace Contactor.Web.Persistence.Migrations
                 type: "INTEGER",
                 nullable: true);
 
-            migrationBuilder.AddColumn<int>(
-                name: "StopRelayId",
+            migrationBuilder.AddColumn<string>(
+                name: "StopRelayIds",
                 table: "GroupRuntime",
-                type: "INTEGER",
-                nullable: true);
+                type: "TEXT",
+                nullable: false,
+                defaultValue: "[]");
 
             migrationBuilder.DropIndex(
                 name: "IX_RelayGroupMember_GroupId_Position",
@@ -201,7 +202,7 @@ namespace Contactor.Web.Persistence.Migrations
                 table: "GroupRuntime");
 
             migrationBuilder.DropColumn(
-                name: "StopRelayId",
+                name: "StopRelayIds",
                 table: "GroupRuntime");
 
             migrationBuilder.RenameColumn(

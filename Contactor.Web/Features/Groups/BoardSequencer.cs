@@ -353,7 +353,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     runtime.PendingRelayId = null;
                     runtime.PendingOn = false;
                     runtime.PendingSinceUtc = null;
-                    runtime.StopRelayId = null;
+                    runtime.StopRelayIds = [];
                     runtime.OnSinceUtc = null;
                     runtime.AutoOffAtUtc = null;
                     runtime.TurnedOnBy = null;

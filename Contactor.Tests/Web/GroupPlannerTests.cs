@@ -183,8 +183,10 @@ public sealed class GroupPlannerTests
             Assert.Equal(["Heat"], details.RootElement.GetProperty("off").EnumerateArray().Select(x => x.GetString()));
         }
 
-        // The same old status again before the board reports back: nothing new.
-        Assert.True(Plan(State(2), T0.AddSeconds(1)).IsEmpty);
+        // The same old status again before the board reports back: the heat's OFF again, nothing new logged and the
+        // fan's ON not sent twice.
+        var again = Plan(State(2), T0.AddSeconds(1));
+        Assert.Equal((Mask(2), ChannelMask.None, 0), (again.Off, again.On, again.Events.Count));
 
         // The fan runs on, then stops.
         Assert.Equal(EventActions.RunOnStart, Plan(State(1), T0.AddSeconds(2)).Events[0].Action);
@@ -474,7 +476,7 @@ public sealed class GroupPlannerTests
         // The board hasn't reported the trip yet: the ventilation's ON is on its way.
         var early = new GroupCommands();
         Assert.Null(GroupPlanner.MemberOn(Spray, State(6), _runtime, 1, John, null, T0.AddSeconds(1), early));
-        Assert.True(early.IsEmpty);
+        Assert.Equal((Mask(6), ChannelMask.None, 0), (early.Off, early.On, early.Events.Count));
         Assert.Equal((GroupPhases.Stopping, 0), (_runtime.Phase, _runtime.TargetLevel));
 
         // The ventilation on, the compressor not yet off: turning the compressor on doesn't call the trip's stop off.
@@ -482,6 +484,20 @@ public sealed class GroupPlannerTests
         Assert.Null(GroupPlanner.MemberOn(Spray, State(5, 6), _runtime, 2, John, null, T0.AddSeconds(2), late));
         Assert.True(late.IsEmpty);
         Assert.Equal((GroupPhases.Stopping, 0), (_runtime.Phase, _runtime.TargetLevel));
+    }
+
+    // A trip's ON was on its way when the connection dropped (or the app restarted); the sequencer gives it a fresh
+    // timeout, and the board shows the heat on again without the fan. The heat goes off at once all the same.
+    [Fact]
+    public void Should_TurnOffBelowTheGap_WhileATripIsBeingHandled()
+    {
+        Plan(State(2), T0);
+        _runtime.PendingSinceUtc = T0.AddMinutes(1);
+
+        var reconnected = Plan(State(2), T0.AddMinutes(1).AddSeconds(1));
+
+        Assert.Equal((Mask(2), ChannelMask.None), (reconnected.Off, reconnected.On));
+        Assert.Empty(reconnected.Events);
     }
 
     [Fact]

@@ -29,10 +29,11 @@ public sealed class GroupRuntime
     public DateTime? PendingSinceUtc { get; set; }
 
     /// <summary>
-    /// While stopping to <see cref="TargetLevel"/> after one relay was turned off: that relay, the only one of the step
-    /// below the target that goes off. The other relays of its step stay as they are. Null stops whole steps.
+    /// While stopping to <see cref="TargetLevel"/> after relays were turned off one at a time: those relays, the only
+    /// ones of the step below the target that go off. The other relays of their step stay as they are. Empty stops whole
+    /// steps.
     /// </summary>
-    public int? StopRelayId { get; set; }
+    public List<int> StopRelayIds { get; set; } = [];
 
     public DateTime? OnSinceUtc { get; set; }
 

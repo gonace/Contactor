@@ -290,7 +290,7 @@ public static class GroupPlanner
             {
                 runtime.Phase = GroupPhases.Idle;
                 runtime.NextStepAtUtc = null;
-                runtime.StopRelayId = null;
+                runtime.StopRelayIds = [];
                 if (reach == 0)
                 {
                     ClearRun(runtime);
@@ -305,7 +305,7 @@ public static class GroupPlanner
                 var going = GoingOff(step, state, runtime);
                 var ranOn = runtime.NextStepAtUtc is not null && reach < n && step.RunOnSec > 0;
                 commands.Off |= Mask(going);
-                SetPending(runtime, reach, StopRelayIn(step, runtime)?.RelayId, on: false, now);
+                SetPending(runtime, reach, relayId: null, on: false, now);
                 runtime.NextStepAtUtc = null;
                 if (ranOn)
                 {
@@ -365,7 +365,7 @@ public static class GroupPlanner
         runtime.Phase = GroupPhases.Starting;
         runtime.TargetLevel = steps.Count;
         runtime.NextStepAtUtc = null;
-        runtime.StopRelayId = null;
+        runtime.StopRelayIds = [];
         ClearPending(runtime);
         if (overtaken is { } pending)
         {
@@ -400,7 +400,7 @@ public static class GroupPlanner
         if (runtime.Phase == GroupPhases.Stopping)
         {
             // Already stopping the whole group (a trip's run-on relays on their way included): that stop carries on.
-            if (runtime.TargetLevel == 0 && runtime.StopRelayId is null)
+            if (runtime.TargetLevel == 0 && runtime.StopRelayIds.Count == 0)
             {
                 return false;
             }
@@ -408,7 +408,7 @@ public static class GroupPlanner
             // Stopping part of it (one relay turned off): that stop goes on to the whole group, and a run-on under way
             // keeps its time.
             runtime.TargetLevel = 0;
-            runtime.StopRelayId = null;
+            runtime.StopRelayIds = [];
             runtime.AutoOffAtUtc = null;
             commands.Events.Add(new GroupEvent(EventActions.GroupOff, null, actor, null));
             Plan(steps, state, runtime, now, commands);
@@ -488,7 +488,7 @@ public static class GroupPlanner
             runtime.Phase = GroupPhases.Idle;
             runtime.TargetLevel = Math.Max(Level(steps, state), place);
             runtime.NextStepAtUtc = null;
-            runtime.StopRelayId = null;
+            runtime.StopRelayIds = [];
             ClearPending(runtime);
             KeepsRunning(runtime, actor, maxOnMinutes, now);
             return null;
@@ -503,7 +503,7 @@ public static class GroupPlanner
         runtime.Phase = GroupPhases.Idle;
         runtime.TargetLevel = Math.Max(Level(steps, state), place);
         runtime.NextStepAtUtc = null;
-        runtime.StopRelayId = null;
+        runtime.StopRelayIds = [];
         SetPending(runtime, place, relay.RelayId, on: true, now);
         if (!AnyOn(steps, state) || runtime.OnSinceUtc is null)
         {
@@ -549,15 +549,13 @@ public static class GroupPlanner
         {
             // A stop already under way goes at least as far: it is kept, never cut short to this relay, so nothing it
             // stops is left on (e.g. the group stopping and Fan 1 turned off during the fans' run-on: Fan 2 still stops).
+            // One that stops only some relays of this relay's step takes this one too: it goes off with them, after
+            // the relays below and its step's run-on.
             commands.Events.Add(new GroupEvent(EventActions.Off, relay.RelayId, actor, null));
-            var stopsIt = runtime.TargetLevel < place - 1 || runtime.StopRelayId is null || runtime.StopRelayId == relay.RelayId;
-            var belowOn = steps.Skip(place).SelectMany(s => s.Relays).Any(r => state.IsOn(r.Channel));
-            if (!stopsIt && !belowOn)
+            var stopsIt = runtime.TargetLevel < place - 1 || runtime.StopRelayIds.Count == 0 || runtime.StopRelayIds.Contains(relay.RelayId);
+            if (!stopsIt)
             {
-                // The stop runs on another relay of this step: its step is running on already, so this one goes now.
-                // Not while a relay below is still on: that would break the interlock. It can be turned off once they
-                // are off.
-                commands.Off |= ChannelMask.Of(relay.Channel);
+                runtime.StopRelayIds = [.. runtime.StopRelayIds, relay.RelayId];
             }
 
             return;
@@ -565,7 +563,7 @@ public static class GroupPlanner
 
         runtime.Phase = GroupPhases.Stopping;
         runtime.TargetLevel = place - 1;
-        runtime.StopRelayId = relay.RelayId;
+        runtime.StopRelayIds = [relay.RelayId];
         runtime.NextStepAtUtc = null;
         ClearPending(runtime);
         var below = Mask(steps.Skip(place).SelectMany(s => s.Relays).Where(r => state.IsOn(r.Channel)));
@@ -605,13 +603,8 @@ public static class GroupPlanner
 
         var missing = level + 1;
         var step = steps[missing - 1];
-        var handling = runtime.Phase == GroupPhases.Stopping && runtime.PendingStep == missing && runtime.PendingRelayId is null && runtime.PendingOn;
-        if (handling && now - (runtime.PendingSinceUtc ?? now) < ConfirmTimeout)
-        {
-            // This trip is being handled; the board hasn't reported it yet.
-            return true;
-        }
-
+        // Everything below the gap goes off at once, every time: also while a trip is being handled, e.g. after a
+        // reconnect that shows the heaters on again. Sending it again is harmless.
         List<string> turnedOff = [];
         for (var p = missing + 1; p <= steps.Count; p++)
         {
@@ -622,13 +615,20 @@ public static class GroupPlanner
             }
         }
 
+        var handling = runtime.Phase == GroupPhases.Stopping && runtime.PendingStep == missing && runtime.PendingRelayId is null && runtime.PendingOn;
+        if (handling && now - (runtime.PendingSinceUtc ?? now) < ConfirmTimeout)
+        {
+            // This trip is being handled: its ON is on its way, and it is logged once.
+            return true;
+        }
+
         var off = step.Relays.Where(r => !state.IsOn(r.Channel)).ToList();
         commands.On |= Mask(off);
         runtime.Phase = GroupPhases.Stopping;
         runtime.TargetLevel = 0;
         runtime.NextStepAtUtc = null;
         runtime.AutoOffAtUtc = null;
-        runtime.StopRelayId = null;
+        runtime.StopRelayIds = [];
         SetPending(runtime, missing, relayId: null, on: true, now);
         if (handling)
         {
@@ -677,29 +677,28 @@ public static class GroupPlanner
     // relay is off and nothing below it is on.
     private static bool StopDone(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime, int reach)
     {
-        if (runtime.StopRelayId is { } id)
+        for (var p = 1; p <= steps.Count; p++)
         {
-            for (var p = 1; p <= steps.Count; p++)
+            var stopping = StopRelaysIn(steps[p - 1], runtime);
+            if (stopping.Count > 0)
             {
-                if (steps[p - 1].Relays.FirstOrDefault(r => r.RelayId == id) is { } relay)
-                {
-                    return reach < p || (reach == p && !state.IsOn(relay.Channel));
-                }
+                return reach < p || (reach == p && stopping.All(r => !state.IsOn(r.Channel)));
             }
         }
 
         return reach <= runtime.TargetLevel;
     }
 
-    // What of a step goes off next in a stop: the one relay a person turned off, or every relay of it that is on.
+    // What of a step goes off next in a stop: the relays a person turned off, or every relay of it that is on.
     private static List<GroupRelayInfo> GoingOff(GroupStepInfo step, BoardState state, GroupRuntime runtime)
     {
-        return StopRelayIn(step, runtime) is { } relay ? [relay] : [.. step.Relays.Where(r => state.IsOn(r.Channel))];
+        var stopping = StopRelaysIn(step, runtime);
+        return [.. (stopping.Count > 0 ? stopping : step.Relays).Where(r => state.IsOn(r.Channel))];
     }
 
-    private static GroupRelayInfo? StopRelayIn(GroupStepInfo step, GroupRuntime runtime)
+    private static List<GroupRelayInfo> StopRelaysIn(GroupStepInfo step, GroupRuntime runtime)
     {
-        return runtime.StopRelayId is { } id ? step.Relays.FirstOrDefault(r => r.RelayId == id) : null;
+        return runtime.StopRelayIds.Count == 0 ? [] : [.. step.Relays.Where(r => runtime.StopRelayIds.Contains(r.RelayId))];
     }
 
     // The relays a command is waiting for: one relay, or every relay of its step. Null when the group no longer has them.
@@ -713,7 +712,9 @@ public static class GroupPlanner
         var step = steps[position - 1];
         if (runtime.PendingRelayId is not { } id)
         {
-            return (position, step, step.Relays);
+            // A stop's OFF for the relays a person turned off waits for those only.
+            var stopping = !runtime.PendingOn && runtime.Phase == GroupPhases.Stopping ? StopRelaysIn(step, runtime) : [];
+            return (position, step, stopping.Count > 0 ? stopping : step.Relays);
         }
 
         return step.Relays.FirstOrDefault(r => r.RelayId == id) is { } relay ? (position, step, [relay]) : null;
@@ -767,7 +768,7 @@ public static class GroupPlanner
         runtime.TargetLevel = 0;
         runtime.NextStepAtUtc = null;
         runtime.AutoOffAtUtc = null;
-        runtime.StopRelayId = null;
+        runtime.StopRelayIds = [];
         ClearPending(runtime);
     }
 

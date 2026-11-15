@@ -571,7 +571,7 @@ public sealed class PersistenceTests
             steps.Select(s => (s.GroupId, s.Position, s.Name, s.StartDelaySec, s.RunOnSec, Assert.Single(s.Members).RelayId)));
         Assert.All(steps, s => Assert.Equal((1, s.GroupId), (s.Members[0].Order, s.Members[0].GroupId)));
         var runtimes = await check.GroupRuntimes.OrderBy(r => r.GroupId).ToListAsync(Cancel);
-        Assert.Equal(((int?)1, (int?)null, true, (int?)null), (runtimes[0].PendingStep, runtimes[0].PendingRelayId, runtimes[0].PendingOn, runtimes[0].StopRelayId));
+        Assert.Equal(((int?)1, (int?)null, true, 0), (runtimes[0].PendingStep, runtimes[0].PendingRelayId, runtimes[0].PendingOn, runtimes[0].StopRelayIds.Count));
         Assert.Equal((GroupPhases.Starting, 3, (int?)null), (runtimes[1].Phase, runtimes[1].TargetLevel, runtimes[1].PendingStep));
         Assert.Equal(0L, await ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }

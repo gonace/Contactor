@@ -189,8 +189,9 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("StopRelayId")
-                        .HasColumnType("INTEGER");
+                    b.PrimitiveCollection<string>("StopRelayIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("TargetLevel")
                         .HasColumnType("INTEGER");

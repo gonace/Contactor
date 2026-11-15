@@ -105,12 +105,27 @@ public sealed class GroupStepsTests
         Assert.Equal("""{"missing":"Fan 2","off":["Heater 1","Heater 2"]}""", e.Details);
         Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
 
-        // Handled: not again while the board hasn't reported it.
-        Assert.True(Plan(State(1, 3, 4), T0.AddSeconds(1)).IsEmpty);
+        // Handled: the heaters' OFF again while the board hasn't reported it, but not logged again.
+        var again = Plan(State(1, 3, 4), T0.AddSeconds(1));
+        Assert.Equal((Mask(3, 4), ChannelMask.None, 0), (again.Off, again.On, again.Events.Count));
 
         // The fans are on again and run on, then stop together.
         Assert.Equal(EventActions.RunOnStart, Assert.Single(Plan(State(1, 2), T0.AddSeconds(2)).Events).Action);
         Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(182)).Off);
+    }
+
+    // After a reconnect or a restart, a trip's ON for the fans is waiting with a fresh timeout, and the board shows the
+    // heaters on without the fans: they go off at once, not after the timeout.
+    [Fact]
+    public void Should_TurnOffTheHeatersAtOnce_WhenATripIsWaitingAfterAReconnect()
+    {
+        (_runtime.Phase, _runtime.TargetLevel, _runtime.PendingStep, _runtime.PendingOn, _runtime.PendingSinceUtc) =
+            (GroupPhases.Stopping, 0, 1, true, T0);
+
+        var commands = Plan(State(3, 4), T0.AddSeconds(1));
+
+        Assert.Equal((Mask(3, 4), ChannelMask.None), (commands.Off, commands.On));
+        Assert.Empty(commands.Events);
     }
 
     [Fact]
@@ -204,7 +219,7 @@ public sealed class GroupStepsTests
         var stop = new GroupCommands();
         Assert.True(GroupPlanner.Stop(FansHeaters, State(1, 2), _runtime, John, T0.AddSeconds(2), stop));
         Assert.Equal((ChannelMask.None, EventActions.GroupOff), (stop.Off, Assert.Single(stop.Events).Action));
-        Assert.Null(_runtime.StopRelayId);
+        Assert.Empty(_runtime.StopRelayIds);
         Assert.True(Plan(State(1, 2), T0.AddSeconds(180)).IsEmpty);
         Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
     }
@@ -222,7 +237,8 @@ public sealed class GroupStepsTests
         GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 1, John, T0.AddSeconds(30), off);
 
         Assert.Equal((ChannelMask.None, EventActions.Off), (off.Off, Assert.Single(off.Events).Action));
-        Assert.Equal((GroupPhases.Stopping, 0, (int?)null), (_runtime.Phase, _runtime.TargetLevel, _runtime.StopRelayId));
+        Assert.Equal((GroupPhases.Stopping, 0), (_runtime.Phase, _runtime.TargetLevel));
+        Assert.Empty(_runtime.StopRelayIds);
         Assert.Equal(T0.AddSeconds(181), _runtime.NextStepAtUtc);
         Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
         Plan(State(), T0.AddSeconds(182));
@@ -230,7 +246,7 @@ public sealed class GroupStepsTests
     }
 
     [Fact]
-    public void Should_TurnOffASecondFanAtOnce_WhileTheFirstRunsOn()
+    public void Should_JoinASecondFan_ToTheFirstOnesStop_DuringItsRunOn()
     {
         GroupPlanner.MemberOff(FansHeaters, State(1, 2, 3, 4), _runtime, 1, John, T0, new GroupCommands());
         Plan(State(1, 2), T0.AddSeconds(1));
@@ -238,11 +254,38 @@ public sealed class GroupStepsTests
         var off = new GroupCommands();
         GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 2, John, T0.AddSeconds(2), off);
 
-        // The fans' step runs on already: Fan 2 goes now, Fan 1 when its run-on ends.
-        Assert.Equal(Mask(2), off.Off);
-        Assert.Equal(Mask(1), Plan(State(1), T0.AddSeconds(181)).Off);
+        // The fans' step runs on already: Fan 2 goes with Fan 1 when the run-on ends.
+        Assert.Equal((ChannelMask.None, EventActions.Off, (int?)22), (off.Off, Assert.Single(off.Events).Action, off.Events[0].RelayId));
+        Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
         Plan(State(), T0.AddSeconds(182));
-        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+        Assert.Equal((GroupPhases.Idle, (DateTime?)null), (_runtime.Phase, _runtime.OnSinceUtc));
+    }
+
+    // Fan 2 is turned off while the heaters run: they go off at once. Before the board confirms it, Fan 1 is turned off
+    // too: it joins Fan 2's stop, and both run on and go off; nothing is left on.
+    [Fact]
+    public void Should_JoinASecondFan_ToTheFirstOnesStop_BeforeTheHeatersAreOff()
+    {
+        _runtime.OnSinceUtc = T0.AddMinutes(-5);
+        _runtime.AutoOffAtUtc = T0.AddHours(2);
+        var first = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2, 3, 4), _runtime, 2, John, T0, first);
+        Assert.Equal(Mask(3, 4), first.Off);
+
+        var second = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2, 3, 4), _runtime, 1, John, T0.AddSeconds(0.5), second);
+        Assert.Equal((EventActions.Off, (int?)21), (Assert.Single(second.Events).Action, second.Events[0].RelayId));
+        Assert.Equal([22, 21], _runtime.StopRelayIds);
+
+        var runOn = Assert.Single(Plan(State(1, 2), T0.AddSeconds(1)).Events);
+        Assert.Equal((EventActions.RunOnStart, (int?)null, "Fans"), (runOn.Action, runOn.RelayId, Read(runOn.Details, "role")));
+        Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
+
+        // One fan confirmed off is not the stop done.
+        Assert.True(Plan(State(1), T0.AddSeconds(182)).IsEmpty);
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
+        Plan(State(), T0.AddSeconds(183));
+        Assert.Equal((GroupPhases.Idle, (DateTime?)null), (_runtime.Phase, _runtime.OnSinceUtc));
     }
 
     // A stop called off by turning a fan on again: the run gets the group's auto-off back.
@@ -348,7 +391,7 @@ public sealed class GroupStepsTests
         Assert.Equal(["Keeps running for 1 min", "Keeps running for 1 min", "Off", "Off"], Notes(stopping, State(1, 2)));
         Assert.Equal("Stopping · run-on for 1 min: Fans", Status(stopping, State(1, 2)));
 
-        var oneFan = stopping with { Runtime = new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60), StopRelayId = 21 } };
+        var oneFan = stopping with { Runtime = new GroupRuntime { GroupId = 1, Phase = GroupPhases.Stopping, NextStepAtUtc = T0.AddSeconds(60), StopRelayIds = [21] } };
         Assert.Equal(["Keeps running for 1 min", "On", "Off", "Off"], Notes(oneFan, State(1, 2)));
         Assert.Equal("Stopping · run-on for 1 min: Fan 1", Status(oneFan, State(1, 2)));
 
