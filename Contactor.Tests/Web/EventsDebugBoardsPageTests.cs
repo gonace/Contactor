@@ -372,7 +372,8 @@ public sealed partial class EventsDebugBoardsPageTests
     }
 
     // One board: Relays, Events and Debug show the board in the filter, picked, and "+ Board" / "+ Add a board", but no
-    // "All boards"; a tap on the board shows everything still, as there is nothing to filter.
+    // "All boards"; a tap on the board (its chip or its box in the side menu) posts every board, so it shows everything
+    // still, as there is nothing to filter.
     [Theory]
     [InlineData("relays")]
     [InlineData("events")]
@@ -383,7 +384,13 @@ public sealed partial class EventsDebugBoardsPageTests
         await using var app = await OneBoardAsync();
         using var http = app.CreateClient();
 
-        foreach (var html in new[] { await PageAsync(http, screen.PagePath), await PickAsync(http, screen, "1") })
+        var page = await PageAsync(http, screen.PagePath);
+        var chip = Regex.Match(page, "name=\"show\" value=\"([^\"]*)\" class=\"chip-filter picked ");
+        var side = Regex.Match(page, "name=\"show\" value=\"([^\"]*)\" class=\"side-board picked ");
+        Assert.Equal(BoardFilter.AllValue, chip.Groups[1].Value);
+        Assert.Equal(BoardFilter.AllValue, side.Groups[1].Value);
+
+        foreach (var html in new[] { page, await PickAsync(http, screen, chip.Groups[1].Value) })
         {
             AssertOnlyTheBoard(html, screen);
             AssertEverythingShows(html, screenName);

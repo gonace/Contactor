@@ -30,7 +30,7 @@
             var state = board.State;
             var count = Counts.Of(board.BoardId, state);
             var picked = !Go && Picked(board.BoardId);
-            <button type="submit" form="@form" name="show" value="@(Go ? OnlyValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
+            <button type="submit" form="@form" name="show" value="@(Go ? GoValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
                 <span class="line"><span class="name">@board.Name</span><span class="dot @(state.IsConnected ? null : "off")" aria-hidden="true"></span></span>
                 <span class="hint">
                     @(state.HasAnswered ? $"{count.On} of {count.Active} on" : "")
@@ -104,7 +104,8 @@ else
 
     /// <summary>
     /// The side menu's list on a page without a board filter (Settings, a relay's page …): a tap goes to Relays showing
-    /// that board ("All boards": every board), through the Relays screen's own form. Nothing shows as picked.
+    /// that board ("All boards", or the one board: every board), through the Relays screen's own form. Nothing shows as
+    /// picked.
     /// </summary>
     [Parameter]
     public bool Go { get; set; }
@@ -160,10 +161,11 @@ else
         return Several ? !Filter.IsAll && Filter.Shows(boardId) : Boards.Count == 1;
     }
 
-    // What a tap on the board posts on a page without the filter: that board alone.
-    private static string OnlyValue(int boardId)
+    // What a tap on the board posts on a page without the filter: that board alone. The one board posts every board, as
+    // it is every board there is: kept as that board alone, the cookie would hide a board added later.
+    private string GoValue(int boardId)
     {
-        return boardId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Several ? boardId.ToString(System.Globalization.CultureInfo.InvariantCulture) : BoardFilter.AllValue;
     }
 
     // What a tap on the board posts: the filter as it would be after it.
