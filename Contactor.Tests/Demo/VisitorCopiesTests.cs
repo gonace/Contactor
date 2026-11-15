@@ -5,9 +5,14 @@ using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Demo;
 
-/// <summary>Each visitor's copy: made while there is room, kept while used, stopped and deleted when idle or at stop.</summary>
+/// <summary>
+/// Each visitor's copy: a place kept by the page, started by its frames while there is room, kept while the visitor
+/// clicks, and stopped and deleted when idle, too old, ended, or at stop.
+/// </summary>
 public sealed class VisitorCopiesTests : IAsyncDisposable
 {
+    private static readonly TimeSpan IdleAndWarning = TimeSpan.FromMinutes(17);
+
     private readonly DemoFolder _folder = new();
     private readonly FakeStarter _starter = new();
     private readonly FakeCopyDatabase _database = new();
@@ -28,7 +33,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
     [Fact]
     public async Task Should_StartAnAppAndASimulator_OnTheirOwnPorts_PointedAtEachOther()
     {
-        var copy = Assert.IsType<VisitorCopy>(_copies.TryStart());
+        var copy = Start(_copies);
         await copy.Started;
 
         var app = Assert.Single(_starter.RunsOf("app")).Start;
@@ -38,11 +43,14 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.NotEqual(app.Port, simulator.Port);
         Assert.Equal($"http://127.0.0.1:{app.Port}", app.Environment["ASPNETCORE_URLS"]);
         Assert.Equal($"http://127.0.0.1:{simulator.Port}", simulator.Environment["ASPNETCORE_URLS"]);
+        Assert.Same(ProgramProbe.App, app.Probe);
+        Assert.Same(ProgramProbe.Simulator, simulator.Probe);
 
-        // The app's VM201 is the visitor's simulated one.
+        // The app's VM201 is the visitor's simulated one, and the visitor has at most 20 boards.
         Assert.Equal("127.0.0.1", app.Environment["Vm201__Host"]);
         Assert.Equal(simulator.Environment["Simulator__Boards__0__Port"], app.Environment["Vm201__Port"]);
         Assert.NotEqual(app.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), app.Environment["Vm201__Port"]);
+        Assert.Equal("20", simulator.Environment["Simulator__MaxBoards"]);
 
         // Its database is in the copy's own folder, in the data root, and nothing of the visitor's id is in the path.
         Assert.Equal(_folder.DataRoot, Path.GetDirectoryName(copy.DataFolder));
@@ -55,72 +63,240 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Should_StartNoMoreCopies_ThanTheLimit()
+    public void Should_StartNothing_WhenOnlyThePageIsRead()
     {
-        var copies = Enumerable.Range(0, 3).Select(_ => _copies.TryStart()).ToList();
-        await Task.WhenAll(copies.Select(c => c!.Started));
+        // A bot or a link preview reads the page many times, and never asks for its frames.
+        for (var i = 0; i < 50; i++)
+        {
+            var visit = _copies.Visit(null);
+            Assert.Equal(VisitKind.Kept, visit.Kind);
+            Assert.True(VisitorCookie.IsWellFormed(visit.NewId));
+        }
 
-        Assert.All(copies, Assert.NotNull);
-        Assert.Equal(3, copies.Select(c => c!.VisitorId).Distinct().Count());
-        Assert.Null(_copies.TryStart());
-        Assert.Equal(6, _starter.Runs.Count);
-
-        // Room again once one is gone.
-        _time.Advance(TimeSpan.FromMinutes(30));
-        Assert.Equal(3, await _copies.StopIdleAsync());
-        Assert.NotNull(_copies.TryStart());
+        Assert.Empty(_starter.Runs);
+        Assert.Equal(0, _copies.Taken);
+        Assert.Equal(50, _copies.KeptCount);
+        Assert.Empty(_folder.CopyFolders());
     }
 
     [Fact]
-    public async Task Should_StopACopy_After30MinutesWithoutUse_AndDeleteItsData()
+    public async Task Should_StartTheCopy_OnTheFramesFirstRequest_Once()
     {
-        var copy = _copies.TryStart()!;
+        var id = _copies.Visit(null).NewId!;
+
+        // Both frames ask at once; they get the one copy.
+        var app = _copies.Use(id);
+        var simulator = _copies.Use(id);
+
+        Assert.Equal(UseKind.Copy, app.Kind);
+        Assert.Same(app.Copy, simulator.Copy);
+        Assert.Equal(id, app.Copy!.VisitorId);
+        await app.Copy.Started;
+        Assert.Equal(2, _starter.Runs.Count);
+        Assert.Equal(0, _copies.KeptCount);
+
+        // The page again: the copy, and no new id.
+        Assert.Equal(new Visit(VisitKind.Copy), _copies.Visit(id));
+    }
+
+    [Fact]
+    public async Task Should_KeepThePlace_WhenThePageReportsAClickBeforeItsFrames()
+    {
+        var id = _copies.Visit(null).NewId!;
+        _time.Advance(VisitorCopies.KeptFor - TimeSpan.FromMinutes(1));
+
+        Assert.True(_copies.Active(id));
+        _time.Advance(TimeSpan.FromMinutes(2));
+        await _copies.StopExpiredAsync();
+
+        Assert.Equal(UseKind.Copy, _copies.Use(id).Kind);
+        Assert.False(_copies.Active("0123456789abcdef0123456789abcdef"));
+    }
+
+    [Fact]
+    public void Should_KeepTheSameId_ForAPageLoadedAgainBeforeItsFrames()
+    {
+        var id = _copies.Visit(null).NewId!;
+
+        Assert.Equal(new Visit(VisitKind.Kept), _copies.Visit(id));
+        Assert.Equal(1, _copies.KeptCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0123456789abcdef0123456789abcdef")]
+    public void Should_StartNoCopy_ForAnIdTheDemoDidntGive(string? given)
+    {
+        var visit = _copies.Visit(given);
+
+        Assert.NotEqual(given, visit.NewId);
+        Assert.Equal(UseKind.None, _copies.Use("0123456789abcdef0123456789abcdef").Kind);
+        Assert.Empty(_starter.Runs);
+    }
+
+    [Fact]
+    public async Task Should_ForgetKeptIds_AfterAWhile_AndTheOldestFirstWhenThereAreTooMany()
+    {
+        var first = _copies.Visit(null).NewId!;
+        for (var i = 1; i < VisitorCopies.MaxKept; i++)
+        {
+            _copies.Visit(null);
+        }
+
+        Assert.Equal(VisitorCopies.MaxKept, _copies.KeptCount);
+        var newest = _copies.Visit(null).NewId!;
+        Assert.Equal(VisitorCopies.MaxKept, _copies.KeptCount);
+        Assert.Equal(UseKind.None, _copies.Use(first).Kind);
+
+        _time.Advance(VisitorCopies.KeptFor);
+        Assert.Equal(0, await _copies.StopExpiredAsync());
+        Assert.Equal(0, _copies.KeptCount);
+        Assert.Equal(UseKind.None, _copies.Use(newest).Kind);
+    }
+
+    [Fact]
+    public async Task Should_StartNoMoreCopies_ThanTheLimit()
+    {
+        var copies = Enumerable.Range(0, 3).Select(_ => Start(_copies)).ToList();
+        await Task.WhenAll(copies.Select(c => c.Started));
+
+        Assert.Equal(3, copies.Select(c => c.VisitorId).Distinct().Count());
+        Assert.Equal(VisitKind.Busy, _copies.Visit(null).Kind);
+        Assert.Equal(6, _starter.Runs.Count);
+
+        // Room again once one is gone.
+        _time.Advance(IdleAndWarning);
+        Assert.Equal(3, await _copies.StopExpiredAsync());
+        Assert.Equal(VisitKind.Kept, _copies.Visit(null).Kind);
+    }
+
+    [Fact]
+    public async Task Should_NotStartAKeptCopy_WhenTheDemoFilledUpSince()
+    {
+        var kept = _copies.Visit(null).NewId!;
+        await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => Start(_copies).Started));
+
+        Assert.Equal(UseKind.Busy, _copies.Use(kept).Kind);
+        Assert.Equal(6, _starter.Runs.Count);
+    }
+
+    [Fact]
+    public async Task Should_CountCopiesStillStopping_AsTaken()
+    {
+        var database = new GatedCopyDatabase();
+        await using var copies = Copies(maxVisitors: 1, database);
+        var copy = Start(copies);
+        await database.Entered.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        // Its stop waits for its start; its processes would still run.
+        var end = copies.EndAsync(copy.VisitorId);
+        Assert.Equal(0, copies.Count);
+        Assert.Equal(1, copies.Taken);
+        Assert.Equal(VisitKind.Busy, copies.Visit(null).Kind);
+
+        database.Release.TrySetResult();
+        await end;
+        Assert.Equal(0, copies.Taken);
+        Assert.Equal(VisitKind.Kept, copies.Visit(null).Kind);
+    }
+
+    [Fact]
+    public async Task Should_KeepACopy_WhileTheVisitorClicks()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+
+        for (var i = 0; i < 6; i++)
+        {
+            _time.Advance(TimeSpan.FromMinutes(16));
+            Assert.True(_copies.Active(copy.VisitorId));
+            Assert.Equal(0, await _copies.StopExpiredAsync());
+        }
+
+        Assert.All(_starter.Runs, r => Assert.False(r.HasExited));
+    }
+
+    [Fact]
+    public async Task Should_StopACopy_After15And2MinutesWithoutAClick_AndDeleteItsData()
+    {
+        var copy = Start(_copies);
         await copy.Started;
         Assert.Single(_folder.CopyFolders());
 
-        _time.Advance(TimeSpan.FromMinutes(20));
-        Assert.True(_copies.Touch(copy.VisitorId));
-        _time.Advance(TimeSpan.FromMinutes(29));
-        Assert.Equal(0, await _copies.StopIdleAsync());
+        _time.Advance(TimeSpan.FromMinutes(10));
+        Assert.True(_copies.Active(copy.VisitorId));
+        _time.Advance(IdleAndWarning - TimeSpan.FromSeconds(1));
+        Assert.Equal(0, await _copies.StopExpiredAsync());
         Assert.All(_starter.Runs, r => Assert.False(r.HasExited));
 
-        _time.Advance(TimeSpan.FromMinutes(1));
-        Assert.Equal(1, await _copies.StopIdleAsync());
+        _time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(1, await _copies.StopExpiredAsync());
 
         Assert.All(_starter.Runs, r => Assert.True(r.Stopped));
         Assert.Empty(_folder.CopyFolders());
         Assert.Equal(0, _copies.Count);
-        Assert.False(_copies.Touch(copy.VisitorId));
-        Assert.Null(_copies.Begin(copy.VisitorId));
+        Assert.True(copy.Stopped.IsCompleted);
+        Assert.False(_copies.Active(copy.VisitorId));
+        Assert.Equal(UseKind.None, _copies.Use(copy.VisitorId).Kind);
     }
 
     [Fact]
-    public async Task Should_KeepACopy_WhileAConnectionIsOpen()
+    public async Task Should_CountAPageLoad_AsActivity()
     {
-        var copy = _copies.TryStart()!;
+        var copy = Start(_copies);
         await copy.Started;
 
-        // Blazor's live connection is one long request.
-        Assert.Same(copy, _copies.Begin(copy.VisitorId));
-        _time.Advance(TimeSpan.FromHours(2));
-        Assert.Equal(0, await _copies.StopIdleAsync());
+        _time.Advance(TimeSpan.FromMinutes(16));
+        Assert.Equal(VisitKind.Copy, _copies.Visit(copy.VisitorId).Kind);
+        _time.Advance(TimeSpan.FromMinutes(16));
 
-        _copies.End(copy);
-        _time.Advance(TimeSpan.FromMinutes(29));
-        Assert.Equal(0, await _copies.StopIdleAsync());
-        _time.Advance(TimeSpan.FromMinutes(1));
-        Assert.Equal(1, await _copies.StopIdleAsync());
+        Assert.Equal(0, await _copies.StopExpiredAsync());
+    }
+
+    [Fact]
+    public async Task Should_StopACopy_After2Hours_EvenWhileTheVisitorClicks()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+
+        for (var minute = 10; minute < 120; minute += 10)
+        {
+            _time.Advance(TimeSpan.FromMinutes(10));
+            Assert.True(_copies.Active(copy.VisitorId));
+            Assert.Equal(0, await _copies.StopExpiredAsync());
+        }
+
+        _time.Advance(TimeSpan.FromMinutes(10));
+        Assert.True(_copies.Active(copy.VisitorId));
+        Assert.Equal(1, await _copies.StopExpiredAsync());
+        Assert.Empty(_folder.CopyFolders());
+    }
+
+    [Fact]
+    public async Task Should_EndOnlyTheVisitorsOwnCopy()
+    {
+        var mine = Start(_copies);
+        var theirs = Start(_copies);
+        await Task.WhenAll(mine.Started, theirs.Started);
+
+        await _copies.EndAsync(mine.VisitorId);
+        await _copies.EndAsync("0123456789abcdef0123456789abcdef");
+
+        Assert.True(mine.Stopped.IsCompleted);
+        Assert.False(theirs.Stopped.IsCompleted);
+        Assert.Equal(1, _copies.Count);
+        Assert.Equal(VisitKind.Copy, _copies.Visit(theirs.VisitorId).Kind);
     }
 
     [Fact]
     public async Task Should_LookForIdleCopies_EveryMinute()
     {
-        var copy = _copies.TryStart()!;
+        var copy = Start(_copies);
         await copy.Started;
         using var service = new DemoHostedService(_copies, _time);
         await service.StartAsync(TestContext.Current.CancellationToken);
 
-        for (var minute = 1; minute <= 29; minute++)
+        for (var minute = 1; minute <= 16; minute++)
         {
             await Wait.UntilAsync(() => _time.Waits(DemoHostedService.SweepEvery));
             _time.Advance(DemoHostedService.SweepEvery);
@@ -137,8 +313,9 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
     [Fact]
     public async Task Should_StopEveryCopy_WhenTheDemoStops_AndStartNoMore()
     {
-        var copies = new[] { _copies.TryStart()!, _copies.TryStart()! };
+        var copies = new[] { Start(_copies), Start(_copies) };
         await Task.WhenAll(copies.Select(c => c.Started));
+        var kept = _copies.Visit(null).NewId!;
         using var service = new DemoHostedService(_copies, _time);
         await service.StartAsync(TestContext.Current.CancellationToken);
 
@@ -147,7 +324,8 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Equal(4, _starter.Runs.Count);
         Assert.All(_starter.Runs, r => Assert.True(r.Stopped));
         Assert.Empty(_folder.CopyFolders());
-        Assert.Null(_copies.TryStart());
+        Assert.Equal(VisitKind.Busy, _copies.Visit(null).Kind);
+        Assert.Equal(UseKind.None, _copies.Use(kept).Kind);
     }
 
     [Fact]
@@ -155,7 +333,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
     {
         var database = new GatedCopyDatabase();
         await using var copies = Copies(maxVisitors: 3, database);
-        var copy = copies.TryStart()!;
+        var copy = Start(copies);
         await database.Entered.Task.WaitAsync(TestContext.Current.CancellationToken);
 
         var stop = copies.StopAllAsync();
@@ -171,7 +349,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
     public async Task Should_StopACopy_WhoseProgramIsGivenUp()
     {
         _starter.Listens = false;
-        var copy = _copies.TryStart()!;
+        var copy = Start(_copies);
         await copy.Started;
 
         for (var i = 1; i <= SupervisedProgram.MaxFailedStarts; i++)
@@ -180,7 +358,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
             _starter.RunsOf("app")[^1].Exit(1);
         }
 
-        await Wait.UntilAsync(() => _copies.Count == 0 && _folder.CopyFolders().Count == 0);
+        await Wait.UntilAsync(() => _copies.Taken == 0 && _folder.CopyFolders().Count == 0);
         Assert.All(_starter.RunsOf("simulator"), r => Assert.True(r.Stopped));
         await Assert.ThrowsAnyAsync<InvalidOperationException>(() => copy.App.Listening);
     }
@@ -199,6 +377,16 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.False(Directory.Exists(left));
         Assert.True(Directory.Exists(other));
         Assert.True(File.Exists(Path.Combine(_folder.DataRoot, "note.txt")));
+    }
+
+    // A visitor as a browser is one: the page, then its frames.
+    private static VisitorCopy Start(VisitorCopies copies)
+    {
+        var visit = copies.Visit(null);
+        Assert.Equal(VisitKind.Kept, visit.Kind);
+        var use = copies.Use(visit.NewId!);
+        Assert.Equal(UseKind.Copy, use.Kind);
+        return use.Copy!;
     }
 
     private VisitorCopies Copies(int maxVisitors, ICopyDatabase? database = null)

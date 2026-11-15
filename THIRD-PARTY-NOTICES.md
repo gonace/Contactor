@@ -6,8 +6,8 @@ following works of others, each under its own licence. The licence texts are in 
 
 ## IBM Plex Sans and IBM Plex Mono
 
-- Latin subsets of the fonts, served by the app and the simulator (`wwwroot/fonts` in `Contactor.Web` and
-  `Contactor.Simulator`; `/app/wwwroot/fonts` in the image).
+- Latin subsets of the fonts, served by the app, the simulator and the demo (`wwwroot/fonts` in `Contactor.Web` and
+  `Contactor.Simulator`, two of them embedded in `Contactor.Demo`; `/app/wwwroot/fonts` in the image).
 - Copyright 2019 IBM Corp. (IBM Plex Sans) and Copyright 2017 IBM Corp. (IBM Plex Mono).
 - Licensed under the SIL Open Font License 1.1: `OFL.txt` next to the fonts.
 

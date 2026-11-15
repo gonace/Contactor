@@ -57,6 +57,7 @@ Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --projec
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
   Boards/                   # ChannelMask, BoardPoller, board adapters
+  Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings and pages
   Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
   Simulator/                # The simulator's boards and page
   Vm201/                    # Codec + client against the simulator

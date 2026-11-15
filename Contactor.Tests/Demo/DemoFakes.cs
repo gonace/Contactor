@@ -155,14 +155,42 @@ internal sealed class FakeCopyDatabase : ICopyDatabase
 /// </summary>
 internal sealed class EchoStarter : IProgramStarter
 {
+    private readonly Lock _lock = new();
+    private readonly List<ProgramStart> _started = [];
+    private int _requests;
+
+    /// <summary>Whether a program says it listens; otherwise requests wait for it until it is stopped.</summary>
+    public bool Listens { get; init; } = true;
+
+    /// <summary>The programs started, in order.</summary>
+    public IReadOnlyList<ProgramStart> Started
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _started];
+            }
+        }
+    }
+
+    /// <summary>How many requests the programs got, all together.</summary>
+    public int Requests => Volatile.Read(ref _requests);
+
     public IRunningProgram Start(ProgramStart start)
     {
+        lock (_lock)
+        {
+            _started.Add(start);
+        }
+
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls($"http://127.0.0.1:{start.Port}");
         var app = builder.Build();
         app.Run(async context =>
         {
+            Interlocked.Increment(ref _requests);
             if (context.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.Ordinal))
             {
                 context.Response.ContentType = "text/html; charset=utf-8";
@@ -174,24 +202,26 @@ internal sealed class EchoStarter : IProgramStarter
                 $"{start.Name} {start.Visitor} {context.Request.Path}{context.Request.QueryString} cookie=[{context.Request.Headers.Cookie}]");
         });
         app.StartAsync().GetAwaiter().GetResult();
-        return new EchoRun(app);
+        return new EchoRun(app, Listens);
     }
 
     private sealed class EchoRun : IRunningProgram
     {
         private readonly WebApplication _app;
+        private readonly bool _listens;
         private readonly TaskCompletionSource<int> _exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public EchoRun(WebApplication app)
+        public EchoRun(WebApplication app, bool listens)
         {
             _app = app;
+            _listens = listens;
         }
 
         public Task<int> Exited => _exited.Task;
 
         public Task WaitUntilListeningAsync(CancellationToken cancellationToken)
         {
-            return Task.CompletedTask;
+            return _listens ? Task.CompletedTask : Task.Delay(Timeout.Infinite, cancellationToken);
         }
 
         public async Task StopAsync()

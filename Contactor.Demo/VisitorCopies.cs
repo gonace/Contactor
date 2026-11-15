@@ -3,15 +3,56 @@ using Microsoft.Extensions.Options;
 
 namespace Contactor.Demo;
 
+/// <summary>What a page load finds: the visitor's copy, a place kept for one, or no room.</summary>
+public enum VisitKind
+{
+    /// <summary>The visitor's copy runs; the page load counts as activity.</summary>
+    Copy,
+
+    /// <summary>
+    /// A place is kept for the visitor's id: the copy starts once the page's frames ask for it, so a bot or a link
+    /// preview that only reads the page starts nothing.
+    /// </summary>
+    Kept,
+
+    /// <summary>The demo is full, or stopping.</summary>
+    Busy,
+}
+
+/// <param name="NewId">The id to give the browser, when it needs a new one.</param>
+public readonly record struct Visit(VisitKind Kind, string? NewId = null);
+
+/// <summary>What a request to a copy finds.</summary>
+public enum UseKind
+{
+    /// <summary>The visitor's copy, started now if this was its first request.</summary>
+    Copy,
+
+    /// <summary>The visitor's copy was kept, but the demo filled up since.</summary>
+    Busy,
+
+    /// <summary>The visitor has no copy: it ended, or never was.</summary>
+    None,
+}
+
+public readonly record struct Use(UseKind Kind, VisitorCopy? Copy = null);
+
 /// <summary>
-/// Every visitor's copy: makes one for a new visitor while there is room (<see cref="DemoOptions.MaxVisitors"/>),
-/// finds a visitor's own by the id in their cookie, and stops a copy, with its processes and its data folder, when it
-/// has been idle too long, when one of its programs is given up, or when the demo stops.
+/// Every visitor's copy: keeps a place for a new visitor while there is room (<see cref="DemoOptions.MaxVisitors"/>),
+/// starts their copy on its first real use, finds it by the id in their cookie, and stops it, with its processes and its
+/// data folder, when the visitor ends it or left it (<see cref="DemoOptions.IdleTimeout"/>), when it is too old
+/// (<see cref="DemoOptions.MaxLifetime"/>), when one of its programs is given up, or when the demo stops.
 /// </summary>
 public sealed partial class VisitorCopies : IAsyncDisposable
 {
     /// <summary>The address everything of a copy listens on.</summary>
     public const string Host = "127.0.0.1";
+
+    /// <summary>How many ids given to a page and not used yet are kept; the oldest goes first.</summary>
+    public const int MaxKept = 1000;
+
+    /// <summary>How long an id given to a page is kept for its frames' first request.</summary>
+    public static readonly TimeSpan KeptFor = TimeSpan.FromMinutes(10);
 
     private readonly DemoOptions _options;
     private readonly IProgramStarter _starter;
@@ -23,6 +64,9 @@ public sealed partial class VisitorCopies : IAsyncDisposable
     private readonly Lock _lock = new();
     private readonly Dictionary<string, Entry> _copies = new(StringComparer.Ordinal);
     private readonly HashSet<Entry> _stopping = [];
+
+    // Ids given to a page whose copy hasn't started yet, oldest first, with when they were given.
+    private readonly OrderedDictionary<string, DateTimeOffset> _kept = new(StringComparer.Ordinal);
     private bool _closed;
 
     public VisitorCopies(
@@ -44,7 +88,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         _logger = loggers.CreateLogger<VisitorCopies>();
     }
 
-    /// <summary>How many copies there are, the ones still starting included.</summary>
+    /// <summary>How many copies run, the ones still starting included, not the ones stopping.</summary>
     public int Count
     {
         get
@@ -55,6 +99,32 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             }
         }
     }
+
+    /// <summary>How many places are taken: running copies and copies still stopping, whose processes still run.</summary>
+    public int Taken
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return TakenLocked;
+            }
+        }
+    }
+
+    /// <summary>How many ids given to a page wait for their copy.</summary>
+    public int KeptCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _kept.Count;
+            }
+        }
+    }
+
+    private int TakenLocked => _copies.Count + _stopping.Count;
 
     /// <summary>
     /// Deletes what copies left in <see cref="DemoOptions.DataRoot"/> when the demo didn't stop cleanly: only folders
@@ -73,82 +143,135 @@ public sealed partial class VisitorCopies : IAsyncDisposable
     }
 
     /// <summary>
-    /// A new visitor's copy, with a new id for their cookie, starting in the background; null while the demo is full
-    /// or stopping.
+    /// A load of the demo's page by a visitor with this id (null: none). Starts nothing: a new visitor gets a new id,
+    /// never one the browser chose, kept until the page's frames use it.
     /// </summary>
-    public VisitorCopy? TryStart()
-    {
-        Entry entry;
-        lock (_lock)
-        {
-            if (_closed || _copies.Count >= _options.MaxVisitors)
-            {
-                return null;
-            }
-
-            entry = Create();
-            _copies.Add(entry.Copy.VisitorId, entry);
-
-            // Set before anything can stop it, so a stop always waits for the start to end.
-            entry.Starting = StartAsync(entry);
-            LogStarting(_logger, entry.Copy.Visitor, _copies.Count, _options.MaxVisitors);
-        }
-
-        return entry.Copy;
-    }
-
-    /// <summary>A page load of a visitor whose copy is still there: counts as use. False when it isn't there.</summary>
-    public bool Touch(string visitorId)
+    public Visit Visit(string? visitorId)
     {
         lock (_lock)
         {
-            if (!_copies.TryGetValue(visitorId, out var entry))
+            var now = _time.GetUtcNow();
+            if (visitorId is not null && _copies.TryGetValue(visitorId, out var entry))
             {
-                return false;
+                // Loading the page starts the page's count from now, so it counts as activity here too.
+                entry.Copy.Active(now);
+                return new Visit(VisitKind.Copy);
             }
 
-            entry.Copy.Touch(_time.GetUtcNow());
-            return true;
+            if (_closed || TakenLocked >= _options.MaxVisitors)
+            {
+                return new Visit(VisitKind.Busy);
+            }
+
+            if (visitorId is not null && _kept.Remove(visitorId))
+            {
+                _kept.Add(visitorId, now);
+                return new Visit(VisitKind.Kept);
+            }
+
+            var id = VisitorCookie.NewId();
+            while (_kept.Count >= MaxKept)
+            {
+                _kept.RemoveAt(0);
+            }
+
+            _kept.Add(id, now);
+            return new Visit(VisitKind.Kept, id);
         }
     }
 
     /// <summary>
-    /// A request or connection to the visitor's copy begins: it isn't idle until <see cref="End"/>. Null when the
-    /// visitor has no copy (stopped, or never had one).
+    /// A request to the visitor's copy: finds it, or starts it on the first request with an id kept for one, while
+    /// there is room.
     /// </summary>
-    public VisitorCopy? Begin(string visitorId)
+    public Use Use(string visitorId)
     {
+        Entry entry;
         lock (_lock)
         {
-            if (!_copies.TryGetValue(visitorId, out var entry))
+            if (_copies.TryGetValue(visitorId, out var running))
             {
-                return null;
+                return new Use(UseKind.Copy, running.Copy);
             }
 
-            entry.Copy.Begin(_time.GetUtcNow());
-            return entry.Copy;
+            if (!_kept.ContainsKey(visitorId))
+            {
+                return new Use(UseKind.None);
+            }
+
+            if (_closed || TakenLocked >= _options.MaxVisitors)
+            {
+                return new Use(UseKind.Busy);
+            }
+
+            _kept.Remove(visitorId);
+            entry = Create(visitorId);
+            _copies.Add(visitorId, entry);
+
+            // Set before anything can stop it, so a stop always waits for the start to end.
+            entry.Starting = StartAsync(entry);
+            LogStarting(_logger, entry.Copy.Visitor, TakenLocked, _options.MaxVisitors);
         }
+
+        return new Use(UseKind.Copy, entry.Copy);
     }
 
-    public void End(VisitorCopy copy)
+    /// <summary>
+    /// The page reports a click or a key in either frame. False when the visitor has no copy (any more), nor a place
+    /// kept for one whose frames haven't asked yet.
+    /// </summary>
+    public bool Active(string visitorId)
     {
-        ArgumentNullException.ThrowIfNull(copy);
         lock (_lock)
         {
-            copy.End(_time.GetUtcNow());
+            var now = _time.GetUtcNow();
+            if (_copies.TryGetValue(visitorId, out var entry))
+            {
+                entry.Copy.Active(now);
+                return true;
+            }
+
+            if (_kept.Remove(visitorId))
+            {
+                _kept.Add(visitorId, now);
+                return true;
+            }
+
+            return false;
         }
     }
 
-    /// <summary>Stops every copy idle for <see cref="DemoOptions.IdleTimeout"/> and deletes its data. Returns how many.</summary>
-    public async Task<int> StopIdleAsync()
+    /// <summary>The visitor ends their copy (or the page's count down did): stops it and deletes its data.</summary>
+    public Task EndAsync(string visitorId)
+    {
+        lock (_lock)
+        {
+            _kept.Remove(visitorId);
+            return _copies.TryGetValue(visitorId, out var entry) ? StopLocked(entry, "ended on the page") : Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Stops every copy without a click or a key for <see cref="DemoOptions.IdleTimeout"/> and
+    /// <see cref="DemoOptions.IdleWarning"/> together, or older than <see cref="DemoOptions.MaxLifetime"/>, and deletes
+    /// its data; forgets ids kept longer than <see cref="KeptFor"/>. Returns how many copies.
+    /// </summary>
+    public async Task<int> StopExpiredAsync()
     {
         List<Task> stops = [];
         lock (_lock)
         {
             var now = _time.GetUtcNow();
-            foreach (var entry in _copies.Values.Where(e => e.Copy.IsIdle(now, _options.IdleTimeout)).ToList())
+            var idle = _options.IdleTimeout + _options.IdleWarning;
+            foreach (var entry in _copies.Values.Where(e => e.Copy.HasExpired(now, idle, _options.MaxLifetime)).ToList())
             {
-                stops.Add(StopLocked(entry, "idle"));
+                var reason = now - entry.Copy.StartedAt >= _options.MaxLifetime ? "it reached its lifetime" : "idle";
+                stops.Add(StopLocked(entry, reason));
+            }
+
+            while (_kept.Count > 0 && now - _kept.GetAt(0).Value >= KeptFor)
+            {
+                _kept.RemoveAt(0);
             }
         }
 
@@ -163,6 +286,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         lock (_lock)
         {
             _closed = true;
+            _kept.Clear();
             foreach (var entry in _copies.Values.ToList())
             {
                 StopLocked(entry, "the demo stops");
@@ -179,9 +303,8 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         await StopAllAsync();
     }
 
-    private Entry Create()
+    private Entry Create(string visitorId)
     {
-        var visitorId = VisitorCookie.NewId();
         var visitor = VisitorCookie.ForLog(visitorId);
 
         // The folder has an id of its own: nothing a browser sends ever becomes part of a path.
@@ -198,16 +321,17 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             ["Vm201__Port"] = board,
             ["DOTNET_gcServer"] = "0",
             ["Logging__LogLevel__Default"] = "Warning",
-        });
+        }, ProgramProbe.App);
         var simulator = new ProgramStart("simulator", visitor, _options.SimulatorPath, simulatorPort, new Dictionary<string, string>
         {
             ["ASPNETCORE_URLS"] = Url(simulatorPort),
             ["ASPNETCORE_ENVIRONMENT"] = _options.CopyEnvironment,
             ["Simulator__Boards__0__Type"] = "vm201",
             ["Simulator__Boards__0__Port"] = board,
+            ["Simulator__MaxBoards"] = _options.MaxBoards.ToString(CultureInfo.InvariantCulture),
             ["DOTNET_gcServer"] = "0",
             ["Logging__LogLevel__Default"] = "Warning",
-        });
+        }, ProgramProbe.Simulator);
         var copy = new VisitorCopy(
             visitorId,
             dataFolder,
@@ -229,7 +353,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
 
     private async Task StartAsync(Entry entry)
     {
-        // Out of TryStart's lock before any real work.
+        // Out of Use's lock before any real work.
         await Task.Yield();
         var copy = entry.Copy;
         try
@@ -260,8 +384,8 @@ public sealed partial class VisitorCopies : IAsyncDisposable
     private async Task WatchAsync(Entry entry)
     {
         var copy = entry.Copy;
-        var first = await Task.WhenAny(copy.App.GaveUp, copy.Simulator.GaveUp, entry.Stopped.Task);
-        if (first != entry.Stopped.Task)
+        var first = await Task.WhenAny(copy.App.GaveUp, copy.Simulator.GaveUp, copy.Stopped);
+        if (first != copy.Stopped)
         {
             await Stop(entry, "a program was given up");
         }
@@ -285,7 +409,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
 
         _copies.Remove(entry.Copy.VisitorId);
         _stopping.Add(entry);
-        entry.Stopped.TrySetResult();
+        entry.Copy.SetStopped();
         entry.Cancel.Cancel();
         entry.Stopping = StopAsync(entry, reason);
         return entry.Stopping;
@@ -372,8 +496,6 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         public VisitorCopy Copy { get; }
 
         public CancellationTokenSource Cancel { get; } = new();
-
-        public TaskCompletionSource Stopped { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task Starting { get; set; } = Task.CompletedTask;
 

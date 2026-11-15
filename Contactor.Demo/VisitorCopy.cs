@@ -14,8 +14,8 @@ public enum CopyPart
 public sealed class VisitorCopy
 {
     private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private DateTimeOffset _lastUsed;
-    private int _inUse;
+    private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private DateTimeOffset _lastActive;
 
     internal VisitorCopy(string visitorId, string dataFolder, SupervisedProgram app, SupervisedProgram simulator, DateTimeOffset now)
     {
@@ -23,7 +23,8 @@ public sealed class VisitorCopy
         DataFolder = dataFolder;
         App = app;
         Simulator = simulator;
-        _lastUsed = now;
+        StartedAt = now;
+        _lastActive = now;
     }
 
     /// <summary>The id in the visitor's cookie.</summary>
@@ -38,40 +39,41 @@ public sealed class VisitorCopy
 
     public SupervisedProgram Simulator { get; }
 
+    /// <summary>When the copy was made: it is deleted <see cref="DemoOptions.MaxLifetime"/> later whatever happens.</summary>
+    public DateTimeOffset StartedAt { get; }
+
     /// <summary>Completes once the database is made and both programs are started; throws when that failed.</summary>
     public Task Started => _started.Task;
 
-    /// <summary>When a request last began or ended. Changed under <see cref="VisitorCopies"/>' lock.</summary>
-    internal DateTimeOffset LastUsed => _lastUsed;
+    /// <summary>Completes once the copy is being stopped: no request reaches it any more.</summary>
+    public Task Stopped => _stopped.Task;
 
-    /// <summary>Requests and connections (Blazor's live one included) going on now. Changed under the same lock.</summary>
-    internal int InUse => _inUse;
+    /// <summary>
+    /// When the visitor last clicked or pressed a key in either frame, as the page reports it, or loaded the page.
+    /// Changed under <see cref="VisitorCopies"/>' lock.
+    /// </summary>
+    internal DateTimeOffset LastActive => _lastActive;
 
     public SupervisedProgram Part(CopyPart part)
     {
         return part == CopyPart.App ? App : Simulator;
     }
 
-    internal void Begin(DateTimeOffset now)
+    internal void Active(DateTimeOffset now)
     {
-        _inUse++;
-        _lastUsed = now;
+        if (now > _lastActive)
+        {
+            _lastActive = now;
+        }
     }
 
-    internal void End(DateTimeOffset now)
+    /// <summary>
+    /// Whether the copy is done: no click or key for <paramref name="idle"/> (the timeout and the page's count down
+    /// together), or older than <paramref name="maxLifetime"/>.
+    /// </summary>
+    internal bool HasExpired(DateTimeOffset now, TimeSpan idle, TimeSpan maxLifetime)
     {
-        _inUse--;
-        _lastUsed = now;
-    }
-
-    internal void Touch(DateTimeOffset now)
-    {
-        _lastUsed = now;
-    }
-
-    internal bool IsIdle(DateTimeOffset now, TimeSpan idleTimeout)
-    {
-        return _inUse == 0 && now - _lastUsed >= idleTimeout;
+        return now - _lastActive >= idle || now - StartedAt >= maxLifetime;
     }
 
     internal void SetStarted()
@@ -82,5 +84,10 @@ public sealed class VisitorCopy
     internal void SetFailed(Exception exception)
     {
         _started.TrySetException(exception);
+    }
+
+    internal void SetStopped()
+    {
+        _stopped.TrySetResult();
     }
 }

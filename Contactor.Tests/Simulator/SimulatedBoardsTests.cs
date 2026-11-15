@@ -18,7 +18,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 11, 18, 0, 0, TimeSpan.Zero);
 
-    private readonly SimulatedBoards _boards = new(NullLoggerFactory.Instance, new FixedTimeProvider(Now));
+    private readonly SimulatedBoards _boards = new(NullLoggerFactory.Instance, new FixedTimeProvider(Now), Options.Create(new SimulatorOptions()));
 
     public async ValueTask DisposeAsync()
     {
@@ -257,6 +257,44 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.Equal("ab:c", board.Username);
         await using var client = await ConnectAsync(board.Board.Port, "ab:c", "x");
         Assert.True(client.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_RefuseABoard_OverTheLimit()
+    {
+        await using var boards = new SimulatedBoards(
+            NullLoggerFactory.Instance, new FixedTimeProvider(Now), Options.Create(new SimulatorOptions { MaxBoards = 2 }));
+        Assert.Null(boards.Add("vm201", FreePort(), null, null));
+        Assert.Null(boards.Add("vm208", FreePort(), null, null));
+
+        Assert.Equal("You can have at most 2 boards.", boards.Add("vm201", FreePort(), null, null));
+        Assert.Equal(2, boards.Boards.Count);
+
+        // Room again once one is removed.
+        await boards.RemoveAsync(boards.Boards[0].Id);
+        Assert.Null(boards.Add("vm201", FreePort(), null, null));
+    }
+
+    [Fact]
+    public async Task Should_StartTheSettingsBoards_EvenOverTheLimit()
+    {
+        await using var boards = new SimulatedBoards(
+            NullLoggerFactory.Instance, new FixedTimeProvider(Now), Options.Create(new SimulatorOptions { MaxBoards = 1 }));
+        Assert.Null(boards.Add("vm201", FreePort(), null, null, fromSettings: true));
+        Assert.Null(boards.Add("vm201", FreePort(), null, null, fromSettings: true));
+
+        Assert.Equal("You can have at most 1 board.", boards.Add("vm201", FreePort(), null, null));
+    }
+
+    [Fact]
+    public void Should_HaveNoLimit_WhenNoneIsSet()
+    {
+        for (var i = 0; i < 25; i++)
+        {
+            Assert.Null(_boards.Add("vm201", FreePort(), null, null));
+        }
+
+        Assert.Equal(25, _boards.Boards.Count);
     }
 
     [Fact]

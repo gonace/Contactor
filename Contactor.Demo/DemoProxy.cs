@@ -8,9 +8,9 @@ using Yarp.ReverseProxy.Forwarder;
 namespace Contactor.Demo;
 
 /// <summary>
-/// The demo's only public endpoint: gives a new visitor a copy and a cookie, shows the page, and passes every other
-/// request (Blazor's live connection included) to the visitor's own copy, found by the cookie and nothing else, so a
-/// visitor never reaches another's copy.
+/// The demo's only public endpoint: gives a new visitor a cookie and shows the page, starts their copy when the page's
+/// frames first ask for it, and passes every other request (Blazor's live connection included) to the visitor's own
+/// copy, found by the cookie and nothing else, so a visitor never reaches another's copy.
 /// </summary>
 public sealed partial class DemoProxy : IDisposable
 {
@@ -50,7 +50,19 @@ public sealed partial class DemoProxy : IDisposable
                 await PageAsync(context);
                 break;
             case DemoTarget.Stylesheet:
-                await StylesheetAsync(context);
+                await FileAsync(context, "text/css; charset=utf-8", DemoPages.Stylesheet());
+                break;
+            case DemoTarget.Script:
+                await FileAsync(context, "text/javascript; charset=utf-8", DemoPages.Script());
+                break;
+            case DemoTarget.Font:
+                await FileAsync(context, "font/woff2", DemoPages.Font(route.Path));
+                break;
+            case DemoTarget.Activity:
+                Activity(context);
+                break;
+            case DemoTarget.End:
+                await EndAsync(context);
                 break;
             case DemoTarget.App:
             case DemoTarget.Simulator:
@@ -70,80 +82,135 @@ public sealed partial class DemoProxy : IDisposable
     private async Task PageAsync(HttpContext context)
     {
         NoStore(context.Response);
-        var visitorId = VisitorCookie.Read(context.Request);
-        if ((visitorId is null || !_copies.Touch(visitorId)) && HttpMethods.IsHead(context.Request.Method))
+        if (HttpMethods.IsHead(context.Request.Method))
         {
             // A check that the site answers (a monitor, a link preview) takes no visitor's place.
             context.Response.ContentType = "text/html; charset=utf-8";
             return;
         }
 
-        if (visitorId is null || !_copies.Touch(visitorId))
+        // A bot or a link preview that reads the page gets an id at most; only the page's frames start the copy.
+        var visit = _copies.Visit(VisitorCookie.Read(context.Request));
+        if (visit.Kind == VisitKind.Busy)
         {
-            // A new visitor, or one whose copy was stopped: a new copy with a new id, never one the browser chose.
-            var copy = _copies.TryStart();
-            if (copy is null)
-            {
-                LogBusy(_logger, _options.MaxVisitors);
-                context.Response.Headers.RetryAfter = DemoPages.BusyRetrySeconds.ToString(CultureInfo.InvariantCulture);
-                await HtmlAsync(context, StatusCodes.Status503ServiceUnavailable, DemoPages.Busy());
-                return;
-            }
-
-            VisitorCookie.Give(context, copy.VisitorId);
+            await BusyAsync(context, page: true);
+            return;
         }
 
-        await HtmlAsync(context, StatusCodes.Status200OK, DemoPages.Page(_options.IdleTimeout));
+        if (visit.NewId is { } id)
+        {
+            VisitorCookie.Give(context, id);
+        }
+
+        await HtmlAsync(context, StatusCodes.Status200OK, DemoPages.Page(_options));
     }
 
-    private static async Task StylesheetAsync(HttpContext context)
+    // The page, or a frame of it: "busy" and its "Try again now". Anything else just gets the status.
+    private async Task BusyAsync(HttpContext context, bool page)
     {
-        var css = DemoPages.Stylesheet();
-        context.Response.ContentType = "text/css; charset=utf-8";
+        LogBusy(_logger, _options.MaxVisitors);
+        NoStore(context.Response);
+        context.Response.Headers.RetryAfter = DemoPages.BusyRetrySeconds.ToString(CultureInfo.InvariantCulture);
+        if (page || DemoRoutes.IsDocument(context.Request))
+        {
+            await HtmlAsync(context, StatusCodes.Status503ServiceUnavailable, DemoPages.Busy());
+        }
+        else
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        }
+    }
+
+    private static async Task FileAsync(HttpContext context, string contentType, byte[] bytes)
+    {
+        context.Response.ContentType = contentType;
         context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
-        context.Response.ContentLength = css.Length;
+        context.Response.ContentLength = bytes.Length;
         if (!HttpMethods.IsHead(context.Request.Method))
         {
-            await context.Response.Body.WriteAsync(css, context.RequestAborted);
+            await context.Response.Body.WriteAsync(bytes, context.RequestAborted);
+        }
+    }
+
+    // The page reports a click or a key: 204 while the copy is there, 404 once it is gone, so the page says it ended.
+    private void Activity(HttpContext context)
+    {
+        NoStore(context.Response);
+        if (!DemoRoutes.IsFromThisSite(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        var visitorId = VisitorCookie.Read(context.Request);
+        context.Response.StatusCode = visitorId is not null && _copies.Active(visitorId)
+            ? StatusCodes.Status204NoContent
+            : StatusCodes.Status404NotFound;
+    }
+
+    // Ends the copy of the cookie's visitor, never another's: the page's count down ran out, or "Start again", which
+    // then starts over at the page.
+    private async Task EndAsync(HttpContext context)
+    {
+        NoStore(context.Response);
+        if (!DemoRoutes.IsFromThisSite(context.Request))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (VisitorCookie.Read(context.Request) is { } visitorId)
+        {
+            await _copies.EndAsync(visitorId);
+        }
+
+        if (DemoRoutes.IsDocument(context.Request, post: true))
+        {
+            context.Response.StatusCode = StatusCodes.Status303SeeOther;
+            context.Response.Headers.Location = "/";
+        }
+        else
+        {
+            context.Response.StatusCode = StatusCodes.Status204NoContent;
         }
     }
 
     private async Task ForwardAsync(HttpContext context, DemoRoute route)
     {
         var visitorId = VisitorCookie.Read(context.Request);
-        var copy = visitorId is null ? null : _copies.Begin(visitorId);
-        if (copy is null)
+        var use = visitorId is null ? new Use(UseKind.None) : _copies.Use(visitorId);
+        if (use.Kind == UseKind.Busy)
         {
-            await NoCopyAsync(context, DemoPages.Stopped(_options.IdleTimeout));
+            await BusyAsync(context, page: false);
             return;
         }
 
+        if (use.Copy is not { } copy)
+        {
+            await NoCopyAsync(context, DemoPages.Ended());
+            return;
+        }
+
+        var part = route.Target == DemoTarget.App ? CopyPart.App : CopyPart.Simulator;
+        var program = copy.Part(part);
         try
         {
-            var part = route.Target == DemoTarget.App ? CopyPart.App : CopyPart.Simulator;
-            var program = copy.Part(part);
-            try
-            {
-                await copy.Started.WaitAsync(_options.StartTimeout, _time, context.RequestAborted);
-                await program.Listening.WaitAsync(_options.StartTimeout, _time, context.RequestAborted);
-            }
-            catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
-            {
-                await NoCopyAsync(context, DemoPages.NotStarted());
-                return;
-            }
-
-            var destination = string.Create(CultureInfo.InvariantCulture, $"http://{VisitorCopies.Host}:{program.Program.Port}");
-            var transformer = part == CopyPart.App ? AppTransformer.Instance : new SimulatorTransformer(route.Path);
-            var error = await _forwarder.SendAsync(context, destination, _client, RequestConfig, transformer);
-            if (error != ForwarderError.None && !context.RequestAborted.IsCancellationRequested)
-            {
-                LogForwardFailed(_logger, copy.Visitor, part, error);
-            }
+            await copy.Started.WaitAsync(_options.StartTimeout, _time, context.RequestAborted);
+            await program.Listening.WaitAsync(_options.StartTimeout, _time, context.RequestAborted);
         }
-        finally
+        catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
         {
-            _copies.End(copy);
+            // Ended while the request waited for it: the visitor sees that, not an error.
+            await NoCopyAsync(context, copy.Stopped.IsCompleted ? DemoPages.Ended() : DemoPages.NotStarted());
+            return;
+        }
+
+        var destination = string.Create(CultureInfo.InvariantCulture, $"http://{VisitorCopies.Host}:{program.Program.Port}");
+        var transformer = part == CopyPart.App ? AppTransformer.Instance : new SimulatorTransformer(route.Path);
+        var error = await _forwarder.SendAsync(context, destination, _client, RequestConfig, transformer);
+        if (error != ForwarderError.None && !context.RequestAborted.IsCancellationRequested)
+        {
+            LogForwardFailed(_logger, copy.Visitor, part, error);
         }
     }
 

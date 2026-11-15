@@ -16,6 +16,12 @@ public sealed class SimulatorOptions
 
     /// <summary>The boards to start. None given: one VM201 on its own port, 9760, without a login.</summary>
     public List<SimulatorBoardOptions> Boards { get; init; } = [];
+
+    /// <summary>
+    /// How many boards may run at once, the ones from the settings included; "Add a board" refuses more. Not set: no
+    /// limit. The demo sets it, so no visitor runs more than their share.
+    /// </summary>
+    public int? MaxBoards { get; set; }
 }
 
 /// <summary>One board that starts with the simulator, e.g. <c>Simulator__Boards__0__Port=9760</c>.</summary>

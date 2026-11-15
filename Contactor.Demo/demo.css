@@ -1,5 +1,9 @@
 /* The demo's own pages. Every colour is a design token, copied from the app's app.css (docs/ARCHITECTURE.md, Design
-   tokens): the page around the two frames looks like the app, light and dark. */
+   tokens): the page around the two frames looks like the app, light and dark. The app's own fonts, served by the
+   demo. */
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); }
+
 :root {
     --bg: #F5F2EC;
     --card: #FFFFFF;
@@ -9,6 +13,7 @@
     --chip: #E8E3DA;
     --accent: #C2410C;
     --on-ink: #FFFFFF;
+    --backdrop: rgba(29, 27, 24, 0.5);
     --font-sans: "IBM Plex Sans", system-ui, sans-serif;
     color-scheme: light dark;
 }
@@ -23,6 +28,7 @@
         --chip: #2E2A24;
         --accent: #F06A2C;
         --on-ink: #16140F;
+        --backdrop: rgba(0, 0, 0, 0.6);
     }
 }
 
@@ -210,6 +216,30 @@ body.message {
     background: var(--card);
 }
 
-.card h1 {
+.card h1,
+.card h2 {
+    margin: 0;
     font-size: 24px;
+    font-weight: 600;
+}
+
+/* "Are you still there?" and "Your demo has ended": over the whole page, the page dimmed behind. */
+.overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--backdrop);
+}
+
+.overlay[hidden] {
+    display: none;
+}
+
+/* Nothing is left behind it: the page's own background. */
+#demo-ended {
+    background: var(--bg);
 }

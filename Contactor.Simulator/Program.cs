@@ -16,6 +16,7 @@ public sealed class Program
         builder.AddServiceDefaults();
         builder.Services.AddOptions<SimulatorOptions>()
             .Bind(builder.Configuration.GetSection(SimulatorOptions.SectionName))
+            .Validate(o => o.MaxBoards is null or >= 1, "Simulator:MaxBoards is 1 or more, or not set for no limit.")
             .ValidateOnStart();
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<SimulatedBoards>();

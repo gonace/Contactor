@@ -6,13 +6,15 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Demo;
 
 /// <summary>
 /// The proxy with real copies standing in for the app and the simulator (small web servers on their ports): the page
-/// and its cookie, each visitor reaching only their own copy, the limit, and what never reaches a copy.
+/// and its cookie, the copy started by the frames, each visitor reaching only their own copy, the limit, activity and
+/// ending, and what never reaches a copy.
 /// </summary>
 public sealed class DemoProxyTests : IAsyncDisposable
 {
@@ -34,7 +36,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Should_GiveANewVisitor_ACopyACookieAndThePage()
+    public async Task Should_GiveANewVisitor_ACookieAndThePage_AndStartNothingYet()
     {
         var client = await StartAsync();
 
@@ -44,12 +46,30 @@ public sealed class DemoProxyTests : IAsyncDisposable
         var html = await response.Content.ReadAsStringAsync(Cancel);
         Assert.Contains("<iframe class=\"frame-simulator\" title=\"Simulator\" src=\"/demo/simulator/\"></iframe>", html, StringComparison.Ordinal);
         Assert.Contains("<iframe class=\"frame-app\" title=\"Contactor\" src=\"/?demo-frame\"></iframe>", html, StringComparison.Ordinal);
-        Assert.Contains("deleted after 30 minutes without use", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reset when you're done", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Nobody else", html, StringComparison.Ordinal);
+        Assert.Contains("data-idle=\"900\" data-warning=\"120\" data-report=\"60\"", html, StringComparison.Ordinal);
+        Assert.Matches("<script src=\"/demo/demo.js\\?v=[0-9a-f]{12}\" defer></script>", html);
+        Assert.Contains("role=\"alertdialog\"", html, StringComparison.Ordinal);
         Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
-        var id = VisitorId(response);
-        Assert.NotNull(id);
+        Assert.NotNull(VisitorId(response));
+
+        // A bot or a link preview reads the page and nothing more: no copy, no place taken.
+        Assert.Equal(0, Copies.Taken);
+        Assert.Empty(Echo.Started);
+    }
+
+    [Fact]
+    public async Task Should_StartTheCopy_OnTheFramesFirstRequest()
+    {
+        var client = await StartAsync();
+        var id = await PageAsync(client);
+
+        var app = await GetAsync(client, "/?demo-frame", id);
+
+        Assert.Equal($"app {VisitorCookie.ForLog(id)} /?demo-frame cookie=[]", app);
         Assert.Equal(1, Copies.Count);
+        Assert.Equal(2, Echo.Started.Count);
     }
 
     [Fact]
@@ -119,6 +139,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
     {
         var client = await StartAsync();
         await NewVisitorAsync(client);
+        var before = Echo.Requests;
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/setup");
         if (id is not null)
@@ -131,10 +152,17 @@ public sealed class DemoProxyTests : IAsyncDisposable
         using var file = await client.SendAsync(Get("/_framework/blazor.web.js", id), Cancel);
 
         Assert.Equal(HttpStatusCode.NotFound, page.StatusCode);
-        Assert.Contains("This copy of the demo was stopped", await page.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
-        Assert.Contains("target=\"_top\"", await page.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        var html = await page.Content.ReadAsStringAsync(Cancel);
+        Assert.Contains("Your demo has ended", html, StringComparison.Ordinal);
+        Assert.Contains("<form method=\"post\" action=\"/demo/end\" target=\"_top\">", html, StringComparison.Ordinal);
+        Assert.Contains("Start again", html, StringComparison.Ordinal);
         Assert.Equal(HttpStatusCode.NotFound, file.StatusCode);
         Assert.Equal("", await file.Content.ReadAsStringAsync(Cancel));
+
+        // No copy got anything, and no new one started.
+        Assert.Equal(before, Echo.Requests);
+        Assert.Equal(2, Echo.Started.Count);
+        Assert.Equal(1, Copies.Count);
     }
 
     [Theory]
@@ -171,7 +199,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
         var html = await busy.Content.ReadAsStringAsync(Cancel);
         Assert.Contains("<h1>The demo is busy right now</h1>", html, StringComparison.Ordinal);
         Assert.Contains("<meta http-equiv=\"refresh\" content=\"30\">", html, StringComparison.Ordinal);
-        Assert.Contains("<form method=\"get\" action=\"/\">", html, StringComparison.Ordinal);
+        Assert.Contains("<form method=\"get\" action=\"/\" target=\"_top\">", html, StringComparison.Ordinal);
         Assert.Contains("<button type=\"submit\">Try again now</button>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2, Copies.Count);
@@ -181,20 +209,143 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, own.StatusCode);
 
         // Once a copy is idle and stopped, the next visitor gets one.
-        _time.Advance(TimeSpan.FromMinutes(30));
-        await Copies.StopIdleAsync();
+        _time.Advance(TimeSpan.FromMinutes(17));
+        await Copies.StopExpiredAsync();
         using var later = await client.SendAsync(Page(null), Cancel);
         Assert.Equal(HttpStatusCode.OK, later.StatusCode);
         Assert.NotNull(VisitorId(later));
     }
 
     [Fact]
-    public async Task Should_GiveAVisitorWhoseCopyWasStopped_ANewCopyAndANewId()
+    public async Task Should_ShowBusyInTheFrames_WhenTheDemoFilledUpAfterThePage()
+    {
+        var client = await StartAsync(maxVisitors: 1);
+        var late = await PageAsync(client);
+        await NewVisitorAsync(client);
+
+        using var request = Get("/?demo-frame", late);
+        request.Headers.Add("Sec-Fetch-Dest", "iframe");
+        using var frame = await client.SendAsync(request, Cancel);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, frame.StatusCode);
+        Assert.Contains("The demo is busy right now", await frame.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Equal(1, Copies.Count);
+    }
+
+    [Fact]
+    public async Task Should_KeepTheCopy_ForEachClickTheyReport()
     {
         var client = await StartAsync();
         var id = await NewVisitorAsync(client);
-        _time.Advance(TimeSpan.FromMinutes(30));
-        await Copies.StopIdleAsync();
+
+        for (var i = 0; i < 4; i++)
+        {
+            _time.Advance(TimeSpan.FromMinutes(16));
+            using var active = await client.SendAsync(Post("/demo/activity", id), Cancel);
+            Assert.Equal(HttpStatusCode.NoContent, active.StatusCode);
+            Assert.Equal(0, await Copies.StopExpiredAsync());
+        }
+
+        _time.Advance(TimeSpan.FromMinutes(17));
+        Assert.Equal(1, await Copies.StopExpiredAsync());
+
+        // The page hears it has ended.
+        using var gone = await client.SendAsync(Post("/demo/activity", id), Cancel);
+        Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Sec-Fetch-Site", "cross-site")]
+    [InlineData("Sec-Fetch-Site", "same-site")]
+    [InlineData("Origin", "https://elsewhere.example")]
+    [InlineData("Origin", "null")]
+    public async Task Should_LetNoOtherSite_KeepOrEndACopy(string header, string value)
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+        _time.Advance(TimeSpan.FromMinutes(10));
+
+        using var activity = Post("/demo/activity", id);
+        activity.Headers.Add(header, value);
+        using var end = Post("/demo/end", id);
+        end.Headers.Add(header, value);
+        using var activityResponse = await client.SendAsync(activity, Cancel);
+        using var endResponse = await client.SendAsync(end, Cancel);
+
+        Assert.Equal(HttpStatusCode.Forbidden, activityResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, endResponse.StatusCode);
+        Assert.Equal(1, Copies.Count);
+        _time.Advance(TimeSpan.FromMinutes(7));
+        Assert.Equal(1, await Copies.StopExpiredAsync());
+    }
+
+    [Fact]
+    public async Task Should_EndOnlyTheVisitorsOwnCopy_AndStartAgainWithANewOne()
+    {
+        var client = await StartAsync();
+        var mine = await NewVisitorAsync(client);
+        var theirs = await NewVisitorAsync(client);
+
+        // "Start again": a form's POST, from the page.
+        using var end = Post("/demo/end", mine);
+        end.Headers.Add("Sec-Fetch-Site", "same-origin");
+        end.Headers.Add("Sec-Fetch-Dest", "document");
+        end.Headers.Add("Origin", "http://localhost");
+        using var ended = await client.SendAsync(end, Cancel);
+
+        Assert.Equal(HttpStatusCode.SeeOther, ended.StatusCode);
+        Assert.Equal("/", ended.Headers.Location?.ToString());
+        Assert.Equal(1, Copies.Count);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(Post("/demo/activity", theirs), Cancel)).StatusCode);
+
+        // The page again: a new id, never the old one, and a fresh copy once its frames ask.
+        using var again = await client.SendAsync(Page(mine), Cancel);
+        var newId = VisitorId(again);
+        Assert.NotNull(newId);
+        Assert.NotEqual(mine, newId);
+        Assert.StartsWith("app ", await GetAsync(client, "/?demo-frame", newId), StringComparison.Ordinal);
+        Assert.Equal(2, Copies.Count);
+    }
+
+    [Fact]
+    public async Task Should_EndTheCopy_WhenThePagesCountDownRunsOut()
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+
+        using var end = Post("/demo/end", id);
+        end.Headers.Add("Sec-Fetch-Site", "same-origin");
+        end.Headers.Add("Sec-Fetch-Dest", "empty");
+        using var ended = await client.SendAsync(end, Cancel);
+
+        Assert.Equal(HttpStatusCode.NoContent, ended.StatusCode);
+        Assert.Equal(0, Copies.Taken);
+    }
+
+    [Fact]
+    public async Task Should_ShowEnded_ToARequestThatWaitedForACopyThatEnded()
+    {
+        var client = await StartAsync(listens: false);
+        var id = await PageAsync(client);
+        using var request = Get("/setup", id);
+        request.Headers.Add("Sec-Fetch-Dest", "iframe");
+
+        var waiting = client.SendAsync(request, Cancel);
+        await Wait.UntilAsync(() => Copies.Count == 1);
+        await Copies.EndAsync(id);
+        using var response = await waiting;
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Contains("Your demo has ended", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_GiveAVisitorWhoseCopyWasStopped_ANewId()
+    {
+        var client = await StartAsync();
+        var id = await NewVisitorAsync(client);
+        _time.Advance(TimeSpan.FromMinutes(17));
+        await Copies.StopExpiredAsync();
 
         using var response = await client.SendAsync(Page(id), Cancel);
 
@@ -214,27 +365,63 @@ public sealed class DemoProxyTests : IAsyncDisposable
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(VisitorId(response));
-        Assert.Equal(0, Copies.Count);
+        Assert.Equal(0, Copies.KeptCount);
+        Assert.Equal(0, Copies.Taken);
     }
 
-    [Fact]
-    public async Task Should_ServeTheStylesheet()
+    [Theory]
+    [InlineData("/demo/demo.css?v=1", "text/css", "--accent:")]
+    [InlineData("/demo/demo.js?v=1", "text/javascript", "body.dataset.activity")]
+    public async Task Should_ServeThePagesFiles(string path, string type, string content)
     {
         var client = await StartAsync();
 
-        using var response = await client.GetAsync(new Uri("/demo/demo.css?v=1", UriKind.Relative), Cancel);
+        using var response = await client.GetAsync(new Uri(path, UriKind.Relative), Cancel);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("text/css", response.Content.Headers.ContentType?.MediaType);
-        Assert.Contains("--accent:", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
-        Assert.Equal(0, Copies.Count);
+        Assert.Equal(type, response.Content.Headers.ContentType?.MediaType);
+        Assert.Contains(content, await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        Assert.Equal(0, Copies.Taken);
+    }
+
+    [Theory]
+    [InlineData("ibm-plex-sans-latin-400-normal.woff2")]
+    [InlineData("ibm-plex-sans-latin-600-normal.woff2")]
+    public async Task Should_ServeTheAppsFonts_TheStylesheetUses(string font)
+    {
+        var client = await StartAsync();
+        var css = await client.GetStringAsync(new Uri("/demo/demo.css", UriKind.Relative), Cancel);
+
+        using var response = await client.GetAsync(new Uri("/demo/fonts/" + font, UriKind.Relative), Cancel);
+
+        Assert.Contains($"url(\"fonts/{font}\")", css, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("font/woff2", response.Content.Headers.ContentType?.MediaType);
+        var app = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Contactor.Web", "wwwroot", "fonts", font), Cancel);
+        Assert.Equal(app, await response.Content.ReadAsByteArrayAsync(Cancel));
+    }
+
+    [Theory]
+    [InlineData("/demo/fonts/OFL.txt")]
+    [InlineData("/demo/fonts/")]
+    [InlineData("/demo/activity")]
+    [InlineData("/demo/end")]
+    public async Task Should_NotFind_AnythingElseOfTheDemos(string path)
+    {
+        var client = await StartAsync();
+
+        using var response = await client.GetAsync(new Uri(path, UriKind.Relative), Cancel);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     private VisitorCopies Copies => _app!.Services.GetRequiredService<VisitorCopies>();
 
-    private async Task<HttpClient> StartAsync(int maxVisitors = 10)
+    private EchoStarter Echo => (EchoStarter)_app!.Services.GetRequiredService<IProgramStarter>();
+
+    private async Task<HttpClient> StartAsync(int maxVisitors = 10, bool listens = true)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
         builder.WebHost.UseTestServer();
@@ -247,10 +434,13 @@ public sealed class DemoProxyTests : IAsyncDisposable
             ["Demo:MaxVisitors"] = maxVisitors.ToString(System.Globalization.CultureInfo.InvariantCulture),
         });
         builder.Services.AddSingleton<TimeProvider>(_time);
-        builder.Services.AddSingleton<IProgramStarter, EchoStarter>();
+        builder.Services.AddSingleton<IProgramStarter>(new EchoStarter { Listens = listens });
         builder.Services.AddSingleton<IFreePorts, LoopbackPorts>();
         builder.Services.AddSingleton<ICopyDatabase, FakeCopyDatabase>();
         builder.Services.AddDemo(builder.Configuration);
+
+        // The tests look for expired copies themselves, not on the clock they move.
+        builder.Services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>();
         _app = builder.Build();
         _app.MapDemo();
         await _app.StartAsync(Cancel);
@@ -258,11 +448,20 @@ public sealed class DemoProxyTests : IAsyncDisposable
         return _client;
     }
 
-    private static async Task<string> NewVisitorAsync(HttpClient client)
+    // The page only: an id, no copy yet.
+    private static async Task<string> PageAsync(HttpClient client)
     {
         using var response = await client.SendAsync(Page(null), Cancel);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return VisitorId(response) ?? throw new InvalidOperationException("No cookie.");
+    }
+
+    // A visitor as a browser is one: the page, then its frames, which start the copy.
+    private static async Task<string> NewVisitorAsync(HttpClient client)
+    {
+        var id = await PageAsync(client);
+        await GetAsync(client, "/?demo-frame", id);
+        return id;
     }
 
     private static async Task<string> GetAsync(HttpClient client, string path, string id)
@@ -276,6 +475,13 @@ public sealed class DemoProxyTests : IAsyncDisposable
     {
         var request = Get("/", id);
         request.Headers.Add("Sec-Fetch-Dest", "document");
+        return request;
+    }
+
+    private static HttpRequestMessage Post(string path, string? id)
+    {
+        var request = Get(path, id);
+        request.Method = HttpMethod.Post;
         return request;
     }
 

@@ -26,11 +26,14 @@
     <Using Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 
-  <!-- The page's stylesheet, served from the assembly. The demo has no appsettings.json or web root of its own (its
+  <!-- The page's stylesheet, its script and the app's fonts it uses, served from the assembly. The demo has no appsettings.json or web root of its own (its
        settings come from the environment): nothing of it lands on the app's in a project that references both, such as
        Contactor.Tests. -->
   <ItemGroup>
     <EmbeddedResource Include="demo.css" LogicalName="demo.css" />
+    <EmbeddedResource Include="demo.js" LogicalName="demo.js" />
+    <EmbeddedResource Include="..\Contactor.Web\wwwroot\fonts\ibm-plex-sans-latin-400-normal.woff2" LogicalName="fonts/ibm-plex-sans-latin-400-normal.woff2" Link="fonts\ibm-plex-sans-latin-400-normal.woff2" />
+    <EmbeddedResource Include="..\Contactor.Web\wwwroot\fonts\ibm-plex-sans-latin-600-normal.woff2" LogicalName="fonts/ibm-plex-sans-latin-600-normal.woff2" Link="fonts\ibm-plex-sans-latin-600-normal.woff2" />
   </ItemGroup>
 
   <ItemGroup>

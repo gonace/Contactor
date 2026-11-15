@@ -31,8 +31,23 @@ public sealed class DemoOptions
     /// <summary>How many visitors may have a copy at once. The next one gets "The demo is busy right now".</summary>
     public int MaxVisitors { get; set; } = 10;
 
-    /// <summary>How long a copy may go unused (no request, no open connection) before it is stopped and deleted.</summary>
-    public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromMinutes(30);
+    /// <summary>
+    /// How long a visitor may go without a click or a key in either frame before the page asks whether they are still
+    /// there.
+    /// </summary>
+    public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// How long the page counts down before the copy is deleted, once <see cref="IdleTimeout"/> has passed. Any click or
+    /// key stops the count.
+    /// </summary>
+    public TimeSpan IdleWarning { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>How long a copy lasts at most, used or not, so no script that keeps clicking holds a place.</summary>
+    public TimeSpan MaxLifetime { get; set; } = TimeSpan.FromHours(2);
+
+    /// <summary>How many boards a visitor may have in their simulator (<c>Simulator:MaxBoards</c>).</summary>
+    public int MaxBoards { get; set; } = 20;
 
     /// <summary>How long the app or the simulator may take to start listening before the copy is given up.</summary>
     public TimeSpan StartTimeout { get; set; } = TimeSpan.FromSeconds(60);
@@ -91,9 +106,24 @@ public sealed class DemoOptionsValidation : IValidateOptions<DemoOptions>
             errors.Add("Demo:MaxVisitors is a number from 1 to 100.");
         }
 
-        if (options.IdleTimeout < TimeSpan.FromMinutes(1) || options.IdleTimeout > TimeSpan.FromDays(1))
+        if (options.IdleTimeout < TimeSpan.FromSeconds(10) || options.IdleTimeout > TimeSpan.FromDays(1))
         {
-            errors.Add("Demo:IdleTimeout is from 00:01:00 to 1.00:00:00.");
+            errors.Add("Demo:IdleTimeout is from 00:00:10 to 1.00:00:00.");
+        }
+
+        if (options.IdleWarning < TimeSpan.FromSeconds(5) || options.IdleWarning > TimeSpan.FromHours(1))
+        {
+            errors.Add("Demo:IdleWarning is from 00:00:05 to 01:00:00.");
+        }
+
+        if (options.MaxLifetime < options.IdleTimeout + options.IdleWarning || options.MaxLifetime > TimeSpan.FromDays(1))
+        {
+            errors.Add("Demo:MaxLifetime is at least Demo:IdleTimeout and Demo:IdleWarning together, and at most 1.00:00:00.");
+        }
+
+        if (options.MaxBoards is < 1 or > 100)
+        {
+            errors.Add("Demo:MaxBoards is a number from 1 to 100.");
         }
 
         if (options.StartTimeout < TimeSpan.FromSeconds(1) || options.StartTimeout > TimeSpan.FromMinutes(10))

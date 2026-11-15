@@ -24,7 +24,10 @@ public sealed class DemoSetupTests : IDisposable
         var options = new DemoOptions();
 
         Assert.Equal(10, options.MaxVisitors);
-        Assert.Equal(TimeSpan.FromMinutes(30), options.IdleTimeout);
+        Assert.Equal(TimeSpan.FromMinutes(15), options.IdleTimeout);
+        Assert.Equal(TimeSpan.FromMinutes(2), options.IdleWarning);
+        Assert.Equal(TimeSpan.FromHours(2), options.MaxLifetime);
+        Assert.Equal(20, options.MaxBoards);
         Assert.Equal("Production", options.CopyEnvironment);
         Assert.True(new DemoOptionsValidation().Validate(null, _folder.Options()).Succeeded);
     }
@@ -38,6 +41,8 @@ public sealed class DemoSetupTests : IDisposable
         options.DataRoot = Path.GetPathRoot(_folder.Root)!;
         options.MaxVisitors = 0;
         options.IdleTimeout = TimeSpan.Zero;
+        options.IdleWarning = TimeSpan.FromSeconds(1);
+        options.MaxBoards = 0;
         options.CopyEnvironment = "Staging";
 
         var result = new DemoOptionsValidation().Validate(null, options);
@@ -49,7 +54,38 @@ public sealed class DemoSetupTests : IDisposable
         Assert.Contains(failures, f => f.StartsWith("Demo:DataRoot can't be the root", StringComparison.Ordinal));
         Assert.Contains(failures, f => f.StartsWith("Demo:MaxVisitors", StringComparison.Ordinal));
         Assert.Contains(failures, f => f.StartsWith("Demo:IdleTimeout", StringComparison.Ordinal));
+        Assert.Contains(failures, f => f.StartsWith("Demo:IdleWarning", StringComparison.Ordinal));
+        Assert.Contains(failures, f => f.StartsWith("Demo:MaxBoards", StringComparison.Ordinal));
         Assert.Contains(failures, f => f.StartsWith("Demo:CopyEnvironment", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Should_RefuseALifetime_ShorterThanTheIdleTimeAndTheCountDown()
+    {
+        var options = _folder.Options();
+        options.IdleTimeout = TimeSpan.FromMinutes(15);
+        options.IdleWarning = TimeSpan.FromMinutes(2);
+        options.MaxLifetime = TimeSpan.FromMinutes(16);
+
+        var result = new DemoOptionsValidation().Validate(null, options);
+
+        Assert.Contains(result.Failures!, f => f.StartsWith("Demo:MaxLifetime", StringComparison.Ordinal));
+        options.MaxLifetime = TimeSpan.FromMinutes(17);
+        Assert.True(new DemoOptionsValidation().Validate(null, options).Succeeded);
+    }
+
+    [Fact]
+    public void Should_GiveThePage_ShortSettingsToo()
+    {
+        var options = _folder.Options();
+        options.IdleTimeout = TimeSpan.FromSeconds(20);
+        options.IdleWarning = TimeSpan.FromSeconds(10);
+
+        var page = DemoPages.Page(options);
+
+        // It reports at least twice within the idle time, so the demo never ends a copy whose page still counts.
+        Assert.Contains("data-idle=\"20\" data-warning=\"10\" data-report=\"10\"", page, StringComparison.Ordinal);
+        Assert.Contains("Your demo ends in <span id=\"demo-idle-left\">0:10</span>", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -81,12 +117,13 @@ public sealed class DemoSetupTests : IDisposable
         var css = System.Text.Encoding.UTF8.GetString(DemoPages.Stylesheet());
 
         var outsideTokens = css.Split('\n').Where(l => colour.IsMatch(l) && !token.IsMatch(l)).ToList();
-        var pages = string.Concat(DemoPages.Page(TimeSpan.FromMinutes(30)), DemoPages.Busy(), DemoPages.Stopped(TimeSpan.FromMinutes(30)), DemoPages.NotStarted());
+        var pages = string.Concat(DemoPages.Page(new DemoOptions()), DemoPages.Busy(), DemoPages.Ended(), DemoPages.NotStarted());
 
         Assert.Empty(outsideTokens);
         Assert.Contains("@media (prefers-color-scheme: dark)", css, StringComparison.Ordinal);
         Assert.DoesNotMatch(colour, pages);
         Assert.DoesNotContain("style=", pages, StringComparison.Ordinal);
+        Assert.DoesNotMatch(colour, System.Text.Encoding.UTF8.GetString(DemoPages.Script()));
     }
 
     [Fact]

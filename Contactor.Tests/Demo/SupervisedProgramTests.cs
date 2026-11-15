@@ -4,7 +4,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Contactor.Tests.Demo;
 
-/// <summary>A copy's program kept running: started again when it exits by itself, given up when it can't start.</summary>
+/// <summary>
+/// A copy's program kept running: started again when it exits by itself, later each time when it keeps exiting, and
+/// given up when it can't start or exits too often.
+/// </summary>
 public sealed class SupervisedProgramTests : IAsyncDisposable
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(60);
@@ -15,7 +18,7 @@ public sealed class SupervisedProgramTests : IAsyncDisposable
 
     public SupervisedProgramTests()
     {
-        var start = new ProgramStart("app", "0123ab", "/demo/app/Contactor.Web.dll", 41001, new Dictionary<string, string> { ["A"] = "1" });
+        var start = new ProgramStart("app", "0123ab", "/demo/app/Contactor.Web.dll", 41001, new Dictionary<string, string> { ["A"] = "1" }, ProgramProbe.App);
         _program = new SupervisedProgram(start, _starter, StartTimeout, _time, NullLogger.Instance);
     }
 
@@ -75,6 +78,79 @@ public sealed class SupervisedProgramTests : IAsyncDisposable
         await _program.GaveUp;
         await Assert.ThrowsAsync<InvalidOperationException>(() => _program.Listening);
         Assert.Equal(SupervisedProgram.MaxFailedStarts, _starter.Runs.Count);
+    }
+
+    [Fact]
+    public void Should_WaitLongerBeforeEachRestart_AfterTheFirstFew()
+    {
+        var waits = Enumerable.Range(0, 10).Select(SupervisedProgram.RestartWait).Select(w => (int)w.TotalSeconds);
+
+        Assert.Equal([0, 0, 0, 1, 2, 4, 8, 16, 30, 30], waits);
+        Assert.Equal(SupervisedProgram.MaxRestartWait, SupervisedProgram.RestartWait(int.MaxValue));
+    }
+
+    [Fact]
+    public async Task Should_GiveUp_WhenItExitsTooOften_AfterWaitingLongerEachTime()
+    {
+        _program.Start();
+        for (var run = 1; run <= SupervisedProgram.MaxRestarts + 1; run++)
+        {
+            await Wait.UntilAsync(() => _starter.Runs.Count == run);
+            await _program.Listening;
+            _starter.Runs[^1].Exit(0);
+
+            var wait = SupervisedProgram.RestartWait(run - 1);
+            if (run <= SupervisedProgram.MaxRestarts && wait > TimeSpan.Zero)
+            {
+                // Not started again until the wait is over.
+                await Wait.UntilAsync(() => _time.Waits(wait));
+                Assert.Equal(run, _starter.Runs.Count);
+                _time.Advance(wait);
+            }
+        }
+
+        await _program.GaveUp;
+        Assert.Equal(SupervisedProgram.MaxRestarts + 1, _starter.Runs.Count);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _program.Listening);
+    }
+
+    [Fact]
+    public async Task Should_StartAgainAtOnce_WhenTheEarlierRestartsAreOld()
+    {
+        _program.Start();
+        for (var run = 1; run <= SupervisedProgram.RestartsAtOnce; run++)
+        {
+            await Wait.UntilAsync(() => _starter.Runs.Count == run);
+            await _program.Listening;
+            _starter.Runs[^1].Exit(0);
+        }
+
+        await Wait.UntilAsync(() => _starter.Runs.Count == SupervisedProgram.RestartsAtOnce + 1);
+        await _program.Listening;
+        _time.Advance(SupervisedProgram.RestartWindow);
+        _starter.Runs[^1].Exit(0);
+
+        await Wait.UntilAsync(() => _starter.Runs.Count == SupervisedProgram.RestartsAtOnce + 2);
+        Assert.False(_program.GaveUp.IsCompleted);
+    }
+
+    [Fact]
+    public async Task Should_StopWhileItWaitsToStartAgain()
+    {
+        _program.Start();
+        for (var run = 1; run <= SupervisedProgram.RestartsAtOnce + 1; run++)
+        {
+            await Wait.UntilAsync(() => _starter.Runs.Count == run);
+            await _program.Listening;
+            _starter.Runs[^1].Exit(0);
+        }
+
+        await Wait.UntilAsync(() => _time.Waits(TimeSpan.FromSeconds(1)));
+        await _program.StopAsync();
+
+        Assert.Equal(SupervisedProgram.RestartsAtOnce + 1, _starter.Runs.Count);
+        Assert.False(_program.GaveUp.IsCompleted);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _program.Listening);
     }
 
     [Fact]

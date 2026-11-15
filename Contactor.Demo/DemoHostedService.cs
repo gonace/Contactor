@@ -1,12 +1,12 @@
 namespace Contactor.Demo;
 
 /// <summary>
-/// The copies' lifetime: clears what copies left in the data root at start, stops idle copies every minute, and stops
-/// every copy, processes and data, when the demo stops.
+/// The copies' lifetime: clears what copies left in the data root at start, stops idle and old copies every minute,
+/// and stops every copy, processes and data, when the demo stops.
 /// </summary>
 public sealed class DemoHostedService : BackgroundService
 {
-    /// <summary>How often idle copies are looked for.</summary>
+    /// <summary>How often idle and old copies are looked for.</summary>
     public static readonly TimeSpan SweepEvery = TimeSpan.FromMinutes(1);
 
     private readonly VisitorCopies _copies;
@@ -37,7 +37,7 @@ public sealed class DemoHostedService : BackgroundService
             while (true)
             {
                 await Task.Delay(SweepEvery, _time, stoppingToken);
-                await _copies.StopIdleAsync();
+                await _copies.StopExpiredAsync();
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

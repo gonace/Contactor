@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 
 namespace Contactor.Demo;
 
@@ -10,12 +11,71 @@ namespace Contactor.Demo;
 /// </summary>
 /// <param name="Name">"app" or "simulator", for the log.</param>
 /// <param name="Visitor">The visitor's short id, for the log (<see cref="VisitorCookie.ForLog"/>).</param>
+/// <param name="Environment">The program's whole environment, apart from what <see cref="DotnetProgramStarter"/> keeps.</param>
+/// <param name="Probe">How to tell that what listens on the port is this program.</param>
 public sealed record ProgramStart(
     string Name,
     string Visitor,
     string DllPath,
     int Port,
-    IReadOnlyDictionary<string, string> Environment);
+    IReadOnlyDictionary<string, string> Environment,
+    ProgramProbe Probe);
+
+/// <summary>
+/// A request only the program itself answers this way: a GET of <paramref name="Path"/> from 127.0.0.1 that answers
+/// 200 with <paramref name="Expect"/> in its body. Anything else on the port, such as a board a visitor's simulator
+/// opened there while the program was starting again, isn't it.
+/// </summary>
+public sealed record ProgramProbe(string Path, string Expect)
+{
+    /// <summary>The app: its <c>/healthz</c>, which only answers its own machine.</summary>
+    public static ProgramProbe App { get; } = new("/healthz", "\"boardConnected\"");
+
+    /// <summary>The simulator: its page.</summary>
+    public static ProgramProbe Simulator { get; } = new("/", "<title>Contactor simulator</title>");
+
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
+    private const int MaxBody = 64 * 1024;
+
+    /// <summary>Whether what listens on <paramref name="port"/> on 127.0.0.1 answers as the program does.</summary>
+    public async Task<bool> AnswersAsync(HttpMessageInvoker client, int port, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(Timeout);
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"http://{IPAddress.Loopback}:{port}{Path}"));
+            using var response = await client.SendAsync(request, timeout.Token);
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                return false;
+            }
+
+            // Read at most a little: whatever listens there may send anything.
+            await using var body = await response.Content.ReadAsStreamAsync(timeout.Token);
+            var buffer = new byte[MaxBody];
+            var read = 0;
+            while (read < buffer.Length)
+            {
+                var n = await body.ReadAsync(buffer.AsMemory(read), timeout.Token);
+                if (n == 0)
+                {
+                    break;
+                }
+
+                read += n;
+            }
+
+            return System.Text.Encoding.UTF8.GetString(buffer, 0, read).Contains(Expect, StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException
+            || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            return false;
+        }
+    }
+}
 
 /// <summary>Starts programs. A test puts one in that starts nothing.</summary>
 public interface IProgramStarter
@@ -29,32 +89,55 @@ public interface IRunningProgram : IAsyncDisposable
     /// <summary>Completes with the exit code when the program exits, by itself or stopped.</summary>
     Task<int> Exited { get; }
 
-    /// <summary>Completes once the program listens on its port; throws if it exits first.</summary>
+    /// <summary>
+    /// Completes once the program itself answers on its port (<see cref="ProgramStart.Probe"/>); throws if it exits
+    /// first.
+    /// </summary>
     Task WaitUntilListeningAsync(CancellationToken cancellationToken);
 
     /// <summary>Stops the program and everything it started, and waits until it has exited.</summary>
     Task StopAsync();
 }
 
-/// <summary>Runs each program as <c>dotnet &lt;dll&gt;</c>, a process of its own.</summary>
-public sealed partial class DotnetProgramStarter : IProgramStarter
+/// <summary>
+/// Runs each program as <c>dotnet &lt;dll&gt;</c>, a process of its own, with only what it needs of the demo's
+/// environment (<see cref="Kept"/>) and the copy's own settings: nothing else of the demo's reaches a copy.
+/// </summary>
+public sealed partial class DotnetProgramStarter : IProgramStarter, IDisposable
 {
-    // What the demo's own environment may hold that would make a copy listen elsewhere or run as something else.
-    private static readonly string[] LeftOut =
-    [
-        "ASPNETCORE_URLS",
-        "ASPNETCORE_HTTP_PORTS",
-        "ASPNETCORE_HTTPS_PORTS",
-        "ASPNETCORE_ENVIRONMENT",
-        "DOTNET_ENVIRONMENT",
-        "DOTNET_URLS",
-    ];
+    // Where dotnet and the system are, and the runtime's own settings. DOTNET_ENVIRONMENT and DOTNET_URLS would make a
+    // copy run as something else or listen elsewhere, so they are left out like everything not named here.
+    private static readonly string[] Kept = ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "USERPROFILE"];
+    private static readonly string[] KeptDotnetLeftOut = ["DOTNET_ENVIRONMENT", "DOTNET_URLS"];
 
     private readonly ILogger<DotnetProgramStarter> _logger;
+
+    // For the probes: straight to 127.0.0.1, never through a proxy the demo's environment names.
+    private readonly HttpMessageInvoker _probeClient = new(new SocketsHttpHandler
+    {
+        UseProxy = false,
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        ConnectTimeout = TimeSpan.FromSeconds(2),
+    });
 
     public DotnetProgramStarter(ILogger<DotnetProgramStarter> logger)
     {
         _logger = logger;
+    }
+
+    /// <summary>Whether a variable of the demo's own environment is passed on to a copy's programs.</summary>
+    public static bool Keeps(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return Kept.Contains(name, StringComparer.OrdinalIgnoreCase)
+            || (name.StartsWith("DOTNET_", StringComparison.OrdinalIgnoreCase)
+                && !KeptDotnetLeftOut.Contains(name, StringComparer.OrdinalIgnoreCase));
+    }
+
+    public void Dispose()
+    {
+        _probeClient.Dispose();
     }
 
     public IRunningProgram Start(ProgramStart start)
@@ -71,8 +154,7 @@ public sealed partial class DotnetProgramStarter : IProgramStarter
         info.ArgumentList.Add(start.DllPath);
         foreach (var name in info.Environment.Keys.ToList())
         {
-            if (LeftOut.Contains(name, StringComparer.OrdinalIgnoreCase)
-                || name.StartsWith(DemoOptions.SectionName + "__", StringComparison.OrdinalIgnoreCase))
+            if (!Keeps(name))
             {
                 info.Environment.Remove(name);
             }
@@ -99,7 +181,7 @@ public sealed partial class DotnetProgramStarter : IProgramStarter
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         LogStarted(_logger, start.Name, start.Visitor, process.Id, start.Port);
-        return new RunningProcess(process, start.Port);
+        return new RunningProcess(process, start, _probeClient);
     }
 
     private void Output(ProgramStart start, string? line)
@@ -122,12 +204,14 @@ public sealed partial class DotnetProgramStarter : IProgramStarter
         private static readonly TimeSpan ProbeEvery = TimeSpan.FromMilliseconds(100);
 
         private readonly Process _process;
-        private readonly int _port;
+        private readonly ProgramStart _start;
+        private readonly HttpMessageInvoker _probeClient;
 
-        public RunningProcess(Process process, int port)
+        public RunningProcess(Process process, ProgramStart start, HttpMessageInvoker probeClient)
         {
             _process = process;
-            _port = port;
+            _start = start;
+            _probeClient = probeClient;
             Exited = WaitForExitAsync(process);
         }
 
@@ -143,15 +227,11 @@ public sealed partial class DotnetProgramStarter : IProgramStarter
                     throw new InvalidOperationException($"The program exited with code {await Exited} before it listened.");
                 }
 
-                using var client = new TcpClient();
-                try
+                // Something answers as the program does, and the program still runs: then it is the program that
+                // listens, not something else that took the port while it was starting.
+                if (await _start.Probe.AnswersAsync(_probeClient, _start.Port, cancellationToken) && !Exited.IsCompleted)
                 {
-                    await client.ConnectAsync(IPAddress.Loopback, _port, cancellationToken);
                     return;
-                }
-                catch (SocketException)
-                {
-                    // Not listening yet.
                 }
 
                 await Task.WhenAny(Exited, Task.Delay(ProbeEvery, cancellationToken));
@@ -196,19 +276,41 @@ public interface IFreePorts
     IReadOnlyList<int> Take(int count);
 }
 
-/// <summary>Asks the system: each port is one it gave a listener a moment ago, all held at once so they differ.</summary>
+/// <summary>
+/// Random ports, so no visitor can tell another's from their own: each one a listener could take a moment ago, all held
+/// at once so they differ. Below the system's own range for outgoing connections (from 32768 on Linux).
+/// </summary>
 public sealed class LoopbackPorts : IFreePorts
 {
+    public const int First = 20000;
+    public const int Last = 32767;
+
+    private const int MaxTries = 1000;
+
     public IReadOnlyList<int> Take(int count)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
         List<TcpListener> listeners = [];
         try
         {
-            for (var i = 0; i < count; i++)
+            for (var tries = 0; listeners.Count < count; tries++)
             {
-                var listener = new TcpListener(IPAddress.Loopback, 0);
-                listener.Start();
-                listeners.Add(listener);
+                if (tries == MaxTries)
+                {
+                    throw new InvalidOperationException($"Found no free port from {First} to {Last}.");
+                }
+
+                var listener = new TcpListener(IPAddress.Loopback, RandomNumberGenerator.GetInt32(First, Last + 1));
+                try
+                {
+                    listener.Start();
+                    listeners.Add(listener);
+                }
+                catch (SocketException)
+                {
+                    // In use: another one.
+                    listener.Dispose();
+                }
             }
 
             return [.. listeners.Select(l => ((IPEndPoint)l.LocalEndpoint).Port)];
