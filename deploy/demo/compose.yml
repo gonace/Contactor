@@ -9,9 +9,9 @@
 # A visitor can type any board address in their copy of the app. The demo container is on the "demo" network only, so
 # from it nothing but the forwarder can be reached, and the forwarder only forwards to the demo.
 #
-# Port 8080 is published on this machine's addresses for the tunnel's connector only. Never forward it from the router.
-# Docker's published ports pass by this machine's own firewall, so let only the connector in with the Proxmox firewall
-# (docs/DEMO.md).
+# Port 8080 is published on this machine's addresses for the tunnel's connector. Never forward it from the router.
+# To let only the connector in, use the Proxmox firewall (optional, docs/DEMO.md): Docker's published ports pass by
+# this machine's own firewall.
 name: contactor-demo
 
 x-logging: &logging

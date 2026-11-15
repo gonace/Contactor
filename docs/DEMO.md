@@ -15,9 +15,9 @@ Visitor ─▶ Cloudflare ─▶ your tunnel's connector (LAN) ─▶ <machine>:
 - **forwarder** (Caddy's own image): publishes port 8080 on the machine and only forwards it to the demo, with the
   tunnel's `X-Forwarded-Proto`. Its settings are in `deploy/demo/Caddyfile`.
 
-Port 8080 is open on the machine's LAN address for the tunnel's connector only. Never forward it from the router.
-Docker's published ports pass by the machine's own firewall, so the Proxmox firewall lets only the connector in (see
-The firewall, in Install).
+Port 8080 is open on the machine's LAN address for the tunnel's connector. Never forward it from the router. Anyone
+on your LAN can reach it too, as with your tunnel's other services; the demo stays sealed off either way. To let only
+the connector in, see The firewall (optional), in Install.
 
 There is no sign-in in front: the demo is public.
 
@@ -30,7 +30,6 @@ There is no sign-in in front: the demo is public.
   older (Debian 13 has 26.1). Docker 28 is the first that keeps the machine off the demo's network: an older one would
   let a visitor reach the machine's own services, such as SSH.
 - A Cloudflare tunnel you already run, with its connector on a machine on the same LAN, and a domain on Cloudflare.
-- A classic GitHub token with only `read:packages`: the image is private, as the app's is.
 
 ## 1. The route on your tunnel
 
@@ -55,10 +54,9 @@ On the machine:
 ```sh
 sudo mkdir -p /opt/contactor-demo
 sudo install -m 644 compose.yml Caddyfile /opt/contactor-demo/
-sudo docker login ghcr.io -u token
 ```
 
-`docker login` asks for the GitHub token. No other secret is kept on the machine.
+The image is public, so no login is needed, and no secret is kept on the machine.
 
 Start it:
 
@@ -81,13 +79,14 @@ The forwarder starts once the demo is healthy, after a few seconds.
 4. Open your hostname. The page shows the simulator and the app, with "Skip setup: start from a template".
 5. Choose **Workshop**. The app shows the relays, and switching one shows in the simulator too.
 
-**The firewall:** in Proxmox, select the VM → **Firewall → Add**: direction **in**, action **ACCEPT**, protocol
-**tcp**, source the tunnel's connector's address, destination port **8080**. Add one more for SSH (port 22) from where
-you log in. Then **Firewall → Options → Firewall: Yes** and **Input Policy: DROP**. The VM's network device needs
-**Firewall** ticked too (Hardware → Network Device), and a VM's rules only work when the firewall is on for the
-datacenter too (**Datacenter → Firewall → Options → Firewall: Yes**). If you turn that on now, first check the
-datacenter's own rules and input policy, so you keep access to Proxmox's web interface and SSH. Check that your hostname still opens, and that port 8080 doesn't
-answer from another machine (`curl -m 5 http://<machine's LAN address>:8080` from there times out).
+**The firewall (optional):** to let only the connector reach port 8080, in Proxmox, select the VM → **Firewall → Add**:
+direction **in**, action **ACCEPT**, protocol **tcp**, source the tunnel's connector's address, destination port
+**8080**. Add one more for SSH (port 22) from where you log in. Then **Firewall → Options → Firewall: Yes** and **Input
+Policy: DROP**. The VM's network device needs **Firewall** ticked too (Hardware → Network Device), and a VM's rules only
+work when the firewall is on for the datacenter too (**Datacenter → Firewall → Options → Firewall: Yes**). If you turn
+that on now, first check the datacenter's own rules and input policy, so you keep access to Proxmox's web interface and
+SSH. Check that your hostname still opens, and that port 8080 doesn't answer from another machine (`curl -m 5
+http://<machine's LAN address>:8080` from there times out).
 
 Logs: `sudo docker compose logs -f demo` and `sudo docker compose logs -f forwarder`.
 
