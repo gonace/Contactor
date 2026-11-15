@@ -4,7 +4,8 @@
 // keeps the visitor's copy: it tells the demo at most every data-report seconds. After data-idle seconds without one,
 // a popup counts down data-warning seconds; with no click or key by then, it asks the demo to end the copy. The demo
 // keeps it when the visitor used it since in another tab: then the popup goes and the count starts over. Otherwise the
-// copy ends and the page says so; or that it didn't start, when that is what happened. The demo itself deletes a copy
+// copy ends and the page says so; or that it didn't start, or that something went wrong with it, when that is what
+// happened. The demo itself deletes a copy
 // whose pages stopped reporting, so this script only shows what the demo does anyway.
 (() => {
     "use strict";
@@ -35,7 +36,7 @@
         reportTimer = null;
         lastReport = Date.now();
         fetch(body.dataset.activity, { method: "POST", credentials: "same-origin" })
-            .then((response) => { if (response.status === 404) { end(false); } })
+            .then((response) => { if (response.status === 404) { end("ended"); } })
             .catch(() => { /* Offline for a moment: the next click tries again. */ });
     }
 
@@ -114,23 +115,25 @@
                     lastActive = Date.now();
                     hidePopup();
                 } else if (response.ok || response.status === 404) {
-                    end(false);
+                    end("ended");
                 }
             })
             .catch(() => { timingOut = false; });
     }
 
-    // The copy is gone: it ended, or didn't start (`didntStart`), and the page says which.
-    function end(didntStart) {
+    // The copy is gone, and the page says how (`how`, as data-demo-copy says it): it "ended", it didn't start
+    // ("not-started"), or something went wrong with it after it got going ("went-wrong").
+    function end(how) {
         if (over) {
             return;
         }
 
         over = true;
-        if (didntStart) {
+        if (how === "not-started" || how === "went-wrong") {
             const card = document.getElementById("demo-ended-card");
-            document.getElementById("demo-ended-title").textContent = card.dataset.notStartedTitle;
-            document.getElementById("demo-ended-text").textContent = card.dataset.notStartedText;
+            const wrong = how === "went-wrong";
+            document.getElementById("demo-ended-title").textContent = wrong ? card.dataset.wentWrongTitle : card.dataset.notStartedTitle;
+            document.getElementById("demo-ended-text").textContent = wrong ? card.dataset.wentWrongText : card.dataset.notStartedText;
             document.getElementById("demo-ended-start").textContent = card.dataset.notStartedButton;
         }
 
@@ -184,10 +187,10 @@
     }
 
     // The waiting screen: shown until every frame in `loading` has loaded, everything behind it inert meanwhile. When
-    // that takes longer than a frame can wait for the copy, the page says it didn't start, with "Try again".
+    // that takes longer than a frame can wait for the copy, the page says so (`how`, as end() takes it), with "Try again".
     let loading = new Set();
     let waitTimer = null;
-    function wait(title, text) {
+    function wait(title, text, how) {
         document.getElementById("demo-waiting-title").textContent = title;
         document.getElementById("demo-waiting-text").textContent = text;
         waiting.hidden = false;
@@ -198,7 +201,7 @@
         }
 
         clearTimeout(waitTimer);
-        waitTimer = setTimeout(() => end(true), Number(body.dataset.start) * 1000);
+        waitTimer = setTimeout(() => end(how), Number(body.dataset.start) * 1000);
     }
 
     function loaded(frame) {
@@ -218,13 +221,13 @@
         }
     }
 
-    // A frame that shows the demo's own "ended" or "didn't start" (data-demo-copy) has no copy behind it: the whole page
-    // says so instead.
+    // A frame that shows the demo's own "ended", "didn't start" or "went wrong" (data-demo-copy) has no copy behind it:
+    // the whole page says so instead.
     function gone(frame) {
         try {
             const copy = frame.contentDocument.body.dataset.demoCopy;
-            if (copy === "ended" || copy === "not-started") {
-                end(copy === "not-started");
+            if (copy === "ended" || copy === "not-started" || copy === "went-wrong") {
+                end(copy);
             }
         } catch {
             // Not this site's, or no document: nothing to read.
@@ -247,7 +250,7 @@
         // No time zone: the copy runs in UTC.
     }
 
-    wait("Getting your demo ready", "One moment: your own copy of the app and a simulated relay board are starting. It takes a few seconds.");
+    wait("Getting your demo ready", "One moment: your own copy of the app and a simulated relay board are starting. It takes a few seconds.", "not-started");
     loading = new Set(frames);
     for (const frame of frames) {
         frame.src = frame.dataset.src;
@@ -268,7 +271,8 @@
         template.addEventListener("submit", (event) => {
             event.preventDefault();
             offer.remove();
-            wait("Setting up the workshop", "One moment: the app starts again with the ready-made workshop.");
+            // The copy got going already: when the app doesn't come back, something went wrong with it.
+            wait("Setting up the workshop", "One moment: the app starts again with the ready-made workshop.", "went-wrong");
 
             // Only the reload below ends the wait: the app's frame may load something else while its app restarts.
             loading = new Set();
@@ -278,8 +282,12 @@
             };
             fetch(template.action, { method: "POST", credentials: "same-origin", body: new URLSearchParams(new FormData(template)) })
                 .then((response) => {
-                    if (response.status === 404 || response.status === 503) {
-                        end(response.status === 503);
+                    if (response.status === 404) {
+                        end("ended");
+                    } else if (response.status === 503) {
+                        end("not-started");
+                    } else if (response.status === 500) {
+                        end("went-wrong");
                     } else {
                         reload();
                     }

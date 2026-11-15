@@ -43,6 +43,7 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
     // The current runs' own stop, cancelled by a restart as well as by StopAsync.
     private CancellationTokenSource? _run;
     private int _starts;
+    private int _listened;
     private int _stopped;
     private int _disposed;
 
@@ -59,6 +60,9 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
 
     /// <summary>How many times it was started, the first included.</summary>
     public int Starts => Volatile.Read(ref _starts);
+
+    /// <summary>Whether it ever listened: a program given up after that had got going, and stopped working later.</summary>
+    public bool HasListened => Volatile.Read(ref _listened) == 1;
 
     /// <summary>Completes when it was given up; never when it is stopped.</summary>
     public Task GaveUp => _gaveUp.Task;
@@ -289,10 +293,11 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
             TaskScheduler.Default);
     }
 
+    // Given up first: a request that waited for it to listen then finds it given up.
     private void GiveUp(Exception exception)
     {
-        Volatile.Read(ref _listening).TrySetException(exception);
         _gaveUp.TrySetResult();
+        Volatile.Read(ref _listening).TrySetException(exception);
     }
 
     /// <summary>One run, until it exits or is stopped. Returns whether it listened.</summary>
@@ -308,6 +313,7 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
             {
                 await run.WaitUntilListeningAsync(probing.Token).WaitAsync(_startTimeout, _time, stop);
                 listened = true;
+                Volatile.Write(ref _listened, 1);
                 listening.TrySetResult();
             }
             catch (Exception) when (stop.IsCancellationRequested)

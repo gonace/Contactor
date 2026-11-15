@@ -19,10 +19,14 @@ public static class DemoPages
     public static readonly TimeSpan ReportAtMost = TimeSpan.FromMinutes(1);
 
     // "Didn't start": the frame's own page, and the page's, which the script shows instead of "ended" when that is what
-    // happened.
+    // happened. "Try again" for both this and "went wrong".
     private const string NotStartedTitle = "Your copy of the demo didn't start";
     private const string NotStartedText = "Something went wrong on our side.";
     private const string NotStartedButton = "Try again";
+
+    // "Went wrong": the same, for a copy that got going and stopped working later.
+    private const string WentWrongTitle = "Something went wrong with your copy";
+    private const string WentWrongText = "It stopped working on our side.";
 
     private static readonly string[] Fonts = ["ibm-plex-sans-latin-400-normal.woff2", "ibm-plex-sans-latin-600-normal.woff2"];
 
@@ -145,6 +149,20 @@ public static class DemoPages
             """, bodyData: """data-demo-copy="not-started" """);
     }
 
+    /// <summary>In a frame whose copy got going, and stopped working later.</summary>
+    public static string WentWrong()
+    {
+        return Document("The demo stopped working", "message", $"""
+            <main class="card">
+                <h1>{WentWrongTitle}</h1>
+                <p class="muted">{WentWrongText}</p>
+                <form method="post" action="{DemoRoutes.EndPath}" target="_top">
+                    <button type="submit">{NotStartedButton}</button>
+                </form>
+            </main>
+            """, bodyData: """data-demo-copy="went-wrong" """);
+    }
+
     /// <summary>
     /// How often the page reports clicks and keys at most, so how late the demo may hear of one: at least twice within
     /// the idle timeout, so the demo never thinks a visitor left whose page doesn't, and at least twice within the count
@@ -209,7 +227,7 @@ public static class DemoPages
     private static string EndedCard()
     {
         return $"""
-            <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="demo-ended-title" aria-describedby="demo-ended-text" id="demo-ended-card" data-not-started-title="{NotStartedTitle}" data-not-started-text="{NotStartedText}" data-not-started-button="{NotStartedButton}">
+            <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="demo-ended-title" aria-describedby="demo-ended-text" id="demo-ended-card" data-not-started-title="{NotStartedTitle}" data-not-started-text="{NotStartedText}" data-not-started-button="{NotStartedButton}" data-went-wrong-title="{WentWrongTitle}" data-went-wrong-text="{WentWrongText}">
                 {EndedContent("h2")}
             </div>
             """;

@@ -40,8 +40,11 @@ public enum TemplateResult
     /// <summary>The visitor has no copy: it ended, or never was.</summary>
     None,
 
-    /// <summary>The visitor's copy didn't start (<see cref="VisitorCopy.DidntStart"/>), and is stopped.</summary>
+    /// <summary>The visitor's copy didn't start (<see cref="CopyFailure.DidntStart"/>), and is stopped.</summary>
     DidntStart,
+
+    /// <summary>Something went wrong with the visitor's copy after it got going (<see cref="CopyFailure.WentWrong"/>), and it is stopped.</summary>
+    WentWrong,
 }
 
 /// <summary>What a request to a copy finds.</summary>
@@ -319,7 +322,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             // It didn't start, or ended meanwhile: it is being stopped, and nothing is left to fill. Which of the two,
             // once its start has ended: a start that fails stops the copy first, so the stop may come first here.
             await copy.Started.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-            return copy.DidntStart ? TemplateResult.DidntStart : TemplateResult.None;
+            return Failed(copy);
         }
 
         var applied = false;
@@ -333,7 +336,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         catch (Exception) when (copy.Stopped.IsCompleted)
         {
             // It ended meanwhile, or a program of it was given up: nothing is left to fill.
-            return copy.DidntStart ? TemplateResult.DidntStart : TemplateResult.None;
+            return Failed(copy);
         }
         catch (Exception ex)
         {
@@ -445,6 +448,17 @@ public sealed partial class VisitorCopies : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopAllAsync();
+    }
+
+    // A copy that is stopped: what the visitor is told of it.
+    private static TemplateResult Failed(VisitorCopy copy)
+    {
+        return copy.Failure switch
+        {
+            CopyFailure.DidntStart => TemplateResult.DidntStart,
+            CopyFailure.WentWrong => TemplateResult.WentWrong,
+            _ => TemplateResult.None,
+        };
     }
 
     private static async Task<bool> EndedAsync(Task stop)

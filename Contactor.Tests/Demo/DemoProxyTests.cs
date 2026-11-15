@@ -61,7 +61,7 @@ public sealed class DemoProxyTests : IAsyncDisposable
         Assert.Matches("<div class=\"waiting-slow\">\\s*<p class=\"muted\">Taking long\\?</p>\\s*<a class=\"button\" href=\"/\">Reload</a>", html);
 
         // The script says the copy didn't start, rather than that it ended, when that is what happened.
-        Assert.Contains("data-not-started-title=\"Your copy of the demo didn't start\" data-not-started-text=\"Something went wrong on our side.\" data-not-started-button=\"Try again\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-not-started-title=\"Your copy of the demo didn't start\" data-not-started-text=\"Something went wrong on our side.\" data-not-started-button=\"Try again\" data-went-wrong-title=\"Something went wrong with your copy\" data-went-wrong-text=\"It stopped working on our side.\"", html, StringComparison.Ordinal);
         Assert.Contains($"data-zone-cookie=\"{VisitorTimeZone.CookieName}\"", html, StringComparison.Ordinal);
         Assert.Contains("reset when you're done", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Nobody else", html, StringComparison.Ordinal);

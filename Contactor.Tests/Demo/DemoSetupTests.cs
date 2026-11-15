@@ -153,7 +153,7 @@ public sealed class DemoSetupTests : IDisposable
         var css = System.Text.Encoding.UTF8.GetString(DemoPages.Stylesheet());
 
         var outsideTokens = css.Split('\n').Where(l => colour.IsMatch(l) && !token.IsMatch(l)).ToList();
-        var pages = string.Concat(DemoPages.Page(new DemoOptions(), offersTemplate: true), DemoPages.Busy(), DemoPages.Ended(), DemoPages.NotStarted());
+        var pages = string.Concat(DemoPages.Page(new DemoOptions(), offersTemplate: true), DemoPages.Busy(), DemoPages.Ended(), DemoPages.NotStarted(), DemoPages.WentWrong());
 
         Assert.Empty(outsideTokens);
         Assert.Contains("@media (prefers-color-scheme: dark)", css, StringComparison.Ordinal);

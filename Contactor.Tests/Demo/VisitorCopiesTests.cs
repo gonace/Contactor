@@ -301,7 +301,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         await _copies.EndAsync("0123456789abcdef0123456789abcdef");
 
         Assert.True(mine.Stopped.IsCompleted);
-        Assert.False(mine.DidntStart);
+        Assert.Equal(CopyFailure.None, mine.Failure);
         Assert.False(theirs.Stopped.IsCompleted);
         Assert.Equal(1, _copies.Count);
         Assert.Equal(VisitKind.Copy, _copies.Visit(theirs.VisitorId).Kind);
@@ -472,7 +472,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         await stop;
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => copy.Started);
-        Assert.False(copy.DidntStart);
+        Assert.Equal(CopyFailure.None, copy.Failure);
         Assert.Empty(_starter.Runs);
         Assert.Empty(_folder.CopyFolders());
     }
@@ -496,7 +496,58 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
 
         // A request that waited for it hears that it didn't start, not that it ended, though it is stopped too.
         Assert.True(copy.Stopped.IsCompleted);
-        Assert.True(copy.DidntStart);
+        Assert.Equal(CopyFailure.DidntStart, copy.Failure);
+    }
+
+    [Fact]
+    public async Task Should_SaySomethingWentWrong_NotThatItDidntStart_WhenAProgramIsGivenUpAfterItGotGoing()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        await copy.Simulator.Listening;
+
+        // The app ran, and then exited too often.
+        for (var run = 1; run <= SupervisedProgram.MaxRestarts + 1; run++)
+        {
+            await Wait.UntilAsync(() => _starter.RunsOf("app").Count == run);
+            await copy.App.Listening;
+            _starter.RunsOf("app")[^1].Exit(1);
+            var wait = SupervisedProgram.RestartWait(run - 1);
+            if (run <= SupervisedProgram.MaxRestarts && wait > TimeSpan.Zero)
+            {
+                await Wait.UntilAsync(() => _time.Waits(wait));
+                _time.Advance(wait);
+            }
+        }
+
+        await Wait.UntilAsync(() => _copies.Taken == 0 && _folder.CopyFolders().Count == 0);
+        Assert.True(copy.Stopped.IsCompleted);
+        Assert.Equal(CopyFailure.WentWrong, copy.Failure);
+    }
+
+    [Fact]
+    public async Task Should_SaySomethingWentWrong_WhenTheAppDoesntComeBack_AfterTheTemplate()
+    {
+        var copy = Start(_copies);
+        await copy.Started;
+        await copy.App.Listening;
+        await copy.Simulator.Listening;
+
+        // Started again with the template, the app exits before it listens, each time.
+        _starter.Listens = false;
+        Assert.Equal(TemplateResult.Applied, await _copies.ApplyTemplateAsync(copy.VisitorId));
+        var waiting = copy.App.Listening;
+        for (var run = 2; run <= SupervisedProgram.MaxFailedStarts + 1; run++)
+        {
+            await Wait.UntilAsync(() => _starter.RunsOf("app").Count == run);
+            _starter.RunsOf("app")[^1].Exit(1);
+        }
+
+        // A request that waited for it finds it given up, not merely not listening.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => waiting);
+        Assert.Equal(CopyFailure.WentWrong, copy.Failure);
+        await Wait.UntilAsync(() => _copies.Taken == 0 && _folder.CopyFolders().Count == 0);
+        Assert.True(copy.Stopped.IsCompleted);
     }
 
     [Fact]
@@ -634,7 +685,7 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
 
         Assert.Equal(TemplateResult.DidntStart, await applying);
         Assert.True(copy.Stopped.IsCompleted);
-        Assert.True(copy.DidntStart);
+        Assert.Equal(CopyFailure.DidntStart, copy.Failure);
         Assert.Empty(_starter.Runs);
     }
 
