@@ -349,21 +349,43 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Empty(_folder.CopyFolders());
     }
 
-    [Fact]
-    public async Task Should_EndTheCopy_WhenTheOnlyTabsCountDownRunsOut_HeardOfAsLateAsAPageMay()
+    [Theory]
+    [InlineData("00:15:00", "00:02:00")]
+    [InlineData("00:00:10", "00:00:05")]
+    [InlineData("00:00:10", "01:00:00")]
+    [InlineData("00:01:00", "00:00:05")]
+    [InlineData("00:03:00", "00:30:00")]
+    [InlineData("23:59:00", "00:00:05")]
+    [InlineData("23:00:00", "01:00:00")]
+    public async Task Should_EndTheCopy_WhenTheOnlyTabsCountDownRunsOut_HeardOfAsLateAsAPageMay(string idleTimeout, string idleWarning)
     {
-        var copy = Start(_copies);
+        var options = _folder.Options();
+        options.IdleTimeout = TimeSpan.Parse(idleTimeout, System.Globalization.CultureInfo.InvariantCulture);
+        options.IdleWarning = TimeSpan.Parse(idleWarning, System.Globalization.CultureInfo.InvariantCulture);
+        options.MaxLifetime = TimeSpan.FromDays(1);
+        Assert.Empty(new DemoOptionsValidation().Validate(null, options).Failures ?? []);
+        var reportEvery = DemoPages.ReportEvery(options);
+
+        // What this relies on: the page reports at most half the count down, and half the idle timeout, late, and at
+        // most a minute late.
+        Assert.True(reportEvery > TimeSpan.Zero);
+        Assert.True(reportEvery * 2 <= options.IdleWarning);
+        Assert.True(reportEvery * 2 <= options.IdleTimeout);
+        Assert.True(reportEvery <= TimeSpan.FromMinutes(1));
+
+        await using var copies = new VisitorCopies(
+            Options.Create(options), _starter, new FakePorts(), _database, _time, NullLoggerFactory.Instance);
+        var copy = Start(copies);
         await copy.Started;
-        var reportEvery = DemoPages.ReportEvery(_folder.Options());
 
         // The tab's last click was reported as late as it may be: its count down runs out sooner, by the demo's clock.
         _time.Advance(reportEvery);
-        Assert.True(_copies.Active(copy.VisitorId));
-        _time.Advance(IdleAndWarning - reportEvery);
+        Assert.True(copies.Active(copy.VisitorId));
+        _time.Advance(options.IdleTimeout + options.IdleWarning - reportEvery);
 
-        Assert.True(await _copies.EndIfIdleAsync(copy.VisitorId));
+        Assert.True(await copies.EndIfIdleAsync(copy.VisitorId));
         Assert.True(copy.Stopped.IsCompleted);
-        Assert.Equal(0, _copies.Count);
+        Assert.Equal(0, copies.Count);
     }
 
     [Fact]
