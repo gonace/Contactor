@@ -650,7 +650,7 @@ button:disabled {
 .confirm {
     border: none;
     background: var(--danger-solid);
-    color: #FFFFFF;
+    color: var(--on-danger);
 }
 
 .icon-field {
