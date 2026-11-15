@@ -4,7 +4,7 @@
 #
 #   docker buildx build --platform linux/amd64 -f Contactor.Demo/Dockerfile --build-arg VERSION=2026.11.12 --build-arg COMMIT=$(git rev-parse HEAD) .
 #
-# Published and signed with the app's image (scripts/images-publish.sh or the Images workflow). No cloudflared or
+# Published and signed with the app's image (the Images workflow). No cloudflared or
 # Tailscale inside: the tunnel is a container of its own (deploy/demo/compose.yml).
 
 # Built on the machine's own platform and cross-compiled for the target: no emulation needed.

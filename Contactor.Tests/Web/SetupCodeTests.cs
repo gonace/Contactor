@@ -234,7 +234,7 @@ public sealed partial class SetupCodeTests
 
         using var guide = await http.GetAsync("/setup", Cancel);
         Assert.Equal(HttpStatusCode.OK, guide.StatusCode);
-        // Set up with .env, it has no address saved: the guide asks for the way in first, since it sends people there.
+        // Set up with environment variables, it has no address saved: the guide asks for the way in first, since it sends people there.
         Assert.Contains("How do people reach the app?", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 

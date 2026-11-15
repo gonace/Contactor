@@ -70,14 +70,9 @@ install/
   compose.yml               # The generic compose file it puts in /opt/contactor, attached to each release too
   contactor-updater.sh      # The update helper on the host ("Update now"), with its .service and .path units; attached too
 deploy/
-  compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
   demo/compose.yml          # The public demo, on a network with no route out, and its forwarder on port 8080 for an existing tunnel's connector
   demo/Caddyfile            # The forwarder's settings: only to the demo, passing on X-Forwarded-Proto
-  install.sh                # Run on the Pi: settings to /opt/contactor/.env, data folder, ghcr.io login, first start
-  upgrade.sh                # Pulls, checks the cosign signature, restarts, waits until healthy
-  autoupdate-install.sh     # systemd timer: upgrade every night 03:00–04:00
   cosign/                   # Public signing keys and how to make them
-docs/DEPLOY.md              # Installation steps
 docs/DEMO.md                # Hosting the public demo
 docs/ARCHITECTURE.md        # How the app is built and what it does: architecture, boards, data model, rules, screens, operations
 docs/screenshots/           # The README's screenshots, taken by scripts/screenshots/take.mjs
@@ -85,7 +80,6 @@ scripts/
   screenshots/take.mjs      # Takes them: simulator, app and made-up data on a temporary database, Playwright
   release-version.sh        # YYYY.M.D[.N]
   images-build.sh           # Build and push an image with docker buildx; prints the digest to sign
-  images-publish.sh         # Publish and sign the images (the app's and the demo's) from your computer
   images-sign.sh            # cosign, by digest
   updater-test.sh           # Tests the update helper for real: Docker, a local registry, a test key, stand-in images
 LICENSE                     # MIT

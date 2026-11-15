@@ -135,7 +135,7 @@ public sealed class SetupSignInHandlerTests
         Assert.Equal(("tunnel-token", "contactor.example.com"), (settings.Tunnel.Token, settings.Tunnel.Address));
     }
 
-    // After reset-sign-in: with the address saved, the guide asks only for the sign-in. Set up with .env there is
+    // After reset-sign-in: with the address saved, the guide asks only for the sign-in. Set up with environment variables there is
     // none, and the guide sends people to it, so it asks for the way in again.
     [Fact]
     public async Task Should_AskForTheAddress_WhenItIsMissing_AfterAReset()

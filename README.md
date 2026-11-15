@@ -87,8 +87,6 @@ Cloudflare or Tailscale, which you choose in the setup guide.
 To remove Contactor, add `--uninstall`: `... | sh -s -- --uninstall`. Your data stays in `/opt/contactor/data`, and
 installing again takes it back. `--uninstall --delete-data` deletes that too.
 
-The earlier way, with `deploy/install.sh`, is in [docs/DEPLOY.md](docs/DEPLOY.md).
-
 ## Development
 
 Needs the .NET 10 SDK.

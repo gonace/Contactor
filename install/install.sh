@@ -613,12 +613,6 @@ show() {
 }
 
 install() {
-    # One made by the earlier installer (deploy/install.sh), with its settings in .env and its data elsewhere. Its
-    # folder is root's only, so it is looked at as root.
-    if as_root test -f "$DIR/.env"; then
-        fail "Contactor was installed here with the earlier installer ($DIR/.env). This one can't move it over yet: nothing was changed."
-    fi
-
     if updating; then
         fail "Contactor is being updated from its Settings right now. Run this command again in a few minutes."
     fi
@@ -652,9 +646,6 @@ install() {
 
 uninstall() {
     delete_data="$1"
-    if as_root test -f "$DIR/.env"; then
-        fail "Contactor was installed here with the earlier installer ($DIR/.env). This one can't remove it: nothing was changed."
-    fi
     if updating; then
         fail "Contactor is being updated from its Settings right now. Run this again in a few minutes. Nothing was changed."
     fi

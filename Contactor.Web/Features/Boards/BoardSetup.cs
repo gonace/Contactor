@@ -6,7 +6,7 @@ namespace Contactor.Web.Features.Boards;
 /// <summary>
 /// What a model's code needs from a board's row to build it (<see cref="BoardRegistration.Create"/>): which board it is,
 /// whether it is the first (only the first takes the address and login in the model's settings section, e.g.
-/// <c>Vm201:Host</c>, as install.sh writes them), and the address and login saved on its row, if any.
+/// <c>Vm201:Host</c>), and the address and login saved on its row, if any.
 /// </summary>
 /// <param name="BoardId">The board's row (<see cref="Board.Id"/>): the events of what only this model has are about it.</param>
 /// <param name="IsFirst">Whether it is the first board in the list, the one the model's settings section is for.</param>

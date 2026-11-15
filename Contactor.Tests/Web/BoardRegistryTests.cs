@@ -282,7 +282,7 @@ public sealed class BoardRegistryTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => board.ReplaceAsync(new FakeBoardParts().Build(id)));
     }
 
-    // Decided in Issue #4: the settings' address and login (install.sh's Vm201__Host and so on) are the first board's
+    // Decided in Issue #4: the settings' address and login (Vm201__Host and so on) are the first board's
     // only. Another board starts at the model's default port with no address and no login, until one is saved for it;
     // its other settings are the model's as for any board.
     [Fact]

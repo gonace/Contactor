@@ -410,7 +410,7 @@ public sealed class BoardRemovalTests
         Assert.Contains("There's no relay board in Contactor.", WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel)), StringComparison.Ordinal);
     }
 
-    // The settings' address and login (install.sh's) are the first board's: the board that becomes first never takes
+    // The settings' address and login are the first board's: the board that becomes first never takes
     // them, which were the removed board's, whatever its model, or none.
     [Theory]
     [InlineData("", "vm201")]

@@ -9,7 +9,7 @@ namespace Contactor.Demo;
 /// <summary>
 /// The Workshop template (Issue #60): a VM201, as in the garage the app was made for, set up as if someone had been
 /// through the setup guide and used it for three days. The board is the visitor's own simulated VM201, which the
-/// copy's settings point at (<c>Vm201:Host</c> and <c>Vm201:Port</c>), as install.sh's do on a Raspberry Pi.
+/// copy's settings point at (<c>Vm201:Host</c> and <c>Vm201:Port</c>), the first board's address in the settings.
 /// <list type="bullet">
 /// <item>Group "Fan heater": relay 1 Fan → 3 s → relay 2 Heat. The fan runs on for 2 minutes after the heat goes
 /// off; the group turns off after 2 h.</item>

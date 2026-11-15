@@ -324,7 +324,7 @@ public sealed partial class BoardRemoval : IDisposable
         await transaction.CommitAsync(cancellationToken);
     }
 
-    // Only the first board takes the address and login in its model's settings (install.sh's), which are the removed
+    // Only the first board takes the address and login in its model's settings, which are the removed
     // board's. The board that becomes first keeps what it has: with none saved, it is saved as "no address and no
     // login", also without a model, so it never takes the removed board's at the next start.
     private static async Task KeepNextBoardsAddressAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)

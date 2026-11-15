@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds an image for linux/arm64 and linux/amd64, pushes it, and prints the digest of the image index it pushed, so
 # the caller signs exactly that (images-sign.sh). The app's image is built from the Dockerfile, the demo's from the
-# Dockerfile given last (Contactor.Demo/Dockerfile). Used by images-publish.sh and the Images workflow. The registry
+# Dockerfile given last (Contactor.Demo/Dockerfile). Used by the Images workflow. The registry
 # login (REGISTRY_USER and REGISTRY_TOKEN) goes in a Docker config of its own, written directly rather than with
 # docker login, which would hand the token to the computer's credential store; the folder is removed again on exit,
 # so the token is neither on the command line nor saved. Docker's contexts, plugins and builders are taken from your

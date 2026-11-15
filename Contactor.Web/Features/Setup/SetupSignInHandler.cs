@@ -63,7 +63,7 @@ public sealed class SetupSignInHandler : IDisposable
         : _signIn.Current is null ? SetupPart1Step.SignIn
         : SetupPart1Step.Done;
 
-    // Cloudflare without an address: an installation set up with .env, whose sign-in was reset. The way-in step asks
+    // Cloudflare without an address: an installation set up with environment variables, whose sign-in was reset. The way-in step asks
     // for it, since the guide sends people there.
     private bool NeedsAddress => _signIn.Current is null
         && _access.Current?.Id == CloudflareMethods.TunnelId

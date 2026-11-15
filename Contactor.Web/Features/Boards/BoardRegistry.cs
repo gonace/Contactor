@@ -15,7 +15,7 @@ public sealed record BoardStateChange(int BoardId, BoardState State);
 /// setup guide's choice), and added while it runs (<see cref="AddBoardAsync(BoardModel, string?, CancellationToken)"/>,
 /// "Add a board"). <see cref="BoardHostedService"/> keeps every board's connection open
 /// (<see cref="RunAsync"/>). Only the first board takes the address and login in its model's settings section
-/// (install.sh's <c>Vm201__Host</c> and so on); every board takes the ones saved on its own row.
+/// (e.g. <c>Vm201__Host</c>); every board takes the ones saved on its own row.
 /// </summary>
 public sealed partial class BoardRegistry : IAsyncDisposable
 {
@@ -251,7 +251,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     /// <summary>
     /// "Add a board": a new board of <paramref name="model"/>, last in the list, running from now on. Its row is made with
     /// "no address and no login" saved (the model's default port), so it never takes the address and login in the
-    /// model's settings section, which are install.sh's for the first board it set up, also when it is the only board
+    /// model's settings section, which are the first board's, also when it is the only board
     /// now: its address is typed in the steps that follow. Then its relays and inputs get their rows by channel, and its
     /// live board is watched by every safety service before its connection starts, as at start. An empty
     /// <paramref name="name"/> gives it the model's name, made unique ("Velleman VM201 2"). If it can't be made all the

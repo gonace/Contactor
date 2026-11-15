@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prints the next release version: today's date in UTC as YYYY.M.D, without leading zeros, e.g. 2026.11.4. When the
 # tag v<date> is already on origin, a release was made today: it adds the next counter, e.g. 2026.11.4.1, then .2.
-# Used by the Images workflow and scripts/images-publish.sh, which tag the commit they publish v<version>.
+# Used by the Images workflow, which tags the commit it publishes v<version>.
 #
 #   bash scripts/release-version.sh
 set -euo pipefail
