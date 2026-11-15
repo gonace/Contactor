@@ -32,6 +32,28 @@ public sealed class ExpectedChangesTests
         Assert.False(_expected.IsPending(1, on: true));
     }
 
+    // Sent only once marked, and only in its own direction, until the board shows it or it expires.
+    [Fact]
+    public void Should_TellWhetherACommandWentOut()
+    {
+        _expected.Expect(ChannelMask.Of(1), on: true);
+        Assert.False(_expected.IsSent(1, on: true));
+
+        _expected.MarkSent(ChannelMask.Of(1), on: false);
+        Assert.False(_expected.IsSent(1, on: true));
+        _expected.MarkSent(ChannelMask.Of(1), on: true);
+        Assert.True(_expected.IsSent(1, on: true));
+        Assert.False(_expected.IsSent(2, on: true));
+
+        Assert.True(_expected.TryConsume(1, on: true, _time.GetUtcNow().UtcDateTime));
+        Assert.False(_expected.IsSent(1, on: true));
+
+        _expected.Expect(ChannelMask.Of(1), on: true);
+        _expected.MarkSent(ChannelMask.Of(1), on: true);
+        _time.Now += ExpectedChanges.Lifetime;
+        Assert.False(_expected.IsSent(1, on: true));
+    }
+
     [Fact]
     public void Should_MatchEachRelayInTheMaskOnce()
     {

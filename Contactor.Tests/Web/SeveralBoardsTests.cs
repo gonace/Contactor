@@ -483,6 +483,38 @@ public sealed class SeveralBoardsTests
         var allOff = Assert.Single(await rig.EventsAsync(), e => e.Details == """{"allOff":true}""");
         Assert.Equal((rig.SecondBoardId, rig.SecondRelayId(4), Jane), (allOff.BoardId!.Value, allOff.RelayId!.Value, allOff.Actor));
         Assert.Null((await RelayRuntimeAsync(rig, rig.SecondRelayId(4))).OnSinceUtc);
+
+        // The statuses come late: the ON, then the OFF. Both are the app's own, not changes made at the board; only
+        // relay 3, switched at the board afterwards, is (and shows the statuses before it were handled).
+        second.ReleaseStatus();
+        second.SetRelay(4, on: true);
+        second.SetRelay(4, on: false);
+        second.SetRelay(3, on: true);
+        await rig.WaitForEventsAsync(events => events.Any(e => e.Actor == EventActors.External));
+        var external = Assert.Single(await rig.EventsAsync(), e => e.Actor == EventActors.External);
+        Assert.Equal(rig.SecondRelayId(3), external.RelayId);
+    }
+
+    [Fact]
+    public async Task Should_LogNoAllOff_ForARelayWhoseOnIsStillOnItsWay()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var second = rig.Second!;
+        var held = new TaskCompletionSource();
+        second.BeforeOn = () => held.Task;
+        var turningOn = rig.Control.TurnOnAsync(rig.SecondRelayId(4), Jane, Cancel);
+        await BoardTestRig.WaitUntilAsync(() => rig.SecondLive.Expected.IsPending(4, on: true));
+
+        await rig.Control.TurnAllOffAsync(rig.SecondBoardId, Jane, Cancel);
+
+        // The ON may reach the board after the OFF, so "All off" doesn't say it turned the relay off, or expect its OFF.
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Details == """{"allOff":true}""");
+        Assert.False(rig.SecondLive.Expected.IsPending(4, on: false));
+
+        held.SetResult();
+        await turningOn;
+        Assert.True(second.State.IsOn(4));
+        Assert.Equal(EventActions.On, Assert.Single(await rig.EventsAsync(), e => e.RelayId == rig.SecondRelayId(4)).Action);
     }
 
     [Fact]

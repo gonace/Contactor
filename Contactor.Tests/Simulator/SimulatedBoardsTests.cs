@@ -337,7 +337,8 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
 
     private static async Task<ConnectedClient> ConnectAsync(int port, string username = "", string password = "")
     {
-        var options = new Vm201Options { Host = "127.0.0.1", Port = port, Username = username, Password = password };
+        // No keep-alive while a test runs: it would add routine lines the test doesn't wait for.
+        var options = new Vm201Options { Host = "127.0.0.1", Port = port, Username = username, Password = password, KeepAliveSeconds = 3600 };
         var client = new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance);
         var stop = new CancellationTokenSource();
         var run = client.RunAsync(stop.Token);

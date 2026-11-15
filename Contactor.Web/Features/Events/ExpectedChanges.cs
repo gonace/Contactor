@@ -20,7 +20,7 @@ public sealed class ExpectedChanges
 
     private readonly Func<DateTime> _utcNow;
     private readonly Lock _lock = new();
-    private readonly List<(int Channel, bool On, DateTime ExpiresUtc)> _expected = [];
+    private readonly List<Expectation> _expected = [];
 
     public ExpectedChanges(LocalClock clock)
     {
@@ -45,7 +45,7 @@ public sealed class ExpectedChanges
         {
             foreach (var channel in mask.Channels)
             {
-                _expected.Add((channel, on, expires));
+                _expected.Add(new Expectation(channel, on, expires, Sent: false));
             }
 
             if (_expected.Count > MaxExpected)
@@ -106,6 +106,38 @@ public sealed class ExpectedChanges
     }
 
     /// <summary>
+    /// Marks what <see cref="Expect"/> added for a command as sent, once the command went out: the newest expectation
+    /// for each relay not marked yet. Only a sent change is <see cref="IsSent"/>.
+    /// </summary>
+    public void MarkSent(ChannelMask mask, bool on)
+    {
+        lock (_lock)
+        {
+            foreach (var channel in mask.Channels)
+            {
+                var index = _expected.FindLastIndex(e => e.Channel == channel && e.On == on && !e.Sent);
+                if (index >= 0)
+                {
+                    _expected[index] = _expected[index] with { Sent = true };
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a command for this change went out (<see cref="MarkSent"/>) in the last few seconds and the board hasn't
+    /// shown it yet. Unlike <see cref="IsPending"/>, not a command still on its way, which a later one may overtake.
+    /// </summary>
+    public bool IsSent(int channel, bool on)
+    {
+        var now = _utcNow();
+        lock (_lock)
+        {
+            return _expected.Exists(e => e.Channel == channel && e.On == on && e.Sent && e.ExpiresUtc > now);
+        }
+    }
+
+    /// <summary>
     /// Whether the app asked for this change; if so the expectation is used up, so a second identical change is
     /// external.
     /// </summary>
@@ -131,4 +163,6 @@ public sealed class ExpectedChanges
             return index >= 0;
         }
     }
+
+    private readonly record struct Expectation(int Channel, bool On, DateTime ExpiresUtc, bool Sent);
 }
