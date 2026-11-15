@@ -496,28 +496,6 @@ public sealed class SeveralBoardsTests
     }
 
     [Fact]
-    public async Task Should_LogNoAllOff_ForARelayWhoseOnIsStillOnItsWay()
-    {
-        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
-        var second = rig.Second!;
-        var held = new TaskCompletionSource();
-        second.BeforeOn = () => held.Task;
-        var turningOn = rig.Control.TurnOnAsync(rig.SecondRelayId(4), Jane, Cancel);
-        await BoardTestRig.WaitUntilAsync(() => rig.SecondLive.Expected.IsPending(4, on: true));
-
-        await rig.Control.TurnAllOffAsync(rig.SecondBoardId, Jane, Cancel);
-
-        // The ON may reach the board after the OFF, so "All off" doesn't say it turned the relay off, or expect its OFF.
-        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Details == """{"allOff":true}""");
-        Assert.False(rig.SecondLive.Expected.IsPending(4, on: false));
-
-        held.SetResult();
-        await turningOn;
-        Assert.True(second.State.IsOn(4));
-        Assert.Equal(EventActions.On, Assert.Single(await rig.EventsAsync(), e => e.RelayId == rig.SecondRelayId(4)).Action);
-    }
-
-    [Fact]
     public async Task Should_RefuseAGroup_WithRelaysOnTwoBoards()
     {
         await using var rig = await BoardTestRig.StartAsync(secondBoard: true);

@@ -427,7 +427,6 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                 await _board.TurnOffAsync(mask, cancellationToken);
             }
 
-            _expected.MarkSent(mask, on);
             return Sent.Done;
         }
         catch (BoardClosedException)
