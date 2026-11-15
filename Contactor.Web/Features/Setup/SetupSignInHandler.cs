@@ -2,6 +2,8 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Tailscale;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Setup;
 
@@ -37,6 +39,8 @@ public sealed class SetupSignInHandler : IDisposable
     private readonly CloudflareTunnel _tunnel;
     private readonly TailscaleSettings _tailscale;
     private readonly TailscaleNetwork _tailscaleNetwork;
+    private readonly IStringLocalizer<SetupTexts> _texts;
+    private readonly SetupText _setupText;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public SetupSignInHandler(
@@ -45,8 +49,12 @@ public sealed class SetupSignInHandler : IDisposable
         CloudflareSettings cloudflare,
         CloudflareTunnel tunnel,
         TailscaleSettings tailscale,
-        TailscaleNetwork tailscaleNetwork)
+        TailscaleNetwork tailscaleNetwork,
+        IStringLocalizer<SetupTexts> texts,
+        SetupText setupText)
     {
+        _texts = texts;
+        _setupText = setupText;
         _access = access;
         _signIn = signIn;
         _cloudflare = cloudflare;
@@ -115,7 +123,7 @@ public sealed class SetupSignInHandler : IDisposable
                 m,
                 wayIn.SignIns.Contains(m.Id),
                 m == recommended,
-                wayIn.SignIns.Contains(m.Id) ? null : OnlyWith(m)))
+                wayIn.SignIns.Contains(m.Id) ? null : _setupText.OnlyWith(m)))
             .OrderBy(o => o.Allowed ? (o.Recommended ? 0 : 1) : 2)];
     }
 
@@ -131,7 +139,7 @@ public sealed class SetupSignInHandler : IDisposable
             CloudflareMethods.TunnelId => ChooseCloudflareCoreAsync(fields.TunnelToken, fields.TunnelAddress, cancellationToken),
             TailscaleMethods.NetworkId => ChooseTailscaleCoreAsync(fields.AuthKey, fields.HostName, cancellationToken),
             AccessCatalogue.LocalId => ChooseLocalCoreAsync(cancellationToken),
-            _ => Task.FromResult<string?>("Choose how people reach the app."),
+            _ => Task.FromResult<string?>(_texts["Setup.Choose.WayIn"]),
         }, cancellationToken);
     }
 
@@ -143,7 +151,7 @@ public sealed class SetupSignInHandler : IDisposable
             CloudflareMethods.AccessId => ChooseCloudflareAccessCoreAsync(teamDomain, audience, cancellationToken),
             TailscaleMethods.IdentityId => ChooseTailscaleIdentityCoreAsync(cancellationToken),
             SignInCatalogue.NoneId => ChooseNoSignInCoreAsync(cancellationToken),
-            _ => Task.FromResult<string?>("Choose how people sign in."),
+            _ => Task.FromResult<string?>(_texts["Setup.Choose.SignIn"]),
         }, cancellationToken);
     }
 
@@ -152,7 +160,7 @@ public sealed class SetupSignInHandler : IDisposable
     {
         if (_signIn.Current is not null)
         {
-            return "This installation is set up already.";
+            return _texts["Setup.Done.Already"];
         }
 
         await _access.ChooseAsync(AccessCatalogue.Find(AccessCatalogue.LocalId)!, cancellationToken);
@@ -164,12 +172,12 @@ public sealed class SetupSignInHandler : IDisposable
     {
         if (_signIn.Current is not null)
         {
-            return "This installation is set up already.";
+            return _texts["Setup.Done.Already"];
         }
 
         if (_access.Current is not { } wayIn || !wayIn.SignIns.Contains(SignInCatalogue.NoneId))
         {
-            return "No sign-in only works when the app is only on this network.";
+            return _texts["Setup.None.OnlyHere"];
         }
 
         await _signIn.ChooseAsync(SignInCatalogue.Find(SignInCatalogue.NoneId)!, cancellationToken);
@@ -214,18 +222,6 @@ public sealed class SetupSignInHandler : IDisposable
         }
     }
 
-    // "Only with Cloudflare", or "Only on this network.": the ways in a sign-in works with.
-    private static string OnlyWith(SignInMethod method)
-    {
-        var ways = AccessCatalogue.All.Where(w => w.SignIns.Contains(method.Id)).Select(w => w.Name).ToList();
-        return ways switch
-        {
-            [] => "Not available yet.",
-            [var only] when only.StartsWith("Only ", StringComparison.Ordinal) => $"{only}.",
-            _ => $"Only with {string.Join(" or ", ways)}.",
-        };
-    }
-
     /// <summary>The sign-in chosen, or null.</summary>
     public SignInMethod? SignIn => _signIn.Current;
 
@@ -238,7 +234,7 @@ public sealed class SetupSignInHandler : IDisposable
     {
         if (_signIn.Current is not null)
         {
-            return "This installation is set up already.";
+            return _texts["Setup.Done.Already"];
         }
 
         if (string.IsNullOrWhiteSpace(token) && _access.Current?.Id == CloudflareMethods.TunnelId)
@@ -249,7 +245,7 @@ public sealed class SetupSignInHandler : IDisposable
         var problem = await _cloudflare.SaveTunnelAsync(token, address, cancellationToken);
         if (problem is not null)
         {
-            return problem;
+            return problem.In(_texts);
         }
 
         await _access.ChooseAsync(AccessCatalogue.Find(CloudflareMethods.TunnelId)!, cancellationToken);
@@ -265,7 +261,7 @@ public sealed class SetupSignInHandler : IDisposable
     {
         if (_signIn.Current is not null)
         {
-            return "This installation is set up already.";
+            return _texts["Setup.Done.Already"];
         }
 
         if (string.IsNullOrWhiteSpace(authKey) && _access.Current?.Id == TailscaleMethods.NetworkId)
@@ -276,7 +272,7 @@ public sealed class SetupSignInHandler : IDisposable
         var problem = await _tailscale.SaveAsync(authKey, hostName, cancellationToken);
         if (problem is not null)
         {
-            return problem;
+            return problem.In(_texts);
         }
 
         await _access.ChooseAsync(AccessCatalogue.Find(TailscaleMethods.NetworkId)!, cancellationToken);
@@ -292,17 +288,17 @@ public sealed class SetupSignInHandler : IDisposable
     {
         if (_signIn.Current is not null)
         {
-            return "This installation is set up already.";
+            return _texts["Setup.Done.Already"];
         }
 
         if (_access.Current is not { } wayIn || !wayIn.SignIns.Contains(TailscaleMethods.IdentityId))
         {
-            return "Tailscale identity only works when people reach the app through Tailscale.";
+            return _texts["Setup.TailscaleIdentity.OnlyTailscale"];
         }
 
         if (_tailscaleNetwork.Status is not { Online: true, Address: not null })
         {
-            return "Wait until Contactor is on your Tailscale network: people open it there.";
+            return _texts["Setup.TailscaleIdentity.Wait"];
         }
 
         await _signIn.ChooseAsync(SignInCatalogue.Find(TailscaleMethods.IdentityId)!, cancellationToken);
@@ -321,23 +317,23 @@ public sealed class SetupSignInHandler : IDisposable
     {
         if (_signIn.Current is not null)
         {
-            return "This installation is set up already.";
+            return _texts["Setup.Done.Already"];
         }
 
         if (_access.Current is not { } wayIn || !wayIn.SignIns.Contains(CloudflareMethods.AccessId))
         {
-            return "Cloudflare Access only works when people reach the app through Cloudflare.";
+            return _texts["Setup.CloudflareAccess.OnlyCloudflare"];
         }
 
         if (NeedsAddress)
         {
-            return "Go back and save the tunnel's address first: people open Contactor there.";
+            return _texts["Setup.CloudflareAccess.AddressFirst"];
         }
 
         var problem = await _cloudflare.SaveAccessAsync(teamDomain, audience, cancellationToken);
         if (problem is not null)
         {
-            return problem;
+            return problem.In(_texts);
         }
 
         await _signIn.ChooseAsync(SignInCatalogue.Find(CloudflareMethods.AccessId)!, cancellationToken);

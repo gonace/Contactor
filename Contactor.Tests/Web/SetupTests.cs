@@ -890,7 +890,7 @@ public sealed class SetupTests
     [InlineData(1, 0, 2, "1 relay · 2 analog inputs")]
     public void Should_DescribeWhatAModelHas(int relays, int inputs, int analog, string text)
     {
-        Assert.Equal(text, SetupText.Capabilities(new BoardCapabilities(relays, inputs, ReportsChanges: true, analog)));
+        Assert.Equal(text, TestTexts.Setup.Capabilities(new BoardCapabilities(relays, inputs, ReportsChanges: true, analog)));
     }
 
     [Theory]
@@ -899,7 +899,7 @@ public sealed class SetupTests
     [InlineData(0, 4, "None in use, 4 hidden")]
     public void Should_SummariseTheRelaysInUse(int inUse, int hidden, string text)
     {
-        Assert.Equal(text, SetupText.RelaysInUse(inUse, hidden));
+        Assert.Equal(text, TestTexts.Setup.RelaysInUse(inUse, hidden));
     }
 
     private static async Task<List<EventLogEntry>> EventsAsync(TestDatabase database)

@@ -147,6 +147,10 @@
     <value>GROUP · {0}</value>
     <comment>Over a group's name: {0} is its relays' numbers, e.g. "1 → 2".</comment>
   </data>
+  <data name="Relays.DefaultName" xml:space="preserve">
+    <value>Relay {0}</value>
+    <comment>A relay's name until someone gives it one: {0} is its number on the board.</comment>
+  </data>
   <data name="Relays.RelayLabel" xml:space="preserve">
     <value>RELAY {0}</value>
     <comment>Over a relay's name: {0} is its number on the board.</comment>
@@ -155,16 +159,16 @@
     <value>INPUT {0}</value>
     <comment>Over an input's name: {0} is its number on the board.</comment>
   </data>
-  <data name="Relays.StartOrder" xml:space="preserve">
-    <value>Relays in start order</value>
-    <comment>Read out by screen readers: a group's relays.</comment>
-  </data>
   <data name="Relays.Chip.Unknown" xml:space="preserve">
     <value> (unknown)</value>
     <comment>Read out by screen readers after a relay's name, before the board's first answer.</comment>
   </data>
   <data name="Relays.Chip.On" xml:space="preserve">
     <value> (on)</value>
+  </data>
+  <data name="Relays.Chip.Partly" xml:space="preserve">
+    <value> (partly on)</value>
+    <comment>For a screen reader, after a step's name on a group's card: only some of its relays are on.</comment>
   </data>
   <data name="Relays.Chip.Off" xml:space="preserve">
     <value> (off)</value>

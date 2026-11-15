@@ -20,6 +20,9 @@
 @inject NavigationManager Navigation
 @inject AppLanguage Language
 @inject ILogger<SetupGuide> Log
+@inject IStringLocalizer<SetupTexts> Texts
+@inject IStringLocalizer<BoardsTexts> BoardTexts
+@inject SetupText SetupText
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Setup"]])</PageTitle>
 
@@ -39,10 +42,10 @@
         {
             <span></span>
         }
-        <span class="step-count">STEP @StepInPart OF @StepsInPart</span>
+        <span class="step-count">@Texts["Setup.Step", StepInPart, StepsInPart]</span>
     </header>
 
-    <div class="part" inert="@_sheetOpen">@(InPart1 ? "PART 1 OF 2 · THE APP" : "PART 2 OF 2 · THE BOARD")</div>
+    <div class="part" inert="@_sheetOpen">@Texts[InPart1 ? "Setup.Part1" : "Setup.Part2"]</div>
     <div class="progress" aria-hidden="true" inert="@_sheetOpen">
         @for (var i = 1; i <= StepsInPart; i++)
         {
@@ -70,17 +73,17 @@
         else if (_step == StepAbout)
         {
             <div class="intro">
-                <h1 tabindex="-1" @ref="_heading">About you</h1>
-                <p>Your name in Contactor. Then four short questions about your relay board. You can change all of it later under Settings.</p>
+                <h1 tabindex="-1" @ref="_heading">@Texts["Setup.About.Title"]</h1>
+                <p>@Texts["Setup.About.Intro"]</p>
             </div>
             <div class="field">
-                <label for="name">Your name</label>
+                <label for="name">@Texts["Setup.About.Name"]</label>
                 <input id="name" type="text" maxlength="@User.DisplayNameMaxLength" autocomplete="given-name" @bind="_name" @bind:event="oninput" />
-                <p class="hint">Shown in the app and under Events, e.g. "@(string.IsNullOrWhiteSpace(_name) ? "Jane" : _name.Trim()) turned on Compressor".</p>
+                <p class="hint">@Texts["Setup.About.Hint", string.IsNullOrWhiteSpace(_name) ? Texts["Setup.About.Example"] : _name.Trim()]</p>
             </div>
             <div class="info">
-                <span class="label">YOU'LL NEED</span>
-                <p>The relay board switched on and plugged into the same network as this app. Your router lists its address among its connected devices.</p>
+                <span class="label">@Texts["Setup.About.Need"]</span>
+                <p>@Texts["Setup.About.NeedText"]</p>
             </div>
         }
         else if (_step == StepBoard)
@@ -90,7 +93,7 @@
         else if (Chosen is not { Model: not null } chosen)
         {
             @* The board chosen here is gone (it can't be, while the guide runs): its steps start again. *@
-            <p class="hint">Choose your relay board first.</p>
+            <p class="hint">@Texts["Setup.BoardFirst"]</p>
         }
         else if (_step == StepWhere)
         {
@@ -108,30 +111,30 @@
             var board = Chosen;
             var connected = board?.State.IsConnected == true;
             var endpoint = board?.Endpoint;
-            var modelName = board?.Model?.Name ?? "Relay board";
+            var modelName = board?.Model?.Name ?? Common["Common.Screen.RelayBoard"];
             <div class="intro">
                 <span class="done-mark" aria-hidden="true">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"></path></svg>
                 </span>
-                <h1 tabindex="-1" @ref="_heading">All set@(string.IsNullOrWhiteSpace(_name) ? "" : $", {_name.Trim()}")</h1>
-                <p>@(connected ? "Your relay board is ready." : "The app keeps looking for your relay board. You can change its address under Settings.")</p>
+                <h1 tabindex="-1" @ref="_heading">@(string.IsNullOrWhiteSpace(_name) ? Texts["Setup.Done.Title"] : Texts["Setup.Done.TitleName", _name.Trim()])</h1>
+                <p>@Texts[connected ? "Setup.Done.Ready" : "Setup.Done.Looking"]</p>
             </div>
             <dl class="summary">
                 <div>
-                    <dt class="label">BOARD</dt>
-                    <dd>@(endpoint is { HasHost: true } ? $"{modelName} at {endpoint.Host}" : $"{modelName}, no address yet")</dd>
+                    <dt class="label">@Texts["Setup.Done.Board"]</dt>
+                    <dd>@(endpoint is { HasHost: true } ? Texts["Setup.Done.BoardAt", modelName, endpoint.Host] : Texts["Setup.Done.BoardNoAddress", modelName])</dd>
                 </div>
                 <div>
-                    <dt class="label">RELAYS</dt>
+                    <dt class="label">@Texts["Setup.Done.Relays"]</dt>
                     <dd>@SetupText.RelaysInUse(inUse, _relays.Count - inUse)</dd>
                 </div>
             </dl>
-            <h2>Good next steps</h2>
+            <h2>@Texts["Setup.Done.Next"]</h2>
             <div class="links">
-                <a href="group/new">Make a group, e.g. a fan heater <span aria-hidden="true">→</span></a>
+                <a href="group/new">@Texts["Setup.Done.Group"] <span aria-hidden="true">→</span></a>
                 @if (first is not null)
                 {
-                    <a href="@($"relay/{first.Id}")">Add a schedule, e.g. to @first.Shown <span aria-hidden="true">→</span></a>
+                    <a href="@($"relay/{first.Id}")">@Texts["Setup.Done.Schedule", first.Shown] <span aria-hidden="true">→</span></a>
                 }
             </div>
         }
@@ -144,7 +147,7 @@
         }
         @if (_elsewhere is not null)
         {
-            <a href="@_elsewhere" class="finish">Open @(new Uri(_elsewhere).Host)</a>
+            <a href="@_elsewhere" class="finish">@Texts["Setup.Open", new Uri(_elsewhere).Host]</a>
         }
         else if (_step < StepDone)
         {
@@ -152,12 +155,12 @@
             <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">@Common["Common.Next"]</button>
             @if (_step == StepWhere)
             {
-                <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">Go on without a connection</button>
+                <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">@BoardTexts["Boards.New.WithoutConnection"]</button>
             }
         }
         else
         {
-            <a href="" class="finish">Go to Relays</a>
+            <a href="" class="finish">@Texts["Setup.ToRelays"]</a>
         }
     </div>
 
@@ -193,21 +196,21 @@
     private RenderFragment WayInStep => __builder =>
     {
         <div class="intro">
-            <h1 tabindex="-1" @ref="_heading">How do people reach the app?</h1>
-            <p>Where should people be able to open Contactor?</p>
+            <h1 tabindex="-1" @ref="_heading">@Texts["Setup.WayIn.Title"]</h1>
+            <p>@Texts["Setup.WayIn.Intro"]</p>
         </div>
-        <div class="choices" role="radiogroup" aria-label="Ways in">
+        <div class="choices" role="radiogroup" aria-label="@Texts["Setup.WayIn.Label"]">
             @foreach (var way in AccessCatalogue.All)
             {
                 var id = way.Id;
                 <label class="choice @(id == _wayIn ? "chosen" : null)">
                     <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
                     <span class="choice-text">
-                        <span class="name">@way.Name @if (way.Simplest)
+                        <span class="name">@SetupText.Name(way) @if (way.Simplest)
                             {
-                                <span class="tag">SIMPLEST</span>
+                                <span class="tag">@Texts["Setup.Simplest"]</span>
                             }</span>
-                        <span class="note">@way.Description</span>
+                        <span class="note">@SetupText.Description(way)</span>
                     </span>
                 </label>
             }
@@ -215,31 +218,31 @@
         @if (_wayIn == CloudflareMethods.TunnelId)
         {
             <div class="field">
-                <label for="tunnel-token">Tunnel token</label>
+                <label for="tunnel-token">@Texts["Setup.Tunnel.Token"]</label>
                 <input id="tunnel-token" type="password" autocomplete="new-password" spellcheck="false" maxlength="@CloudflareSetting.TunnelTokenMaxLength"
-                       placeholder="@(SignIns.WayIn?.Id == CloudflareMethods.TunnelId ? "unchanged" : "")" @bind="_tunnelToken" @bind:event="oninput" />
-                <p class="hint">Zero Trust → Networks → Tunnels → your tunnel. It is the long code after <code>--token</code> in the install command.</p>
+                       placeholder="@(SignIns.WayIn?.Id == CloudflareMethods.TunnelId ? Texts["Setup.Unchanged"] : "")" @bind="_tunnelToken" @bind:event="oninput" />
+                <p class="hint"><Sentence Text="@Texts["Setup.Tunnel.TokenHint"]"><Arg0><code>--token</code></Arg0></Sentence></p>
             </div>
             <div class="field">
-                <label for="tunnel-address">Address</label>
+                <label for="tunnel-address">@Texts["Setup.Tunnel.Address"]</label>
                 <input id="tunnel-address" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
                        maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="relays.example.com" @bind="_tunnelAddress" @bind:event="oninput" />
-                <p class="hint">The tunnel's public hostname: where people will open Contactor. In Cloudflare, point it at <code>http://contactor:8080</code>.</p>
+                <p class="hint"><Sentence Text="@Texts["Setup.Tunnel.AddressHint"]"><Arg0><code>http://contactor:8080</code></Arg0></Sentence></p>
             </div>
         }
         else if (_wayIn == TailscaleMethods.NetworkId)
         {
             <div class="field">
-                <label for="auth-key">Auth key</label>
+                <label for="auth-key">@Texts["Setup.Tailscale.KeyLabel"]</label>
                 <input id="auth-key" type="password" autocomplete="new-password" spellcheck="false" maxlength="@TailscaleSetting.AuthKeyMaxLength"
-                       placeholder="@(SignIns.WayIn?.Id == TailscaleMethods.NetworkId ? "unchanged" : "tskey-auth-…")" @bind="_authKey" @bind:event="oninput" />
-                <p class="hint">Tailscale's admin console → Settings → Keys → Generate auth key, not ephemeral. Under DNS, also turn on MagicDNS and HTTPS Certificates.</p>
+                       placeholder="@(SignIns.WayIn?.Id == TailscaleMethods.NetworkId ? Texts["Setup.Unchanged"] : "tskey-auth-…")" @bind="_authKey" @bind:event="oninput" />
+                <p class="hint">@Texts["Setup.Tailscale.KeyHint"]</p>
             </div>
             <div class="field">
-                <label for="tailscale-name">Name on your Tailscale network</label>
+                <label for="tailscale-name">@Texts["Setup.Tailscale.NameLabel"]</label>
                 <input id="tailscale-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
                        maxlength="@TailscaleSetting.HostNameMaxLength" placeholder="@TailscaleSetting.DefaultHostName" @bind="_tailscaleName" @bind:event="oninput" />
-                <p class="hint">People open Contactor at https://@(string.IsNullOrWhiteSpace(_tailscaleName) ? TailscaleSetting.DefaultHostName : _tailscaleName.Trim().ToLowerInvariant()).<i>your-network</i>.ts.net.</p>
+                <p class="hint"><Sentence Text="@Texts["Setup.Tailscale.NameHint"]"><Arg0>@(string.IsNullOrWhiteSpace(_tailscaleName) ? TailscaleSetting.DefaultHostName : _tailscaleName.Trim().ToLowerInvariant())</Arg0><Arg1><i>@Texts["Setup.Tailscale.YourNetwork"]</i></Arg1></Sentence></p>
             </div>
         }
     };
@@ -253,29 +256,27 @@
         var options = SignIns.SignIns();
         var recommended = options.FirstOrDefault(o => o.Recommended);
         <div class="intro">
-            <h1 tabindex="-1" @ref="_heading">@(_elsewhere is null ? "How do people sign in?" : "Go on at your new address")</h1>
-            <p>@(_elsewhere is not null
-                ? $"Contactor now only answers through {SignIns.WayIn?.Name}. Open it there{(SignIns.SignIn?.Id == TailscaleMethods.IdentityId ? ", on a phone or computer on your Tailscale network" : " and sign in with your e-mail")}{(_setupDone ? "." : ": the guide goes on.")}"
-                : recommended is not null ? $"Recommended with {SignIns.WayIn?.Name}: {recommended.Method.Name}." : "With a sign-in, the events show who did what.")</p>
+            <h1 tabindex="-1" @ref="_heading">@Texts[_elsewhere is null ? "Setup.SignIn.Title" : "Setup.Elsewhere.Title"]</h1>
+            <p>@IntroOfSignIn(recommended)</p>
         </div>
         @if (_elsewhere is null)
         {
-            <div class="choices" role="radiogroup" aria-label="Sign-ins">
+            <div class="choices" role="radiogroup" aria-label="@Texts["Setup.SignIn.Label"]">
                 @foreach (var option in options)
                 {
                     var id = option.Method.Id;
                     <label class="choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
                         <input type="radio" name="sign-in" checked="@(id == _signInId)" disabled="@(!option.Allowed)" @onchange="() => _signInId = id" />
                         <span class="choice-text">
-                            <span class="name">@option.Method.Name @if (option.Recommended)
+                            <span class="name">@SetupText.Name(option.Method) @if (option.Recommended)
                                 {
-                                    <span class="tag">RECOMMENDED</span>
+                                    <span class="tag">@Texts["Setup.RecommendedTag"]</span>
                                 }
                                 else if (option.Method.NotRecommended && option.Allowed)
                                 {
-                                    <span class="tag warn">NOT RECOMMENDED</span>
+                                    <span class="tag warn">@Texts["Setup.NotRecommendedTag"]</span>
                                 }</span>
-                            <span class="note">@(option.Reason ?? option.Method.Description)</span>
+                            <span class="note">@(option.Reason ?? SetupText.Description(option.Method))</span>
                         </span>
                     </label>
                 }
@@ -283,21 +284,21 @@
             @if (_signInId == CloudflareMethods.AccessId)
             {
                 <div class="field">
-                    <label for="team-domain">Team domain</label>
+                    <label for="team-domain">@Texts["Setup.Access.TeamDomain"]</label>
                     <input id="team-domain" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
                            maxlength="@CloudflareSetting.HostNameMaxLength" placeholder="myteam.cloudflareaccess.com" @bind="_teamDomain" @bind:event="oninput" />
-                    <p class="hint">Zero Trust → Settings → Team name and domain.</p>
+                    <p class="hint">@Texts["Setup.Access.TeamDomainHint"]</p>
                 </div>
                 <div class="field">
-                    <label for="audience">AUD tag</label>
+                    <label for="audience">@Texts["Setup.Access.Audience"]</label>
                     <input id="audience" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
                            maxlength="@CloudflareSetting.AudienceMaxLength" @bind="_audience" @bind:event="oninput" />
-                    <p class="hint">Zero Trust → Access controls → Applications → the application for @(address ?? "your address") → Edit → Additional settings.</p>
+                    <p class="hint">@Texts["Setup.Access.AudienceHint", address ?? Texts["Setup.Access.YourAddress"].Value]</p>
                 </div>
             }
             else if (_signInId == SignInCatalogue.NoneId)
             {
-                <p class="warning" role="note">Anyone on your network can switch the relays, and the events can't say who did it. Choose a sign-in to reach the app from outside.</p>
+                <p class="warning" role="note">@Texts["Setup.None.Warning"]</p>
             }
         }
         @if (cloudflare)
@@ -305,8 +306,8 @@
             <div class="board-status" role="status">
                 <span class="dot @(connected ? null : "waiting")"></span>
                 <span class="status-text">
-                    <b>@(connected ? "Tunnel connected" : "Waiting for the tunnel to connect")</b>
-                    <span>@(connected && address is not null ? $"Cloudflare answers at {address}." : "It can take a minute. Check the token if it doesn't.")</span>
+                    <b>@Texts[connected ? "Setup.Tunnel.Connected" : "Setup.Tunnel.Waiting"]</b>
+                    <span>@(connected && address is not null ? Texts["Setup.Tunnel.Answers", address] : Texts["Setup.Tunnel.Minute"])</span>
                 </span>
             </div>
         }
@@ -315,15 +316,15 @@
             <div class="board-status" role="status">
                 <span class="dot @(tailscale.Online ? null : "waiting")"></span>
                 <span class="status-text">
-                    <b>@(tailscale.Online ? "On your Tailscale network" : "Joining your Tailscale network")</b>
-                    <span>@(tailscale.Problem ?? (tailscale.Online && tailscale.Address is not null ? $"Contactor answers at https://{tailscale.Address}." : "It can take a minute."))</span>
+                    <b>@Texts[tailscale.Online ? "Setup.Tailscale.Online" : "Setup.Tailscale.Joining"]</b>
+                    <span>@(tailscale.Problem?.In(Texts) ?? (tailscale.Online && tailscale.Address is not null ? Texts["Setup.Tailscale.Answers", tailscale.Address] : Texts["Setup.Tailscale.Minute"]))</span>
                     @if (tailscale.Problem is not null && tailscale.Link is not null)
                     {
-                        <a href="@tailscale.Link.AbsoluteUri" target="_blank" rel="noopener noreferrer">Open Tailscale to turn on HTTPS</a>
+                        <a href="@tailscale.Link.AbsoluteUri" target="_blank" rel="noopener noreferrer">@Texts["Setup.Tailscale.TurnOnHttps"]</a>
                     }
                 </span>
             </div>
-            <p class="hint">In Tailscale's admin console, under Machines, turn off key expiry for @(SignIns.TailscaleHostName), or it leaves the network after a few months. Under Access controls, let devices reach it only on port 443.</p>
+            <p class="hint">@Texts["Setup.Tailscale.Expiry", SignIns.TailscaleHostName]</p>
         }
     };
 
@@ -473,6 +474,28 @@
         return address is { Length: > 0 }
             ? $"https://{address}/{(_setupDone ? "" : "setup")}"
             : Navigation.BaseUri;
+    }
+
+    // Under "How do people sign in?": the sign-in recommended for the way in; once it is chosen and this page no longer
+    // answers here, where to go on.
+    private string IntroOfSignIn(SetupSignInOption? recommended)
+    {
+        if (_elsewhere is not null)
+        {
+            var through = SignIns.WayIn is { } way ? SetupText.Name(way) : "";
+            var key = (SignIns.SignIn?.Id == TailscaleMethods.IdentityId, _setupDone) switch
+            {
+                (true, true) => "Setup.Elsewhere.Tailscale",
+                (true, false) => "Setup.Elsewhere.TailscaleGoesOn",
+                (false, true) => "Setup.Elsewhere.Email",
+                (false, false) => "Setup.Elsewhere.EmailGoesOn",
+            };
+            return Texts[key, through];
+        }
+
+        return recommended is not null && SignIns.WayIn is { } wayIn
+            ? Texts["Setup.Recommended", SetupText.Name(wayIn), SetupText.Name(recommended.Method)]
+            : Texts["Setup.WithSignIn"];
     }
 
     // The sign-in chosen to begin with: the one recommended for the way in, else the first that fits it.
@@ -631,7 +654,7 @@
 
         if (BoardCatalogue.Find(_type) is not { } chosen)
         {
-            _error = "Choose your relay board.";
+            _error = BoardTexts["Boards.New.ChooseBoard"];
             return;
         }
 
@@ -705,7 +728,7 @@
     {
         // An exception that leaves the handler would end the page's live connection.
         Log.LogError(ex, "{What}", what);
-        _error = "Something went wrong. Try again.";
+        _error = Common["Common.SomethingWrongTryAgain"];
     }
 
     // From a board's read loop: the guide's own board's, for "All set".

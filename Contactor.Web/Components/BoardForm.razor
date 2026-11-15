@@ -8,6 +8,7 @@
 @inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
 @inject IStringLocalizer<BoardsTexts> Texts
+@inject BoardLoginText LoginText
 
 @* One board's card: on Settings with one board ("Relay board"), and on a board's own page ("Board", with its name). *@
 <form class="card" @onsubmit="SaveAsync">
@@ -60,7 +61,7 @@
                            @bind="_newPassword" @bind:event="oninput" />
                 </div>
             </div>
-            <p class="hint">@(model.PasswordOnly ? model.LoginHint : Texts["Boards.Login.Hint", model.LoginHint ?? Texts["Boards.Login.MaxLength", model.LoginMaxLength].Value])</p>
+            <p class="hint">@LoginText.Hint(model)</p>
         }
     }
 

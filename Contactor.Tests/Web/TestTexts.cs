@@ -3,6 +3,7 @@ using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
+using Contactor.Web.Features.Setup;
 using Contactor.Web.Resources;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,6 +36,8 @@ internal static class TestTexts
     public static GroupStatusText GroupStatus { get; } = new(For<GroupsTexts>(), RelayStatus, Events);
 
     public static GroupPlanText GroupPlan { get; } = new(For<GroupsTexts>(), Events);
+
+    public static SetupText Setup { get; } = new(For<SetupTexts>());
 
     public static IStringLocalizer<T> For<T>() => new StringLocalizer<T>(Factory);
 }

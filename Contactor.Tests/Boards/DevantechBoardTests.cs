@@ -97,8 +97,8 @@ public sealed class DevantechBoardTests
         Assert.Equal(new BoardLogin("", "apple"), connection.DefaultLogin);
         Assert.Null(connection.CheckLogin(BoardLogin.None));
         Assert.Null(connection.CheckLogin(new BoardLogin("", "pear")));
-        Assert.Equal("The Devantech board takes a password only, no user name.", connection.CheckLogin(new BoardLogin("admin", "pear")));
-        Assert.Equal("The password can be at most 32 characters.", connection.CheckLogin(new BoardLogin("", new string('a', 33))));
+        Assert.Equal("The Devantech board takes a password only, no user name.", connection.CheckLogin(new BoardLogin("admin", "pear"))?.ToString());
+        Assert.Equal("The password can be at most 32 characters.", connection.CheckLogin(new BoardLogin("", new string('a', 33)))?.ToString());
         Assert.Throws<ArgumentException>(() => connection.SetLogin(new BoardLogin("admin", "")));
 
         connection.SetLogin(new BoardLogin("", "pear"));

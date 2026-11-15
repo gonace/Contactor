@@ -46,7 +46,7 @@ public sealed class Vm201ConnectionTests
     {
         var login = new BoardLogin(username, password);
 
-        Assert.Equal(message, _connection.CheckLogin(login));
+        Assert.Equal(message, _connection.CheckLogin(login)?.ToString());
         Assert.Throws<ArgumentException>(() => _connection.SetLogin(login));
         Assert.Equal("john", _client.Login.Username);
     }

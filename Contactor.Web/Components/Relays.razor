@@ -29,6 +29,7 @@
 @inject InputsText InputsText
 @inject IStringLocalizer<RelaysTexts> Texts
 @inject IStringLocalizer<BoardsTexts> BoardTexts
+@inject IStringLocalizer<GroupsTexts> GroupTexts
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Relays"]])</PageTitle>
 
@@ -465,16 +466,18 @@
                     <button type="button" class="toggle unknown" aria-label="@Common["Common.NameAndState", group.Name, StatusText.Waiting]" disabled>–</button>
                 }
             </div>
-            <ol class="chips" aria-label="@Texts["Relays.StartOrder"]">
-                @foreach (var member in group.Members)
+            <ol class="chips" aria-label="@GroupTexts["Groups.Steps"]">
+                @for (var i = 0; i < group.Steps.Count; i++)
                 {
-                    var memberOn = state.IsOn(member.Channel);
+                    var step = group.Steps[i];
+                    var on = step.Relays.Count(r => state.IsOn(r.Channel));
+                    var chipState = on == 0 ? null : on == step.Relays.Count ? "on" : "partly";
                     <li>
-                        @if (member.Position > 1)
+                        @if (i > 0)
                         {
                             <span class="arrow" aria-hidden="true">→</span>
                         }
-                        <span class="chip @(memberOn ? "on" : null)"><span class="dot" aria-hidden="true"></span>@member.RoleName<span class="visually-hidden">@Texts[!state.HasAnswered ? "Relays.Chip.Unknown" : memberOn ? "Relays.Chip.On" : "Relays.Chip.Off"]</span></span>
+                        <span class="chip @chipState"><span class="dot" aria-hidden="true"></span>@step.Name<span class="visually-hidden">@(!state.HasAnswered ? Texts["Relays.Chip.Unknown"] : chipState == "partly" ? Texts["Relays.Chip.Partly"] : Texts[chipState == "on" ? "Relays.Chip.On" : "Relays.Chip.Off"])</span></span>
                     </li>
                 }
             </ol>

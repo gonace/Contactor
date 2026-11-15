@@ -25,9 +25,9 @@ public sealed class Vm204LoginTests
     {
         Assert.NotNull(Vm204Login.TryCreate(new string('a', 31), new string('b', 17), out _));
         Assert.Null(Vm204Login.TryCreate(new string('a', 32), "", out var tooLong));
-        Assert.Equal("The user name can be at most 31 characters on the relay board.", tooLong);
+        Assert.Equal("The user name can be at most 31 characters on the relay board.", tooLong?.ToString());
         Assert.Null(Vm204Login.TryCreate(new string('a', 31), new string('b', 18), out var together));
-        Assert.Equal("The user name and password can be at most 48 characters together on the relay board.", together);
+        Assert.Equal("The user name and password can be at most 48 characters together on the relay board.", together?.ToString());
     }
 
     [Theory]
@@ -44,7 +44,7 @@ public sealed class Vm204LoginTests
     public void Should_RefuseCharactersTheBoardWouldNotGetUnchanged(string password)
     {
         Assert.Null(Vm204Login.TryCreate("admin", password, out var error));
-        Assert.Equal("The password can only contain letters a–z, digits and - . _ ~ ! $ ' ( ) * + , ; : @ on the relay board.", error);
+        Assert.Equal("The password can only contain letters a–z, digits and - . _ ~ ! $ ' ( ) * + , ; : @ on the relay board.", error?.ToString());
     }
 
     [Fact]

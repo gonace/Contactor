@@ -231,6 +231,8 @@ public sealed class SetupSignInHandlerTests
             services.AddTailscale(configuration);
             services.AddAccess(configuration);
             services.AddSignIn(configuration);
+            services.AddLocalization();
+            services.AddSingleton<SetupText>();
             services.AddSingleton<SetupSignInHandler>();
             configure?.Invoke(services);
         });

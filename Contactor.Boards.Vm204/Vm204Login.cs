@@ -22,28 +22,28 @@ public sealed class Vm204Login : IEquatable<Vm204Login>
     public bool IsNone => Username.Length == 0 && Password.Length == 0;
 
     /// <summary>A login from what someone typed, or null with the reason when the board can't take it.</summary>
-    public static Vm204Login? TryCreate(string? username, string? password, out string? error)
+    public static Vm204Login? TryCreate(string? username, string? password, out LoginProblem? error)
     {
         username ??= "";
         password ??= "";
-        foreach (var (value, what) in new[] { (username, "The user name"), (password, "The password") })
+        foreach (var (value, what) in new[] { (username, LoginField.UserName), (password, LoginField.Password) })
         {
             if (value.Length > Vm204Api.CredentialMaxLength)
             {
-                error = $"{what} can be at most {Vm204Api.CredentialMaxLength} characters on the relay board.";
+                error = new LoginProblem(LoginProblemKind.TooLong, what, Vm204Api.CredentialMaxLength);
                 return null;
             }
 
             if (!value.All(Vm204Api.IsCredentialCharacter))
             {
-                error = $"{what} can only contain letters a–z, digits and {SymbolList} on the relay board.";
+                error = new LoginProblem(LoginProblemKind.ListedCharacters, what, Symbols: SymbolList);
                 return null;
             }
         }
 
         if (username.Length + password.Length > Vm204Api.CredentialsTotalMaxLength)
         {
-            error = $"The user name and password can be at most {Vm204Api.CredentialsTotalMaxLength} characters together on the relay board.";
+            error = new LoginProblem(LoginProblemKind.TooLongTogether, MaxLength: Vm204Api.CredentialsTotalMaxLength);
             return null;
         }
 

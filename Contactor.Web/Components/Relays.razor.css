@@ -247,6 +247,16 @@ h1 {
     background: var(--accent);
 }
 
+/* A step with only some of its relays on: its dot half on. */
+.chip.partly {
+    background: var(--card);
+    color: var(--ink);
+}
+
+.chip.partly .dot {
+    background: linear-gradient(90deg, var(--accent) 50%, var(--line-dashed) 50%);
+}
+
 .card.inactive {
     background: var(--inactive-bg);
     border: 1.5px dashed var(--inactive-border);

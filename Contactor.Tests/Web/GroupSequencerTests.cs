@@ -554,7 +554,7 @@ public sealed class GroupSequencerTests
             "A relay can only be in the group once.",
             (await rig.GroupSetup.CreateAsync(FansHeaters with { Steps = [new GroupStepDraft("Fans", [1, 2]), new GroupStepDraft("Heaters", [2, 3])] }, John, Cancel)).Error);
         Assert.Equal(
-            "The name in the group can be at most 40 characters.",
+            "The step's name can be at most 40 characters.",
             (await rig.GroupSetup.CreateAsync(FansHeaters with { Steps = [new GroupStepDraft(new string('F', 41), [1, 2])] }, John, Cancel)).Error);
 
         // One step of two relays is a group.

@@ -138,11 +138,12 @@ public sealed class GroupTextTests
         var starting = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
         var stopping = FanHeater with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(299) } };
 
-        Assert.Equal("On", TestTexts.GroupStatus.MemberNote(starting, State(1), 0, on: true, null, Now));
-        Assert.Equal("Starts in 3 s", TestTexts.GroupStatus.MemberNote(starting, State(1), 1, on: false, null, Now));
-        Assert.Equal("Keeps running for 4 min 59 s", TestTexts.GroupStatus.MemberNote(stopping, State(1), 0, on: true, null, Now));
-        Assert.Equal("Off", TestTexts.GroupStatus.MemberNote(stopping, State(1), 1, on: false, null, Now));
-        Assert.Equal("Needs Fan to be on", TestTexts.GroupStatus.MemberNote(FanHeater, State(), 1, on: false, "Fan", Now));
+        Assert.Equal("On", TestTexts.GroupStatus.StepNote(starting, State(1), 0, Now));
+        Assert.Equal("Starts in 3 s", TestTexts.GroupStatus.StepNote(starting, State(1), 1, Now));
+        Assert.Equal("Keeps running for 4 min 59 s", TestTexts.GroupStatus.StepNote(stopping, State(1), 0, Now));
+        Assert.Equal("Off", TestTexts.GroupStatus.StepNote(stopping, State(1), 1, Now));
+        Assert.Equal("Off · starts first", TestTexts.GroupStatus.StepNote(FanHeater, State(), 0, Now));
+        Assert.Equal("Needs Fan to be on", TestTexts.GroupStatus.StepNote(FanHeater, State(), 1, Now));
     }
 
     // Only the relay that is next shows a countdown: the one after the last relay on when starting, the last one on
@@ -157,15 +158,15 @@ public sealed class GroupTextTests
         var starting = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Starting, NextStepAtUtc = Now.AddSeconds(3) } };
         var stopping = group with { Runtime = new GroupRuntime { Phase = GroupPhases.Stopping, NextStepAtUtc = Now.AddSeconds(60) } };
 
-        Assert.Equal(["On", "Starts in 3 s", "Off"], Notes(starting, State(1)));
+        Assert.Equal(["On", "Starts in 3 s", "Needs Heat to be on"], Notes(starting, State(1)));
         Assert.Equal(["On", "On", "Starts in 3 s"], Notes(starting, State(1, 2)));
         Assert.Equal(["On", "Keeps running for 1 min", "Off"], Notes(stopping, State(1, 2)));
-        Assert.Equal(["Keeps running for 1 min", "Off", "Off"], Notes(stopping, State(1)));
+        Assert.Equal(["Keeps running for 1 min", "Off", "Needs Heat to be on"], Notes(stopping, State(1)));
     }
 
     private static List<string> Notes(GroupView group, BoardState state)
     {
-        return [.. Enumerable.Range(0, group.Members.Count).Select(i => TestTexts.GroupStatus.MemberNote(group, state, i, state.IsOn(group.Members[i].Channel), null, Now))];
+        return [.. Enumerable.Range(0, group.Steps.Count).Select(i => TestTexts.GroupStatus.StepNote(group, state, i, Now))];
     }
 
     [Fact]

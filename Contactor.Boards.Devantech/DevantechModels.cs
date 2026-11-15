@@ -97,18 +97,16 @@ public static class DevantechModels
             : string.Create(CultureInfo.InvariantCulture, $"The board at this address says it is module {moduleId}, not an {expected.Family}.");
     }
 
-    /// <summary>Why the board can't take this password, in words for the person who typed it, or null when it can.</summary>
-    public static string? CheckPassword(string password)
+    /// <summary>Why the board can't take this password, or null when it can; its English is its ToString.</summary>
+    public static LoginProblem? CheckPassword(string password)
     {
         ArgumentNullException.ThrowIfNull(password);
         if (password.Length > DevantechApi.PasswordMaxLength)
         {
-            return string.Create(CultureInfo.InvariantCulture, $"The password can be at most {DevantechApi.PasswordMaxLength} characters.");
+            return new LoginProblem(LoginProblemKind.PasswordTooLong, MaxLength: DevantechApi.PasswordMaxLength);
         }
 
-        return password.All(DevantechApi.IsPasswordCharacter)
-            ? null
-            : "The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.";
+        return password.All(DevantechApi.IsPasswordCharacter) ? null : new LoginProblem(LoginProblemKind.PasswordCharacters);
     }
 
     private static BoardModel Create(string id, string name, int relays, int inputs, int analog)
@@ -120,9 +118,7 @@ public static class DevantechModels
             new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog, Pulse: Pulse),
             DevantechApi.DefaultPort,
             LoginMaxLength: DevantechApi.PasswordMaxLength,
-            LoginHint: string.Create(
-                CultureInfo.InvariantCulture,
-                $"The TCP password from the board's configuration page, not the login of its web page. At most {DevantechApi.PasswordMaxLength} characters: letters, digits and plain symbols, no spaces."),
+            LoginHint: new LoginHint(LoginHintKind.TcpPassword, DevantechApi.PasswordMaxLength),
             PasswordOnly: true);
     }
 }
