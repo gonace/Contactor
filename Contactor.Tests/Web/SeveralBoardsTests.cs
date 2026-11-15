@@ -469,6 +469,33 @@ public sealed class SeveralBoardsTests
     }
 
     [Fact]
+    public async Task Should_LogAllOff_ForARelayJustTurnedOn_BeforeItsBoardShowsIt()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var second = rig.Second!;
+        second.HoldStatus = true;
+        await rig.Control.TurnOnAsync(rig.SecondRelayId(4), Jane, Cancel);
+        Assert.False(second.State.IsOn(4));
+
+        await rig.Control.TurnAllOffAsync(rig.SecondBoardId, Jane, Cancel);
+
+        // Its "Off" is logged as the person's "All off", and its run ended.
+        var allOff = Assert.Single(await rig.EventsAsync(), e => e.Details == """{"allOff":true}""");
+        Assert.Equal((rig.SecondBoardId, rig.SecondRelayId(4), Jane), (allOff.BoardId!.Value, allOff.RelayId!.Value, allOff.Actor));
+        Assert.Null((await RelayRuntimeAsync(rig, rig.SecondRelayId(4))).OnSinceUtc);
+
+        // The statuses come late: the ON, then the OFF. Both are the app's own, not changes made at the board; only
+        // relay 3, switched at the board afterwards, is (and shows the statuses before it were handled).
+        second.ReleaseStatus();
+        second.SetRelay(4, on: true);
+        second.SetRelay(4, on: false);
+        second.SetRelay(3, on: true);
+        await rig.WaitForEventsAsync(events => events.Any(e => e.Actor == EventActors.External));
+        var external = Assert.Single(await rig.EventsAsync(), e => e.Actor == EventActors.External);
+        Assert.Equal(rig.SecondRelayId(3), external.RelayId);
+    }
+
+    [Fact]
     public async Task Should_RefuseAGroup_WithRelaysOnTwoBoards()
     {
         await using var rig = await BoardTestRig.StartAsync(secondBoard: true);

@@ -175,7 +175,11 @@ public sealed class RelayControl
 
         var expected = board.Expected;
         var single = board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(boardId, cancellationToken));
-        var wasOn = board.State.Relays & single;
+
+        // A relay the app just turned on counts as on before its board shows it (a status still on its way, or the next
+        // poll): otherwise its "Off" would be neither logged nor expected, and the board's OFF would show as a change
+        // made at the board.
+        var wasOn = (board.State.Relays | PendingOn(expected, single)) & single;
         var sent = _clock.UtcNow;
         var refused = ChannelMask.None;
         if (!single.IsEmpty)
@@ -295,6 +299,12 @@ public sealed class RelayControl
             board.Expected.Forget(mask, on);
             throw;
         }
+    }
+
+    // The relays of the mask an ON went out for in the last few seconds that the board hasn't shown yet.
+    private static ChannelMask PendingOn(ExpectedChanges expected, ChannelMask relays)
+    {
+        return ChannelMask.Of(relays.Channels.Where(channel => expected.IsPending(channel, on: true)));
     }
 
     private const string BoardRemoved = "The relay board was removed.";
