@@ -152,6 +152,14 @@ public sealed class TailscaleSettingsTests
     }
 
     [Fact]
+    public void Should_StartTailscaled_InUserspace_WithoutUploadingItsLogs()
+    {
+        Assert.Equal(
+            ["--tun=userspace-networking", "--statedir=/data/tailscale", "--socket=/data/tailscale/tailscaled.sock", "--no-logs-no-support"],
+            TailscaleProcess.DaemonArguments("/data/tailscale", "/data/tailscale/tailscaled.sock"));
+    }
+
+    [Fact]
     public void Should_GiveTailscaleTheKeyAsAFile_NeverOnItsCommandLine()
     {
         Assert.Equal(["up", "--reset", "--auth-key=file:/data/tailscale/authkey-1", "--hostname=relays"], TailscaleProcess.UpArguments("/data/tailscale/authkey-1", "relays", force: false));

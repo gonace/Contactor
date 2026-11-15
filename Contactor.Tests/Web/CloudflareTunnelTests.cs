@@ -538,7 +538,7 @@ public sealed class CloudflaredProcessTests
         // "dotnet tunnel --no-autoupdate run" isn't a command dotnet has: it says so and exits with an error.
         List<string> lines = [];
 
-        var exitCode = await new CloudflaredProcess().RunAsync("dotnet", "a-token", line => { lock (lines) { lines.Add(line); } }, Cancel);
+        var exitCode = await new CloudflaredProcess(TimeProvider.System).RunAsync("dotnet", "a-token", line => { lock (lines) { lines.Add(line); } }, Cancel);
 
         Assert.NotEqual(0, exitCode);
         Assert.NotEmpty(lines);
@@ -550,7 +550,7 @@ public sealed class CloudflaredProcessTests
     {
         var missing = Path.Combine(Path.GetTempPath(), "contactor-tests", "no-cloudflared-here");
 
-        await Assert.ThrowsAsync<System.ComponentModel.Win32Exception>(() => new CloudflaredProcess().RunAsync(missing, "a-token", _ => { }, Cancel));
+        await Assert.ThrowsAsync<System.ComponentModel.Win32Exception>(() => new CloudflaredProcess(TimeProvider.System).RunAsync(missing, "a-token", _ => { }, Cancel));
     }
 
     [Fact]
@@ -559,6 +559,6 @@ public sealed class CloudflaredProcessTests
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new CloudflaredProcess().RunAsync("dotnet", "a-token", _ => { }, cancelled.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new CloudflaredProcess(TimeProvider.System).RunAsync("dotnet", "a-token", _ => { }, cancelled.Token));
     }
 }
