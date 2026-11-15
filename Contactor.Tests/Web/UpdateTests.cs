@@ -1131,23 +1131,23 @@ public sealed class UpdateEventTextTests
     [Fact]
     public void Should_SayWhoStartedTheUpdate()
     {
-        var view = EventText.For(Entry("john@example.com", EventActions.UpdateRequested, "{\"from\":\"2026.11.14\",\"to\":\"2026.11.20\"}"), null, "John");
+        var view = TestTexts.Events.For(Entry("john@example.com", EventActions.UpdateRequested, "{\"from\":\"2026.11.14\",\"to\":\"2026.11.20\"}"), null, "John");
 
-        Assert.Equal(new EventView(true, "J", "John", "started the update to 2026.11.20", null), view);
+        Assert.Equal(new EventView(true, "J", "John", "{0} started the update to 2026.11.20", null), view);
     }
 
     [Fact]
     public void Should_SayItWasUpdated_WithItsLog()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.UpdateDone, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.20\"}"), null, null);
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateDone, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.20\"}"), null, null);
 
-        Assert.Equal(new EventView(false, "A", "Contactor", "updated to 2026.11.20", null, Log: "settings/update-log?id=20261115-140200"), view);
+        Assert.Equal(new EventView(false, "A", "Contactor", "{0} updated to 2026.11.20", null, Log: "settings/update-log?id=20261115-140200"), view);
     }
 
     [Fact]
     public void Should_SayItWentBack_InRed()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.UpdateWentBack, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.20\",\"reason\":\"health\"}"), null, null);
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateWentBack, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.20\",\"reason\":\"health\"}"), null, null);
 
         Assert.Equal(("Contactor", "went back to 2026.11.14: the update to 2026.11.20 didn't work", true), (view.Who, view.What, view.IsAlert));
     }
@@ -1159,7 +1159,7 @@ public sealed class UpdateEventTextTests
     [InlineData("switching", "didn't update to 2026.11.20: the relays were still switching. Nothing was changed", false)]
     public void Should_SayWhyItDidntUpdate(string reason, string what, bool alert)
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.UpdateFailed, $"{{\"id\":\"20261115-140200\",\"to\":\"2026.11.20\",\"reason\":\"{reason}\"}}"), null, null);
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateFailed, $"{{\"id\":\"20261115-140200\",\"to\":\"2026.11.20\",\"reason\":\"{reason}\"}}"), null, null);
 
         Assert.Equal((what, alert), (view.What, view.IsAlert));
     }
@@ -1167,7 +1167,7 @@ public sealed class UpdateEventTextTests
     [Fact]
     public void Should_SayThereWasNothingNewer()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.UpdateCurrent, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.14\"}"), null, null);
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateCurrent, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.14\"}"), null, null);
 
         Assert.Equal(("Contactor", "found nothing newer than 2026.11.14 to download", false), (view.Who, view.What, view.IsAlert));
     }
@@ -1175,7 +1175,7 @@ public sealed class UpdateEventTextTests
     [Fact]
     public void Should_LinkNoLog_ForAnIdThatIsntOne()
     {
-        var view = EventText.For(Entry(EventActors.System, EventActions.UpdateDone, "{\"id\":\"../x\",\"to\":\"2026.11.20\"}"), null, null);
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateDone, "{\"id\":\"../x\",\"to\":\"2026.11.20\"}"), null, null);
 
         Assert.Null(view.Log);
     }

@@ -15,9 +15,9 @@ public sealed class EventTextTests
     [InlineData(EventActions.ScheduleAdd, "added a schedule")]
     public void Should_ShowAPersonWithTheirInitial(string action, string what)
     {
-        var view = EventText.For(Entry("jane@example.com", action), Relay, "Jane");
+        var view = TestTexts.Events.For(Entry("jane@example.com", action), Relay, "Jane");
 
-        Assert.Equal(new EventView(true, "J", "Jane", what, Relay), view);
+        Assert.Equal(new EventView(true, "J", "Jane", "{0} " + what, Relay), view);
     }
 
     // A pulse: one event, with how long.
@@ -31,7 +31,7 @@ public sealed class EventTextTests
         var entry = Entry("jane@example.com", EventActions.Pulse);
         entry.Details = details;
 
-        Assert.Equal(new EventView(true, "J", "Jane", what, Relay), EventText.For(entry, Relay, "Jane"));
+        Assert.Equal(new EventView(true, "J", "Jane", "{0} " + what, Relay), TestTexts.Events.For(entry, Relay, "Jane"));
     }
 
     // "Off since" after a pulse: when the board turned the relay off, at the pulse's end.
@@ -50,7 +50,7 @@ public sealed class EventTextTests
     [Fact]
     public void Should_FallBackToTheAddress_WhenThePersonIsUnknown()
     {
-        var view = EventText.For(Entry("åsa@example.com", EventActions.On), Relay, personName: null);
+        var view = TestTexts.Events.For(Entry("åsa@example.com", EventActions.On), Relay, personName: null);
 
         Assert.Equal(("åsa@example.com", "Å"), (view.Who, view.Badge));
     }
@@ -62,9 +62,9 @@ public sealed class EventTextTests
     [InlineData(EventActors.External, EventActions.Off, "Outside the app", "turned off")]
     public void Should_ShowAutomaticEventsWithA(string actor, string action, string who, string what)
     {
-        var view = EventText.For(Entry(actor, action), Relay, personName: null);
+        var view = TestTexts.Events.For(Entry(actor, action), Relay, personName: null);
 
-        Assert.Equal(new EventView(false, "A", who, what, Relay), view);
+        Assert.Equal(new EventView(false, "A", who, "{0} " + what, Relay), view);
     }
 
     [Theory]
@@ -74,7 +74,7 @@ public sealed class EventTextTests
     [InlineData("not json", "turned off after a while")]
     public void Should_SayHowLongAutoOffWaited(string? details, string what)
     {
-        var view = EventText.For(Entry(EventActors.AutoOff, EventActions.Off, details), Relay, personName: null);
+        var view = TestTexts.Events.For(Entry(EventActors.AutoOff, EventActions.Off, details), Relay, personName: null);
 
         Assert.Equal(("Auto-off", what), (view.Who, view.What));
     }
@@ -84,7 +84,7 @@ public sealed class EventTextTests
     {
         var entry = Entry("sam@example.com", EventActions.Rename, """{"from":"Relay 4","to":"Ventilation – Paint shop"}""");
 
-        var view = EventText.For(entry, "Ventilation – Paint shop", "Sam");
+        var view = TestTexts.Events.For(entry, "Ventilation – Paint shop", "Sam");
 
         Assert.Equal(("renamed Relay 4 to", "Ventilation – Paint shop"), (view.What, view.Target));
     }
@@ -97,7 +97,7 @@ public sealed class EventTextTests
     {
         var entry = Entry("sam@example.com", EventActions.BoardRenamed, details, relayId: null);
 
-        var view = EventText.For(entry, null, "Sam");
+        var view = TestTexts.Events.For(entry, null, "Sam");
 
         Assert.Equal(("Sam", what, (string?)null), (view.Who, view.What, view.Target));
     }
@@ -110,9 +110,9 @@ public sealed class EventTextTests
         var entry = Entry(EventActors.External, EventActions.InputChanged, on ? """{"on":true}""" : """{"on":false}""", relayId: null);
         entry.InputId = 2;
 
-        var view = EventText.For(entry, relayName: null, personName: null, inputName: "Door");
+        var view = TestTexts.Events.For(entry, relayName: null, personName: null, inputName: "Door");
 
-        Assert.Equal(new EventView(false, "I", who, what, null), view);
+        Assert.Equal(new EventView(false, "I", who, "{0} " + what, null), view);
     }
 
     // A change the app only noticed after a gap: its time is when it was noticed, so it says the real time is unknown.
@@ -124,7 +124,7 @@ public sealed class EventTextTests
         var entry = Entry(EventActors.External, EventActions.InputChanged, details, relayId: null);
         entry.InputId = 2;
 
-        var view = EventText.For(entry, relayName: null, personName: null, inputName: "Door");
+        var view = TestTexts.Events.For(entry, relayName: null, personName: null, inputName: "Door");
 
         Assert.Equal(("Door:", "Open", unknown), (view.Who, view.What, view.TimeUnknown));
     }
@@ -136,9 +136,9 @@ public sealed class EventTextTests
         var entry = Entry(EventActors.External, EventActions.InputChanged, """{"on":true}""", relayId: null);
         entry.InputId = 201;
 
-        Assert.Equal(new EventView(false, "I", "An input:", "Closed", null), EventText.For(entry, relayName: null, personName: null));
+        Assert.Equal(new EventView(false, "I", "An input:", "{0} Closed", null), TestTexts.Events.For(entry, relayName: null, personName: null));
         var on = Entry(EventActors.ForInput(201), EventActions.On, details: null, relayId: 4);
-        Assert.Equal(("An input", "An input"), (EventText.For(on, "Lighting", personName: null).Who, EventText.ShortWho(on.Actor, personName: null)));
+        Assert.Equal(("An input", "An input"), (TestTexts.Events.For(on, "Lighting", personName: null).Who, TestTexts.Events.ShortWho(on.Actor, personName: null)));
     }
 
     [Theory]
@@ -148,9 +148,9 @@ public sealed class EventTextTests
     [InlineData(EventActions.BoardRelayModesReset, """{"modes":[0,0,1,0,0,0,0,0]}""", "The board", "had its relays set to normal mode, so its inputs don't switch them", "A")]
     public void Should_DescribeBoardEvents(string action, string? details, string who, string what, string badge)
     {
-        var view = EventText.For(Entry(EventActors.System, action, details, relayId: null), relayName: null, personName: null);
+        var view = TestTexts.Events.For(Entry(EventActors.System, action, details, relayId: null), relayName: null, personName: null);
 
-        Assert.Equal(new EventView(false, badge, who, what, null), view);
+        Assert.Equal(new EventView(false, badge, who, "{0} " + what, null), view);
     }
 
     [Fact]
@@ -158,9 +158,9 @@ public sealed class EventTextTests
     {
         var entry = Entry(EventActors.System, EventActions.BoardRelayModesNotReset, """{"reason":"The board refused it: it failed (code 4)."}""", relayId: null);
 
-        var view = EventText.For(entry, relayName: null, personName: null);
+        var view = TestTexts.Events.For(entry, relayName: null, personName: null);
 
-        Assert.Equal(new EventView(false, "A", "The board", "couldn't have its relays set to normal mode, so its inputs may switch them", null, IsAlert: true), view);
+        Assert.Equal(new EventView(false, "A", "The board", "{0} couldn't have its relays set to normal mode, so its inputs may switch them", null, IsAlert: true), view);
     }
 
     [Theory]
@@ -169,7 +169,7 @@ public sealed class EventTextTests
     [InlineData(EventActors.External, "outside the app")]
     public void Should_GiveAShortNameForTheStatusLine(string actor, string expected)
     {
-        Assert.Equal(expected, EventText.ShortWho(actor, personName: null));
+        Assert.Equal(expected, TestTexts.Events.ShortWho(actor, personName: null));
     }
 
     private static EventLogEntry Entry(string actor, string action, string? details = null, int? relayId = 1)

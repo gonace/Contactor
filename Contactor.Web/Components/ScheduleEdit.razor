@@ -12,6 +12,7 @@
 @inject GroupsHandler Groups
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
+@inject IStringLocalizer<SchedulesTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", Common[IsNew ? "Common.Screen.NewSchedule" : "Common.Screen.EditSchedule"]])</PageTitle>
 
@@ -23,7 +24,7 @@
     @if (_loaded && _target is null)
     {
         <main class="content">
-            <p class="missing">@(!IsNew ? "The schedule no longer exists." : GroupId is not null ? "The group doesn't exist." : "The relay doesn't exist.")</p>
+            <p class="missing">@Texts[!IsNew ? "Schedules.Missing" : GroupId is not null ? "Schedules.GroupMissing" : "Schedules.RelayMissing"]</p>
         </main>
     }
     else if (_target is { } target)
@@ -31,32 +32,31 @@
         <form class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="title">
-                    <h1>@(IsNew ? "New schedule" : "Edit schedule")</h1>
+                    <h1>@Common[IsNew ? "Common.Screen.NewSchedule" : "Common.Screen.EditSchedule"]</h1>
                     <p>@target.Name</p>
                 </div>
 
                 <section class="days">
-                    <h2>Which days?</h2>
+                    <h2>@Texts["Schedules.Days"]</h2>
                     <div class="day-buttons">
                         @foreach (var day in ScheduleText.Days)
                         {
-                            var name = day.Name;
-                            <button type="button" aria-pressed="@(_days.HasFlag(day.Day) ? "true" : "false")" aria-label="@name" @onclick="() => _days ^= day.Day">@day.Letter</button>
+                            <button type="button" aria-pressed="@(_days.HasFlag(day) ? "true" : "false")" aria-label="@ScheduleText.Name(day)" @onclick="() => _days ^= day">@ScheduleText.Letter(day)</button>
                         }
                     </div>
                     <div class="shortcuts">
-                        <button type="button" @onclick="() => _days = ScheduleDays.Weekdays">Weekdays</button>
-                        <button type="button" @onclick="() => _days = ScheduleDays.All">Every day</button>
+                        <button type="button" @onclick="() => _days = ScheduleDays.Weekdays">@Texts["Schedules.Weekdays"]</button>
+                        <button type="button" @onclick="() => _days = ScheduleDays.All">@Texts["Schedules.EveryDay"]</button>
                     </div>
                 </section>
 
                 <section class="times">
                     <div class="time">
-                        <label for="on">Turn on</label>
+                        <label for="on">@Texts["Schedules.TurnOn"]</label>
                         <input id="on" type="time" value="@_on" @oninput="e => _on = e.Value?.ToString() ?? string.Empty" required />
                     </div>
                     <div class="time">
-                        <label for="off">Turn off</label>
+                        <label for="off">@Texts["Schedules.TurnOff"]</label>
                         <input id="off" type="time" value="@_off" @oninput="e => _off = e.Value?.ToString() ?? string.Empty" required />
                     </div>
                 </section>
@@ -71,10 +71,10 @@
                 {
                     <p class="error" role="alert">@_error</p>
                 }
-                <button type="submit" class="save" disabled="@_busy">Save schedule</button>
+                <button type="submit" class="save" disabled="@_busy">@Texts["Schedules.Save"]</button>
                 @if (!IsNew)
                 {
-                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">Delete schedule</button>
+                    <button type="button" class="delete" disabled="@_busy" @onclick="() => _confirmDelete = true">@Texts["Schedules.Delete"]</button>
                 }
             </div>
         </form>
@@ -83,7 +83,7 @@
         {
             <div class="backdrop">
                 <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
-                    <h2 id="confirm-title">Delete the schedule?</h2>
+                    <h2 id="confirm-title">@Texts["Schedules.Delete.Title"]</h2>
                     <p>@ScheduleText.Summary(_saved!.Days, _saved.OnTime, _saved.OffTime, IsGroup)</p>
                     <div class="dialog-buttons">
                         <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Common["Common.Cancel"]</button>
@@ -132,7 +132,7 @@
 
     private string Summary => TryTime(_on, out var on) && TryTime(_off, out var off)
         ? ScheduleText.Summary(_days, on, off, IsGroup)
-        : IsGroup ? "Enter when the group turns on and off." : "Enter when the relay turns on and off.";
+        : Texts[IsGroup ? "Schedules.EnterGroup" : "Schedules.EnterRelay"];
 
     protected override async Task OnParametersSetAsync()
     {
@@ -188,7 +188,7 @@
 
         if (!TryTime(_on, out var on) || !TryTime(_off, out var off))
         {
-            _error = "Enter a time for both turning on and turning off.";
+            _error = Texts["Schedules.EnterBoth"];
             return;
         }
 

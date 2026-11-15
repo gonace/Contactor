@@ -10,16 +10,17 @@
 @inject BoardRegistry Registry
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
+@inject IStringLocalizer<EventsTexts> Texts
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Events"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>Events</h1>
+        <h1>@Common["Common.Screen.Events"]</h1>
         <div class="filters">
             @foreach (var (filter, label) in Filters)
             {
-                <button type="button" aria-pressed="@(_filter == filter ? "true" : "false")" @onclick="() => SetFilterAsync(filter)">@label</button>
+                <button type="button" aria-pressed="@(_filter == filter ? "true" : "false")" @onclick="() => SetFilterAsync(filter)">@Texts[label]</button>
             }
         </div>
         @if (Boards.Count > 0)
@@ -35,7 +36,7 @@
     <main class="days">
         @if (_rows.Count == 0)
         {
-            <p class="empty">No events yet.</p>
+            <p class="empty">@Texts["Events.Empty"]</p>
         }
 
         @foreach (var day in Handler.GroupByDay(_rows))
@@ -62,7 +63,7 @@
                                 }
                                 @if (row.View.Log is { } log)
                                 {
-                                    <a class="log" href="@log" download data-enhance-nav="false">Download its log</a>
+                                    <a class="log" href="@log" download data-enhance-nav="false">@Texts["Events.Update.Log"]</a>
                                 }
                             </div>
                         </div>
@@ -73,7 +74,7 @@
 
         @if (_hasMore)
         {
-            <button type="button" class="more" disabled="@_loading" @onclick="LoadMoreAsync">Show more</button>
+            <button type="button" class="more" disabled="@_loading" @onclick="LoadMoreAsync">@Texts["Events.More"]</button>
         }
     </main>
 
@@ -81,11 +82,12 @@
 </div>
 
 @code {
+    // Each filter and the key of its label.
     private static readonly (EventFilter Filter, string Label)[] Filters =
     [
-        (EventFilter.All, "All"),
-        (EventFilter.People, "People"),
-        (EventFilter.Automatic, "Automatic"),
+        (EventFilter.All, "Events.Filter.All"),
+        (EventFilter.People, "Events.Filter.People"),
+        (EventFilter.Automatic, "Events.Filter.Automatic"),
     ];
 
     private List<EventRow> _rows = [];

@@ -1,8 +1,9 @@
 @using Contactor.Web.Features.Events
+@inject IStringLocalizer<EventsTexts> Texts
 
 @* An event's text: who, what, and for an input's change only noticed after a gap, "time unknown" with its reason. *@
-<span class="event-what @(Wrap ? "wrap" : null)"><strong>@Row.View.Who</strong> @Row.View.What@if (Row.View.TimeUnknown)
-    {<span class="unknown"> · time unknown</span> <WhyUnknown Label="@($"Why is the time unknown for {Row.View.Who.TrimEnd(':')}?")" For="Row.Id" Kind="event" Text="@EventText.WhyTimeUnknown" />}</span>
+<span class="event-what @(Wrap ? "wrap" : null)"><Sentence Text="@Row.View.Line"><Arg0><strong>@Row.View.Who</strong></Arg0></Sentence>@if (Row.View.TimeUnknown)
+    {<span class="unknown">@Texts["Events.TimeUnknown"]</span> <WhyUnknown Label="@Texts["Events.WhyUnknown", Row.View.Who.TrimEnd(':')]" For="Row.Id" Kind="event" Text="@EventText.WhyTimeUnknown" />}</span>
 
 @code {
     [Parameter]

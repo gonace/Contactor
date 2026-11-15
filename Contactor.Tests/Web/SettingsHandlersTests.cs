@@ -31,7 +31,7 @@ public sealed class SettingsHandlersTests
         Assert.Equal(("admin", "secret"), (rig.Client.Login.Username, rig.Client.Login.Password));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardLoginChanged);
         Assert.Null(entry.Details);
-        Assert.Equal("changed the relay board's login", EventText.For(entry, null, "John").What);
+        Assert.Equal("changed the relay board's login", TestTexts.Events.For(entry, null, "John").What);
     }
 
     [Fact]

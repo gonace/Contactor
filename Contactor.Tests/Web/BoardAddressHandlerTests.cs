@@ -39,7 +39,7 @@ public sealed class BoardAddressHandlerTests
         Assert.Equal(new BoardEndpoint("127.0.0.1", other.Port), await Handler(rig).GetAsync(rig.Live.BoardId, Cancel));
         var entry = Assert.Single(await rig.EventsAsync(), e => e.Action == EventActions.BoardAddressChanged);
         Assert.Equal(John, entry.Actor);
-        Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", EventText.For(entry, null, "John").What);
+        Assert.Equal($"changed the relay board's address from {from} to 127.0.0.1:{other.Port}", TestTexts.Events.For(entry, null, "John").What);
     }
 
     // The app can't tell a new board from the same board at a new IP, so a relay's run is kept: for the same board
