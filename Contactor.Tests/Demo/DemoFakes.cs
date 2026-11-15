@@ -245,6 +245,29 @@ internal sealed class EchoStarter : IProgramStarter
         app.Run(async context =>
         {
             Interlocked.Increment(ref _requests);
+            if (context.Request.Path == "/redirect")
+            {
+                // As the app's own redirects come out behind the demo: an absolute address, on the host it was asked
+                // for, in the scheme it got (http).
+                context.Response.StatusCode = StatusCodes.Status302Found;
+                context.Response.Headers.Location = $"http://{context.Request.Host}/setup?step=1#top";
+                return;
+            }
+
+            if (context.Request.Path == "/redirect-loopback")
+            {
+                context.Response.StatusCode = StatusCodes.Status302Found;
+                context.Response.Headers.Location = $"http://127.0.0.1:{start.Port}/setup";
+                return;
+            }
+
+            if (context.Request.Path == "/redirect-away")
+            {
+                context.Response.StatusCode = StatusCodes.Status302Found;
+                context.Response.Headers.Location = "https://elsewhere.example/x";
+                return;
+            }
+
             if (context.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.Ordinal))
             {
                 context.Response.ContentType = "text/html; charset=utf-8";

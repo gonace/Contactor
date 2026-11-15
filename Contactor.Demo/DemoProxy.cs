@@ -430,6 +430,47 @@ public sealed partial class DemoProxy : IDisposable
             WithoutVisitorCookie(proxyRequest);
         }
 
+        public override async ValueTask<bool> TransformResponseAsync(
+            HttpContext httpContext,
+            HttpResponseMessage? proxyResponse,
+            CancellationToken cancellationToken)
+        {
+            var copyBody = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
+            if (MakesRedirectsRelative)
+            {
+                RelativeRedirect(httpContext);
+            }
+
+            return copyBody;
+        }
+
+        /// <summary>Whether a redirect to the visitor's own host is made relative to the site's root.</summary>
+        protected virtual bool MakesRedirectsRelative => true;
+
+        /// <summary>
+        /// The copy only gets plain http from the demo, so a redirect it makes is an absolute <c>http://</c> address. On
+        /// a page the visitor opened over https, a browser blocks that in the frame (mixed content). A redirect to the
+        /// visitor's own host, or to the copy's own loopback address, becomes its path, query and fragment, so the
+        /// browser stays on the scheme and host it came in on. A redirect to another site is left alone.
+        /// </summary>
+        private static void RelativeRedirect(HttpContext context)
+        {
+            var location = context.Response.Headers.Location.ToString();
+            if (!Uri.TryCreate(location, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                return;
+            }
+
+            var ownHost = string.Equals(uri.Authority, context.Request.Host.Value, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(uri.Host, context.Request.Host.Host, StringComparison.OrdinalIgnoreCase)
+                || uri.IsLoopback;
+            if (ownHost)
+            {
+                context.Response.Headers.Location = uri.PathAndQuery + uri.Fragment;
+            }
+        }
+
         private static void WithoutVisitorCookie(HttpRequestMessage request)
         {
             if (!request.Headers.TryGetValues(HeaderNames.Cookie, out var values))
@@ -462,6 +503,9 @@ public sealed partial class DemoProxy : IDisposable
         {
             _path = path;
         }
+
+        // The simulator's own paths are under the demo's prefix; it makes no redirects of its own.
+        protected override bool MakesRedirectsRelative => false;
 
         public override async ValueTask TransformRequestAsync(
             HttpContext httpContext,

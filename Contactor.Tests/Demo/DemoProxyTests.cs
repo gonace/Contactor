@@ -90,6 +90,24 @@ public sealed class DemoProxyTests : IAsyncDisposable
     }
 
     [Theory]
+    [InlineData("/redirect", "/setup?step=1#top")]
+    [InlineData("/redirect-loopback", "/setup")]
+    [InlineData("/redirect-away", "https://elsewhere.example/x")]
+    public async Task Should_MakeOnlyTheAppsRedirectsToItself_Relative(string path, string expected)
+    {
+        var client = await StartAsync();
+        var id = await PageAsync(client);
+
+        using var response = await client.SendAsync(Get(path, id), Cancel);
+
+        // The copy says http://<host>/setup…; behind the tunnel the visitor is on https, where a browser blocks an http
+        // frame, so a redirect to the visitor's own host or the copy's loopback address keeps only its path. One to
+        // another site is left alone.
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Equal(expected, response.Headers.Location?.OriginalString);
+    }
+
+    [Theory]
     [InlineData("America%2FNew_York", "America/New_York")]
     [InlineData("..%2F..%2Fetc%2Fpasswd", "UTC")]
     [InlineData(null, "UTC")]
