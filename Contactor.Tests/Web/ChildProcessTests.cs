@@ -11,7 +11,8 @@ public sealed class ChildProcessTests
     private const string NoSigTerm = "Windows has no SIGTERM: a child process is killed at once there.";
     private const string NoProc = "Only Linux lists what a process started (/proc), and the scripts use a POSIX shell.";
 
-    // Only a safety net, so a stop that never ends fails the test instead of hanging it; nothing waits this long.
+    // Only a safety net, so a stop that never ends fails the test instead of hanging it; nothing waits this long. The
+    // scripts' leftovers sleep far longer, so one that is never killed can't end the stop by itself within it.
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(30);
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
@@ -60,7 +61,7 @@ public sealed class ChildProcessTests
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), NoProc);
         var time = new ManualTimeProvider();
-        var script = new Script("sleep 30 & echo \"leftover $!\"; trap 'exit 0' TERM; echo ready; while :; do sleep 0.1; done");
+        var script = new Script("sleep 300 & echo \"leftover $!\"; trap 'exit 0' TERM; echo ready; while :; do sleep 0.1; done");
         using var stop = new CancellationTokenSource();
 
         var run = ChildProcess.RunAsync(script.Start, script.Output, time, stop.Token);
@@ -85,7 +86,7 @@ public sealed class ChildProcessTests
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), NoProc);
         var time = new ManualTimeProvider();
-        var script = new Script("trap 'sleep 30 & echo \"leftover $!\"; exit 0' TERM; echo ready; while :; do sleep 0.1; done");
+        var script = new Script("trap 'sleep 300 & echo \"leftover $!\"; exit 0' TERM; echo ready; while :; do sleep 0.1; done");
         using var stop = new CancellationTokenSource();
 
         var run = ChildProcess.RunAsync(script.Start, script.Output, time, stop.Token);
@@ -113,7 +114,7 @@ public sealed class ChildProcessTests
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), NoProc);
         var time = new ManualTimeProvider();
-        var script = new Script("sleep 30 & echo \"leftover $!\"; exit 3");
+        var script = new Script("sleep 300 & echo \"leftover $!\"; exit 3");
 
         var run = ChildProcess.RunAsync(script.Start, script.Output, time, Cancel);
         try
