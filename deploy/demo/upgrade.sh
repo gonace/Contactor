@@ -94,7 +94,8 @@ export DEMO_IMAGE=$reference
 echo "Preparing the demo"
 docker compose up --no-start --remove-orphans || stop_demo "could not prepare the demo."
 
-# The bridge of the demo's network must have no IPv4 address and no global IPv6 address on this machine.
+# The bridge of the demo's network must have no address on this machine, IPv4 or IPv6 (link-local too: a container
+# could reach this machine's services on :: through it).
 network=$(docker network ls --quiet --no-trunc \
     --filter label=com.docker.compose.project=contactor-demo --filter label=com.docker.compose.network=demo) \
     || stop_demo "could not look up the demo's network."
@@ -104,7 +105,7 @@ bridge=$(docker network inspect -f '{{index .Options "com.docker.network.bridge.
 bridge=${bridge:-br-${network::12}}
 ipv4=$(ip -4 -o addr show dev "$bridge" 2>&1) \
     || stop_demo "could not read the addresses of the demo's network ($bridge)."
-ipv6=$(ip -6 -o addr show dev "$bridge" scope global 2>&1) \
+ipv6=$(ip -6 -o addr show dev "$bridge" 2>&1) \
     || stop_demo "could not read the addresses of the demo's network ($bridge)."
 if [[ -n "$ipv4" || -n "$ipv6" ]]; then
     stop_demo "this machine has an address on the demo's network ($bridge), so a visitor could reach it. Use Docker $MIN_DOCKER or later and keep gateway_mode_ipv4: isolated and enable_ipv6: false in compose.yml."

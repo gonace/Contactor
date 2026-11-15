@@ -66,7 +66,7 @@ sudo /opt/contactor-demo/upgrade.sh
 
 It refuses a Docker older than 28, pulls the image, checks its signature with cosign by digest (the public keys in
 `deploy/cosign/`, as the Raspberry Pi does) and prepares exactly that image. Before it starts anything, it checks that
-the machine has no address on the demo's network, neither IPv4 nor global IPv6, and stops the demo if it has or if it
+the machine has no address on the demo's network, neither IPv4 nor IPv6, and stops the demo if it has or if it
 can't tell. Always start the demo with it, not with `docker compose up`. The tunnel starts once the demo is healthy,
 after a few seconds.
 
@@ -75,8 +75,8 @@ after a few seconds.
 1. `cd /opt/contactor-demo && sudo docker compose ps`: both containers say `healthy`.
 2. `ip -br addr | grep 172.30.60.` prints nothing: the machine has no IPv4 address on the demo's network (with another
    subnet, grep for that).
-3. `ip -6 -o addr show dev br-$(sudo docker network inspect -f '{{.Id}}' contactor-demo_demo | cut -c1-12) scope global`
-   prints nothing: the machine has no IPv6 address there either.
+3. `ip -6 -o addr show dev br-$(sudo docker network inspect -f '{{.Id}}' contactor-demo_demo | cut -c1-12)` prints
+   nothing: the machine has no IPv6 address there either.
 
    If step 2 or 3 prints a line, stop the demo at once (`sudo docker compose down`): a visitor could reach the machine.
    Upgrade Docker as in What you need, keep `enable_ipv6: false` in `compose.yml`, and start it again.
