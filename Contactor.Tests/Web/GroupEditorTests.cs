@@ -22,7 +22,7 @@ public sealed class GroupEditorTests
         editor.AddToStep(0, Fan2);
         editor.AddStep(new EditRelay(14, 4, "Lamp"));
 
-        Assert.Equal([("Fan", new[] { 11, 13 }), ("Heat", [12]), ("Lamp", [14])], editor.Drafts.Select(d => (d.Name!, d.RelayIds.ToArray())));
+        Assert.Equal(["Fan:11,13", "Heat:12", "Lamp:14"], editor.Drafts.Select(d => $"{d.Name}:{string.Join(',', d.RelayIds)}"));
         Assert.Equal((RelayGroupStep.DefaultStartDelaySec, RelayGroupStep.DefaultRunOnSec), (editor.Steps[2].StartDelaySec, editor.Steps[2].RunOnSec));
         Assert.Equal(4, editor.RelayCount);
         Assert.False(editor.HasSameRelays(FanHeater));
