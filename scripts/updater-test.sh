@@ -9,9 +9,11 @@
 #   (the next run finishes the update or goes back, after a new start of the machine); a cancel during the download;
 #   requests that must do nothing (left behind, unknown, a symlink, from before the machine started, already up to
 #   date); files in the app's folder that must not hang the helper (a FIFO, a link to /dev/urandom, a folder it can't
-#   remove); install.sh refusing to run while the helper runs; and the helper bringing itself up to date from the new
+#   remove); install.sh refusing to run while the helper runs; the helper bringing itself up to date from the new
 #   image (a newer helper is used from the next run on; one that fails its check, the same one, an older one or none
-#   changes nothing; nothing in the data folder or the running container changes what is installed).
+#   changes nothing; nothing in the data folder or the running container changes what is installed); and install.sh
+#   taking compose.yml and the helper from the image it installs, and the helper from the newest one when it runs
+#   again (nothing downloaded from a release; an image without them, or with a broken helper, says so).
 #
 #   sudo bash scripts/updater-test.sh
 #
@@ -44,8 +46,9 @@ BOOT=test-start-1
 
 cleanup() {
     docker compose --project-directory "$DIR" -f "$DIR/compose.yml" down --timeout 1 > /dev/null 2>&1 || true
-    docker rm -f "$REGISTRY_CONTAINER" > /dev/null 2>&1 || true
-    docker rm -f -v "$READER" > /dev/null 2>&1 || true
+    # With its volume: the stand-in images pushed to it take about 600 MB.
+    docker rm -f -v "$REGISTRY_CONTAINER" > /dev/null 2>&1 || true
+    docker rm -f -v "$READER" contactor-install-read > /dev/null 2>&1 || true
     rm -rf -- "$WORK"
 }
 trap cleanup EXIT
@@ -74,7 +77,8 @@ helper() {
         "$@" bash "$INSTALLED" >> "$WORK/helper.log" 2>&1
 }
 
-# The copies of the helper and its units a stand-in image brings in /app/updater, as the Dockerfile puts them there:
+# The copies of the helper and its units a stand-in image brings in /app/updater, and compose.yml in /app/install, as
+# the Dockerfile puts them there:
 # "same" (this one), "newer" and "newer2" (a higher HELPER_VERSION, units with a line more), "broken" (a higher
 # version that bash can't read), "older" (a lower version) and "none" (no copies, as releases before them).
 variants() {
@@ -101,8 +105,9 @@ build() {
     rm -rf "$WORK/image"
     mkdir -p "$WORK/image/root/usr/local/bin"
     if [[ "$copies" != none ]]; then
-        mkdir -p "$WORK/image/root/app/updater"
+        mkdir -p "$WORK/image/root/app/updater" "$WORK/image/root/app/install"
         cp "$WORK/variants/$copies/"* "$WORK/image/root/app/updater/"
+        cp "$ROOT/install/compose.yml" "$WORK/image/root/app/install/"
     fi
     cat > "$WORK/image/root/usr/local/bin/dotnet" <<'EOF'
 #!/bin/sh
@@ -588,6 +593,93 @@ done
 sh "$WORK/uninstall.sh"
 check "nothing of the helper is left" test -z "$(find "$WORK/uninstall" -type f)"
 
+say "install.sh takes compose.yml and the update helper from the image, never from a release"
+# install.sh's own functions on folders of the test's own ($1), as root, with the test's systemctl and a curl and wget
+# that only note they were asked; the box at the end is left out (the stand-in app has no setup-status).
+installer() {
+    local folder=$1
+    mkdir -p "$folder/sbin" "$folder/units"
+    {
+        sed '$d' "$ROOT/install/install.sh"
+        printf 'DIR=%s\nDATA=%s\nHELPER=%s\nUNITS=%s\nHELPER_STATE=%s\n' "$folder/opt" "$folder/opt/data" \
+            "$folder/sbin/contactor-updater" "$folder/units" "$folder/state"
+        # shellcheck disable=SC2016 # for the inner shell
+        printf '%s\n' 'as_root() { "$@"; }' 'has_systemd() { true; }' 'show() { echo "(the box)"; }' \
+            'TMP=$(mktemp -d)' 'trap cleanup EXIT' 'install'
+    } > "$WORK/installer.sh"
+    local result=0
+    env PATH="$WORK/no-downloads:$WORK/bin:$PATH" TMPDIR="$WORK" CONTACTOR_IMAGE="$REPOSITORY:latest" \
+        sh "$WORK/installer.sh" > "$WORK/install.log" 2>&1 || result=$?
+    cat "$WORK/install.log" >> "$WORK/installs.log"
+    return "$result"
+}
+mkdir -p "$WORK/no-downloads"
+for tool in curl wget; do
+    printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$tool" "$WORK/downloads.log" > "$WORK/no-downloads/$tool"
+    chmod 755 "$WORK/no-downloads/$tool"
+done
+check "install.sh's image is the one compose.yml names" \
+    grep -qF "image: \${CONTACTOR_IMAGE:-$(sed -n 's/^IMAGE="\(.*\)"$/\1/p' "$ROOT/install/install.sh")}" "$ROOT/install/compose.yml"
+docker compose --project-directory "$DIR" -f "$DIR/compose.yml" down --timeout 1 > /dev/null 2>&1
+INST=$WORK/inst
+V15=$(release v15 unsigned)
+temporary=$(find "$WORK" -maxdepth 1 -name 'tmp.*' | sort)
+check "a new installation" installer "$INST"
+check "it took compose.yml from the image" cmp -s "$INST/opt/compose.yml" "$ROOT/install/compose.yml"
+check "the helper and its units from the image" bash -c "cmp -s '$INST/sbin/contactor-updater' '$WORK/variants/newer2/contactor-updater.sh' \
+    && cmp -s '$INST/units/contactor-updater.service' '$WORK/variants/newer2/contactor-updater.service' \
+    && cmp -s '$INST/units/contactor-updater.path' '$WORK/variants/newer2/contactor-updater.path'"
+check "the helper is executable" test -x "$INST/sbin/contactor-updater"
+check "the app runs that image" test -n "$(running_image)" -a "$(running_image)" = "$(image_id "$V15")"
+check "the data folder is the app's" test "$(stat -c %u "$INST/opt/data")" = 1654
+check "nothing was downloaded with curl or wget" test ! -e "$WORK/downloads.log"
+check "no container it made to read the image is left" test -z "$(docker ps -aq --filter "name=^contactor-install-read\$")"
+check "no half-written file is left" test -z "$(find "$INST" -name '*.new')"
+check "its temporary folders are gone" test "$(find "$WORK" -maxdepth 1 -name 'tmp.*' | sort)" = "$temporary"
+
+say "install.sh again, with a newer helper in the newest image: the helper is brought up to date, nothing else"
+before=$(docker inspect -f '{{.Id}}' contactor)
+echo '# (test) changed by hand' >> "$INST/opt/compose.yml"
+V10=$(release v10 unsigned)
+check "install.sh runs again" installer "$INST"
+check "it says the helper is brought up to date" grep -q "Update helper brought up to date" "$WORK/install.log"
+check "the helper is the newest image's" cmp -s "$INST/sbin/contactor-updater" "$WORK/variants/newer/contactor-updater.sh"
+check "compose.yml stays as it was" grep -qx '# (test) changed by hand' "$INST/opt/compose.yml"
+check "the same container runs on" test "$(docker inspect -f '{{.Id}}' contactor)" = "$before"
+check "latest names the running version again" test "$(image_id "$REPOSITORY:latest")" = "$(image_id "$V15")"
+check "the newest image isn't kept" test -z "$(image_id "$V10")"
+check "nothing was downloaded with curl or wget" test ! -e "$WORK/downloads.log"
+
+say "install.sh again, with a helper bash can't read in the newest image: it stops, nothing changed"
+release v11 unsigned > /dev/null
+before=$(find "$INST/sbin" "$INST/units" -type f -exec md5sum {} + | sort)
+if installer "$INST"; then
+    fail "install.sh took a broken helper"
+else
+    check "it says the helper isn't Contactor's" grep -q "contactor-updater.sh in Contactor's image (/app/updater) isn't Contactor's update helper" "$WORK/install.log"
+fi
+check "nothing of the helper changed" test "$(find "$INST/sbin" "$INST/units" -type f -exec md5sum {} + | sort)" = "$before"
+check "latest names the running version again" test "$(image_id "$REPOSITORY:latest")" = "$(image_id "$V15")"
+
+say "install.sh again, with no helper in the newest image: the one in place stays"
+V13=$(release v13 unsigned)
+check "install.sh runs again" installer "$INST"
+check "it says so" grep -q "brings no update helper: the one in place stays" "$WORK/install.log"
+check "nothing of the helper changed" test "$(find "$INST/sbin" "$INST/units" -type f -exec md5sum {} + | sort)" = "$before"
+
+say "A new installation from an image without compose.yml: it stops, and says why"
+docker compose --project-directory "$INST/opt" -f "$INST/opt/compose.yml" down --timeout 1 > /dev/null 2>&1
+release v13 unsigned > /dev/null
+if installer "$WORK/inst2"; then
+    fail "install.sh installed without a compose.yml"
+else
+    check "it says the image has no compose.yml" grep -q "is too old for this installer: its image has no compose.yml" "$WORK/install.log"
+fi
+check "there is no compose.yml" test ! -e "$WORK/inst2/opt/compose.yml"
+check "no container it made to read the image is left" test -z "$(docker ps -aq --filter "name=^contactor-install-read\$")"
+check "nothing was downloaded with curl or wget" test ! -e "$WORK/downloads.log"
+docker image rm "$REPOSITORY:latest" "$V13" > /dev/null 2>&1 || true
+
 say "Secrets across the 2000-character cut"
 stripped=$(printf '%s Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after\n' "$(head -c 1990 /dev/zero | tr '\0' a)" \
     | bash -c "MAX_LINE=2000; FIRST_CUT=8000; $(sed -n '/^strip_secrets() {/,/^}/p' "$HELPER"); strip_secrets")
@@ -606,6 +698,8 @@ check "three 8000-character worst-case lines are stripped well within 10 s" test
 printf '\nThe helper said:\n'
 if [[ "$FAILED" -gt 0 ]]; then
     sed 's/^/  | /' "$WORK/helper.log"
+    printf '\ninstall.sh said:\n'
+    sed 's/^/  | /' "$WORK/installs.log" 2> /dev/null || true
 else
     sed 's/^/  | /' "$WORK/helper.log" | tail -n 40
 fi
