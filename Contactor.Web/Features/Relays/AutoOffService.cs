@@ -85,73 +85,74 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
             .ToListAsync(cancellationToken);
         var expected = board.Expected;
 
-        // Once an OFF went out, it is recorded whatever happens to the caller now: a cancel (mostly at shutdown) or a
-        // later OFF that fails (e.g. a timeout) would leave the board's change without its event, and the run with an
-        // auto-off that already went. A failure after an OFF went out stops there, what went out is saved, and then the
-        // failure is thrown.
+        // Once an OFF went out, it is recorded whatever happens to the caller now: a cancel (mostly at shutdown), a
+        // later OFF that fails (e.g. a timeout) or a database call that fails would leave the board's change without
+        // its event, and the run with an auto-off that already went. A failure after an OFF went out stops there, what
+        // went out is saved, and then the failure is thrown.
         List<int> turnedOff = [];
         ExceptionDispatchInfo? failed = null;
         foreach (var runtime in due)
         {
-            // The board's state and the command go by the relay's channel; a relay the board doesn't have isn't on.
-            if (OnBoard(board, channels, runtime.RelayId) is { } channel && state.IsOn(channel))
+            try
             {
-                var sent = _clock.UtcNow;
-                var mask = board.Capabilities.Relay(channel);
-                expected.Expect(mask, on: false);
-                try
+                // The board's state and the command go by the relay's channel; a relay the board doesn't have isn't on.
+                if (OnBoard(board, channels, runtime.RelayId) is { } channel && state.IsOn(channel))
                 {
-                    await board.TurnOffAsync(mask, cancellationToken);
-                }
-                catch (BoardNotConnectedException)
-                {
-                    // Lost the board mid-way: the rest waits for the next check. Nothing is logged, so whatever the
-                    // board did shows as an external change.
-                    expected.Forget(mask, on: false);
-                    break;
-                }
-                catch (Exception ex) when (turnedOff.Count > 0)
-                {
-                    // No event for this OFF: whatever the board did shows as an external change. It is tried again at
-                    // the next check. Logged now, so it isn't lost should the save of what went out fail too; a cancel
-                    // by the caller (mostly at shutdown) isn't a failure.
-                    expected.Forget(mask, on: false);
-                    if (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                    var sent = _clock.UtcNow;
+                    var mask = board.Capabilities.Relay(channel);
+                    expected.Expect(mask, on: false);
+                    try
                     {
-                        LogOffFailed(ex, runtime.RelayId, board.BoardId);
+                        await board.TurnOffAsync(mask, cancellationToken);
+                    }
+                    catch (BoardNotConnectedException)
+                    {
+                        // Lost the board mid-way: the rest waits for the next check. Nothing is logged, so whatever the
+                        // board did shows as an external change.
+                        expected.Forget(mask, on: false);
+                        break;
+                    }
+                    catch
+                    {
+                        // Cancelled or failed: no event for this OFF, so whatever the board did shows as an external
+                        // change. It is tried again at the next check.
+                        expected.Forget(mask, on: false);
+                        throw;
                     }
 
-                    failed = ExceptionDispatchInfo.Capture(ex);
-                    break;
-                }
-                catch
-                {
-                    // Cancelled or failed before anything went out: nothing is logged, so whatever the board did shows
-                    // as an external change.
-                    expected.Forget(mask, on: false);
-                    throw;
+                    var minutes = runtime.OnSinceUtc is { } since ? (int)Math.Round((runtime.AutoOffAtUtc!.Value - since).TotalMinutes) : (int?)null;
+                    db.EventLog.Add(new EventLogEntry
+                    {
+                        TimestampUtc = now,
+                        BoardId = board.BoardId,
+                        RelayId = runtime.RelayId,
+                        Actor = EventActors.AutoOff,
+                        Action = EventActions.Off,
+                        Details = minutes is null ? null : JsonSerializer.Serialize(new { afterMinutes = minutes }),
+                    });
+                    turnedOff.Add(runtime.RelayId);
+
+                    // Its run ends; one begun after the OFF went out (someone turned it on again meanwhile) stays.
+                    await RelayRuns.EndAsync(db, runtime.RelayId, sent, CancellationToken.None);
+                    continue;
                 }
 
-                var minutes = runtime.OnSinceUtc is { } since ? (int)Math.Round((runtime.AutoOffAtUtc!.Value - since).TotalMinutes) : (int?)null;
-                db.EventLog.Add(new EventLogEntry
-                {
-                    TimestampUtc = now,
-                    BoardId = board.BoardId,
-                    RelayId = runtime.RelayId,
-                    Actor = EventActors.AutoOff,
-                    Action = EventActions.Off,
-                    Details = minutes is null ? null : JsonSerializer.Serialize(new { afterMinutes = minutes }),
-                });
-                turnedOff.Add(runtime.RelayId);
-
-                // Its run ends; one begun after the OFF went out (someone turned it on again meanwhile) stays.
-                await RelayRuns.EndAsync(db, runtime.RelayId, sent, CancellationToken.None);
-                continue;
+                // Off already, turned off some other way: nothing to send, but the plan is stale. Only the run as read
+                // ends; one saved meanwhile (someone turned it on again) stays.
+                await RelayRuns.EndOutsideAsync(db, runtime.RelayId, Record(turnedOff, cancellationToken));
             }
+            catch (Exception ex) when (turnedOff.Count > 0)
+            {
+                // An OFF or a database call failed after an OFF went out. Logged now, so it isn't lost should the save
+                // of what went out fail too; a cancel by the caller (mostly at shutdown) isn't a failure.
+                if (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    LogOffFailed(ex, runtime.RelayId, board.BoardId);
+                }
 
-            // Off already, turned off some other way: nothing to send, but the plan is stale. Only the run as read
-            // ends; one saved meanwhile (someone turned it on again) stays.
-            await RelayRuns.EndOutsideAsync(db, runtime.RelayId, Record(turnedOff, cancellationToken));
+                failed = ExceptionDispatchInfo.Capture(ex);
+                break;
+            }
         }
 
         // Not after the board was lost on the way, nor after a failure: nothing happens without it.
@@ -377,7 +378,7 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
     [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off check of relay board {BoardId} failed")]
     private partial void LogCheckFailed(Exception exception, int boardId);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off could not turn off relay {RelayId} on relay board {BoardId}; the OFFs that went out before it are saved")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Auto-off failed at relay {RelayId} on relay board {BoardId}; the OFFs that went out before it are saved")]
     private partial void LogOffFailed(Exception exception, int relayId, int boardId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Relay {RelayId} is on with nobody's run: it gets its own auto-off")]

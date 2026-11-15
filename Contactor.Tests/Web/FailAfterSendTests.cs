@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Data.Common;
 using Contactor.Tests.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Boards;
@@ -7,15 +8,18 @@ using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// A command fails (here a timeout) after an earlier one of the same schedule tick or auto-off check went out: the one
-/// that went out keeps its run, its auto-off and its event, and the failed one is tried again at the next tick or check.
+/// A command (here a timeout) or a database call fails after an earlier command of the same schedule tick or auto-off
+/// check went out: the one that went out keeps its run, its auto-off and its event, and the failed one is tried again
+/// at the next tick or check.
 /// </summary>
 public sealed class FailAfterSendTests : IAsyncLifetime
 {
@@ -26,6 +30,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
     private static readonly DateTimeOffset OnTime = new(2026, 11, 4, 13, 5, 0, TimeSpan.Zero);
 
     private readonly ErrorCollector _errors = new();
+    private readonly FailingQueries _queries = new();
 
     private readonly FakeRelayBoard _board = new(8);
     private readonly FixedTimeProvider _time = new(Now);
@@ -51,6 +56,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
             services.AddRelays(configuration);
             services.AddGroups(configuration);
             services.AddSchedules(configuration);
+            services.ConfigureDbContext<ContactorDbContext>(options => options.AddInterceptors(_queries));
         });
         await _database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
         await _database.Services.UseFakeBoardAsync(_board);
@@ -77,7 +83,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.Equal((EventActors.Schedule, (DateTime?)OnTime.UtcDateTime, (DateTime?)null), (run.TurnedOnBy, run.OnSinceUtc, run.AutoOffAtUtc));
         Assert.Equal([(2, EventActors.Schedule, EventActions.On)], await EventsAsync());
         Assert.False(_database.Services.Live().Expected.IsPending(5, on: true));
-        Assert.Contains("Scheduler could not switch relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
+        Assert.Contains("Scheduler failed at relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
 
         // The next tick turns relay 5 on, and leaves relay 2 alone.
         _board.BeforeOn = null;
@@ -107,7 +113,7 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.Equal(EventActors.Schedule, (await RunAsync(5)).TurnedOnBy);
         Assert.Equal([(5, EventActors.Schedule, EventActions.On), (2, EventActors.Schedule, EventActions.On)], await EventsAsync());
         Assert.False(_database.Services.Live().Expected.IsPending(5, on: false));
-        Assert.Contains("Scheduler could not switch relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
+        Assert.Contains("Scheduler failed at relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
 
         // The next tick turns relay 5 off, and leaves relay 2 alone.
         _board.BeforeOff = null;
@@ -137,13 +143,110 @@ public sealed class FailAfterSendTests : IAsyncLifetime
         Assert.Equal(Jane, (await RunAsync(5)).TurnedOnBy);
         Assert.Equal([(2, Jane, EventActions.On), (5, Jane, EventActions.On), (2, EventActors.AutoOff, EventActions.Off)], await EventsAsync());
         Assert.False(_database.Services.Live().Expected.IsPending(5, on: false));
-        Assert.Contains("Auto-off could not turn off relay 5 on relay board 1; the OFFs that went out before it are saved", _errors.Lines);
+        Assert.Contains("Auto-off failed at relay 5 on relay board 1; the OFFs that went out before it are saved", _errors.Lines);
 
         // The next check turns relay 5 off.
         _board.BeforeOff = null;
         Assert.Equal([5], await AutoOff.CheckAsync(Cancel));
         Assert.False(_board.State.IsOn(5));
         Assert.Null((await RunAsync(5)).OnSinceUtc);
+    }
+
+    [Fact]
+    public async Task Should_RecordTheScheduleOnThatWentOut_WhenTheDatabaseFailsAfterTheNextOn()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await AddScheduleAsync(relayId: 5);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+
+        // Relay 5's ON goes out; reading its run fails.
+        var commands = 0;
+        _board.AfterSwitch = () =>
+        {
+            if (++commands == 2)
+            {
+                _queries.FailRunRead(skip: 0);
+            }
+
+            return Task.CompletedTask;
+        };
+
+        await Assert.ThrowsAsync<SqliteException>(() => Scheduler.TickAsync(Cancel));
+
+        Assert.Equal((true, true), (_board.State.IsOn(2), _board.State.IsOn(5)));
+        var run = await RunAsync(2);
+        Assert.Equal((EventActors.Schedule, (DateTime?)OnTime.UtcDateTime), (run.TurnedOnBy, run.OnSinceUtc));
+        Assert.Equal([(2, EventActors.Schedule, EventActions.On)], await EventsAsync());
+        Assert.Contains("Scheduler failed at relay 5 on relay board 1; the commands that went out before it are saved", _errors.Lines);
+
+        // The next tick sends nothing: both relays are on.
+        _board.AfterSwitch = null;
+        var sent = _board.Sent.Count;
+        _time.Now = OnTime.AddMinutes(1);
+        await Scheduler.TickAsync(Cancel);
+        Assert.Equal(sent, _board.Sent.Count);
+        Assert.Equal(EventActors.Schedule, (await RunAsync(2)).TurnedOnBy);
+    }
+
+    [Fact]
+    public async Task Should_RecordTheAutoOffThatWentOut_WhenTheDatabaseFailsAfterIt()
+    {
+        await Control.TurnOnAsync(2, Jane, Cancel);
+        await Control.TurnOnAsync(5, Jane, Cancel);
+
+        // Relay 5 went off outside the app: its run is ended without a command.
+        _board.SetRelay(5, on: false);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
+
+        // Relay 2's OFF goes out and its run ends; reading relay 5's run fails.
+        _board.AfterOff = () =>
+        {
+            _queries.FailRunRead(skip: 1);
+            return Task.CompletedTask;
+        };
+
+        await Assert.ThrowsAsync<SqliteException>(() => AutoOff.CheckAsync(_database.Services.Live(), Cancel));
+
+        Assert.Equal((false, false), (_board.State.IsOn(2), _board.State.IsOn(5)));
+        Assert.Null((await RunAsync(2)).OnSinceUtc);
+        Assert.Equal(Jane, (await RunAsync(5)).TurnedOnBy);
+        Assert.Equal([(2, Jane, EventActions.On), (5, Jane, EventActions.On), (2, EventActors.AutoOff, EventActions.Off)], await EventsAsync());
+        Assert.Contains("Auto-off failed at relay 5 on relay board 1; the OFFs that went out before it are saved", _errors.Lines);
+
+        // The next check ends relay 5's run, and sends nothing.
+        _board.AfterOff = null;
+        var sent = _board.Sent.Count;
+        Assert.Empty(await AutoOff.CheckAsync(Cancel));
+        Assert.Equal(sent, _board.Sent.Count);
+        Assert.Null((await RunAsync(5)).OnSinceUtc);
+    }
+
+    // A schedule's ON refused while the board was being removed is tried again at the next tick, also after that try
+    // fails: the window began in an earlier tick, so nothing else would turn the relay on.
+    [Fact]
+    public async Task Should_TryTheScheduleOnAgain_WhenItsRetryFails()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        var live = _database.Services.Live();
+        await live.CloseAsync();
+        _time.Now = OnTime;
+        await Scheduler.TickAsync(Cancel);
+        Assert.False(_board.State.IsOn(2));
+
+        live.Reopen();
+        _board.BeforeOn = TimeOutTheFirst();
+        _time.Now = OnTime.AddMinutes(1);
+        await Assert.ThrowsAsync<TimeoutException>(() => Scheduler.TickAsync(Cancel));
+        Assert.False(_board.State.IsOn(2));
+
+        _board.BeforeOn = null;
+        _time.Now = OnTime.AddMinutes(2);
+        await Scheduler.TickAsync(Cancel);
+        Assert.True(_board.State.IsOn(2));
+        Assert.Equal(EventActors.Schedule, (await RunAsync(2)).TurnedOnBy);
+        Assert.Equal([(2, EventActors.Schedule, EventActions.On)], await EventsAsync());
     }
 
     // The first command goes through; the second times out before it reaches the board.
@@ -187,6 +290,34 @@ public sealed class FailAfterSendTests : IAsyncLifetime
             CreatedBy = Jane,
         });
         await db.SaveChangesAsync(Cancel);
+    }
+
+    // Fails a chosen read of a relay's run, as a database error would.
+    private sealed class FailingQueries : DbCommandInterceptor
+    {
+        private int _skip = -1;
+
+        // Lets <paramref name="skip"/> reads of a relay's run through, then fails the next one.
+        public void FailRunRead(int skip)
+        {
+            Volatile.Write(ref _skip, skip);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("FROM \"RelayRuntime\"", StringComparison.Ordinal)
+                && Volatile.Read(ref _skip) >= 0
+                && Interlocked.Decrement(ref _skip) == -1)
+            {
+                throw new SqliteException("database is locked", 5);
+            }
+
+            return ValueTask.FromResult(result);
+        }
     }
 
     // The error lines logged, by their message.
