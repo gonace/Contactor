@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Simulator;
 
@@ -151,14 +152,26 @@ public sealed class SimulatorPageTests
         Assert.Equal("You can have at most 2 boards.", boards.Add("vm201", SimulatedBoardsTests.FreePort(), "", ""));
     }
 
+    // Started through Main itself, with the simulator's name for its static files. Through WebApplicationFactory, Main
+    // starts the host on its own thread: when that start fails and disposes the host before the factory starts it too,
+    // the factory throws ObjectDisposedException instead. The board in the settings is of no known model, so a check
+    // that let the limit through fails at once instead of running.
     [Fact]
     public void Should_RefuseToStart_OnABoardLimitBelowOne()
     {
-        using var app = CreateApp(SimulatedBoardsTests.FreePort(), maxBoards: "0");
+        string[] args =
+        [
+            "--applicationName=Contactor.Simulator",
+            "--urls=http://127.0.0.1:0",
+            "--Logging:LogLevel:Default=None",
+            "--Simulator:MaxBoards=0",
+            "--Simulator:Boards:0:Type=none",
+            "--Simulator:Boards:0:Port=1",
+        ];
 
-        var error = Assert.ThrowsAny<Exception>(() => app.CreateClient());
+        var error = Assert.Throws<OptionsValidationException>(() => Contactor.Simulator.Program.Main(args));
 
-        Assert.Contains("Simulator:MaxBoards", error.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Simulator:MaxBoards", error.Message, StringComparison.Ordinal);
     }
 
     private static WebApplicationFactory<Contactor.Simulator.Program> CreateApp(int port, string? appAddress = null, string? maxBoards = null)

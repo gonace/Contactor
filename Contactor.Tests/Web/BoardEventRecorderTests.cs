@@ -435,7 +435,12 @@ public sealed class BoardEventRecorderTests
             [(1, """{"on":true}"""), (2, """{"on":true,"noticed":true}""")],
             InputEvents(setup.Database).Select(e => (e.InputId!.Value, e.Details)));
         Assert.DoesNotContain(Events(setup.Database), e => e.RelayId == 1);
-        Assert.False(setup.Database.Services.GetRequiredService<InputChangeFeed>().Reader.TryRead(out _));
+
+        // Neither acts: a change seen as it happens after them is the first one handed on. The test reads the feed
+        // itself, since a change is handed on only after the save.
+        setup.Board.SetInput(2, on: false);
+        var feed = setup.Database.Services.GetRequiredService<InputChangeFeed>().Reader;
+        Assert.Equal(new InputChanged(2, Closed: false), await BoardTestRig.NextAsync(feed));
     }
 
     // A status from before a lost connection, recorded while there is still no contact, doesn't save a time of contact:

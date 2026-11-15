@@ -290,11 +290,11 @@ public sealed class InputActionsTests
         try
         {
             await BoardTestRig.WaitUntilAsync(() => rig.InputEvents() == 2);
-            Assert.False(rig.Feed.Reader.TryRead(out _));
 
             rig.Board.SetInput(1, on: false);
 
-            // Handed on once it is logged.
+            // Handed on once it is logged, and first: the change noticed at start was never handed on. The test reads
+            // the feed itself, since the change is handed on only after the save.
             var change = await BoardTestRig.NextAsync(rig.Feed.Reader);
             Assert.Equal(3, rig.InputEvents());
             Assert.Equal(new InputChanged(1, Closed: false), change);
