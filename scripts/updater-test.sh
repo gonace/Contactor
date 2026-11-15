@@ -376,8 +376,18 @@ check "the next request is taken" test "$(status_of changed)" != "$changed"
 
 say "Secrets across the 2000-character cut"
 stripped=$(printf '%s Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after\n' "$(head -c 1990 /dev/zero | tr '\0' a)" \
-    | bash -c "MAX_LINE=2000; $(sed -n '/^strip_secrets() {/,/^}/p' "$HELPER"); strip_secrets")
+    | bash -c "MAX_LINE=2000; FIRST_CUT=8000; $(sed -n '/^strip_secrets() {/,/^}/p' "$HELPER"); strip_secrets")
 check "a token across the cut is hidden whole" bash -c "[[ '$stripped' == *' [hidden] …' && '$stripped' != *Zq* ]]"
+strip() {
+    bash -c "MAX_LINE=2000; FIRST_CUT=8000; $(sed -n '/^strip_secrets() {/,/^}/p' "$HELPER"); strip_secrets"
+}
+stripped=$(printf 'x eyJ%s.sig %s Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after\n' "$(head -c 7000 /dev/zero | tr '\0' A)" "$(head -c 970 /dev/zero | tr '\0' a)" | strip)
+check "a token across the first cut (8000) is dropped, and the line says it was cut" \
+    test "$stripped" = "x [hidden] $(head -c 970 /dev/zero | tr '\0' a) …"
+# The worst lines for the patterns, each 8000 characters: a generous bound, far above the few milliseconds they take.
+worst=$( (head -c 8000 /dev/zero | tr '\0' a; echo; head -c 20000 /dev/urandom | base64 -w0 | tr '[:upper:]' '[:lower:]' | tr -d '/+=' | head -c 8000; echo;
+    for _ in $(seq 1 800); do printf 'keykeykeyk'; done; echo) | timeout 10 bash -c "MAX_LINE=2000; FIRST_CUT=8000; $(sed -n '/^strip_secrets() {/,/^}/p' "$HELPER"); strip_secrets" | wc -l)
+check "three 8000-character worst-case lines are stripped well within 10 s" test "$worst" = 3
 
 printf '\nThe helper said:\n'
 if [[ "$FAILED" -gt 0 ]]; then

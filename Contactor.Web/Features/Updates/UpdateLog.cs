@@ -19,6 +19,12 @@ public static partial class UpdateLog
     /// <summary>The longest line kept, as the helper keeps it; anything after it is cut, with "…".</summary>
     public const int MaxLineLength = 2000;
 
+    /// <summary>
+    /// The first cut, before secrets are hidden, which keeps a huge line cheap: it drops the word it cuts through, which
+    /// could be the start of a secret. The helper cuts at the same length.
+    /// </summary>
+    public const int FirstCut = 8000;
+
     /// <summary>The log of update <paramref name="id"/> in <paramref name="logsFolder"/>, stripped; null when there is none.</summary>
     public static async Task<string?> ReadAsync(string logsFolder, string? id, CancellationToken cancellationToken)
     {
@@ -71,15 +77,22 @@ public static partial class UpdateLog
         for (var i = 0; i < lines.Length; i++)
         {
             // Secrets are hidden before the line is cut, so none is cut in half and left showing. Every pattern runs
-            // without backtracking, and a first, far longer bound keeps a huge line cheap (what lies past it is cut anyway).
-            var line = lines[i].Length > 64 * MaxLineLength ? lines[i][..(64 * MaxLineLength)] : lines[i];
+            // without backtracking.
+            var line = lines[i];
+            var cut = line.Length > FirstCut;
+            if (cut)
+            {
+                line = line[..FirstCut];
+                line = line[..(line.LastIndexOfAny([' ', '\t']) + 1)];
+            }
+
             line = TailscaleKey().Replace(line, Hidden);
             line = Token().Replace(line, Hidden);
             line = Bearer().Replace(line, Hidden);
             line = Basic().Replace(line, Hidden);
             line = Named().Replace(line, m => m.Groups["name"].Value + (m.Groups["value"].Success ? Hidden : ""));
             line = LongRun().Replace(line, m => LooksRandom(m.Value) ? Hidden : m.Value);
-            lines[i] = line.Length > MaxLineLength ? line[..MaxLineLength] + "…" : line;
+            lines[i] = line.Length > MaxLineLength ? line[..MaxLineLength] + "…" : cut ? line + "…" : line;
         }
 
         return string.Join('\n', lines);
@@ -102,7 +115,7 @@ public static partial class UpdateLog
     [GeneratedRegex(@"[Bb][Aa][Ss][Ii][Cc] [^ \t]+", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Basic();
 
-    [GeneratedRegex(@"(?<name>[A-Za-z0-9_.-]*(?i:token|key|password|passwd|pwd|secret|auth)[A-Za-z0-9_.-]*[""']?[ \t]*[:=][ \t]*[""']?)(?<value>[^ \t""',;&]+)?", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    [GeneratedRegex(@"(?<name>(?i:token|key|password|passwd|pwd|secret|auth)[A-Za-z0-9_.-]*[""']?[ \t]*[:=][ \t]*[""']?)(?<value>[^ \t""',;&]+)?", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Named();
 
     [GeneratedRegex(@"[A-Za-z0-9+=_-]{24,}", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]

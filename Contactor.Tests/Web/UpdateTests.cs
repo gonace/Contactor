@@ -327,8 +327,9 @@ public sealed class UpdateLogTests
 
         var stripped = UpdateLog.Strip(huge);
 
-        Assert.Equal(UpdateLog.MaxLineLength + 1, stripped.Length);
-        Assert.EndsWith("…", stripped, StringComparison.Ordinal);
+        // The first cut drops the unfinished word, here all of the run.
+        Assert.Equal("api_key …", stripped);
+        Assert.Equal(UpdateLog.MaxLineLength + 1, UpdateLog.Strip(new string('a', UpdateLog.FirstCut)).Length);
         Assert.Equal("x password=[hidden] " + new string('b', UpdateLog.MaxLineLength - 20) + "…",
             UpdateLog.Strip("x password=hunter2 " + new string('b', 5000)));
         Assert.DoesNotContain("hunter2", UpdateLog.Strip(new string('c', 3000) + " password=hunter2"), StringComparison.Ordinal);
@@ -344,6 +345,21 @@ public sealed class UpdateLogTests
         var stripped = UpdateLog.Strip(line);
 
         Assert.Equal(new string('a', UpdateLog.MaxLineLength - 10) + " [hidden] …", stripped);
+        Assert.DoesNotContain("Zq", stripped, StringComparison.Ordinal);
+    }
+
+    // The first cut drops the word it cuts through, a token's start included, and the line says it was cut, also when
+    // what is left after hiding is shorter than MaxLineLength.
+    [Fact]
+    public void Should_DropATokenAcrossTheFirstCut()
+    {
+        var before = "x eyJ" + new string('A', 7000) + ".sig " + new string('a', 970) + " ";
+        var line = before + "Zq7RmW2xKp9LtVb4Nc8YhJ3sDf6GuE1aQw5 after";
+        Assert.True(before.Length < UpdateLog.FirstCut && line.Length > UpdateLog.FirstCut);
+
+        var stripped = UpdateLog.Strip(line);
+
+        Assert.Equal("x [hidden] " + new string('a', 970) + " …", stripped);
         Assert.DoesNotContain("Zq", stripped, StringComparison.Ordinal);
     }
 

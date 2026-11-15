@@ -52,8 +52,10 @@ readonly READ_SECONDS=5
 readonly STUCK_SECONDS=${CONTACTOR_STUCK_SECONDS:-60}
 # This start of the machine: the first run after a start takes no request (see take_request).
 readonly BOOT_ID=${CONTACTOR_BOOT_ID:-$(cat /proc/sys/kernel/random/boot_id 2> /dev/null || echo unknown)}
-# The longest line the log keeps; the app's UpdateLog cuts at the same length.
+# The longest line the log keeps, and the first cut that keeps stripping a huge one cheap; the app's UpdateLog cuts
+# at the same lengths.
 readonly MAX_LINE=2000
+readonly FIRST_CUT=8000
 readonly KEEP_LOGS=10
 # Room kept free beyond what the update needs, in MB.
 readonly SPARE_MB=200
@@ -131,9 +133,11 @@ strip_secrets() {
     for ((i = 0; i < 24; i++)); do
         run+="[A-Za-z0-9+=_-]"
     done
-    awk -v run="$run" -v q="'" -v max="$MAX_LINE" '
+    awk -v run="$run" -v q="'" -v max="$MAX_LINE" -v first="$FIRST_CUT" '
         BEGIN {
-            name = "[a-z0-9_.-]*(token|key|password|passwd|pwd|secret|auth)[a-z0-9_.-]*[\"" q "]?[ \t]*[:=][ \t]*[\"" q "]?"
+            # From the word that makes it the name of a secret: the letters before it stay as they are either way, and
+            # without a run of them in front, matching costs no more than the line is long.
+            name = "(token|key|password|passwd|pwd|secret|auth)[a-z0-9_.-]*[\"" q "]?[ \t]*[:=][ \t]*[\"" q "]?"
             value = "^[^ \t\"" q ",;&]+"
         }
         function hide(text, pattern,    out) {
@@ -172,16 +176,23 @@ strip_secrets() {
             return out text
         }
         {
-            # Secrets are hidden before the line is cut, so none is cut in half and left showing; a first, far longer
-            # bound keeps a huge line cheap (what lies past it is cut anyway).
-            line = length($0) > 64 * max ? substr($0, 1, 64 * max) : $0
+            # Secrets are hidden before the line is cut, so none is cut in half and left showing. A first, longer cut
+            # keeps a huge line cheap; it drops the word it cuts through, which could be the start of a secret.
+            cut = 0
+            line = $0
+            if (length(line) > first) {
+                line = substr(line, 1, first)
+                for (i = first; i > 0 && substr(line, i, 1) != " " && substr(line, i, 1) != "\t"; i--) { }
+                line = substr(line, 1, i)
+                cut = 1
+            }
             line = hide(line, "tskey-[A-Za-z0-9-]+")
             line = hide(line, "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_.-]*")
             line = hide(line, "[Bb][Ee][Aa][Rr][Ee][Rr] [^ \t]+")
             line = hide(line, "[Bb][Aa][Ss][Ii][Cc] [^ \t]+")
             line = named(line)
             line = long_runs(line)
-            print (length(line) > max ? substr(line, 1, max) "…" : line)
+            print (length(line) > max ? substr(line, 1, max) "…" : cut ? line "…" : line)
         }'
 }
 
