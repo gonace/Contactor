@@ -182,12 +182,17 @@ public static class GroupPlanner
     }
 
     /// <summary>The next step for one group. Updates <paramref name="runtime"/> and adds to <paramref name="commands"/>.</summary>
+    /// <param name="offOnItsWay">
+    /// Relays an OFF was sent for that the board hasn't shown yet: they count as off for what may come on (a start's
+    /// next step, a confirmed ON), so a status from before that OFF never confirms them on.
+    /// </param>
     public static void Plan(
         IReadOnlyList<GroupStepInfo> steps,
         BoardState state,
         GroupRuntime runtime,
         DateTime now,
-        GroupCommands commands)
+        GroupCommands commands,
+        ChannelMask offOnItsWay = default)
     {
         ArgumentNullException.ThrowIfNull(steps);
         ArgumentNullException.ThrowIfNull(state);
@@ -199,8 +204,11 @@ public static class GroupPlanner
             return;
         }
 
-        bool On(GroupRelayInfo relay) => state.IsOn(relay.Channel);
-        var level = Level(steps, state);
+        // What may count as on for turning on more: not a relay with an OFF on its way. The interlock and the stop go
+        // by what the board shows.
+        var onState = Without(state, offOnItsWay);
+        bool On(GroupRelayInfo relay) => onState.IsOn(relay.Channel);
+        var level = Level(steps, onState);
         var reach = Reach(steps, state);
 
         // 1. The interlock, before anything else.
@@ -217,7 +225,7 @@ public static class GroupPlanner
                 // A step or relay the group no longer has.
                 ClearPending(runtime);
             }
-            else if (pending.Relays.All(r => On(r) == runtime.PendingOn))
+            else if (pending.Relays.All(r => (runtime.PendingOn ? On(r) : state.IsOn(r.Channel)) == runtime.PendingOn))
             {
                 ClearPending(runtime);
                 Confirmed(steps, state, runtime, level, reach, now, commands);
@@ -334,7 +342,7 @@ public static class GroupPlanner
                 null,
                 EventActors.AutoOff,
                 minutes is null ? null : JsonSerializer.Serialize(new { afterMinutes = minutes })));
-            Plan(steps, state, runtime, now, commands);
+            Plan(steps, state, runtime, now, commands, offOnItsWay);
         }
     }
 
@@ -349,7 +357,8 @@ public static class GroupPlanner
         string actor,
         int? maxOnMinutes,
         DateTime now,
-        GroupCommands commands)
+        GroupCommands commands,
+        ChannelMask offOnItsWay = default)
     {
         ArgumentNullException.ThrowIfNull(steps);
         ArgumentNullException.ThrowIfNull(runtime);
@@ -369,7 +378,10 @@ public static class GroupPlanner
         ClearPending(runtime);
         if (overtaken is { } pending)
         {
+            // Their OFF is on its way: the board's status may still show them on from before it, which doesn't
+            // confirm this ON.
             commands.On |= Mask(pending.Relays);
+            offOnItsWay |= Mask(pending.Relays);
             SetPending(runtime, pending.Position, overtakenRelayId, on: true, now);
         }
 
@@ -381,7 +393,7 @@ public static class GroupPlanner
         runtime.TurnedOnBy = actor;
         runtime.AutoOffAtUtc = maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
         commands.Events.Add(new GroupEvent(EventActions.GroupOn, null, actor, Chain(steps)));
-        Plan(steps, state, runtime, now, commands);
+        Plan(steps, state, runtime, now, commands, offOnItsWay);
         return true;
     }
 
@@ -450,7 +462,8 @@ public static class GroupPlanner
         string actor,
         int? maxOnMinutes,
         DateTime now,
-        GroupCommands commands)
+        GroupCommands commands,
+        ChannelMask offOnItsWay = default)
     {
         ArgumentNullException.ThrowIfNull(steps);
         ArgumentNullException.ThrowIfNull(state);
@@ -466,7 +479,11 @@ public static class GroupPlanner
             return place > level + 1 ? new MemberRefusal(steps[level].Name) : null;
         }
 
-        if (NeedsOn(steps, state, position) is { } needs)
+        // A relay with an OFF on its way counts as off, whatever the last status still shows: nothing may come on
+        // below it, and turning it on again sends its ON.
+        var pendingOff = !runtime.PendingOn && Pending(steps, runtime) is { } offs ? offs : ((int Position, GroupStepInfo Step, IReadOnlyList<GroupRelayInfo> Relays)?)null;
+        var onState = Without(state, offOnItsWay | (pendingOff is { } p ? Mask(p.Relays) : ChannelMask.None));
+        if (NeedsOn(steps, onState, position) is { } needs)
         {
             return new MemberRefusal(needs);
         }
@@ -496,20 +513,29 @@ public static class GroupPlanner
             if (place < stopping || (runtime.StopRelayIds.Count > 1 || !runtime.StopRelayIds.Contains(relay.RelayId)))
             {
                 runtime.StopRelayIds = [.. runtime.StopRelayIds.Where(id => id != relay.RelayId)];
-                if (!state.IsOn(relay.Channel))
-                {
-                    commands.On |= ChannelMask.Of(relay.Channel);
-                    commands.Events.Add(new GroupEvent(EventActions.On, relay.RelayId, actor, null));
-                }
-
-                KeepsRunning(runtime, actor, maxOnMinutes, now);
+                BackOn(relay, onState, actor, maxOnMinutes, now, runtime, commands);
                 return null;
             }
 
             // The only relay stopping: the stop is called off, as below.
         }
 
-        if (state.IsOn(relay.Channel))
+        // This relay's step is going off as a whole, its OFF on its way: this relay takes its OFF over with an ON, and
+        // the others of its step still go off, as a stop of those relays.
+        if (runtime.Phase == GroupPhases.Stopping && pendingOff is { } going && going.Position == place && going.Relays.Contains(relay))
+        {
+            var others = going.Relays.Where(r => r != relay && state.IsOn(r.Channel)).Select(r => r.RelayId).ToList();
+            if (others.Count > 0)
+            {
+                runtime.TargetLevel = place - 1;
+                runtime.StopRelayIds = others;
+                runtime.NextStepAtUtc = null;
+                BackOn(relay, onState, actor, maxOnMinutes, now, runtime, commands);
+                return null;
+            }
+        }
+
+        if (onState.IsOn(relay.Channel))
         {
             // E.g. the fan during its run-on: it stays on, and the stop is called off. A start going on is left alone.
             if (runtime.Phase != GroupPhases.Stopping)
@@ -518,7 +544,7 @@ public static class GroupPlanner
             }
 
             runtime.Phase = GroupPhases.Idle;
-            runtime.TargetLevel = Math.Max(Level(steps, state), place);
+            runtime.TargetLevel = Math.Max(Level(steps, onState), place);
             runtime.NextStepAtUtc = null;
             runtime.StopRelayIds = [];
             ClearPending(runtime);
@@ -531,13 +557,15 @@ public static class GroupPlanner
             KeepsRunning(runtime, actor, maxOnMinutes, now);
         }
 
+        // Its ON, also when the last status still shows it on with its OFF on its way: the ON takes that OFF over, and
+        // is waited for.
         commands.On |= ChannelMask.Of(relay.Channel);
         runtime.Phase = GroupPhases.Idle;
-        runtime.TargetLevel = Math.Max(Level(steps, state), place);
+        runtime.TargetLevel = Math.Max(Level(steps, onState), place);
         runtime.NextStepAtUtc = null;
         runtime.StopRelayIds = [];
         SetPending(runtime, place, relay.RelayId, on: true, now);
-        if (!AnyOn(steps, state) || runtime.OnSinceUtc is null)
+        if (!AnyOn(steps, onState) || runtime.OnSinceUtc is null)
         {
             runtime.OnSinceUtc = now;
             runtime.AutoOffAtUtc = maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null;
@@ -818,6 +846,25 @@ public static class GroupPlanner
         }
 
         throw new ArgumentException("The step isn't in the group.", nameof(step));
+    }
+
+    // A relay of a stop's step brought back while the others still go off: its ON when it is (or may be) off, and the
+    // run is the person's again.
+    private static void BackOn(GroupRelayInfo relay, BoardState onState, string actor, int? maxOnMinutes, DateTime now, GroupRuntime runtime, GroupCommands commands)
+    {
+        if (!onState.IsOn(relay.Channel))
+        {
+            commands.On |= ChannelMask.Of(relay.Channel);
+            commands.Events.Add(new GroupEvent(EventActions.On, relay.RelayId, actor, null));
+        }
+
+        KeepsRunning(runtime, actor, maxOnMinutes, now);
+    }
+
+    // The board's state with these relays off: an OFF for them is on its way.
+    private static BoardState Without(BoardState state, ChannelMask off)
+    {
+        return off.IsEmpty ? state : state with { Relays = state.Relays.Except(off) };
     }
 
     private static ChannelMask Mask(IEnumerable<GroupRelayInfo> relays)

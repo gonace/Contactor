@@ -33,6 +33,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly CancellationTokenSource _ended = new();
     private bool _wasConnected;
+
+    // The relays an OFF was sent for that the board's status doesn't show yet, as of the pass under way. Under _gate.
+    private ChannelMask _offOnItsWay;
     private int _reconnected;
     private int _disposed;
 
@@ -150,7 +153,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 {
                     // A schedule's OffTime is the end of the run it starts; it gets no auto-off.
                     var maxOnMinutes = actor == EventActors.Schedule ? null : group.MaxOnMinutes;
-                    GroupPlanner.Start(steps, state, runtime, actor, maxOnMinutes, now, commands);
+                    GroupPlanner.Start(steps, state, runtime, actor, maxOnMinutes, now, commands, _offOnItsWay);
                 }
 
                 return null;
@@ -215,7 +218,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 refusal = null;
                 if (on)
                 {
-                    refusal = GroupPlanner.MemberOn(steps, state, runtime, position, actor, group.MaxOnMinutes, now, commands) is { } why
+                    refusal = GroupPlanner.MemberOn(steps, state, runtime, position, actor, group.MaxOnMinutes, now, commands, _offOnItsWay) is { } why
                         ? _texts["Groups.Refusal.NeedsOn", why.NeedsOn].Value
                         : null;
                 }
@@ -299,6 +302,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         try
         {
             var state = _board.State;
+
+            // A relay the app sent an OFF for still shows on until the board's status catches up: it counts as off for
+            // what may come on, so a status from before the OFF never lets a relay below it on.
+            _offOnItsWay = ChannelMask.Of(state.Relays.Channels.Where(c => _expected.IsPending(c, on: false)));
             if (!state.IsConnected || Volatile.Read(ref _disposed) == 1)
             {
                 if (request is not null)
@@ -392,7 +399,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 if (commands.IsEmpty)
                 {
-                    GroupPlanner.Plan(steps, state, runtime, now, commands);
+                    GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay);
                 }
 
                 GroupPlanner.GiveOwnerlessAutoOff(steps, state, runtime, group.MaxOnMinutes, now);
