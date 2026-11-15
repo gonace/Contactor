@@ -88,13 +88,15 @@ It needs Docker Desktop. The AppHost starts a VM201 simulator on port 9760, whic
 `host.docker.internal`, and the app as its image, built from the
 `Dockerfile` with cloudflared and Tailscale inside, as on a real installation, on http://localhost:8080; Docker Desktop
 shows its container under `contactor`, and `docker compose ls` lists a running `contactor` project while the AppHost
-runs. This is harmless. What the app keeps is in the Docker volume `contactor-dev`; delete it to start over. A new
-database starts with the setup guide, behind the setup code in the app's log: choose any way in and sign-in there, as
-on a real installation. For quick work on this computer only, `dotnet run --project Contactor.Web` runs the app on its
-own, with a local database file, against the simulator started with `dotnet run --project Contactor.Simulator`. The
-simulator's page, linked from the dashboard, shows the board's relays and every packet, and switches relays as the
-board's own buttons would. Stop and start the simulator in the dashboard to test a lost connection to the board. The
-tests use the same simulator, so no hardware is needed.
+runs. This is harmless. Each run builds the image as `contactor-web:dev`. When the image changed, the build before it
+stays in Docker as an untagged `<none>` image. `docker image prune` removes these, and every other untagged image. What
+the app keeps is in the Docker volume `contactor-dev`; delete it to start over. A new database starts with the setup
+guide, behind the setup code in the app's log: choose any way in and sign-in there, as on a real installation. For quick
+work on this computer only, `dotnet run --project Contactor.Web` runs the app on its own, with a local database file,
+against the simulator started with `dotnet run --project Contactor.Simulator`. The simulator's page, linked from the
+dashboard, shows the board's relays and every packet, and switches relays as the board's own buttons would. Stop and
+start the simulator in the dashboard to test a lost connection to the board. The tests use the same simulator, so no
+hardware is needed.
 
 The public demo, where each visitor gets their own copy of the app and the simulator side by side, is
 `Contactor.Demo`: the AppHost runs it as `contactor-demo` on http://localhost:5070, linked from the dashboard, with
