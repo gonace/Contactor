@@ -3,7 +3,9 @@ using Contactor.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Groups;
 
@@ -26,13 +28,6 @@ public sealed record GroupMemberDraft(
 public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null, int BoardId = 0)
 {
     public bool IsFree => GroupName is null && !HasSchedules && InputName is null;
-
-    /// <summary>"Free", "Inactive · free", "Already in Painting", "Has its own schedules" or "Controlled by Door".</summary>
-    public string Note => GroupName is not null ? $"Already in {GroupName}"
-        : HasSchedules ? "Has its own schedules"
-        : InputName is not null ? $"Controlled by {InputName}"
-        : IsActive ? "Free"
-        : "Inactive · free";
 }
 
 /// <summary>
@@ -44,11 +39,6 @@ public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool 
 /// </summary>
 public sealed class GroupsHandler
 {
-    /// <summary>
-    /// What "Which relays?" says under the other boards once a relay is picked: their relays can't join the group.
-    /// </summary>
-    public const string OneBoardText = "A group's relays are all on one board.";
-
     /// <summary>The run-on times the screens offer, in seconds: none, 1, 3, 5, 10 and 15 min.</summary>
     public static readonly IReadOnlyList<int> RunOnChoices = [0, 60, 180, 300, 600, 900];
 
@@ -60,14 +50,17 @@ public sealed class GroupsHandler
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
+    private readonly IStringLocalizer<GroupsTexts> _texts;
 
     public GroupsHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
         BoardRegistry registry,
         LocalClock clock,
         RelayChanges changes,
-        GroupSequencer sequencer)
+        GroupSequencer sequencer,
+        IStringLocalizer<GroupsTexts> texts)
     {
+        _texts = texts;
         _dbFactory = dbFactory;
         _registry = registry;
         _clock = clock;
@@ -241,7 +234,7 @@ public sealed class GroupsHandler
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         if (await BoardOfAsync(groupId, cancellationToken) is not { } boardId)
         {
-            return "The group no longer exists.";
+            return _texts["Groups.Gone"];
         }
 
         return await _sequencer.ExclusiveAsync(boardId, () => SaveCoreAsync(groupId, draft, userEmail, cancellationToken), cancellationToken);
@@ -260,7 +253,7 @@ public sealed class GroupsHandler
         var group = await db.RelayGroups.Include(g => g.Members).SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
         if (group is null)
         {
-            return "The group no longer exists.";
+            return _texts["Groups.Gone"];
         }
 
         // Checked inside the transaction, as when creating one.
@@ -279,7 +272,7 @@ public sealed class GroupsHandler
             var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
             if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.BoardId, before.Concat(after), relays) is not null)
             {
-                return "Turn off the group, and the relays you add, before you change its relays or their order.";
+                return _texts["Groups.Save.TurnOffFirst"];
             }
 
             // Replaced in two saves: the unique position per group would clash while rows move.
@@ -337,7 +330,7 @@ public sealed class GroupsHandler
         var runtime = await db.GroupRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.GroupId == groupId, cancellationToken);
         if ((runtime is not null && runtime.Phase != GroupPhases.Idle) || AllOff(group.BoardId, group.Members.Select(m => m.RelayId), relays) is not null)
         {
-            return "Turn off the group before deleting it.";
+            return _texts["Groups.Delete.TurnOffFirst"];
         }
 
         db.RelayGroups.Remove(group);
@@ -347,7 +340,7 @@ public sealed class GroupsHandler
         return null;
     }
 
-    private static async Task<string?> ValidateAsync(
+    private async Task<string?> ValidateAsync(
         ContactorDbContext db,
         GroupDraft draft,
         Dictionary<int, Relay> relays,
@@ -358,67 +351,67 @@ public sealed class GroupsHandler
         var name = draft.Name?.Trim() ?? "";
         if (name.Length == 0)
         {
-            return "Give the group a name.";
+            return _texts["Groups.Save.Name"];
         }
 
         if (name.Length > RelayGroup.NameMaxLength)
         {
-            return $"The name can be at most {RelayGroup.NameMaxLength} characters.";
+            return _texts["Groups.Save.NameTooLong", RelayGroup.NameMaxLength];
         }
 
         if (!GroupIcons.All.Contains(draft.Icon))
         {
-            return "Choose an icon.";
+            return _texts["Groups.Save.Icon"];
         }
 
         if (!RelaySettingsHandler.Limits.Contains(draft.MaxOnMinutes))
         {
-            return "Choose how long the group may stay on.";
+            return _texts["Groups.Save.Limit"];
         }
 
         if (draft.Members is null || draft.Members.Count < RelayGroup.MinMembers)
         {
-            return $"Choose at least {RelayGroup.MinMembers} relays.";
+            return _texts["Groups.Save.TooFew", RelayGroup.MinMembers];
         }
 
         // More members than the board has relays means a repeat or a relay that isn't there; both are caught here or below.
         if (draft.Members.Select(m => m.RelayId).Distinct().Count() != draft.Members.Count)
         {
-            return "A relay can only be in the group once.";
+            return _texts["Groups.Save.Twice"];
         }
 
         foreach (var member in draft.Members)
         {
             if (!relays.TryGetValue(member.RelayId, out var relay))
             {
-                return "That relay doesn't exist.";
+                return _texts["Groups.Save.NoRelay"];
             }
 
             // One board: the group's order and interlock are checked on each of its board's statuses, and the board
             // switches them; relays on two boards can't be kept in order (across boards is issue #204).
             if (relay.BoardId != boardId)
             {
-                return "All the relays of a group must be on one board.";
+                return _texts["Groups.Save.OneBoard"];
             }
 
             if ((member.RoleName?.Trim().Length ?? 0) > RelayGroupMember.RoleNameMaxLength)
             {
-                return $"The name in the group can be at most {RelayGroupMember.RoleNameMaxLength} characters.";
+                return _texts["Groups.Save.RoleTooLong", RelayGroupMember.RoleNameMaxLength];
             }
 
             if (member.StartDelaySec is < RelayGroupMember.MinStartDelaySec or > RelayGroupMember.MaxStartDelaySec)
             {
-                return $"The wait on start is {RelayGroupMember.MinStartDelaySec}–{RelayGroupMember.MaxStartDelaySec} seconds.";
+                return _texts["Groups.Save.Wait", RelayGroupMember.MinStartDelaySec, RelayGroupMember.MaxStartDelaySec];
             }
 
             if (member.RunOnSec is < 0 or > RelayGroupMember.MaxRunOnSec)
             {
-                return $"The run-on can be at most {RelayGroupMember.MaxRunOnSec / 60} minutes.";
+                return _texts["Groups.Save.RunOn", RelayGroupMember.MaxRunOnSec / 60];
             }
 
             if (await db.Schedules.AnyAsync(s => s.RelayId == member.RelayId, cancellationToken))
             {
-                return $"{relay.Name} has its own schedules. Delete them first.";
+                return _texts["Groups.Save.HasSchedules", relay.Name];
             }
 
             var input = await db.InputActions
@@ -427,7 +420,7 @@ public sealed class GroupsHandler
                 .FirstOrDefaultAsync(cancellationToken);
             if (input is not null)
             {
-                return $"{relay.Name} is controlled by the input {input}. Remove it there first.";
+                return _texts["Groups.Save.Controlled", relay.Name, input];
             }
         }
 
@@ -436,7 +429,7 @@ public sealed class GroupsHandler
             .Where(m => ids.Contains(m.RelayId) && m.GroupId != groupId)
             .Select(m => new { m.RelayId, Group = m.Group!.Name })
             .FirstOrDefaultAsync(cancellationToken);
-        return taken is null ? null : $"{relays[taken.RelayId].Name} is already in {taken.Group}.";
+        return taken is null ? null : _texts["Groups.Save.InGroup", relays[taken.RelayId].Name, taken.Group].Value;
     }
 
     // The group's board must say each relay is off: a group never starts with a relay running outside its order.
@@ -445,12 +438,12 @@ public sealed class GroupsHandler
         var state = boardId is { } id ? _registry.Find(id)?.State : null;
         if (state is not { IsConnected: true })
         {
-            return "No contact with the relay board. It's needed to see that the relays are off.";
+            return _texts["Groups.Save.NoContact"];
         }
 
         // By channel on the group's board; a relay the board doesn't have can't be on, and the relays are all on it.
         var on = relayIds.Distinct().Select(relays.GetValueOrDefault).FirstOrDefault(r => r is not null && r.BoardId == boardId && state.IsOn(r.Channel));
-        return on is null ? null : $"Turn off {on.Name} first.";
+        return on is null ? null : _texts["Groups.Save.RelayOn", on.Name].Value;
     }
 
     private static void AddMembers(RelayGroup group, GroupDraft draft, Dictionary<int, Relay> relays)

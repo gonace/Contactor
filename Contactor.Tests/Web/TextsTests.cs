@@ -140,6 +140,7 @@ public sealed partial class TextsTests
         var code = """
             @Common["Common.Save"] @Common["Common.Missing_Key"] @Common.Plural("Common.Relays", 2) @Common["Common.Relays_Other"]
             "Other.Thing" "Common.Gone"
+            /// <see cref="Common.Elsewhere"/> <param name="Common.Param">
             """;
 
         var (count, missing) = MissingKeys([("Page.razor", code)], english);
@@ -264,7 +265,8 @@ public sealed partial class TextsTests
     /// </summary>
     private static (int Count, List<string> Missing) MissingKeys(IEnumerable<(string Name, string Text)> files, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> english)
     {
-        var used = new Regex($"\"((?:{string.Join('|', english.Keys)})\\.[A-Za-z0-9._]+)\"");
+        // Not a name in a doc comment, e.g. <see cref="Groups.GroupsHandler"/>.
+        var used = new Regex($"(?<!(?:cref|name)=)\"((?:{string.Join('|', english.Keys)})\\.[A-Za-z0-9._]+)\"");
         var missing = new List<string>();
         var count = 0;
         foreach (var (name, text) in files)

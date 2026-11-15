@@ -204,8 +204,8 @@ public sealed class GroupSequencerTests
 
         Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], relays.Select(r => r.RelayId));
         Assert.Equal([3, 5, 6, 7, 8], relays.Where(r => r.IsFree).Select(r => r.RelayId));
-        Assert.Equal("Already in Fan heater – Lathe", relays[0].Note);
-        Assert.Equal("Has its own schedules", relays[3].Note);
+        Assert.Equal("Already in Fan heater – Lathe", TestTexts.GroupPlan.Note(relays[0]));
+        Assert.Equal("Has its own schedules", TestTexts.GroupPlan.Note(relays[3]));
     }
 
     [Fact]

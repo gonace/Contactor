@@ -18,13 +18,13 @@ public sealed class GroupNewTests
     [Fact]
     public void Should_DescribeTheStartFromTheTop_WithTheWaits()
     {
-        Assert.Equal("Fan → wait 10 s → Heat → wait 1 s → Lamp", GroupPlanText.Start(FanHeater));
+        Assert.Equal("Fan → wait 10 s → Heat → wait 1 s → Lamp", TestTexts.GroupPlan.Start(FanHeater));
     }
 
     [Fact]
     public void Should_DescribeTheStopFromTheBottom_WithTheRunOn()
     {
-        Assert.Equal("Lamp off → Heat off → Fan keeps running for 5 min, then off", GroupPlanText.Stop(FanHeater));
+        Assert.Equal("Lamp off → Heat off → Fan keeps running for 5 min, then off", TestTexts.GroupPlan.Stop(FanHeater));
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class GroupNewTests
     {
         Assert.Equal(
             "Heat can only be on while Fan is on. Lamp can only be on while Heat is on.",
-            GroupPlanText.Interlock(FanHeater));
+            TestTexts.GroupPlan.Interlock(FanHeater));
     }
 
     [Theory]
@@ -44,7 +44,7 @@ public sealed class GroupNewTests
     {
         var relay = new GroupCandidate(4, 4, "Relay 4", isActive, group, hasSchedules);
 
-        Assert.Equal((note, isFree), (relay.Note, relay.IsFree));
+        Assert.Equal((note, isFree), (TestTexts.GroupPlan.Note(relay), relay.IsFree));
     }
 
     [Fact]
