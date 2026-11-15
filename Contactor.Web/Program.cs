@@ -72,6 +72,7 @@ public sealed partial class Program
 
         var app = builder.Build();
         LogBuild(app.Logger, AppBuild.Current.Version, AppBuild.Current.Commit ?? "unknown");
+        app.CheckForwardedHeadersOff();
         app.Services.InitializeDatabaseAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
         app.Services.GetRequiredService<AccessChoice>().ApplySavedAsync(CancellationToken.None).GetAwaiter().GetResult();
