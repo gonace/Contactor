@@ -3,7 +3,9 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Setup;
+using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -118,16 +120,38 @@ public sealed class ThisNetworkTests
     [InlineData("::ffff:192.168.1.5")]
     [InlineData("fd12:3456::1")]
     [InlineData("fe80::1")]
-    [InlineData(null)]
-    public async Task Should_LetInARequestFromThisNetwork_OnlyOnThisNetwork(string? address)
+    public async Task Should_LetInARequestFromThisNetwork_OnlyOnThisNetwork(string address)
     {
-        await using var app = OnlyOnThisNetwork(address is null ? null : IPAddress.Parse(address));
+        await using var app = OnlyOnThisNetwork(IPAddress.Parse(address));
         using var http = app.CreateClient();
 
         using var response = await http.GetAsync("/", Cancel);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("Hi Someone", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+    }
+
+    // No address says nothing about where it came from, as for ThisMachine.
+    [Fact]
+    public async Task Should_RefuseARequestWithoutAnAddress_OnlyOnThisNetwork()
+    {
+        await using var app = OnlyOnThisNetwork(remote: null);
+        using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        using var response = await http.GetAsync("/", Cancel);
+
+        await AssertRefusedAsync(response);
+    }
+
+    [Fact]
+    public async Task Should_RefuseTheSetupCodesPage_WithoutAnAddress()
+    {
+        await using var app = new TestWebApp("Production", setUp: false) { RemoteAddress = null };
+        using var http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        using var page = await http.GetAsync(SetupMode.CodePath, Cancel);
+
+        await AssertRefusedAsync(page);
     }
 
     // Only the connection's own address counts: anyone can write these headers.
@@ -206,6 +230,33 @@ public sealed class ThisNetworkTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.DoesNotContain(ThisNetwork.Refusal, await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+    }
+
+    // Tailscale with its sign-in chosen: the check doesn't refuse it, Tailscale identity decides. Tailscale's identity
+    // stands in here, and tailscaled isn't started.
+    [Theory]
+    [InlineData(Public)]
+    [InlineData("2001:db8::1")]
+    public async Task Should_LeaveTailscale_ToItsSignIn(string address)
+    {
+        await using var app = new TestWebApp(
+            "Production",
+            configureServices: services =>
+            {
+                services.AddKeyedSingleton<ISignInMethod>(TailscaleMethods.IdentityId, new FixedSignIn("alice@example.com"));
+                foreach (var hosted in services.Where(d => d.ImplementationType == typeof(AccessHostedService)).ToList())
+                {
+                    services.Remove(hosted);
+                }
+            },
+            setUp: false) { RemoteAddress = IPAddress.Parse(address) };
+        app.SaveBeforeStart(new Installation { SetupDoneUtc = DateTime.UtcNow, AccessType = "tailscale", SignInType = "tailscale-identity" }, boardType: "vm201");
+        using var http = app.CreateClient();
+
+        using var response = await http.GetAsync("/", Cancel);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Hi Alice", await response.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     // Production Cloudflare without a token: denied by the sign-in, not by this check.
@@ -302,6 +353,19 @@ public sealed class ThisNetworkTests
         Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
         Assert.Equal(ThisNetwork.Refusal, await response.Content.ReadAsStringAsync(Cancel));
         Assert.False(response.Headers.Contains("Set-Cookie"));
+    }
+
+    // Signs every request in as one person, in a sign-in's place.
+    private sealed class FixedSignIn : ISignInMethod
+    {
+        private readonly string _email;
+
+        public FixedSignIn(string email)
+        {
+            _email = email;
+        }
+
+        public Task<string?> AuthenticateAsync(HttpContext context) => Task.FromResult<string?>(_email);
     }
 
     // A clock that stands still until the test moves it; timers run on the real one.

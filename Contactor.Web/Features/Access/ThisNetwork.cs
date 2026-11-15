@@ -22,12 +22,12 @@ public static class ThisNetwork
 
     /// <summary>
     /// Whether the request came from this network. Only the connection's own address counts: forwarded headers are
-    /// never believed. No address (hosted in the same process, with no network between) is let through.
+    /// never believed. A request without an address is refused, as <see cref="ThisMachine"/> refuses it.
     /// </summary>
     public static bool Asked(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return context.Connection.RemoteIpAddress is not { } remote || Contains(remote);
+        return context.Connection.RemoteIpAddress is { } remote && Contains(remote);
     }
 
     /// <summary>
