@@ -68,7 +68,7 @@ public sealed class InputActionsTests
             return Task.CompletedTask;
         };
 
-        await rig.RunAsync(closed: true, caller.Token);
+        await rig.RunAsAtShutdownAsync(closed: true, caller.Token);
 
         Assert.True(rig.Board.State.Relays.Contains(1));
         Assert.Equal([(1, Door, EventActions.On)], (await rig.EventsAsync()).Select(e => (e.RelayId ?? 0, e.Actor, e.Action)));
@@ -478,12 +478,13 @@ public sealed class InputActionsTests
 
         public async Task RunAsync(bool closed)
         {
-            await RunAsync(closed, Cancel);
+            await Service.RunAsync(new InputChanged(1, closed), Cancel);
         }
 
-        public async Task RunAsync(bool closed, CancellationToken cancellationToken)
+        // As the input's service runs it, with its own token, e.g. one cancelled at shutdown.
+        public async Task RunAsAtShutdownAsync(bool closed, CancellationToken stoppingToken)
         {
-            await Service.RunAsync(new InputChanged(1, closed), cancellationToken);
+            await Service.RunAsync(new InputChanged(1, closed), stoppingToken);
         }
 
         // Either through the handler, as "New group" does, or straight into the database (check: false), as for a
