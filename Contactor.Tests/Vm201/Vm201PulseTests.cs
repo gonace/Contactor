@@ -143,10 +143,11 @@ public sealed class Vm201PulseTests
         await run.Client.PulseAsync(0x01, TimeSpan.FromMinutes(5), Cancel);
         await Wait.UntilAsync(() => time.Waits(TimeSpan.FromMinutes(5)));
 
+        // The board's own outputs: the client's status can still show the pulse's ON while the OFF is already done.
         await run.Client.TurnOffAsync(0x01, Cancel);
-        await Wait.UntilAsync(() => simulator.Pulsing == ChannelMask.None);
+        await Wait.UntilAsync(() => simulator.Pulsing == ChannelMask.None && simulator.Outputs == 0);
         await run.Client.TurnOnAsync(0x01, Cancel);
-        await Wait.UntilAsync(() => run.Client.State.Outputs == 0x01);
+        await Wait.UntilAsync(() => simulator.Outputs == 0x01);
         time.Advance(TimeSpan.FromMinutes(5));
 
         Assert.Equal(0x01, simulator.Outputs);
