@@ -436,7 +436,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     _expected.Forget(all.On, on: true);
 
                     // The OFF went out: it is recorded, also when the caller cancelled before the ON.
-                    if ((ex is BoardNotConnectedException or OperationCanceledException) && !all.Off.IsEmpty)
+                    if ((ex is BoardNotConnectedException || (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)) && !all.Off.IsEmpty)
                     {
                         await SaveAsync(db, events, now, CancellationToken.None);
                         RememberShutOffs(shutOff);

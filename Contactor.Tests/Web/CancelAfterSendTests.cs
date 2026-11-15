@@ -245,6 +245,121 @@ public sealed class CancelAfterSendTests : IAsyncLifetime
         Assert.True(_board.State.IsOn(3));
     }
 
+    // The next relay's OFF doesn't go out once the caller cancelled; the one that went out is recorded.
+    [Fact]
+    public async Task Should_RecordTheScheduleOffsThatWentOut_WhenTheCallerCancelsBeforeTheNext()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await AddScheduleAsync(relayId: 3);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OffTime;
+        CancelAfterTheNextSwitch();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Scheduler.TickAsync(_caller.Token));
+
+        Assert.Equal((false, true), (_board.State.IsOn(2), _board.State.IsOn(3)));
+        Assert.Null((await RunAsync(2)).OnSinceUtc);
+        Assert.Equal(EventActors.Schedule, (await RunAsync(3)).TurnedOnBy);
+        Assert.Equal(
+            [(2, EventActors.Schedule, EventActions.On), (3, EventActors.Schedule, EventActions.On), (2, EventActors.Schedule, EventActions.Off)],
+            await EventsAsync());
+        Assert.False(_database.Services.Live().Expected.IsPending(3, on: false));
+
+        // The next tick, without a cancel, turns the other relay off.
+        await Scheduler.TickAsync(Cancel);
+        Assert.False(_board.State.IsOn(3));
+    }
+
+    // A relay's ON went out, then the caller cancels while the groups' part of the tick runs, after the group's own ON
+    // went out: both are recorded, and the minute is done again without switching or logging anything twice.
+    [Fact]
+    public async Task Should_RecordTheRelayAndTheGroup_WhenTheCallerCancelsDuringTheGroups()
+    {
+        await AddScheduleAsync(relayId: 4);
+        var groupId = await AddGroupAsync((1, "Fan"), (2, "Heat"));
+        await AddScheduleAsync(relayId: null, groupId);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        var switches = 0;
+        _board.AfterSwitch = () =>
+        {
+            if (++switches == 2)
+            {
+                _board.AfterSwitch = null;
+                _caller.Cancel();
+            }
+
+            return Task.CompletedTask;
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Scheduler.TickAsync(_caller.Token));
+
+        Assert.Equal((true, true), (_board.State.IsOn(4), _board.State.IsOn(1)));
+        Assert.Equal(EventActors.Schedule, (await RunAsync(4)).TurnedOnBy);
+        Assert.Equal((GroupPhases.Starting, EventActors.Schedule), ((await GroupRunAsync(groupId)).Phase, (await GroupRunAsync(groupId)).TurnedOnBy));
+        var events = await EventsAsync();
+        Assert.Contains((4, EventActors.Schedule, EventActions.On), events);
+        Assert.Contains((0, EventActors.Schedule, EventActions.GroupOn), events);
+
+        var sent = _board.Sent.Count;
+        await Scheduler.TickAsync(Cancel);
+        Assert.Equal(sent, _board.Sent.Count);
+        Assert.Equal(events, await EventsAsync());
+    }
+
+    // A token cancelled before anything went out: nothing is sent, logged or expected.
+    [Fact]
+    public async Task Should_DoNothing_WhenAnOnIsCancelledBeforeItGoesOut()
+    {
+        await _caller.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Control.TurnOnAsync(3, Jane, _caller.Token));
+
+        await AssertUntouchedAsync(3);
+    }
+
+    [Fact]
+    public async Task Should_DoNothing_WhenAScheduleTickIsCancelledBeforeItsOn()
+    {
+        await AddScheduleAsync(relayId: 2);
+        await Scheduler.TickAsync(Cancel);
+        _time.Now = OnTime;
+        await _caller.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Scheduler.TickAsync(_caller.Token));
+
+        await AssertUntouchedAsync(2);
+    }
+
+    [Fact]
+    public async Task Should_DoNothing_WhenAnAutoOffIsCancelledBeforeItsOff()
+    {
+        await Control.TurnOnAsync(3, Jane, Cancel);
+        _time.Now += TimeSpan.FromMinutes(Relay.DefaultMaxOnMinutes);
+        await _caller.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => AutoOff.CheckAsync(_caller.Token));
+
+        Assert.True(_board.State.IsOn(3));
+        Assert.Single(_board.Sent);
+        Assert.Equal([(3, Jane, EventActions.On)], await EventsAsync());
+        Assert.False(_database.Services.Live().Expected.IsPending(3, on: false));
+        Assert.Equal(Jane, (await RunAsync(3)).TurnedOnBy);
+    }
+
+    // The board got no command, nothing is logged, no change is expected and the relay has no run.
+    private async Task AssertUntouchedAsync(int relayId)
+    {
+        Assert.False(_board.State.IsOn(relayId));
+        Assert.Empty(_board.Sent);
+        Assert.Empty(await EventsAsync());
+        Assert.False(_database.Services.Live().Expected.IsPending(relayId, on: true));
+        await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Null((await db.RelayRuntimes.AsNoTracking().SingleOrDefaultAsync(r => r.RelayId == relayId, Cancel))?.OnSinceUtc);
+    }
+
     // 14:05 and 14:10 local on the test's day; it starts at 14:02.
     private static DateTimeOffset OnTime => new(2026, 11, 4, 13, 5, 0, TimeSpan.Zero);
 
@@ -280,12 +395,13 @@ public sealed class CancelAfterSendTests : IAsyncLifetime
         return [.. (await db.EventLog.AsNoTracking().OrderBy(e => e.Id).ToListAsync(Cancel)).Select(e => (e.RelayId ?? 0, e.Actor, e.Action))];
     }
 
-    private async Task AddScheduleAsync(int relayId)
+    private async Task AddScheduleAsync(int? relayId, int? groupId = null)
     {
         await using var db = await _database.Factory.CreateDbContextAsync(Cancel);
         db.Schedules.Add(new Schedule
         {
             RelayId = relayId,
+            GroupId = groupId,
             Days = ScheduleDays.All,
             OnTime = new TimeOnly(14, 5),
             OffTime = new TimeOnly(14, 10),
