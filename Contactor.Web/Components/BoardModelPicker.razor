@@ -1,22 +1,24 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Setup
+@using Contactor.Web.Features.Languages
+@inject IStringLocalizer<BoardsTexts> Texts
 
 @* "Which relay board?": "Brand", then "Model". Each field opens a list from the bottom of the screen on a phone, and a
    dropdown under the field on a tablet or desktop. Shared by the setup guide (the first board) and "Add a board"
    (BoardNew). While a list is open, everything but the list and its field takes no focus or clicks: the page around it
    is told through OpenChanged. *@
 <div class="intro" inert="@(_sheet != Sheet.None)">
-    <h1 tabindex="-1" @ref="_heading">Which relay board?</h1>
-    <p>Choose the brand first, then the model. Both are printed on the board.</p>
+    <h1 tabindex="-1" @ref="_heading">@Texts["Boards.Model.Title"]</h1>
+    <p>@Texts["Boards.Model.Intro"]</p>
 </div>
 <div class="field" inert="@(_sheet == Sheet.Model)" @onkeydown="OnSheetKey">
-    <span class="field-label" id="brand-label">Brand</span>
+    <span class="field-label" id="brand-label">@Texts["Boards.Model.Brand"]</span>
     <button type="button" class="select @(_sheet == Sheet.Brand ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Brand ? "true" : "false")"
             aria-labelledby="brand-label brand-value" @ref="_brandField" @onclick="() => OpenAsync(Sheet.Brand)">
         <span class="select-text" id="brand-value">
             @if (_brand is null)
             {
-                <span class="placeholder">Choose the brand</span>
+                <span class="placeholder">@Texts["Boards.Model.ChooseBrand"]</span>
             }
             else
             {
@@ -31,7 +33,7 @@
     }
 </div>
 <div class="field" inert="@(_sheet == Sheet.Brand)" @onkeydown="OnSheetKey">
-    <span class="field-label" id="model-label">Model</span>
+    <span class="field-label" id="model-label">@Texts["Boards.Model.Model"]</span>
     <button type="button" class="select @(_sheet == Sheet.Model ? "open" : null)" aria-haspopup="dialog" aria-expanded="@(_sheet == Sheet.Model ? "true" : "false")"
             aria-labelledby="model-label model-value" disabled="@(_brand is null)" @ref="_modelField" @onclick="() => OpenAsync(Sheet.Model)">
         <span class="select-text" id="model-value">
@@ -42,7 +44,7 @@
             }
             else
             {
-                <span class="placeholder">@(_brand is null ? "Choose the brand first" : "Choose the model")</span>
+                <span class="placeholder">@Texts[_brand is null ? "Boards.Model.BrandFirst" : "Boards.Model.ChooseModel"]</span>
             }
         </span>
         <svg class="chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
@@ -56,7 +58,7 @@
 {
     <div class="more" inert="@(_sheet != Sheet.None)">@ChildContent</div>
 }
-<p class="hint" inert="@(_sheet != Sheet.None)">Not on the list? Contactor only lists the boards it can switch.</p>
+<p class="hint" inert="@(_sheet != Sheet.None)">@Texts["Boards.Model.NotListed"]</p>
 
 @code {
     /// <summary>The chosen model's catalogue id; empty while none is chosen.</summary>
@@ -125,7 +127,7 @@
         <div class="sheet-backdrop" @onclick="CloseAsync"></div>
         <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
             <span class="grab" aria-hidden="true"></span>
-            <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Brand ? "Brand" : $"{_brand} model")</h2>
+            <h2 id="sheet-title" tabindex="-1" @ref="_sheetTitle">@(_sheet == Sheet.Brand ? Texts["Boards.Model.Brand"] : Texts["Boards.Model.BrandModels", _brand ?? ""])</h2>
             <div class="sheet-options">
                 @if (_sheet == Sheet.Brand)
                 {
@@ -135,7 +137,7 @@
                         <button type="button" class="sheet-option @(name == _brand ? "chosen" : null)" value="@name" aria-current="@(name == _brand ? "true" : null)" @onclick="() => ChooseBrandAsync(name)">
                             <span class="option-text">
                                 <span class="name">@name</span>
-                                <span class="note">@(brand.Models.Count == 1 ? "1 model" : $"{brand.Models.Count} models")</span>
+                                <span class="note">@Texts.Plural("Boards.Model.Count", brand.Models.Count)</span>
                             </span>
                             @if (name == _brand)
                             {

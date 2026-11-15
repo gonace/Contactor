@@ -16,6 +16,8 @@ public static class BoardsServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<BoardRegistry>();
         services.AddSingleton<BoardChoice>();
+        // The boards' messages. AddLanguages also adds the localization; adding it twice is harmless.
+        services.AddLocalization();
         services.AddSingleton<BoardAddressHandler>();
         services.AddSingleton<BoardRemoval>();
         services.AddSingleton<BoardTrafficSetting>();

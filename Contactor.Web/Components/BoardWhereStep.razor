@@ -4,38 +4,40 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Setup
+@using Contactor.Web.Features.Languages
 @inject BoardAddressHandler Address
 @inject BoardRegistry Registry
 @inject TimeProvider Time
 @inject LocalClock Clock
 @inject ILogger<BoardWhereStep> Log
+@inject IStringLocalizer<BoardsTexts> Texts
 
 @* "Where is the board?": its address, port and login, saved through BoardAddressHandler; "Next" waits up to 10 s for
    the board (BoardContact). Shared by the setup guide (the first board) and "Add a board" (BoardNew); the page has the
    buttons and calls GoOnAsync or GoOnWithoutConnectionAsync. What is typed lives in Fields, which the page keeps, so it
    is still there after "Back". *@
 <div class="intro">
-    <h1 tabindex="-1" @ref="_heading">Where is the board?</h1>
-    <p>@Model.Name · its address on your network.</p>
+    <h1 tabindex="-1" @ref="_heading">@Texts["Boards.Where.Title"]</h1>
+    <p>@Texts["Boards.Where.Intro", Model.Name]</p>
 </div>
 <div class="fields">
     <div class="field">
-        <label for="host">Address</label>
+        <label for="host">@Texts["Boards.Address"]</label>
         <input id="host" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"
                maxlength="@Persistence.Board.HostMaxLength" placeholder="192.168.1.50" @bind="Values.Host" @bind:event="oninput" />
     </div>
     <div class="field port">
-        <label for="port">Port</label>
+        <label for="port">@Texts["Boards.Port"]</label>
         <input id="port" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="@Model.DefaultPort" @bind="Values.Port" @bind:event="oninput" />
     </div>
 </div>
-<p class="hint">Your router lists the board among its connected devices. Leave the port empty unless you changed it on the board.</p>
+<p class="hint">@Texts["Boards.Where.Hint"]</p>
 
 @if (Model.HasLogin)
 {
     <label for="no-login" class="check">
         <input id="no-login" type="checkbox" @bind="Values.NoLogin" />
-        <span>@(Model.PasswordOnly ? "The board has no password" : "The board has no login")</span>
+        <span>@Texts[Model.PasswordOnly ? "Boards.NoPassword" : "Boards.NoLogin"]</span>
     </label>
     @if (!Values.NoLogin)
     {
@@ -43,19 +45,19 @@
             @if (!Model.PasswordOnly)
             {
                 <div class="field">
-                    <label for="username">User name</label>
+                    <label for="username">@Texts["Boards.UserName"]</label>
                     <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
                            maxlength="@Model.LoginMaxLength" @bind="Values.Username" @bind:event="oninput" />
                 </div>
             }
             <div class="field">
-                <label for="password">Password</label>
+                <label for="password">@Texts["Boards.Password"]</label>
                 <input id="password" type="password" autocomplete="new-password"
-                       maxlength="@Model.LoginMaxLength" placeholder="@(Values.HasPassword ? "unchanged" : "none")"
+                       maxlength="@Model.LoginMaxLength" placeholder="@Texts[Values.HasPassword ? "Boards.Password.Unchanged" : "Boards.Password.None"]"
                        @bind="Values.NewPassword" @bind:event="oninput" />
             </div>
         </div>
-        <p class="hint">@(Model.PasswordOnly ? Model.LoginHint : $"The same as on the board's own web page. {Model.LoginHint ?? $"At most {Model.LoginMaxLength} characters."}")</p>
+        <p class="hint">@(Model.PasswordOnly ? Model.LoginHint : Texts["Boards.Login.Hint", Model.LoginHint ?? Texts["Boards.Login.MaxLength", Model.LoginMaxLength].Value])</p>
     }
 }
 
@@ -63,14 +65,14 @@
 {
     <div class="board-status" role="status">
         <span class="dot waiting" aria-hidden="true"></span>
-        <span class="status-text"><strong>Looking for the board</strong><span>at @Board.Endpoint</span></span>
+        <span class="status-text"><strong>@Texts["Boards.Where.Looking"]</strong><span>@Texts["Boards.Where.At", Board.Endpoint]</span></span>
     </div>
 }
 else if (_notFound)
 {
     <div class="not-found" role="alert">
-        <span>No answer from @Board.Endpoint. Check that the board has power and a network cable, and that the address is right.</span>
-        <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">Check again</button>
+        <span>@Texts["Boards.Where.NoAnswer", Board.Endpoint]</span>
+        <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">@Texts["Boards.Where.CheckAgain"]</button>
     </div>
 }
 else if (Board.State.IsConnected && Board.Endpoint.HasHost)
@@ -78,14 +80,27 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
     <div class="board-status" role="status">
         <span class="dot" aria-hidden="true"></span>
         <span class="status-text">
-            <strong>Board online</strong>
-            <span>Found @Board.Capabilities.RelayCount @(Board.Capabilities.RelayCount == 1 ? "relay" : "relays") at @Board.Endpoint@(Values.CheckedAt is { } at ? $" · checked {at.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}" : "")</span>
+            <strong>@Texts["Boards.Where.Online"]</strong>
+            <span>@FoundText</span>
         </span>
-        <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">Check again</button>
+        <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">@Texts["Boards.Where.CheckAgain"]</button>
     </div>
 }
 
 @code {
+    // "Found 8 relays at 192.168.1.50:9760 · checked 14:02:31": the time with seconds, always with ":".
+    private string FoundText
+    {
+        get
+        {
+            var count = Board.Capabilities.RelayCount;
+            var found = Texts["Boards.Where.Found" + Plurals.Form(count), count, Board.Endpoint];
+            return Values.CheckedAt is { } at
+                ? Texts["Boards.Where.Checked", found, at.ToString("HH:mm:ss", CultureInfo.InvariantCulture)]
+                : found;
+        }
+    }
+
     /// <summary>The board the address is for; it must have a model.</summary>
     [Parameter]
     [EditorRequired]
@@ -246,7 +261,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
         var port = Model.DefaultPort;
         if (Values.Port.Trim().Length > 0 && !int.TryParse(Values.Port.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out port))
         {
-            await ErrorChanged.InvokeAsync("The port is a number from 1 to 65535.");
+            await ErrorChanged.InvokeAsync(Address.EndpointError(BoardEndpointError.BadPort, null));
             return false;
         }
 
@@ -275,7 +290,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
     {
         // An exception that leaves the handler would end the page's live connection.
         Log.LogError(ex, "{What}", what);
-        await ErrorChanged.InvokeAsync("Something went wrong. Try again.");
+        await ErrorChanged.InvokeAsync(Common["Common.SomethingWrongTryAgain"]);
     }
 
     // From the board's read loop.

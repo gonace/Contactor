@@ -3,7 +3,9 @@ using Contactor.Boards;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Boards;
 
@@ -36,9 +38,6 @@ public sealed partial class BoardRemoval : IDisposable
     /// <summary>How often the board's relays are looked at meanwhile.</summary>
     public static readonly TimeSpan OffCheck = TimeSpan.FromMilliseconds(500);
 
-    /// <summary>What removing says when someone else removed the board first.</summary>
-    public const string AlreadyRemoved = "This relay board was removed already.";
-
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardRegistry _registry;
     private readonly RelayControl _control;
@@ -47,6 +46,7 @@ public sealed partial class BoardRemoval : IDisposable
     private readonly LocalClock _clock;
     private readonly TimeProvider _time;
     private readonly ILogger<BoardRemoval> _logger;
+    private readonly IStringLocalizer<BoardsTexts> _texts;
 
     // One removal at a time: a failed one's restore can't meet another's.
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -59,8 +59,10 @@ public sealed partial class BoardRemoval : IDisposable
         RelayChanges changes,
         LocalClock clock,
         TimeProvider time,
-        ILogger<BoardRemoval> logger)
+        ILogger<BoardRemoval> logger,
+        IStringLocalizer<BoardsTexts> texts)
     {
+        _texts = texts;
         _dbFactory = dbFactory;
         _registry = registry;
         _control = control;
@@ -70,6 +72,9 @@ public sealed partial class BoardRemoval : IDisposable
         _time = time;
         _logger = logger;
     }
+
+    /// <summary>What removing says when someone else removed the board first.</summary>
+    public string AlreadyRemoved => _texts["Boards.Remove.AlreadyRemoved"];
 
     public void Dispose()
     {
@@ -187,9 +192,9 @@ public sealed partial class BoardRemoval : IDisposable
         }
     }
 
-    private static string LostText(string name)
+    private string LostText(string name)
     {
-        return $"{name} has lost contact, so its relays couldn't be turned off. Nothing was removed.";
+        return _texts["Boards.Remove.Lost", name];
     }
 
     // "All off" for the board, its groups stopping in their order with their run-on times, until the board shows every
@@ -221,7 +226,7 @@ public sealed partial class BoardRemoval : IDisposable
                 var runOn = stopping.OrderByDescending(g => g.Off).FirstOrDefault();
                 if (runOn is not null && runOn.Off > now && (runOn.Off > deadline || now >= deadline))
                 {
-                    return ($"{runOn.Name} runs on until {_clock.ToLocal(runOn.Off).ToString("HH:mm", CultureInfo.InvariantCulture)}. Remove {name} when it's done.", false);
+                    return (_texts["Boards.Remove.RunsOn", runOn.Name, _clock.ToLocal(runOn.Off).ToString("HH:mm", CultureInfo.InvariantCulture), name], false);
                 }
 
                 if (stopping.Count == 0 && (state.Relays & all).IsEmpty)
@@ -231,7 +236,7 @@ public sealed partial class BoardRemoval : IDisposable
 
                 if (now >= deadline)
                 {
-                    return ($"Some of {name}'s relays didn't turn off. Nothing was removed. Try again.", false);
+                    return (_texts["Boards.Remove.NotOff", name], false);
                 }
 
                 await Task.Delay(OffCheck, _time, cancellationToken);

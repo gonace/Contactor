@@ -1,5 +1,18 @@
 namespace Contactor.Boards;
 
+/// <summary>Why what someone typed isn't a board's address; the app puts it in words, in its own language.</summary>
+public enum BoardEndpointError
+{
+    /// <summary>Nothing was typed.</summary>
+    NoHost,
+
+    /// <summary>What was typed isn't a host name or an IP address.</summary>
+    NotAnAddress,
+
+    /// <summary>The port isn't from 1 to 65535.</summary>
+    BadPort,
+}
+
 /// <summary>Where a board is on the network: a host name or IP address and a TCP port.</summary>
 public sealed record BoardEndpoint(string Host, int Port)
 {
@@ -13,24 +26,24 @@ public sealed record BoardEndpoint(string Host, int Port)
     public bool HasHost => !string.IsNullOrWhiteSpace(Host);
 
     /// <summary>An endpoint from what someone typed, or null with the reason when it can't be one.</summary>
-    public static BoardEndpoint? TryCreate(string? host, int port, out string? error)
+    public static BoardEndpoint? TryCreate(string? host, int port, out BoardEndpointError? error)
     {
         host = host?.Trim() ?? "";
         if (host.Length == 0)
         {
-            error = "Enter the relay board's address, e.g. 192.168.1.50.";
+            error = BoardEndpointError.NoHost;
             return null;
         }
 
         if (host.Length > MaxHostLength || Uri.CheckHostName(host) == UriHostNameType.Unknown)
         {
-            error = $"{host} isn't an address. Enter e.g. 192.168.1.50.";
+            error = BoardEndpointError.NotAnAddress;
             return null;
         }
 
         if (port is < 1 or > 65535)
         {
-            error = "The port is a number from 1 to 65535.";
+            error = BoardEndpointError.BadPort;
             return null;
         }
 

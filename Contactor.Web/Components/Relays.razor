@@ -28,6 +28,7 @@
 @inject GroupStatusText GroupStatus
 @inject InputsText InputsText
 @inject IStringLocalizer<RelaysTexts> Texts
+@inject IStringLocalizer<BoardsTexts> BoardTexts
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Relays"]])</PageTitle>
 
@@ -272,7 +273,7 @@
     private UnconfirmedPress? _unconfirmed;
     private bool _inGroup;
 
-    // The press was refused because its board is being removed (LiveBoard.BeingRemoved).
+    // The press was refused because its board is being removed (BoardClosedException).
     private bool _beingRemoved;
 
     /// <summary>The boards this browser picked to show (<see cref="BoardFilter"/>), as the page was opened.</summary>
@@ -492,7 +493,7 @@
                 }
                 else if (_failedRelayId == relay.Id && _beingRemoved)
                 {
-                    <span class="error" role="alert">@LiveBoard.BeingRemoved</span>
+                    <span class="error" role="alert">@BoardTexts["Boards.BeingRemoved"]</span>
                 }
             </a>
             @if (state.HasAnswered)
@@ -699,7 +700,7 @@
         catch (BoardClosedException)
         {
             _failedGroupId = groupId;
-            _groupError = LiveBoard.BeingRemoved;
+            _groupError = BoardTexts["Boards.BeingRemoved"];
         }
         catch (BoardNotConnectedException)
         {
