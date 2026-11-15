@@ -38,8 +38,8 @@ public sealed class BoardsText
         return names.Count switch
         {
             0 => null,
-            1 => _texts["Relays.Unreachable.One", names[0]],
-            _ => _texts["Relays.Unreachable.Several", And(names)],
+            1 => _texts["Relays.Unreachable.One", names[0]].Value,
+            _ => _texts["Relays.Unreachable.Several", And(names)].Value,
         };
     }
 
