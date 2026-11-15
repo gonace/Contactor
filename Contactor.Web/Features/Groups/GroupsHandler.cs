@@ -32,7 +32,8 @@ public sealed record GroupDraft(string Name, string Icon, int? MaxOnMinutes, IRe
 
     private static IReadOnlyList<GroupStepDraft> OneRelayPerStep(IReadOnlyList<GroupMemberDraft> members)
     {
-        return members is null ? null! : [.. members.Select(m => new GroupStepDraft(m.RoleName, [m.RelayId], m.StartDelaySec, m.RunOnSec))];
+        ArgumentNullException.ThrowIfNull(members);
+        return [.. members.Select(m => new GroupStepDraft(m.RoleName, [m.RelayId], m.StartDelaySec, m.RunOnSec))];
     }
 }
 

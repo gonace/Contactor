@@ -515,7 +515,13 @@ public static class GroupPlanner
             runtime.NextStepAtUtc = null;
             runtime.StopRelayId = null;
             ClearPending(runtime);
+            KeepsRunning(runtime, actor, maxOnMinutes, now);
             return null;
+        }
+
+        if (runtime.Phase == GroupPhases.Stopping)
+        {
+            KeepsRunning(runtime, actor, maxOnMinutes, now);
         }
 
         commands.On |= ChannelMask.Of(relay.Channel);
@@ -561,6 +567,24 @@ public static class GroupPlanner
         }
 
         var place = IndexOf(steps, step) + 1;
+        if (runtime.Phase == GroupPhases.Stopping && runtime.TargetLevel <= place - 1)
+        {
+            // A stop already under way goes at least as far: it is kept, never cut short to this relay, so nothing it
+            // stops is left on (e.g. the group stopping and Fan 1 turned off during the fans' run-on: Fan 2 still stops).
+            commands.Events.Add(new GroupEvent(EventActions.Off, relay.RelayId, actor, null));
+            var stopsIt = runtime.TargetLevel < place - 1 || runtime.StopRelayId is null || runtime.StopRelayId == relay.RelayId;
+            var belowOn = steps.Skip(place).SelectMany(s => s.Relays).Any(r => state.IsOn(r.Channel));
+            if (!stopsIt && !belowOn)
+            {
+                // The stop runs on another relay of this step: its step is running on already, so this one goes now.
+                // Not while a relay below is still on: that would break the interlock. It can be turned off once they
+                // are off.
+                commands.Off |= ChannelMask.Of(relay.Channel);
+            }
+
+            return;
+        }
+
         runtime.Phase = GroupPhases.Stopping;
         runtime.TargetLevel = place - 1;
         runtime.StopRelayId = relay.RelayId;
@@ -693,6 +717,18 @@ public static class GroupPlanner
     private static ChannelMask Mask(IEnumerable<GroupRelayInfo> relays)
     {
         return ChannelMask.Of(relays.Select(r => r.Channel));
+    }
+
+    // A stop called off by a person turning a relay on: the run is theirs again, with the group's auto-off when the stop
+    // had taken it away, so nothing stays on for ever by accident.
+    private static void KeepsRunning(GroupRuntime runtime, string actor, int? maxOnMinutes, DateTime now)
+    {
+        runtime.TurnedOnBy = actor;
+        runtime.OnSinceUtc ??= now;
+        if (runtime.AutoOffAtUtc is null && maxOnMinutes is { } minutes)
+        {
+            runtime.AutoOffAtUtc = now.AddMinutes(minutes);
+        }
     }
 
     private static void BeginStop(GroupRuntime runtime)

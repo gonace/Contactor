@@ -431,6 +431,25 @@ public sealed class GroupPlannerTests
         Assert.Equal(T0.AddMinutes(8), _runtime.NextStepAtUtc);
     }
 
+    // The group stops; during the compressor's run-on the compressor is turned off by hand. The stop goes on to the
+    // ventilation: it isn't left on for ever.
+    [Fact]
+    public void Should_KeepTheGroupsStop_WhenARelayAboveIsTurnedOffDuringIt()
+    {
+        _members = Spray;
+        GroupPlanner.Stop(Spray, State(5, 6, 7), _runtime, John, T0, new GroupCommands());
+        Plan(State(5, 6), T0.AddSeconds(1));
+
+        GroupPlanner.MemberOff(Spray, State(5, 6), _runtime, 2, John, T0.AddSeconds(10), new GroupCommands());
+
+        Assert.Equal(0, _runtime.TargetLevel);
+        Assert.Equal(Mask(6), Plan(State(5, 6), T0.AddSeconds(61)).Off);
+        Plan(State(5), T0.AddSeconds(62));
+        Assert.Equal(Mask(5), Plan(State(5), T0.AddSeconds(182)).Off);
+        Plan(State(), T0.AddSeconds(183));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
     [Fact]
     public void Should_StopNothing_WhenTheGroupIsOff()
     {

@@ -209,6 +209,69 @@ public sealed class GroupStepsTests
         Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
     }
 
+    // The group stops; during the fans' run-on Fan 1 is turned off by hand. The stop goes on: Fan 2 stops too, and
+    // nothing is left on without an auto-off.
+    [Fact]
+    public void Should_KeepTheGroupsStop_WhenOneFanIsTurnedOffDuringItsRunOn()
+    {
+        _runtime.AutoOffAtUtc = T0.AddHours(2);
+        GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), _runtime, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 1, John, T0.AddSeconds(30), off);
+
+        Assert.Equal((ChannelMask.None, EventActions.Off), (off.Off, Assert.Single(off.Events).Action));
+        Assert.Equal((GroupPhases.Stopping, 0, (int?)null), (_runtime.Phase, _runtime.TargetLevel, _runtime.StopRelayId));
+        Assert.Equal(T0.AddSeconds(181), _runtime.NextStepAtUtc);
+        Assert.Equal(Mask(1, 2), Plan(State(1, 2), T0.AddSeconds(181)).Off);
+        Plan(State(), T0.AddSeconds(182));
+        Assert.Equal((GroupPhases.Idle, (DateTime?)null), (_runtime.Phase, _runtime.OnSinceUtc));
+    }
+
+    [Fact]
+    public void Should_TurnOffASecondFanAtOnce_WhileTheFirstRunsOn()
+    {
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2, 3, 4), _runtime, 1, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 2, John, T0.AddSeconds(2), off);
+
+        // The fans' step runs on already: Fan 2 goes now, Fan 1 when its run-on ends.
+        Assert.Equal(Mask(2), off.Off);
+        Assert.Equal(Mask(1), Plan(State(1), T0.AddSeconds(181)).Off);
+        Plan(State(), T0.AddSeconds(182));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    // A stop called off by turning a fan on again: the run gets the group's auto-off back.
+    [Fact]
+    public void Should_GiveTheAutoOffBack_WhenAStopIsCalledOff()
+    {
+        _runtime.AutoOffAtUtc = T0.AddHours(2);
+        GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), _runtime, John, T0, new GroupCommands());
+        Plan(State(1, 2), T0.AddSeconds(1));
+        Assert.Null(_runtime.AutoOffAtUtc);
+
+        Assert.Null(GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 1, John, 120, T0.AddSeconds(10), new GroupCommands()));
+
+        Assert.Equal((GroupPhases.Idle, T0.AddSeconds(10).AddMinutes(120), John), (_runtime.Phase, _runtime.AutoOffAtUtc!.Value, _runtime.TurnedOnBy));
+    }
+
+    [Fact]
+    public void Should_ReadTheEventsOfAStepRight()
+    {
+        var trip = Plan(State(1, 3, 4), T0).Events[0];
+        Assert.Equal("Heater 1 and Heater 2 turned off. Fan 2 must be on first.", Text(trip));
+
+        var stop = new GroupRuntime { GroupId = 1 };
+        var commands = new GroupCommands();
+        GroupPlanner.Stop(FansHeaters, State(1, 2, 3, 4), stop, John, T0, commands);
+        GroupPlanner.Plan(FansHeaters, State(1, 2), stop, T0.AddSeconds(1), commands);
+        Assert.Equal("for 3 min: Fans", Text(commands.Events.Single(e => e.Action == EventActions.RunOnStart)));
+    }
+
     [Fact]
     public void Should_StopAGroupThatIsOnlyPartlyOn()
     {
@@ -301,6 +364,9 @@ public sealed class GroupStepsTests
         Assert.Null(GroupPlanner.NeedsOn(FansHeaters, State(1, 2), 3));
         Assert.Null(GroupPlanner.NeedsOn(FansHeaters, State(), 2));
     }
+
+    private static string Text(GroupEvent e) =>
+        TestTexts.Events.For(new EventLogEntry { GroupId = 1, RelayId = e.RelayId, Actor = e.Actor, Action = e.Action, Details = e.Details }, null, null, "Workshop heat").What;
 
     private GroupCommands Plan(BoardState state, DateTime now)
     {

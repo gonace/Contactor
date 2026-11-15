@@ -537,7 +537,6 @@ public sealed class PersistenceTests
         Assert.Equal(0L, await ScalarAsync(cs, "SELECT COUNT(*) FROM sqlite_master WHERE \"name\" IN ('Board', 'BoardRuntime');"));
     }
 
-    // A database as the version before the board's own row left it, with the rows the SQL adds, brought up to date.
     // Before a group's relays were in steps: one relay per place.
     private const string BeforeSteps = "20261115153057_AddInstallationLanguage";
 
@@ -621,6 +620,7 @@ public sealed class PersistenceTests
         Assert.Equal(6L, await ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM \"RelayGroupStep\";"));
     }
 
+    // A database as the version before the board's own row left it, with the rows the SQL adds, brought up to date.
     private static async Task<TestDatabase> UpgradeAsync(string sql)
     {
         var database = TestDatabase.Create();
