@@ -57,7 +57,7 @@ public sealed class CloudflareSettingsTests : IDisposable
 
         var problem = await settings.SaveTunnelAsync(token, address, Cancel);
 
-        Assert.Contains(named, problem, StringComparison.Ordinal);
+        Assert.Contains(named, problem?.English(), StringComparison.Ordinal);
         Assert.False(await HasRowAsync(database));
     }
 
@@ -88,7 +88,7 @@ public sealed class CloudflareSettingsTests : IDisposable
 
         var problem = await settings.SaveAccessAsync(teamDomain, audience, Cancel);
 
-        Assert.Contains(named, problem, StringComparison.Ordinal);
+        Assert.Contains(named, problem?.English(), StringComparison.Ordinal);
         Assert.False(await HasRowAsync(database));
         Assert.Equal(AccessTokens.TeamDomain, settings.Access.TeamDomain);
     }

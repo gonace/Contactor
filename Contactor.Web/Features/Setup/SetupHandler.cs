@@ -4,6 +4,8 @@ using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Setup;
 
@@ -40,6 +42,7 @@ public sealed class SetupHandler
     private readonly LocalClock _clock;
     private readonly TimeProvider _time;
     private readonly ILogger<SetupHandler> _logger;
+    private readonly IStringLocalizer<SetupTexts> _texts;
 
     // Once done it stays done, so the relay list needn't ask the database on every visit.
     private volatile bool _done;
@@ -52,8 +55,10 @@ public sealed class SetupHandler
         RelaySettingsHandler relays,
         LocalClock clock,
         TimeProvider time,
-        ILogger<SetupHandler> logger)
+        ILogger<SetupHandler> logger,
+        IStringLocalizer<SetupTexts> texts)
     {
+        _texts = texts;
         _dbFactory = dbFactory;
         _choice = choice;
         _registry = registry;
@@ -137,7 +142,7 @@ public sealed class SetupHandler
             var name = string.IsNullOrWhiteSpace(choice.Name) ? Relay.DefaultName(channel) : choice.Name;
             if (await _relays.SaveAsync(current with { Name = name, IsActive = choice.IsActive }, userEmail, cancellationToken) is { } error)
             {
-                return $"Relay {channel}: {error}";
+                return _texts["Setup.RelayError", channel, error];
             }
         }
 

@@ -9,6 +9,9 @@ public static class SetupServiceCollectionExtensions
         services.AddSingleton<SetupHandler>();
         services.AddSingleton<SetupCode>();
         services.AddSingleton<SetupMode>();
+        // The guide's texts. AddLanguages also adds the localization; adding it twice is harmless.
+        services.AddLocalization();
+        services.AddSingleton<SetupText>();
         services.AddSingleton<SetupSignInHandler>();
         return services;
     }

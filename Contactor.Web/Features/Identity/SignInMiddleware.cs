@@ -4,6 +4,8 @@ using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Setup;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Identity;
 
@@ -57,6 +59,12 @@ public sealed partial class SignInMiddleware
         _time = time;
     }
 
+    // A refusal's words, in the app's language: the request already has its culture (UseRequestLocalization runs first).
+    private static IStringLocalizer<SetupTexts> Texts(HttpContext context)
+    {
+        return context.RequestServices.GetRequiredService<IStringLocalizer<SetupTexts>>();
+    }
+
     public async Task InvokeAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -72,7 +80,7 @@ public sealed partial class SignInMiddleware
             WarnAboutOutside(context);
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync(ThisNetwork.Refusal, context.RequestAborted);
+            await context.Response.WriteAsync(Texts(context)["Setup.Refused.OwnNetwork"], context.RequestAborted);
             return;
         }
 
@@ -95,7 +103,7 @@ public sealed partial class SignInMiddleware
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Access denied.", context.RequestAborted);
+            await context.Response.WriteAsync(Texts(context)["Setup.Refused.AccessDenied"], context.RequestAborted);
             return;
         }
 
