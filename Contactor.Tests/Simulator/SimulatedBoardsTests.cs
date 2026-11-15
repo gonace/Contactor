@@ -184,8 +184,12 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         await board.SetInputAsync(1, closed: true);
         await board.SetTimersAsync(on: true);
         await WaitUntilAsync(() => board.Traffic.Any(t => t.Text == "Status: relay 3 on · the board's timers on for all · input on"));
+
+        // The request and the unchanged status it gets back. The channel names at login are routine too, so only a
+        // count above theirs shows both were handled, before the traffic is cleared.
+        var routine = board.HiddenRoutine;
         await client.Client.RequestStatusAsync(TestContext.Current.CancellationToken);
-        await WaitUntilAsync(() => board.HiddenRoutine >= 2);
+        await WaitUntilAsync(() => board.HiddenRoutine >= routine + 2);
 
         var traffic = board.Traffic;
         Assert.Contains(traffic, t => t is { Kind: TrafficKind.AtBoard, Text: "Relay 3 switched on here" });

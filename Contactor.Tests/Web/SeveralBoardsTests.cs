@@ -469,6 +469,23 @@ public sealed class SeveralBoardsTests
     }
 
     [Fact]
+    public async Task Should_LogAllOff_ForARelayJustTurnedOn_BeforeItsBoardShowsIt()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var second = rig.Second!;
+        second.HoldStatus = true;
+        await rig.Control.TurnOnAsync(rig.SecondRelayId(4), Jane, Cancel);
+        Assert.False(second.State.IsOn(4));
+
+        await rig.Control.TurnAllOffAsync(rig.SecondBoardId, Jane, Cancel);
+
+        // Its "Off" is logged as the person's "All off", and its run ended.
+        var allOff = Assert.Single(await rig.EventsAsync(), e => e.Details == """{"allOff":true}""");
+        Assert.Equal((rig.SecondBoardId, rig.SecondRelayId(4), Jane), (allOff.BoardId!.Value, allOff.RelayId!.Value, allOff.Actor));
+        Assert.Null((await RelayRuntimeAsync(rig, rig.SecondRelayId(4))).OnSinceUtc);
+    }
+
+    [Fact]
     public async Task Should_RefuseAGroup_WithRelaysOnTwoBoards()
     {
         await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
