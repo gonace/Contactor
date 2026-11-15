@@ -157,7 +157,7 @@
                             @foreach (var row in _events)
                             {
                                 <div class="row @(row.View.IsAlert ? "alert" : null)" @key="row.Id">
-                                    <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture)</span>
+                                    <span class="time">@row.TimestampLocal.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
                                     <span class="badge @(row.View.IsPerson ? "person" : "automatic")" aria-hidden="true">@row.View.Badge</span>
                                     <div class="text">
                                         <EventWhat Row="row" />

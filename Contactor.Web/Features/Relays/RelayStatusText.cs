@@ -13,6 +13,7 @@ public enum TurnedOnBy
     /// <summary>The person looking at the screen.</summary>
     You,
 
+    /// <summary>One of the relay's schedules.</summary>
     Schedule,
 
     /// <summary>Outside the app, e.g. with the board's own web page.</summary>
@@ -126,13 +127,13 @@ public sealed class RelayStatusText
     }
 
     /// <summary>
-    /// "14:02" today, "yesterday 14:02", "tomorrow 06:30", otherwise "3 Nov 14:02": always 24 hours, with the
-    /// language's month names.
+    /// "14:02" today, "yesterday 14:02", "tomorrow 06:30", otherwise "3 Nov 14:02": the time always 24 hours with ":"
+    /// in every language, the date with the language's month names.
     /// </summary>
     public string When(DateTime local, DateTime nowLocal)
     {
         var culture = CultureInfo.CurrentCulture;
-        var time = local.ToString("HH:mm", culture);
+        var time = local.ToString("HH:mm", CultureInfo.InvariantCulture);
         var days = (local.Date - nowLocal.Date).Days;
         return days switch
         {
