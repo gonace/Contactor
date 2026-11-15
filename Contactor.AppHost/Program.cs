@@ -3,6 +3,7 @@ namespace Contactor.AppHost;
 /// <summary>
 /// Runs everything for development: <c>dotnet run --project Contactor.AppHost</c>. The app runs as its image, built
 /// from the <c>Dockerfile</c> with cloudflared and Tailscale inside, as on a real installation; it needs Docker Desktop.
+/// The public demo runs beside it as <c>contactor-demo</c>, with copies of its own.
 /// </summary>
 public static class Program
 {
@@ -15,6 +16,14 @@ public static class Program
 
     // Where a container reaches this computer, as Docker Desktop names it.
     private const string ContainerHost = "host.docker.internal";
+
+    // The build the demo starts its copies of the app and the simulator from: the AppHost's own, which builds them
+    // through its reference to the demo.
+#if DEBUG
+    private const string Configuration = "Debug";
+#else
+    private const string Configuration = "Release";
+#endif
 
     public static void Main(string[] args)
     {
@@ -45,6 +54,19 @@ public static class Program
             .WithOtlpExporter()
             .InDockerProject()
             .WaitFor(simulator);
+
+        // The public demo (docs/DEMO.md) on http://localhost:5070: each visitor gets their own copy of the app and the
+        // simulator, started from their build output, not the resources above. Aspire runs it with `dotnet run
+        // --no-launch-profile` and takes only its address from the launch profile; this is the one place its settings
+        // are given in development, with full paths.
+        var root = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, ".."));
+        string Output(string project) => Path.Combine(root, project, "bin", Configuration, "net10.0", project + ".dll");
+        builder.AddProject<Projects.Contactor_Demo>("contactor-demo")
+            .WithEnvironment("Demo__AppPath", Output("Contactor.Web"))
+            .WithEnvironment("Demo__SimulatorPath", Output("Contactor.Simulator"))
+            .WithEnvironment("Demo__CopyEnvironment", "Development")
+            .WithEnvironment("Demo__DataRoot", Path.Combine(root, "Contactor.Demo", "bin", "demo-data"))
+            .WithHttpHealthCheck("/healthz");
 
         builder.Build().Run();
     }

@@ -1,13 +1,15 @@
 # Third-party notices
 
-Contactor is licensed under the MIT License (see `LICENSE`). It includes, or its container image bundles, the
+Contactor is licensed under the MIT License (see `LICENSE`). It includes, or its container images bundle, the
 following works of others, each under its own licence. The licence texts are in `licenses/` in the repository and in
-`/licenses` in the image, next to `LICENSE` and this file.
+`/licenses` in each image, next to `LICENSE` and this file. The demo's image (`Contactor.Demo/Dockerfile`) bundles all
+of them except cloudflared and Tailscale, and also YARP; its `/licenses` is the same folder, so it holds their licence
+texts too.
 
 ## IBM Plex Sans and IBM Plex Mono
 
-- Latin subsets of the fonts, served by the app and the simulator (`wwwroot/fonts` in `Contactor.Web` and
-  `Contactor.Simulator`; `/app/wwwroot/fonts` in the image).
+- Latin subsets of the fonts, served by the app, the simulator and the demo (`wwwroot/fonts` in `Contactor.Web` and
+  `Contactor.Simulator`, two of them embedded in `Contactor.Demo`; `/app/wwwroot/fonts` in the image).
 - Copyright 2019 IBM Corp. (IBM Plex Sans) and Copyright 2017 IBM Corp. (IBM Plex Mono).
 - Licensed under the SIL Open Font License 1.1: `OFL.txt` next to the fonts.
 
@@ -44,5 +46,7 @@ following works of others, each under its own licence. The licence texts are in 
   License: `Polly-BSD-3-Clause.txt`.
 - **SQLitePCLRaw** (`SQLitePCLRaw.*`): Copyright 2014-2024 SourceGear, LLC. Apache License 2.0: `Apache-2.0.txt`.
   It bundles SQLite (`libe_sqlite3`), which is in the public domain.
+- **YARP** (`Yarp.ReverseProxy`, the demo's image only): Copyright (c) .NET Foundation and Contributors. MIT License:
+  `YARP-MIT.txt`.
 - **.NET and the `Microsoft.*` packages:** Copyright (c) .NET Foundation and Contributors, and Microsoft Corporation;
   MIT License. The .NET runtime's own notices come with Microsoft's base image (`mcr.microsoft.com/dotnet/aspnet`).

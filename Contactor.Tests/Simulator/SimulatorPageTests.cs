@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Tests.Simulator;
@@ -139,7 +140,28 @@ public sealed class SimulatorPageTests
         Assert.Matches(@"\.board \.name\s*\{[^{}]*overflow-wrap:\s*anywhere", wide);
     }
 
-    private static WebApplicationFactory<Contactor.Simulator.Program> CreateApp(int port, string? appAddress = null)
+    [Fact]
+    public async Task Should_TakeTheBoardLimit_FromTheSettings()
+    {
+        await using var app = CreateApp(SimulatedBoardsTests.FreePort(), maxBoards: "2");
+        using var http = app.CreateClient();
+        var boards = app.Services.GetRequiredService<Contactor.Simulator.SimulatedBoards>();
+
+        Assert.Null(boards.Add("vm201", SimulatedBoardsTests.FreePort(), "", ""));
+        Assert.Equal("You can have at most 2 boards.", boards.Add("vm201", SimulatedBoardsTests.FreePort(), "", ""));
+    }
+
+    [Fact]
+    public void Should_RefuseToStart_OnABoardLimitBelowOne()
+    {
+        using var app = CreateApp(SimulatedBoardsTests.FreePort(), maxBoards: "0");
+
+        var error = Assert.ThrowsAny<Exception>(() => app.CreateClient());
+
+        Assert.Contains("Simulator:MaxBoards", error.ToString(), StringComparison.Ordinal);
+    }
+
+    private static WebApplicationFactory<Contactor.Simulator.Program> CreateApp(int port, string? appAddress = null, string? maxBoards = null)
     {
         return new WebApplicationFactory<Contactor.Simulator.Program>().WithWebHostBuilder(builder =>
         {
@@ -149,6 +171,11 @@ public sealed class SimulatorPageTests
             if (appAddress is not null)
             {
                 builder.UseSetting("Simulator:AppAddress", appAddress);
+            }
+
+            if (maxBoards is not null)
+            {
+                builder.UseSetting("Simulator:MaxBoards", maxBoards);
             }
         });
     }

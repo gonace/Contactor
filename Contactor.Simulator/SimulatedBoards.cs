@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Sockets;
+using Microsoft.Extensions.Options;
 
 namespace Contactor.Simulator;
 
@@ -12,17 +13,20 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
     private readonly ILoggerFactory _loggers;
     private readonly ILogger<SimulatedBoards> _logger;
     private readonly TimeProvider _time;
+    private readonly int? _maxBoards;
     private readonly Lock _lock = new();
     private readonly List<RunningBoard> _boards = [];
     private int _nextId = 1;
     private bool _stopped;
 
-    public SimulatedBoards(ILoggerFactory loggers, TimeProvider time)
+    public SimulatedBoards(ILoggerFactory loggers, TimeProvider time, IOptions<SimulatorOptions> options)
     {
         ArgumentNullException.ThrowIfNull(loggers);
+        ArgumentNullException.ThrowIfNull(options);
         _loggers = loggers;
         _logger = loggers.CreateLogger<SimulatedBoards>();
         _time = time;
+        _maxBoards = options.Value.MaxBoards;
     }
 
     /// <summary>Raised when a board is added or removed, or any board's state or traffic changes; from any thread.</summary>
@@ -88,6 +92,14 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
             if (_stopped)
             {
                 return "The simulator is stopping.";
+            }
+
+            // The settings' boards always start; only the page is held to the limit.
+            if (!fromSettings && _maxBoards is { } max && _boards.Count >= max)
+            {
+                return max == 1
+                    ? "You can have at most 1 board."
+                    : string.Create(CultureInfo.InvariantCulture, $"You can have at most {max} boards.");
             }
 
             if (_boards.Any(b => b.Board.Port == port))

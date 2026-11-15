@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Builds the image from the Dockerfile for linux/arm64 and linux/amd64, pushes it, and prints the digest of the image
-# index it pushed, so the caller signs exactly that (images-sign.sh). Used by images-publish.sh and the Images
-# workflow. The registry login (REGISTRY_USER and REGISTRY_TOKEN) goes in a Docker config of its own, written
-# directly rather than with docker login, which would hand the token to the computer's credential store; the folder is
-# removed again on exit, so the token is neither on the command line nor saved. Docker's contexts, plugins and builders
-# are taken from your own config.
+# Builds an image for linux/arm64 and linux/amd64, pushes it, and prints the digest of the image index it pushed, so
+# the caller signs exactly that (images-sign.sh). The app's image is built from the Dockerfile, the demo's from the
+# Dockerfile given last (Contactor.Demo/Dockerfile). Used by images-publish.sh and the Images workflow. The registry
+# login (REGISTRY_USER and REGISTRY_TOKEN) goes in a Docker config of its own, written directly rather than with
+# docker login, which would hand the token to the computer's credential store; the folder is removed again on exit,
+# so the token is neither on the command line nor saved. Docker's contexts, plugins and builders are taken from your
+# own config.
 #
 #   bash scripts/images-build.sh ghcr.io/gonace/contactor 2026.11.12 <commit>
+#   bash scripts/images-build.sh ghcr.io/gonace/contactor-demo 2026.11.12 <commit> Contactor.Demo/Dockerfile
 set -euo pipefail
 
-readonly IMAGE=$1 VERSION=$2 COMMIT=$3
+readonly IMAGE=$1 VERSION=$2 COMMIT=$3 DOCKERFILE=${4:-Dockerfile}
 
 fail() { echo "Error: $*" >&2; exit 1; }
 
 cd "$(dirname "$0")/.."
 [[ -n "${REGISTRY_TOKEN:-}" ]] || fail "REGISTRY_TOKEN isn't set."
+[[ -f "$DOCKERFILE" ]] || fail "there is no $DOCKERFILE."
 host=${IMAGE%%/*}
 mine=${DOCKER_CONFIG:-$HOME/.docker}
 config=$(mktemp -d)
@@ -44,6 +47,7 @@ docker buildx inspect contactor > /dev/null 2>&1 \
     || fail "could not create the buildx builder."
 
 docker buildx build . \
+    --file "$DOCKERFILE" \
     --builder contactor \
     --platform linux/arm64,linux/amd64 \
     --build-arg VERSION="$VERSION" \

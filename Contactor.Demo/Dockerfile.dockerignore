@@ -1,0 +1,16 @@
+# The demo image's sources (BuildKit takes this file instead of the root's .dockerignore for Contactor.Demo/Dockerfile):
+# as the app's, plus the simulator the demo starts for each visitor. No build output, history, tests or local settings.
+**/bin/
+**/obj/
+.git/
+.github/
+docs/
+deploy/
+scripts/
+Contactor.Tests/
+Contactor.AppHost/
+**/*.user
+**/.env
+**/contactor.db*
+**/keys/
+**/backups/

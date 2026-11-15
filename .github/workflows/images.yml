@@ -73,6 +73,29 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: bash scripts/images-sign.sh --check
 
+      - name: Publish the demo's image
+        id: publish-demo
+        # First, so a failure here stops the release before the app's image, which the Raspberry Pi takes the same
+        # night, is touched. As the app's below, from Contactor.Demo/Dockerfile, with the same version.
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/contactor-demo"
+          digest=$(bash scripts/images-build.sh "$image" "$VERSION" "$GITHUB_SHA" Contactor.Demo/Dockerfile)
+          echo "Published $image@$digest ($VERSION)"
+          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the demo's image
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.publish-demo.outputs.image }}
+        run: bash scripts/images-sign.sh "$IMAGE"
+
       - name: Publish the image
         id: publish
         # From the Dockerfile, for linux/arm64 and linux/amd64 (scripts/images-build.sh); it prints the digest of the

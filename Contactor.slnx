@@ -6,6 +6,7 @@
   <Project Path="Contactor.Boards.Vm204/Contactor.Boards.Vm204.csproj" />
   <Project Path="Contactor.Boards.Vm208/Contactor.Boards.Vm208.csproj" />
   <Project Path="Contactor.Boards.Waveshare/Contactor.Boards.Waveshare.csproj" />
+  <Project Path="Contactor.Demo/Contactor.Demo.csproj" />
   <Project Path="Contactor.ServiceDefaults/Contactor.ServiceDefaults.csproj" />
   <Project Path="Contactor.Simulator/Contactor.Simulator.csproj" />
   <Project Path="Contactor.Tests/Contactor.Tests.csproj" />

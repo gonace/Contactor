@@ -31,8 +31,8 @@ The relays drive real machines. Each rule is told in full in its section of `doc
 
 - .NET 10 (LTS), C#, Blazor Server (interactive server rendering), EF Core + `Microsoft.EntityFrameworkCore.Sqlite`
 - No JavaScript framework. No external CSS framework; one small stylesheet of our own, following the design tokens in `docs/ARCHITECTURE.md`.
-- Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` and Tailscale (`tailscaled`, `tailscale`) copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi.
-- Local development with Aspire 13.5.4, pinned on purpose: later releases hang at startup on Windows. Its dashboard's advisories GHSA-f7vh-h5g3-7jrh (its cookie reaching a container opened from it) and GHSA-4g86-54fm-h9h8 (anyone who reaches it can delete its telemetry) are suppressed in the AppHost only, which runs no container but our own app's image and serves the dashboard on localhost; the dashboard isn't in the image. Raise the version once a release starts on Windows (issue #18). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the app as its image against it, as on a real installation, on http://localhost:8080 with `/data` in the Docker volume `contactor-dev`; it needs Docker Desktop. `dotnet run --project Contactor.Web` runs the app on its own, on this computer only, against `dotnet run --project Contactor.Simulator`.
+- Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` and Tailscale (`tailscaled`, `tailscale`) copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi. The public demo has its own image (`ghcr.io/gonace/contactor-demo`) from `Contactor.Demo/Dockerfile`, run with `deploy/demo/compose.yml` (`docs/DEMO.md`).
+- Local development with Aspire 13.5.4, pinned on purpose: later releases hang at startup on Windows. Its dashboard's advisories GHSA-f7vh-h5g3-7jrh (its cookie reaching a container opened from it) and GHSA-4g86-54fm-h9h8 (anyone who reaches it can delete its telemetry) are suppressed in the AppHost only, which runs no container but our own app's image and serves the dashboard on localhost; the dashboard isn't in the image. Raise the version once a release starts on Windows (issue #18). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the app as its image against it, as on a real installation, on http://localhost:8080 with `/data` in the Docker volume `contactor-dev`; it needs Docker Desktop. It also runs the public demo as `contactor-demo` on http://localhost:5070, which starts its own copies of the app and the simulator from their build output; the AppHost is the one place the demo is set up for development. `dotnet run --project Contactor.Web` runs the app on its own, on this computer only, against `dotnet run --project Contactor.Simulator`.
 
 No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Vm201/`, `Web/` …). Don't create more test projects.
 
@@ -52,10 +52,12 @@ Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
 Contactor.Simulator/      # Development: simulated boards, each on its own port, with a page to drive them and see their traffic
+Contactor.Demo/           # The public demo: a proxy that gives each visitor their own app and simulator, each a process on 127.0.0.1, and the Workshop template ("Skip setup"). Dockerfile: its image (ghcr.io/gonace/contactor-demo)
 Contactor.AppHost/        # Aspire: runs everything locally (dotnet run --project Contactor.AppHost)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
   Boards/                   # ChannelMask, BoardPoller, board adapters
+  Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
   Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
   Simulator/                # The simulator's boards and page
   Vm201/                    # Codec + client against the simulator
@@ -65,23 +67,25 @@ Contactor.Tests/          # The only test project
   Web/                      # Scheduling, auto-off, daylight saving, identity
 deploy/
   compose.yml               # The app (cloudflared inside) on the Raspberry Pi; no published ports
+  demo/compose.yml          # The public demo and its cloudflared, on a network with no route out; no published ports
   install.sh                # Run on the Pi: settings to /opt/contactor/.env, data folder, ghcr.io login, first start
   upgrade.sh                # Pulls, checks the cosign signature, restarts, waits until healthy
   autoupdate-install.sh     # systemd timer: upgrade every night 03:00–04:00
   cosign/                   # Public signing keys and how to make them
 docs/DEPLOY.md              # Installation steps
+docs/DEMO.md                # Hosting the public demo
 docs/ARCHITECTURE.md        # How the app is built and what it does: architecture, boards, data model, rules, screens, operations
 docs/screenshots/           # The README's screenshots, taken by scripts/screenshots/take.mjs
 scripts/
   screenshots/take.mjs      # Takes them: simulator, app and made-up data on a temporary database, Playwright
   release-version.sh        # YYYY.M.D[.N]
-  images-build.sh           # Build and push the image with docker buildx; prints the digest to sign
-  images-publish.sh         # Publish and sign the image from your computer
+  images-build.sh           # Build and push an image with docker buildx; prints the digest to sign
+  images-publish.sh         # Publish and sign the images (the app's and the demo's) from your computer
   images-sign.sh            # cosign, by digest
 LICENSE                     # MIT
 THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence texts in licenses/ (in the image: /licenses)
 .github/workflows/build.yml # build + test (pull requests, merges to main, by hand)
-.github/workflows/images.yml # publish and sign the image (by hand)
+.github/workflows/images.yml # publish and sign the images, the app's and the demo's (by hand)
 .github/pull_request_template.md # What every pull request description has
 .agents/writing.md          # How to write pull requests, issues and comments
 .agents/review.md           # The independent review's checklist
