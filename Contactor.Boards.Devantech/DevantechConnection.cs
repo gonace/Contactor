@@ -38,17 +38,17 @@ public sealed class DevantechConnection : IBoardConnection
     {
         if (CheckLogin(login) is { } error)
         {
-            throw new ArgumentException(error, nameof(login));
+            throw new ArgumentException(error.ToString(), nameof(login));
         }
 
         _client.SetPassword(login.Password);
     }
 
-    public string? CheckLogin(BoardLogin login)
+    public LoginProblem? CheckLogin(BoardLogin login)
     {
         ArgumentNullException.ThrowIfNull(login);
         return login.Username.Length > 0
-            ? "The Devantech board takes a password only, no user name."
+            ? new LoginProblem(LoginProblemKind.PasswordOnly, LoginField.UserName, Board: "Devantech")
             : DevantechModels.CheckPassword(login.Password);
     }
 

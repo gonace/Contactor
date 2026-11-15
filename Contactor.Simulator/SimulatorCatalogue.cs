@@ -34,7 +34,7 @@ public static class SimulatorCatalogue
             (username, password) =>
             {
                 Vm201Login.TryCreate(username, password, out var error);
-                return error;
+                return error?.ToString();
             },
             (username, password, logger, time) => new Vm201Simulator(username, password, logger) { TimeProvider = time }),
         new(
@@ -42,7 +42,7 @@ public static class SimulatorCatalogue
             (username, password) =>
             {
                 Vm204Login.TryCreate(username, password, out var error);
-                return error;
+                return error?.ToString();
             },
             (username, password, logger, time) => new Vm204Simulator(username, password, logger) { TimeProvider = time },
             SuggestedPort: 8204),
@@ -59,7 +59,7 @@ public static class SimulatorCatalogue
             model,
             (username, password) => username.Length > 0
                 ? "The Devantech board takes a password only, no user name."
-                : DevantechModels.CheckPassword(password),
+                : DevantechModels.CheckPassword(password)?.ToString(),
             (_, password, logger, time) => new DevantechSimulator(model, password, logger) { TimeProvider = time })),
     ];
 

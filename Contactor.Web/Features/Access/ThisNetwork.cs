@@ -8,7 +8,10 @@ namespace Contactor.Web.Features.Access;
 /// </summary>
 public static class ThisNetwork
 {
-    /// <summary>The plain text a request from outside gets, with 403.</summary>
+    /// <summary>
+    /// The English of the plain text a request from outside gets, with 403; the app says it in its own language
+    /// (Setup.Refused.OwnNetwork).
+    /// </summary>
     public const string Refusal = "Contactor can only be opened on its own network.";
 
     /// <summary>

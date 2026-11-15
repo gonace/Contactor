@@ -129,7 +129,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         ArgumentNullException.ThrowIfNull(password);
         if (DevantechModels.CheckPassword(password) is { } error)
         {
-            throw new ArgumentException(error, nameof(password));
+            throw new ArgumentException(error.ToString(), nameof(password));
         }
 
         if (Interlocked.Exchange(ref _password, password) == password)

@@ -177,7 +177,8 @@ public sealed class BoardAddressHandlerTests
     [InlineData(BoardEndpointError.BadPort, "192.168.1.50", "The port is a number from 1 to 65535.")]
     public void Should_PutTheAddressError_InWords(BoardEndpointError error, string host, string text)
     {
-        var handler = new BoardAddressHandler(null!, null!, null!, null!, TestTexts.For<Contactor.Web.Resources.BoardsTexts>());
+        var texts = TestTexts.For<Contactor.Web.Resources.BoardsTexts>();
+        var handler = new BoardAddressHandler(null!, null!, null!, null!, texts, new BoardLoginText(texts));
 
         Assert.Equal(text, handler.EndpointError(error, host));
     }

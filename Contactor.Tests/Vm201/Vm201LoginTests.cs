@@ -28,7 +28,7 @@ public sealed class Vm201LoginTests
     public void Should_RefuseWhatTheBoardCannotTake(string username, string password, string message)
     {
         Assert.Null(Vm201Login.TryCreate(username, password, out var error));
-        Assert.Equal(message, error);
+        Assert.Equal(message, error?.ToString());
     }
 
     [Fact]

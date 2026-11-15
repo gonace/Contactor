@@ -63,7 +63,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
 
         if (!string.IsNullOrEmpty(password) && DevantechModels.CheckPassword(password) is { } error)
         {
-            throw new ArgumentException(error, nameof(password));
+            throw new ArgumentException(error.ToString(), nameof(password));
         }
 
         Model = model;

@@ -19,7 +19,7 @@ public sealed class Vm208ConnectionTests
         Assert.Equal(BoardLogin.None, connection.DefaultLogin);
         Assert.Equal(BoardLogin.None, connection.Login);
         Assert.Null(connection.CheckLogin(BoardLogin.None));
-        Assert.Equal("The VM208 takes no login: its password only protects its own web pages.", connection.CheckLogin(new BoardLogin("admin", "")));
+        Assert.Equal("The VM208 takes no login: its password only protects its own web pages.", connection.CheckLogin(new BoardLogin("admin", ""))?.ToString());
         Assert.NotNull(connection.CheckLogin(new BoardLogin("", "secret")));
         connection.SetLogin(BoardLogin.None);
         Assert.Throws<ArgumentException>(() => connection.SetLogin(new BoardLogin("admin", "secret")));

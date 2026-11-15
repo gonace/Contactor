@@ -1,3 +1,6 @@
+using Contactor.Web.Resources;
+using Microsoft.Extensions.Localization;
+
 namespace Contactor.Web.Features.Setup;
 
 /// <summary>
@@ -49,7 +52,9 @@ public sealed class SetupMode
 
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         context.Response.ContentType = "text/plain; charset=utf-8";
-        await context.Response.WriteAsync("Access denied.", context.RequestAborted);
+        // In the app's language: the request already has its culture (UseRequestLocalization runs first).
+        var texts = context.RequestServices.GetRequiredService<IStringLocalizer<SetupTexts>>();
+        await context.Response.WriteAsync(texts["Setup.Refused.AccessDenied"], context.RequestAborted);
         return false;
     }
 

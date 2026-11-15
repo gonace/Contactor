@@ -268,9 +268,26 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         (Active ?? throw new InvalidOperationException(NotChosen)).Connection.SetLogin(login);
     }
 
-    public string? CheckLogin(BoardLogin login)
+    /// <summary>Throws <see cref="InvalidOperationException"/> before a model is chosen; see <see cref="TryCheckLogin"/>.</summary>
+    public LoginProblem? CheckLogin(BoardLogin login)
     {
-        return Active is { } active ? active.Connection.CheckLogin(login) : NotChosen;
+        return (Active ?? throw new InvalidOperationException(NotChosen)).Connection.CheckLogin(login);
+    }
+
+    /// <summary>
+    /// Checks the login against the model in use, read once: false when there is none, e.g. a board removed meanwhile,
+    /// so a page never meets an exception for it.
+    /// </summary>
+    public bool TryCheckLogin(BoardLogin login, out LoginProblem? problem)
+    {
+        if (Active is not { } active)
+        {
+            problem = null;
+            return false;
+        }
+
+        problem = active.Connection.CheckLogin(login);
+        return true;
     }
 
     /// <summary>

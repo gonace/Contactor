@@ -10,5 +10,5 @@ public static class Vm204Model
         Vm204Board.Vm204Capabilities,
         Vm204Api.DefaultPort,
         Vm204Api.CredentialMaxLength,
-        $"At most {Vm204Api.CredentialMaxLength} characters, {Vm204Api.CredentialsTotalMaxLength} for both together: letters a–z, digits and {Vm204Login.SymbolList}.");
+        new LoginHint(LoginHintKind.ListedSymbols, Vm204Api.CredentialMaxLength, Vm204Api.CredentialsTotalMaxLength, Vm204Login.SymbolList));
 }
