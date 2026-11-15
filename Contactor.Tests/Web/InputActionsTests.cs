@@ -52,6 +52,30 @@ public sealed class InputActionsTests
         Assert.Equal(Now.AddMinutes(Relay1MaxOnMinutes), runtime.AutoOffAtUtc);
     }
 
+    // The input's service is cancelled right after the ON went out, mostly at shutdown: the run, its auto-off and the
+    // event are still saved.
+    [Fact]
+    public async Task Should_RecordItsOn_WhenCancelledAfterItWentOut()
+    {
+        await using var rig = await RigAsync();
+        await rig.SaveAsync(new InputActionRow(Relay(1), WhenClosed: true, WhenOpened: false));
+        using var caller = new CancellationTokenSource();
+        rig.Board.ThrowWhenCancelled = true;
+        rig.Board.AfterSwitch = () =>
+        {
+            rig.Board.AfterSwitch = null;
+            caller.Cancel();
+            return Task.CompletedTask;
+        };
+
+        await rig.RunAsync(closed: true, caller.Token);
+
+        Assert.True(rig.Board.State.Relays.Contains(1));
+        Assert.Equal([(1, Door, EventActions.On)], (await rig.EventsAsync()).Select(e => (e.RelayId ?? 0, e.Actor, e.Action)));
+        var runtime = await rig.RuntimeAsync(1);
+        Assert.Equal((Door, (DateTime?)Now.AddMinutes(Relay1MaxOnMinutes)), (runtime.TurnedOnBy, runtime.AutoOffAtUtc));
+    }
+
     [Fact]
     public async Task Should_DoNothing_WhereSetToNothing()
     {
@@ -454,7 +478,12 @@ public sealed class InputActionsTests
 
         public async Task RunAsync(bool closed)
         {
-            await Service.RunAsync(new InputChanged(1, closed), Cancel);
+            await RunAsync(closed, Cancel);
+        }
+
+        public async Task RunAsync(bool closed, CancellationToken cancellationToken)
+        {
+            await Service.RunAsync(new InputChanged(1, closed), cancellationToken);
         }
 
         // Either through the handler, as "New group" does, or straight into the database (check: false), as for a

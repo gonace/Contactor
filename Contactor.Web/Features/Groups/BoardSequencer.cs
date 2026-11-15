@@ -434,7 +434,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     // A failed or cancelled command's change isn't the app's: whatever the board did shows as an
                     // external one.
                     _expected.Forget(all.On, on: true);
-                    if (ex is BoardNotConnectedException && !all.Off.IsEmpty)
+
+                    // The OFF went out: it is recorded, also when the caller cancelled before the ON.
+                    if ((ex is BoardNotConnectedException or OperationCanceledException) && !all.Off.IsEmpty)
                     {
                         await SaveAsync(db, events, now, CancellationToken.None);
                         RememberShutOffs(shutOff);
@@ -446,7 +448,11 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
             // Pages also follow a sequence's own progress, e.g. "Starting" turning into "On since".
             var changed = events.Count > 0 || !all.Off.IsEmpty || !all.On.IsEmpty || db.ChangeTracker.HasChanges();
-            await SaveAsync(db, events, now, cancellationToken);
+
+            // What went out is recorded whatever happens to the caller now: a cancel (mostly at shutdown) would leave
+            // the board's change without its run and events.
+            var sent = !all.Off.IsEmpty || !all.On.IsEmpty;
+            await SaveAsync(db, events, now, sent ? CancellationToken.None : cancellationToken);
             RememberShutOffs(shutOff);
             if (changed)
             {

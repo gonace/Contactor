@@ -49,13 +49,14 @@ public sealed class RelayControl
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
         await SendAsync(board, mask, on: true, cancellationToken);
 
+        // The ON went out: from here it is recorded whatever happens to the caller.
         var now = _clock.UtcNow;
-        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var maxOnMinutes = (await db.Relays.Where(r => r.Id == relayId).Select(r => new { r.MaxOnMinutes }).SingleOrDefaultAsync(cancellationToken)
+        await using var db = await _dbFactory.CreateDbContextAsync(Recorded);
+        var maxOnMinutes = (await db.Relays.Where(r => r.Id == relayId).Select(r => new { r.MaxOnMinutes }).SingleOrDefaultAsync(Recorded)
             ?? throw new BoardNotConnectedException(BoardRemoved)).MaxOnMinutes;
-        await RelayRuns.StartAsync(db, relayId, actor, now, maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null, cancellationToken);
+        await RelayRuns.StartAsync(db, relayId, actor, now, maxOnMinutes is { } minutes ? now.AddMinutes(minutes) : null, Recorded);
         db.EventLog.Add(new EventLogEntry { TimestampUtc = now, BoardId = board.BoardId, RelayId = relayId, Actor = actor, Action = EventActions.On });
-        await SaveAsync(db, board.BoardId, cancellationToken);
+        await SaveAsync(db, board.BoardId, Recorded);
         _changes.Notify();
     }
 
@@ -100,8 +101,8 @@ public sealed class RelayControl
         }
 
         var now = _clock.UtcNow;
-        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        await RelayRuns.StartAsync(db, relayId, actor, now, now + length + PulseBackstop, cancellationToken);
+        await using var db = await _dbFactory.CreateDbContextAsync(Recorded);
+        await RelayRuns.StartAsync(db, relayId, actor, now, now + length + PulseBackstop, Recorded);
         db.EventLog.Add(new EventLogEntry
         {
             TimestampUtc = now,
@@ -111,7 +112,7 @@ public sealed class RelayControl
             Action = EventActions.Pulse,
             Details = JsonSerializer.Serialize(new { milliseconds = (int)length.TotalMilliseconds }),
         });
-        await SaveAsync(db, board.BoardId, cancellationToken);
+        await SaveAsync(db, board.BoardId, Recorded);
         _changes.Notify();
     }
 
@@ -137,10 +138,10 @@ public sealed class RelayControl
         await SendAsync(board, mask, on: false, cancellationToken);
 
         var now = _clock.UtcNow;
-        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
+        await using var db = await _dbFactory.CreateDbContextAsync(Recorded);
+        await RelayRuns.EndAsync(db, relayId, sent, Recorded);
         db.EventLog.Add(new EventLogEntry { TimestampUtc = now, BoardId = board.BoardId, RelayId = relayId, Actor = actor, Action = EventActions.Off });
-        await SaveAsync(db, board.BoardId, cancellationToken);
+        await SaveAsync(db, board.BoardId, Recorded);
         _changes.Notify();
     }
 
@@ -205,17 +206,20 @@ public sealed class RelayControl
             expected.Forget(wasOn & refused, on: false);
         }
 
+        // Once the OFF went out, it is recorded whatever happens to the caller now. The groups' stop after it is
+        // cancelled as ever before its own command goes out.
+        var record = single.IsEmpty ? cancellationToken : Recorded;
         var now = _clock.UtcNow;
-        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var channels = await BoardChannels.LoadAsync(db, boardId, cancellationToken);
+        await using var db = await _dbFactory.CreateDbContextAsync(record);
+        var channels = await BoardChannels.LoadAsync(db, boardId, record);
 
         // Only this board's relays' runs: another board's relays weren't sent anything.
         var relayIds = channels.AllRelayIds.ToList();
-        foreach (var relayId in await db.RelayRuntimes.Where(r => r.OnSinceUtc != null && relayIds.Contains(r.RelayId)).Select(r => r.RelayId).ToListAsync(cancellationToken))
+        foreach (var relayId in await db.RelayRuntimes.Where(r => r.OnSinceUtc != null && relayIds.Contains(r.RelayId)).Select(r => r.RelayId).ToListAsync(record))
         {
             if (channels.RelayChannel(relayId) is not { } channel || !refused.Contains(channel))
             {
-                await RelayRuns.EndAsync(db, relayId, sent, cancellationToken);
+                await RelayRuns.EndAsync(db, relayId, sent, record);
             }
         }
 
@@ -236,7 +240,7 @@ public sealed class RelayControl
             }
         }
 
-        await SaveAsync(db, board.BoardId, cancellationToken);
+        await SaveAsync(db, board.BoardId, record);
         _changes.Notify();
         await _groups.StopAllAsync(boardId, userEmail, cancellationToken);
     }
@@ -308,6 +312,11 @@ public sealed class RelayControl
     }
 
     private const string BoardRemoved = "The relay board was removed.";
+
+    // What records a command that went out: not the caller's token. A cancel after the send (mostly at shutdown) would
+    // leave the board's change without its run, auto-off and event, while its expectation stays and it isn't logged as
+    // a change outside the app either.
+    private static CancellationToken Recorded => CancellationToken.None;
 
     // What a command saves once it went out. The board may have been removed meanwhile, its rows with it: that fails as
     // a board the app doesn't run, not as a broken database.
