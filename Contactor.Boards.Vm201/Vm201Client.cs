@@ -250,14 +250,14 @@ public sealed class Vm201Client
 
     private async Task SendAsync(byte[] packet, CancellationToken cancellationToken)
     {
+        // A cancelled command is never queued, so it can't reach the board after the caller gave up on it.
+        cancellationToken.ThrowIfCancellationRequested();
+
         var session = Volatile.Read(ref _session);
         if (session is null || !State.IsConnected)
         {
             throw new BoardNotConnectedException();
         }
-
-        // A cancelled command is never queued, so it can't reach the board after the caller gave up on it.
-        cancellationToken.ThrowIfCancellationRequested();
 
         var write = new PendingWrite(packet, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
         if (!session.Commands.Writer.TryWrite(write))
@@ -445,6 +445,7 @@ public sealed class Vm201Client
 
             try
             {
+                // The Sent trace's handlers run inside this call, so before the caller's task completes.
                 await SendAsync(stream, write.Packet, cancellationToken).ConfigureAwait(false);
                 write.Completion?.TrySetResult();
             }

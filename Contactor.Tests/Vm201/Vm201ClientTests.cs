@@ -376,6 +376,37 @@ public sealed class Vm201ClientTests
     }
 
     [Fact]
+    public async Task Should_ReportSuccess_WhenCancelledAfterTheWriterTookTheCommand()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        using var cts = new CancellationTokenSource();
+        var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, cts.Token);
+        await gate.Held.WaitAsync(WaitTimeout, ct);
+        await cts.CancelAsync();
+        gate.Release();
+
+        await hold;
+        await SendMarkerAsync(run.Client, simulator);
+        Assert.Equal([(Vm201Command.Off, WriterGate.HoldMask), (Vm201Command.On, Marker)], Sent(simulator));
+    }
+
+    [Fact]
+    public async Task Should_ThrowCancelled_WhenCancelledBeforeTheCallWhileNeverConnected()
+    {
+        var client = CreateClient(port: 1);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.TurnOnAsync(0x01, cts.Token));
+    }
+
+    [Fact]
     public async Task Should_SendTheOtherCommandsInOrder_WhenOneIsCancelledInTheQueue()
     {
         var ct = TestContext.Current.CancellationToken;
