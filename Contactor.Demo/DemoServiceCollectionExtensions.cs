@@ -1,4 +1,3 @@
-using System.Net;
 using Contactor.Web.Features.Access;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -51,7 +50,7 @@ public static class DemoServiceCollectionExtensions
         forwarded.KnownProxies.Clear();
         forwarded.KnownIPNetworks.Clear();
         forwarded.ForwardLimit = 1;
-        if (IPAddress.TryParse(demo.Value.TunnelAddress, out var tunnel))
+        if (DemoOptions.TryParseTunnelAddress(demo.Value.TunnelAddress, out var tunnel))
         {
             forwarded.KnownProxies.Add(tunnel);
             forwarded.ForwardedHeaders = ForwardedHeaders.XForwardedProto;

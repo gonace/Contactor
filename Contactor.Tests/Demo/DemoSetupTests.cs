@@ -62,6 +62,38 @@ public sealed class DemoSetupTests : IDisposable
         Assert.Contains(failures, f => f.StartsWith("Demo:TunnelAddress", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("172.30.60")]
+    [InlineData("172.30.60.2.")]
+    [InlineData("2886745090")]
+    [InlineData("0xAC.30.60.2")]
+    [InlineData("172.030.060.002")]
+    public void Should_RefuseATunnelAddress_InShorthand(string address)
+    {
+        var options = _folder.Options();
+        options.TunnelAddress = address;
+
+        var result = new DemoOptionsValidation().Validate(null, options);
+
+        Assert.Contains(result.Failures!, f => f.StartsWith("Demo:TunnelAddress", StringComparison.Ordinal));
+        Assert.False(DemoOptions.TryParseTunnelAddress(address, out _));
+    }
+
+    [Theory]
+    [InlineData("172.30.60.2", "172.30.60.2")]
+    [InlineData(" 172.30.60.2 ", "172.30.60.2")]
+    [InlineData("fd00::2", "fd00::2")]
+    [InlineData("FD00::2", "fd00::2")]
+    public void Should_TakeATunnelAddress_WrittenInFull(string address, string expected)
+    {
+        var options = _folder.Options();
+        options.TunnelAddress = address;
+
+        Assert.True(new DemoOptionsValidation().Validate(null, options).Succeeded);
+        Assert.True(DemoOptions.TryParseTunnelAddress(address, out var parsed));
+        Assert.Equal(expected, parsed.ToString());
+    }
+
     [Fact]
     public void Should_RefuseALifetime_ShorterThanTheIdleTimeAndTheCountDown()
     {
