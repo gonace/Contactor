@@ -54,7 +54,22 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
     {
+        ThrowIfCancelled(cancellationToken);
         return SwitchAsync(relays, on: true);
+    }
+
+    /// <summary>
+    /// When set, a command whose token is already cancelled throws <see cref="OperationCanceledException"/> and doesn't
+    /// reach the board, as a real board's client does. Otherwise commands don't look at their token.
+    /// </summary>
+    public bool ThrowWhenCancelled { get; set; }
+
+    private void ThrowIfCancelled(CancellationToken cancellationToken)
+    {
+        if (ThrowWhenCancelled)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
 
     /// <summary>
@@ -130,6 +145,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             throw new BoardNotConnectedException();
         }
 
+        ThrowIfCancelled(cancellationToken);
         return SwitchAsync(relays, on: false);
     }
 
@@ -163,6 +179,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             throw new ArgumentOutOfRangeException(nameof(length), length, "The board can't pulse for that long.");
         }
 
+        ThrowIfCancelled(cancellationToken);
         var taken = await SwitchAsync(relays, on: true);
         lock (_lock)
         {

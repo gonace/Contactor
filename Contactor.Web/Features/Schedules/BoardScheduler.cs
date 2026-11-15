@@ -182,6 +182,12 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
             var changed = false;
             var interrupted = false;
 
+            // Once a command went out, it is recorded whatever happens to the caller now: a cancel (mostly at
+            // shutdown) would leave the board's change without its run and event. A cancel before the next command
+            // stops there, and what went out is still saved.
+            var wentOut = false;
+            var cancelled = false;
+
             // The board's relays in channel order; the board's state and the commands go by the channel.
             for (var channel = 1; channel <= _board.Capabilities.RelayCount; channel++)
             {
@@ -202,7 +208,7 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     // an auto-off of its own.
                     if (isOn && runtime?.TurnedOnBy == EventActors.External)
                     {
-                        await RelayRuns.TakeOverForScheduleAsync(db, relayId, cancellationToken);
+                        await RelayRuns.TakeOverForScheduleAsync(db, relayId, wentOut ? CancellationToken.None : cancellationToken);
                         changed = true;
                     }
 
@@ -210,7 +216,19 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     var retry = _retryRelays.Remove(relayId);
                     if (!isOn && (startedNow || reconcile || retry))
                     {
-                        var sent = await SendAsync(channel, on: true, cancellationToken);
+                        Sent sent;
+                        try
+                        {
+                            sent = await SendAsync(channel, on: true, cancellationToken);
+                        }
+                        catch (OperationCanceledException) when (wentOut && cancellationToken.IsCancellationRequested)
+                        {
+                            // As a failed command: whatever the board did shows as an external change.
+                            _expected.Forget(_board.Capabilities.Relay(channel), on: true);
+                            cancelled = interrupted = true;
+                            break;
+                        }
+
                         if (sent == Sent.Closed)
                         {
                             // Refused while the board is being removed: this relay alone is tried again at the next
@@ -226,7 +244,8 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                         }
 
                         // Since the ON went out, not the minute: a person's OFF is told apart from it by time (RelayRuns.End).
-                        await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, cancellationToken);
+                        wentOut = true;
+                        await RelayRuns.StartAsync(db, relayId, Actor, _clock.UtcNow, autoOffAt: null, CancellationToken.None);
                         Log(db, progress.BoardId, now, relayId, EventActions.On, running.ScheduleId);
                         changed = true;
                     }
@@ -258,13 +277,27 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                 }
 
                 var sentUtc = _clock.UtcNow;
-                if (await SendAsync(channel, on: false, cancellationToken) != Sent.Done)
+                Sent off;
+                try
+                {
+                    off = await SendAsync(channel, on: false, cancellationToken);
+                }
+                catch (OperationCanceledException) when (wentOut && cancellationToken.IsCancellationRequested)
+                {
+                    // As a failed command: whatever the board did shows as an external change.
+                    _expected.Forget(_board.Capabilities.Relay(channel), on: false);
+                    cancelled = interrupted = true;
+                    break;
+                }
+
+                if (off != Sent.Done)
                 {
                     interrupted = true;
                     break;
                 }
 
-                await RelayRuns.EndAsync(db, relayId, sentUtc, cancellationToken);
+                wentOut = true;
+                await RelayRuns.EndAsync(db, relayId, sentUtc, CancellationToken.None);
 
                 Log(db, progress.BoardId, now, relayId, EventActions.Off, ended?.ScheduleId);
                 changed = true;
@@ -272,7 +305,13 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
 
             // The relays' runs are saved first: whatever happens to the groups, a relay this tick switched keeps its
             // "turned on by the schedule" and its event.
-            await RelayRuns.SaveAsync(db, cancellationToken);
+            await RelayRuns.SaveAsync(db, wentOut ? CancellationToken.None : cancellationToken);
+            if (cancelled)
+            {
+                _changes.Notify();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             if (!interrupted)
             {
                 var groups = await TickGroupsAsync(db, channels, windows, from, now, reconcile, cancellationToken);

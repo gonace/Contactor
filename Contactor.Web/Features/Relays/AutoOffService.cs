@@ -84,7 +84,11 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
             .ToListAsync(cancellationToken);
         var expected = board.Expected;
 
+        // Once an OFF went out, it is recorded whatever happens to the caller now: a cancel (mostly at shutdown) would
+        // leave the board's change without its event, and the run with an auto-off that already went. A cancel before
+        // the next OFF stops there, and what went out is still saved.
         List<int> turnedOff = [];
+        var cancelled = false;
         foreach (var runtime in due)
         {
             // The board's state and the command go by the relay's channel; a relay the board doesn't have isn't on.
@@ -104,6 +108,13 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
                     expected.Forget(mask, on: false);
                     break;
                 }
+                catch (OperationCanceledException) when (turnedOff.Count > 0 && cancellationToken.IsCancellationRequested)
+                {
+                    // As a failed command: whatever the board did shows as an external change.
+                    expected.Forget(mask, on: false);
+                    cancelled = true;
+                    break;
+                }
 
                 var minutes = runtime.OnSinceUtc is { } since ? (int)Math.Round((runtime.AutoOffAtUtc!.Value - since).TotalMinutes) : (int?)null;
                 db.EventLog.Add(new EventLogEntry
@@ -118,28 +129,39 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
                 turnedOff.Add(runtime.RelayId);
 
                 // Its run ends; one begun after the OFF went out (someone turned it on again meanwhile) stays.
-                await RelayRuns.EndAsync(db, runtime.RelayId, sent, cancellationToken);
+                await RelayRuns.EndAsync(db, runtime.RelayId, sent, CancellationToken.None);
                 continue;
             }
 
             // Off already, turned off some other way: nothing to send, but the plan is stale. Only the run as read
             // ends; one saved meanwhile (someone turned it on again) stays.
-            await RelayRuns.EndOutsideAsync(db, runtime.RelayId, cancellationToken);
+            await RelayRuns.EndOutsideAsync(db, runtime.RelayId, Record(turnedOff, cancellationToken));
         }
 
-        // Not after the board was lost on the way: nothing happens without it.
-        if (board.State.IsConnected)
+        // Not after the board was lost on the way, nor after a cancel: nothing happens without it.
+        if (board.State.IsConnected && !cancelled)
         {
-            await EndRunsOfOffRelaysAsync(db, board, channels, state, [.. due.Select(r => r.RelayId)], cancellationToken);
+            await EndRunsOfOffRelaysAsync(db, board, channels, state, [.. due.Select(r => r.RelayId)], Record(turnedOff, cancellationToken));
         }
 
         if (db.ChangeTracker.HasChanges())
         {
-            await RelayRuns.SaveAsync(db, cancellationToken);
+            await RelayRuns.SaveAsync(db, Record(turnedOff, cancellationToken));
             _changes.Notify();
         }
 
+        if (cancelled)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
         return turnedOff;
+    }
+
+    // What records the check: not the caller's token once an OFF went out.
+    private static CancellationToken Record(List<int> turnedOff, CancellationToken cancellationToken)
+    {
+        return turnedOff.Count > 0 ? CancellationToken.None : cancellationToken;
     }
 
     // A relay the board shows off keeps no run: one can be left when the change seen outside the app gave way to another
