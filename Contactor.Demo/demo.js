@@ -2,13 +2,13 @@
 // browser's time zone in a short-lived cookie, which the copy runs in; then "Getting your demo ready" covers both
 // frames until each has loaded. A click or a key anywhere, in the page or in either frame (both are this site's own),
 // keeps the visitor's copy: it tells the demo at most every data-report seconds. After data-idle seconds without one,
-// it asks the demo when the copy was last used, in any of the visitor's tabs; only when that too was data-idle seconds
-// ago does a popup count down data-warning seconds, and otherwise it counts from then. With no click or key by the end
-// of the count down, it asks the demo to end the copy. The demo keeps it when the visitor used it since in another tab,
-// and says when: then the popup goes and the count starts from then. Otherwise the
-// copy ends and the page says so; or that it didn't start, or that something went wrong with it, when that is what
-// happened. The demo itself deletes a copy
-// whose pages stopped reporting, so this script only shows what the demo does anyway.
+// it asks the demo when the copy was last used, in any of the visitor's tabs: only when that too was data-idle seconds
+// ago, so the copy is about to end, does a popup count down data-warning seconds; otherwise it counts from then. With
+// no click or key by the end of the count down, it asks the demo to end the copy. The demo keeps it when the visitor
+// used it since in another tab, and says when: then the popup goes and the count starts from then. Otherwise the copy
+// ends and the page says so; or that it didn't start, or that something went wrong with it, when that is what
+// happened. The demo itself deletes a copy whose pages stopped reporting, so this script only shows what the demo does
+// anyway.
 (() => {
     "use strict";
     const body = document.body;
