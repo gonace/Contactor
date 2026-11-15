@@ -406,7 +406,17 @@ internal sealed class ManualTimeProvider : TimeProvider
 {
     private readonly Lock _lock = new();
     private readonly List<ManualTimer> _timers = [];
-    private DateTimeOffset _now = new(2026, 11, 12, 10, 0, 0, TimeSpan.Zero);
+    private DateTimeOffset _now;
+
+    public ManualTimeProvider()
+        : this(new DateTimeOffset(2026, 11, 12, 10, 0, 0, TimeSpan.Zero))
+    {
+    }
+
+    public ManualTimeProvider(DateTimeOffset start)
+    {
+        _now = start;
+    }
 
     public override DateTimeOffset GetUtcNow()
     {

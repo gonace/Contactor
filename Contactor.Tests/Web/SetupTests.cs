@@ -488,8 +488,7 @@ public sealed class SetupTests
     public async Task Should_GiveATriedRelayAnAutoOff_AtTheEndOfTheTry()
     {
         // The try's turn-off waits on this clock, so it can't come before the auto-off is saved.
-        var time = new ManualTimeProvider();
-        Assert.Equal(Now, time.GetUtcNow().UtcDateTime);
+        var time = new ManualTimeProvider(new DateTimeOffset(Now));
         await using var rig = await Rig.StartAsync(time: time);
 
         await rig.Setup.TryAsync(3, "john@example.com", Cancel);

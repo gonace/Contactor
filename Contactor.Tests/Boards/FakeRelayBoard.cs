@@ -105,6 +105,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// </summary>
     public Func<Task>? AfterSwitch { get; set; }
 
+    /// <summary>As <see cref="AfterSwitch"/>, but after an OFF only, so it knows the command that ran it.</summary>
+    public Func<Task>? AfterOff { get; set; }
+
     /// <summary>
     /// Runs before an ON reaches the board, e.g. to hold it on its way (a slow request) while something else happens.
     /// </summary>
@@ -330,6 +333,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
         if (AfterSwitch is { } after)
         {
             await after();
+        }
+
+        if (!on && AfterOff is { } afterOff)
+        {
+            await afterOff();
         }
 
         return Confirmed(relays, taken);

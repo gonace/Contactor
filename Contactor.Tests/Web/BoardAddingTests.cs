@@ -615,13 +615,13 @@ public sealed class BoardAddingTests
         return count;
     }
 
-    // What went wrong on the page, but for moving the focus to a new step's heading, which needs a browser.
     // An element whose class starts with these classes, e.g. "side-board all".
     private static Func<IReadOnlyDictionary<string, object?>, bool> WithClass(string classes)
     {
         return attributes => attributes.GetValueOrDefault("class")?.ToString()?.StartsWith(classes + " ", StringComparison.Ordinal) == true;
     }
 
+    // What went wrong on the page, but for moving the focus to a new step's heading, which needs a browser.
     private static List<Exception> Errors(PageRenderer page)
     {
         return [.. page.Errors.Where(e => !e.ToString().Contains("ElementReference has not been configured correctly", StringComparison.Ordinal))];
