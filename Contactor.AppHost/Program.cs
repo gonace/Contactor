@@ -31,9 +31,9 @@ public static class Program
         // The image, run as on a real installation: Production, everything it keeps in /data (a Docker volume, so the
         // database and Tailscale's state survive a restart; delete the volume to start over). Aspire gives it the
         // simulator's address as a container reaches it, and sends its telemetry to the dashboard. Docker Desktop shows
-        // the container under "contactor".
+        // the container under "contactor", as "contactor-web", the name of its image too.
         var board = simulator.GetEndpoint("vm201");
-        builder.AddDockerfile("web", Path.Combine(builder.AppHostDirectory, ".."))
+        builder.AddDockerfile("contactor-web", Path.Combine(builder.AppHostDirectory, ".."))
             .WithHttpEndpoint(port: AppPort, targetPort: AppPort, name: "http", isProxied: false)
             .WithVolume("contactor-dev", "/data")
             .WithEnvironment("Vm201__Host", board.Property(EndpointProperty.Host))
