@@ -118,6 +118,29 @@ public sealed partial class RelaysBoardsPageTests
         Assert.DoesNotContain("id=\"board-1\"", await PageAsync(http), StringComparison.Ordinal);
     }
 
+    // "Add a board" ends on Relays through ShowAllPath: with only Barn picked, the board just added shows, and so does
+    // every other board, on this page and the next.
+    [Fact]
+    public async Task Should_ShowTheBoardJustAdded_AlsoWithAFilter()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var http = boards.App.CreateClient();
+        Assert.DoesNotContain("id=\"board-1\"", await PickAsync(http, boards.BarnId.ToString(System.Globalization.CultureInfo.InvariantCulture)), StringComparison.Ordinal);
+        var parts = new FakeBoardParts(new FakeRelayBoard(relayCount: 4, inputCount: 0));
+        var model = parts.FakeModel;
+        var shed = await boards.App.Services.GetRequiredService<BoardRegistry>().AddBoardAsync(model, "Shed", setup => parts.Build(setup.BoardId, model), Cancel);
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync(RelaysEndpoints.ShowAllPath, Cancel));
+
+        foreach (var page in new[] { html, await PageAsync(http) })
+        {
+            Assert.Contains($"id=\"board-{shed.BoardId}\"", page, StringComparison.Ordinal);
+            Assert.Contains("id=\"board-1\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"board-{boards.BarnId}\"", page, StringComparison.Ordinal);
+            Assert.DoesNotContain("class=\"showing\"", page, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task Should_ChangeNothing_WithoutTheFormsToken()
     {
@@ -183,6 +206,9 @@ public sealed partial class RelaysBoardsPageTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.False(response.Headers.Contains("Set-Cookie"));
+        using var showAll = await http.GetAsync(RelaysEndpoints.ShowAllPath, Cancel);
+        Assert.Equal(HttpStatusCode.Forbidden, showAll.StatusCode);
+        Assert.False(showAll.Headers.Contains("Set-Cookie"));
     }
 
     [Fact]
@@ -195,6 +221,11 @@ public sealed partial class RelaysBoardsPageTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.False(response.Headers.Contains("Set-Cookie"));
+
+        // A page while the app is being set up: to the setup code's page.
+        using var showAll = await http.GetAsync(RelaysEndpoints.ShowAllPath, Cancel);
+        Assert.Equal((HttpStatusCode.Redirect, Contactor.Web.Features.Setup.SetupMode.CodePath), (showAll.StatusCode, showAll.Headers.Location?.OriginalString));
+        Assert.False(showAll.Headers.Contains("Set-Cookie"));
     }
 
     // The page's own buttons, pressed live: a board's "All off" turns off that board only; "Turn off all boards" only

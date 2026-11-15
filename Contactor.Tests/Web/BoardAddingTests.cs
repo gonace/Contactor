@@ -245,8 +245,9 @@ public sealed class BoardAddingTests
         await page.TypeAsync(PageRenderer.With("id", $"relay-{await RelayIdAsync(boards, garage.BoardId, 1)}"), "Door motor");
         await page.ClickAsync(Button("Done"));
 
+        // To Relays, showing every board, so a filter can't hide the board just added.
         var navigation = Assert.IsType<NavigationException>(Assert.Single(Errors(page)));
-        Assert.Equal("http://localhost/", navigation.Location);
+        Assert.Equal("http://localhost" + RelaysEndpoints.ShowAllPath, navigation.Location);
         await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
         Assert.Equal("Door motor", await db.Relays.Where(r => r.BoardId == garage.BoardId && r.Channel == 1).Select(r => r.Name).SingleAsync(Cancel));
         Assert.NotNull(registry.Find(garage.BoardId));
