@@ -19,6 +19,9 @@ public sealed class SwedishTests
     private const string John = "john@example.com";
     private static readonly DateTime Now = new(2026, 11, 4, 15, 30, 0);
 
+    // Now, in the app's time zone (Europe/Stockholm): 15:30.
+    private static readonly DateTimeOffset NowUtc = new(2026, 11, 4, 14, 30, 0, TimeSpan.Zero);
+
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -48,11 +51,13 @@ public sealed class SwedishTests
     [Fact]
     public async Task Should_ShowARelaysPage_AndItsEvents_InSwedish()
     {
-        await using var app = await SwedishAppAsync();
+        // On a clock of the test's own: "I dag" whatever the time of day the test runs.
+        var time = new FixedTimeProvider(NowUtc);
+        await using var app = await SwedishAppAsync(time);
         using var http = app.CreateClient();
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
-            db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, RelayId = 3, Actor = John, Action = EventActions.On });
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = time.GetUtcNow().UtcDateTime, RelayId = 3, Actor = John, Action = EventActions.On });
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -64,6 +69,7 @@ public sealed class SwedishTests
         // The name in bold where the Swedish line puts it, and the day in Swedish.
         Assert.Matches("<strong[^>]*>John</strong> slog på", html);
         Assert.Contains("I dag", html, StringComparison.Ordinal);
+        Assert.Contains("15:30", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -118,6 +124,57 @@ public sealed class SwedishTests
             Assert.Contains("Allt av", text, StringComparison.Ordinal);
             Assert.DoesNotContain("All off", text, StringComparison.Ordinal);
             Assert.Empty(page.Errors);
+        }
+    }
+
+    // As for the Relays page: a group's page and the tab bar redrawn by a change from another thread stay Swedish.
+    [Fact]
+    public async Task Should_KeepAGroupsPageInSwedish_WhenAChangeFromAnotherThreadRedrawsIt()
+    {
+        await using var app = await SwedishAppAsync();
+        var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+        int id;
+        await using (var db = await factory.CreateDbContextAsync(Cancel))
+        {
+            // The group and its runtime in one transaction, as the app saves a new group: the running group sequencer
+            // makes a runtime for a group it finds without one.
+            await using var transaction = await db.Database.BeginTransactionAsync(Cancel);
+            var group = new RelayGroup { BoardId = 1, Name = "Fläktvärmare", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
+            group.AddStep("Fläkt", 1, runOnSec: 300);
+            group.AddStep("Värme", 2);
+            db.RelayGroups.Add(group);
+            await db.SaveChangesAsync(Cancel);
+            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
+            await db.SaveChangesAsync(Cancel);
+            await transaction.CommitAsync(Cancel);
+            id = group.Id;
+        }
+
+        PageRenderer page;
+        using (TestCulture.Language("sv"))
+        {
+            page = await PageRenderer.StartAsync<GroupDetail>(app.Services, John, "John", new Dictionary<string, object?> { ["Id"] = id });
+        }
+
+        using (page)
+        {
+            await AssertSwedishAfterRedrawAsync(app, page, "SLÅ PÅ GRUPPEN", "TURN ON THE GROUP");
+        }
+    }
+
+    [Fact]
+    public async Task Should_KeepTheTabBarInSwedish_WhenAChangeFromAnotherThreadRedrawsIt()
+    {
+        await using var app = await SwedishAppAsync();
+        PageRenderer page;
+        using (TestCulture.Language("sv"))
+        {
+            page = await PageRenderer.StartAsync<TabBar>(app.Services, John, "John");
+        }
+
+        using (page)
+        {
+            await AssertSwedishAfterRedrawAsync(app, page, "Inställningar", "Settings");
         }
     }
 
@@ -185,10 +242,37 @@ public sealed class SwedishTests
         Assert.Equal(size, Settings.Size(TestTexts.For<SettingsTexts>(), bytes));
     }
 
-    // The app with Swedish chosen; every request has it, whatever the browser asks for.
-    private static async Task<TestWebApp> SwedishAppAsync()
+    // A change from a thread of the test's own, in English (the relays' "In use", a group made): the page redraws, and
+    // its texts stay Swedish.
+    private static async Task AssertSwedishAfterRedrawAsync(TestWebApp app, PageRenderer page, string swedish, string english)
     {
-        var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John }, TestWebApp.WithLostBoard);
+        var renders = page.Renders;
+        Assert.Equal("en", CultureInfo.CurrentUICulture.Name);
+
+        app.Services.GetRequiredService<RelayChanges>().Notify();
+        await Wait.UntilAsync(() => page.Renders > renders);
+
+        var text = await page.TextAsync();
+        Assert.Contains(swedish, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(english, text, StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+    }
+
+    // The app with Swedish chosen; every request has it, whatever the browser asks for. With a clock, the app runs on
+    // it.
+    private static async Task<TestWebApp> SwedishAppAsync(TimeProvider? time = null)
+    {
+        var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
+            services =>
+            {
+                TestWebApp.WithLostBoard(services);
+                if (time is not null)
+                {
+                    services.AddSingleton(time);
+                }
+            });
         using (var http = app.CreateClient())
         {
             await http.GetAsync("/", Cancel);
