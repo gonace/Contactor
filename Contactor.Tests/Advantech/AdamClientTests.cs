@@ -369,6 +369,43 @@ public sealed class AdamClientTests
         Assert.Equal(1, simulator.ConnectionCount);
     }
 
+    // Issue #396: the client is disposed at once (Dispose) while a switch waits for its answer. The connection closes
+    // under it, and the client opens no new one to send the switch again: the command throws BoardNotConnectedException.
+    [Fact]
+    public async Task Should_OpenNoNewConnection_WhenDisposedDuringACommand()
+    {
+        var written = 0;
+        using var hold = new ManualResetEventSlim();
+        byte[] Write(byte[] request)
+        {
+            Interlocked.Increment(ref written);
+            hold.Wait(Cancel);
+            return request;
+        }
+
+        await using var module = ScriptedModule.Start(request => request[7] switch
+        {
+            AdamApi.WriteSingleCoil => Write(request),
+            _ => Answer(request, 0),
+        });
+        await using var run = ClientRun.Start(module.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var sent = run.Client.TurnOnAsync(1, Cancel);
+        await Wait.UntilAsync(() => Volatile.Read(ref written) == 1);
+
+        try
+        {
+            run.Client.Dispose();
+        }
+        finally
+        {
+            hold.Set();
+        }
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+        Assert.Equal((1, 1), (module.Connections, Volatile.Read(ref written)));
+    }
+
     [Fact]
     public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
     {

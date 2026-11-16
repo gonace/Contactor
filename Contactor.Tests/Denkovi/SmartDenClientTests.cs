@@ -490,6 +490,85 @@ public sealed class SmartDenClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    // Issue #396: the client is disposed at once (Dispose) while a switch waits for its answer. The connection closes
+    // under it, and the client opens no new one to send the switch again: the command throws BoardNotConnectedException.
+    [Fact]
+    public async Task Should_OpenNoNewConnection_WhenDisposedDuringACommand()
+    {
+        var written = 0;
+        using var hold = new ManualResetEventSlim();
+        byte[] Write(byte[] request)
+        {
+            Interlocked.Increment(ref written);
+            hold.Wait(Cancel);
+            return request;
+        }
+
+        await using var board = ScriptedBoard.Start(request => request[7] switch
+        {
+            SmartDenApi.WriteSingleCoil => Write(request),
+            _ => Relays(request, 0),
+        });
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var sent = run.Client.TurnOnAsync(1, Cancel);
+        await Wait.UntilAsync(() => Volatile.Read(ref written) == 1);
+
+        try
+        {
+            run.Client.Dispose();
+        }
+        finally
+        {
+            hold.Set();
+        }
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+        Assert.Equal((1, 1), (board.Connections, Volatile.Read(ref written)));
+    }
+
+    // Issue #396: the board is removed while a command is under way. The connection closes only once that command has
+    // ended, so it finishes as sent; a command after it is refused, and nothing opens a new connection.
+    [Fact]
+    public async Task Should_FinishTheCommandUnderWay_BeforeTheConnectionCloses()
+    {
+        var written = 0;
+        using var hold = new ManualResetEventSlim();
+        byte[] Write(byte[] request)
+        {
+            Volatile.Write(ref written, 1);
+            hold.Wait(Cancel);
+            return request;
+        }
+
+        await using var board = ScriptedBoard.Start(request => request[7] switch
+        {
+            SmartDenApi.WriteSingleCoil => Write(request),
+            _ => Relays(request, (ushort)Volatile.Read(ref written)),
+        });
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var sent = run.Client.TurnOnAsync(1, Cancel);
+        await Wait.UntilAsync(() => Volatile.Read(ref written) == 1);
+
+        ValueTask disposing;
+        try
+        {
+            disposing = run.Client.DisposeAsync();
+            Assert.False(disposing.IsCompleted);
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffAsync(1, Cancel));
+        }
+        finally
+        {
+            hold.Set();
+        }
+
+        Assert.Equal(1UL, await sent);
+        await disposing;
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.Equal(1, board.Connections);
+    }
+
     [Fact]
     public async Task Should_ThrowNotConnected_ForACommandThatGetsNoAnswer_AndSendNoMore()
     {

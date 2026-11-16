@@ -19,7 +19,7 @@ namespace Contactor.Boards.Denkovi;
 /// a poll under way gives way to them, and the board's state right after them is reported at once. The community, a
 /// secret, is never logged or traced: the trace shows the PDU only.
 /// </summary>
-public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
+public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long one attempt waits for its answer; also the limit to look up the board's host name.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(1);
@@ -51,6 +51,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     private IPEndPoint? _remote;
     private DaenetIp2Status? _lastTraced;
     private int _wasConnected;
+    private int _disposed;
     private int _requestId;
 
     public DaenetIp2Client(IOptions<DaenetIp2Options> options, BoardModel model, TimeProvider timeProvider, ILogger<DaenetIp2Client> logger)
@@ -183,9 +184,22 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         _poller.PollNow();
     }
 
+    /// <summary>
+    /// Ends the connection once the poll or command under way has ended (at most the poller's
+    /// <see cref="BoardPoller{TReading}.DisposeWait"/>): nothing new starts, and nothing is left using the connection
+    /// when it closes. A command that outlasts the wait throws <see cref="BoardNotConnectedException"/>.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        await _poller.DisposeAsync().ConfigureAwait(false);
+        Dispose();
+    }
+
     public void Dispose()
     {
+        // The poller first, so no poll or command starts on the connection being closed; then nothing opens a new one.
         _poller.Dispose();
+        Interlocked.Exchange(ref _disposed, 1);
         Close();
     }
 
@@ -586,6 +600,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     private async Task OpenAsync(CancellationToken cancellationToken)
     {
         Close();
+        ThrowIfDisposed();
         var endpoint = Endpoint;
 
         // An empty name would find this computer's own addresses: no board is there.
@@ -624,8 +639,18 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             throw;
         }
 
-        _socket = socket;
+        // Kept with a full fence before the check below, against Dispose's flag before its Close: either that Close
+        // finds this socket, or the check finds the flag.
         _remote = new IPEndPoint(address, endpoint.Port);
+        Interlocked.Exchange(ref _socket, socket);
+
+        // Disposed while the name was looked up: Dispose's Close may have come before the socket was kept.
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            Close();
+            ThrowIfDisposed();
+        }
+
         var local = (IPEndPoint)socket.LocalEndPoint!;
         Trace(BoardTraceDirection.None, string.Create(CultureInfo.InvariantCulture, $"Sending to {_remote} from UDP port {local.Port}"));
     }
@@ -635,6 +660,15 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         var socket = Interlocked.Exchange(ref _socket, null);
         _remote = null;
         socket?.Dispose();
+    }
+
+    // Once disposed, a request still under way gets no answer: it fails as one, and opens no new connection.
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            throw new IOException("The app closed the connection to the board.");
+        }
     }
 
     // The first status after the client (re)starts always gets a toast.
