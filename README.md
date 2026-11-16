@@ -15,9 +15,9 @@ It works like an app on a phone and uses the whole screen on a tablet or a compu
 English or Swedish.
 
 <p>
-  <img src="docs/screenshots/relays.png" width="250" alt="The relays, with the fan heaters group on">
-  <img src="docs/screenshots/group.png" width="250" alt="A group's steps: two fans, then two heaters">
-  <img src="docs/screenshots/relays-dark.png" width="250" alt="The relays in dark mode">
+  <img src="docs/screenshots/relays.png" height="640" alt="The relays, with the fan heaters group on">
+  <img src="docs/screenshots/group.png" height="640" alt="A group's steps: two fans, then two heaters">
+  <img src="docs/screenshots/relays-dark.png" height="640" alt="The relays in dark mode">
 </p>
 
 ## What it does
@@ -39,22 +39,22 @@ English or Swedish.
 - **Backups and updates:** a copy of the database every night, a download button, and "Update now" in Settings.
 
 <p>
-  <img src="docs/screenshots/new-group.png" width="250" alt="Picking the relays for a new group">
-  <img src="docs/screenshots/schedule.png" width="250" alt="A schedule for the compressor on weekdays">
-  <img src="docs/screenshots/events.png" width="250" alt="The event log">
+  <img src="docs/screenshots/new-group.png" height="640" alt="Picking the relays for a new group">
+  <img src="docs/screenshots/schedule.png" height="640" alt="A schedule for the compressor on weekdays">
+  <img src="docs/screenshots/events.png" height="640" alt="The event log">
 </p>
 
 <p>
-  <img src="docs/screenshots/setup.png" width="250" alt="The setup guide asks how people reach the app">
-  <img src="docs/screenshots/relays-sv.png" width="250" alt="The relays in Swedish">
-  <img src="docs/screenshots/settings.png" width="250" alt="Settings: updates, the relay board and the language">
+  <img src="docs/screenshots/setup.png" height="640" alt="The setup guide asks how people reach the app">
+  <img src="docs/screenshots/relays-sv.png" height="640" alt="The relays in Swedish">
+  <img src="docs/screenshots/settings.png" height="640" alt="Settings: updates, the relay board, the language, people and backups">
 </p>
 
 On a tablet the cards sit in two columns. On a computer a side menu replaces the tab bar:
 
 <p>
-  <img src="docs/screenshots/relays-tablet.png" width="280" alt="The relays on a tablet">
-  <img src="docs/screenshots/relays-desktop.png" width="480" alt="The relays on a computer, with a side menu">
+  <img src="docs/screenshots/relays-tablet.png" height="320" alt="The relays on a tablet">
+  <img src="docs/screenshots/relays-desktop.png" height="320" alt="The relays on a computer, with a side menu">
 </p>
 
 **Safety:** the interlock in the app is an extra layer, not a safety device. It only works while the app runs. Where

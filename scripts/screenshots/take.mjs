@@ -259,7 +259,7 @@ try {
         }, false, 'content'],
         ['schedule', 'schedule/1', null, false],
         ['events', 'events', null, false],
-        ['settings', 'settings', null, false],
+        ['settings', 'settings', null, false, 'content'],
     ];
     await shoot(browser, 'light', shots);
     await shoot(browser, 'dark', shots.filter(([name]) => name === 'relays'));
@@ -296,6 +296,9 @@ try {
         await page.goto(base);
         await page.waitForFunction(() => window.Blazor !== undefined);
         await page.waitForTimeout(1200);
+        // The whole page, as the relays in English, so the tab bar doesn't hide the Inputs card.
+        await page.setViewportSize({ width: phone.viewport.width, height: await page.evaluate(() => document.documentElement.scrollHeight) });
+        await page.waitForTimeout(300);
         await page.screenshot({ path: join(out, 'relays-sv.png') });
         await page.close();
     }
