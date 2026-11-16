@@ -147,12 +147,23 @@ jobs:
             fi
           done
 
-      - name: Push the tag
+      - name: Create the tag
+        # Through the API, not git push: GitHub refuses a pushed tag on a commit that changes .github/workflows/ unless the
+        # token has the workflows permission, which GITHUB_TOKEN can't have. A tag already on this commit (a rerun) is kept;
+        # one on another commit stops the release.
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          git tag "v$VERSION" "$GITHUB_SHA"
-          git push origin "v$VERSION"
+          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq .object.sha 2>/dev/null); then
+            if [ "$existing" != "$GITHUB_SHA" ]; then
+              echo "The tag v$VERSION already exists on another commit ($existing)." >&2
+              exit 1
+            fi
+            echo "The tag v$VERSION is already on this commit."
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$GITHUB_SHA" >/dev/null
+          fi
 
       - name: Attach the install script to the release
         # The one-command install (install/install.sh), attached to the release of this tag, with the tag filled in. It
