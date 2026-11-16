@@ -204,10 +204,13 @@
                 <label class="choice @(id == _wayIn ? "chosen" : null)">
                     <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
                     <span class="choice-text">
-                        <span class="name">@SetupText.Name(way) @if (way.Simplest)
+                        <span class="title">
+                            <span class="name">@SetupText.Name(way)</span>
+                            @if (way.Simplest)
                             {
                                 <span class="tag">@Texts["Setup.Simplest"]</span>
-                            }</span>
+                            }
+                        </span>
                         <span class="note">@SetupText.Description(way)</span>
                     </span>
                 </label>
@@ -266,14 +269,17 @@
                     <label class="choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
                         <input type="radio" name="sign-in" checked="@(id == _signInId)" disabled="@(!option.Allowed)" @onchange="() => _signInId = id" />
                         <span class="choice-text">
-                            <span class="name">@SetupText.Name(option.Method) @if (option.Recommended)
+                            <span class="title">
+                                <span class="name">@SetupText.Name(option.Method)</span>
+                                @if (option.Recommended)
                                 {
                                     <span class="tag">@Texts["Setup.RecommendedTag"]</span>
                                 }
                                 else if (option.Method.NotRecommended && option.Allowed)
                                 {
                                     <span class="tag warn">@Texts["Setup.NotRecommendedTag"]</span>
-                                }</span>
+                                }
+                            </span>
                             <span class="note">@(option.Reason ?? SetupText.Description(option.Method))</span>
                         </span>
                     </label>

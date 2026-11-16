@@ -193,15 +193,25 @@ input[type="password"] {
     gap: 2px;
 }
 
+/* A choice's title row: the name on the left, wrapping when long, and its tag at the right end, on the name's first
+   line. */
+.title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
 .tag {
-    margin-left: 2px;
+    flex-shrink: 0;
     padding: 1px 6px;
     border-radius: 6px;
     background: var(--accent);
     color: var(--on-accent);
     font-family: var(--font-mono);
     font-size: 11px;
-    vertical-align: 2px;
+    font-weight: 600;
+    white-space: nowrap;
 }
 
 .choice.off {
@@ -238,6 +248,8 @@ input[type="password"] {
 }
 
 .name {
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-size: 18px;
     font-weight: 600;
 }
