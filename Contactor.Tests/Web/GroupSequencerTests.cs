@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Velleman;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -494,6 +495,46 @@ public sealed class GroupSequencerTests
         Assert.Equal((ChannelMask.Of(1), GroupPhases.Idle, John), (board.State.Relays, runtime.Phase, runtime.TurnedOnBy));
         Assert.Equal(BoardTestRig.Start, runtime.OnSinceUtc);
         Assert.Contains(await rig.EventsAsync(), e => e.Action == EventActions.On && e.RelayId == Fan(1) && e.Actor == John);
+    }
+
+    // Issue #398: as above, and "Turn off" comes while Fan 1's ON is still on its way. Its OFF goes after that ON, and
+    // the group ends with every relay off and no run.
+    [Fact]
+    public async Task Should_TurnEveryFanOff_WhenTheGroupIsTurnedOffWhileAFansOnIsOnItsWay()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var board = rig.Second!;
+        int Fan(int channel) => rig.SecondRelayId(channel);
+        var id = await CreateAsync(rig, new GroupDraft("Barn fans", GroupIcons.Fan, 120, [new GroupStepDraft("Fans", [Fan(1), Fan(2)], 3, 180)]));
+        await rig.Groups.StartGroupAsync(id, John, Cancel);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: false, John, Cancel));
+        await rig.Groups.StepAsync(Cancel);
+
+        board.HoldStatus = true;
+        rig.Time.Now += TimeSpan.FromSeconds(0.5);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(2), on: false, John, Cancel));
+        rig.Time.Now += TimeSpan.FromSeconds(0.5);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: true, John, Cancel));
+        rig.Time.Now += TimeSpan.FromSeconds(0.2);
+        board.SetRelay(2, on: false);
+        await rig.Groups.StepAsync(Cancel);
+
+        var sent = board.Sent.Count;
+        await rig.Groups.StopGroupAsync(id, John, Cancel);
+        Assert.Equal([(ChannelMask.Of(1), false)], board.Sent.Skip(sent));
+        Assert.Equal(GroupPhases.Stopping, (await RuntimeAsync(rig, id)).Phase);
+
+        // The board shows Fan 1 off: its ON and then its OFF. The ON never showed, so the stop is done once it is no
+        // longer on its way.
+        board.ReleaseStatus();
+        await rig.Groups.StepAsync(Cancel);
+        rig.Time.Now += ExpectedChanges.Lifetime;
+        await rig.Groups.StepAsync(Cancel);
+        await rig.Groups.StepAsync(Cancel);
+
+        var runtime = await RuntimeAsync(rig, id);
+        Assert.Equal((ChannelMask.None, GroupPhases.Idle, (string?)null), (board.State.Relays, runtime.Phase, runtime.TurnedOnBy));
     }
 
     [Fact]
