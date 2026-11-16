@@ -60,7 +60,7 @@ length. There is no framing and no checksum.
 relay stays as set. A relay number that the board does not have gets `01`.
 
 A pulse is `20 nn tt` with `tt` from 1 to 255: the board turns the relay on, and off again by itself after `tt` × 100 ms,
-also when the app stops in between. So all four models pulse for 0.1 s to 25.5 s, in steps of 0.1 s
+also when the app stops in between. So all five models pulse for 0.1 s to 25.5 s, in steps of 0.1 s
 (`DevantechModels.Pulse`). For example, `20 03 05` pulses relay 3 for 0.5 s, and the board answers `00`.
 
 Layouts:
