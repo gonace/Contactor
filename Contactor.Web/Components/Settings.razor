@@ -29,20 +29,19 @@
     <main class="content">
         @* On a desktop two columns, each its own stack: the workshop's own things on the left (the boards, People,
            Backups), the app itself on the right (Updates, Language, Debugging). On a phone and a tablet the columns
-           aren't boxes of their own, and the cards keep one column in the order Updates, the boards, Language, People,
-           Backups, Debugging (Settings.razor.css, order). *@
+           aren't boxes of their own: the cards are one column, in this order. *@
         <div class="column">
             @if (Boards is [var only])
             {
                 @* One board: its card as it always was. *@
-                <div class="board-stack boards">
+                <div class="board-stack">
                     <BoardForm BoardId="only.BoardId" Title="@Common["Common.Screen.RelayBoard"]" @key="only.BoardId" />
                     @AddBoard
                 </div>
             }
             else
             {
-                <section class="card boards">
+                <section class="card">
                     <h2>@Texts["Settings.Boards"]</h2>
                     @if (Boards.Count == 0)
                     {
@@ -70,7 +69,7 @@
                 </section>
             }
 
-            <section class="card people">
+            <section class="card">
                 <h2>@Texts["Settings.People"]</h2>
                 <p class="hint">@Texts["Settings.People.Hint"]</p>
                 @foreach (var person in _people)
@@ -92,7 +91,7 @@
                 }
             </section>
 
-            <section class="card backups">
+            <section class="card">
                 <h2>@Texts["Settings.Backups"]</h2>
                 <p class="hint">@Texts["Settings.Backups.Hint"]</p>
                 @if (_latest is { } latest)
@@ -124,12 +123,12 @@
 
             @if (Language.HasChoice)
             {
-                <section class="card language">
+                <section class="card">
                     <LanguagePicker />
                 </section>
             }
 
-            <section class="card debugging">
+            <section class="card">
                 <h2>@Texts["Settings.Debugging"]</h2>
                 <label for="debugging" class="check">
                     <input id="debugging" type="checkbox" checked="@_debugging" disabled="@(_user is null)" @onchange="SetDebuggingAsync" />

@@ -234,33 +234,9 @@ button:disabled {
 }
 
 /* The desktop's two columns. On a phone and a tablet they aren't boxes of their own: their cards are the page's, in
-   one column, in the order below. Each column's cards keep that order on a desktop too. */
+   one column, in the markup's order. */
 .column {
     display: contents;
-}
-
-.column ::deep .updates {
-    order: 1;
-}
-
-.boards {
-    order: 2;
-}
-
-.language {
-    order: 3;
-}
-
-.people {
-    order: 4;
-}
-
-.backups {
-    order: 5;
-}
-
-.debugging {
-    order: 6;
 }
 
 /* With two or more boards: a row per board, opening its page. */

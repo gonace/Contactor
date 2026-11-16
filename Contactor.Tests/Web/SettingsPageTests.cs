@@ -138,6 +138,7 @@ public sealed class SettingsPageTests
     }
 
     // On a desktop two columns, each its own stack: the workshop's own things on the left, the app itself on the right.
+    // On a phone and a tablet the same cards are one column, in this order: the left column's, then the right's.
     [Fact]
     public async Task Should_PutTheCardsInTwoColumns_WithOneBoard()
     {
@@ -148,8 +149,8 @@ public sealed class SettingsPageTests
 
         var (left, right) = Columns(WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel)));
 
-        AssertInOrder(left, "class=\"board-stack boards\"", "id=\"host\"", "Add a board", "class=\"card people\"", "class=\"card backups\"");
-        AssertInOrder(right, "class=\"card updates\"", "class=\"card language\"", "id=\"language\"", "class=\"card debugging\"");
+        AssertInOrder(left, "class=\"board-stack\"", "id=\"host\"", "Add a board", ">People</h2>", ">Backups</h2>");
+        AssertInOrder(right, ">Updates</h2>", "id=\"language\"", ">Debugging</h2>");
     }
 
     [Fact]
@@ -160,8 +161,8 @@ public sealed class SettingsPageTests
 
         var (left, right) = Columns(WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel)));
 
-        AssertInOrder(left, "class=\"card boards\"", "href=\"board/1\"", $"href=\"board/{boards.BarnId}\"", "Add a board", "class=\"card people\"", "class=\"card backups\"");
-        AssertInOrder(right, "class=\"card updates\"", "class=\"card language\"", "class=\"card debugging\"");
+        AssertInOrder(left, ">Relay boards</h2>", "href=\"board/1\"", $"href=\"board/{boards.BarnId}\"", "Add a board", ">People</h2>", ">Backups</h2>");
+        AssertInOrder(right, ">Updates</h2>", "id=\"language\"", ">Debugging</h2>");
         Assert.DoesNotContain("board/", right, StringComparison.Ordinal);
     }
 
