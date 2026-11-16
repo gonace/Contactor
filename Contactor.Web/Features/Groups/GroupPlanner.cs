@@ -186,13 +186,18 @@ public static class GroupPlanner
     /// Relays an OFF was sent for that the board hasn't shown yet: they count as off for what may come on (a start's
     /// next step, a confirmed ON), so a status from before that OFF never confirms them on.
     /// </param>
+    /// <param name="onOnItsWay">
+    /// Relays an ON was sent for that the board hasn't shown yet. A stop of some relays of a step doesn't finish while a
+    /// relay turned on again during it still waits for its ON, so its run isn't taken for one outside the app.
+    /// </param>
     public static void Plan(
         IReadOnlyList<GroupStepInfo> steps,
         BoardState state,
         GroupRuntime runtime,
         DateTime now,
         GroupCommands commands,
-        ChannelMask offOnItsWay = default)
+        ChannelMask offOnItsWay = default,
+        ChannelMask onOnItsWay = default)
     {
         ArgumentNullException.ThrowIfNull(steps);
         ArgumentNullException.ThrowIfNull(state);
@@ -296,6 +301,13 @@ public static class GroupPlanner
         {
             if (StopDone(steps, state, runtime, reach))
             {
+                if (BroughtBackOnItsWay(steps, state, runtime, onOnItsWay))
+                {
+                    // A relay turned on again while the others of its step stopped: its ON took its own OFF over, and
+                    // the stop finishes once the board shows it on, so the run stays the person's.
+                    return;
+                }
+
                 runtime.Phase = GroupPhases.Idle;
                 runtime.NextStepAtUtc = null;
                 runtime.StopRelayIds = [];
@@ -342,7 +354,7 @@ public static class GroupPlanner
                 null,
                 EventActors.AutoOff,
                 minutes is null ? null : JsonSerializer.Serialize(new { afterMinutes = minutes })));
-            Plan(steps, state, runtime, now, commands, offOnItsWay);
+            Plan(steps, state, runtime, now, commands, offOnItsWay, onOnItsWay);
         }
     }
 
@@ -757,6 +769,15 @@ public static class GroupPlanner
         }
 
         return reach <= runtime.TargetLevel;
+    }
+
+    // Whether a relay that a stop of only some relays doesn't stop (one turned on again during it) has an ON on its way
+    // that the board doesn't show yet. Bounded: an ON counts as on its way for a few seconds only.
+    private static bool BroughtBackOnItsWay(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime, ChannelMask onOnItsWay)
+    {
+        return runtime.StopRelayIds.Count > 0
+            && !onOnItsWay.IsEmpty
+            && Relays(steps).Any(r => !runtime.StopRelayIds.Contains(r.Relay.RelayId) && onOnItsWay.Contains(r.Relay.Channel) && !state.IsOn(r.Relay.Channel));
     }
 
     // What of a step goes off next in a stop: the relays a person turned off, or every relay of it that is on.

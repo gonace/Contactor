@@ -460,6 +460,42 @@ public sealed class GroupSequencerTests
         Assert.False(rig.Client.State.IsOn(3));
     }
 
+    // Issue #353: Fan 1 off; Fan 2 off half a second later; Fan 1 on again. The board's status shows Fan 2's OFF before
+    // Fan 1's ON: the stop waits for that ON, so the run stays John's, with no "outside the app" in between.
+    [Fact]
+    public async Task Should_KeepTheRun_OfAFanTurnedOnAgain_WhenTheBoardShowsTheOthersOffFirst()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var board = rig.Second!;
+        int Fan(int channel) => rig.SecondRelayId(channel);
+        var id = await CreateAsync(rig, new GroupDraft("Barn fans", GroupIcons.Fan, 120, [new GroupStepDraft("Fans", [Fan(1), Fan(2)], 3, 180)]));
+        await rig.Groups.StartGroupAsync(id, John, Cancel);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: false, John, Cancel));
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal((GroupPhases.Idle, ChannelMask.Of(2)), ((await RuntimeAsync(rig, id)).Phase, board.State.Relays));
+
+        board.HoldStatus = true;
+        rig.Time.Now += TimeSpan.FromSeconds(0.5);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(2), on: false, John, Cancel));
+        rig.Time.Now += TimeSpan.FromSeconds(0.5);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: true, John, Cancel));
+
+        // The board shows nothing on: Fan 2's OFF, with Fan 1's ON still to come.
+        rig.Time.Now += TimeSpan.FromSeconds(0.2);
+        board.SetRelay(2, on: false);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(GroupPhases.Stopping, (await RuntimeAsync(rig, id)).Phase);
+
+        board.ReleaseStatus();
+        await rig.Groups.StepAsync(Cancel);
+
+        var runtime = await RuntimeAsync(rig, id);
+        Assert.Equal((ChannelMask.Of(1), GroupPhases.Idle, John), (board.State.Relays, runtime.Phase, runtime.TurnedOnBy));
+        Assert.Equal(BoardTestRig.Start, runtime.OnSinceUtc);
+        Assert.Contains(await rig.EventsAsync(), e => e.Action == EventActions.On && e.RelayId == Fan(1) && e.Actor == John);
+    }
+
     [Fact]
     public async Task Should_SendTheFansOnceMore_WhenATripsOnWasLostInAReconnect()
     {
@@ -568,6 +604,12 @@ public sealed class GroupSequencerTests
         var (id, error) = await rig.GroupSetup.CreateAsync(draft, John, Cancel);
         Assert.Null(error);
         return id!.Value;
+    }
+
+    private static async Task<GroupRuntime> RuntimeAsync(BoardTestRig rig, int groupId)
+    {
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        return await db.GroupRuntimes.AsNoTracking().SingleAsync(r => r.GroupId == groupId, Cancel);
     }
 
     private static async Task<int> GroupIdAsync(BoardTestRig rig)
