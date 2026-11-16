@@ -29,11 +29,13 @@ public static class DevantechModels
 
     public static BoardModel Eth008 { get; } = Create("devantech-eth008", "ETH008-B", relays: 8, inputs: 0, analog: 0);
 
+    public static BoardModel Eth1610 { get; } = Create("devantech-eth1610", "ETH1610", relays: 10, inputs: 16, analog: 16);
+
     public static BoardModel Eth484 { get; } = Create("devantech-eth484", "ETH484-B", relays: 4, inputs: 8, analog: 4);
 
     public static BoardModel Eth8020 { get; } = Create("devantech-eth8020", "ETH8020-B", relays: 20, inputs: 8, analog: 8);
 
-    public static IReadOnlyList<BoardModel> All { get; } = [Eth002, Eth008, Eth484, Eth8020];
+    public static IReadOnlyList<BoardModel> All { get; } = [Eth002, Eth008, Eth1610, Eth484, Eth8020];
 
     // The ETH484's 2 output bytes: relays 1–4 in the first, its I/O used as outputs in the second. The ETH8020's
     // 4 input bytes: the first three are always 0.
@@ -41,6 +43,7 @@ public static class DevantechModels
     {
         [Eth002.Id] = new("ETH002", 18, OutputBytes: 1, InputBytes: 0),
         [Eth008.Id] = new("ETH008", 19, OutputBytes: 1, InputBytes: 0),
+        [Eth1610.Id] = new("ETH1610", 52, OutputBytes: 2, InputBytes: 2),
         [Eth484.Id] = new("ETH484", 20, OutputBytes: 2, InputBytes: 2),
         [Eth8020.Id] = new("ETH8020", 21, OutputBytes: 3, InputBytes: 4),
     };
