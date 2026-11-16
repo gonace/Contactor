@@ -5,9 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The tab bar's order, as the server first renders it: Relays and Events, the boards' list, then Debug (while Debugging
-/// is on) and Settings in the group a desktop puts at the bottom of the side menu, just above the version. The CSS puts
-/// Debug after Settings in the phone's tab bar.
+/// The tab bar's order, as the server first renders it: Relays and Events, the boards' list, then Settings and Debug
+/// (while Debugging is on) in the group a desktop puts at the bottom of the side menu, just above the version. The phone's
+/// tab bar shows them in the same order: Relays, Events, Settings, Debug.
 /// </summary>
 public sealed class TabBarTests
 {
@@ -19,7 +19,7 @@ public sealed class TabBarTests
     [InlineData("/")]
     [InlineData("/events")]
     [InlineData("/settings")]
-    public async Task Should_PutDebugAndSettings_UnderTheBoardsAndAboveTheVersion(string path)
+    public async Task Should_PutSettingsAndDebug_UnderTheBoardsAndAboveTheVersion(string path)
     {
         await using var app = new TestWebApp(
             "Development",
@@ -31,7 +31,7 @@ public sealed class TabBarTests
 
         var nav = Nav(WebUtility.HtmlDecode(await http.GetStringAsync(path, Cancel)));
 
-        AssertInOrder(nav, "<a href ", "href=\"events\"", "class=\"side-list\"", "class=\"side-bottom\"", "href=\"debug\"", "href=\"settings\"", "class=\"version\"");
+        AssertInOrder(nav, "<a href ", "href=\"events\"", "class=\"side-list\"", "class=\"side-bottom\"", "href=\"settings\"", "href=\"debug\"", "class=\"version\"");
     }
 
     [Fact]
