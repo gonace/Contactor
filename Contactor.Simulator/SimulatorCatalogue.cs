@@ -1,9 +1,8 @@
 using Contactor.Boards;
 using Contactor.Boards.Advantech;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 
 namespace Contactor.Simulator;
@@ -56,22 +55,29 @@ public static class SimulatorCatalogue
             model,
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Waveshare board takes no login.",
             (_, _, logger, time) => new WaveshareSimulator(model, logger) { TimeProvider = time })),
+        new(
+            SmartDenModels.Ip16RMt,
+            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Denkovi board takes no login.",
+            (_, _, logger, time) => new SmartDenSimulator(logger) { TimeProvider = time },
+            SuggestedPort: 8502),
+        .. DaenetIp2Models.All.Select(model => new SimulatorModel(
+            model,
+            (username, password) => username.Length > 0
+                ? "The DAEnetIP2 v2 takes its read-write community as the password, no user name."
+                : DaenetIp2Models.CheckCommunity(password)?.ToString(),
+            (_, community, logger, time) => new DaenetIp2Simulator(model, community, logger) { TimeProvider = time },
+            SuggestedPort: 8161)),
         .. DevantechModels.All.Select(model => new SimulatorModel(
             model,
             (username, password) => username.Length > 0
                 ? "The Devantech board takes a password only, no user name."
                 : DevantechModels.CheckPassword(password)?.ToString(),
             (_, password, logger, time) => new DevantechSimulator(model, password, logger) { TimeProvider = time })),
-        .. Adam6000Models.All.Select(model => new SimulatorModel(
+        .. AdamModels.All.Select(model => new SimulatorModel(
             model,
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The ADAM module takes no login.",
-            (_, _, logger, time) => new Adam6000Simulator(model, logger, time),
+            (_, _, logger, time) => new AdamSimulator(model, logger) { TimeProvider = time },
             SuggestedPort: 8502)),
-        .. Adam6200Models.All.Select(model => new SimulatorModel(
-            model,
-            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The ADAM module takes no login.",
-            (_, _, logger, time) => new Adam6200Simulator(model, logger, time),
-            SuggestedPort: 8526)),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>

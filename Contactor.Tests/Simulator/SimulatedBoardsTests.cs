@@ -2,10 +2,9 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Advantech;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Simulator;
 using Contactor.Tests.Web;
@@ -89,6 +88,44 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     }
 
     [Theory]
+    [InlineData("denkovi-smartden-ip-16r-mt")]
+    [InlineData(" DENKOVI-SMARTDEN-IP-16R-MT ")]
+    public void Should_RunTheSmartDen_WithoutALogin(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+
+        var board = Assert.Single(_boards.Boards).Board;
+        Assert.IsType<SmartDenSimulator>(board);
+        Assert.Same(SmartDenModels.Ip16RMt, board.Model);
+        Assert.False(board.HasLogin);
+
+        // Port 502 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8502, 502), (SimulatorCatalogue.Find(type)!.Port, SmartDenModels.Ip16RMt.DefaultPort));
+        Assert.Equal("The Denkovi board takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
+    }
+
+    [Theory]
+    [InlineData("denkovi-daenetip2-v2-16")]
+    [InlineData("denkovi-daenetip2-v2-8")]
+    [InlineData(" DENKOVI-DAENETIP2-V2-2 ")]
+    public void Should_RunEachDaenetIp2Kit_WithTheFactoryOrItsOwnCommunity(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        Assert.Null(_boards.Add(type, FreePort(), "", "apple"));
+
+        var boards = _boards.Boards;
+        Assert.All(boards, b => Assert.IsType<DaenetIp2Simulator>(b.Board));
+        Assert.All(boards, b => Assert.Equal(type.Trim().ToLowerInvariant(), b.Board.Model.Id));
+        Assert.All(boards, b => Assert.True(b.Board.HasLogin));
+
+        // Port 161 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8161, 161), (SimulatorCatalogue.Find(type)!.Port, DaenetIp2Api.DefaultPort));
+        Assert.Equal("The DAEnetIP2 v2 takes its read-write community as the password, no user name.", _boards.Add(type, FreePort(), "admin", "apple"));
+        Assert.Equal("The password, the board's read-write community, must be 4 to 12 characters.", _boards.Add(type, FreePort(), "", "thirteen-char"));
+        Assert.Equal("The password, the board's read-write community, must be 4 to 12 characters.", _boards.Add(type, FreePort(), "", "abc"));
+    }
+
+    [Theory]
     [InlineData("devantech-eth002")]
     [InlineData("devantech-eth008")]
     [InlineData("devantech-eth484")]
@@ -111,29 +148,15 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Theory]
     [InlineData("advantech-adam-6060")]
     [InlineData("advantech-adam-6066")]
-    public void Should_RunEachAdvantechAdam6000Model_WithoutALogin(string type)
+    public void Should_RunEachAdamModel_WithoutALogin(string type)
     {
         Assert.Null(_boards.Add(type, FreePort(), null, null));
 
         var board = Assert.Single(_boards.Boards).Board;
-        Assert.IsType<Adam6000Simulator>(board);
+        Assert.IsType<AdamSimulator>(board);
         Assert.Equal(type, board.Model.Id);
         Assert.False(board.HasLogin);
         Assert.Equal((8502, 502), (SimulatorCatalogue.Find(type)!.Port, SimulatorCatalogue.Find(type)!.Model.DefaultPort));
-        Assert.Equal("The ADAM module takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
-    }
-
-    [Fact]
-    public void Should_RunTheAdvantechAdam6200Model_WithoutALogin()
-    {
-        const string type = "advantech-adam-6260";
-        Assert.Null(_boards.Add(type, FreePort(), null, null));
-
-        var board = Assert.Single(_boards.Boards).Board;
-        Assert.IsType<Adam6200Simulator>(board);
-        Assert.Equal(type, board.Model.Id);
-        Assert.False(board.HasLogin);
-        Assert.Equal((8526, 502), (SimulatorCatalogue.Find(type)!.Port, SimulatorCatalogue.Find(type)!.Model.DefaultPort));
         Assert.Equal("The ADAM module takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
     }
 

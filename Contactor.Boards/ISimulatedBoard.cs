@@ -1,9 +1,9 @@
 namespace Contactor.Boards;
 
 /// <summary>
-/// A fake board for development and tests, listening on a local TCP port as the real model would. Each board model's
-/// project brings its own. It is driven from the outside as the board itself would be, e.g. a relay switched by its
-/// own button, and reports every message to and from the app.
+/// A fake board for development and tests, listening on a local port as the real model would: TCP, or UDP for an SNMP
+/// board. Each board model's project brings its own. It is driven from the outside as the board itself would be, e.g. a
+/// relay switched by its own button, and reports every message to and from the app.
 /// </summary>
 public interface ISimulatedBoard : IAsyncDisposable
 {
@@ -39,7 +39,7 @@ public interface ISimulatedBoard : IAsyncDisposable
     /// <summary>Sets a digital input, and tells the app if anything changed.</summary>
     Task SetInputAsync(int input, bool closed);
 
-    /// <summary>Closes every open connection, as if the network dropped.</summary>
+    /// <summary>Closes every open connection, as if the network dropped. A UDP board has none: it forgets its clients.</summary>
     void DropConnections();
 }
 

@@ -27,7 +27,8 @@ public interface IBoardConnection
 
     /// <summary>
     /// Logs in with another login at once. Throws <see cref="ArgumentException"/> for a login
-    /// <see cref="CheckLogin"/> refuses.
+    /// <see cref="CheckLogin"/> refuses, except <see cref="BoardLogin.None"/>, which it always takes: the app falls back to
+    /// it for a saved login the board can't take, and a board added in the app starts with it.
     /// </summary>
     void SetLogin(BoardLogin login);
 

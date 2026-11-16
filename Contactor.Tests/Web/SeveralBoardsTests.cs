@@ -134,7 +134,7 @@ public sealed class SeveralBoardsTests
     [Fact]
     public async Task Should_ConnectTheBoards_OnlyOnceTheAppHasStarted()
     {
-        await using var simulator = new Contactor.Boards.Vm201.Vm201Simulator();
+        await using var simulator = new Contactor.Boards.Velleman.Vm201Simulator();
         simulator.Start();
         HeldStart? held = null;
         await using var app = new TestWebApp(
@@ -171,9 +171,9 @@ public sealed class SeveralBoardsTests
     private sealed class HeldStart : IHostedService
     {
         private readonly IServiceProvider _services;
-        private readonly Contactor.Boards.Vm201.Vm201Simulator _simulator;
+        private readonly Contactor.Boards.Velleman.Vm201Simulator _simulator;
 
-        public HeldStart(IServiceProvider services, Contactor.Boards.Vm201.Vm201Simulator simulator)
+        public HeldStart(IServiceProvider services, Contactor.Boards.Velleman.Vm201Simulator simulator)
         {
             _services = services;
             _simulator = simulator;

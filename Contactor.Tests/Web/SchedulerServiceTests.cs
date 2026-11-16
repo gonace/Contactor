@@ -1,4 +1,4 @@
-using Contactor.Boards.Vm201;
+using Contactor.Boards.Velleman;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;

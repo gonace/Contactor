@@ -45,6 +45,7 @@ public sealed class BoardLoginText
             LoginProblemKind.PasswordTooLong => _texts["Boards.Login.PasswordTooLong", problem.MaxLength],
             LoginProblemKind.PasswordCharacters => _texts["Boards.Login.PasswordCharacters"],
             LoginProblemKind.NoLoginWebPages => _texts["Boards.Login.NoLoginWebPages", problem.Board],
+            LoginProblemKind.CommunityLength => _texts["Boards.Login.CommunityLength", problem.MinLength, problem.MaxLength],
             _ => _texts["Boards.Login.NoLoginWebPage", problem.Board],
         };
     }
@@ -55,7 +56,8 @@ public sealed class BoardLoginText
         {
             LoginHintKind.PlainSymbols => _texts["Boards.LoginHint.PlainSymbols", hint.MaxLength],
             LoginHintKind.ListedSymbols => _texts["Boards.LoginHint.ListedSymbols", hint.MaxLength, hint.TotalMaxLength, hint.Symbols],
-            _ => _texts["Boards.LoginHint.TcpPassword", hint.MaxLength],
+            LoginHintKind.TcpPassword => _texts["Boards.LoginHint.TcpPassword", hint.MaxLength],
+            _ => _texts["Boards.LoginHint.SnmpCommunity", hint.MinLength, hint.MaxLength, hint.FactoryValue],
         };
     }
 }

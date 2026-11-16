@@ -14,6 +14,12 @@ public sealed class SimulatorCatalogueTests
     [InlineData("waveshare-8c", 4196)]
     [InlineData("waveshare-16", 4196)]
     [InlineData("waveshare-30", 4196)]
+    [InlineData("denkovi-smartden-ip-16r-mt", 8502)]
+    [InlineData("denkovi-daenetip2-v2-16", 8161)]
+    [InlineData("denkovi-daenetip2-v2-8", 8161)]
+    [InlineData("denkovi-daenetip2-v2-2", 8161)]
+    [InlineData("advantech-adam-6060", 8502)]
+    [InlineData("advantech-adam-6066", 8502)]
     public void Should_OfferTheModelsOwnPort_WhenItIsFree(string type, int port)
     {
         Assert.Equal(port, SimulatorCatalogue.FreePort(type, [9761, 4197]));

@@ -256,6 +256,38 @@ public sealed class BoardAddingTests
         Assert.NotNull(registry.Find(garage.BoardId));
     }
 
+    // A DAEnetIP2 v2 kit always has a community: the step asks for it, with the hint naming the factory one, and offers
+    // no "no password" box. A community the board can't take is refused in words.
+    [Fact]
+    public async Task Should_AskForTheCommunity_WithoutANoPasswordBox_OnADaenetIp2Kit()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+
+        await ChooseAsync(page, "Denkovi", "denkovi-daenetip2-v2-8");
+        await page.ClickAsync(Button("Next"));
+
+        var text = await page.TextAsync();
+        Assert.Contains("Where is the board?", text, StringComparison.Ordinal);
+        Assert.Contains("On a new board it is private.", text, StringComparison.Ordinal);
+        Assert.Contains("check the address and the community", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("The board has no password", text, StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.With("id", "no-login")));
+        Assert.True(await page.HasAsync(PageRenderer.With("id", "password")));
+        Assert.False(await page.HasAsync(PageRenderer.With("id", "username")));
+
+        await page.TypeAsync(PageRenderer.With("id", "host"), "192.168.1.100");
+        await page.TypeAsync(PageRenderer.With("id", "password"), "abc");
+        await page.ClickAsync(Button("Go on without a connection"));
+        Assert.Contains("The password, the board's read-write community, must be 4 to 12 characters.", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.TypeAsync(PageRenderer.With("id", "password"), "private");
+        await page.ClickAsync(Button("Go on without a connection"));
+        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Equal(new BoardLogin("", "private"), registry.All[^1].Login);
+    }
+
     // Cancel at any step leaves nothing behind: before "Next" nothing was made; after it the board goes again. Back to
     // the first step and another model makes a new board in place of the first.
     [Fact]
@@ -351,7 +383,7 @@ public sealed class BoardAddingTests
     [Fact]
     public async Task Should_TurnTheRelaysOff_AndRemoveTheBoard_OnCancel_WhileItAnswers()
     {
-        await using var simulator = new Contactor.Boards.Vm201.Vm201Simulator();
+        await using var simulator = new Contactor.Boards.Velleman.Vm201Simulator();
         simulator.Start();
         await using var boards = await TwoBoards.StartAsync();
         var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
