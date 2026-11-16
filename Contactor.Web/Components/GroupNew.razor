@@ -101,60 +101,20 @@
         }
         else if (_wizard.Step == 3)
         {
-            var members = _wizard.Members;
             @if (BoardLabel is { } onBoard)
             {
                 <p class="on-board label">@Texts["Groups.New.OnBoard", onBoard]</p>
             }
-            <ol class="steps">
-                @for (var i = 0; i < members.Count; i++)
-                {
-                    var index = i;
-                    var member = members[index];
-                    var label = LabelOf(member);
-                    <li @key="member.RelayId">
-                        <div class="step">
-                            <span class="number" aria-hidden="true">@(index + 1)</span>
-                            <div class="step-text">
-                                <label class="label" for="@($"role-{member.RelayId}")">@Texts["Groups.New.RoleLabel", ChannelOf(member.RelayId)]</label>
-                                <input id="@($"role-{member.RelayId}")" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="member.RoleName" @bind:event="oninput" autocomplete="off" />
-                            </div>
-                            <div class="order">
-                                <button type="button" aria-label="@Texts["Groups.MoveUp", label]" disabled="@(index == 0)" @onclick="() => _wizard.Move(index, -1)">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
-                                </button>
-                                <button type="button" aria-label="@Texts["Groups.MoveDown", label]" disabled="@(index == members.Count - 1)" @onclick="() => _wizard.Move(index, 1)">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
-                                </button>
-                            </div>
-                        </div>
-                        @if (index < members.Count - 1)
-                        {
-                            var below = members[index + 1];
-                            <div class="gap" role="group" aria-label="@Texts["Groups.Between", label, LabelOf(below)]">
-                                <label>
-                                    @Texts["Groups.StartWait"]
-                                    <select @bind="below.StartDelaySec">
-                                        @foreach (var seconds in GroupsHandler.StartDelayChoices)
-                                        {
-                                            <option value="@seconds">@EventText.Seconds(seconds)</option>
-                                        }
-                                    </select>
-                                </label>
-                                <label>
-                                    @Texts["Groups.RunOn"]
-                                    <select @bind="member.RunOnSec">
-                                        @foreach (var seconds in GroupsHandler.RunOnChoices)
-                                        {
-                                            <option value="@seconds">@(seconds == 0 ? Texts["Groups.RunOn.None"] : EventText.Seconds(seconds))</option>
-                                        }
-                                    </select>
-                                </label>
-                            </div>
-                        }
-                    </li>
-                }
-            </ol>
+            @* The same step cards as the group's page: a relay can join a step, be added or removed, and a whole step moves. *@
+            <div class="steps-editor">
+                <GroupStepsEditor Editor="_wizard.Editor"
+                                  CanAdd="Addable.Count > 0"
+                                  Addable="Addable"
+                                  OnMove="m => _wizard.Move(m.Step, m.By)"
+                                  OnRemove="_wizard.Remove"
+                                  OnAdd="AddRelay"
+                                  OnChange="StepsChanged" />
+            </div>
             <p class="info">@Texts["Groups.New.Interlock"]</p>
         }
         else
@@ -164,7 +124,7 @@
             <div class="preview">
                 <span class="icon" aria-hidden="true"><GroupIcon Icon="@draft.Icon" /></span>
                 <span class="preview-text">
-                    <span class="label">@PreviewLabel(draft)</span>
+                    <span class="label">@PreviewLabel()</span>
                     <span class="name">@draft.Name.Trim()</span>
                     <span class="note">@Texts["Groups.Status.Off"]</span>
                 </span>
@@ -173,15 +133,15 @@
             <dl class="plan">
                 <div>
                     <dt class="label">@Texts["Groups.New.WhenOn"]</dt>
-                    <dd>@Plan.Start(_wizard.MemberDrafts)</dd>
+                    <dd>@Plan.Start(_wizard.StepDrafts)</dd>
                 </div>
                 <div>
                     <dt class="label">@Texts["Groups.New.WhenOff"]</dt>
-                    <dd>@Plan.Stop(_wizard.MemberDrafts)</dd>
+                    <dd>@Plan.Stop(_wizard.StepDrafts)</dd>
                 </div>
                 <div>
                     <dt class="label">@Texts["Groups.New.Interlock.Label"]</dt>
-                    <dd>@Plan.Interlock(_wizard.MemberDrafts)</dd>
+                    <dd>@Plan.Interlock(_wizard.StepDrafts)</dd>
                 </div>
                 <div>
                     <dt class="label">@Texts["Groups.New.AutoOff"]</dt>
@@ -258,22 +218,24 @@
     private string? BoardLabel => Several && _wizard.BoardId is { } id && Registry.Find(id) is { } board ? board.Name.ToUpperInvariant() : null;
     private IReadOnlyList<GroupCandidate> _candidates = [];
 
-    // A relay's channel on the board, the number shown; the wizard only offers the candidates, so "?" never shows.
-    private string ChannelOf(int relayId)
-    {
-        return _candidates.FirstOrDefault(c => c.RelayId == relayId)?.Channel.ToString(CultureInfo.InvariantCulture) ?? "?";
-    }
+    // What "+ Add a relay to this step" and "+ Add a step" offer: the free relays of the group's board not picked yet,
+    // by channel, as step 2 offers them.
+    private IReadOnlyList<EditRelay> Addable =>
+        [.. _candidates
+            .Where(c => c.IsFree && _wizard.FitsBoard(c.BoardId) && _wizard.OrderOf(c.RelayId) == 0)
+            .OrderBy(c => c.Channel)
+            .Select(c => new EditRelay(c.RelayId, c.Channel, c.Name))];
     private ElementReference _heading;
     private SignedInUser? _user;
     private string? _error;
     private bool _busy;
     private bool _moved;
 
-    private string SelectedText => _wizard.Members.Count switch
+    private string SelectedText => _wizard.RelayCount switch
     {
         0 => Texts["Groups.New.NoneChosen"],
-        < RelayGroup.MinMembers => Texts["Groups.New.ChosenTooFew", _wizard.Members.Count, RelayGroup.MinMembers],
-        _ => Texts["Groups.New.Chosen", _wizard.Members.Count],
+        < RelayGroup.MinMembers => Texts["Groups.New.ChosenTooFew", _wizard.RelayCount, RelayGroup.MinMembers],
+        _ => Texts["Groups.New.Chosen", _wizard.RelayCount],
     };
 
     protected override async Task OnInitializedAsync()
@@ -292,15 +254,10 @@
         }
     }
 
-    private string LabelOf(WizardMember member)
+    // "GROUP · RELAY 1 + 2 → 3", or with two or more boards "GROUP · WORKSHOP 1 + 2 → 3", as the group's card shows it.
+    private string PreviewLabel()
     {
-        return string.IsNullOrWhiteSpace(member.RoleName) ? Texts["Groups.New.RelayNumber", ChannelOf(member.RelayId)] : member.RoleName;
-    }
-
-    // "GROUP · RELAY 1 → 2", or with two or more boards "GROUP · WORKSHOP 1 → 2", as the group's card shows it.
-    private string PreviewLabel(GroupDraft draft)
-    {
-        var channels = string.Join(" → ", draft.RelayIds.Select(ChannelOf));
+        var channels = string.Join(" → ", _wizard.Editor.Steps.Select(s => string.Join(" + ", s.Relays.Select(r => r.Channel.ToString(CultureInfo.InvariantCulture)))));
         return Texts["Relays.GroupLabel", BoardLabel is { } board ? $"{board} {channels}" : Texts["Groups.Chain", channels].Value];
     }
 
@@ -308,7 +265,20 @@
     {
         if ((relay.IsFree && _wizard.FitsBoard(relay.BoardId)) || _wizard.OrderOf(relay.RelayId) > 0)
         {
-            _wizard.Toggle(relay.RelayId, relay.Name, relay.BoardId);
+            _wizard.Toggle(relay.RelayId, relay.Channel, relay.Name, relay.BoardId);
+        }
+    }
+
+    // A step's name or a wait changed in the step cards: the page draws again, so "Next" follows the steps' names.
+    private static void StepsChanged()
+    {
+    }
+
+    private void AddRelay((int Step, EditRelay Relay) add)
+    {
+        if (_candidates.FirstOrDefault(c => c.RelayId == add.Relay.RelayId) is { IsFree: true } relay)
+        {
+            _wizard.Add(add.Step, add.Relay, relay.BoardId);
         }
     }
 

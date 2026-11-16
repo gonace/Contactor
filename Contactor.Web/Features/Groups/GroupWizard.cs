@@ -3,15 +3,19 @@ using Contactor.Web.Persistence;
 namespace Contactor.Web.Features.Groups;
 
 /// <summary>
-/// What "New group" holds between its four steps. The relays' order is one list: the order they were picked in, changed
-/// by the arrows in step 3, so step 2's #1, #2 … and step 3 always show the same start order.
+/// What "New group" holds between its four steps. The relays are in steps, edited as the group's page edits them
+/// (<see cref="GroupEditor"/>): a relay picked in step 2 starts a step of its own, last; in step 3 a relay can join a
+/// step, be added or removed, and a whole step moves. Step 2's #1, #2 … are the relays' places in that start order.
 /// </summary>
 public sealed class GroupWizard
 {
     public const int StepCount = 4;
 
-    private readonly List<WizardMember> _members = [];
-    private readonly Dictionary<int, WizardMember> _unpicked = [];
+    private readonly GroupEditor _editor = new([]);
+
+    // A relay unpicked while alone in its step: that step's name and waits, for when it is picked again.
+    private readonly Dictionary<int, (string Name, int StartDelaySec, int RunOnSec)> _unpicked = [];
+    private int _boardId;
 
     public int Step { get; private set; } = 1;
 
@@ -19,35 +23,42 @@ public sealed class GroupWizard
 
     public string Icon { get; set; } = GroupIcons.Fan;
 
-    /// <summary>The picked relays in start order.</summary>
-    public IReadOnlyList<WizardMember> Members => _members;
+    /// <summary>The steps in start order, each with its relays.</summary>
+    public GroupEditor Editor => _editor;
+
+    /// <summary>How many relays are picked, in all the steps.</summary>
+    public int RelayCount => _editor.RelayCount;
 
     public bool CanGoOn => Step switch
     {
         1 => !string.IsNullOrWhiteSpace(Name),
-        2 => _members.Count >= RelayGroup.MinMembers,
-        3 => _members.All(m => !string.IsNullOrWhiteSpace(m.RoleName)),
+        2 => _editor.RelayCount >= RelayGroup.MinMembers,
+        // A step's name may be empty, as on the group's page: it is then saved as its first relay's.
+        3 => _editor.RelayCount >= RelayGroup.MinMembers,
         _ => false,
     };
 
-    /// <summary>The group to create: each relay in a step of its own.</summary>
-    public GroupDraft Draft => new(Name, Icon, RelayGroup.DefaultMaxOnMinutes, MemberDrafts);
+    /// <summary>The group to create: its steps as the group's page saves them.</summary>
+    public GroupDraft Draft => new(Name, Icon, RelayGroup.DefaultMaxOnMinutes, _editor.Drafts);
 
-    /// <summary>The picked relays in start order, each with its name in the group and its times.</summary>
-    public IReadOnlyList<GroupMemberDraft> MemberDrafts =>
-        [.. _members.Select(m => new GroupMemberDraft(m.RelayId, m.RoleName.Trim(), m.StartDelaySec, m.RunOnSec))];
+    /// <summary>
+    /// The steps in start order for the plan in words: each by its first relay, with the step's name (its first relay's
+    /// while empty, as it is saved) and times.
+    /// </summary>
+    public IReadOnlyList<GroupMemberDraft> StepDrafts =>
+        [.. _editor.Steps.Select(s => new GroupMemberDraft(s.Relays[0].RelayId, s.Label, s.StartDelaySec, s.RunOnSec))];
 
-    /// <summary>1 for the first in the start order, or 0 when not picked.</summary>
+    /// <summary>The relay's place in the start order, from 1 (the steps' relays one after another), or 0 when not picked.</summary>
     public int OrderOf(int relayId)
     {
-        return _members.FindIndex(m => m.RelayId == relayId) + 1;
+        return _editor.Relays.Select(r => r.RelayId).ToList().IndexOf(relayId) + 1;
     }
 
     /// <summary>
-    /// The board of the picked relays: the first picked relay's, or null before one is picked. A group's relays are all
+    /// The board of the picked relays: the first picked relay's, or null while none is picked. A group's relays are all
     /// on one board, so only that board's relays can be picked next.
     /// </summary>
-    public int? BoardId => _members.Count > 0 ? _members[0].BoardId : null;
+    public int? BoardId => _editor.RelayCount > 0 ? _boardId : null;
 
     /// <summary>Whether a relay on this board can be picked next: none is picked yet, or the picked ones are on it.</summary>
     public bool FitsBoard(int boardId)
@@ -56,44 +67,80 @@ public sealed class GroupWizard
     }
 
     /// <summary>
-    /// Picks a relay on this board last in the order, or unpicks it. A relay picked again keeps its name and waits. One
-    /// on another board than the picked relays' isn't picked.
+    /// Picks a relay on this board in a step of its own, last, or unpicks it. A relay picked again that was alone in its
+    /// step gets that step's name and waits back. One on another board than the picked relays' isn't picked.
     /// </summary>
-    public void Toggle(int relayId, string relayName, int boardId)
+    public void Toggle(int relayId, int channel, string relayName, int boardId)
     {
         ArgumentNullException.ThrowIfNull(relayName);
-        var index = _members.FindIndex(m => m.RelayId == relayId);
-        if (index >= 0)
+        if (_editor.Contains(relayId))
         {
-            _unpicked[relayId] = _members[index];
-            _members.RemoveAt(index);
+            Remove(relayId);
             return;
         }
 
-        if (!FitsBoard(boardId))
-        {
-            return;
-        }
-
-        if (_unpicked.Remove(relayId, out var earlier))
-        {
-            _members.Add(earlier);
-            return;
-        }
-
-        var role = relayName.Length > RelayGroupStep.NameMaxLength ? relayName[..RelayGroupStep.NameMaxLength] : relayName;
-        _members.Add(new WizardMember(relayId, role) { BoardId = boardId });
+        Add(GroupEditor.NewStep, new EditRelay(relayId, channel, relayName), boardId);
     }
 
-    public void Move(int index, int step)
+    /// <summary>
+    /// Adds a relay on this board to the step at <paramref name="stepIndex"/>, or with <see cref="GroupEditor.NewStep"/>
+    /// in a step of its own, last. One already picked, on another board, or a step that isn't there, does nothing.
+    /// </summary>
+    public void Add(int stepIndex, EditRelay relay, int boardId)
     {
-        var to = index + step;
-        if (index < 0 || index >= _members.Count || to < 0 || to >= _members.Count)
+        ArgumentNullException.ThrowIfNull(relay);
+        if (_editor.Contains(relay.RelayId) || !FitsBoard(boardId))
         {
             return;
         }
 
-        (_members[index], _members[to]) = (_members[to], _members[index]);
+        if (stepIndex != GroupEditor.NewStep && (stepIndex < 0 || stepIndex >= _editor.Steps.Count))
+        {
+            return;
+        }
+
+        if (_editor.RelayCount == 0)
+        {
+            _boardId = boardId;
+        }
+
+        if (stepIndex != GroupEditor.NewStep)
+        {
+            _editor.AddToStep(stepIndex, relay);
+            _unpicked.Remove(relay.RelayId);
+            return;
+        }
+
+        _editor.AddStep(relay);
+        if (_unpicked.Remove(relay.RelayId, out var earlier))
+        {
+            var step = _editor.Steps[^1];
+            step.Name = earlier.Name;
+            step.StartDelaySec = earlier.StartDelaySec;
+            step.RunOnSec = earlier.RunOnSec;
+        }
+    }
+
+    /// <summary>Unpicks a relay; a step left without relays goes with it.</summary>
+    public void Remove(int relayId)
+    {
+        if (_editor.Steps.FirstOrDefault(s => s.Relays.Any(r => r.RelayId == relayId)) is not { } step)
+        {
+            return;
+        }
+
+        if (step.Relays.Count == 1)
+        {
+            _unpicked[relayId] = (step.Name, step.StartDelaySec, step.RunOnSec);
+        }
+
+        _editor.Remove(relayId);
+    }
+
+    /// <summary>Moves a whole step up (-1) or down (+1); nothing past the ends.</summary>
+    public void Move(int stepIndex, int by)
+    {
+        _editor.Move(stepIndex, by);
     }
 
     /// <summary>Goes on from <paramref name="fromStep"/>; a second tap that arrives after the page moved on does nothing.</summary>
@@ -119,25 +166,4 @@ public sealed class GroupWizard
         Step--;
         return true;
     }
-}
-
-/// <summary>A relay as "New group" sets it up.</summary>
-public sealed class WizardMember
-{
-    public WizardMember(int relayId, string roleName)
-    {
-        RelayId = relayId;
-        RoleName = roleName;
-    }
-
-    public int RelayId { get; }
-
-    /// <summary>The relay's board.</summary>
-    public int BoardId { get; init; }
-
-    public string RoleName { get; set; }
-
-    public int StartDelaySec { get; set; } = RelayGroupStep.DefaultStartDelaySec;
-
-    public int RunOnSec { get; set; } = RelayGroupStep.DefaultRunOnSec;
 }

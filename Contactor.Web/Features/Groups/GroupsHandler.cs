@@ -12,7 +12,7 @@ namespace Contactor.Web.Features.Groups;
 /// <summary>A group as it is created or saved; the steps in start order.</summary>
 public sealed record GroupDraft(string Name, string Icon, int? MaxOnMinutes, IReadOnlyList<GroupStepDraft> Steps)
 {
-    /// <summary>A group with each relay in a step of its own, as "New group" makes one.</summary>
+    /// <summary>A group with each relay in a step of its own.</summary>
     public GroupDraft(string name, string icon, int? maxOnMinutes, IReadOnlyList<GroupMemberDraft> members)
         : this(name, icon, maxOnMinutes, OneRelayPerStep(members))
     {
@@ -44,7 +44,7 @@ public sealed record GroupStepDraft(
     int StartDelaySec = RelayGroupStep.DefaultStartDelaySec,
     int RunOnSec = RelayGroupStep.DefaultRunOnSec);
 
-/// <summary>A relay in its own step, as "New group" has them. An empty role name takes the relay's own name.</summary>
+/// <summary>A relay in its own step, or a step by its first relay for "New group"'s plan in words. An empty role name takes the relay's own name.</summary>
 public sealed record GroupMemberDraft(
     int RelayId,
     string? RoleName,

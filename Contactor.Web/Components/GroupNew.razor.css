@@ -254,102 +254,12 @@ input[type="text"] {
     color: var(--accent);
 }
 
-.steps {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-}
-
-.steps > li {
-    display: flex;
-    flex-direction: column;
-}
-
-.step {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px;
-    border-radius: 14px;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-}
-
-.number {
-    width: 28px;
-    height: 28px;
-    flex-shrink: 0;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--ink);
-    color: var(--on-ink);
-    font-size: 14px;
-    font-weight: 700;
-}
-
-.step-text {
-    flex: 1;
+/* "Order and rules": the step cards (GroupStepsEditor) and "+ Add a step" under them. */
+.steps-editor {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-}
-
-.step-text input {
-    min-height: 44px;
-    font-size: 16px;
-}
-
-.order {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.order button {
-    width: 44px;
-    height: 30px;
-    border-radius: 8px;
-    border: 1.5px solid var(--line);
-    background: var(--card);
-    color: var(--ink);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-}
-
-/* The waits between two steps, on the line that joins them. */
-.gap {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    margin-left: 25px;
-    padding: 10px 0 10px 22px;
-    border-left: 2px dashed var(--line-dashed);
-}
-
-.gap label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 14px;
-    color: var(--muted);
-}
-
-.gap select {
-    min-height: 44px;
-    padding: 0 8px;
-    border-radius: 10px;
-    border: 1.5px solid var(--line-strong);
-    background: var(--card);
-    color: var(--ink);
-    font: inherit;
-    font-size: 16px;
+    gap: 12px;
 }
 
 .info {

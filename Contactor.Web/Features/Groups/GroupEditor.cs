@@ -9,6 +9,9 @@ namespace Contactor.Web.Features.Groups;
 /// </summary>
 public sealed class GroupEditor
 {
+    /// <summary>Where a relay is added: a step's index, or this for a new step last.</summary>
+    public const int NewStep = -1;
+
     private readonly List<EditStep> _steps = [];
     private readonly List<EditRelay> _removed = [];
 
