@@ -25,6 +25,12 @@ public static class EventActions
 
     /// <summary>A board's new name. Details: <c>{"from":"Barn","to":"Garage"}</c>.</summary>
     public const string BoardRenamed = "board-renamed";
+
+    /// <summary>
+    /// A board taken out of the app, logged with no board so it outlives the board's own events. Details:
+    /// <c>{"name":"Garage","model":"Velleman VM204"}</c>, as they were at the removal; no model for a board without one.
+    /// </summary>
+    public const string BoardRemoved = "board-removed";
     public const string GroupOn = "group-on";
     public const string GroupOff = "group-off";
     public const string GroupStartFailed = "group-start-failed";

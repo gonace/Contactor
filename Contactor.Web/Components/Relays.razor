@@ -649,7 +649,13 @@
             return Texts["Relays.By.Outside"];
         }
 
-        return _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email);
+        if (_names.TryGetValue(email, out var name))
+        {
+            return name;
+        }
+
+        // An input that is no longer in the app (a removed board's) has no name, and isn't an e-mail.
+        return EventActors.TryInput(email, out _) ? Texts["Relays.By.RemovedInput"] : IdentityRules.DisplayNameFor(email);
     }
 
     private async Task ToggleAsync(Relay relay, bool isOn)

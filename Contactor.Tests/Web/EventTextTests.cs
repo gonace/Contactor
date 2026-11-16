@@ -129,16 +129,53 @@ public sealed class EventTextTests
         Assert.Equal(("Door:", "Open", unknown), (view.Who, view.What, view.TimeUnknown));
     }
 
-    // An input no longer on the board has no name to show, and its id is not the number the screens show.
+    // An input no longer in the app (a removed board's) has no name to show, and its id is not the number the screens
+    // show. The relay's status line says the same.
     [Fact]
     public void Should_NameAnInputPlainly_WithoutItsName()
     {
         var entry = Entry(EventActors.External, EventActions.InputChanged, """{"on":true}""", relayId: null);
         entry.InputId = 201;
 
-        Assert.Equal(new EventView(false, "I", "An input:", "{0} Closed", null), TestTexts.Events.For(entry, relayName: null, personName: null));
+        Assert.Equal(new EventView(false, "I", "A removed input:", "{0} Closed", null), TestTexts.Events.For(entry, relayName: null, personName: null));
         var on = Entry(EventActors.ForInput(201), EventActions.On, details: null, relayId: 4);
-        Assert.Equal(("An input", "An input"), (TestTexts.Events.For(on, "Lighting", personName: null).Who, TestTexts.Events.ShortWho(on.Actor, personName: null)));
+        Assert.Equal(("A removed input", "a removed input"), (TestTexts.Events.For(on, "Lighting", personName: null).Who, TestTexts.Events.ShortWho(on.Actor, personName: null)));
+    }
+
+    // A relay or group id with no name left (a removed board's) shows plain words, or the name the event saved; one
+    // that still resolves shows its name.
+    [Fact]
+    public void Should_NameARemovedRelayOrGroupPlainly()
+    {
+        Assert.Equal("a removed relay", TestTexts.Events.For(Entry("jane@example.com", EventActions.On, relayId: 301), relayName: null, "Jane").Target);
+        Assert.Equal(Relay, TestTexts.Events.For(Entry("jane@example.com", EventActions.On, relayId: 301), Relay, "Jane").Target);
+        Assert.Null(TestTexts.Events.For(Entry(EventActors.System, EventActions.ConnectionLost, relayId: null), relayName: null, personName: null).Target);
+
+        var group = Entry("jane@example.com", EventActions.GroupOff, relayId: null);
+        group.GroupId = 40;
+        Assert.Equal("a removed group", TestTexts.Events.For(group, relayName: null, "Jane").Target);
+        Assert.Equal("Fan heater", TestTexts.Events.For(group, relayName: null, "Jane", groupName: "Fan heater").Target);
+        group.Details = """{"name":"Heater"}""";
+        Assert.Equal("Heater", TestTexts.Events.For(group, relayName: null, "Jane").Target);
+
+        var runOn = Entry(EventActors.System, EventActions.RunOnEnd, relayId: 301);
+        runOn.GroupId = 40;
+        Assert.Equal("{0} a removed relay off", TestTexts.Events.For(runOn, relayName: null, personName: null).Line);
+    }
+
+    // A removed board is named from the event: its row is gone.
+    [Theory]
+    [InlineData("""{"name":"Garage","model":"Velleman VM204"}""", "removed relay board Garage (Velleman VM204)")]
+    [InlineData("""{"name":"Garage"}""", "removed relay board Garage")]
+    [InlineData("""{"name":"","model":"Velleman VM204"}""", "removed relay board Velleman VM204")]
+    [InlineData(null, "removed relay board ?")]
+    [InlineData("not json", "removed relay board ?")]
+    public void Should_SayWhoRemovedABoard(string? details, string what)
+    {
+        var view = TestTexts.Events.For(Entry("john@example.com", EventActions.BoardRemoved, details, relayId: null), relayName: null, "John");
+
+        Assert.Equal(("John", what, null, "J"), (view.Who, view.What, view.Target, view.Badge));
+        Assert.Equal("John " + what, view.Text);
     }
 
     [Theory]
