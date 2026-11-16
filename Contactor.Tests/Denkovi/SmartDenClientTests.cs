@@ -355,6 +355,72 @@ public sealed class SmartDenClientTests
         Assert.DoesNotContain(run.Changes, s => s.IsOn(2));
     }
 
+    // Polls given up on for a command each, none of their answers ever coming: eight may wait on the connection, the
+    // ninth opens it afresh, so the ids to skip never pile up.
+    [Fact]
+    public async Task Should_OpenANewConnection_WhenMoreThanEightPollsWereGivenUp()
+    {
+        var holdReads = 0;
+        await using var board = ScriptedBoard.Start(request =>
+            request[7] == SmartDenApi.WriteSingleCoil ? request : Volatile.Read(ref holdReads) == 1 ? null : Relays(request, 0));
+        await using var run = ClientRun.Start(board.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        for (var given = 1; given <= 9; given++)
+        {
+            await GiveUpAPollAsync(board, run, hold => Volatile.Write(ref holdReads, hold ? 1 : 0));
+
+            Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+            Assert.Equal(given <= 8 ? 1 : 2, board.Connections);
+        }
+
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    // A poll given up on after it had read part of what came (here the late answer of the poll before it, and the first
+    // byte of its own): the connection is out of step, so the command goes on a new one, and nothing unreadable is read.
+    [Fact]
+    public async Task Should_OpenANewConnection_WhenAPollGivenUpOnHadReadPartOfItsAnswer()
+    {
+        var mode = 0;
+        byte[]? late = null;
+        await using var board = ScriptedBoard.Start(request =>
+        {
+            if (request[7] == SmartDenApi.WriteSingleCoil)
+            {
+                return request;
+            }
+
+            switch (Volatile.Read(ref mode))
+            {
+                case 1:
+                    Volatile.Write(ref late, Relays(request, 0));
+                    return null;
+                case 2:
+                    return [.. Volatile.Read(ref late)!, Relays(request, 0)[0]];
+                default:
+                    return Relays(request, 0);
+            }
+        });
+        await using var run = ClientRun.Start(board.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        await GiveUpAPollAsync(board, run, hold => Volatile.Write(ref mode, hold ? 1 : 0));
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+
+        // The next poll reads the first one's late answer, then waits for the rest of its own.
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        Volatile.Write(ref mode, 2);
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Skipped a late answer nobody waited for") && run.Time.WaitsOnly(SmartDenClient.RequestTimeout));
+        Volatile.Write(ref mode, 0);
+
+        Assert.Equal(1UL, await run.Client.TurnOffAsync(1, Cancel));
+
+        Assert.Equal(2, board.Connections);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Unreadable answer", StringComparison.Ordinal));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
     [Fact]
     public async Task Should_SendEveryOff_OnANewConnection_WhenTheBoardClosedTheOldOne()
     {
@@ -493,6 +559,18 @@ public sealed class SmartDenClientTests
             Contactor.Boards.Velleman.Vm201Model.Model,
             TimeProvider.System,
             NullLogger<SmartDenClient>.Instance));
+    }
+
+    // Lets the next poll go unanswered (hold), and returns once the client waits for its answer: a command then takes its
+    // place and gives it up.
+    private static async Task GiveUpAPollAsync(ScriptedBoard board, ClientRun run, Action<bool> hold)
+    {
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        var requests = board.Requests;
+        hold(true);
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Requests == requests + 1 && run.Time.WaitsOnly(SmartDenClient.RequestTimeout));
+        hold(false);
     }
 
     // The client's poll with this transaction id.
