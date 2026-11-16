@@ -278,6 +278,9 @@ public sealed class BoardAddingTests
         Assert.False(await page.HasAsync(PageRenderer.With("id", "username")));
 
         await page.TypeAsync(PageRenderer.With("id", "host"), "192.168.1.100");
+        await page.ClickAsync(Button("Go on without a connection"));
+        Assert.Contains("Type the password, the board's read-write community.", await page.TextAsync(), StringComparison.Ordinal);
+
         await page.TypeAsync(PageRenderer.With("id", "password"), "abc");
         await page.ClickAsync(Button("Go on without a connection"));
         Assert.Contains("The password, the board's read-write community, must be 4 to 12 characters.", await page.TextAsync(), StringComparison.Ordinal);

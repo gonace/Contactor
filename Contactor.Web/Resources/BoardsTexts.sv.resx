@@ -354,6 +354,9 @@
   <data name="Boards.Login.CommunityLength" xml:space="preserve">
     <value>Lösenordet, kortets read-write community, måste vara {0} till {1} tecken.</value>
   </data>
+  <data name="Boards.Login.CommunityMissing" xml:space="preserve">
+    <value>Skriv lösenordet, kortets read-write community.</value>
+  </data>
   <data name="Boards.Login.NoLoginWebPages" xml:space="preserve">
     <value>{0} tar ingen inloggning: dess lösenord skyddar bara dess egna webbsidor.</value>
   </data>

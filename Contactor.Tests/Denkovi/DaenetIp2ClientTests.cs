@@ -253,6 +253,31 @@ public sealed class DaenetIp2ClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    // Relay 1 gets no answer, relay 2 is taken, relay 3 gets none either: the taken relay in between starts the count
+    // over, so relay 4 still goes.
+    [Fact]
+    public async Task Should_CountOnlyRelaysInARow_WithoutAnAnswer()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        simulator.SilentRelays = 0b0101;
+        await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var sent = run.Client.TurnOnAsync(0b1111, run.Stopping);
+        for (var unanswered = 1; unanswered <= 4; unanswered++)
+        {
+            var count = unanswered;
+            await Wait.UntilAsync(() => simulator.UnansweredCount == count && run.Time.PendingTimers == 2);
+            run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        }
+
+        Assert.Equal(0b1010UL, await Done(sent));
+        Assert.Equal(0b1010UL, simulator.Relays);
+        Assert.Contains(run.Traces, t => t.Text == "No answer for relay 3: going on with the rest" && t.IsError);
+        Assert.DoesNotContain(run.Traces, t => t.Text.Contains("either", StringComparison.Ordinal));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
     [Fact]
     public async Task Should_ReturnWhatWasTaken_WithoutTheRead_WhenTheBoardGoesInTheMiddleOfAMask()
     {

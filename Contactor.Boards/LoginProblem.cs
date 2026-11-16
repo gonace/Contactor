@@ -32,9 +32,12 @@ public enum LoginProblemKind
 
     /// <summary>
     /// The password, an SNMP community, is shorter than <see cref="LoginProblem.MinLength"/> or longer than
-    /// <see cref="LoginProblem.MaxLength"/> characters; empty included, as the board always has one.
+    /// <see cref="LoginProblem.MaxLength"/> characters. An empty one is <see cref="CommunityMissing"/>.
     /// </summary>
     CommunityLength,
+
+    /// <summary>The password, an SNMP community, is empty: the board always has one.</summary>
+    CommunityMissing,
 }
 
 /// <summary>Which part of a login a <see cref="LoginProblem"/> is about.</summary>
@@ -71,6 +74,7 @@ public sealed record LoginProblem(LoginProblemKind Kind, LoginField Field = Logi
             LoginProblemKind.PasswordCharacters => "The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.",
             LoginProblemKind.NoLoginWebPages => $"The {Board} takes no login: its password only protects its own web pages.",
             LoginProblemKind.CommunityLength => $"The password, the board's read-write community, must be {MinLength} to {MaxLength} characters.",
+            LoginProblemKind.CommunityMissing => "Type the password, the board's read-write community.",
             _ => $"The {Board} board takes no login: its password only protects its own web page.",
         };
     }
