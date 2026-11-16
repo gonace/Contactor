@@ -14,6 +14,9 @@ namespace Contactor.Boards;
 /// <param name="PasswordOnly">
 /// Whether its login is a password alone, without a user name: the screens then ask for the password only.
 /// </param>
+/// <param name="LoginRequired">
+/// Whether the board always has a login, e.g. an SNMP community: the screens then offer no "no login" box.
+/// </param>
 public sealed record BoardModel(
     string Id,
     string Brand,
@@ -22,7 +25,8 @@ public sealed record BoardModel(
     int DefaultPort,
     int LoginMaxLength,
     LoginHint? LoginHint = null,
-    bool PasswordOnly = false)
+    bool PasswordOnly = false,
+    bool LoginRequired = false)
 {
     /// <summary>Its name as people know it, with the brand, e.g. "Velleman VM201".</summary>
     public string Name => $"{Brand} {ModelName}";

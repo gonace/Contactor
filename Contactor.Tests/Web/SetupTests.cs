@@ -155,6 +155,19 @@ public sealed class SetupTests
     }
 
     [Fact]
+    public async Task Should_Start_WithoutADaenetIp2Address()
+    {
+        var settings = new Dictionary<string, string?>(John) { ["Board:Type"] = "denkovi-daenetip2-v2-8", ["DaenetIp2:Host"] = "" };
+        await using var app = new TestWebApp("Development", settings);
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+
+        Assert.Contains("Denkovi DAEnetIP2 v2 8-relay kit", html, StringComparison.Ordinal);
+        Assert.Contains("The relay board has no address yet", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Should_Start_WithoutADevantechAddress()
     {
         var settings = new Dictionary<string, string?>(John) { ["Board:Type"] = "devantech-eth008", ["Devantech:Host"] = "" };
@@ -437,7 +450,7 @@ public sealed class SetupTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));
-        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, denkovi-smartden-ip-16r-mt, devantech-eth002, devantech-eth008, devantech-eth484, devantech-eth8020.", error.Message);
+        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, denkovi-smartden-ip-16r-mt, denkovi-daenetip2-v2-16, denkovi-daenetip2-v2-8, denkovi-daenetip2-v2-2, devantech-eth002, devantech-eth008, devantech-eth484, devantech-eth8020.", error.Message);
     }
 
     [Fact]

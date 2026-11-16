@@ -59,6 +59,13 @@ public static class SimulatorCatalogue
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Denkovi board takes no login.",
             (_, _, logger, time) => new SmartDenSimulator(logger) { TimeProvider = time },
             SuggestedPort: 8502),
+        .. DaenetIp2Models.All.Select(model => new SimulatorModel(
+            model,
+            (username, password) => username.Length > 0
+                ? "The DAEnetIP2 v2 takes its read-write community as the password, no user name."
+                : DaenetIp2Models.CheckCommunity(password)?.ToString(),
+            (_, community, logger, time) => new DaenetIp2Simulator(model, community, logger) { TimeProvider = time },
+            SuggestedPort: 8161)),
         .. DevantechModels.All.Select(model => new SimulatorModel(
             model,
             (username, password) => username.Length > 0
