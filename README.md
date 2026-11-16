@@ -49,11 +49,13 @@ qualified electrician.
 
 | Board | Relays | Status |
 |---|---|---|
-| Velleman VM201 (WMRC201), ethernet | 8, plus 1 input | Supported |
+| Velleman VM201 (WMRC201), ethernet | 8, plus 1 input | Supported. See [its README](Contactor.Boards.Velleman/README.md) |
 | Advantech ADAM-6060 and ADAM-6066 | 6 each, plus 6 inputs each | In the app and the simulator; not yet tested on a real board. See [its README](Contactor.Boards.Advantech/README.md) |
-| Velleman VM204 (WMRC204), ethernet | 4, plus 4 inputs and 1 analog input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
-| Velleman VM208, ethernet or WLAN | 4, plus 1 input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
+| Velleman VM204 (WMRC204), ethernet | 4, plus 4 inputs and 1 analog input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Velleman/README.md) |
+| Velleman VM208, ethernet or WLAN | 4, plus 1 input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Velleman/README.md) |
 | Waveshare Modbus PoE ETH Relay, (B), (C), 16CH and 30CH | 8, 8 plus 8 inputs, 8 plus 8 inputs, 16, 30 | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Waveshare/README.md) |
+| Denkovi smartDEN IP-16R-MT, Modbus TCP | 16 | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Denkovi/README.md) |
+| Denkovi DAEnetIP2 v2 with a 16-, 8- or 2-relay board, SNMPv1 | 16, 8, 2 | In the app and the simulator; not yet tested on a real board (Issue #371), and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Denkovi/README.md#the-daenetip2-v2) |
 | Devantech ETH002-B, ETH008-B, ETH484-B and ETH8020-B | 2, 8, 4 plus 8 inputs, 20 plus 8 inputs | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Devantech/README.md) |
 
 The app talks to a board through one interface, `IRelayBoard`, so another board needs its own small project and

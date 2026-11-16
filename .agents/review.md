@@ -11,7 +11,7 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
 - `AGENTS.md`: how to work in this repository, the safety rules and the conventions. Review against them.
 - `docs/ARCHITECTURE.md`: the architecture and the domain rules. Read the sections the change touches, and review
   against them.
-- For a change to a board, its `Contactor.Boards.<Model>/README.md`: the board's protocol or routes, and what to check on a real board.
+- For a change to a board, its manufacturer's `Contactor.Boards.<Manufacturer>/README.md`: the board's protocol or routes, and what to check on a real board.
 - `.agents/writing.md`, for how to write the report.
 - The whole diff you're given (`git diff origin/<base>...origin/<branch>`, after fetching both with
   `git fetch origin <name>:refs/remotes/origin/<name>`), then whatever surrounding code you need to understand each

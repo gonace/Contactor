@@ -655,7 +655,7 @@ public sealed class WaveshareClientTests
     public void Should_RefuseSettingsAndModelsItCantUse()
     {
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, WaveshareModels.Relay8, pollSeconds: 0));
-        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Vm201.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Velleman.Vm201Model.Model));
     }
 
     private static byte[] BadCrc(byte[] frame)

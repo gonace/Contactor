@@ -1,9 +1,8 @@
 using Contactor.Boards;
 using Contactor.Boards.Advantech;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
@@ -80,6 +79,43 @@ public sealed class BoardCatalogueTests
     }
 
     [Theory]
+    [InlineData("denkovi-smartden-ip-16r-mt")]
+    [InlineData(" DENKOVI-SMARTDEN-IP-16R-MT ")]
+    public async Task Should_BuildTheSmartDenModel_WhenChosen(string type)
+    {
+        await using var board = Build(type);
+
+        Assert.Same(SmartDenModels.Ip16RMt, board.Model);
+        var smartDen = Assert.IsType<SmartDenBoard>(board.Board);
+        Assert.Same(board.Model.Capabilities, smartDen.Capabilities);
+        Assert.Same(board.Model, board.Services.GetRequiredService<SmartDenClient>().Model);
+        Assert.IsType<SmartDenConnection>(board.Connection);
+        Assert.IsType<SmartDenTraffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(502, board.Connection.Endpoint.Port);
+    }
+
+    [Theory]
+    [InlineData("denkovi-daenetip2-v2-16")]
+    [InlineData("Denkovi-DAEnetIP2-v2-8")]
+    [InlineData(" denkovi-daenetip2-v2-2 ")]
+    public async Task Should_BuildEachDaenetIp2Kit_WhenChosen(string type)
+    {
+        await using var board = Build(type);
+
+        Assert.Contains(board.Model, DaenetIp2Models.All);
+        Assert.Equal(type.Trim().ToLowerInvariant(), board.Model.Id);
+        var daenet = Assert.IsType<DaenetIp2Board>(board.Board);
+        Assert.Same(board.Model.Capabilities, daenet.Capabilities);
+        Assert.Same(board.Model, board.Services.GetRequiredService<DaenetIp2Client>().Model);
+        Assert.IsType<DaenetIp2Connection>(board.Connection);
+        Assert.IsType<DaenetIp2Traffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(161, board.Connection.Endpoint.Port);
+        Assert.Equal(BoardLogin.None, board.Connection.Login);
+    }
+
+    [Theory]
     [InlineData("devantech-eth002")]
     [InlineData("devantech-eth008")]
     [InlineData("Devantech-ETH484")]
@@ -147,7 +183,7 @@ public sealed class BoardCatalogueTests
     [Fact]
     public void Should_ListTheBrands_InAlphabeticalOrder_EachWithItsModels()
     {
-        Assert.Equal(["Advantech", "Devantech", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
+        Assert.Equal(["Advantech", "Denkovi", "Devantech", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
         Assert.Equal(
             ["VM201", "VM204", "VM208"],
             BoardCatalogue.Brands.Single(m => m.Name == "Velleman").Models.Select(m => m.ModelName));
@@ -166,6 +202,7 @@ public sealed class BoardCatalogueTests
             Assert.Equal($"{r.Model.Brand} {r.Model.ModelName}", r.Model.Name);
         });
         Assert.Equal("Waveshare Modbus PoE ETH Relay 30CH", BoardCatalogue.Find("waveshare-30")!.Model.Name);
+        Assert.Equal("Denkovi DAEnetIP2 v2 16-relay kit", BoardCatalogue.Find("denkovi-daenetip2-v2-16")!.Model.Name);
     }
 
     private static ActiveBoard Build(string type, string vm208Host = "127.0.0.1", Dictionary<string, string?>? settings = null)

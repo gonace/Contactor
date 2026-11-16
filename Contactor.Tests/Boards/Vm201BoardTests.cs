@@ -1,5 +1,5 @@
 using Contactor.Boards;
-using Contactor.Boards.Vm201;
+using Contactor.Boards.Velleman;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 

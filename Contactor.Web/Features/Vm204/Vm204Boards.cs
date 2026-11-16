@@ -1,5 +1,5 @@
 using Contactor.Boards;
-using Contactor.Boards.Vm204;
+using Contactor.Boards.Velleman;
 using Contactor.Web.Features.Boards;
 
 namespace Contactor.Web.Features.Vm204;
