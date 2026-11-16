@@ -178,12 +178,14 @@ the app. The app sees each switch only as a change from outside:
 - The DO modes (pages 80–83): Pulse Output makes a pulse train; Low-to-High Delay and High-to-Low Delay switch a relay
   some time after it was told to. Only the DO mode is plain on and off.
 - The fail-safe values and the Communication WDT (page 76): when the module has had no TCP packet for longer than its
-  host idle time, it turns on each relay whose FSV box is checked.
+  host idle time, it sets every relay to its fail-safe value (FSV): a checked box is on, and an unchecked box most
+  likely off. So when the WDT runs out, for example while the app restarts or the Pi is down longer than the host idle
+  time, the module can turn relays off, or on, without the app.
 - P2P (page 84) and GCL (chapter 8): another module's inputs, or the module's own logic, set its relays.
 
 The app doesn't read or change these settings. Set them in Advantech's utility or on the module's web page: the DO mode
 for every relay that the app switches, no FSV box checked unless the installation wants that relay on when the network
-is lost, and P2P and GCL off for those relays. The app polls every 2 s, so a host idle time longer than that never
+is lost (with the WDT on, every unchecked relay then goes off), and P2P and GCL off for those relays. The app polls every 2 s, so a host idle time longer than that never
 starts the WDT while the app runs.
 
 ## Settings
@@ -234,7 +236,9 @@ offers port 8502, because port 502 needs rights that a developer doesn't have.
 - How many Modbus TCP connections the module takes at a time, and what it does with one more.
 - What the host idle time does to the TCP connection: does the module close a connection after it? The app polls every
   2 s.
-- What the fail-safe values do after a network loss, and that the module never turns a relay off by itself then.
+- What the fail-safe values do after a network loss: that a checked box turns its relay on and an unchecked box turns
+  it off.
+- What the module does with a request for another unit id than 1.
 - How the inputs read with a dry and a wet contact, and with the inverted DI status on and off.
 - The relay states after a power cut. The app must turn nothing off at start.
 - What the Access Control does to a request from an address it doesn't list: no answer, a closed connection or an

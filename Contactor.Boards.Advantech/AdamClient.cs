@@ -386,8 +386,9 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
         catch (OperationCanceledException)
         {
             // A command took the poll's place, or the app stops. The connection stays: the manual doesn't say how many
-            // the module takes at a time. The answer may still come; the next request skips it by its transaction id. Only when part of it was read already, or too many are given up on, is the connection
-            // out of step and opened afresh.
+            // the module takes at a time. The answer may still come; the next request skips it by its transaction id.
+            // Only when part of it was read already, or too many are given up on, is the connection out of step and
+            // opened afresh.
             if (reader.BytesRead > 0 || _late.Count >= MaxLateAnswers)
             {
                 Close();

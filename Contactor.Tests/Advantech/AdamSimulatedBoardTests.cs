@@ -112,7 +112,7 @@ public sealed class AdamSimulatedBoardTests
             var stream = tcp.GetStream();
             await stream.WriteAsync(AdamModbusTests.Bytes(header), Cancel);
 
-            Assert.Equal(0, await stream.ReadAsync(new byte[1], Cancel));
+            Assert.Equal(0, await stream.ReadAsync(new byte[1], Cancel).AsTask().WaitAsync(TimeSpan.FromSeconds(30), Cancel));
         }
 
         await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
