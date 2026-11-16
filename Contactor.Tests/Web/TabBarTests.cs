@@ -31,7 +31,7 @@ public sealed class TabBarTests
 
         var nav = Nav(WebUtility.HtmlDecode(await http.GetStringAsync(path, Cancel)));
 
-        AssertInOrder(nav, "<a href ", "href=\"events\"", "class=\"side-list\"", "class=\"side-bottom\"", "href=\"settings\"", "href=\"debug\"", "class=\"version\"");
+        AssertInOrder(nav, "<a href ", "href=\"events\"", "class=\"side-list\"", "class=\"side-bottom\"", "href=\"settings\"", "href=\"debug\"", "</div>", "class=\"version\"");
     }
 
     [Fact]
@@ -45,9 +45,11 @@ public sealed class TabBarTests
         var nav = Nav(WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel)));
 
         Assert.DoesNotContain("href=\"debug\"", nav, StringComparison.Ordinal);
-        AssertInOrder(nav, "href=\"events\"", "class=\"side-list\"", "class=\"side-bottom\"", "href=\"settings\"", "class=\"version\"");
+        AssertInOrder(nav, "href=\"events\"", "class=\"side-list\"", "class=\"side-bottom\"", "href=\"settings\"", "</div>", "class=\"version\"");
     }
 
+    // The links hold no box of their own, so the first </div> after the last one closes the bottom group: a link outside
+    // the group would come after it.
     private static string Nav(string html)
     {
         var start = html.IndexOf("<nav class=\"tabs", StringComparison.Ordinal);
