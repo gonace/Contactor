@@ -148,12 +148,12 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Theory]
     [InlineData("advantech-adam-6060")]
     [InlineData("advantech-adam-6066")]
-    public void Should_RunEachAdvantechAdam6000Model_WithoutALogin(string type)
+    public void Should_RunEachAdamModel_WithoutALogin(string type)
     {
         Assert.Null(_boards.Add(type, FreePort(), null, null));
 
         var board = Assert.Single(_boards.Boards).Board;
-        Assert.IsType<Adam6000Simulator>(board);
+        Assert.IsType<AdamSimulator>(board);
         Assert.Equal(type, board.Model.Id);
         Assert.False(board.HasLogin);
         Assert.Equal((8502, 502), (SimulatorCatalogue.Find(type)!.Port, SimulatorCatalogue.Find(type)!.Model.DefaultPort));

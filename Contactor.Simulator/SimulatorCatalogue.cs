@@ -73,10 +73,10 @@ public static class SimulatorCatalogue
                 ? "The Devantech board takes a password only, no user name."
                 : DevantechModels.CheckPassword(password)?.ToString(),
             (_, password, logger, time) => new DevantechSimulator(model, password, logger) { TimeProvider = time })),
-        .. Adam6000Models.All.Select(model => new SimulatorModel(
+        .. AdamModels.All.Select(model => new SimulatorModel(
             model,
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The ADAM module takes no login.",
-            (_, _, logger, time) => new Adam6000Simulator(model, logger, time),
+            (_, _, logger, time) => new AdamSimulator(model, logger) { TimeProvider = time },
             SuggestedPort: 8502)),
     ];
 

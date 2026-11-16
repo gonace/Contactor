@@ -4,9 +4,9 @@ using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
+using Contactor.Web.Features.Advantech;
 using Contactor.Web.Features.Denkovi;
 using Contactor.Web.Features.Devantech;
-using Contactor.Web.Features.Advantech;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Features.Vm204;
 using Contactor.Web.Features.Vm208;
@@ -38,8 +38,6 @@ public static class BoardCatalogue
         new(Vm201Model.Model, Vm201Boards.Create),
         new(Vm204Model.Model, Vm204Boards.Create),
         new(Vm208Model.Model, Vm208Boards.Create),
-        new(Adam6000Models.Adam6060, Adam6000Boards.Create),
-        new(Adam6000Models.Adam6066, Adam6000Boards.Create),
         new(WaveshareModels.Relay8, WaveshareBoards.Create),
         new(WaveshareModels.Relay8B, WaveshareBoards.Create),
         new(WaveshareModels.Relay8C, WaveshareBoards.Create),
@@ -53,6 +51,8 @@ public static class BoardCatalogue
         new(DevantechModels.Eth008, DevantechBoards.Create),
         new(DevantechModels.Eth484, DevantechBoards.Create),
         new(DevantechModels.Eth8020, DevantechBoards.Create),
+        new(AdamModels.Adam6060, AdamBoards.Create),
+        new(AdamModels.Adam6066, AdamBoards.Create),
     ];
 
     /// <summary>The brands in alphabetical order, each with its models in the catalogue's order.</summary>

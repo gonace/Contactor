@@ -147,17 +147,17 @@ public sealed class BoardCatalogueTests
     [Theory]
     [InlineData("advantech-adam-6060")]
     [InlineData("ADVANTECH-ADAM-6066 ")]
-    public async Task Should_BuildEachAdvantechAdam6000Model(string type)
+    public async Task Should_BuildEachAdamModel(string type)
     {
         await using var board = Build(type);
 
-        Assert.Contains(board.Model, Adam6000Models.All);
+        Assert.Contains(board.Model, AdamModels.All);
         Assert.Equal(type.Trim().ToLowerInvariant(), board.Model.Id);
-        var adam = Assert.IsType<Adam6000Board>(board.Board);
+        var adam = Assert.IsType<AdamBoard>(board.Board);
         Assert.Same(board.Model.Capabilities, adam.Capabilities);
-        Assert.Same(board.Model, board.Services.GetRequiredService<Adam6000Client>().Model);
-        Assert.IsType<Adam6000Connection>(board.Connection);
-        Assert.IsType<Adam6000Traffic>(board.Traffic);
+        Assert.Same(board.Model, board.Services.GetRequiredService<AdamClient>().Model);
+        Assert.IsType<AdamConnection>(board.Connection);
+        Assert.IsType<AdamTraffic>(board.Traffic);
         Assert.False(board.Connection.Endpoint.HasHost);
         Assert.Equal(502, board.Connection.Endpoint.Port);
     }

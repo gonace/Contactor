@@ -43,11 +43,11 @@ global.json                 # SDK version and test runner (Microsoft.Testing.Pla
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
 Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel, BoardPoller. No dependencies.
+Contactor.Boards.Advantech/ # The Advantech ADAM-6060 and ADAM-6066 (Modbus TCP): codec, client, simulator and their adapters (AdamBoard, AdamConnection, AdamTraffic). No web/EF. README.md: their protocol
 Contactor.Boards.Denkovi/   # The Denkovi smartDEN IP-16R-MT (Modbus TCP) and the DAEnetIP2 v2 kits (SNMPv1 over UDP): codecs, clients, simulators and their adapters (SmartDen*, DaenetIp2*: Board, Connection, Traffic). No web/EF. README.md: their protocols
 Contactor.Boards.Devantech/ # The Devantech ETH002-B, ETH008-B, ETH484-B and ETH8020-B: binary TCP commands, client, simulator and its adapters (DevantechBoard, DevantechConnection, DevantechTraffic). No web/EF. README.md: its protocol
 Contactor.Boards.Velleman/  # The Velleman VM201 (packet codec), VM204 and VM208 (HTTP clients): their clients, simulators and adapters (Vm201Board, Vm204Connection, Vm208Traffic …). No web/EF. README.md: their protocols and routes
 Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and its adapters (WaveshareBoard, WaveshareConnection, WaveshareTraffic). No web/EF. README.md: its protocol
-Contactor.Boards.Advantech/ # Advantech ADAM modules: Modbus TCP framing, separate series maps/clients, simulators and adapters. No web/EF. README.md: protocols and hardware checks
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Resources/                # The UI's texts: one .resx per area with its marker class (CommonTexts); not a feature
@@ -57,6 +57,7 @@ Contactor.Demo/           # The public demo: a proxy that gives each visitor the
 Contactor.AppHost/        # Aspire: runs everything locally (aspire run)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
+  Advantech/                # Modbus TCP codec, trace words, simulator + client against the simulator
   Boards/                   # ChannelMask, BoardPoller, board adapters
   Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
   Denkovi/                  # Modbus TCP and SNMPv1 codecs, trace words, simulators + clients against the simulators
@@ -64,7 +65,6 @@ Contactor.Tests/          # The only test project
   Simulator/                # The simulator's boards and page
   Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, trace words, connections + clients against the simulator
   Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
-  Advantech/                # Modbus TCP framing, series maps, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 install/
   install.sh                # The one-command install (curl … | sh), the only file attached to each GitHub Release
