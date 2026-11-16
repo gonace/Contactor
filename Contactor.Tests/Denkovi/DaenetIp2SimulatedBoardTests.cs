@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Denkovi;
+using Contactor.Boards.Velleman;
 
 namespace Contactor.Tests.Denkovi;
 
@@ -281,7 +282,7 @@ public sealed class DaenetIp2SimulatedBoardTests
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(DaenetIp2Models.Relays8, "thirteen-char", logger));
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(DaenetIp2Models.Relays8, "abc", logger));
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(DaenetIp2Models.Relays8) { ReadOnlyCommunity = "with space" });
-        Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(Vm201Model.Model));
     }
 
     private static DaenetIp2Simulator Started(BoardModel model)

@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Denkovi;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -46,7 +47,7 @@ public sealed class DaenetIp2BoardTests
         Assert.Equal([DaenetIp2Port.P5], relays2.Ports);
         Assert.Null(relays2.RelayOf(new DaenetIp2Pin(DaenetIp2Port.P5, 1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => relays2.PinOf(3));
-        Assert.Throws<ArgumentException>(() => DaenetIp2Models.Layout(Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => DaenetIp2Models.Layout(Vm201Model.Model));
     }
 
     [Theory]

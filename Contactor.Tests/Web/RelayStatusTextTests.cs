@@ -84,7 +84,7 @@ public sealed class RelayStatusTextTests
     {
         Assert.Equal(
             "On since 14:02, by Jane. Turns off 16:02.",
-            TestTexts.RelayStatus.Sentence(true, new DateTime(2026, 11, 4, 14, 2, 0), TurnedOnBy.Person, "Jane", new DateTime(2026, 11, 4, 16, 2, 0), Now));
+            TestTexts.RelayStatus.Sentence(true, new DateTime(2026, 11, 4, 14, 2, 0), TurnedOnBy.Named, "Jane", new DateTime(2026, 11, 4, 16, 2, 0), Now));
         Assert.Equal("On since 14:02, by you.", TestTexts.RelayStatus.Sentence(true, new DateTime(2026, 11, 4, 14, 2, 0), TurnedOnBy.You, null, null, Now));
         Assert.Equal("On right now.", TestTexts.RelayStatus.Sentence(true, null, TurnedOnBy.Nobody, null, null, Now));
         Assert.Equal("Off right now.", TestTexts.RelayStatus.Sentence(false, null, TurnedOnBy.Nobody, null, null, Now));
@@ -96,11 +96,11 @@ public sealed class RelayStatusTextTests
         var since = new DateTime(2026, 11, 4, 14, 2, 0);
 
         Assert.Equal("On since 14:02, outside the app.", TestTexts.RelayStatus.Sentence(true, since, TurnedOnBy.Outside, null, null, Now));
-        Assert.Equal("On since 14:02.", TestTexts.RelayStatus.Sentence(true, since, TurnedOnBy.Person, "", null, Now));
+        Assert.Equal("On since 14:02.", TestTexts.RelayStatus.Sentence(true, since, TurnedOnBy.Named, "", null, Now));
         Assert.Equal("On since 14:02.", TestTexts.RelayStatus.Sentence(true, since, TurnedOnBy.Nobody, "Jane", null, Now));
 
         // A name is shown as it is, braces included.
-        Assert.Equal("On since 14:02, by {0}.", TestTexts.RelayStatus.Sentence(true, since, TurnedOnBy.Person, "{0}", null, Now));
+        Assert.Equal("On since 14:02, by {0}.", TestTexts.RelayStatus.Sentence(true, since, TurnedOnBy.Named, "{0}", null, Now));
     }
 
     [Fact]
