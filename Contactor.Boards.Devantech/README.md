@@ -65,7 +65,7 @@ also when the app stops in between. So all five models pulse for 0.1 s to 25.5 s
 
 Layouts:
 
-- The ETH1610 answers 0x24 with 2 bytes: relays 1–8 are in the first byte and relays 9–10 in the second. It answers 0x25 with 2 bytes for all 16 digital inputs, high byte first.
+- The ETH1610 answers 0x24 with 2 bytes: relays 1–8 are in the first byte and relays 9–10 in the second. Its manual documents 16 digital inputs and a 2-byte 0x25 response, but does not specify the input byte/bit order. The simulator currently follows the existing Devantech high-byte-first convention; confirm that layout on a real board.
 - The ETH484-B answers 0x24 with 2 bytes. Relays 1 to 4 are bits 0 to 3 of the first byte. The second byte is its I/O
   used as outputs, and the app does not use it. It answers 0x25 with 2 bytes. Inputs 1 to 8 are the second byte.
 - The ETH8020-B answers 0x24 with 3 bytes: relays 1 to 8, 9 to 16, and 17 to 20. It answers 0x25 with 4 bytes. The
