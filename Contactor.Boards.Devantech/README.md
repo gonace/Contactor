@@ -129,6 +129,11 @@ Then:
 - The client reads only the length of the answer. A short answer counts as no answer after 5 s.
 - An answer with a value it cannot have is unreadable, for example `05` to 0x20. Then the client closes the
   connection, because the stream can be out of step. The next command opens and checks a new connection.
+- When the connection was open from before and turns out broken (the board or the network can close a connection
+  that is idle), the client sends the command once more on a new connection, which it checks and unlocks first. It
+  does this only when no byte of the answer came, and never for the commands that check and unlock a new connection.
+  Each command the client sends has the same result when done twice: 0x10, 0x7A, 0x24 and 0x25 read, 0x20 and 0x21
+  switch one relay or start its pulse again, and 0x79 unlocks.
 - Bytes that wait before a command were not asked for. The client drops them and shows them on the Debug screen.
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the VM204, the VM208 and the
   Waveshare boards.
@@ -137,7 +142,7 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
 
 - First the client sends 0x7A. When the board locked again, it sends the password again.
 - The client sends 0x20 or 0x21 for every relay in the mask, also when the board refuses one.
-- A command with no answer stops the rest of the mask.
+- A command with no answer, also on a new connection, stops the rest of the mask: the board is gone.
 - When the board takes no relay, the command throws "The Devantech board didn't take the command: …".
 - Otherwise it returns the relays the board confirmed. A refused relay, or one whose answer couldn't be read, isn't among them.
 - When a command gets no answer, the command throws "The Devantech board didn't answer; the command may not have been
@@ -147,7 +152,8 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
   the open one when `7A` before a command fails. When the board answered `01` to every relay, the board answered: the
   command is a refusal (`BoardRefusedException`), which does not count.
 - After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
-  new state. When that read cannot be read, the client keeps the last state it read and reads again at once.
+  new state. When that read gets an answer it cannot read or no answer, the command returns the relays that the board
+  took. The client keeps the last state it read and reads again at once.
 
 `DevantechClient.PulseAsync` and `DevantechBoard.PulseAsync` throw `ArgumentOutOfRangeException` for a length outside
 0.1 s to 25.5 s, or not in steps of 0.1 s, before anything is sent.
@@ -206,4 +212,4 @@ When `Host` is empty, the setup guide asks for the address.
 - The pulse: that the relay goes off by itself after `tt` × 100 ms, and what a 0x20, 0x21 or a second pulse for the
   relay does to a pulse that runs.
 - That the board never sends data that the app did not ask for.
-- How the board handles a poll every 2 s for days.
+- How the board handles a poll every 2 s for days, and if it closes a connection that is idle, and after how long.

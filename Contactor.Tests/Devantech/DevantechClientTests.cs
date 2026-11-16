@@ -599,6 +599,160 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
+    public async Task Should_SendEveryOff_OnANewConnection_WhenTheBoardClosedTheOldOne()
+    {
+        await using var simulator = Started(DevantechModels.Eth008);
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        await simulator.SwitchRelayAsync(1, true);
+        await simulator.SwitchRelayAsync(2, true);
+        await simulator.SwitchRelayAsync(3, true);
+
+        // The board closes the connection, e.g. as idle; "All off" comes before the next poll.
+        simulator.DropConnections();
+        await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
+        Assert.Equal(0b0111UL, await run.Client.TurnOffAsync(0b0111, Cancel).WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+
+        Assert.Equal(0UL, simulator.Relays);
+        Assert.Equal(0UL, run.Client.State.Relays);
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(1, simulator.ConnectionCount);
+
+        // The new connection was checked as the first was, before the lock check goes once more.
+        Assert.Equal(["10", "7A", "24", "10", "7A", "7A", "21 01 00", "21 02 00", "21 03 00", "24"], simulator.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task Should_SwitchARelay_RightAfterTheBoardClosedAnIdleConnection()
+    {
+        // The board takes the lock check, then closes the connection at the switch without an answer.
+        var switches = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [19, 2, 28],
+            [0x7A] => [0xFF],
+            [0x20, 1, 0] when Interlocked.Increment(ref switches) == 1 => null,
+            [0x20, 1, 0] => [0x00],
+            _ => [Volatile.Read(ref switches) > 1 ? (byte)1 : (byte)0],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(0b0001UL, await run.Client.TurnOnAsync(0b0001, Cancel).WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(2, board.Connections);
+        Assert.Equal(["10", "7A", "24", "7A", "20 01 00", "10", "7A", "20 01 00", "24"], board.Received);
+    }
+
+    [Fact]
+    public async Task Should_NotTryAnotherConnection_WhenANewOneBreaksAtItsCheck()
+    {
+        // The board closes the first two connections at the module check: a new connection isn't one from before, so
+        // the check doesn't go once more on yet another, and the poller tries again with its backoff.
+        var checks = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] when Interlocked.Increment(ref checks) <= 2 => null,
+            [0x10] => [19, 2, 28],
+            [0x7A] => [0xFF],
+            _ => [0],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008);
+
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+
+        Assert.Equal(1, board.Connections);
+        Assert.Equal(["10"], board.Received);
+        Assert.False(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_NotAskAgain_WhenPartOfTheAnswerCameBeforeTheBoardClosedTheConnection()
+    {
+        // The second poll's answer has one of its two bytes, and the board closes the connection: the poll counts as
+        // failed and isn't sent once more.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(
+            request => request switch
+            {
+                [0x10] => [52, 1, 1],
+                [0x7A] => [0xFF],
+                [0x24] when Interlocked.Increment(ref reads) == 2 => [0],
+                _ => [0, 0],
+            },
+            closeAfter: request => request is [0x24] && Volatile.Read(ref reads) == 2);
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth1610);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(["10", "7A", "24", "24"], board.Received);
+        Assert.Equal(1, board.Connections);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
+    {
+        // The switch is answered; the read after it gets no answer.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [19, 2, 28],
+            [0x7A] => [0xFF],
+            [0x20, _, 0] => [0x00],
+            [0x24] when Interlocked.Increment(ref reads) == 2 => [],
+            _ => [0b0001],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var sent = run.Client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.PendingTimers == 2);
+        run.Time.Advance(DevantechClient.RequestTimeout);
+
+        Assert.Equal(0b0001UL, await sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+
+        // The read at once, not in a minute, on a new connection.
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(2, board.Connections);
+    }
+
+    [Fact]
+    public async Task Should_OpenNoConnection_AfterItIsDisposed_WhileACommandWaits()
+    {
+        // The switch gets no answer; the client is disposed meanwhile, before its run has ended (LiveBoard doesn't wait
+        // for it), which closes the connection under the command.
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [19, 2, 28],
+            [0x7A] => [0xFF],
+            [0x20, _, 0] => [],
+            _ => [0],
+        });
+        var time = new ManualTimeProvider();
+        using var cts = new CancellationTokenSource();
+        var client = CreateClient(board.Port, time, DevantechModels.Eth008, pollSeconds: 60);
+        var running = client.RunAsync(cts.Token);
+        await Wait.UntilAsync(() => client.State.IsConnected && time.WaitsOnly(TimeSpan.FromSeconds(60)));
+
+        var sent = client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => board.Received.Contains("20 01 00") && time.PendingTimers == 2);
+        client.Dispose();
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+        await cts.CancelAsync();
+        await StoppedAsync(running);
+        Assert.Equal(1, board.Connections);
+        Assert.Equal(["10", "7A", "24", "7A", "20 01 00"], board.Received);
+    }
+
+    [Fact]
     public async Task Should_RefuseCommands_BeforeItConnected()
     {
         using var client = CreateClient(1, new ManualTimeProvider(), DevantechModels.Eth008);
@@ -655,6 +809,18 @@ public sealed class DevantechClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Velleman.Vm201Model.Model));
         var error = Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, DevantechModels.Eth008, password: "smörgås"));
         Assert.DoesNotContain("smörgås", error.Message, StringComparison.Ordinal);
+    }
+
+    // The run of a client disposed while it ran: it may end on the poller's lock being gone.
+    private static async Task StoppedAsync(Task running)
+    {
+        try
+        {
+            await running.WaitAsync(TimeSpan.FromMinutes(1), Cancel);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     private static DevantechSimulator Started(BoardModel model, string? password = null, TimeProvider? time = null)
@@ -749,15 +915,17 @@ public sealed class DevantechClientTests
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _stop = new();
         private readonly Func<byte[], byte[]?> _answer;
+        private readonly Func<byte[], bool> _closeAfter;
         private readonly Task _loop;
         private readonly List<string> _received = [];
         private int _sent;
         private int _connections;
 
-        private ScriptedBoard(TcpListener listener, Func<byte[], byte[]?> answer)
+        private ScriptedBoard(TcpListener listener, Func<byte[], byte[]?> answer, Func<byte[], bool> closeAfter)
         {
             _listener = listener;
             _answer = answer;
+            _closeAfter = closeAfter;
             _loop = ServeAsync();
         }
 
@@ -781,11 +949,12 @@ public sealed class DevantechClientTests
         public int Connections => Volatile.Read(ref _connections);
 
         /// <param name="answer">The answer to a packet: empty for none, null to close the connection.</param>
-        public static ScriptedBoard Start(Func<byte[], byte[]?> answer)
+        /// <param name="closeAfter">Whether to close the connection after answering a packet.</param>
+        public static ScriptedBoard Start(Func<byte[], byte[]?> answer, Func<byte[], bool>? closeAfter = null)
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
-            return new ScriptedBoard(listener, answer);
+            return new ScriptedBoard(listener, answer, closeAfter ?? (_ => false));
         }
 
         public async ValueTask DisposeAsync()
@@ -850,6 +1019,11 @@ public sealed class DevantechClientTests
                         {
                             await stream.WriteAsync(answer, _stop.Token);
                             Interlocked.Increment(ref _sent);
+                        }
+
+                        if (_closeAfter(request))
+                        {
+                            return;
                         }
                     }
                 }

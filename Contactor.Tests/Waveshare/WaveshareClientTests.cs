@@ -413,6 +413,114 @@ public sealed class WaveshareClientTests
     }
 
     [Fact]
+    public async Task Should_SendEveryOff_OnANewConnection_WhenTheBoardClosedTheOldOne()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        await simulator.SwitchRelayAsync(1, true);
+        await simulator.SwitchRelayAsync(2, true);
+        await simulator.SwitchRelayAsync(3, true);
+
+        // The board closes the connection, e.g. as idle; "All off" comes before the next poll.
+        simulator.DropConnections();
+        await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
+        Assert.Equal(0b0111UL, await run.Client.TurnOffAsync(0b0111, Cancel).WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+
+        Assert.Equal(0UL, simulator.Relays);
+        Assert.Equal(0UL, run.Client.State.Relays);
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(1, simulator.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task Should_SwitchARelay_RightAfterTheBoardClosedAnIdleConnection()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        simulator.DropConnections();
+        await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
+        Assert.Equal(0b0001UL, await run.Client.TurnOnAsync(0b0001, Cancel).WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+
+        Assert.Equal(0b0001UL, simulator.Relays);
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.Equal(1, simulator.ReceivedRequests.Count(r => r == "01 05 00 00 FF 00 8C 3A"));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_NotAskAgain_WhenPartOfTheAnswerCameBeforeTheBoardClosedTheConnection()
+    {
+        // The second poll's answer stops after two bytes, and the board closes the connection: what came may be the
+        // start of an answer, so the poll counts as failed and isn't sent once more.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(
+            request => Interlocked.Increment(ref reads) == 2 ? [1, 1] : WaveshareModbus.WithCrc([1, 1, 1, 0]),
+            closeAfter: _ => Volatile.Read(ref reads) == 2);
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(2, board.Requests);
+        Assert.Equal(1, board.Connections);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
+    {
+        // The switch is answered; the read after it gets no answer.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.WriteSingleCoil => request,
+            _ when Interlocked.Increment(ref reads) == 2 => [],
+            _ => WaveshareModbus.WithCrc([1, 1, 1, 1]),
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var sent = run.Client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.PendingTimers == 2);
+        run.Time.Advance(WaveshareClient.RequestTimeout);
+
+        Assert.Equal(0b0001UL, await sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+
+        // The read at once, not in a minute, on a new connection.
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(2, board.Connections);
+    }
+
+    [Fact]
+    public async Task Should_OpenNoConnection_AfterItIsDisposed_WhileACommandWaits()
+    {
+        // The switch gets no answer; the client is disposed meanwhile, before its run has ended (LiveBoard doesn't wait
+        // for it), which closes the connection under the command.
+        await using var board = ScriptedBoard.Start(request => request[1] == WaveshareApi.WriteSingleCoil ? [] : WaveshareModbus.WithCrc([1, 1, 1, 0]));
+        var time = new ManualTimeProvider();
+        using var cts = new CancellationTokenSource();
+        var client = CreateClient(board.Port, time, WaveshareModels.Relay8, pollSeconds: 60);
+        var running = client.RunAsync(cts.Token);
+        await Wait.UntilAsync(() => client.State.IsConnected && time.WaitsOnly(TimeSpan.FromSeconds(60)));
+
+        var sent = client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => board.Requests == 2 && time.PendingTimers == 2);
+        client.Dispose();
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+        await cts.CancelAsync();
+        await StoppedAsync(running);
+        Assert.Equal(1, board.Connections);
+        Assert.Equal(2, board.Requests);
+    }
+
+    [Fact]
     public async Task Should_RefuseCommands_BeforeItConnected()
     {
         using var client = CreateClient(1, new ManualTimeProvider(), WaveshareModels.Relay8);
@@ -658,6 +766,18 @@ public sealed class WaveshareClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Velleman.Vm201Model.Model));
     }
 
+    // The run of a client disposed while it ran: it may end on the poller's lock being gone.
+    private static async Task StoppedAsync(Task running)
+    {
+        try
+        {
+            await running.WaitAsync(TimeSpan.FromMinutes(1), Cancel);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
     private static byte[] BadCrc(byte[] frame)
     {
         frame[^1] ^= 0xFF;
@@ -768,14 +888,16 @@ public sealed class WaveshareClientTests
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _stop = new();
         private readonly Func<byte[], byte[]> _answer;
+        private readonly Func<byte[], bool> _closeAfter;
         private readonly Task _loop;
         private int _requests;
         private int _connections;
 
-        private ScriptedBoard(TcpListener listener, Func<byte[], byte[]> answer)
+        private ScriptedBoard(TcpListener listener, Func<byte[], byte[]> answer, Func<byte[], bool> closeAfter)
         {
             _listener = listener;
             _answer = answer;
+            _closeAfter = closeAfter;
             _loop = ServeAsync();
         }
 
@@ -785,11 +907,13 @@ public sealed class WaveshareClientTests
 
         public int Connections => Volatile.Read(ref _connections);
 
-        public static ScriptedBoard Start(Func<byte[], byte[]> answer)
+        /// <param name="answer">The answer to a request: empty for none.</param>
+        /// <param name="closeAfter">Whether to close the connection after answering a request.</param>
+        public static ScriptedBoard Start(Func<byte[], byte[]> answer, Func<byte[], bool>? closeAfter = null)
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
-            return new ScriptedBoard(listener, answer);
+            return new ScriptedBoard(listener, answer, closeAfter ?? (_ => false));
         }
 
         public async ValueTask DisposeAsync()
@@ -843,6 +967,10 @@ public sealed class WaveshareClientTests
 
                         Interlocked.Increment(ref _requests);
                         await stream.WriteAsync(_answer(request), _stop.Token);
+                        if (_closeAfter(request))
+                        {
+                            return;
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is OperationCanceledException or IOException or SocketException or EndOfStreamException or ObjectDisposedException)
