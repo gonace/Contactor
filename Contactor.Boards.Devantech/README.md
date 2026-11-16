@@ -6,9 +6,10 @@ in `docs/ARCHITECTURE.md`.
 This project connects Contactor to five Devantech ETH relay boards. It has the command bytes, the client, the adapters
 for the app and a simulator. It has no web or database code.
 
-Nobody has tested the app on a real board yet. Devantech's own site was not reachable when this was written, so the
-facts come from copies of Devantech's documents and code, and from a session recorded on a real ETH008-B. The list in
-"To check on a real board" shows what is not known.
+Nobody has tested the app on a real board yet. Devantech's own site was not reachable when the first four models were
+written, so their facts come from copies of Devantech's documents and code, and from a session recorded on a real
+ETH008-B. The ETH1610's come from its own manual on Devantech's site. The list in "To check on a real board" shows what
+is not known.
 
 ## Sources
 
@@ -20,6 +21,9 @@ facts come from copies of Devantech's documents and code, and from a session rec
   `devantech-eth008b/`.
 - The ETH8020 command table, as `github.com/kiloreven/devantech_relays` quotes it, and the libsigrok driver
   `src/hardware/devantech-eth008/`.
+- *ETH1610 Technical Documentation*, Devantech, 02/11/26 (11 February 2026), `robot-electronics.co.uk/files/eth1610.pdf`:
+  "Overview" (p. 1), "Analogue Inputs" (p. 4), "Access from the Internet" (p. 7), "TCP access and commands" (pp. 17–18)
+  and "TCP/IP Password" (p. 18). For the ETH1610, every command and answer below is from these pages.
 
 ## Models
 
@@ -27,14 +31,20 @@ facts come from copies of Devantech's documents and code, and from a session rec
 |---|---|---|---|---|---|---|
 | `devantech-eth002` | Devantech ETH002-B | 2 | 0 | 18 | 1 | none |
 | `devantech-eth008` | Devantech ETH008-B | 8 | 0 | 19 | 1 | none |
-| `devantech-eth1610` | Devantech ETH1610 | 10 | 16 digital, 16 analog | 52 | 2 | 2 |
+| `devantech-eth1610` | Devantech ETH1610 | 10 | 0 (see below) | 52 | 2 | 2, not read |
 | `devantech-eth484` | Devantech ETH484-B | 4 | 8 | 20 | 2 | 2 |
 | `devantech-eth8020` | Devantech ETH8020-B | 20 | 8 | 21 | 3 | 4 |
 
 All five use port 17494. Their only login is an optional TCP password. `DevantechModels` has the five models and
 their layouts. The original ETH002, ETH008, ETH484 and ETH8020 have the same module ids, so the app also takes them.
 
-The ETH1610, ETH484-B and ETH8020-B also have analog inputs. The app does not read them yet: that is issue #113.
+The ETH1610, ETH484-B and ETH8020-B also have analog inputs: the ETH1610 has 16 (manual pp. 1 and 4). The app does not
+read them yet: that is Issue #113.
+
+The app reads no inputs of the ETH1610. Its manual says 0x25 answers 2 bytes for 16 digital inputs, a set bit meaning an
+active input (p. 17), but not which bit is which input, and no other Devantech document or code says it either: the
+ETH484 and ETH8020 documents only cover 8 inputs in the last byte, and Devantech's `ethx_java` gives the ETH1610 no
+digital input bytes at all. So the ETH1610 is relays only until a real board shows the order.
 
 ## Protocol
 
@@ -65,7 +75,9 @@ also when the app stops in between. So all five models pulse for 0.1 s to 25.5 s
 
 Layouts:
 
-- The ETH1610 answers 0x24 with 2 bytes: relays 1–8 are in the first byte and relays 9–10 in the second. Its manual documents 16 digital inputs and a 2-byte 0x25 response, but does not specify the input byte/bit order. The simulator currently follows the existing Devantech high-byte-first convention; confirm that layout on a real board.
+- The ETH1610 answers 0x10 with module id 52 (`34`), and 0x24 with 2 bytes: relays 1 to 8 in the first, 9 and 10 in
+  the second (manual p. 17). As for the other models, the app takes bit 0 of each byte as its lowest relay. It answers
+  0x25 with 2 bytes (p. 17), which the app does not ask for. Its command table has no 0x78 (pp. 17–18).
 - The ETH484-B answers 0x24 with 2 bytes. Relays 1 to 4 are bits 0 to 3 of the first byte. The second byte is its I/O
   used as outputs, and the app does not use it. It answers 0x25 with 2 bytes. Inputs 1 to 8 are the second byte.
 - The ETH8020-B answers 0x24 with 3 bytes: relays 1 to 8, 9 to 16, and 17 to 20. It answers 0x25 with 4 bytes. The
@@ -84,6 +96,7 @@ Exchanges from the documents and the recorded session:
 | `7A` | `FF` | No password |
 | `79 61 70 70 6C 65` | `01` | The password "apple" is right |
 | `25` | none | The ETH008-B has no inputs |
+| `20 02 32` | `00` | ETH1610: relay 2 on for 5 s, the example of its manual (p. 17) |
 
 `DevantechProtocolTests` and `DevantechSimulatedBoardTests` check these exchanges byte for byte.
 
@@ -145,7 +158,7 @@ change nothing are routine.
 
 ## Settings
 
-The `Devantech` section applies to all four models:
+The `Devantech` section applies to all five models:
 
 ```json
 "Devantech": {
@@ -162,7 +175,8 @@ When `Host` is empty, the setup guide asks for the address.
 
 `DevantechSimulator` simulates each of the five models on a local port. `Contactor.Simulator` offers port 17494.
 
-- It answers 0x10, 0x20, 0x21, 0x23, 0x24, 0x77, 0x78, 0x79, 0x7A and 0x7B, and 0x25 on the models with inputs.
+- It answers 0x10, 0x20, 0x21, 0x23, 0x24, 0x77, 0x79, 0x7A and 0x7B, 0x25 on the models that answer it (the ETH1610
+  with 2 bytes of 0: it has no inputs to set), and 0x78 on all but the ETH1610.
 - It gives no answer to a command that it does not know.
 - It reads each TCP packet as the commands in it, and a password as the rest of its packet.
 - With a password, each connection starts locked and locks again after 30 s without a command. A relay command while
@@ -181,7 +195,10 @@ When `Host` is empty, the setup guide asks for the address.
 - Which commands keep the board unlocked: if a poll (0x24, 0x25) counts as activity for the 30 s lock.
 - The longest password, and which characters the board takes.
 - What 0x79 answers when the board has no password.
-- The ETH1610 relay and digital-input byte layouts, and the input bit order, against a real board.
+- The ETH1610's 0x25: which bit is which input, what an input is on the terminals (its manual shows 16 analog inputs
+  and no digital ones), and that a set bit means an active input. Then the app can read them.
+- The ETH1610's 0x24 and 0x23: that relays 9 and 10 are bits 0 and 1 of the second byte.
+- If the ETH1610 answers 0x78, which its manual does not list.
 - The layouts of the ETH484-B and the ETH8020-B: the byte orders of 0x24 and 0x25, and the input bit order.
 - That an input bit of 1 means a closed contact.
 - The relay states after a power cut, with "Latched Outputs" on and off. The recorded ETH008-B had all relays off.

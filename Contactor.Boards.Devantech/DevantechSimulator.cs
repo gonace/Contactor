@@ -8,12 +8,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Contactor.Boards.Devantech;
 
 /// <summary>
-/// A fake Devantech ETH relay board of any of the four models, on a local TCP port, answering the binary commands as
+/// A fake Devantech ETH relay board of any of the five models, on a local TCP port, answering the binary commands as
 /// the board does (<see cref="DevantechApi"/>): its module id (0x10), relays (0x20, 0x21, 0x23, 0x24), inputs (0x25, on
-/// the models that have them), supply volts (0x78), serial number (0x77) and the TCP password (0x79, 0x7A, 0x7B). With
-/// a password each connection starts locked, and locks again after 30 s on <see cref="TimeProvider"/> without a command;
-/// a relay command while locked is refused (01). A command it doesn't know, or one the model doesn't have, gets no
-/// answer at all, as on the board. It reads each TCP packet as the commands in it, and a password as the rest of its
+/// the models that answer it), supply volts (0x78, on the models that have it), serial number (0x77) and the TCP
+/// password (0x79, 0x7A, 0x7B). With a password each connection starts locked, and locks again after 30 s on
+/// <see cref="TimeProvider"/> without a command; a relay command while locked is refused (01). A command it doesn't
+/// know, or one the model doesn't have, gets no answer at all, as on the board. It reads each TCP packet as the commands in it, and a password as the rest of its
 /// packet. A pulse time switches the relay back by itself after the time on <see cref="TimeProvider"/>; a later command
 /// for the relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may
 /// connect at once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
@@ -326,8 +326,9 @@ public sealed class DevantechSimulator : ISimulatedBoard
     {
         return packet[0] switch
         {
-            DevantechApi.GetModuleInfo or DevantechApi.GetOutputs or GetSerialNumber or GetVolts or DevantechApi.GetUnlockTime or LogOut => 1,
+            DevantechApi.GetModuleInfo or DevantechApi.GetOutputs or GetSerialNumber or DevantechApi.GetUnlockTime or LogOut => 1,
             DevantechApi.GetInputs when _layout.InputBytes > 0 => 1,
+            GetVolts when _layout.HasVolts => 1,
             DevantechApi.DigitalActive or DevantechApi.DigitalInactive => 3,
             SetOutputs => 1 + _layout.OutputBytes,
 

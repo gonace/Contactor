@@ -127,6 +127,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Theory]
     [InlineData("devantech-eth002")]
     [InlineData("devantech-eth008")]
+    [InlineData("devantech-eth1610")]
     [InlineData("devantech-eth484")]
     [InlineData("DEVANTECH-ETH8020 ")]
     public void Should_RunEachDevantechModel_WithOrWithoutAPassword(string type)

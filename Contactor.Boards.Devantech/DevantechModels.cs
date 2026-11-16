@@ -6,13 +6,18 @@ namespace Contactor.Boards.Devantech;
 /// <param name="Family">The name the board's module id stands for, e.g. "ETH008": the -B revision has the same id.</param>
 /// <param name="ModuleId">What the board answers first to 0x10.</param>
 /// <param name="OutputBytes">How many bytes 0x24 answers, low byte first: relay 1 is bit 0 of the first.</param>
-/// <param name="InputBytes">How many bytes 0x25 answers, high byte first: input 1 is bit 0 of the last. 0: no 0x25.</param>
-public sealed record DevantechLayout(string Family, byte ModuleId, int OutputBytes, int InputBytes);
+/// <param name="InputBytes">
+/// How many bytes 0x25 answers, high byte first: input 1 is bit 0 of the last. 0: no 0x25. The app asks for them only
+/// on a model with inputs (<see cref="BoardCapabilities.InputCount"/>).
+/// </param>
+/// <param name="HasVolts">Whether the board answers 0x78, its supply voltage; the app doesn't ask, the simulator answers.</param>
+public sealed record DevantechLayout(string Family, byte ModuleId, int OutputBytes, int InputBytes, bool HasVolts);
 
 /// <summary>
 /// The Devantech ETH relay boards in the board catalogue. They speak the same binary commands on port 17494 and may have
 /// a TCP password, which is all their login: there is no user name. Only their relays and digital inputs are read; the
-/// analog inputs of the ETH484-B and ETH8020-B are issue #113. None is checked on a real board yet.
+/// analog inputs of the ETH1610, ETH484-B and ETH8020-B are issue #113. The ETH1610's digital inputs aren't read: its
+/// manual doesn't say which bit is which input. None is checked on a real board yet.
 /// </summary>
 public static class DevantechModels
 {
@@ -29,7 +34,7 @@ public static class DevantechModels
 
     public static BoardModel Eth008 { get; } = Create("devantech-eth008", "ETH008-B", relays: 8, inputs: 0, analog: 0);
 
-    public static BoardModel Eth1610 { get; } = Create("devantech-eth1610", "ETH1610", relays: 10, inputs: 16, analog: 16);
+    public static BoardModel Eth1610 { get; } = Create("devantech-eth1610", "ETH1610", relays: 10, inputs: 0, analog: 16);
 
     public static BoardModel Eth484 { get; } = Create("devantech-eth484", "ETH484-B", relays: 4, inputs: 8, analog: 4);
 
@@ -38,14 +43,15 @@ public static class DevantechModels
     public static IReadOnlyList<BoardModel> All { get; } = [Eth002, Eth008, Eth1610, Eth484, Eth8020];
 
     // The ETH484's 2 output bytes: relays 1–4 in the first, its I/O used as outputs in the second. The ETH8020's
-    // 4 input bytes: the first three are always 0.
+    // 4 input bytes: the first three are always 0. The ETH1610's 2 output bytes: relays 1–8 and 9–10; it answers 0x25
+    // with 2 bytes for its 16 inputs, in an order its manual doesn't give, so the app doesn't ask (inputs: 0 above).
     private static readonly Dictionary<string, DevantechLayout> Layouts = new(StringComparer.Ordinal)
     {
-        [Eth002.Id] = new("ETH002", 18, OutputBytes: 1, InputBytes: 0),
-        [Eth008.Id] = new("ETH008", 19, OutputBytes: 1, InputBytes: 0),
-        [Eth1610.Id] = new("ETH1610", 52, OutputBytes: 2, InputBytes: 2),
-        [Eth484.Id] = new("ETH484", 20, OutputBytes: 2, InputBytes: 2),
-        [Eth8020.Id] = new("ETH8020", 21, OutputBytes: 3, InputBytes: 4),
+        [Eth002.Id] = new("ETH002", 18, OutputBytes: 1, InputBytes: 0, HasVolts: true),
+        [Eth008.Id] = new("ETH008", 19, OutputBytes: 1, InputBytes: 0, HasVolts: true),
+        [Eth1610.Id] = new("ETH1610", 52, OutputBytes: 2, InputBytes: 2, HasVolts: false),
+        [Eth484.Id] = new("ETH484", 20, OutputBytes: 2, InputBytes: 2, HasVolts: true),
+        [Eth8020.Id] = new("ETH8020", 21, OutputBytes: 3, InputBytes: 4, HasVolts: true),
     };
 
     // Module ids of Devantech's other ETH boards, only to say which one is at an address. From Devantech's own code
@@ -57,7 +63,6 @@ public static class DevantechModels
         [23] = "ETH0621",
         [29] = "ETH044",
         [51] = "ETH1620",
-        [52] = "ETH1610",
         [54] = "ETH24V008H",
     };
 

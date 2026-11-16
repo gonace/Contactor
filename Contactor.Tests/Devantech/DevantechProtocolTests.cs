@@ -6,7 +6,7 @@ namespace Contactor.Tests.Devantech;
 /// <summary>
 /// The commands' bytes and the answers' layouts, against the exchanges in Devantech's documents (the ETH002-B and
 /// ETH008 technical documents) and a session recorded on a real ETH008-B; the ETH8020 layout as Devantech's ETH8020
-/// table gives it.
+/// table gives it, and the ETH1610's as its manual does.
 /// </summary>
 public sealed class DevantechProtocolTests
 {
@@ -34,8 +34,10 @@ public sealed class DevantechProtocolTests
     [InlineData(3, 500, "20 03 05")]
     [InlineData(8, 2000, "20 08 14")]
     [InlineData(20, 25_500, "20 14 FF")]
+    [InlineData(2, 5000, "20 02 32")]
     public void Should_BuildAPulse_InTenthsOfASecond(int relay, int milliseconds, string bytes)
     {
+        // 20 02 32 is the ETH1610 manual's example (p. 17): output 2 for 5 s.
         var request = DevantechProtocol.Pulse(relay, TimeSpan.FromMilliseconds(milliseconds));
 
         Assert.Equal(bytes, DevantechProtocol.Hex(request.Bytes));
@@ -109,19 +111,18 @@ public sealed class DevantechProtocolTests
     public void Should_ReadTheOutputs_LowByteFirst(string answer, int relays, ulong expected)
     {
         // The ETH008-B's 0D is relays 1, 3 and 4; the ETH484's second byte is its I/O, not a relay; the ETH8020's
-        // relays 17–20 are the low half of the third byte.
+        // relays 17–20 are the low half of the third byte; the ETH1610's relays 9 and 10 are the second byte.
         Assert.Equal(expected, DevantechProtocol.Outputs(Bytes(answer), relays));
     }
 
     [Theory]
-    [InlineData("00 81", 8, 0b1000_0001UL)]
-    [InlineData("FF 01", 8, 0b0000_0001UL)]
-    [InlineData("00 00 00 81", 8, 0b1000_0001UL)]
-    [InlineData("FF FF FF 00", 8, 0UL)]
-    [InlineData("80 01", 16, 0x0000_8001UL)]
-    public void Should_ReadTheInputs_HighByteFirst(string answer, int inputs, ulong expected)
+    [InlineData("00 81", 0b1000_0001UL)]
+    [InlineData("FF 01", 0b0000_0001UL)]
+    [InlineData("00 00 00 81", 0b1000_0001UL)]
+    [InlineData("FF FF FF 00", 0UL)]
+    public void Should_ReadTheInputs_HighByteFirst(string answer, ulong expected)
     {
-        Assert.Equal(expected, DevantechProtocol.Inputs(Bytes(answer), inputs));
+        Assert.Equal(expected, DevantechProtocol.Inputs(Bytes(answer), 8));
     }
 
     [Fact]
@@ -130,7 +131,6 @@ public sealed class DevantechProtocolTests
         Assert.Equal("05 00 08", DevantechProtocol.Hex(DevantechProtocol.OutputBytes(0b0101 | (1UL << 19), 3)));
         Assert.Equal("00 00 00 81", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0b1000_0001, 4)));
         Assert.Equal("00 81", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0b1000_0001, 2)));
-        Assert.Equal("80 01", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0x0000_8001, 2)));
     }
 
     [Fact]
@@ -155,6 +155,9 @@ public sealed class DevantechProtocolTests
     [InlineData("devantech-eth008", 19, null)]
     [InlineData("devantech-eth008", 20, "The board at this address is an ETH484, not an ETH008.")]
     [InlineData("devantech-eth002", 19, "The board at this address is an ETH008, not an ETH002.")]
+    [InlineData("devantech-eth8020", 51, "The board at this address is an ETH1620, not an ETH8020.")]
+    [InlineData("devantech-eth1610", 52, null)]
+    [InlineData("devantech-eth1610", 20, "The board at this address is an ETH484, not an ETH1610.")]
     [InlineData("devantech-eth8020", 52, "The board at this address is an ETH1610, not an ETH8020.")]
     [InlineData("devantech-eth484", 99, "The board at this address says it is module 99, not an ETH484.")]
     public void Should_SayWhichBoardIsThere_WhenItIsNotTheModel(string id, byte moduleId, string? message)
