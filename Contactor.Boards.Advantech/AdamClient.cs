@@ -253,7 +253,7 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
     }
 
     // Under the poller's lock. Returns the module's state read after the switches, which the poller takes as a poll's,
-    // or Unread when that read failed, and puts the relays the module took in <paramref name="taken"/>.
+    // or none when that read failed, and puts the relays the module took in <paramref name="taken"/>.
     private async Task<CommandReading<AdamStatus>> SwitchEachAsync(ulong mask, Func<int, AdamRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
@@ -292,14 +292,14 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
 
         try
         {
-            return CommandReading<AdamStatus>.Read(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            return new CommandReading<AdamStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is AdamRefusedException or AdamProtocolException || IsNoAnswer(ex))
         {
             // Never a state the module didn't read: an echo doesn't show that the relay switched. The command doesn't
             // fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last state read and
             // reads the board at once, which counts as a poll of its own if it fails too.
-            return CommandReading<AdamStatus>.Unread;
+            return default;
         }
     }
 

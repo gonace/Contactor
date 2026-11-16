@@ -177,16 +177,17 @@ public sealed class BoardPoller<TReading> : IDisposable
     public async Task RunCommandAsync(Func<CancellationToken, Task<TReading>> command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
-        await RunSwitchesAsync(async token => CommandReading<TReading>.Read(await command(token).ConfigureAwait(false)), cancellationToken)
+        await RunSwitchesAsync(async token => new CommandReading<TReading>(await command(token).ConfigureAwait(false)), cancellationToken)
             .ConfigureAwait(false);
     }
 
     /// <summary>
     /// As <see cref="RunCommandAsync"/>, for a command that switches the relays and then reads the board's state, and
-    /// whose read may fail once the switches went out. Such a command doesn't fail: it returns
-    /// <see cref="CommandReading{TReading}.Unread"/>. That isn't an answered poll: <see cref="State"/> keeps its last
-    /// reading and its <see cref="PolledState{TReading}.LastContactUtc"/>, the failed polls in a row aren't started over,
-    /// and the board's state is read at once, as by <see cref="PollNow"/>, which counts on its own if it fails too.
+    /// whose read may fail once the switches went out. Such a command doesn't fail: it returns a
+    /// <see cref="CommandReading{TReading}"/> with no reading (its default value). That isn't an answered poll:
+    /// <see cref="State"/> keeps its last reading and its <see cref="PolledState{TReading}.LastContactUtc"/>, the failed
+    /// polls in a row aren't started over, and the board's state is read at once, as by <see cref="PollNow"/>, which
+    /// counts on its own if it fails too.
     /// </summary>
     public async Task RunSwitchesAsync(Func<CancellationToken, Task<CommandReading<TReading>>> command, CancellationToken cancellationToken = default)
     {

@@ -290,7 +290,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     }
 
     // Under the poller's lock. Returns the board's state read after the switches, which the poller takes as a poll's,
-    // or Unread when that read failed, and puts the relays the board took in <paramref name="taken"/>.
+    // or none when that read failed, and puts the relays the board took in <paramref name="taken"/>.
     private async Task<CommandReading<WaveshareStatus>> SwitchEachAsync(ulong mask, Func<int, WaveshareRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
@@ -330,7 +330,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
         try
         {
-            return CommandReading<WaveshareStatus>.Read(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            return new CommandReading<WaveshareStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException || IsNoAnswer(ex))
         {
@@ -338,7 +338,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
             // linkage mode echoes and stays as it is), and a group would take a made-up "on" as confirmation. The
             // command doesn't fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last
             // state read and reads the board at once, which counts as a poll of its own if it fails too.
-            return CommandReading<WaveshareStatus>.Unread;
+            return default;
         }
     }
 

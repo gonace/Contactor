@@ -270,7 +270,7 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
     }
 
     // Under the poller's lock. Returns the board's state read after the switches, which the poller takes as a poll's,
-    // or Unread when that read failed, and puts the relays the board took in <paramref name="taken"/>.
+    // or none when that read failed, and puts the relays the board took in <paramref name="taken"/>.
     private async Task<CommandReading<SmartDenStatus>> SwitchEachAsync(ulong mask, Func<int, SmartDenRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
@@ -309,14 +309,14 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
 
         try
         {
-            return CommandReading<SmartDenStatus>.Read(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            return new CommandReading<SmartDenStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is SmartDenRefusedException or SmartDenProtocolException || IsNoAnswer(ex))
         {
             // Never a state the board didn't read: an echo doesn't show that the relay switched. The command doesn't
             // fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last state read and
             // reads the board at once, which counts as a poll of its own if it fails too.
-            return CommandReading<SmartDenStatus>.Unread;
+            return default;
         }
     }
 

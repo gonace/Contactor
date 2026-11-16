@@ -306,7 +306,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     }
 
     // Under the poller's lock. Returns the board's state read after the switches, which the poller takes as a poll's,
-    // or Unread when that read failed, and puts the relays the board took in <paramref name="taken"/>.
+    // or none when that read failed, and puts the relays the board took in <paramref name="taken"/>.
     private async Task<CommandReading<DaenetIp2Status>> SwitchEachAsync(ulong mask, bool on, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
@@ -380,12 +380,12 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         // answered poll: the poller keeps the last state read, and reads the board at once, as an ordinary poll.
         if (gone)
         {
-            return CommandReading<DaenetIp2Status>.Unread;
+            return default;
         }
 
         try
         {
-            return CommandReading<DaenetIp2Status>.Read(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            return new CommandReading<DaenetIp2Status>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is DaenetIp2RefusedException or DaenetIp2ProtocolException || IsNoAnswer(ex))
         {
@@ -393,7 +393,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             // set while its ICMP monitoring or an analog event holds the pin, manual section 7). The command doesn't
             // fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last state read and
             // reads the board at once, which counts as a poll of its own if it fails too.
-            return CommandReading<DaenetIp2Status>.Unread;
+            return default;
         }
     }
 

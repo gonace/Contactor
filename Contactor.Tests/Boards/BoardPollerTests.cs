@@ -220,7 +220,7 @@ public sealed class BoardPollerTests
         await WaitForPollAsync(board, time, reads: 2);
         var changes = board.Changes.Count;
 
-        await poller.RunSwitchesAsync(_ => Task.FromResult(CommandReading<int>.Unread), Cancel);
+        await poller.RunSwitchesAsync(_ => Task.FromResult(default(CommandReading<int>)), Cancel);
 
         Assert.Equal(new PolledState<int>(true, 1, contact), poller.State);
         Assert.Equal(changes, board.Changes.Count);
@@ -245,7 +245,7 @@ public sealed class BoardPollerTests
         time.Advance(Interval);
         await WaitForPollAsync(board, time, reads: 2);
 
-        await poller.RunSwitchesAsync(_ => Task.FromResult(CommandReading<int>.Read(5)), Cancel);
+        await poller.RunSwitchesAsync(_ => Task.FromResult(new CommandReading<int>(5)), Cancel);
 
         Assert.Equal(new PolledState<int>(true, 5, time.GetUtcNow()), poller.State);
 
