@@ -428,14 +428,17 @@ public sealed class GroupStepsTests
         Assert.Equal((GroupPhases.Idle, (DateTime?)null, (string?)null), (_runtime.Phase, _runtime.OnSinceUtc, _runtime.TurnedOnBy));
     }
 
-    // An ON on its way for a relay the stop turns off doesn't hold the stop up: only one turned on again does.
+    // Issue #412: an ON on its way for a relay the stop turns off counts as on, so that ON can't leave it on once it
+    // lands. The stop waits for it no longer than it counts as on its way.
     [Fact]
-    public void Should_NotWaitForAnOn_OfARelayTheStopTurnsOff()
+    public void Should_WaitForAnOn_OfARelayTheStopTurnsOff_NoLongerThanItIsOnItsWay()
     {
         GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 2, John, T0, new GroupCommands());
 
         Plan(State(1), T0.AddSeconds(0.5), onOnItsWay: Mask(2));
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
 
+        Plan(State(1), T0.AddSeconds(5));
         Assert.Equal(GroupPhases.Idle, _runtime.Phase);
     }
 
@@ -590,6 +593,95 @@ public sealed class GroupStepsTests
         GroupPlanner.Plan(steps, State(1), _runtime, T0.AddSeconds(0.5), confirmed);
         Assert.Equal(ChannelMask.None, confirmed.Off);
         Assert.Contains(confirmed.Events, e => e.Action == EventActions.RunOnStart && e.RelayId == 21);
+    }
+
+    // Issue #412, a lower step: Heater 1 is turned off while its own ON is on its way and the board doesn't show it yet.
+    // It counts as on: its OFF goes at once, after that ON, and counts as done only once the board shows it off with
+    // that ON no longer on its way. The fans stay on.
+    [Fact]
+    public void Should_TurnOffAHeater_WhoseOwnOnIsOnItsWay()
+    {
+        Assert.Null(GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 3, John, null, T0, new GroupCommands()));
+
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 3, John, T0.AddSeconds(0.1), off, Mask(3));
+
+        Assert.Equal((ChannelMask.None, Mask(3)), (off.On, off.Off));
+        Assert.Contains(off.Events, e => e.Action == EventActions.Off && e.RelayId == 23);
+        Assert.Equal((GroupPhases.Stopping, 2, false), (_runtime.Phase, _runtime.PendingStep, _runtime.PendingOn));
+
+        // Neither a status from before its ON nor one that shows its ON is that OFF done.
+        Assert.True(Plan(State(1, 2), T0.AddSeconds(0.2), onOnItsWay: Mask(3)).IsEmpty);
+        Assert.True(Plan(State(1, 2, 3), T0.AddSeconds(0.3)).IsEmpty);
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
+
+        Assert.True(Plan(State(1, 2), T0.AddSeconds(0.4)).IsEmpty);
+        Assert.True(Plan(State(1, 2), T0.AddSeconds(0.5)).IsEmpty);
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    // Issue #412, the top step: Fan 1 is turned off while its own ON is on its way, and so is Heater 1's below it. The
+    // heater goes off first, after its ON; Fan 1 runs on once the board shows the heater off, then its OFF goes. Fan 2
+    // stays on.
+    [Fact]
+    public void Should_TurnOffTheRelaysBelowFirst_WhenARelayIsTurnedOffWhileItsOwnOnIsOnItsWay()
+    {
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(2), _runtime, 1, John, T0, off, Mask(1, 3));
+
+        Assert.Equal((ChannelMask.None, Mask(3)), (off.On, off.Off));
+        Assert.Equal((2, false), (_runtime.PendingStep, _runtime.PendingOn));
+
+        Assert.True(Plan(State(2), T0.AddSeconds(0.1), onOnItsWay: Mask(1, 3)).IsEmpty);
+        Assert.True(Plan(State(1, 2, 3), T0.AddSeconds(0.2)).IsEmpty);
+
+        var runOn = Plan(State(1, 2), T0.AddSeconds(0.3));
+        Assert.Equal(ChannelMask.None, runOn.Off);
+        Assert.Contains(runOn.Events, e => e.Action == EventActions.RunOnStart && e.RelayId == 21);
+        Assert.True(Plan(State(1, 2), T0.AddSeconds(180)).IsEmpty);
+        Assert.Equal(Mask(1), Plan(State(1, 2), T0.AddSeconds(180.3)).Off);
+        Plan(State(2), T0.AddSeconds(180.4));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    // Issue #412: with nothing below on, a relay turned off while its own ON is on its way goes off at once, and a stop
+    // whose ON never shows (the board didn't carry it out) waits no longer than that ON counts as on its way.
+    [Fact]
+    public void Should_FinishTheOff_WhenTheRelaysOwnOnNeverShows()
+    {
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(2), _runtime, 1, John, T0, off, Mask(1));
+
+        Assert.Equal(Mask(1), off.Off);
+        Assert.True(Plan(State(2), T0.AddSeconds(1), onOnItsWay: Mask(1)).IsEmpty);
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
+
+        Plan(State(2), T0.AddSeconds(5.1));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
+    // Issue #412: Fan 1 and Fan 2 are stopping, Fan 2 is turned on again, and off again before its ON shows. It joins
+    // the stop once more, and the stop waits for its OFF after that ON, so Fan 2 isn't left on when that ON lands.
+    [Fact]
+    public void Should_WaitForTheOff_OfARelayTurnedOffAgainWhileItsOnIsOnItsWay()
+    {
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 1, John, T0, new GroupCommands());
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 2, John, T0, new GroupCommands());
+        var on = new GroupCommands();
+        Assert.Null(GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 2, John, null, T0.AddSeconds(0.1), on, Mask(1, 2)));
+        Assert.Equal(Mask(2), on.On);
+
+        var off = new GroupCommands();
+        GroupPlanner.MemberOff(FansHeaters, State(1), _runtime, 2, John, T0.AddSeconds(0.2), off, Mask(2));
+        Assert.Equal(Mask(2), off.Off);
+
+        // Fan 1 shows off, and Fan 2's ON is still on its way, then shows: the stop isn't done.
+        Assert.True(Plan(State(), T0.AddSeconds(0.3), onOnItsWay: Mask(2)).IsEmpty);
+        Assert.True(Plan(State(2), T0.AddSeconds(0.4)).IsEmpty);
+        Assert.Equal(GroupPhases.Stopping, _runtime.Phase);
+
+        Plan(State(), T0.AddSeconds(0.5));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
     }
 
     // Fan 1's ON never shows (the board didn't carry it out): the stop waits no longer than that ON counts as on
