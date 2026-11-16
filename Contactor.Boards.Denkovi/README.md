@@ -244,15 +244,22 @@ two (section 6.6.1): the read-only community, for reading, and the read-write co
 operations". So one secret does both, and the app asks only for the read-write community. It is the login's password;
 the model is `PasswordOnly`, with no user name. The read-only community is never needed.
 
-- At most 12 characters (section 6.6.1). The app takes letters, digits and plain symbols without spaces, so each
-  character is one byte (`DaenetIp2Models.CheckCommunity`).
+- 4 to 12 characters: table 9.1 gives the community as `OCTET STRING (SIZE (4..12))`, and section 6.6.1 says "max 12
+  symbols". The app takes letters, digits and plain symbols without spaces, so each character is one byte
+  (`DaenetIp2Models.CheckCommunity`). A shorter or longer one is refused in words: "The password, the board's
+  read-write community, must be 4 to 12 characters."
+- The board always has a community, so the model is `LoginRequired`: the setup guide and Settings show the password
+  field and the hint, and no "The board has no password" box. The hint names the factory community, `private`
+  (table 4.1), so a person knows what to type on a new board.
 - The community is a secret, like any board's password. It is never logged, traced or shown. The Debug screen shows the
   PDU of each message only, never the whole datagram, because the community is before the PDU. A datagram that the app
   can't read shows only its length.
 - A wrong community gets no answer at all: SNMPv1 drops a message that isn't authentic (RFC 1157, section 4.1). So the
   app can't tell a wrong community from a wrong address. The login's hint says it: "With a wrong community the board
   doesn't answer: check the address and the community." The trace says the same after each request without an answer.
-- With no community saved yet, the app sends an empty one, and the board doesn't answer.
+- With no community saved yet (a board added in the app starts so), the app sends an empty one, and the board doesn't
+  answer. `DaenetIp2Connection.SetLogin` still takes no login for that, as every board does
+  (`IBoardConnection.SetLogin`).
 
 ### Protocol
 
@@ -294,7 +301,9 @@ checks them byte for byte:
   is no answer.
 - Lengths in the short form, and in the long form with 1 or 2 bytes. Every length is checked against what is left, so a
   datagram can't make the codec read past it.
-- An `INTEGER` of 1 to 4 bytes. An OID of at most 32 arcs, each of at most 5 bytes and with no leading zero byte.
+- An `INTEGER` of 1 to 4 bytes, in two's complement. A value of one byte is read unsigned, 0 to 255: an agent may send
+  a port of 255 as one raw byte (`02 01 FF`) as well as BER's `02 02 00 FF`. Anything outside 0 to 255 after that is
+  refused. An OID of at most 32 arcs, each of at most 5 bytes and with no leading zero byte.
 - Exactly one variable, and no bytes after the message.
 
 An answer is the answer to a request only when it has all of these (`DaenetIp2Snmp.Value`):
@@ -321,6 +330,9 @@ An answer is the answer to a request only when it has all of these (`DaenetIp2Sn
 - The board counts as connected only after its first valid answer (`BoardPoller`). Before that, a command throws
   `BoardNotConnectedException`.
 - A host name is looked up when the client starts asking, within the same 1 s. The client takes an IPv4 address first.
+  Without an address it sends nothing: an empty name would find this computer itself.
+- The trace says which local UDP port the client sends from. When the network refuses a datagram, the client closes
+  the socket, and the next request opens a new one.
 - A new address forgets the board's state. A new community asks again at once. The board counts as connected again only
   when it answers with the new community.
 - `BoardPoller` does the polls, the new tries and the count of failures, as for the other polled boards. A request with
@@ -330,14 +342,17 @@ A command (ON or OFF) switches the relays in the mask one at a time, as on the s
 
 - The client sends a `SetRequest` for every relay in the mask, also when the board refuses one or its answer can't be
   read. "All off" and a group's interlock depend on every OFF being sent.
-- A request with no answer to both tries stops the rest of the mask: the board is gone.
+- A request with no answer to both tries doesn't stop the rest of the mask either: over UDP, one lost datagram says
+  nothing about the next, and "All off" and a group's interlock depend on every OFF being sent. A relay without an
+  answer isn't among the relays returned.
 - An empty mask sends nothing and returns no relays.
 - When the board takes no relay, the command throws "The DAEnetIP2 v2 board didn't take the command: …"
   (`BoardNotConnectedException`). A refusal never leaves the client as `BoardRefusedException`.
 - Otherwise it returns the relays that the board confirmed. A refused relay, or one whose answer couldn't be read, isn't
   among them.
-- When a request gets no answer, the command throws "The DAEnetIP2 v2 board didn't answer; the command may not have been
-  carried out." The poller reads the board at once after it.
+- When no relay's request got an answer, the command throws "The DAEnetIP2 v2 board didn't answer; the command may not
+  have been carried out." The poller counts it as a failed poll and reads the board at once after it. A mask of 16
+  relays on a board that is gone takes 16 × 2 s before it says so.
 - After the switches, the client reads the ports in the same command. The poller takes that as the new state.
 - When that read fails, the command returns the relays that the board took. The client keeps the last state it read and
   reads again at once. An echo is not proof that a relay switched: the board answers a set that its ICMP monitoring or
@@ -397,20 +412,38 @@ rights that a developer doesn't have.
 - It answers another OID with error-status 2 (no such name), and a value out of range or not an `INTEGER` with 3 (a
   value it doesn't take). The real board's codes are to check.
 - UDP has no connection. Its page lists where the app asked from; "Drop connection" forgets them.
-- For the tests: `NoAnswer` stops all answers, `DropRequests` drops the next few requests, and `FailRelays` refuses the
-  sets of some relays with error-status 5 (it failed).
+- For the tests: `NoAnswer` stops all answers, `DropRequests` drops the next few requests, `SilentRelays` never answers
+  the sets of some relays, and `FailRelays` refuses the sets of some relays with error-status 5 (it failed).
+- Like the board, it takes a community of 4 to 12 characters only.
 - Its trace shows the PDU of each message, never the community.
 
 ### To check on a real kit
 
-- That a High pin (1) turns its relay on, on each Denkovi relay board. The manual shows it only for a relay switched
-  through a transistor (figure 15.1, and section 6.9), not for the kits' relay boards.
-- Which port has relays 1 to 8 on the 16-relay kit: the app takes P3. And that "In 1" is pin 1 of its port on every kit.
-- Which of P5.7 and P5.8 is relay 1 on the 2-relay kit: the app takes P5.7.
+> **Warning: check these four first, before anything is connected to the relays.** If one is wrong, the app's OFF can
+> turn a machine ON, or switch another relay than the one named on the screen. The manual doesn't say them for the
+> kits' relay boards; the app takes the choices below.
+>
+> 1. **A High pin (1) turns its relay on.** The manual shows it only for a relay switched through a transistor (figure
+>    15.1, and section 6.9).
+> 2. **Relays 1 to 8 of the 16-relay kit are on P3**, relays 9 to 16 on P5.
+> 3. **"In 1" is pin 1 of its port**, "In 2" pin 2, and so on, on every kit.
+> 4. **Relay 1 of the 2-relay kit is on P5.7**, relay 2 on P5.8.
+>
+> To check them: with nothing connected to the relays' contacts, choose the kit in the setup guide, and in "Name your
+> relays" press "Try" for each relay in turn. The board's own LED of that relay, and only that one, must go on for 2 s
+> and then off. A relay that is on while the app shows every relay off means a pin works the other way round: stop, and
+> don't use the kit with the app. Check relay 1 and relay 9 on the 16-relay kit, and relay 1 on the 2-relay kit.
+
+The other points:
+
 - The communities of a new board: `000000000000` and `private` (table 4.1). That a get with the read-write community
   is answered (section 6.6.1 says it is).
 - What the board does with a wrong community, and with a set with the read-only community: no answer, as the app
   expects, or an error-status?
+- How the board encodes a port of 128 to 255: as BER's two bytes (`02 02 00 FF`) or as one raw byte (`02 01 FF`). The
+  app takes both.
+- That the board answers from UDP port 161 (or the port set), the one the app sent to: an answer from another port is
+  skipped.
 - The firmware version (`cfgVersion`, x.9.1.8.0) of the kits that Denkovi sells now.
 - That the board answers within 1 s, every time, to a poll every 2 s for days, also with two gets per poll on the
   16-relay kit.

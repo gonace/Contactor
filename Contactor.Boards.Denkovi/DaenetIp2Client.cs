@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -63,7 +64,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         }
 
         var community = settings.Community ?? "";
-        if (DaenetIp2Models.CheckCommunity(community) is { } error)
+        if (DaenetIp2Models.CheckSendable(community) is { } error)
         {
             throw new ArgumentException($"DaenetIp2:Community can't be sent to the board: {error}", nameof(options));
         }
@@ -127,12 +128,12 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     /// <summary>
     /// Asks again at once with another community, empty for none; nothing happens if it is the same. The board counts as
     /// connected again only once it answers with it. Throws <see cref="ArgumentException"/> for one the board can't take
-    /// (<see cref="DaenetIp2Models.CheckCommunity"/>).
+    /// (<see cref="DaenetIp2Models.CheckSendable"/>).
     /// </summary>
     public void SetCommunity(string community)
     {
         ArgumentNullException.ThrowIfNull(community);
-        if (DaenetIp2Models.CheckCommunity(community) is { } error)
+        if (DaenetIp2Models.CheckSendable(community) is { } error)
         {
             throw new ArgumentException(error.ToString(), nameof(community));
         }
@@ -275,8 +276,8 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         }
 
         // A poll under way gives way. The board switches one pin per request, and the whole mask goes out, as one
-        // command on a board that takes a mask would: a group's interlock and "All off" rely on every OFF being sent.
-        // Only a request that gets no answer at all, also when asked again (the board is gone), stops it.
+        // command on a board that takes a mask would: a group's interlock and "All off" rely on every OFF being sent,
+        // also after one that got no answer: over UDP one lost datagram says nothing about the next.
         try
         {
             var taken = new StrongBox<ulong>();
@@ -303,13 +304,12 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     {
         string? refusal = null;
         var unreadable = false;
+        Exception? noAnswer = null;
         var community = Community;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
             var request = DaenetIp2Snmp.SetPin(NextRequestId(), community, _layout.PinOf(relay), on);
 
-            // No answer (IsNoAnswer), also when asked again, is thrown as it is and stops the rest: the poller counts it
-            // as a failed poll.
             try
             {
                 var (value, pdu) = await ExchangeAsync(request, routine: false, cancellationToken).ConfigureAwait(false);
@@ -327,14 +327,29 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
                     string.Create(CultureInfo.InvariantCulture, $"The board didn't take the command for relay {relay}: {ex.Message}"),
                     isError: true);
             }
+            catch (Exception ex) when (IsNoAnswer(ex))
+            {
+                // No answer, also when asked again: the relay may or may not have switched. The others still go, as
+                // "All off" and a group's interlock need; the read after them shows the truth.
+                noAnswer ??= ex;
+                Trace(
+                    BoardTraceDirection.None,
+                    string.Create(CultureInfo.InvariantCulture, $"No answer for relay {relay}: going on with the rest"),
+                    isError: true);
+            }
         }
 
         // Not one relay was taken: the command failed, as on a board that takes the mask at once, and nothing is
-        // counted as switched. The poller reads the board at once, which shows what really happened. When the board
-        // refused every relay with an error-status, it answered: that doesn't count toward losing it. When an answer
-        // couldn't be read, it counts as a failed poll, as a poll whose answer it can't read would.
+        // counted as switched. The poller reads the board at once, which shows what really happened. A request with
+        // no answer counts as a failed poll, and so does an answer that couldn't be read, as a poll's would. When the
+        // board refused every relay with an error-status, it answered: that doesn't count toward losing it.
         if (taken.Value == 0)
         {
+            if (noAnswer is not null)
+            {
+                ExceptionDispatchInfo.Throw(noAnswer);
+            }
+
             throw unreadable ? new DaenetIp2ProtocolException(refusal!) : new BoardRefusedException(refusal!);
         }
 
@@ -424,7 +439,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             try
             {
                 // A datagram goes whole or not at all.
-                await socket.SendToAsync(request.Message, SocketFlags.None, remote, timeout.Token).ConfigureAwait(false);
+                await socket.SendToAsync(request.Message, SocketFlags.None, remote, linked.Token).ConfigureAwait(false);
                 answer = await ReceiveAsync(socket, remote, request, linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -588,6 +603,8 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
 
         _socket = socket;
         _remote = new IPEndPoint(address, endpoint.Port);
+        var local = (IPEndPoint)socket.LocalEndPoint!;
+        Trace(BoardTraceDirection.None, string.Create(CultureInfo.InvariantCulture, $"Sending to {_remote} from UDP port {local.Port}"));
     }
 
     private void Close()

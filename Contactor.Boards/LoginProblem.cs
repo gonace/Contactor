@@ -29,6 +29,12 @@ public enum LoginProblemKind
 
     /// <summary>The board takes no login: its password only protects its own web page. "The <c>Board</c> board takes …".</summary>
     NoLoginWebPage,
+
+    /// <summary>
+    /// The password, an SNMP community, is shorter than <see cref="LoginProblem.MinLength"/> or longer than
+    /// <see cref="LoginProblem.MaxLength"/> characters; empty included, as the board always has one.
+    /// </summary>
+    CommunityLength,
 }
 
 /// <summary>Which part of a login a <see cref="LoginProblem"/> is about.</summary>
@@ -48,7 +54,8 @@ public enum LoginField
 /// The board's brand or model, a proper noun that every language keeps as it is, for the kinds that name it, e.g. "VM208"
 /// or "Devantech"; the word "board" is in the sentence.
 /// </param>
-public sealed record LoginProblem(LoginProblemKind Kind, LoginField Field = LoginField.Password, int MaxLength = 0, string Symbols = "", string Board = "")
+/// <param name="MinLength">The shortest the board takes, for <see cref="LoginProblemKind.CommunityLength"/>.</param>
+public sealed record LoginProblem(LoginProblemKind Kind, LoginField Field = LoginField.Password, int MaxLength = 0, string Symbols = "", string Board = "", int MinLength = 0)
 {
     public override string ToString()
     {
@@ -63,6 +70,7 @@ public sealed record LoginProblem(LoginProblemKind Kind, LoginField Field = Logi
             LoginProblemKind.PasswordTooLong => $"The password can be at most {MaxLength} characters.",
             LoginProblemKind.PasswordCharacters => "The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.",
             LoginProblemKind.NoLoginWebPages => $"The {Board} takes no login: its password only protects its own web pages.",
+            LoginProblemKind.CommunityLength => $"The password, the board's read-write community, must be {MinLength} to {MaxLength} characters.",
             _ => $"The {Board} board takes no login: its password only protects its own web page.",
         };
     }
@@ -87,12 +95,17 @@ public enum LoginHintKind
     TcpPassword,
 
     /// <summary>
-    /// The read-write community from the board's SNMP settings, at most <see cref="LoginHint.MaxLength"/> characters:
-    /// letters, digits and plain symbols, no spaces. A wrong community gets no answer at all, so the hint says to check
-    /// the address and the community.
+    /// The read-write community from the board's SNMP settings, <see cref="LoginHint.MinLength"/> to
+    /// <see cref="LoginHint.MaxLength"/> characters: letters, digits and plain symbols, no spaces; on a new board
+    /// <see cref="LoginHint.FactoryValue"/>. A wrong community gets no answer at all, so the hint says to check the
+    /// address and the community.
     /// </summary>
     SnmpCommunity,
 }
 
 /// <summary>A model's rule for its login, which the app puts in words for the Settings screen and the setup guide.</summary>
-public sealed record LoginHint(LoginHintKind Kind, int MaxLength, int TotalMaxLength = 0, string Symbols = "");
+/// <param name="MinLength">The shortest it takes, for <see cref="LoginHintKind.SnmpCommunity"/>.</param>
+/// <param name="FactoryValue">
+/// What a new board has, from its manual and not a secret, for <see cref="LoginHintKind.SnmpCommunity"/>, e.g. "private".
+/// </param>
+public sealed record LoginHint(LoginHintKind Kind, int MaxLength, int TotalMaxLength = 0, string Symbols = "", int MinLength = 0, string FactoryValue = "");

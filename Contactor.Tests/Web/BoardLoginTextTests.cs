@@ -26,6 +26,7 @@ public sealed class BoardLoginTextTests
         new LoginProblem(LoginProblemKind.PasswordCharacters),
         new LoginProblem(LoginProblemKind.NoLoginWebPages, Board: "VM208"),
         new LoginProblem(LoginProblemKind.NoLoginWebPage, Board: "Waveshare"),
+        new LoginProblem(LoginProblemKind.CommunityLength, MaxLength: 12, MinLength: 4),
     ];
 
     [Theory]
@@ -56,7 +57,7 @@ public sealed class BoardLoginTextTests
         Assert.Equal($"The same as on the board's own web page. At most 31 characters, 48 for both together: letters a–z, digits and {Vm204Login.SymbolList}.", Login.Hint(Vm204Model.Model));
         Assert.Equal("The TCP password from the board's configuration page, not the login of its web page. At most 32 characters: letters, digits and plain symbols, no spaces.", Login.Hint(DevantechModels.Eth008));
         Assert.Equal(
-            "The board's Read-write Community from its SNMP settings, at most 12 characters: letters, digits and plain symbols, no spaces. With a wrong community the board doesn't answer: check the address and the community.",
+            "The board's Read-write Community from its SNMP settings, 4 to 12 characters: letters, digits and plain symbols, no spaces. On a new board it is private. With a wrong community the board doesn't answer: check the address and the community.",
             Login.Hint(DaenetIp2Models.Relays8));
     }
 

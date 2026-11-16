@@ -17,8 +17,11 @@ public static class DaenetIp2Api
     /// </summary>
     public const int MaxMessageBytes = 484;
 
-    /// <summary>The longest community the board takes ("max 12 symbols", section 6.6.1; table 9.1: 4 to 12).</summary>
+    /// <summary>The longest community the board takes ("max 12 symbols", section 6.6.1; table 9.1: SIZE (4..12)).</summary>
     public const int CommunityMaxLength = 12;
+
+    /// <summary>The shortest community the board takes (table 9.1: <c>cfgPassword</c>, OCTET STRING (SIZE (4..12))).</summary>
+    public const int CommunityMinLength = 4;
 
     /// <summary>The version field of an SNMPv1 message: 0.</summary>
     public const int Version1 = 0;

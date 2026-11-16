@@ -25,7 +25,8 @@ public sealed class DaenetIp2BoardTests
         Assert.Equal(161, model.DefaultPort);
         Assert.Equal(12, model.LoginMaxLength);
         Assert.True(model.PasswordOnly);
-        Assert.Equal(new LoginHint(LoginHintKind.SnmpCommunity, 12), model.LoginHint);
+        Assert.Equal(new LoginHint(LoginHintKind.SnmpCommunity, 12, MinLength: 4, FactoryValue: "private"), model.LoginHint);
+        Assert.True(model.LoginRequired);
         Assert.True(DaenetIp2Models.IsDaenetIp2(model));
         Assert.Equal(relays, DaenetIp2Models.Layout(model).Relays.Count);
     }
@@ -124,17 +125,26 @@ public sealed class DaenetIp2BoardTests
 
         Assert.Equal(new BoardLogin("", "private"), connection.DefaultLogin);
         Assert.Equal(new BoardLogin("", "private"), connection.Login);
-        Assert.Null(connection.CheckLogin(BoardLogin.None));
+        var length = new LoginProblem(LoginProblemKind.CommunityLength, MaxLength: 12, MinLength: 4);
         Assert.Null(connection.CheckLogin(new BoardLogin("", "123456789012")));
+        Assert.Null(connection.CheckLogin(new BoardLogin("", "1234")));
+        Assert.Equal(length, connection.CheckLogin(BoardLogin.None));
+        Assert.Equal(length, connection.CheckLogin(new BoardLogin("", "123")));
+        Assert.Equal(length, connection.CheckLogin(new BoardLogin("", "1234567890123")));
+        Assert.Equal("The password, the board's read-write community, must be 4 to 12 characters.", length.ToString());
         Assert.Equal(new LoginProblem(LoginProblemKind.PasswordOnly, LoginField.UserName, Board: "Denkovi"), connection.CheckLogin(new BoardLogin("admin", "private")));
-        Assert.Equal(new LoginProblem(LoginProblemKind.PasswordTooLong, MaxLength: 12), connection.CheckLogin(new BoardLogin("", "1234567890123")));
         Assert.Equal(new LoginProblem(LoginProblemKind.PasswordCharacters), connection.CheckLogin(new BoardLogin("", "pri vate")));
         Assert.Equal(new LoginProblem(LoginProblemKind.PasswordCharacters), connection.CheckLogin(new BoardLogin("", "privåte")));
         Assert.Throws<ArgumentException>(() => connection.SetLogin(new BoardLogin("admin", "")));
 
+        Assert.Throws<ArgumentException>(() => connection.SetLogin(new BoardLogin("", "abc")));
         connection.SetLogin(new BoardLogin("", "apple"));
         Assert.Equal(new BoardLogin("", "apple"), connection.Login);
         Assert.Equal("apple", client.Community);
+
+        // None is still taken, as the app falls back to it: no community yet, which the board doesn't answer.
+        connection.SetLogin(BoardLogin.None);
+        Assert.Equal(BoardLogin.None, connection.Login);
         Assert.Equal(new BoardEndpoint("", 161), connection.DefaultEndpoint);
     }
 

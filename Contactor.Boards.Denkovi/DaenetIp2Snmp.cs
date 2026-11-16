@@ -64,8 +64,9 @@ public sealed class DaenetIp2Message
     private readonly byte[] _value;
     private readonly byte[] _pdu;
 
-    internal DaenetIp2Message(int version, byte[] community, byte pduType, int requestId, int errorStatus, int errorIndex, int[] oid, byte[] oidBytes, byte valueType, int? value, byte[] valueTlv, byte[] pdu)
+    internal DaenetIp2Message(int version, byte[] community, byte pduType, int requestId, int errorStatus, int errorIndex, int[] oid, byte[] oidBytes, byte valueType, int? value, int valueLength, byte[] valueTlv, byte[] pdu)
     {
+        ValueLength = valueLength;
         Version = version;
         _community = community;
         PduType = pduType;
@@ -98,8 +99,11 @@ public sealed class DaenetIp2Message
     /// <summary>The BER tag of the variable's value, e.g. <see cref="DaenetIp2Api.IntegerTag"/> or <see cref="DaenetIp2Api.NullTag"/>.</summary>
     public byte ValueType { get; }
 
-    /// <summary>The value when it is an INTEGER of at most 4 bytes; null otherwise.</summary>
+    /// <summary>The value when it is an INTEGER of at most 4 bytes, in two's complement; null otherwise.</summary>
     public int? Value { get; }
+
+    /// <summary>How many bytes the value's content has, e.g. 1 for <c>02 01 FF</c>.</summary>
+    public int ValueLength { get; }
 
     /// <summary>The PDU alone, without the version and the community: what a trace may show.</summary>
     public ReadOnlySpan<byte> Pdu => _pdu;
@@ -241,13 +245,14 @@ public static class DaenetIp2Snmp
         // The value's whole TLV, for an error answer that echoes it: the last bytes of the variable.
         var pduBytes = datagram[pduStart..].ToArray();
         pduBytes.AsSpan(pduBytes.Length - valueStart).CopyTo(valueTlv);
-        return new DaenetIp2Message(version, community, pduType, requestId, errorStatus, errorIndex, oid, oidBytes, valueType, value, valueTlv, pduBytes);
+        return new DaenetIp2Message(version, community, pduType, requestId, errorStatus, errorIndex, oid, oidBytes, valueType, value, valueContent.Length, valueTlv, pduBytes);
     }
 
     /// <summary>
     /// The value of <paramref name="answer"/>, once it is checked to be the answer to <paramref name="request"/>: SNMPv1,
     /// a GetResponse with the same request id and community, error-index 0 or 1, the same OID, an INTEGER from 0 to
-    /// the request's <see cref="DaenetIp2Request.MaxValue"/>, and for a set the value that was set. Throws
+    /// the request's <see cref="DaenetIp2Request.MaxValue"/> (an INTEGER of one byte read unsigned, 0 to 255), and for a
+    /// set the value that was set. Throws
     /// <see cref="DaenetIp2RefusedException"/> for an error-status, and <see cref="DaenetIp2ProtocolException"/> for
     /// anything else that isn't the answer.
     /// </summary>
@@ -293,6 +298,12 @@ public static class DaenetIp2Snmp
         if (answer.ValueType != DaenetIp2Api.IntegerTag || answer.Value is not { } value)
         {
             throw Unreadable($"The answer's value has type {answer.ValueType:X2}, not INTEGER.");
+        }
+
+        // A port's byte may come as one raw byte, 02 01 FF, as well as BER's 02 02 00 FF: one byte is read unsigned.
+        if (answer.ValueLength == 1 && value < 0)
+        {
+            value += 256;
         }
 
         if (value < 0 || value > request.MaxValue)
@@ -352,11 +363,11 @@ public static class DaenetIp2Snmp
         return new DaenetIp2Request(message, pduOffset, pduType, requestId, communityBytes, [.. oid], oidBytes, value, maxValue);
     }
 
-    // The community as its bytes: printable ASCII without spaces, as the board takes it (DaenetIp2Models.CheckCommunity).
+    // The community as its bytes: printable ASCII without spaces, as the board takes it, or none (DaenetIp2Models.CheckSendable).
     private static byte[] CommunityBytes(string community)
     {
         ArgumentNullException.ThrowIfNull(community);
-        if (DaenetIp2Models.CheckCommunity(community) is { } problem)
+        if (DaenetIp2Models.CheckSendable(community) is { } problem)
         {
             throw new ArgumentException(problem.ToString(), nameof(community));
         }

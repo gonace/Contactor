@@ -6,6 +6,9 @@ namespace Contactor.Boards.Denkovi;
 /// </summary>
 public sealed class DaenetIp2Layout
 {
+    // The relay each pin drives, for RelayOf.
+    private readonly Dictionary<DaenetIp2Pin, int> _relayOf;
+
     public DaenetIp2Layout(IReadOnlyList<DaenetIp2Pin> relays)
     {
         ArgumentNullException.ThrowIfNull(relays);
@@ -18,7 +21,9 @@ public sealed class DaenetIp2Layout
 
         Relays = [.. relays];
         Ports = [.. Relays.Select(p => p.Port).Distinct().Order()];
+        _relayOf = Relays.Select((pin, index) => (pin, index)).ToDictionary(p => p.pin, p => p.index + 1);
     }
+
 
     /// <summary>The pin of each relay, relay 1 first.</summary>
     public IReadOnlyList<DaenetIp2Pin> Relays { get; }
@@ -37,8 +42,7 @@ public sealed class DaenetIp2Layout
     /// <summary>The relay a pin drives, or null for a pin no relay is on.</summary>
     public int? RelayOf(DaenetIp2Pin pin)
     {
-        var index = Relays.ToList().IndexOf(pin);
-        return index < 0 ? null : index + 1;
+        return _relayOf.TryGetValue(pin, out var relay) ? relay : null;
     }
 
     /// <summary>The relays that are on (bit 0 = relay 1) for the ports' bytes: a relay is on when its pin is High.</summary>
@@ -62,7 +66,7 @@ public sealed class DaenetIp2Layout
 /// <summary>
 /// The Denkovi DAEnetIP2 v2 kits in the board catalogue: the controller with a Denkovi relay board on its outputs
 /// (manual, appendix 3). SNMPv1 on UDP port 161, a poll, no inputs and no pulse. The login is the board's read-write
-/// community, a password alone: section 6.6.1 says it is used in read and write operations. From Denkovi's manual only,
+/// community, a password alone that the board always has: section 6.6.1 says it is used in read and write operations. From Denkovi's manual only,
 /// not yet checked on a real board.
 /// </summary>
 public static class DaenetIp2Models
@@ -106,19 +110,29 @@ public static class DaenetIp2Models
     }
 
     /// <summary>
-    /// Why the board can't take this community, or null when it can: at most 12 characters (section 6.6.1), letters,
-    /// digits and plain symbols without spaces, so each is one byte. Empty is taken: a board with no community saved
-    /// yet, which gets no answer.
+    /// Why the board can't take this community, or null when it can: 4 to 12 characters (table 9.1 and section 6.6.1),
+    /// letters, digits and plain symbols without spaces, so each is one byte. Empty is refused: the board always has a
+    /// community.
     /// </summary>
     public static LoginProblem? CheckCommunity(string community)
     {
         ArgumentNullException.ThrowIfNull(community);
-        if (community.Length > DaenetIp2Api.CommunityMaxLength)
+        if (community.Length is < DaenetIp2Api.CommunityMinLength or > DaenetIp2Api.CommunityMaxLength)
         {
-            return new LoginProblem(LoginProblemKind.PasswordTooLong, MaxLength: DaenetIp2Api.CommunityMaxLength);
+            return new LoginProblem(LoginProblemKind.CommunityLength, MaxLength: DaenetIp2Api.CommunityMaxLength, MinLength: DaenetIp2Api.CommunityMinLength);
         }
 
         return community.All(IsCommunityCharacter) ? null : new LoginProblem(LoginProblemKind.PasswordCharacters);
+    }
+
+    /// <summary>
+    /// Why the app can't send this community, or null when it can: one the board takes (<see cref="CheckCommunity"/>), or
+    /// none at all, on a board with no community saved yet, which gets no answer.
+    /// </summary>
+    public static LoginProblem? CheckSendable(string community)
+    {
+        ArgumentNullException.ThrowIfNull(community);
+        return community.Length == 0 ? null : CheckCommunity(community);
     }
 
     /// <summary>A printable ASCII character other than a space.</summary>
@@ -141,7 +155,12 @@ public static class DaenetIp2Models
             new BoardCapabilities(relays, 0, ReportsChanges: false),
             DaenetIp2Api.DefaultPort,
             LoginMaxLength: DaenetIp2Api.CommunityMaxLength,
-            LoginHint: new LoginHint(LoginHintKind.SnmpCommunity, DaenetIp2Api.CommunityMaxLength),
-            PasswordOnly: true);
+            LoginHint: new LoginHint(
+                LoginHintKind.SnmpCommunity,
+                DaenetIp2Api.CommunityMaxLength,
+                MinLength: DaenetIp2Api.CommunityMinLength,
+                FactoryValue: DaenetIp2Api.FactoryReadWriteCommunity),
+            PasswordOnly: true,
+            LoginRequired: true);
     }
 }

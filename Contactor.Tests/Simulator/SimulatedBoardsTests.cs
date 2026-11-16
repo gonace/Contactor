@@ -120,7 +120,8 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         // Port 161 needs rights a developer doesn't have; the page offers a free high port instead.
         Assert.Equal((8161, 161), (SimulatorCatalogue.Find(type)!.Port, DaenetIp2Api.DefaultPort));
         Assert.Equal("The DAEnetIP2 v2 takes its read-write community as the password, no user name.", _boards.Add(type, FreePort(), "admin", "apple"));
-        Assert.Equal("The password can be at most 12 characters.", _boards.Add(type, FreePort(), "", "thirteen-char"));
+        Assert.Equal("The password, the board's read-write community, must be 4 to 12 characters.", _boards.Add(type, FreePort(), "", "thirteen-char"));
+        Assert.Equal("The password, the board's read-write community, must be 4 to 12 characters.", _boards.Add(type, FreePort(), "", "abc"));
     }
 
     [Theory]

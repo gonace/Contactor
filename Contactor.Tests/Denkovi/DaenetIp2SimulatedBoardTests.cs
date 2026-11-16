@@ -279,6 +279,7 @@ public sealed class DaenetIp2SimulatedBoardTests
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(DaenetIp2Models.Relays8, "thirteen-char", logger));
+        Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(DaenetIp2Models.Relays8, "abc", logger));
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(DaenetIp2Models.Relays8) { ReadOnlyCommunity = "with space" });
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(Contactor.Boards.Velleman.Vm201Model.Model));
     }

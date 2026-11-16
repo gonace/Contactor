@@ -108,6 +108,29 @@ public sealed class DaenetIp2SnmpTests
         Assert.Equal(answer, DaenetIp2Snmp.Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P5), value)));
     }
 
+    [Theory]
+    [InlineData("02 01 05", 5)]
+    [InlineData("02 01 7F", 127)]
+    [InlineData("02 01 80", 128)]
+    [InlineData("02 01 FF", 255)]
+    public void Should_ReadAPortByteOfOneByte_AsUnsigned(string tlv, int value)
+    {
+        // Some agents send a byte as it is, 02 01 FF, not as BER's 02 02 00 FF: both are 255.
+        var answer = P5Is5.Replace("02 01 05", tlv, StringComparison.Ordinal);
+
+        Assert.Equal(value, DaenetIp2Snmp.Value(DaenetIp2Snmp.Decode(Bytes(answer)), DaenetIp2Snmp.GetPort(1, ReadOnly, DaenetIp2Port.P5)));
+    }
+
+    [Fact]
+    public void Should_StillRefuseAPinOfOneByteAbove1()
+    {
+        var request = DaenetIp2Snmp.Get(1, ReadOnly, DaenetIp2Api.PinOid(new DaenetIp2Pin(DaenetIp2Port.P5, 1)), 1);
+        var low = Hex(DaenetIp2Snmp.Response(1, ReadOnly, request.Oid, 0));
+        var answer = DaenetIp2Snmp.Decode(Bytes(low[..^"02 01 00".Length] + "02 01 FF"));
+
+        Assert.Equal("The answer's value 255 isn't from 0 to 1.", Assert.Throws<DaenetIp2ProtocolException>(() => DaenetIp2Snmp.Value(answer, request)).Message);
+    }
+
     [Fact]
     public void Should_ReadTheEchoOfASet()
     {
@@ -143,7 +166,8 @@ public sealed class DaenetIp2SnmpTests
         { Hex(DaenetIp2Snmp.Response(1, "public", DaenetIp2Api.PortOid(DaenetIp2Port.P5), 5)), "The answer carries another community." },
         { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P3), 5)), "The answer is for .1.3.6.1.4.1.42505.9.2.1.33.0, not .1.3.6.1.4.1.42505.9.2.2.33.0." },
         { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P5), 256)), "The answer's value 256 isn't from 0 to 255." },
-        { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P5), -1)), "The answer's value -1 isn't from 0 to 255." },
+        { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P5), -129)), "The answer's value -129 isn't from 0 to 255." },
+        { P5Is5.Replace("30 32", "30 33", StringComparison.Ordinal).Replace("A2 1F", "A2 20", StringComparison.Ordinal).Replace("30 14 30 12", "30 15 30 13", StringComparison.Ordinal).Replace("02 01 05", "02 02 FF FF", StringComparison.Ordinal), "The answer's value -1 isn't from 0 to 255." },
         { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P5), null)), "The answer's value has type 05, not INTEGER." },
         { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P5), null, DaenetIp2Api.NoSuchName, 2)), "The answer's error-index 2 isn't 0 or 1: there is one variable." },
 
@@ -272,6 +296,7 @@ public sealed class DaenetIp2SnmpTests
 
     [Theory]
     [InlineData("thirteen-char")]
+    [InlineData("abc")]
     [InlineData("with space")]
     [InlineData("åäö")]
     public void Should_RefuseACommunityTheBoardCantTake_BeforeAnythingIsSent(string community)

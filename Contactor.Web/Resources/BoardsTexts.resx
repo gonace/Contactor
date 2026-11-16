@@ -340,7 +340,7 @@
     <value>The TCP password from the board's configuration page, not the login of its web page. At most {0} characters: letters, digits and plain symbols, no spaces.</value>
   </data>
   <data name="Boards.LoginHint.SnmpCommunity" xml:space="preserve">
-    <value>The board's Read-write Community from its SNMP settings, at most {0} characters: letters, digits and plain symbols, no spaces. With a wrong community the board doesn't answer: check the address and the community.</value>
+    <value>The board's Read-write Community from its SNMP settings, {0} to {1} characters: letters, digits and plain symbols, no spaces. On a new board it is {2}. With a wrong community the board doesn't answer: check the address and the community.</value>
   </data>
   <data name="Boards.Login.TooLong.UserName" xml:space="preserve">
     <value>The user name can be at most {0} characters on the relay board.</value>
@@ -373,6 +373,9 @@
   </data>
   <data name="Boards.Login.PasswordCharacters" xml:space="preserve">
     <value>The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.</value>
+  </data>
+  <data name="Boards.Login.CommunityLength" xml:space="preserve">
+    <value>The password, the board's read-write community, must be {0} to {1} characters.</value>
   </data>
   <data name="Boards.Login.NoLoginWebPages" xml:space="preserve">
     <value>The {0} takes no login: its password only protects its own web pages.</value>

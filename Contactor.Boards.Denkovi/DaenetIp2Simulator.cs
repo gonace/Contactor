@@ -37,7 +37,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     private Task? _loop;
     private int _p3;
     private int _p5;
-    private int? _lastPortSent;
+    private readonly Dictionary<DaenetIp2Port, int> _lastPortSent = [];
     private int _requestCount;
     private int _unansweredCount;
     private int _dropRequests;
@@ -170,6 +170,12 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     /// of a refused command.
     /// </summary>
     public ulong FailRelays { get; set; }
+
+    /// <summary>
+    /// Relays (bit 0 = relay 1) whose set is read but never answered nor carried out, as if the network lost every try,
+    /// for the tests of a mask that goes on after a set without an answer.
+    /// </summary>
+    public ulong SilentRelays { get; set; }
 
     /// <summary>The PDU of each request received, as hex, without the version and the community. The newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
@@ -362,10 +368,10 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
         {
             var bits = port == DaenetIp2Port.P3 ? _p3 : _p5;
             value = pin is { } one ? ((bits & one.Bit) != 0 ? DaenetIp2Api.High : DaenetIp2Api.Low) : bits;
-            routine = pin is null && _lastPortSent == ((int)port << 8 | bits);
+            routine = pin is null && _lastPortSent.TryGetValue(port, out var sent) && sent == bits;
             if (pin is null)
             {
-                _lastPortSent = (int)port << 8 | bits;
+                _lastPortSent[port] = bits;
             }
         }
 
@@ -374,7 +380,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     }
 
     // A pin to High(1) or Low(0), or the port's whole byte to 0..255; the answer echoes the value.
-    private byte[] Set(DaenetIp2Message request, string community, DaenetIp2Port port, DaenetIp2Pin? pin)
+    private byte[]? Set(DaenetIp2Message request, string community, DaenetIp2Port port, DaenetIp2Pin? pin)
     {
         var max = pin is null ? DaenetIp2Api.MaxPortValue : DaenetIp2Api.High;
         if (request.ValueType != DaenetIp2Api.IntegerTag || request.Value is not { } value || value < 0 || value > max)
@@ -385,6 +391,11 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
         // The relays the set changes the pins of.
         var pins = pin is { } one ? [one] : Enumerable.Range(1, DaenetIp2Api.PinsPerPort).Select(n => new DaenetIp2Pin(port, n)).ToArray();
         var relays = pins.Select(_layout.RelayOf).OfType<int>().Aggregate(0UL, (mask, relay) => mask | (1UL << (relay - 1)));
+        if ((SilentRelays & relays) != 0)
+        {
+            return Unanswered("No answer: the set was lost");
+        }
+
         if ((FailRelays & relays) != 0)
         {
             return Refuse(request, community, DaenetIp2Api.GenErr);

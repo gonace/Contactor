@@ -224,25 +224,86 @@ public sealed class DaenetIp2ClientTests
     }
 
     [Fact]
-    public async Task Should_ThrowNotConnected_ForACommandThatGetsNoAnswer_AndSendNoMore()
+    public async Task Should_SendEverySet_AndThrowNotConnected_WhenNoneIsAnswered()
     {
         await using var simulator = Started(DaenetIp2Models.Relays8);
         await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         simulator.NoAnswer = true;
 
+        // Each set is asked twice; then the next relay's goes all the same.
         var sent = run.Client.TurnOnAsync(0b0011, Cancel);
+        for (var unanswered = 1; unanswered <= 4; unanswered++)
+        {
+            var count = unanswered;
+            await Wait.UntilAsync(() => simulator.UnansweredCount == count && run.Time.PendingTimers == 2);
+            run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        }
+
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
+
+        Assert.Equal("The DAEnetIP2 v2 board didn't answer; the command may not have been carried out.", error.Message);
+        Assert.Equal(2, simulator.ReceivedRequests.Count(r => r.StartsWith("A3", StringComparison.Ordinal) && r.Contains("09 02 02 01 00", StringComparison.Ordinal)));
+        Assert.Equal(2, simulator.ReceivedRequests.Count(r => r.StartsWith("A3", StringComparison.Ordinal) && r.Contains("09 02 02 02 00", StringComparison.Ordinal)));
+        Assert.Contains(run.Traces, t => t.Text == "No answer for relay 1: going on with the rest" && t.IsError);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_SendEveryOtherOff_WhenOneRelaysSetGetsNoAnswer()
+    {
+        // "All off" on the 16-relay kit, and relay 5's set is lost every time: the 15 others still go off.
+        await using var simulator = Started(DaenetIp2Models.Relays16);
+        for (var relay = 1; relay <= 16; relay++)
+        {
+            await simulator.SwitchRelayAsync(relay, true);
+        }
+
+        simulator.SilentRelays = 1UL << 4;
+        await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays16, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var sent = run.Client.TurnOffAsync(0xFFFF, Cancel);
         await Wait.UntilAsync(() => simulator.UnansweredCount == 1 && run.Time.PendingTimers == 2);
         run.Time.Advance(DaenetIp2Client.RequestTimeout);
         await Wait.UntilAsync(() => simulator.UnansweredCount == 2 && run.Time.PendingTimers == 2);
         run.Time.Advance(DaenetIp2Client.RequestTimeout);
-        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => sent);
 
-        // Relay 2 never went: no answer stops the rest.
-        Assert.Equal("The DAEnetIP2 v2 board didn't answer; the command may not have been carried out.", error.Message);
-        Assert.Equal(2, simulator.ReceivedRequests.Count(r => r.StartsWith("A3", StringComparison.Ordinal)));
-        Assert.DoesNotContain(simulator.ReceivedRequests, r => r.Contains("09 02 02 02 00", StringComparison.Ordinal));
+        Assert.Equal(0xFFFFUL & ~(1UL << 4), await sent);
+        Assert.Equal(1UL << 4, simulator.Relays);
+        Assert.Equal(1UL << 4, run.Client.State.Relays);
+        Assert.Equal(17, simulator.ReceivedRequests.Count(r => r.StartsWith("A3", StringComparison.Ordinal)));
         Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_NeverTakeTheAnswer_FromAnotherAddress()
+    {
+        // The right answer, with the right id and community, but only ever from another port.
+        await using var board = ScriptedBoard.Start(request =>
+            [new Datagram(DaenetIp2Snmp.Response(request.RequestId, Community, request.Oid, 0b0101), FromElsewhere: true)]);
+        await using var run = ClientRun.Start(board.Port, DaenetIp2Models.Relays8);
+
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == $"Skipped a datagram from 127.0.0.1:{board.ElsewherePort}: not the board")
+            && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+
+        Assert.False(run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Status);
+    }
+
+    [Fact]
+    public async Task Should_OpenANewSocket_AfterOneTheNetworkRefused()
+    {
+        // Sending to the broadcast address without the right to is refused at once, on every system.
+        await using var run = ClientRun.Start(9, DaenetIp2Models.Relays8, host: "255.255.255.255");
+        static bool IsOpened(BoardTraceEntry t) => t.Text.StartsWith("Sending to 255.255.255.255:9 from UDP port ", StringComparison.Ordinal);
+
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 1 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(1, run.Traces.Count(IsOpened));
+
+        run.Time.Advance(run.PollInterval);
+
+        await Wait.UntilAsync(() => run.Traces.Count(IsOpened) == 2);
     }
 
     [Fact]

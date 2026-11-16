@@ -35,10 +35,14 @@ public sealed class DaenetIp2Connection : IBoardConnection
         _client.SetEndpoint(endpoint);
     }
 
-    /// <summary>Asks with another community; throws for a login <see cref="CheckLogin"/> refuses.</summary>
+    /// <summary>
+    /// Asks with another community; throws for a login <see cref="CheckLogin"/> refuses, except
+    /// <see cref="BoardLogin.None"/>: no community yet, which the board doesn't answer (see <see cref="IBoardConnection.SetLogin"/>).
+    /// </summary>
     public void SetLogin(BoardLogin login)
     {
-        if (CheckLogin(login) is { } error)
+        ArgumentNullException.ThrowIfNull(login);
+        if (!login.IsNone && CheckLogin(login) is { } error)
         {
             throw new ArgumentException(error.ToString(), nameof(login));
         }
@@ -46,6 +50,10 @@ public sealed class DaenetIp2Connection : IBoardConnection
         _client.SetCommunity(login.Password);
     }
 
+    /// <summary>
+    /// Takes the read-write community as a password alone, 4 to 12 characters: the board always has one, so no login is
+    /// refused too.
+    /// </summary>
     public LoginProblem? CheckLogin(BoardLogin login)
     {
         ArgumentNullException.ThrowIfNull(login);
