@@ -117,6 +117,9 @@ public sealed class SmartDenSimulatedBoardTests
         await using var simulator = Started();
         using (var tcp = await ConnectAsync(simulator))
         {
+            // Wait until the board took it. Else it can take this one and the next one together, and this one, with its
+            // half frame not yet read, still looks open, so the board refuses the next one.
+            await Wait.UntilAsync(() => simulator.ConnectionCount == 1);
             await tcp.GetStream().WriteAsync(SmartDenModbusTests.Bytes("00 01 00 00 00 06 00 05 00"), Cancel);
         }
 
