@@ -27,109 +27,117 @@
     </header>
 
     <main class="content">
-        <UpdateBox />
-
-        @if (Boards is [var only])
-        {
-            @* One board: its card as it always was. *@
-            <div class="board-stack">
-                <BoardForm BoardId="only.BoardId" Title="@Common["Common.Screen.RelayBoard"]" @key="only.BoardId" />
-                @AddBoard
-            </div>
-        }
-        else
-        {
-            <section class="card">
-                <h2>@Texts["Settings.Boards"]</h2>
-                @if (Boards.Count == 0)
-                {
-                    <p class="hint">@Common["Common.NoBoard"]</p>
-                }
-                else
-                {
-                    <p class="hint">@Texts["Settings.Boards.Hint"]</p>
-                    <div class="board-rows">
-                        @foreach (var board in Boards)
-                        {
-                            var state = board.State;
-                            <a href="@($"board/{board.BoardId}")" class="@(state.IsConnected ? "board-row" : "board-row lost")" @key="board.BoardId">
-                                <span class="info">
-                                    <span class="board-name">@board.Name</span>
-                                    <span class="board-model">@BoardLine(board)</span>
-                                    <span class="board-status"><span class="dot" aria-hidden="true"></span>@StatusText(board)</span>
-                                </span>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
-                            </a>
-                        }
-                    </div>
-                }
-                @AddBoard
-            </section>
-        }
-
-        @if (Language.HasChoice)
-        {
-            <section class="card">
-                <LanguagePicker />
-            </section>
-        }
-
-        <section class="card">
-            <h2>@Texts["Settings.People"]</h2>
-            <p class="hint">@Texts["Settings.People.Hint"]</p>
-            @foreach (var person in _people)
+        @* On a desktop two columns, each its own stack: the workshop's own things on the left (the boards, People,
+           Backups), the app itself on the right (Updates, Language, Debugging). On a phone and a tablet the columns
+           aren't boxes of their own, and the cards keep one column in the order Updates, the boards, Language, People,
+           Backups, Debugging (Settings.razor.css, order). *@
+        <div class="column">
+            @if (Boards is [var only])
             {
-                <form class="person" @key="person.Email" @onsubmit="() => RenameAsync(person)">
-                    <div class="field">
-                        <label for="@($"name-{person.Index}")">@person.Email</label>
-                        <div class="row">
-                            <input id="@($"name-{person.Index}")" type="text" maxlength="@Contactor.Web.Persistence.User.DisplayNameMaxLength"
-                                   autocomplete="off" @bind="person.Name" @bind:event="oninput" />
-                            <button type="submit" class="small" disabled="@_busy">@Common["Common.Save"]</button>
-                        </div>
-                    </div>
-                    @if (person.Message is not null)
-                    {
-                        <p class="@(person.Saved ? "saved" : "error")" role="alert">@person.Message</p>
-                    }
-                </form>
-            }
-        </section>
-
-        <section class="card">
-            <h2>@Texts["Settings.Backups"]</h2>
-            <p class="hint">@Texts["Settings.Backups.Hint"]</p>
-            @if (_latest is { } latest)
-            {
-                <p class="latest">@Texts["Settings.Backups.Latest", RelayStatus.When(Clock.ToLocal(latest.LastWriteTimeUtc), Clock.Now), Size(Texts, latest.Length)]</p>
+                @* One board: its card as it always was. *@
+                <div class="board-stack boards">
+                    <BoardForm BoardId="only.BoardId" Title="@Common["Common.Screen.RelayBoard"]" @key="only.BoardId" />
+                    @AddBoard
+                </div>
             }
             else
             {
-                <p class="latest">@Texts["Settings.Backups.None"]</p>
+                <section class="card boards">
+                    <h2>@Texts["Settings.Boards"]</h2>
+                    @if (Boards.Count == 0)
+                    {
+                        <p class="hint">@Common["Common.NoBoard"]</p>
+                    }
+                    else
+                    {
+                        <p class="hint">@Texts["Settings.Boards.Hint"]</p>
+                        <div class="board-rows">
+                            @foreach (var board in Boards)
+                            {
+                                var state = board.State;
+                                <a href="@($"board/{board.BoardId}")" class="@(state.IsConnected ? "board-row" : "board-row lost")" @key="board.BoardId">
+                                    <span class="info">
+                                        <span class="board-name">@board.Name</span>
+                                        <span class="board-model">@BoardLine(board)</span>
+                                        <span class="board-status"><span class="dot" aria-hidden="true"></span>@StatusText(board)</span>
+                                    </span>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+                                </a>
+                            }
+                        </div>
+                    }
+                    @AddBoard
+                </section>
             }
 
-            @if (_backupMessage is not null)
-            {
-                <p class="@(_backupSaved ? "saved" : "error")" role="alert">@_backupMessage</p>
-            }
-
-            <div class="buttons">
-                <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">@Texts["Settings.Backups.Make"]</button>
-                @if (_latest is not null)
+            <section class="card people">
+                <h2>@Texts["Settings.People"]</h2>
+                <p class="hint">@Texts["Settings.People.Hint"]</p>
+                @foreach (var person in _people)
                 {
-                    <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">@Common["Common.Download"]</a>
+                    <form class="person" @key="person.Email" @onsubmit="() => RenameAsync(person)">
+                        <div class="field">
+                            <label for="@($"name-{person.Index}")">@person.Email</label>
+                            <div class="row">
+                                <input id="@($"name-{person.Index}")" type="text" maxlength="@Contactor.Web.Persistence.User.DisplayNameMaxLength"
+                                       autocomplete="off" @bind="person.Name" @bind:event="oninput" />
+                                <button type="submit" class="small" disabled="@_busy">@Common["Common.Save"]</button>
+                            </div>
+                        </div>
+                        @if (person.Message is not null)
+                        {
+                            <p class="@(person.Saved ? "saved" : "error")" role="alert">@person.Message</p>
+                        }
+                    </form>
                 }
-            </div>
-        </section>
+            </section>
 
-        <section class="card">
-            <h2>@Texts["Settings.Debugging"]</h2>
-            <label for="debugging" class="check">
-                <input id="debugging" type="checkbox" checked="@_debugging" disabled="@(_user is null)" @onchange="SetDebuggingAsync" />
-                <span>@Texts["Settings.Debugging.Check"]</span>
-            </label>
-            <p class="hint">@Texts["Settings.Debugging.Hint"]</p>
-        </section>
+            <section class="card backups">
+                <h2>@Texts["Settings.Backups"]</h2>
+                <p class="hint">@Texts["Settings.Backups.Hint"]</p>
+                @if (_latest is { } latest)
+                {
+                    <p class="latest">@Texts["Settings.Backups.Latest", RelayStatus.When(Clock.ToLocal(latest.LastWriteTimeUtc), Clock.Now), Size(Texts, latest.Length)]</p>
+                }
+                else
+                {
+                    <p class="latest">@Texts["Settings.Backups.None"]</p>
+                }
+
+                @if (_backupMessage is not null)
+                {
+                    <p class="@(_backupSaved ? "saved" : "error")" role="alert">@_backupMessage</p>
+                }
+
+                <div class="buttons">
+                    <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">@Texts["Settings.Backups.Make"]</button>
+                    @if (_latest is not null)
+                    {
+                        <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">@Common["Common.Download"]</a>
+                    }
+                </div>
+            </section>
+        </div>
+
+        <div class="column">
+            <UpdateBox />
+
+            @if (Language.HasChoice)
+            {
+                <section class="card language">
+                    <LanguagePicker />
+                </section>
+            }
+
+            <section class="card debugging">
+                <h2>@Texts["Settings.Debugging"]</h2>
+                <label for="debugging" class="check">
+                    <input id="debugging" type="checkbox" checked="@_debugging" disabled="@(_user is null)" @onchange="SetDebuggingAsync" />
+                    <span>@Texts["Settings.Debugging.Check"]</span>
+                </label>
+                <p class="hint">@Texts["Settings.Debugging.Hint"]</p>
+            </section>
+        </div>
     </main>
 
     <p class="version">@VersionText</p>

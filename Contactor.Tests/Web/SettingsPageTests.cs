@@ -137,6 +137,56 @@ public sealed class SettingsPageTests
         }
     }
 
+    // On a desktop two columns, each its own stack: the workshop's own things on the left, the app itself on the right.
+    [Fact]
+    public async Task Should_PutTheCardsInTwoColumns_WithOneBoard()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
+        using var http = app.CreateClient();
+
+        var (left, right) = Columns(WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel)));
+
+        AssertInOrder(left, "class=\"board-stack boards\"", "id=\"host\"", "Add a board", "class=\"card people\"", "class=\"card backups\"");
+        AssertInOrder(right, "class=\"card updates\"", "class=\"card language\"", "id=\"language\"", "class=\"card debugging\"");
+    }
+
+    [Fact]
+    public async Task Should_PutTheBoardsList_InTheLeftColumn_WithTwoBoards()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var http = boards.App.CreateClient();
+
+        var (left, right) = Columns(WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel)));
+
+        AssertInOrder(left, "class=\"card boards\"", "href=\"board/1\"", $"href=\"board/{boards.BarnId}\"", "Add a board", "class=\"card people\"", "class=\"card backups\"");
+        AssertInOrder(right, "class=\"card updates\"", "class=\"card language\"", "class=\"card debugging\"");
+        Assert.DoesNotContain("board/", right, StringComparison.Ordinal);
+    }
+
+    // The page's two columns: what is in the first, and what is in the second, up to the end of the page's content.
+    private static (string Left, string Right) Columns(string html)
+    {
+        var content = html.IndexOf("<main class=\"content\"", StringComparison.Ordinal);
+        var first = html.IndexOf("<div class=\"column\"", content, StringComparison.Ordinal);
+        var second = html.IndexOf("<div class=\"column\"", first + 1, StringComparison.Ordinal);
+        var end = html.IndexOf("</main>", content, StringComparison.Ordinal);
+        Assert.True(content >= 0 && first > content && second > first && end > second, "Settings has two columns.");
+        return (html[first..second], html[second..end]);
+    }
+
+    private static void AssertInOrder(string html, params string[] parts)
+    {
+        var at = -1;
+        foreach (var part in parts)
+        {
+            var next = html.IndexOf(part, at + 1, StringComparison.Ordinal);
+            Assert.True(next > at, $"\"{part}\" comes after what is before it.");
+            at = next;
+        }
+    }
+
     [Theory]
     [InlineData(68 * 1024, "68 kB")]
     [InlineData(100, "1 kB")]

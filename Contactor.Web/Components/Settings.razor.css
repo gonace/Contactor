@@ -233,8 +233,38 @@ button:disabled {
     opacity: 0.45;
 }
 
+/* The desktop's two columns. On a phone and a tablet they aren't boxes of their own: their cards are the page's, in
+   one column, in the order below. Each column's cards keep that order on a desktop too. */
+.column {
+    display: contents;
+}
+
+.column ::deep .updates {
+    order: 1;
+}
+
+.boards {
+    order: 2;
+}
+
+.language {
+    order: 3;
+}
+
+.people {
+    order: 4;
+}
+
+.backups {
+    order: 5;
+}
+
+.debugging {
+    order: 6;
+}
+
 /* With two or more boards: a row per board, opening its page. */
-/* One board: its card, and "Add a board" under it, as one cell of the desktop's two columns. */
+/* One board: its card, and "Add a board" under it, as one stack in the desktop's left column. */
 .board-stack {
     min-width: 0;
     display: flex;
@@ -337,7 +367,8 @@ button:disabled {
     text-align: center;
 }
 
-/* A tablet: the same screen, wider. A desktop: as wide as Relays and lined up with it, the cards in two columns. */
+/* A tablet: the same screen, wider. A desktop: as wide as Relays and lined up with it, the cards in two columns, each
+   its own stack. */
 @media (min-width: 768px) {
     .screen {
         max-width: 720px;
@@ -357,11 +388,19 @@ button:disabled {
         }
     }
 
+    /* Two columns, each its own stack: a short card leaves no gap beside a tall one. */
     .content {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-content: start;
         align-items: start;
+        gap: 16px;
+    }
+
+    .column {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
         gap: 16px;
     }
 }

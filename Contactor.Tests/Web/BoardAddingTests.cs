@@ -198,7 +198,7 @@ public sealed class BoardAddingTests
         {
             using var http = one.CreateClient();
             var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
-            Assert.Matches("(?s)class=\"board-stack\".*id=\"host\".*href=\"board/new\" class=\"add-board\"", settings);
+            Assert.Matches("(?s)class=\"board-stack boards\".*id=\"host\".*href=\"board/new\" class=\"add-board\"", settings);
 
             // One board: the side menu has it too, and the relays' chips.
             Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", settings);
