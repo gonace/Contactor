@@ -114,14 +114,14 @@ public sealed class DevantechProtocolTests
     }
 
     [Theory]
-    [InlineData("00 81", 0b1000_0001UL)]
-    [InlineData("FF 01", 0b0000_0001UL)]
-    [InlineData("00 00 00 81", 0b1000_0001UL)]
-    [InlineData("FF FF FF 00", 0UL)]
-    [InlineData("80 01", 0x0000_8001UL)]
-    public void Should_ReadTheInputs_HighByteFirst(string answer, ulong expected)
+    [InlineData("00 81", 8, 0b1000_0001UL)]
+    [InlineData("FF 01", 8, 0b0000_0001UL)]
+    [InlineData("00 00 00 81", 8, 0b1000_0001UL)]
+    [InlineData("FF FF FF 00", 8, 0UL)]
+    [InlineData("80 01", 16, 0x0000_8001UL)]
+    public void Should_ReadTheInputs_HighByteFirst(string answer, int inputs, ulong expected)
     {
-        Assert.Equal(expected, DevantechProtocol.Inputs(Bytes(answer), 8));
+        Assert.Equal(expected, DevantechProtocol.Inputs(Bytes(answer), inputs));
     }
 
     [Fact]
