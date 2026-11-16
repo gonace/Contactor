@@ -1,4 +1,4 @@
-# The Waveshare Modbus PoE ETH relays (`Contactor.Boards.Waveshare`)
+# Waveshare
 
 How the app talks to these boards. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is
 in `docs/ARCHITECTURE.md`.
@@ -9,18 +9,7 @@ adapters for the app and a simulator. It has no web or database code.
 The facts below come from Waveshare's wiki, read through search extracts. Nobody has tested them on a real board yet.
 The list in "To check on a real board" shows what is not known.
 
-## Models
-
-| Catalogue id | Name | Relays | Inputs |
-|---|---|---|---|
-| `waveshare-8` | Waveshare Modbus PoE ETH Relay | 8 | 0 |
-| `waveshare-8b` | Waveshare Modbus PoE ETH Relay (B) | 8 | 8 |
-| `waveshare-8c` | Waveshare Modbus PoE ETH Relay (C) | 8 | 8 |
-| `waveshare-16` | Waveshare Modbus PoE ETH Relay 16CH | 16 | 0 |
-| `waveshare-30` | Waveshare Modbus PoE ETH Relay 30CH | 30 | 0 |
-
-All five use port 4196 and have no login. `WaveshareModels` has the five models. The 16CH and the 30CH come from the
-wiki only. The wiki's table for the 16CH is not clear about inputs, so the app gives it no inputs.
+## Sources
 
 Wiki pages:
 
@@ -29,6 +18,25 @@ Wiki pages:
 - https://www.waveshare.com/wiki/Modbus_POE_ETH_Relay_(C)
 - https://www.waveshare.com/wiki/Modbus_POE_ETH_Relay_16CH
 - https://www.waveshare.com/wiki/Modbus_POE_ETH_Relay_30CH
+
+Sources for the pulse: Waveshare's development protocol pages for the Modbus POE ETH IO 8CH
+(https://docs.waveshare.com/RS232-RS485-CAN-DALI2/Modbus_POE_ETH_IO_8CH/Development-Protocol), the Modbus RTU Module (A)
+(https://docs.waveshare.com/Modbus_RTU_Module_A/Development-Protocol) and the Modbus RTU Relay 16CH
+(https://waveshare.com/wiki/Modbus_RTU_Relay_16CH). They disagree a little on the address ranges per model, so the
+addresses are to check on a real board.
+
+## Models
+
+| Catalogue id | Name | Relays | Inputs | Pulse | Login |
+|---|---|---|---|---|---|
+| `waveshare-8` | Waveshare Modbus PoE ETH Relay | 8 | 0 | 0.1 s to 3276.7 s | none |
+| `waveshare-8b` | Waveshare Modbus PoE ETH Relay (B) | 8 | 8 | 0.1 s to 3276.7 s | none |
+| `waveshare-8c` | Waveshare Modbus PoE ETH Relay (C) | 8 | 8 | 0.1 s to 3276.7 s | none |
+| `waveshare-16` | Waveshare Modbus PoE ETH Relay 16CH | 16 | 0 | 0.1 s to 3276.7 s | none |
+| `waveshare-30` | Waveshare Modbus PoE ETH Relay 30CH | 30 | 0 | 0.1 s to 3276.7 s | none |
+
+All five use port 4196 and have no login. `WaveshareModels` has the five models. The 16CH and the 30CH come from the
+wiki only. The wiki's table for the 16CH is not clear about inputs, so the app gives it no inputs.
 
 ## Protocol
 
@@ -53,12 +61,7 @@ has an MBAP header and port 502.
 
 A pulse turns the relay on, and the board turns it off again by itself after the time, also when the app stops in
 between. So all five models pulse for 0.1 s to 3276.7 s, in steps of 0.1 s (`WaveshareModels.Pulse`). The board also
-has "flash off" at 0x0400 + relay − 1, which the app does not use. Sources for the pulse: Waveshare's development
-protocol pages for the Modbus POE ETH IO 8CH
-(https://docs.waveshare.com/RS232-RS485-CAN-DALI2/Modbus_POE_ETH_IO_8CH/Development-Protocol), the Modbus RTU Module (A)
-(https://docs.waveshare.com/Modbus_RTU_Module_A/Development-Protocol) and the Modbus RTU Relay 16CH
-(https://waveshare.com/wiki/Modbus_RTU_Relay_16CH). They disagree a little on the address ranges per model, so the
-addresses are to check on a real board.
+has "flash off" at 0x0400 + relay − 1, which the app does not use.
 
 A refused request gets an exception answer: the function code with 0x80 added, then an exception code.
 `WaveshareRefusedException` has the code. The board also takes 5500 (toggle) at function 05, and address 0x00FF for
@@ -79,7 +82,7 @@ Frames from the wiki, unit 1:
 
 `WaveshareModbusTests` checks these frames byte for byte.
 
-## Client
+## The app's client
 
 `WaveshareClient` keeps one TCP connection and sends one request at a time. Each request waits for its answer.
 
@@ -119,7 +122,39 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time wit
 `Features/Waveshare` in `Contactor.Web` registers them. `WaveshareTraceText` puts each frame in plain words. The polls
 and the answers that change nothing are routine.
 
-## Relay modes on the (B) and (C)
+## Settings
+
+The `Waveshare` section applies to all five models:
+
+```json
+"Waveshare": {
+  "Host": "",
+  "Port": 4196,
+  "PollSeconds": 2,
+  "ResetRelayModes": true
+}
+```
+
+When `Host` is empty, the setup guide asks for the address.
+
+## The simulator
+
+`WaveshareSimulator` simulates each of the five models on a local port. `Contactor.Simulator` offers port 4196.
+
+- It answers functions 01, 02, 03, 05, 06 and 10 as described above.
+- A pulse ("flash on") turns the relay off again after its time, on the simulator's `TimeProvider`. The next poll shows
+  it. A later function 05 for the relay ends its pulse; a later pulse starts it again. A relay in linkage mode doesn't
+  pulse.
+- It gives an exception answer for a function it does not know (code 1), an address it does not have (code 2), or a
+  value or quantity it does not take (code 3).
+- It gives no answer to a frame with a bad CRC or for another unit, as on a serial Modbus line.
+- On the (B) and (C) it has the mode registers. A relay in mode 1, 2 or 3 follows its input when the input changes.
+- Relays and inputs can be set "at the board", and connections can be dropped or refused.
+- For the tests, `NoAnswer` stops all answers and `FailRelays` refuses function 05 for some relays with code 4.
+
+## Settings on the board that switch relays without the app
+
+### Relay modes on the (B) and (C)
 
 On the (B) and the (C), each relay has a control mode in the registers 0x1000 to 0x1007:
 
@@ -153,50 +188,22 @@ stays until the next connection.
 
 Set `Waveshare:ResetRelayModes` to `false` to keep the modes.
 
-## Settings
-
-The `Waveshare` section applies to all five models:
-
-```json
-"Waveshare": {
-  "Host": "",
-  "Port": 4196,
-  "PollSeconds": 2,
-  "ResetRelayModes": true
-}
-```
-
-When `Host` is empty, the setup guide asks for the address.
-
-## Simulator
-
-`WaveshareSimulator` simulates each of the five models on a local port. `Contactor.Simulator` offers port 4196.
-
-- It answers functions 01, 02, 03, 05, 06 and 10 as described above.
-- A pulse ("flash on") turns the relay off again after its time, on the simulator's `TimeProvider`. The next poll shows
-  it. A later function 05 for the relay ends its pulse; a later pulse starts it again. A relay in linkage mode doesn't
-  pulse.
-- It gives an exception answer for a function it does not know (code 1), an address it does not have (code 2), or a
-  value or quantity it does not take (code 3).
-- It gives no answer to a frame with a bad CRC or for another unit, as on a serial Modbus line.
-- On the (B) and (C) it has the mode registers. A relay in mode 1, 2 or 3 follows its input when the input changes.
-- Relays and inputs can be set "at the board", and connections can be dropped or refused.
-- For the tests, `NoAnswer` stops all answers and `FailRelays` refuses function 05 for some relays with code 4.
-
 ## To check on a real board
 
-- The factory address and port: 192.168.1.200:4196, a static address, mode "Modbus RTU over TCP".
+> **Warning: check the first five points first, before anything is connected to the relays.**
+
 - The relay states after a power cut: all off, or the last states.
-- Which exception codes the board sends for a coil out of range, a quantity above the relay count, and a function 05
-  value other than FF00, 0000 or 5500.
-- The input bit order (bit 0 = input 1), and if a closed input reads 1.
-- How many TCP clients the board accepts at once, and if a second client closes the first.
-- That the board never sends data that the app did not ask for.
 - If the mode registers stay after a power cut, and how a relay in linkage mode answers function 05.
+- The input bit order (bit 0 = input 1), and if a closed input reads 1.
 - What a relay that is on does when the app sets its mode back to normal at connect: does it keep its state? The app
   must turn nothing off at start.
-- That the 16CH has no inputs, and that the 16CH and the 30CH answer as above.
-- How the board handles a poll every 2 s for days, and if it closes a connection that is idle, and after how long.
 - The pulse ("flash on"): its address on each model (0x0200 + relay − 1), the longest time (0x7FFF), that the board
   echoes the request, what a function 05 or a second pulse for the relay does to a pulse that runs, and what a relay in
   linkage mode does with it.
+- The factory address and port: 192.168.1.200:4196, a static address, mode "Modbus RTU over TCP".
+- Which exception codes the board sends for a coil out of range, a quantity above the relay count, and a function 05
+  value other than FF00, 0000 or 5500.
+- How many TCP clients the board accepts at once, and if a second client closes the first.
+- That the board never sends data that the app did not ask for.
+- That the 16CH has no inputs, and that the 16CH and the 30CH answer as above.
+- How the board handles a poll every 2 s for days, and if it closes a connection that is idle, and after how long.
