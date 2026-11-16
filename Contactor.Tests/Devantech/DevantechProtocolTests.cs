@@ -80,6 +80,7 @@ public sealed class DevantechProtocolTests
     [Theory]
     [InlineData("devantech-eth002", 1, 0)]
     [InlineData("devantech-eth008", 1, 0)]
+    [InlineData("devantech-eth1610", 2, 2)]
     [InlineData("devantech-eth484", 2, 2)]
     [InlineData("devantech-eth8020", 3, 4)]
     public void Should_AskForAsManyBytes_AsTheModelSends(string id, int outputs, int inputs)
@@ -103,6 +104,7 @@ public sealed class DevantechProtocolTests
     [InlineData("FF", 2, 0b11UL)]
     [InlineData("F3 FF", 4, 0b0011UL)]
     [InlineData("05 00 08", 20, (1UL << 0) | (1UL << 2) | (1UL << 19))]
+    [InlineData("05 02", 10, (1UL << 0) | (1UL << 2) | (1UL << 9))]
     [InlineData("00 80 FF", 20, (1UL << 15) | 0xF_0000UL)]
     public void Should_ReadTheOutputs_LowByteFirst(string answer, int relays, ulong expected)
     {
@@ -116,6 +118,7 @@ public sealed class DevantechProtocolTests
     [InlineData("FF 01", 0b0000_0001UL)]
     [InlineData("00 00 00 81", 0b1000_0001UL)]
     [InlineData("FF FF FF 00", 0UL)]
+    [InlineData("80 01", 0x0001_0080UL)]
     public void Should_ReadTheInputs_HighByteFirst(string answer, ulong expected)
     {
         Assert.Equal(expected, DevantechProtocol.Inputs(Bytes(answer), 8));
@@ -127,6 +130,7 @@ public sealed class DevantechProtocolTests
         Assert.Equal("05 00 08", DevantechProtocol.Hex(DevantechProtocol.OutputBytes(0b0101 | (1UL << 19), 3)));
         Assert.Equal("00 00 00 81", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0b1000_0001, 4)));
         Assert.Equal("00 81", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0b1000_0001, 2)));
+        Assert.Equal("80 01", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0x0001_0080, 2)));
     }
 
     [Fact]
