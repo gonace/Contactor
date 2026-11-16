@@ -100,7 +100,7 @@
     <value>Den här installationen är redan klar.</value>
   </data>
   <data name="Setup.None.OnlyHere" xml:space="preserve">
-    <value>Ingen inloggning fungerar bara när appen bara finns på det här nätverket.</value>
+    <value>"Ingen inloggning" fungerar bara när appen bara finns på det här nätverket.</value>
   </data>
   <data name="Setup.TailscaleIdentity.OnlyTailscale" xml:space="preserve">
     <value>Tailscale-identitet fungerar bara när folk når appen genom Tailscale.</value>

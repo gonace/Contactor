@@ -196,7 +196,7 @@
     <value>På sedan {0} · av {1}</value>
   </data>
   <data name="Relays.Status.OnSinceByOff" xml:space="preserve">
-    <value>På sedan {0} · {1} · av {2}</value>
+    <value>På sedan {0} · {1} · stängs av {2}</value>
   </data>
   <data name="Relays.Sentence.Off" xml:space="preserve">
     <value>Av just nu.</value>

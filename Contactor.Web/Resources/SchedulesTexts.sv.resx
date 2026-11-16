@@ -34,16 +34,16 @@
     <value>Inga dagar valda.</value>
   </data>
   <data name="Schedules.Summary.Relay" xml:space="preserve">
-    <value>{0}: reläet slås på {1} och stängs av {2}.</value>
+    <value>{0}: reläet slås på kl. {1} och stängs av kl. {2}.</value>
   </data>
   <data name="Schedules.Summary.RelayNextDay" xml:space="preserve">
-    <value>{0}: reläet slås på {1} och stängs av {2} dagen efter.</value>
+    <value>{0}: reläet slås på kl. {1} och stängs av kl. {2} dagen efter.</value>
   </data>
   <data name="Schedules.Summary.Group" xml:space="preserve">
-    <value>{0}: gruppen slås på {1} och stängs av {2}.</value>
+    <value>{0}: gruppen slås på kl. {1} och stängs av kl. {2}.</value>
   </data>
   <data name="Schedules.Summary.GroupNextDay" xml:space="preserve">
-    <value>{0}: gruppen slås på {1} och stängs av {2} dagen efter.</value>
+    <value>{0}: gruppen slås på kl. {1} och stängs av kl. {2} dagen efter.</value>
   </data>
   <data name="Schedules.Times" xml:space="preserve">
     <value>{0} – {1}</value>

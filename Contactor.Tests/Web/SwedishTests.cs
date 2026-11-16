@@ -153,7 +153,7 @@ public sealed class SwedishTests
 
         var text = TestTexts.RelayStatus.For(true, new DateTime(2026, 11, 4, 14, 2, 0), "Jane", new DateTime(2026, 11, 5, 1, 10, 0), Now);
 
-        Assert.Equal("På sedan 14:02 · Jane · av i morgon 01:10", text);
+        Assert.Equal("På sedan 14:02 · Jane · stängs av i morgon 01:10", text);
     }
 
     [Fact]

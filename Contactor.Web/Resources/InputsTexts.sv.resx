@@ -106,10 +106,10 @@
     <value>Den här ingången har inte ändrats än.</value>
   </data>
   <data name="Inputs.Closes" xml:space="preserve">
-    <value>SLUTS</value>
+    <value>NÄR DEN SLUTS</value>
   </data>
   <data name="Inputs.Opens" xml:space="preserve">
-    <value>ÖPPNAS</value>
+    <value>NÄR DEN ÖPPNAS</value>
   </data>
   <data name="Inputs.WhenCloses" xml:space="preserve">
     <value>{0}: när ingången sluts</value>
@@ -136,13 +136,13 @@
     <value>{0} finns två gånger i listan.</value>
   </data>
   <data name="Inputs.Save.GroupOtherBoard" xml:space="preserve">
-    <value>Den gruppen sitter på ett annat kort: en ingång styr bara sitt eget korts.</value>
+    <value>Den gruppen sitter på ett annat kort: en ingång styr bara sitt eget korts grupper.</value>
   </data>
   <data name="Inputs.Save.GroupGone" xml:space="preserve">
     <value>Den gruppen finns inte längre.</value>
   </data>
   <data name="Inputs.Save.RelayOtherBoard" xml:space="preserve">
-    <value>Det reläet sitter på ett annat kort: en ingång styr bara sitt eget korts.</value>
+    <value>Det reläet sitter på ett annat kort: en ingång styr bara sitt eget korts reläer.</value>
   </data>
   <data name="Inputs.Save.RelayInGroup" xml:space="preserve">
     <value>Relä {0} är med i en grupp nu: lägg till gruppen i stället.</value>

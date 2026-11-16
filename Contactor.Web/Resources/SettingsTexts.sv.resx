@@ -31,7 +31,7 @@
     <value>{0} reläer</value>
   </data>
   <data name="Settings.Online" xml:space="preserve">
-    <value>Ansluten</value>
+    <value>Anslutet</value>
   </data>
   <data name="Settings.NoAddress" xml:space="preserve">
     <value>Ingen adress än</value>

@@ -331,7 +331,7 @@
     <value>NÄR GRUPPEN STÄNGS AV</value>
   </data>
   <data name="Groups.New.Interlock.Label" xml:space="preserve">
-    <value>FÖRREGLING</value>
+    <value>INTERLOCK</value>
   </data>
   <data name="Groups.New.AutoOff" xml:space="preserve">
     <value>STÄNGS AV AUTOMATISKT</value>
