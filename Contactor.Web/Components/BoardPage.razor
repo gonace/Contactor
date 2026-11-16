@@ -11,6 +11,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BoardPage> Log
 @inject IStringLocalizer<BoardsTexts> Texts
+@inject AppLanguage Language
 
 <PageTitle>@(Common["Common.PageTitle", _name ?? Common["Common.Screen.RelayBoard"].Value])</PageTitle>
 
@@ -191,6 +192,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);

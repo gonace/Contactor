@@ -18,9 +18,6 @@ public sealed class LanguageTests
 {
     private const string John = "john@example.com";
 
-    // A second language for the tests only: the app has English alone, so its choices are hidden.
-    private static readonly Language TestSwedish = new("sv", "Svenska");
-
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -32,13 +29,13 @@ public sealed class LanguageTests
         await language.ApplySavedAsync(Cancel);
 
         Assert.Equal("en", language.Current.Code);
-        Assert.False(language.HasChoice);
+        Assert.True(language.HasChoice);
     }
 
     [Fact]
     public async Task Should_SaveTheChoice_AndUseItAfterARestart()
     {
-        await using var database = await DatabaseAsync(TwoLanguages);
+        await using var database = await DatabaseAsync();
         var language = database.Services.GetRequiredService<AppLanguage>();
         var changes = 0;
         language.Changed += (_, _) => changes++;
@@ -54,7 +51,7 @@ public sealed class LanguageTests
             Assert.Equal("sv", (await db.Installations.SingleAsync(Cancel)).Language);
         }
 
-        var restarted = new AppLanguage(database.Factory, new LanguageCatalogue([LanguageCatalogue.English, TestSwedish]), Microsoft.Extensions.Logging.Abstractions.NullLogger<AppLanguage>.Instance);
+        var restarted = new AppLanguage(database.Factory, LanguageCatalogue.Default, Microsoft.Extensions.Logging.Abstractions.NullLogger<AppLanguage>.Instance);
         await restarted.ApplySavedAsync(Cancel);
         Assert.Equal("sv", restarted.Current.Code);
     }
@@ -62,7 +59,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_RefuseALanguageItDoesNotHave_AndSaveNothing()
     {
-        await using var database = await DatabaseAsync(TwoLanguages);
+        await using var database = await DatabaseAsync();
         var language = database.Services.GetRequiredService<AppLanguage>();
         var changes = 0;
         language.Changed += (_, _) => changes++;
@@ -82,7 +79,7 @@ public sealed class LanguageTests
         await using var database = await DatabaseAsync();
         await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
         {
-            db.Installations.Add(new Installation { Language = "sv" });
+            db.Installations.Add(new Installation { Language = "fr" });
             await db.SaveChangesAsync(Cancel);
         }
 
@@ -102,7 +99,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_AnswerInTheAppsLanguage_NotTheBrowsers()
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages);
+        await using var app = new TestWebApp();
         using var http = app.CreateClient();
         http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("sv-SE,sv;q=0.9");
 
@@ -113,18 +110,17 @@ public sealed class LanguageTests
         http.DefaultRequestHeaders.AcceptLanguage.Clear();
         http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US");
 
-        // The test language has no texts of its own, so its pages fall back to English's.
         var swedish = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
         Assert.Contains("<html lang=\"sv\">", swedish, StringComparison.Ordinal);
-        Assert.Contains("<title>Settings · Contactor</title>", swedish, StringComparison.Ordinal);
-        Assert.Contains("aria-label=\"Main menu\"", swedish, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"reconnect-trying\">Reconnecting…</span>", swedish, StringComparison.Ordinal);
+        Assert.Contains("<title>Inställningar · Contactor</title>", swedish, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Huvudmeny\"", swedish, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"reconnect-trying\">Ansluter igen…</span>", swedish, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Should_HideTheChoice_WithOneLanguage()
     {
-        await using var app = new TestWebApp();
+        await using var app = new TestWebApp(configureServices: OneLanguage);
         using var http = app.CreateClient();
 
         var settings = await http.GetStringAsync("/settings", Cancel);
@@ -137,7 +133,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_ChooseTheLanguageInSettings_ForEveryone()
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages);
+        await using var app = new TestWebApp();
         using var http = app.CreateClient();
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
         Assert.Contains("One language for everyone who uses the app.", html, StringComparison.Ordinal);
@@ -154,7 +150,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_AskForTheLanguage_AsTheGuidesFirstStep()
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages, setUp: false);
+        await using var app = new TestWebApp(setUp: false);
         using var http = app.CreateClient();
         await http.GetAsync("/setup", Cancel);
         Assert.Contains("STEP 1 OF 5", await http.GetStringAsync("/setup/code", Cancel), StringComparison.Ordinal);
@@ -187,7 +183,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_StartTheGuideAtTheWayIn_WithOneLanguage()
     {
-        await using var app = new TestWebApp(setUp: false);
+        await using var app = new TestWebApp(configureServices: OneLanguage, setUp: false);
         using var http = app.CreateClient();
         await http.GetAsync("/setup", Cancel);
         Assert.Contains("STEP 1 OF 4", await http.GetStringAsync("/setup/code", Cancel), StringComparison.Ordinal);
@@ -204,7 +200,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_KeepTheLanguage_AndSaySo_WhenItCannotBeSaved()
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages);
+        await using var app = new TestWebApp();
         using var http = app.CreateClient();
         await http.GetAsync("/settings", Cancel);
         using var page = await PageRenderer.StartAsync<Settings>(app.Services, John, "John");
@@ -225,7 +221,6 @@ public sealed class LanguageTests
     {
         await using var app = new TestWebApp(
             settings: new Dictionary<string, string?> { ["CloudflareAccess:TeamDomain"] = "myteam.cloudflareaccess.com", ["CloudflareAccess:Audience"] = "aud" },
-            configureServices: TwoLanguages,
             setUp: false);
         app.SaveBeforeStart(new Installation { AccessType = CloudflareMethods.TunnelId, SignInType = CloudflareMethods.AccessId });
         using var http = app.CreateClient();
@@ -240,7 +235,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_ReloadEveryOpenPage_WhenTheLanguageChanges()
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages);
+        await using var app = new TestWebApp();
         using var http = app.CreateClient();
         await http.GetAsync("/", Cancel);
         using var first = await PageRenderer.StartAsync<LanguageWatch>(app.Services, John, "John");
@@ -260,7 +255,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_Reload_WhenTheLanguageChangedBeforeThePageConnected()
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages);
+        await using var app = new TestWebApp();
         using var http = app.CreateClient();
         await http.GetAsync("/", Cancel);
         await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
@@ -278,7 +273,7 @@ public sealed class LanguageTests
     [InlineData("")]
     public async Task Should_NotReload_InTheAppsLanguage_OrOneTheAppDoesNotHave(string culture)
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages);
+        await using var app = new TestWebApp();
         using var http = app.CreateClient();
         await http.GetAsync("/", Cancel);
         await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
@@ -293,7 +288,7 @@ public sealed class LanguageTests
     [Fact]
     public async Task Should_StopWatching_OnceThePageCloses()
     {
-        await using var app = new TestWebApp(configureServices: TwoLanguages);
+        await using var app = new TestWebApp();
         using var http = app.CreateClient();
         await http.GetAsync("/", Cancel);
         var page = await PageRenderer.StartAsync<LanguageWatch>(app.Services, John, "John");
@@ -325,18 +320,15 @@ public sealed class LanguageTests
         return attributes => attributes.ContainsKey("type") && PageRenderer.WithText(text)(attributes);
     }
 
-    private static void TwoLanguages(IServiceCollection services)
+    // The app with English alone: its choices are hidden.
+    private static void OneLanguage(IServiceCollection services)
     {
-        services.AddSingleton(new LanguageCatalogue([LanguageCatalogue.English, TestSwedish]));
+        services.AddSingleton(new LanguageCatalogue([LanguageCatalogue.English]));
     }
 
-    private static async Task<TestDatabase> DatabaseAsync(Action<IServiceCollection>? configure = null)
+    private static async Task<TestDatabase> DatabaseAsync()
     {
-        var database = TestDatabase.Create((services, _) =>
-        {
-            configure?.Invoke(services);
-            services.AddLanguages(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
-        });
+        var database = TestDatabase.Create((services, _) => services.AddLanguages(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
         await database.Services.InitializeDatabaseAsync(Cancel);
         return database;
     }

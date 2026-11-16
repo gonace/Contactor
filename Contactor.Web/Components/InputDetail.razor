@@ -4,6 +4,7 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Inputs
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Persistence
 @inject BoardRegistry Registry
@@ -16,6 +17,7 @@
 @inject RelayStatusText StatusText
 @inject InputsText InputsText
 @inject IStringLocalizer<InputsTexts> Texts
+@inject AppLanguage Language
 
 <PageTitle>@(Common["Common.PageTitle", _input?.Name ?? Common["Common.Screen.Input"].Value])</PageTitle>
 
@@ -283,6 +285,7 @@
 
     private async Task RefreshAsync(bool reload)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(async () =>

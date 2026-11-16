@@ -151,7 +151,8 @@ public sealed partial class SetupCodeTests
 
         using var guide = await http.GetAsync("/setup", Cancel);
         Assert.Equal(HttpStatusCode.OK, guide.StatusCode);
-        Assert.Contains("How do people reach the app?", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        // With a second language, Part 1 goes on with the language, then the way in.
+        Assert.Contains("The language of Contactor, for everyone who uses it.", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
 
         // Only the guide: the rest of the app, and what isn't a page, stay closed.
         using var settings = await http.GetAsync("/settings", Cancel);
@@ -234,8 +235,9 @@ public sealed partial class SetupCodeTests
 
         using var guide = await http.GetAsync("/setup", Cancel);
         Assert.Equal(HttpStatusCode.OK, guide.StatusCode);
-        // Set up with environment variables, it has no address saved: the guide asks for the way in first, since it sends people there.
-        Assert.Contains("How do people reach the app?", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
+        // Set up with environment variables, it has no address saved: the guide asks for the way in again, after the
+        // language, since it sends people there.
+        Assert.Contains("The language of Contactor, for everyone who uses it.", await guide.Content.ReadAsStringAsync(Cancel), StringComparison.Ordinal);
     }
 
     [Fact]

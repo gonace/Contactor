@@ -13,6 +13,7 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
 @inject IStringLocalizer<DebugTexts> Texts
+@inject AppLanguage Language
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Debug"]])</PageTitle>
 
@@ -225,6 +226,7 @@
 
     private async Task RefreshAsync(bool counts)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(async () =>

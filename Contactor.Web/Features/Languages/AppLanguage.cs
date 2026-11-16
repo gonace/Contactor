@@ -1,3 +1,4 @@
+using System.Globalization;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -85,6 +86,20 @@ public sealed partial class AppLanguage : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// The app's language on this flow until disposed. For a page's work for a change raised on another thread, e.g. a
+    /// board's new state: <c>InvokeAsync</c> runs it in that thread's culture, not the page's, and the page would be
+    /// drawn in English.
+    /// </summary>
+    public IDisposable Use()
+    {
+        var before = new Before(CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture);
+        var culture = Current.Culture;
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        return before;
+    }
+
     public void Dispose()
     {
         _gate.Dispose();
@@ -102,6 +117,24 @@ public sealed partial class AppLanguage : IDisposable
 
         installation.Language = code;
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private sealed class Before : IDisposable
+    {
+        private readonly CultureInfo _culture;
+        private readonly CultureInfo _uiCulture;
+
+        public Before(CultureInfo culture, CultureInfo uiCulture)
+        {
+            _culture = culture;
+            _uiCulture = uiCulture;
+        }
+
+        public void Dispose()
+        {
+            CultureInfo.CurrentCulture = _culture;
+            CultureInfo.CurrentUICulture = _uiCulture;
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The saved language {Saved} isn't in this version of the app; it runs in {Fallback}")]

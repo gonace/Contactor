@@ -12,6 +12,7 @@
 @inject ILogger<BoardWhereStep> Log
 @inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
+@inject AppLanguage Language
 
 @* "Where is the board?": its address, port and login, saved through BoardAddressHandler; "Next" waits up to 10 s for
    the board (BoardContact). Shared by the setup guide (the first board) and "Add a board" (BoardNew); the page has the
@@ -305,6 +306,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
 
     private async Task RefreshAsync(BoardState state)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(() =>

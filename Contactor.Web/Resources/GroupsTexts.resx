@@ -182,6 +182,31 @@
   <data name="Groups.Icon" xml:space="preserve">
     <value>Icon</value>
   </data>
+  <data name="Groups.Icon.Fan" xml:space="preserve">
+    <value>Fan</value>
+    <comment>The names under the eight group icons.</comment>
+  </data>
+  <data name="Groups.Icon.Heat" xml:space="preserve">
+    <value>Heat</value>
+  </data>
+  <data name="Groups.Icon.Light" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="Groups.Icon.Air" xml:space="preserve">
+    <value>Air</value>
+  </data>
+  <data name="Groups.Icon.Paint" xml:space="preserve">
+    <value>Paint</value>
+  </data>
+  <data name="Groups.Icon.Pump" xml:space="preserve">
+    <value>Pump</value>
+  </data>
+  <data name="Groups.Icon.Tools" xml:space="preserve">
+    <value>Tools</value>
+  </data>
+  <data name="Groups.Icon.Power" xml:space="preserve">
+    <value>Power</value>
+  </data>
   <data name="Groups.TurnOn" xml:space="preserve">
     <value>TURN ON THE GROUP</value>
   </data>

@@ -149,12 +149,6 @@ public sealed class InputsText
     public string WhyUnknown => _texts["Inputs.WhyUnknown"];
 
     /// <summary>
-    /// How the events name an input whose row is gone, e.g. one of a removed board. Its id is not the number the
-    /// screens show, and its channel is gone with its row.
-    /// </summary>
-    public string Unknown => _texts["Inputs.Unknown"];
-
-    /// <summary>
     /// An input is an electrical contact, so it is "Closed" (the board reads it as on) or "Open": the same words for
     /// every input, on every screen and in Events.
     /// </summary>

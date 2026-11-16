@@ -19,10 +19,6 @@
   <data name="Inputs.Open" xml:space="preserve">
     <value>Open</value>
   </data>
-  <data name="Inputs.Unknown" xml:space="preserve">
-    <value>An input</value>
-    <comment>An input that is no longer on the board, in place of its name.</comment>
-  </data>
   <data name="Inputs.Since" xml:space="preserve">
     <value>{0} since {1}</value>
     <comment>{0} is Inputs.Closed or Inputs.Open, {1} a time.</comment>
