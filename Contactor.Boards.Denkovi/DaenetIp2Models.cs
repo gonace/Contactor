@@ -24,7 +24,6 @@ public sealed class DaenetIp2Layout
         _relayOf = Relays.Select((pin, index) => (pin, index)).ToDictionary(p => p.pin, p => p.index + 1);
     }
 
-
     /// <summary>The pin of each relay, relay 1 first.</summary>
     public IReadOnlyList<DaenetIp2Pin> Relays { get; }
 

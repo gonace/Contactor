@@ -342,17 +342,20 @@ A command (ON or OFF) switches the relays in the mask one at a time, as on the s
 
 - The client sends a `SetRequest` for every relay in the mask, also when the board refuses one or its answer can't be
   read. "All off" and a group's interlock depend on every OFF being sent.
-- A request with no answer to both tries doesn't stop the rest of the mask either: over UDP, one lost datagram says
+- One relay with no answer to both tries doesn't stop the rest of the mask either: over UDP, one lost datagram says
   nothing about the next, and "All off" and a group's interlock depend on every OFF being sent. A relay without an
   answer isn't among the relays returned.
+- Two relays in a row with no answer stop the rest (`MaxUnansweredInARow`): the board is then most likely gone. Each
+  further relay would hold the board's lock 2 s more, and an interlock OFF and the screens wait behind it. So a board
+  that is gone costs a command about 4 s, whatever its mask. The command then returns the relays taken before, without
+  the read after, and the poller reads the board at once.
 - An empty mask sends nothing and returns no relays.
 - When the board takes no relay, the command throws "The DAEnetIP2 v2 board didn't take the command: …"
   (`BoardNotConnectedException`). A refusal never leaves the client as `BoardRefusedException`.
 - Otherwise it returns the relays that the board confirmed. A refused relay, or one whose answer couldn't be read, isn't
   among them.
 - When no relay's request got an answer, the command throws "The DAEnetIP2 v2 board didn't answer; the command may not
-  have been carried out." The poller counts it as a failed poll and reads the board at once after it. A mask of 16
-  relays on a board that is gone takes 16 × 2 s before it says so.
+  have been carried out." The poller counts it as a failed poll and reads the board at once after it.
 - After the switches, the client reads the ports in the same command. The poller takes that as the new state.
 - When that read fails, the command returns the relays that the board took. The client keeps the last state it read and
   reads again at once. An echo is not proof that a relay switched: the board answers a set that its ICMP monitoring or

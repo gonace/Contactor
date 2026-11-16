@@ -27,6 +27,13 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     /// <summary>How many times a request is sent before it counts as unanswered: once, and once more.</summary>
     public const int Attempts = 2;
 
+    /// <summary>
+    /// How many relays in a row may get no answer, both tries each, before a command stops: one lost datagram says
+    /// nothing about the next relay's, but two in a row most likely mean the board is gone, and every further relay
+    /// would hold the board (and an interlock OFF behind it) for 2 s more.
+    /// </summary>
+    public const int MaxUnansweredInARow = 2;
+
     /// <summary>How many skipped datagrams one try traces; a flood of them would bury the rest of the trace.</summary>
     public const int MaxSkippedTraced = 8;
 
@@ -305,6 +312,8 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         string? refusal = null;
         var unreadable = false;
         Exception? noAnswer = null;
+        var unansweredInARow = 0;
+        var gone = false;
         var community = Community;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
@@ -315,6 +324,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
                 var (value, pdu) = await ExchangeAsync(request, routine: false, cancellationToken).ConfigureAwait(false);
                 Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Confirmed(request.Oid, value, _layout), pdu);
                 taken.Value |= 1UL << (relay - 1);
+                unansweredInARow = 0;
             }
             catch (Exception ex) when (ex is DaenetIp2RefusedException or DaenetIp2ProtocolException)
             {
@@ -322,6 +332,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
                 // go; the read after them shows the truth.
                 refusal ??= ex.Message;
                 unreadable |= ex is DaenetIp2ProtocolException;
+                unansweredInARow = 0;
                 Trace(
                     BoardTraceDirection.None,
                     string.Create(CultureInfo.InvariantCulture, $"The board didn't take the command for relay {relay}: {ex.Message}"),
@@ -329,9 +340,21 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             }
             catch (Exception ex) when (IsNoAnswer(ex))
             {
-                // No answer, also when asked again: the relay may or may not have switched. The others still go, as
-                // "All off" and a group's interlock need; the read after them shows the truth.
+                // No answer, also when asked again: the relay may or may not have switched. One lost datagram says
+                // nothing about the next, so the others still go, as "All off" and a group's interlock need; the read
+                // after them shows the truth. A second relay in a row without an answer: the board is most likely
+                // gone, and the rest would only hold the board's lock longer.
                 noAnswer ??= ex;
+                if (++unansweredInARow >= MaxUnansweredInARow)
+                {
+                    gone = true;
+                    Trace(
+                        BoardTraceDirection.None,
+                        string.Create(CultureInfo.InvariantCulture, $"No answer for relay {relay} either: the board is most likely gone, so the rest isn't sent"),
+                        isError: true);
+                    break;
+                }
+
                 Trace(
                     BoardTraceDirection.None,
                     string.Create(CultureInfo.InvariantCulture, $"No answer for relay {relay}: going on with the rest"),
@@ -351,6 +374,19 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             }
 
             throw unreadable ? new DaenetIp2ProtocolException(refusal!) : new BoardRefusedException(refusal!);
+        }
+
+        // Stopped as the board is most likely gone: no read, which would only hold the lock 2 s more. The last state
+        // read stays, and a read at once, as an ordinary poll, shows the truth.
+        if (gone)
+        {
+            if (_poller.State.Reading is { } before)
+            {
+                _poller.PollNow();
+                return before;
+            }
+
+            ExceptionDispatchInfo.Throw(noAnswer!);
         }
 
         try
