@@ -40,8 +40,10 @@ public sealed class DevantechClientTests
     [Theory]
     [InlineData("devantech-eth002")]
     [InlineData("devantech-eth008")]
+    [InlineData("devantech-eth1610")]
     public async Task Should_AskOnlyForTheRelays_OnAModelWithoutInputs(string id)
     {
+        // The ETH1610 answers 0x25, but its manual doesn't say which bit is which input: the app reads none.
         var model = DevantechModels.All.Single(m => m.Id == id);
         await using var simulator = Started(model);
         await using var run = ClientRun.Start(simulator.Port, model);
@@ -69,6 +71,28 @@ public sealed class DevantechClientTests
         Assert.True(run.Client.State.IsOn(17));
         Assert.Contains("20 11 00", simulator.ReceivedRequests);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOnAsync(1UL << 20, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_SwitchAndPulseTheEth1610sTenRelays()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth1610, time: boardTime);
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth1610);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(1UL << 9, await run.Client.TurnOnAsync(1UL << 9, Cancel));
+        Assert.Equal(1UL << 9, simulator.Relays);
+        Assert.True(run.Client.State.IsOn(10));
+
+        // The manual's example (p. 17): output 2 for 5 s.
+        Assert.Equal(0b10UL, await run.Client.PulseAsync(0b10, TimeSpan.FromSeconds(5), Cancel));
+        Assert.Equal(["10", "7A", "24", "7A", "20 0A 00", "24", "7A", "20 02 32", "24"], simulator.ReceivedRequests);
+        Assert.Equal((1UL << 9) | 0b10, run.Client.State.Relays);
+        boardTime.Advance(TimeSpan.FromSeconds(5));
+        await run.PollAsync();
+        Assert.Equal(1UL << 9, run.Client.State.Relays);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOnAsync(1UL << 10, Cancel));
     }
 
     [Fact]

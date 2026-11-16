@@ -34,6 +34,53 @@ public sealed class DevantechSimulatedBoardTests
     }
 
     [Fact]
+    public async Task Should_LayOutTheEth1610_AsItsManualSays()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth1610, time: time);
+        await simulator.SwitchRelayAsync(1, true);
+        await simulator.SwitchRelayAsync(3, true);
+        await simulator.SwitchRelayAsync(10, true);
+        using var board = await Board.ConnectAsync(simulator);
+
+        // Module id 52, relays 1–8 in the first byte of 0x24 and 9–10 in the second, 2 bytes to 0x25 (manual p. 17).
+        Assert.Equal("34 02 1C", await board.AskAsync("10", 3));
+        Assert.Equal("05 02", await board.AskAsync("24", 2));
+        Assert.Equal("00 00", await board.AskAsync("25", 2));
+
+        // The manual's example: output 2 on for 5 s (0x32 × 100 ms), then off by itself.
+        Assert.Equal("00", await board.AskAsync("20 02 32", 1));
+        Assert.Equal("07 02", await board.AskAsync("24", 2));
+        time.Advance(TimeSpan.FromMilliseconds(4900));
+        Assert.Equal(0b10_0000_0111UL, simulator.Relays);
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        Assert.Equal("05 02", await board.AskAsync("24", 2));
+
+        // 0x23 with 2 bytes sets all ten; there is no relay 11.
+        Assert.Equal("00", await board.AskAsync("23 FF 03", 1));
+        Assert.Equal("FF 03", await board.AskAsync("24", 2));
+        Assert.Equal("01", await board.AskAsync("20 0B 00", 1));
+        Assert.Equal(0b11_1111_1111UL, simulator.Relays);
+    }
+
+    [Fact]
+    public async Task Should_AnswerNothingTo0x78_OnTheEth1610()
+    {
+        // The ETH1610's command table has no 0x78 (manual pp. 17–18); the ETH008-B answers it.
+        await using var simulator = Started(DevantechModels.Eth1610);
+        using var board = await Board.ConnectAsync(simulator);
+
+        await board.SendAsync("78");
+        await Wait.UntilAsync(() => simulator.UnansweredCount == 1);
+        Assert.Equal("00 00", await board.AskAsync("24", 2));
+
+        await using var eth008 = Started(DevantechModels.Eth008);
+        using var other = await Board.ConnectAsync(eth008);
+        Assert.Equal("78", await other.AskAsync("78", 1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(1, true));
+    }
+
+    [Fact]
     public async Task Should_SwitchARelayBack_AfterItsPulseTime_OnItsOwnClock()
     {
         var time = new ManualTimeProvider();

@@ -49,6 +49,7 @@ public static class BoardCatalogue
         new(DaenetIp2Models.Relays2, DaenetIp2Boards.Create),
         new(DevantechModels.Eth002, DevantechBoards.Create),
         new(DevantechModels.Eth008, DevantechBoards.Create),
+        new(DevantechModels.Eth1610, DevantechBoards.Create),
         new(DevantechModels.Eth484, DevantechBoards.Create),
         new(DevantechModels.Eth8020, DevantechBoards.Create),
         new(AdamModels.Adam6060, AdamBoards.Create),
