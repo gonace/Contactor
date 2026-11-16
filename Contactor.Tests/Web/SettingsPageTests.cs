@@ -166,7 +166,8 @@ public sealed class SettingsPageTests
         Assert.DoesNotContain("board/", right, StringComparison.Ordinal);
     }
 
-    // The page's two columns: what is in the first, and what is in the second, up to the end of the page's content.
+    // The page's two columns: what is in the first, and what is in the second. The second ends the page's content: after
+    // its last card comes only its own </div>, so a card after the column is caught.
     private static (string Left, string Right) Columns(string html)
     {
         var content = html.IndexOf("<main class=\"content\"", StringComparison.Ordinal);
@@ -174,7 +175,11 @@ public sealed class SettingsPageTests
         var second = html.IndexOf("<div class=\"column\"", first + 1, StringComparison.Ordinal);
         var end = html.IndexOf("</main>", content, StringComparison.Ordinal);
         Assert.True(content >= 0 && first > content && second > first && end > second, "Settings has two columns.");
-        return (html[first..second], html[second..end]);
+        var lastCard = html.LastIndexOf("</section>", end, StringComparison.Ordinal);
+        Assert.True(lastCard > second, "The second column ends with a card.");
+        var tail = string.Concat(html[lastCard..end].Where(c => !char.IsWhiteSpace(c)));
+        Assert.Equal("</section></div>", tail);
+        return (html[first..second], html[second..lastCard]);
     }
 
     private static void AssertInOrder(string html, params string[] parts)

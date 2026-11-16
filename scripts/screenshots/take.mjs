@@ -259,8 +259,8 @@ try {
         }, false, 'content'],
         ['schedule', 'schedule/1', null, false],
         ['events', 'events', null, false],
-        // Just tall enough for the Language card to end above the tab bar.
-        ['settings', 'settings', null, false, 915],
+        // Just tall enough for the People card to end above the tab bar, with Backups not yet showing.
+        ['settings', 'settings', null, false, 974],
     ];
     await shoot(browser, 'light', shots);
     await shoot(browser, 'dark', shots.filter(([name]) => name === 'relays'));
