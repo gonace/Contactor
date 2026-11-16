@@ -37,6 +37,11 @@
     color: var(--accent);
 }
 
+/* The side menu's bottom group: in the tab bar its links are tabs like the others. */
+.side-bottom {
+    display: contents;
+}
+
 /* Above the tab bar, over the page; only the toasts themselves catch taps. */
 .toasts {
     position: absolute;
@@ -134,9 +139,19 @@
             background: var(--accent-tint);
         }
 
+        /* Settings and Debug at the bottom, just above the version, under a thin line. */
+        .side-bottom {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: auto -12px 0;
+            padding: 12px 12px 0;
+            border-top: 1px solid var(--line);
+        }
+
         .tabs .version {
             display: block;
-            margin-top: auto;
+            margin-top: 8px;
             padding: 0 12px;
             font-family: var(--font-mono);
             font-size: 11px;
@@ -147,8 +162,8 @@
             color: var(--muted);
         }
 
-        /* A page's list under the tabs (the Relays screen's boards): it scrolls on its own, between the tabs and the
-           version. */
+        /* A page's list under the tabs (the Relays screen's boards): it scrolls on its own, between the tabs and
+           Settings and Debug. */
         .tabs.has-list {
             overflow: hidden;
         }
@@ -163,12 +178,6 @@
             padding: 12px 12px 16px;
             border-top: 1px solid var(--line);
             overflow-y: auto;
-        }
-
-        .tabs.has-list .version {
-            margin-top: 0;
-            padding-top: 12px;
-            border-top: 1px solid var(--line);
         }
 
         .toasts {
