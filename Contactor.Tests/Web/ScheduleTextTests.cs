@@ -53,7 +53,6 @@ public sealed class ScheduleTextTests
     [Fact]
     public void Should_NameTheDays_InTheLanguage_MondayFirst()
     {
-        using var culture = TestCulture.Formats("en-GB");
         Assert.Equal(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"], ScheduleText.Days.Select(ScheduleText.Letter));
         Assert.Equal(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], ScheduleText.Days.Select(ScheduleText.ShortName));
         Assert.Equal("Monday", ScheduleText.Name(ScheduleDays.Monday));
