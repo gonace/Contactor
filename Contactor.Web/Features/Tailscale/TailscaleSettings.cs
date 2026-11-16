@@ -1,6 +1,5 @@
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
-using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Tailscale;
@@ -105,7 +104,7 @@ public sealed partial class TailscaleSettings : IDisposable
             || authKey.Length > TailscaleSetting.AuthKeyMaxLength
             || authKey.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))
         {
-            return UiText.Of<SetupTexts>("Setup.Tailscale.AuthKey");
+            return UiText.Of("Setup.Tailscale.AuthKey");
         }
 
         // One DNS label: the first part of the app's address on the Tailscale network.
@@ -115,7 +114,7 @@ public sealed partial class TailscaleSettings : IDisposable
             || hostName.EndsWith('-')
             || !hostName.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-'))
         {
-            return UiText.Of<SetupTexts>("Setup.Tailscale.Name");
+            return UiText.Of("Setup.Tailscale.Name");
         }
 
         return null;

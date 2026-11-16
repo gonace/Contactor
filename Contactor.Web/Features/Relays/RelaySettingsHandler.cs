@@ -31,9 +31,9 @@ public sealed class RelaySettingsHandler
     private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
-    private readonly IStringLocalizer<RelaysTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes, IStringLocalizer<RelaysTexts> texts)
+    public RelaySettingsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes, IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _registry = registry;

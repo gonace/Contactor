@@ -25,9 +25,9 @@ public sealed class SchedulesHandler
     private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
-    private readonly IStringLocalizer<SchedulesTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes, IStringLocalizer<SchedulesTexts> texts)
+    public SchedulesHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, LocalClock clock, RelayChanges changes, IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _registry = registry;

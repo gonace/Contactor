@@ -6,7 +6,6 @@
 @inject UpdateService Updates
 @inject LocalClock Clock
 @inject CurrentUser CurrentUser
-@inject IStringLocalizer<UpdatesTexts> Texts
 @inject AppLanguage Language
 
 @* Settings → Updates: the running version, the newest release with what's new, "Update now" and how the update goes.
@@ -49,7 +48,7 @@
             </ol>
             @if (view.CanCancel)
             {
-                <button type="button" class="secondary" disabled="@_busy" @onclick="CancelAsync">@Common["Common.Cancel"]</button>
+                <button type="button" class="secondary" disabled="@_busy" @onclick="CancelAsync">@Texts["Common.Cancel"]</button>
             }
             <p class="hint">@view.StartedLine</p>
             break;
@@ -90,7 +89,7 @@
                 </div>
                 @if (!result.IsDone && view.CanUpdate)
                 {
-                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">@Common["Common.TryAgain"]</button>
+                    <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">@Texts["Common.TryAgain"]</button>
                 }
                 @if (view.LogId is { } logId)
                 {
@@ -102,7 +101,7 @@
                     {
                         <div class="log-head">
                             <span>@Texts["Updates.Log"]</span>
-                            <a class="download" href="@UpdateEndpoints.LogLink(logId)" download data-enhance-nav="false">@Common["Common.Download"]</a>
+                            <a class="download" href="@UpdateEndpoints.LogLink(logId)" download data-enhance-nav="false">@Texts["Common.Download"]</a>
                         </div>
                         <pre class="log" tabindex="0">@_log</pre>
                     }
@@ -173,7 +172,7 @@
             <p>@Texts["Updates.Ask.Restart"]</p>
             <p>@Texts["Updates.Ask.Relays"]</p>
             <div class="dialog-buttons">
-                <button type="button" class="cancel" disabled="@_busy" @onclick="() => _asking = false">@Common["Common.Cancel"]</button>
+                <button type="button" class="cancel" disabled="@_busy" @onclick="() => _asking = false">@Texts["Common.Cancel"]</button>
                 <button type="button" class="confirm" disabled="@_busy" @onclick="UpdateAsync">@Texts["Updates.Update"]</button>
             </div>
         </div>

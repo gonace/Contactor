@@ -82,7 +82,7 @@ public sealed class GroupsHandler
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
-    private readonly IStringLocalizer<GroupsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
     public GroupsHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -90,7 +90,7 @@ public sealed class GroupsHandler
         LocalClock clock,
         RelayChanges changes,
         GroupSequencer sequencer,
-        IStringLocalizer<GroupsTexts> texts)
+        IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _dbFactory = dbFactory;

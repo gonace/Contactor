@@ -1,6 +1,5 @@
 using System.Net;
 using Contactor.Web.Components;
-using Contactor.Web.Resources;
 
 namespace Contactor.Tests.Web;
 
@@ -199,7 +198,7 @@ public sealed class SettingsPageTests
     [InlineData(1363149, "1.3 MB")]
     public void Should_GiveABackupsSize(long bytes, string size)
     {
-        Assert.Equal(size, Settings.Size(TestTexts.For<SettingsTexts>(), bytes));
+        Assert.Equal(size, Settings.Size(TestTexts.Localizer, bytes));
     }
 
     // Under a language with a decimal comma: its number format, whatever the computer's own.
@@ -208,7 +207,7 @@ public sealed class SettingsPageTests
     {
         using var swedish = TestCulture.Formats("sv-SE");
 
-        Assert.Equal("1,3 MB", Settings.Size(TestTexts.For<SettingsTexts>(), 1363149));
+        Assert.Equal("1,3 MB", Settings.Size(TestTexts.Localizer, 1363149));
     }
 
 }

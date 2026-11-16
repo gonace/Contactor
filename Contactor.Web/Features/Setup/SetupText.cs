@@ -15,9 +15,9 @@ namespace Contactor.Web.Features.Setup;
 /// </summary>
 public sealed class SetupText
 {
-    private readonly IStringLocalizer<SetupTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public SetupText(IStringLocalizer<SetupTexts> texts)
+    public SetupText(IStringLocalizer<Texts> texts)
     {
         _texts = texts;
     }

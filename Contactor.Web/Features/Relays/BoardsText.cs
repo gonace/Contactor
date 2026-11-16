@@ -7,9 +7,9 @@ namespace Contactor.Web.Features.Relays;
 /// <summary>The words about the boards on Relays, Events and Debug, with two or more boards.</summary>
 public sealed class BoardsText
 {
-    private readonly IStringLocalizer<RelaysTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public BoardsText(IStringLocalizer<RelaysTexts> texts)
+    public BoardsText(IStringLocalizer<Texts> texts)
     {
         _texts = texts;
     }

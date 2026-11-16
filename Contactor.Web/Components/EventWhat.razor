@@ -1,5 +1,4 @@
 @using Contactor.Web.Features.Events
-@inject IStringLocalizer<EventsTexts> Texts
 
 @* An event's text: who, what, and for an input's change only noticed after a gap, "time unknown" with its reason. *@
 <span class="event-what @(Wrap ? "wrap" : null)"><Sentence Text="@Row.View.Line"><Arg0><strong>@Row.View.Who</strong></Arg0></Sentence>@if (Row.View.TimeUnknown)

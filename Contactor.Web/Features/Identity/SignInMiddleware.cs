@@ -60,9 +60,9 @@ public sealed partial class SignInMiddleware
     }
 
     // A refusal's words, in the app's language: the request already has its culture (UseRequestLocalization runs first).
-    private static IStringLocalizer<SetupTexts> Texts(HttpContext context)
+    private static IStringLocalizer<Texts> Texts(HttpContext context)
     {
-        return context.RequestServices.GetRequiredService<IStringLocalizer<SetupTexts>>();
+        return context.RequestServices.GetRequiredService<IStringLocalizer<Texts>>();
     }
 
     public async Task InvokeAsync(HttpContext context)

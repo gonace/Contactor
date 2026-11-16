@@ -39,7 +39,7 @@ public sealed class SetupSignInHandler : IDisposable
     private readonly CloudflareTunnel _tunnel;
     private readonly TailscaleSettings _tailscale;
     private readonly TailscaleNetwork _tailscaleNetwork;
-    private readonly IStringLocalizer<SetupTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly SetupText _setupText;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -50,7 +50,7 @@ public sealed class SetupSignInHandler : IDisposable
         CloudflareTunnel tunnel,
         TailscaleSettings tailscale,
         TailscaleNetwork tailscaleNetwork,
-        IStringLocalizer<SetupTexts> texts,
+        IStringLocalizer<Texts> texts,
         SetupText setupText)
     {
         _texts = texts;

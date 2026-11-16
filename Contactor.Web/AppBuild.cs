@@ -24,13 +24,13 @@ public sealed record AppBuild(string Version, string? Commit)
     /// <summary>
     /// How the app shows it, in the app's language: "Version 2026.11.4 · 1fdaf34", or "Development version · 1fdaf34".
     /// </summary>
-    public string Text(IStringLocalizer<CommonTexts> texts)
+    public string Text(IStringLocalizer<Texts> texts)
     {
         return ShortCommit is { } commit ? texts["Common.Version.Commit", Name(texts), commit].Value : Name(texts);
     }
 
     /// <summary>"Version 2026.11.4", or "Development version": without the commit.</summary>
-    public string Name(IStringLocalizer<CommonTexts> texts)
+    public string Name(IStringLocalizer<Texts> texts)
     {
         ArgumentNullException.ThrowIfNull(texts);
         return IsRelease ? texts["Common.Version", Version] : texts["Common.Version.Development"];

@@ -85,11 +85,11 @@ public sealed record GroupView(
 /// <summary>A group's status in words, in the app's language: the line under its name and each relay's note.</summary>
 public sealed class GroupStatusText
 {
-    private readonly IStringLocalizer<GroupsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly RelayStatusText _relayStatus;
     private readonly EventText _lengths;
 
-    public GroupStatusText(IStringLocalizer<GroupsTexts> texts, RelayStatusText relayStatus, EventText lengths)
+    public GroupStatusText(IStringLocalizer<Texts> texts, RelayStatusText relayStatus, EventText lengths)
     {
         _texts = texts;
         _relayStatus = relayStatus;
@@ -250,10 +250,10 @@ public sealed class GroupStatusText
 /// <summary>What a group will do, in plain words, for "New group": its plan on "Review and create" and each relay's note.</summary>
 public sealed class GroupPlanText
 {
-    private readonly IStringLocalizer<GroupsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly EventText _lengths;
 
-    public GroupPlanText(IStringLocalizer<GroupsTexts> texts, EventText lengths)
+    public GroupPlanText(IStringLocalizer<Texts> texts, EventText lengths)
     {
         _texts = texts;
         _lengths = lengths;

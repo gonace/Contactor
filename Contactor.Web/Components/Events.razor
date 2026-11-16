@@ -11,14 +11,13 @@
 @inject BoardRegistry Registry
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
-@inject IStringLocalizer<EventsTexts> Texts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Events"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Events"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>@Common["Common.Screen.Events"]</h1>
+        <h1>@Texts["Common.Screen.Events"]</h1>
         <div class="filters">
             @foreach (var (filter, label) in Filters)
             {

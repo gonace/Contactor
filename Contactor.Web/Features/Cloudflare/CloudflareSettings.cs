@@ -1,6 +1,5 @@
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
-using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -137,12 +136,12 @@ public sealed partial class CloudflareSettings : IDisposable
             || teamDomain.Length == TeamDomainSuffix.Length
             || teamDomain[..^TeamDomainSuffix.Length].Contains('.', StringComparison.Ordinal))
         {
-            return UiText.Of<SetupTexts>("Setup.Cloudflare.TeamDomain");
+            return UiText.Of("Setup.Cloudflare.TeamDomain");
         }
 
         if (string.IsNullOrEmpty(audience) || audience.Length > CloudflareSetting.AudienceMaxLength || audience.Any(char.IsWhiteSpace))
         {
-            return UiText.Of<SetupTexts>("Setup.Cloudflare.Audience");
+            return UiText.Of("Setup.Cloudflare.Audience");
         }
 
         return null;
@@ -153,12 +152,12 @@ public sealed partial class CloudflareSettings : IDisposable
     {
         if (token.Length == 0 || token.Length > CloudflareSetting.TunnelTokenMaxLength || token.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))
         {
-            return UiText.Of<SetupTexts>("Setup.Cloudflare.Token");
+            return UiText.Of("Setup.Cloudflare.Token");
         }
 
         if (string.IsNullOrEmpty(address) || Uri.CheckHostName(address) != UriHostNameType.Dns || !address.Contains('.', StringComparison.Ordinal))
         {
-            return UiText.Of<SetupTexts>("Setup.Cloudflare.Address");
+            return UiText.Of("Setup.Cloudflare.Address");
         }
 
         return null;

@@ -2,7 +2,6 @@
 @using Contactor.Web.Features.Relays
 @using Microsoft.AspNetCore.Components.Forms
 @using Contactor.Web.Features.Languages
-@inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardProblemText ProblemText
 
 @* The board filter of Relays, Events and Debug: below 1024 px a row of chips under the heading, on a desktop a list
@@ -48,7 +47,7 @@
         }
         <a href="board/new" class="side-add">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            @Common["Common.AddBoard"]
+            @Texts["Common.AddBoard"]
         </a>
     </div>
 }
@@ -88,7 +87,7 @@ else
                 }
             </button>
         }
-        <a href="board/new" class="chip-add" aria-label="@Common["Common.AddBoard"]">
+        <a href="board/new" class="chip-add" aria-label="@Texts["Common.AddBoard"]">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
             @Texts["Boards.Picker.AddChip"]
         </a>

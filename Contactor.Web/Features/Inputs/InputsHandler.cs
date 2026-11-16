@@ -38,9 +38,9 @@ public sealed class InputsHandler
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardRegistry _registry;
     private readonly RelayChanges _changes;
-    private readonly IStringLocalizer<InputsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public InputsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes, IStringLocalizer<InputsTexts> texts)
+    public InputsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes, IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _dbFactory = dbFactory;
@@ -136,10 +136,10 @@ public sealed record InputStatus(string Text, bool SinceUnknown);
 /// </summary>
 public sealed class InputsText
 {
-    private readonly IStringLocalizer<InputsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly RelayStatusText _relayStatus;
 
-    public InputsText(IStringLocalizer<InputsTexts> texts, RelayStatusText relayStatus)
+    public InputsText(IStringLocalizer<Texts> texts, RelayStatusText relayStatus)
     {
         _texts = texts;
         _relayStatus = relayStatus;

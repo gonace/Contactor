@@ -1,0 +1,2638 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Boards.Address" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="Boards.AddressHint" xml:space="preserve">
+    <value>The relay board's IP address on the local network. Your router lists it among its connected devices.</value>
+  </data>
+  <data name="Boards.BeingRemoved" xml:space="preserve">
+    <value>The relay board is being removed.</value>
+  </data>
+  <data name="Boards.Board" xml:space="preserve">
+    <value>Board</value>
+    <comment>The heading of a board's own card on its page.</comment>
+  </data>
+  <data name="Boards.Endpoint.BadPort" xml:space="preserve">
+    <value>The port is a number from 1 to 65535.</value>
+  </data>
+  <data name="Boards.Endpoint.NoHost" xml:space="preserve">
+    <value>Enter the relay board's address, e.g. 192.168.1.50.</value>
+  </data>
+  <data name="Boards.Endpoint.NotAnAddress" xml:space="preserve">
+    <value>{0} isn't an address. Enter e.g. 192.168.1.50.</value>
+    <comment>{0} is what was typed.</comment>
+  </data>
+  <data name="Boards.Login.CommunityLength" xml:space="preserve">
+    <value>The password, the board's read-write community, must be {0} to {1} characters.</value>
+  </data>
+  <data name="Boards.Login.CommunityMissing" xml:space="preserve">
+    <value>Type the password, the board's read-write community.</value>
+  </data>
+  <data name="Boards.Login.Hint" xml:space="preserve">
+    <value>The same as on the board's own web page. {0}</value>
+    <comment>{0} is what the model's login may contain.</comment>
+  </data>
+  <data name="Boards.Login.ListedCharacters.Password" xml:space="preserve">
+    <value>The password can only contain letters a–z, digits and {0} on the relay board.</value>
+  </data>
+  <data name="Boards.Login.ListedCharacters.UserName" xml:space="preserve">
+    <value>The user name can only contain letters a–z, digits and {0} on the relay board.</value>
+    <comment>{0} is the symbols the board takes.</comment>
+  </data>
+  <data name="Boards.Login.MaxLength" xml:space="preserve">
+    <value>At most {0} characters.</value>
+  </data>
+  <data name="Boards.Login.NoLoginWebPage" xml:space="preserve">
+    <value>The {0} board takes no login: its password only protects its own web page.</value>
+    <comment>{0} is the board's brand, e.g. "Waveshare"; the text already says "board".</comment>
+  </data>
+  <data name="Boards.Login.NoLoginWebPages" xml:space="preserve">
+    <value>The {0} takes no login: its password only protects its own web pages.</value>
+    <comment>{0} names the board, e.g. "VM208".</comment>
+  </data>
+  <data name="Boards.Login.PasswordCharacters" xml:space="preserve">
+    <value>The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.</value>
+  </data>
+  <data name="Boards.Login.PasswordOnly" xml:space="preserve">
+    <value>The {0} board takes a password only, no user name.</value>
+    <comment>{0} is the board's brand, e.g. "Devantech"; the text already says "board".</comment>
+  </data>
+  <data name="Boards.Login.PasswordTooLong" xml:space="preserve">
+    <value>The password can be at most {0} characters.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.Password" xml:space="preserve">
+    <value>The password can only contain letters a–z, digits and plain symbols.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.UserName" xml:space="preserve">
+    <value>The user name can only contain letters a–z, digits and plain symbols.</value>
+  </data>
+  <data name="Boards.Login.TooLong.Password" xml:space="preserve">
+    <value>The password can be at most {0} characters on the relay board.</value>
+  </data>
+  <data name="Boards.Login.TooLong.UserName" xml:space="preserve">
+    <value>The user name can be at most {0} characters on the relay board.</value>
+  </data>
+  <data name="Boards.Login.TooLongTogether" xml:space="preserve">
+    <value>The user name and password can be at most {0} characters together on the relay board.</value>
+  </data>
+  <data name="Boards.LoginHint.ListedSymbols" xml:space="preserve">
+    <value>At most {0} characters, {1} for both together: letters a–z, digits and {2}.</value>
+    <comment>{2} is the symbols the board takes, with spaces between them.</comment>
+  </data>
+  <data name="Boards.LoginHint.PlainSymbols" xml:space="preserve">
+    <value>At most {0} characters: letters a–z, digits and plain symbols.</value>
+  </data>
+  <data name="Boards.LoginHint.SnmpCommunity" xml:space="preserve">
+    <value>The board's Read-write Community from its SNMP settings, {0} to {1} characters: letters, digits and plain symbols, no spaces. On a new board it is {2}. With a wrong community the board doesn't answer: check the address and the community.</value>
+  </data>
+  <data name="Boards.LoginHint.TcpPassword" xml:space="preserve">
+    <value>The TCP password from the board's configuration page, not the login of its web page. At most {0} characters: letters, digits and plain symbols, no spaces.</value>
+  </data>
+  <data name="Boards.Model.Brand" xml:space="preserve">
+    <value>Brand</value>
+  </data>
+  <data name="Boards.Model.BrandFirst" xml:space="preserve">
+    <value>Choose the brand first</value>
+  </data>
+  <data name="Boards.Model.BrandModels" xml:space="preserve">
+    <value>{0} model</value>
+    <comment>The list of a brand's models: {0} is the brand.</comment>
+  </data>
+  <data name="Boards.Model.ChooseBrand" xml:space="preserve">
+    <value>Choose the brand</value>
+  </data>
+  <data name="Boards.Model.ChooseModel" xml:space="preserve">
+    <value>Choose the model</value>
+  </data>
+  <data name="Boards.Model.Count_One" xml:space="preserve">
+    <value>{0} model</value>
+  </data>
+  <data name="Boards.Model.Count_Other" xml:space="preserve">
+    <value>{0} models</value>
+  </data>
+  <data name="Boards.Model.Intro" xml:space="preserve">
+    <value>Choose the brand first, then the model. Both are printed on the board.</value>
+  </data>
+  <data name="Boards.Model.Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Boards.Model.NotListed" xml:space="preserve">
+    <value>Not on the list? Contactor only lists the boards it can switch.</value>
+  </data>
+  <data name="Boards.Model.Title" xml:space="preserve">
+    <value>Which relay board?</value>
+  </data>
+  <data name="Boards.ModelLine" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>A board's model and its relays, e.g. "Velleman VM201 · 8 relays".</comment>
+  </data>
+  <data name="Boards.Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Boards.New.ChooseBoard" xml:space="preserve">
+    <value>Choose your relay board.</value>
+  </data>
+  <data name="Boards.New.Done" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="Boards.New.Gone" xml:space="preserve">
+    <value>This relay board was removed meanwhile.</value>
+  </data>
+  <data name="Boards.New.NameExample" xml:space="preserve">
+    <value>E.g. Garage</value>
+    <comment>In the empty name field before a model is chosen.</comment>
+  </data>
+  <data name="Boards.New.NameHint" xml:space="preserve">
+    <value>What you call it in Contactor, e.g. "Garage". You can change it later.</value>
+  </data>
+  <data name="Boards.New.Step" xml:space="preserve">
+    <value>STEP {0} OF {1}</value>
+  </data>
+  <data name="Boards.New.WithoutConnection" xml:space="preserve">
+    <value>Go on without a connection</value>
+  </data>
+  <data name="Boards.NoAddress" xml:space="preserve">
+    <value>The relay board has no address yet</value>
+  </data>
+  <data name="Boards.NoContact" xml:space="preserve">
+    <value>No contact with the relay board at {0}</value>
+  </data>
+  <data name="Boards.NoLogin" xml:space="preserve">
+    <value>The board has no login</value>
+  </data>
+  <data name="Boards.NoPassword" xml:space="preserve">
+    <value>The board has no password</value>
+  </data>
+  <data name="Boards.NotChosen" xml:space="preserve">
+    <value>No relay board has been chosen yet.</value>
+  </data>
+  <data name="Boards.Online" xml:space="preserve">
+    <value>Board online at {0}</value>
+    <comment>{0} is the board's address.</comment>
+  </data>
+  <data name="Boards.Page.Missing" xml:space="preserve">
+    <value>This relay board isn't in Contactor.</value>
+  </data>
+  <data name="Boards.Password" xml:space="preserve">
+    <value>Password</value>
+  </data>
+  <data name="Boards.Password.None" xml:space="preserve">
+    <value>none</value>
+    <comment>In an empty password field: the board has no password.</comment>
+  </data>
+  <data name="Boards.Password.Unchanged" xml:space="preserve">
+    <value>unchanged</value>
+    <comment>In an empty password field: the saved password stays.</comment>
+  </data>
+  <data name="Boards.Picker.AddChip" xml:space="preserve">
+    <value>Board</value>
+    <comment>The chip that adds a board, after a "+".</comment>
+  </data>
+  <data name="Boards.Picker.All" xml:space="preserve">
+    <value>All boards</value>
+  </data>
+  <data name="Boards.Picker.AllHint" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>Under "All boards": Boards.Picker.OnCount, then Boards.Picker.Count.</comment>
+  </data>
+  <data name="Boards.Picker.AllShort" xml:space="preserve">
+    <value>All</value>
+    <comment>Among the chips: every board.</comment>
+  </data>
+  <data name="Boards.Picker.Count_One" xml:space="preserve">
+    <value>{0} board</value>
+  </data>
+  <data name="Boards.Picker.Count_Other" xml:space="preserve">
+    <value>{0} boards</value>
+  </data>
+  <data name="Boards.Picker.Label" xml:space="preserve">
+    <value>BOARDS</value>
+  </data>
+  <data name="Boards.Picker.NoContact" xml:space="preserve">
+    <value>No contact</value>
+  </data>
+  <data name="Boards.Picker.NoContactHidden" xml:space="preserve">
+    <value>: no contact</value>
+    <comment>Read out by screen readers after a board's name.</comment>
+  </data>
+  <data name="Boards.Picker.OnCount" xml:space="preserve">
+    <value>{0} of {1} on</value>
+  </data>
+  <data name="Boards.Picker.Show" xml:space="preserve">
+    <value>Boards to show</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Boards.Picker.ShowAll" xml:space="preserve">
+    <value>Show all</value>
+  </data>
+  <data name="Boards.Port" xml:space="preserve">
+    <value>Port</value>
+  </data>
+  <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
+    <value>The board asks for a user name and password.</value>
+  </data>
+  <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
+    <value>The board asks for a password.</value>
+  </data>
+  <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
+    <value>Needs a login</value>
+  </data>
+  <data name="Boards.Problem.Short.PasswordNeeded" xml:space="preserve">
+    <value>Needs a password</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongLogin" xml:space="preserve">
+    <value>Wrong login</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongModel" xml:space="preserve">
+    <value>Wrong model</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongPassword" xml:space="preserve">
+    <value>Wrong password</value>
+  </data>
+  <data name="Boards.Problem.WrongLogin" xml:space="preserve">
+    <value>The user name or password is wrong.</value>
+  </data>
+  <data name="Boards.Problem.WrongModel" xml:space="preserve">
+    <value>The board at this address is an {0}, not an {1}.</value>
+    <comment>{0} is the model found at the address, {1} the model chosen, both as the board list names them, e.g. "ETH484-B".</comment>
+  </data>
+  <data name="Boards.Problem.WrongModel.AddAgain" xml:space="preserve">
+    <value>Add it again as an {0} with '{1}', then remove this one.</value>
+    <comment>{0} is the model found at the address; {1} is Common.AddBoard.</comment>
+  </data>
+  <data name="Boards.Problem.WrongModel.Unknown" xml:space="preserve">
+    <value>The board at this address is another model, not an {0}.</value>
+    <comment>{0} is the model chosen, e.g. "ETH008-B".</comment>
+  </data>
+  <data name="Boards.Problem.WrongPassword" xml:space="preserve">
+    <value>The password is wrong.</value>
+  </data>
+  <data name="Boards.Relays.InGroup" xml:space="preserve">
+    <value>In the group {0}, which switches it.</value>
+  </data>
+  <data name="Boards.Relays.InUse" xml:space="preserve">
+    <value>In use</value>
+  </data>
+  <data name="Boards.Relays.Intro" xml:space="preserve">
+    <value>Name each relay after what it switches. "Try" turns it on for {0} seconds, so you can hear which one it is. Untick the ones you don't use.</value>
+  </data>
+  <data name="Boards.Relays.NoContact" xml:space="preserve">
+    <value>No contact with the relay board. Try again in a moment.</value>
+  </data>
+  <data name="Boards.Relays.On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Boards.Relays.Title" xml:space="preserve">
+    <value>Name your relays</value>
+  </data>
+  <data name="Boards.Relays.Try" xml:space="preserve">
+    <value>Try</value>
+  </data>
+  <data name="Boards.Relays.TryLabel" xml:space="preserve">
+    <value>Try relay {0}</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Boards.Relays.TryNeedsContact" xml:space="preserve">
+    <value>"Try" works once the app has contact with the relay board.</value>
+  </data>
+  <data name="Boards.Relays_One" xml:space="preserve">
+    <value>{0} relay</value>
+  </data>
+  <data name="Boards.Relays_Other" xml:space="preserve">
+    <value>{0} relays</value>
+  </data>
+  <data name="Boards.Remove.AlreadyRemoved" xml:space="preserve">
+    <value>This relay board was removed already.</value>
+  </data>
+  <data name="Boards.Remove.Ask" xml:space="preserve">
+    <value>Remove {0}?</value>
+  </data>
+  <data name="Boards.Remove.Button" xml:space="preserve">
+    <value>Remove {0}</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Boards.Remove.Confirm" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Boards.Remove.Deletes" xml:space="preserve">
+    <value>This deletes, and can't be undone:</value>
+  </data>
+  <data name="Boards.Remove.Events" xml:space="preserve">
+    <value>All of {0}'s events</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Boards.Remove.Failed" xml:space="preserve">
+    <value>Couldn't remove {0}. Nothing was removed.</value>
+  </data>
+  <data name="Boards.Remove.Groups_One" xml:space="preserve">
+    <value>{0} group</value>
+  </data>
+  <data name="Boards.Remove.Groups_Other" xml:space="preserve">
+    <value>{0} groups</value>
+  </data>
+  <data name="Boards.Remove.Hint" xml:space="preserve">
+    <value>Takes the board out of Contactor. Its relays, groups, schedules, input actions and events are deleted. The board itself isn't changed.</value>
+  </data>
+  <data name="Boards.Remove.InputActions_One" xml:space="preserve">
+    <value>{0} input action</value>
+  </data>
+  <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
+    <value>{0} input actions</value>
+  </data>
+  <data name="Boards.Remove.Lost" xml:space="preserve">
+    <value>{0} has lost contact, so its relays couldn't be turned off. Nothing was removed.</value>
+  </data>
+  <data name="Boards.Remove.NoContact" xml:space="preserve">
+    <value>{0} has no contact. Any relay that's on stays on, and Contactor can't turn it off.</value>
+  </data>
+  <data name="Boards.Remove.NotOff" xml:space="preserve">
+    <value>Some of {0}'s relays didn't turn off. Nothing was removed. Try again.</value>
+  </data>
+  <data name="Boards.Remove.OffFirst" xml:space="preserve">
+    <value>Its relays are turned off first. If a group is running on, you can remove it once that's done.</value>
+  </data>
+  <data name="Boards.Remove.Removing" xml:space="preserve">
+    <value>Removing…</value>
+  </data>
+  <data name="Boards.Remove.RunsOn" xml:space="preserve">
+    <value>{0} runs on until {1}. Remove {2} when it's done.</value>
+    <comment>{0} is a group, {1} a time, {2} the board.</comment>
+  </data>
+  <data name="Boards.Remove.Schedules_One" xml:space="preserve">
+    <value>{0} schedule</value>
+  </data>
+  <data name="Boards.Remove.Schedules_Other" xml:space="preserve">
+    <value>{0} schedules</value>
+  </data>
+  <data name="Boards.Remove.Title" xml:space="preserve">
+    <value>Remove board</value>
+  </data>
+  <data name="Boards.Save.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
+  </data>
+  <data name="Boards.Save.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+  <data name="Boards.Saved" xml:space="preserve">
+    <value>Saved. The app reconnects to the board.</value>
+  </data>
+  <data name="Boards.UserName" xml:space="preserve">
+    <value>User name</value>
+  </data>
+  <data name="Boards.Where.At" xml:space="preserve">
+    <value>at {0}</value>
+  </data>
+  <data name="Boards.Where.CheckAgain" xml:space="preserve">
+    <value>Check again</value>
+  </data>
+  <data name="Boards.Where.Checked" xml:space="preserve">
+    <value>{0} · checked {1}</value>
+    <comment>{1} is a time with seconds.</comment>
+  </data>
+  <data name="Boards.Where.ChooseModel" xml:space="preserve">
+    <value>Choose model</value>
+  </data>
+  <data name="Boards.Where.Found_One" xml:space="preserve">
+    <value>Found {0} relay at {1}</value>
+  </data>
+  <data name="Boards.Where.Found_Other" xml:space="preserve">
+    <value>Found {0} relays at {1}</value>
+  </data>
+  <data name="Boards.Where.Hint" xml:space="preserve">
+    <value>Your router lists the board among its connected devices. Leave the port empty unless you changed it on the board.</value>
+  </data>
+  <data name="Boards.Where.Intro" xml:space="preserve">
+    <value>{0} · its address on your network.</value>
+    <comment>{0} is the model's name.</comment>
+  </data>
+  <data name="Boards.Where.Looking" xml:space="preserve">
+    <value>Looking for the board</value>
+  </data>
+  <data name="Boards.Where.NoAnswer" xml:space="preserve">
+    <value>No answer from {0}. Check that the board has power and a network cable, and that the address is right.</value>
+  </data>
+  <data name="Boards.Where.Online" xml:space="preserve">
+    <value>Board online</value>
+  </data>
+  <data name="Boards.Where.Title" xml:space="preserve">
+    <value>Where is the board?</value>
+  </data>
+  <data name="Common.Add" xml:space="preserve">
+    <value>Add</value>
+    <comment>Adds a schedule.</comment>
+  </data>
+  <data name="Common.AddBoard" xml:space="preserve">
+    <value>Add a board</value>
+    <comment>The button that opens Common.Screen.AddBoard.</comment>
+  </data>
+  <data name="Common.AllEvents" xml:space="preserve">
+    <value>All events</value>
+    <comment>A link to the Events screen.</comment>
+  </data>
+  <data name="Common.Back" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="Common.BoardNotResponding" xml:space="preserve">
+    <value>The board isn't responding. Try again.</value>
+  </data>
+  <data name="Common.BoardTraffic" xml:space="preserve">
+    <value>Traffic to the relay board</value>
+    <comment>Read out by screen readers: the Debugging toasts.</comment>
+  </data>
+  <data name="Common.Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Common.Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Common.Download" xml:space="preserve">
+    <value>Download</value>
+    <comment>Downloads a file: a backup or an update's log.</comment>
+  </data>
+  <data name="Common.Hours" xml:space="preserve">
+    <value>{0} h</value>
+    <comment>A number of hours, e.g. "2 h".</comment>
+  </data>
+  <data name="Common.Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="Common.Language.Hint" xml:space="preserve">
+    <value>One language for everyone who uses the app. Every open page changes to it.</value>
+  </data>
+  <data name="Common.Language.Intro" xml:space="preserve">
+    <value>The language of Contactor, for everyone who uses it. You can change it later under Settings.</value>
+    <comment>The setup guide's "Language" step, under its heading Common.Language.</comment>
+  </data>
+  <data name="Common.Language.NotSaved" xml:space="preserve">
+    <value>The language couldn't be saved. Try again.</value>
+  </data>
+  <data name="Common.MainMenu" xml:space="preserve">
+    <value>Main menu</value>
+    <comment>Read out by screen readers: the tab bar.</comment>
+  </data>
+  <data name="Common.NameAndState" xml:space="preserve">
+    <value>{0}: {1}</value>
+    <comment>Read out by screen readers: a relay's name and its state.</comment>
+  </data>
+  <data name="Common.Never" xml:space="preserve">
+    <value>Never</value>
+    <comment>An automatic turn-off that never comes.</comment>
+  </data>
+  <data name="Common.Next" xml:space="preserve">
+    <value>Next</value>
+  </data>
+  <data name="Common.NoBoard" xml:space="preserve">
+    <value>There's no relay board in Contactor. Add one to switch its relays here.</value>
+  </data>
+  <data name="Common.NoConnection" xml:space="preserve">
+    <value>No connection to the app.</value>
+  </data>
+  <data name="Common.NoModel" xml:space="preserve">
+    <value>No model chosen</value>
+    <comment>A board whose model isn't chosen yet, where the model's name goes.</comment>
+  </data>
+  <data name="Common.PageTitle" xml:space="preserve">
+    <value>{0} · Contactor</value>
+    <comment>The browser tab's title: {0} is the screen's name.</comment>
+  </data>
+  <data name="Common.Reconnecting" xml:space="preserve">
+    <value>Reconnecting…</value>
+    <comment>The bar at the bottom while the page's connection is broken.</comment>
+  </data>
+  <data name="Common.ReloadPage" xml:space="preserve">
+    <value>Reload the page</value>
+  </data>
+  <data name="Common.Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Common.Saved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="Common.Schedule.Active" xml:space="preserve">
+    <value>Active</value>
+    <comment>A schedule that runs.</comment>
+  </data>
+  <data name="Common.Schedule.Paused" xml:space="preserve">
+    <value>Paused</value>
+    <comment>A schedule that is paused.</comment>
+  </data>
+  <data name="Common.Screen.AddBoard" xml:space="preserve">
+    <value>Add a board</value>
+  </data>
+  <data name="Common.Screen.Debug" xml:space="preserve">
+    <value>Debug</value>
+  </data>
+  <data name="Common.Screen.EditSchedule" xml:space="preserve">
+    <value>Edit schedule</value>
+  </data>
+  <data name="Common.Screen.Events" xml:space="preserve">
+    <value>Events</value>
+  </data>
+  <data name="Common.Screen.Group" xml:space="preserve">
+    <value>Group</value>
+    <comment>A group's page, before its name is known.</comment>
+  </data>
+  <data name="Common.Screen.Input" xml:space="preserve">
+    <value>Input</value>
+    <comment>An input's page, before its name is known.</comment>
+  </data>
+  <data name="Common.Screen.NewGroup" xml:space="preserve">
+    <value>New group</value>
+  </data>
+  <data name="Common.Screen.NewSchedule" xml:space="preserve">
+    <value>New schedule</value>
+  </data>
+  <data name="Common.Screen.Relay" xml:space="preserve">
+    <value>Relay</value>
+    <comment>A relay's page, before its name is known.</comment>
+  </data>
+  <data name="Common.Screen.RelayBoard" xml:space="preserve">
+    <value>Relay board</value>
+    <comment>A board's page, before its name is known.</comment>
+  </data>
+  <data name="Common.Screen.Relays" xml:space="preserve">
+    <value>Relays</value>
+  </data>
+  <data name="Common.Screen.Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Common.Screen.Setup" xml:space="preserve">
+    <value>Setup</value>
+  </data>
+  <data name="Common.SomethingWrong" xml:space="preserve">
+    <value>Something went wrong.</value>
+    <comment>Followed by the link Common.ReloadPage.</comment>
+  </data>
+  <data name="Common.SomethingWrongTryAgain" xml:space="preserve">
+    <value>Something went wrong. Try again.</value>
+  </data>
+  <data name="Common.Switch.Off" xml:space="preserve">
+    <value>OFF</value>
+    <comment>On a switch that is off.</comment>
+  </data>
+  <data name="Common.Switch.On" xml:space="preserve">
+    <value>ON</value>
+    <comment>On a switch that is on.</comment>
+  </data>
+  <data name="Common.TryAgain" xml:space="preserve">
+    <value>Try again</value>
+  </data>
+  <data name="Common.TurnOff" xml:space="preserve">
+    <value>Turn off {0}</value>
+    <comment>As Common.TurnOn.</comment>
+  </data>
+  <data name="Common.TurnOn" xml:space="preserve">
+    <value>Turn on {0}</value>
+    <comment>Read out by screen readers on a switch: {0} is the relay's or group's name.</comment>
+  </data>
+  <data name="Common.Version" xml:space="preserve">
+    <value>Version {0}</value>
+    <comment>The running release, e.g. "Version 2026.11.4".</comment>
+  </data>
+  <data name="Common.Version.Commit" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>The version and the commit it was built from, e.g. "Version 2026.11.4 · 1fdaf34".</comment>
+  </data>
+  <data name="Common.Version.Development" xml:space="preserve">
+    <value>Development version</value>
+    <comment>A build that isn't a release.</comment>
+  </data>
+  <data name="Debug.Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Debug.Connection" xml:space="preserve">
+    <value>connection</value>
+  </data>
+  <data name="Debug.Empty" xml:space="preserve">
+    <value>No traffic yet.</value>
+  </data>
+  <data name="Debug.FromBoard" xml:space="preserve">
+    <value>from the board</value>
+  </data>
+  <data name="Debug.Hint.One" xml:space="preserve">
+    <value>Everything sent to and from the relay board since the app started, newest first. At most {0} lines; nothing is stored. Board: {1}</value>
+    <comment>{1} is the board's address, in a code font.</comment>
+  </data>
+  <data name="Debug.Hint.Several" xml:space="preserve">
+    <value>Everything sent to and from the relay boards since the app started, newest first. At most {0} lines; nothing is stored.</value>
+    <comment>{0} is a number.</comment>
+  </data>
+  <data name="Debug.LeftOut_One" xml:space="preserve">
+    <value>{0:N0} routine step left out, such as status checks that changed nothing.</value>
+  </data>
+  <data name="Debug.LeftOut_Other" xml:space="preserve">
+    <value>{0:N0} routine steps left out, such as status checks that changed nothing.</value>
+  </data>
+  <data name="Debug.ToBoard" xml:space="preserve">
+    <value>to the board</value>
+    <comment>Read out by screen readers for an arrow.</comment>
+  </data>
+  <data name="Events.Activate" xml:space="preserve">
+    <value>{0} made the relay active</value>
+  </data>
+  <data name="Events.Board.Address" xml:space="preserve">
+    <value>{0} set the relay board's address to {1}</value>
+  </data>
+  <data name="Events.Board.AddressFrom" xml:space="preserve">
+    <value>{0} changed the relay board's address from {1} to {2}</value>
+  </data>
+  <data name="Events.Board.Login" xml:space="preserve">
+    <value>{0} changed the relay board's login</value>
+  </data>
+  <data name="Events.Board.Lost" xml:space="preserve">
+    <value>{0} lost contact with the app</value>
+  </data>
+  <data name="Events.Board.ModesNotReset" xml:space="preserve">
+    <value>{0} couldn't have its relays set to normal mode, so its inputs may switch them</value>
+  </data>
+  <data name="Events.Board.ModesReset" xml:space="preserve">
+    <value>{0} had its relays set to normal mode, so its inputs don't switch them</value>
+  </data>
+  <data name="Events.Board.Removed" xml:space="preserve">
+    <value>{0} removed relay board {1} ({2})</value>
+    <comment>{1} is the board's name, {2} its model, e.g. "Velleman VM204".</comment>
+  </data>
+  <data name="Events.Board.RemovedNoModel" xml:space="preserve">
+    <value>{0} removed relay board {1}</value>
+    <comment>A board without a model yet: {1} is its name.</comment>
+  </data>
+  <data name="Events.Board.Renamed" xml:space="preserve">
+    <value>{0} renamed the relay board to {1}</value>
+  </data>
+  <data name="Events.Board.RenamedFrom" xml:space="preserve">
+    <value>{0} renamed the relay board from {1} to {2}</value>
+  </data>
+  <data name="Events.Board.Restored" xml:space="preserve">
+    <value>{0} reconnected</value>
+  </data>
+  <data name="Events.Board.TimersOff" xml:space="preserve">
+    <value>{0} had its own timers turned off</value>
+  </data>
+  <data name="Events.Day.Format" xml:space="preserve">
+    <value>dddd d MMM</value>
+    <comment>A .NET date format for a day this year, e.g. "Monday 2 Nov". Not a sentence: change only the order and the parts.</comment>
+  </data>
+  <data name="Events.Day.Today" xml:space="preserve">
+    <value>Today</value>
+  </data>
+  <data name="Events.Day.YearFormat" xml:space="preserve">
+    <value>dddd d MMM yyyy</value>
+    <comment>As Events.Day.Format, for a day in another year.</comment>
+  </data>
+  <data name="Events.Day.Yesterday" xml:space="preserve">
+    <value>Yesterday</value>
+  </data>
+  <data name="Events.Deactivate" xml:space="preserve">
+    <value>{0} made the relay inactive</value>
+  </data>
+  <data name="Events.Empty" xml:space="preserve">
+    <value>No events yet.</value>
+  </data>
+  <data name="Events.Filter.All" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="Events.Filter.Automatic" xml:space="preserve">
+    <value>Automatic</value>
+  </data>
+  <data name="Events.Filter.People" xml:space="preserve">
+    <value>People</value>
+  </data>
+  <data name="Events.Group.Create" xml:space="preserve">
+    <value>{0} created the group</value>
+  </data>
+  <data name="Events.Group.Delete" xml:space="preserve">
+    <value>{0} deleted the group</value>
+  </data>
+  <data name="Events.Group.Edit" xml:space="preserve">
+    <value>{0} changed the group</value>
+  </data>
+  <data name="Events.Group.Off" xml:space="preserve">
+    <value>{0} turned off the group</value>
+  </data>
+  <data name="Events.Group.OffAfter" xml:space="preserve">
+    <value>{0} turned off the group after {1}</value>
+    <comment>{1} is a length, e.g. "2 h".</comment>
+  </data>
+  <data name="Events.Group.On" xml:space="preserve">
+    <value>{0} turned on the group</value>
+  </data>
+  <data name="Events.Group.RunOnEnd" xml:space="preserve">
+    <value>{0} {1} off</value>
+    <comment>After Events.Who.RunOnDone: {1} is a step's name.</comment>
+  </data>
+  <data name="Events.Group.RunOnStart" xml:space="preserve">
+    <value>{0} for {2}: {1}</value>
+    <comment>{0} is Events.Who.RunOn, in bold, {1} the name of a step of the group, e.g. "Fan" or "Fans", {2} a length: "Run-on for 5 min: Fan". Reads right for any name.</comment>
+  </data>
+  <data name="Events.Group.StartFailed" xml:space="preserve">
+    <value>{0} couldn't start {1}</value>
+    <comment>After Events.Who.TheGroup: {1} is a step's name.</comment>
+  </data>
+  <data name="Events.Group.Target" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>Under a group's event: the group's name and its steps.</comment>
+  </data>
+  <data name="Events.Group.Trip" xml:space="preserve">
+    <value>{0} {1} turned off. {2} must be on first.</value>
+    <comment>After Events.Who.SafetyShutOff: {1} is the steps turned off, {2} the step above that was off: "Heat turned off. Fan must be on first." Reads right for any name.</comment>
+  </data>
+  <data name="Events.Group.TripStarted" xml:space="preserve">
+    <value>{0} {1} turned on to run on</value>
+    <comment>After Events.Who.SafetyShutOff: {1} is the step above, started so it can run on before the group stops.</comment>
+  </data>
+  <data name="Events.Input" xml:space="preserve">
+    <value>{0} {1}</value>
+    <comment>An input's change: {0} is the input's name with a colon, {1} its state, e.g. "Door: Open".</comment>
+  </data>
+  <data name="Events.Length.AMoment" xml:space="preserve">
+    <value>a moment</value>
+  </data>
+  <data name="Events.Length.AWhile" xml:space="preserve">
+    <value>a while</value>
+  </data>
+  <data name="Events.Length.Hours" xml:space="preserve">
+    <value>{0} h</value>
+  </data>
+  <data name="Events.Length.Minutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="Events.Length.MinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+  </data>
+  <data name="Events.Length.Seconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
+  <data name="Events.List.And" xml:space="preserve">
+    <value> and </value>
+    <comment>Between the names of steps turned off together.</comment>
+  </data>
+  <data name="Events.More" xml:space="preserve">
+    <value>Show more</value>
+  </data>
+  <data name="Events.Off" xml:space="preserve">
+    <value>{0} turned off</value>
+  </data>
+  <data name="Events.OffAfter" xml:space="preserve">
+    <value>{0} turned off after {1}</value>
+    <comment>{1} is a length, e.g. "2 h".</comment>
+  </data>
+  <data name="Events.On" xml:space="preserve">
+    <value>{0} turned on</value>
+  </data>
+  <data name="Events.Other" xml:space="preserve">
+    <value>{0} {1}</value>
+    <comment>An event this version has no words for: {1} is its name in the log.</comment>
+  </data>
+  <data name="Events.Pulse" xml:space="preserve">
+    <value>{0} tried for {1}</value>
+    <comment>{1} is a length, e.g. "2 s".</comment>
+  </data>
+  <data name="Events.RemovedGroup" xml:space="preserve">
+    <value>a removed group</value>
+    <comment>A group that is no longer in the app, in place of its name, when the event saved none.</comment>
+  </data>
+  <data name="Events.RemovedInput" xml:space="preserve">
+    <value>A removed input</value>
+    <comment>An input that is no longer in the app, in place of its name, in bold at the start of the line.</comment>
+  </data>
+  <data name="Events.RemovedRelay" xml:space="preserve">
+    <value>a removed relay</value>
+    <comment>A relay that is no longer in the app, in place of its name.</comment>
+  </data>
+  <data name="Events.Rename" xml:space="preserve">
+    <value>{0} renamed {1} to</value>
+    <comment>{1} is the old name; the new one is on the line below.</comment>
+  </data>
+  <data name="Events.Schedule.Added" xml:space="preserve">
+    <value>{0} added schedule {1}</value>
+    <comment>{1} is the schedule, e.g. "Mon–Fri 06:30–08:00".</comment>
+  </data>
+  <data name="Events.Schedule.AddedOne" xml:space="preserve">
+    <value>{0} added a schedule</value>
+  </data>
+  <data name="Events.Schedule.Changed" xml:space="preserve">
+    <value>{0} changed schedule to {1}</value>
+  </data>
+  <data name="Events.Schedule.ChangedOne" xml:space="preserve">
+    <value>{0} changed a schedule</value>
+  </data>
+  <data name="Events.Schedule.Deleted" xml:space="preserve">
+    <value>{0} deleted schedule {1}</value>
+  </data>
+  <data name="Events.Schedule.DeletedOne" xml:space="preserve">
+    <value>{0} deleted a schedule</value>
+  </data>
+  <data name="Events.Schedule.Paused" xml:space="preserve">
+    <value>{0} paused schedule {1}</value>
+  </data>
+  <data name="Events.Schedule.PausedOne" xml:space="preserve">
+    <value>{0} paused a schedule</value>
+  </data>
+  <data name="Events.Schedule.Resumed" xml:space="preserve">
+    <value>{0} resumed schedule {1}</value>
+  </data>
+  <data name="Events.Schedule.ResumedOne" xml:space="preserve">
+    <value>{0} resumed a schedule</value>
+  </data>
+  <data name="Events.Short.AutoOff" xml:space="preserve">
+    <value>auto-off</value>
+  </data>
+  <data name="Events.Short.Outside" xml:space="preserve">
+    <value>outside the app</value>
+  </data>
+  <data name="Events.Short.RemovedInput" xml:space="preserve">
+    <value>a removed input</value>
+    <comment>An input that is no longer in the app, in a relay's status line.</comment>
+  </data>
+  <data name="Events.Short.Schedule" xml:space="preserve">
+    <value>schedule</value>
+    <comment>Who turned a relay off, in its status line: "Off since 12:15 · schedule".</comment>
+  </data>
+  <data name="Events.Short.System" xml:space="preserve">
+    <value>the system</value>
+  </data>
+  <data name="Events.TheRelay" xml:space="preserve">
+    <value>the relay</value>
+    <comment>A group's relay when the event names none, in place of its name.</comment>
+  </data>
+  <data name="Events.TheRelayAbove" xml:space="preserve">
+    <value>the relay above</value>
+  </data>
+  <data name="Events.TimeUnknown" xml:space="preserve">
+    <value> · time unknown</value>
+    <comment>After an input's change the app only noticed later.</comment>
+  </data>
+  <data name="Events.Unknown" xml:space="preserve">
+    <value>?</value>
+    <comment>A name the event doesn't have.</comment>
+  </data>
+  <data name="Events.Update.Because.Backup" xml:space="preserve">
+    <value>the database couldn't be backed up</value>
+  </data>
+  <data name="Events.Update.Because.Download" xml:space="preserve">
+    <value>it couldn't be downloaded</value>
+  </data>
+  <data name="Events.Update.Because.Interrupted" xml:space="preserve">
+    <value>it was interrupted</value>
+  </data>
+  <data name="Events.Update.Because.Other" xml:space="preserve">
+    <value>it didn't start</value>
+  </data>
+  <data name="Events.Update.Because.Signature" xml:space="preserve">
+    <value>it didn't pass the check that it's ours</value>
+  </data>
+  <data name="Events.Update.Because.Space" xml:space="preserve">
+    <value>there wasn't enough room</value>
+  </data>
+  <data name="Events.Update.Cancelled" xml:space="preserve">
+    <value>{0} didn't update to {1}: the update was cancelled</value>
+  </data>
+  <data name="Events.Update.Current" xml:space="preserve">
+    <value>{0} found nothing newer than {1} to download</value>
+  </data>
+  <data name="Events.Update.Done" xml:space="preserve">
+    <value>{0} updated to {1}</value>
+  </data>
+  <data name="Events.Update.Failed" xml:space="preserve">
+    <value>{0} didn't update to {1}: {2}. Nothing was changed</value>
+    <comment>{2} is one of Events.Update.Because.</comment>
+  </data>
+  <data name="Events.Update.Log" xml:space="preserve">
+    <value>Download its log</value>
+  </data>
+  <data name="Events.Update.NewVersion" xml:space="preserve">
+    <value>a new version</value>
+  </data>
+  <data name="Events.Update.Requested" xml:space="preserve">
+    <value>{0} started the update to {1}</value>
+    <comment>In every event text, {0} is who did it, shown in bold: a person's name, or e.g. "Schedule".</comment>
+  </data>
+  <data name="Events.Update.Switching" xml:space="preserve">
+    <value>{0} didn't update to {1}: the relays were still switching. Nothing was changed</value>
+  </data>
+  <data name="Events.Update.VersionBefore" xml:space="preserve">
+    <value>the version before</value>
+  </data>
+  <data name="Events.Update.VersionItRuns" xml:space="preserve">
+    <value>the version it runs</value>
+  </data>
+  <data name="Events.Update.WentBack" xml:space="preserve">
+    <value>{0} went back to {1}: the update to {2} didn't work</value>
+  </data>
+  <data name="Events.Who.AutoOff" xml:space="preserve">
+    <value>Auto-off</value>
+  </data>
+  <data name="Events.Who.Board" xml:space="preserve">
+    <value>The board</value>
+    <comment>An event the board itself is the subject of, with one board.</comment>
+  </data>
+  <data name="Events.Who.Contactor" xml:space="preserve">
+    <value>Contactor</value>
+    <comment>Who did an update on its own.</comment>
+  </data>
+  <data name="Events.Who.Outside" xml:space="preserve">
+    <value>Outside the app</value>
+  </data>
+  <data name="Events.Who.RunOn" xml:space="preserve">
+    <value>Run-on</value>
+    <comment>In bold in Events.Group.RunOnStart.</comment>
+  </data>
+  <data name="Events.Who.RunOnDone" xml:space="preserve">
+    <value>Run-on done:</value>
+    <comment>In bold before Events.Group.RunOnEnd.</comment>
+  </data>
+  <data name="Events.Who.SafetyShutOff" xml:space="preserve">
+    <value>Safety shut-off:</value>
+    <comment>In bold before Events.Group.Trip, in red.</comment>
+  </data>
+  <data name="Events.Who.Schedule" xml:space="preserve">
+    <value>Schedule</value>
+  </data>
+  <data name="Events.Who.System" xml:space="preserve">
+    <value>System</value>
+  </data>
+  <data name="Events.Who.TheGroup" xml:space="preserve">
+    <value>The group</value>
+    <comment>In bold before Events.Group.StartFailed.</comment>
+  </data>
+  <data name="Events.WhyTimeUnknown" xml:space="preserve">
+    <value>The app had no contact with the board when this input changed, so it only noticed the change at this time. It may have happened any time before.</value>
+  </data>
+  <data name="Events.WhyUnknown" xml:space="preserve">
+    <value>Why is the time unknown for {0}?</value>
+    <comment>Read out by screen readers: {0} is the input's name.</comment>
+  </data>
+  <data name="Groups.AddRelayToStep" xml:space="preserve">
+    <value>Add a relay to this step</value>
+  </data>
+  <data name="Groups.AddStep" xml:space="preserve">
+    <value>Add a step</value>
+  </data>
+  <data name="Groups.Between" xml:space="preserve">
+    <value>Between {0} and {1}</value>
+    <comment>Read out by screen readers: two relays' names in the group.</comment>
+  </data>
+  <data name="Groups.Chain" xml:space="preserve">
+    <value>RELAY {0}</value>
+    <comment>A group's relays by number, a step's joined by "+", e.g. "RELAY 1 + 2 → 3 + 4".</comment>
+  </data>
+  <data name="Groups.ChangedElsewhere" xml:space="preserve">
+    <value>Someone else changed the group while you had this page open. Saving overwrites their change.</value>
+  </data>
+  <data name="Groups.Delete" xml:space="preserve">
+    <value>Delete the group</value>
+  </data>
+  <data name="Groups.Delete.Text" xml:space="preserve">
+    <value>Its relays become ordinary relays again, switched one by one. The group's schedules are deleted too.</value>
+  </data>
+  <data name="Groups.Delete.Title" xml:space="preserve">
+    <value>Delete the group?</value>
+  </data>
+  <data name="Groups.Delete.TurnOffFirst" xml:space="preserve">
+    <value>Turn off the group before deleting it.</value>
+  </data>
+  <data name="Groups.Gone" xml:space="preserve">
+    <value>The group no longer exists.</value>
+  </data>
+  <data name="Groups.Icon" xml:space="preserve">
+    <value>Icon</value>
+  </data>
+  <data name="Groups.Icon.Air" xml:space="preserve">
+    <value>Air</value>
+  </data>
+  <data name="Groups.Icon.Fan" xml:space="preserve">
+    <value>Fan</value>
+    <comment>The names under the eight group icons.</comment>
+  </data>
+  <data name="Groups.Icon.Heat" xml:space="preserve">
+    <value>Heat</value>
+  </data>
+  <data name="Groups.Icon.Light" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="Groups.Icon.Paint" xml:space="preserve">
+    <value>Paint</value>
+  </data>
+  <data name="Groups.Icon.Power" xml:space="preserve">
+    <value>Power</value>
+  </data>
+  <data name="Groups.Icon.Pump" xml:space="preserve">
+    <value>Pump</value>
+  </data>
+  <data name="Groups.Icon.Tools" xml:space="preserve">
+    <value>Tools</value>
+  </data>
+  <data name="Groups.LimitHint" xml:space="preserve">
+    <value>Applies when someone turns the group on by hand. It stops in its stop order, with its run-on times.</value>
+  </data>
+  <data name="Groups.List.Separator" xml:space="preserve">
+    <value>, </value>
+    <comment>Between names in a list.</comment>
+  </data>
+  <data name="Groups.Member.KeepsRunning" xml:space="preserve">
+    <value>Keeps running for {0}</value>
+  </data>
+  <data name="Groups.Member.Needs" xml:space="preserve">
+    <value>Needs {0} to be on</value>
+    <comment>{0} is the name of the relay above.</comment>
+  </data>
+  <data name="Groups.Member.Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Groups.Member.On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Groups.Member.StartsIn" xml:space="preserve">
+    <value>Starts in {0}</value>
+  </data>
+  <data name="Groups.Missing" xml:space="preserve">
+    <value>The group doesn't exist.</value>
+  </data>
+  <data name="Groups.MissingRelay" xml:space="preserve">
+    <value>Can't run: relay {0} isn't on the board</value>
+  </data>
+  <data name="Groups.MoveDown" xml:space="preserve">
+    <value>Move {0} down</value>
+  </data>
+  <data name="Groups.MoveUp" xml:space="preserve">
+    <value>Move {0} up</value>
+    <comment>Read out by screen readers: {0} is a relay's name in the group.</comment>
+  </data>
+  <data name="Groups.NameLabel" xml:space="preserve">
+    <value>GROUP · NAME</value>
+  </data>
+  <data name="Groups.New.AutoOff" xml:space="preserve">
+    <value>TURNS OFF AUTOMATICALLY</value>
+  </data>
+  <data name="Groups.New.AutoOffAfter" xml:space="preserve">
+    <value>After {0}. You can change it on the group's page.</value>
+    <comment>{0} is a length, e.g. "2 h".</comment>
+  </data>
+  <data name="Groups.New.Chosen" xml:space="preserve">
+    <value>{0} chosen</value>
+  </data>
+  <data name="Groups.New.ChosenTooFew" xml:space="preserve">
+    <value>{0} chosen · choose at least {1}</value>
+  </data>
+  <data name="Groups.New.Create" xml:space="preserve">
+    <value>Create group</value>
+  </data>
+  <data name="Groups.New.Interlock" xml:space="preserve">
+    <value>Interlock: a relay can only be on while the relay above it is on. If it's turned on anyway, e.g. at the board, the app turns it off at once.</value>
+  </data>
+  <data name="Groups.New.Interlock.Label" xml:space="preserve">
+    <value>INTERLOCK</value>
+  </data>
+  <data name="Groups.New.Lead1" xml:space="preserve">
+    <value>The icon shows on the group's card in the relay list.</value>
+  </data>
+  <data name="Groups.New.Lead2" xml:space="preserve">
+    <value>Choose two or more. The order you choose them in is the start order; you can change it in the next step.</value>
+  </data>
+  <data name="Groups.New.Lead3" xml:space="preserve">
+    <value>The group starts from the top and stops from the bottom. Set the waits between the steps.</value>
+  </data>
+  <data name="Groups.New.Lead4" xml:space="preserve">
+    <value>Check that it does what you expect.</value>
+  </data>
+  <data name="Groups.New.Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Groups.New.NameExample" xml:space="preserve">
+    <value>E.g. Fan heater – Lathe</value>
+  </data>
+  <data name="Groups.New.NoneChosen" xml:space="preserve">
+    <value>None chosen yet</value>
+  </data>
+  <data name="Groups.New.OnBoard" xml:space="preserve">
+    <value>ON {0}</value>
+    <comment>{0} is the board's name, in capitals.</comment>
+  </data>
+  <data name="Groups.New.Preview" xml:space="preserve">
+    <value>HOW IT LOOKS IN THE LIST</value>
+  </data>
+  <data name="Groups.New.RelayNumber" xml:space="preserve">
+    <value>relay {0}</value>
+    <comment>A relay without a name in the group, by its number.</comment>
+  </data>
+  <data name="Groups.New.RoleLabel" xml:space="preserve">
+    <value>RELAY {0} · NAME IN THE GROUP</value>
+  </data>
+  <data name="Groups.New.Step" xml:space="preserve">
+    <value>STEP {0} OF {1}</value>
+  </data>
+  <data name="Groups.New.Title1" xml:space="preserve">
+    <value>Name and icon</value>
+  </data>
+  <data name="Groups.New.Title2" xml:space="preserve">
+    <value>Which relays?</value>
+  </data>
+  <data name="Groups.New.Title3" xml:space="preserve">
+    <value>Order and rules</value>
+  </data>
+  <data name="Groups.New.Title4" xml:space="preserve">
+    <value>Review and create</value>
+  </data>
+  <data name="Groups.New.WhenOff" xml:space="preserve">
+    <value>WHEN THE GROUP TURNS OFF</value>
+  </data>
+  <data name="Groups.New.WhenOn" xml:space="preserve">
+    <value>WHEN THE GROUP TURNS ON</value>
+  </data>
+  <data name="Groups.NoContactMembers" xml:space="preserve">
+    <value>No contact with the relay board. The steps and their relays can be changed once the board responds.</value>
+  </data>
+  <data name="Groups.NoEvents" xml:space="preserve">
+    <value>Nothing has happened to this group yet.</value>
+  </data>
+  <data name="Groups.NoSchedules" xml:space="preserve">
+    <value>No schedules. Add one to turn the group on at set times.</value>
+  </data>
+  <data name="Groups.Note.ControlledBy" xml:space="preserve">
+    <value>Controlled by {0}</value>
+    <comment>{0} is an input's name.</comment>
+  </data>
+  <data name="Groups.Note.Free" xml:space="preserve">
+    <value>Free</value>
+  </data>
+  <data name="Groups.Note.HasSchedules" xml:space="preserve">
+    <value>Has its own schedules</value>
+  </data>
+  <data name="Groups.Note.InGroup" xml:space="preserve">
+    <value>Already in {0}</value>
+    <comment>{0} is a group's name.</comment>
+  </data>
+  <data name="Groups.Note.InactiveFree" xml:space="preserve">
+    <value>Inactive · free</value>
+  </data>
+  <data name="Groups.OneBoard" xml:space="preserve">
+    <value>A group's relays are all on one board.</value>
+  </data>
+  <data name="Groups.Plan.Arrow" xml:space="preserve">
+    <value> → </value>
+    <comment>Between the steps when the group turns off.</comment>
+  </data>
+  <data name="Groups.Plan.Interlock" xml:space="preserve">
+    <value>{0} can only be on while {1} is on.</value>
+  </data>
+  <data name="Groups.Plan.Off" xml:space="preserve">
+    <value>{0} off</value>
+  </data>
+  <data name="Groups.Plan.RunsOn" xml:space="preserve">
+    <value>Run-on for {1}: {0}, then off</value>
+  </data>
+  <data name="Groups.Plan.Separator" xml:space="preserve">
+    <value> </value>
+    <comment>Between the interlock sentences.</comment>
+  </data>
+  <data name="Groups.Plan.Then" xml:space="preserve">
+    <value>{0} → wait {1} → {2}</value>
+    <comment>When the group turns on: {0} is the start so far, {1} a wait, {2} the next relay.</comment>
+  </data>
+  <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
+    <value>Needs {0} to be on.</value>
+    <comment>Why a relay of a group can't be turned on: {0} is the name of the relay above it.</comment>
+  </data>
+  <data name="Groups.Refusal.NotInGroup" xml:space="preserve">
+    <value>That relay isn't in the group.</value>
+  </data>
+  <data name="Groups.RelayOption" xml:space="preserve">
+    <value>Relay {0} · {1}</value>
+    <comment>{0} is the relay's number, {1} its name.</comment>
+  </data>
+  <data name="Groups.RelayToAdd" xml:space="preserve">
+    <value>Relay to add</value>
+  </data>
+  <data name="Groups.Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Groups.RemoveRelay" xml:space="preserve">
+    <value>Remove {0} from the group</value>
+    <comment>For a screen reader: {0} is the relay's name.</comment>
+  </data>
+  <data name="Groups.RunOn" xml:space="preserve">
+    <value>On stop, run on</value>
+  </data>
+  <data name="Groups.RunOn.None" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="Groups.Safety" xml:space="preserve">
+    <value>The app's interlock only works while the app runs. Where safety depends on it, e.g. heat without the fan, it must also be wired in the installation.</value>
+  </data>
+  <data name="Groups.Save.Controlled" xml:space="preserve">
+    <value>{0} is controlled by the input {1}. Remove it there first.</value>
+    <comment>{0} is a relay's name, {1} an input's.</comment>
+  </data>
+  <data name="Groups.Save.EmptyStep" xml:space="preserve">
+    <value>Each step needs at least one relay.</value>
+  </data>
+  <data name="Groups.Save.HasSchedules" xml:space="preserve">
+    <value>{0} has its own schedules. Delete them first.</value>
+    <comment>{0} is a relay's name.</comment>
+  </data>
+  <data name="Groups.Save.Icon" xml:space="preserve">
+    <value>Choose an icon.</value>
+  </data>
+  <data name="Groups.Save.InGroup" xml:space="preserve">
+    <value>{0} is already in {1}.</value>
+    <comment>{0} is a relay's name, {1} a group's.</comment>
+  </data>
+  <data name="Groups.Save.Limit" xml:space="preserve">
+    <value>Choose how long the group may stay on.</value>
+  </data>
+  <data name="Groups.Save.Name" xml:space="preserve">
+    <value>Give the group a name.</value>
+  </data>
+  <data name="Groups.Save.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+  <data name="Groups.Save.NoContact" xml:space="preserve">
+    <value>No contact with the relay board. It's needed to see that the relays are off.</value>
+  </data>
+  <data name="Groups.Save.NoRelay" xml:space="preserve">
+    <value>That relay doesn't exist.</value>
+  </data>
+  <data name="Groups.Save.OneBoard" xml:space="preserve">
+    <value>All the relays of a group must be on one board.</value>
+  </data>
+  <data name="Groups.Save.RelayOn" xml:space="preserve">
+    <value>Turn off {0} first.</value>
+    <comment>{0} is a relay's name.</comment>
+  </data>
+  <data name="Groups.Save.RoleTooLong" xml:space="preserve">
+    <value>The step's name can be at most {0} characters.</value>
+  </data>
+  <data name="Groups.Save.RunOn" xml:space="preserve">
+    <value>The run-on can be at most {0} minutes.</value>
+  </data>
+  <data name="Groups.Save.TooFew" xml:space="preserve">
+    <value>Choose at least {0} relays.</value>
+  </data>
+  <data name="Groups.Save.TurnOffFirst" xml:space="preserve">
+    <value>Turn off the group, and the relays you add, before you change its steps or their relays.</value>
+  </data>
+  <data name="Groups.Save.Twice" xml:space="preserve">
+    <value>A relay can only be in the group once.</value>
+  </data>
+  <data name="Groups.Save.Wait" xml:space="preserve">
+    <value>The wait on start is {0}–{1} seconds.</value>
+  </data>
+  <data name="Groups.StartWait" xml:space="preserve">
+    <value>On start, wait</value>
+  </data>
+  <data name="Groups.Status.Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Groups.Status.Only" xml:space="preserve">
+    <value>{0} · only {1}</value>
+    <comment>{0} is the group's status, {1} the relays of it that run, e.g. "Fan".</comment>
+  </data>
+  <data name="Groups.Status.OutOfOrder" xml:space="preserve">
+    <value>Out of order · turning off</value>
+    <comment>A relay is on while the one above it is off: the interlock turns it off.</comment>
+  </data>
+  <data name="Groups.Status.ScheduleOn" xml:space="preserve">
+    <value>Schedule: on {0}</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Groups.Status.StartingIn" xml:space="preserve">
+    <value>Starting · {0} in {1}</value>
+    <comment>{0} is the next relay's name in the group, {1} the time left.</comment>
+  </data>
+  <data name="Groups.Status.StartingStep" xml:space="preserve">
+    <value>Starting · step {0} of {1}</value>
+  </data>
+  <data name="Groups.Status.Stopping" xml:space="preserve">
+    <value>Stopping</value>
+  </data>
+  <data name="Groups.Status.StoppingRunOn" xml:space="preserve">
+    <value>Stopping · run-on for {1}: {0}</value>
+    <comment>{0} is what runs on: a step's name, e.g. "Fans", or one relay's, {1} the time left.</comment>
+  </data>
+  <data name="Groups.Step.Label" xml:space="preserve">
+    <value>STEP {0} · NAME</value>
+    <comment>Over a step's name field: {0} is its place in the start order, from 1.</comment>
+  </data>
+  <data name="Groups.Step.Only" xml:space="preserve">
+    <value>Only {0} on</value>
+    <comment>A step with only some of its relays on: {0} lists them, e.g. "Fan 1" or "Fan 1, Fan 2".</comment>
+  </data>
+  <data name="Groups.Step.StartsFirst" xml:space="preserve">
+    <value>Off · starts first</value>
+  </data>
+  <data name="Groups.Steps" xml:space="preserve">
+    <value>Steps in start order</value>
+  </data>
+  <data name="Groups.Steps.Hint" xml:space="preserve">
+    <value>Starts from the top, stops from the bottom. The relays in a step switch together. A relay can only be on while every relay in the step above it is on.</value>
+  </data>
+  <data name="Groups.Steps.HintOn" xml:space="preserve">
+    <value>On {0}. Starts from the top, stops from the bottom. The relays in a step switch together. A relay can only be on while every relay in the step above it is on.</value>
+    <comment>{0} is the board's name, with two or more boards.</comment>
+  </data>
+  <data name="Groups.TurnOff" xml:space="preserve">
+    <value>TURN OFF THE GROUP</value>
+  </data>
+  <data name="Groups.TurnOffToChange" xml:space="preserve">
+    <value>Turn the group off to change its steps or their relays.</value>
+  </data>
+  <data name="Groups.TurnOn" xml:space="preserve">
+    <value>TURN ON THE GROUP</value>
+  </data>
+  <data name="Inputs.Active" xml:space="preserve">
+    <value>{0}: shown in the list. Untick it for inputs that aren't wired to anything.</value>
+    <comment>{0} is Inputs.ActiveWord, in bold.</comment>
+  </data>
+  <data name="Inputs.ActiveWord" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="Inputs.Add" xml:space="preserve">
+    <value>+ Add a group or relay</value>
+  </data>
+  <data name="Inputs.AddLabel" xml:space="preserve">
+    <value>Add a group or relay</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Inputs.Closed" xml:space="preserve">
+    <value>Closed</value>
+    <comment>An input that the board reads as on.</comment>
+  </data>
+  <data name="Inputs.Closes" xml:space="preserve">
+    <value>CLOSES</value>
+  </data>
+  <data name="Inputs.Controls" xml:space="preserve">
+    <value>Groups and relays</value>
+  </data>
+  <data name="Inputs.Controls.Hint" xml:space="preserve">
+    <value>Like pressing the button at that moment: a group starts and stops in its order, with its run-on, and auto-off still applies. Only changes the app sees as they happen do anything.</value>
+  </data>
+  <data name="Inputs.Hide.Both" xml:space="preserve">
+    <value>Hide inactive</value>
+  </data>
+  <data name="Inputs.Hide.Inputs" xml:space="preserve">
+    <value>Hide inactive inputs</value>
+  </data>
+  <data name="Inputs.Hide.Relays" xml:space="preserve">
+    <value>Hide inactive relays</value>
+  </data>
+  <data name="Inputs.Missing" xml:space="preserve">
+    <value>The input doesn't exist.</value>
+  </data>
+  <data name="Inputs.NameLabel" xml:space="preserve">
+    <value>INPUT {0} · NAME</value>
+  </data>
+  <data name="Inputs.NoEvents" xml:space="preserve">
+    <value>This input hasn't changed yet.</value>
+  </data>
+  <data name="Inputs.Nothing" xml:space="preserve">
+    <value>Nothing</value>
+  </data>
+  <data name="Inputs.NothingToAdd" xml:space="preserve">
+    <value>There is nothing more to add: this input controls every group and relay.</value>
+  </data>
+  <data name="Inputs.Now" xml:space="preserve">
+    <value>NOW</value>
+  </data>
+  <data name="Inputs.Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="Inputs.Opens" xml:space="preserve">
+    <value>OPENS</value>
+  </data>
+  <data name="Inputs.Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Inputs.Save.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
+  </data>
+  <data name="Inputs.Save.GroupGone" xml:space="preserve">
+    <value>That group no longer exists.</value>
+  </data>
+  <data name="Inputs.Save.GroupOtherBoard" xml:space="preserve">
+    <value>That group is on another board: an input only controls its own board's.</value>
+  </data>
+  <data name="Inputs.Save.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+  <data name="Inputs.Save.NoRelay" xml:space="preserve">
+    <value>The board has no relay {0}.</value>
+  </data>
+  <data name="Inputs.Save.NoSuchRelay" xml:space="preserve">
+    <value>The board has no such relay.</value>
+  </data>
+  <data name="Inputs.Save.RelayInGroup" xml:space="preserve">
+    <value>Relay {0} is in a group now: add the group instead.</value>
+  </data>
+  <data name="Inputs.Save.RelayOtherBoard" xml:space="preserve">
+    <value>That relay is on another board: an input only controls its own board's.</value>
+  </data>
+  <data name="Inputs.Save.Twice" xml:space="preserve">
+    <value>{0} is in the list twice.</value>
+    <comment>{0} is a group or relay, e.g. "Relay 4: Lighting".</comment>
+  </data>
+  <data name="Inputs.Show.Both_One" xml:space="preserve">
+    <value>Show {0} inactive</value>
+  </data>
+  <data name="Inputs.Show.Both_Other" xml:space="preserve">
+    <value>Show {0} inactive</value>
+  </data>
+  <data name="Inputs.Show.Inputs_One" xml:space="preserve">
+    <value>Show {0} inactive input</value>
+  </data>
+  <data name="Inputs.Show.Inputs_Other" xml:space="preserve">
+    <value>Show {0} inactive inputs</value>
+  </data>
+  <data name="Inputs.Show.Relays_One" xml:space="preserve">
+    <value>Show {0} inactive relay</value>
+  </data>
+  <data name="Inputs.Show.Relays_Other" xml:space="preserve">
+    <value>Show {0} inactive relays</value>
+  </data>
+  <data name="Inputs.Since" xml:space="preserve">
+    <value>{0} since {1}</value>
+    <comment>{0} is Inputs.Closed or Inputs.Open, {1} a time.</comment>
+  </data>
+  <data name="Inputs.SinceUnknown" xml:space="preserve">
+    <value>{0} since unknown</value>
+  </data>
+  <data name="Inputs.Stale" xml:space="preserve">
+    <value>No contact with the relay board: this may be out of date.</value>
+  </data>
+  <data name="Inputs.Target.Group" xml:space="preserve">
+    <value>Group: {0}</value>
+    <comment>A group an input controls.</comment>
+  </data>
+  <data name="Inputs.Target.Relay" xml:space="preserve">
+    <value>Relay {0}: {1}</value>
+    <comment>A relay an input controls: its number and name.</comment>
+  </data>
+  <data name="Inputs.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+  </data>
+  <data name="Inputs.TurnOn" xml:space="preserve">
+    <value>Turn on</value>
+  </data>
+  <data name="Inputs.WhenCloses" xml:space="preserve">
+    <value>{0}: when the input closes</value>
+    <comment>Read out by screen readers: {0} is a group or relay.</comment>
+  </data>
+  <data name="Inputs.WhenOpens" xml:space="preserve">
+    <value>{0}: when the input opens</value>
+  </data>
+  <data name="Inputs.WhyUnknown" xml:space="preserve">
+    <value>The board only tells the app what an input reads now, not since when. The app hasn't seen this input change since it was installed or last had no contact with the board for a while, e.g. after a crash or a power cut.</value>
+  </data>
+  <data name="Inputs.WhyUnknownLabel" xml:space="preserve">
+    <value>Why is the time unknown?</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Relays.AllBoardsOff" xml:space="preserve">
+    <value>Turn off all boards</value>
+  </data>
+  <data name="Relays.AllOff" xml:space="preserve">
+    <value>All off</value>
+  </data>
+  <data name="Relays.AllOffOn" xml:space="preserve">
+    <value>All off on {0}</value>
+    <comment>Read out by screen readers: {0} is the board's name.</comment>
+  </data>
+  <data name="Relays.By.AutoOff" xml:space="preserve">
+    <value>auto-off</value>
+  </data>
+  <data name="Relays.By.Outside" xml:space="preserve">
+    <value>outside the app</value>
+  </data>
+  <data name="Relays.By.RemovedInput" xml:space="preserve">
+    <value>a removed input</value>
+    <comment>Who turned a relay on, in its status: an input that is no longer in the app, e.g. of a removed board.</comment>
+  </data>
+  <data name="Relays.By.Schedule" xml:space="preserve">
+    <value>schedule</value>
+  </data>
+  <data name="Relays.By.You" xml:space="preserve">
+    <value>you</value>
+    <comment>Who turned a relay on, in its status line: the person looking.</comment>
+  </data>
+  <data name="Relays.Chip.Off" xml:space="preserve">
+    <value> (off)</value>
+  </data>
+  <data name="Relays.Chip.On" xml:space="preserve">
+    <value> (on)</value>
+  </data>
+  <data name="Relays.Chip.Partly" xml:space="preserve">
+    <value> (partly on)</value>
+    <comment>For a screen reader, after a step's name on a group's card: only some of its relays are on.</comment>
+  </data>
+  <data name="Relays.Chip.Unknown" xml:space="preserve">
+    <value> (unknown)</value>
+    <comment>Read out by screen readers after a relay's name, before the board's first answer.</comment>
+  </data>
+  <data name="Relays.ConfirmAllOff.All" xml:space="preserve">
+    <value>Turn off all {1} relays {0}?</value>
+    <comment>{0} is Relays.OnBoards, {1} the number of relays that are on (2 or more).</comment>
+  </data>
+  <data name="Relays.ConfirmAllOff.Every" xml:space="preserve">
+    <value>Turn off every relay {0}?</value>
+    <comment>{0} is Relays.OnBoards.</comment>
+  </data>
+  <data name="Relays.ConfirmAllOff.One" xml:space="preserve">
+    <value>Turn off the 1 relay that is on, {0}?</value>
+    <comment>{0} is Relays.OnBoards.</comment>
+  </data>
+  <data name="Relays.ConfirmAllOff.Text" xml:space="preserve">
+    <value>Groups stop in their own order. A board without contact is left as it is.</value>
+  </data>
+  <data name="Relays.DefaultName" xml:space="preserve">
+    <value>Relay {0}</value>
+    <comment>A relay's name until someone gives it one: {0} is its number on the board.</comment>
+  </data>
+  <data name="Relays.Detail.Active" xml:space="preserve">
+    <value>{0}: shown in the list. Untick it for relays that aren't used.</value>
+    <comment>{0} is Relays.Detail.ActiveWord, in bold.</comment>
+  </data>
+  <data name="Relays.Detail.ActiveWord" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="Relays.Detail.InGroup" xml:space="preserve">
+    <value>This relay is in the group {0} and is switched from there, in the group's order.</value>
+    <comment>{0} is the group's name, in bold.</comment>
+  </data>
+  <data name="Relays.Detail.Limit" xml:space="preserve">
+    <value>Turn off automatically after</value>
+  </data>
+  <data name="Relays.Detail.LimitHint" xml:space="preserve">
+    <value>Applies when someone turns the relay on by hand.</value>
+  </data>
+  <data name="Relays.Detail.LimitNow" xml:space="preserve">
+    <value>The relay has been on longer than that and turns off when you save.</value>
+  </data>
+  <data name="Relays.Detail.NameLabel" xml:space="preserve">
+    <value>RELAY {0} · NAME</value>
+    <comment>{0} is the relay's number on the board.</comment>
+  </data>
+  <data name="Relays.Detail.NoEvents" xml:space="preserve">
+    <value>Nothing has happened to this relay yet.</value>
+  </data>
+  <data name="Relays.Detail.NoSchedules" xml:space="preserve">
+    <value>No schedules. Add one to turn the relay on at set times.</value>
+  </data>
+  <data name="Relays.Detail.OpenGroup" xml:space="preserve">
+    <value>Open the group</value>
+  </data>
+  <data name="Relays.Detail.Schedules" xml:space="preserve">
+    <value>Schedules</value>
+  </data>
+  <data name="Relays.Detail.TurnOff" xml:space="preserve">
+    <value>TURN OFF</value>
+  </data>
+  <data name="Relays.Detail.TurnOn" xml:space="preserve">
+    <value>TURN ON</value>
+  </data>
+  <data name="Relays.GroupLabel" xml:space="preserve">
+    <value>GROUP · {0}</value>
+    <comment>Over a group's name: {0} is its relays' numbers, e.g. "1 → 2".</comment>
+  </data>
+  <data name="Relays.Groups" xml:space="preserve">
+    <value>Groups</value>
+    <comment>The heading over the group cards.</comment>
+  </data>
+  <data name="Relays.Hi" xml:space="preserve">
+    <value>Hi {0}</value>
+    <comment>The greeting at the top of Relays: {0} is the person's name.</comment>
+  </data>
+  <data name="Relays.InGroup" xml:space="preserve">
+    <value>This relay is in a group and is switched from the group.</value>
+  </data>
+  <data name="Relays.InputLabel" xml:space="preserve">
+    <value>INPUT {0}</value>
+    <comment>Over an input's name: {0} is its number on the board.</comment>
+  </data>
+  <data name="Relays.Inputs" xml:space="preserve">
+    <value>Inputs</value>
+    <comment>The heading over the input cards.</comment>
+  </data>
+  <data name="Relays.List.Last" xml:space="preserve">
+    <value>{0} and {1}</value>
+    <comment>The last two names in a list.</comment>
+  </data>
+  <data name="Relays.List.Separator" xml:space="preserve">
+    <value>, </value>
+    <comment>Between names in a list, except the last two.</comment>
+  </data>
+  <data name="Relays.Lost.None" xml:space="preserve">
+    <value>no contact</value>
+  </data>
+  <data name="Relays.Lost.Since" xml:space="preserve">
+    <value>no contact since {0}</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Relays.Lost.Yet" xml:space="preserve">
+    <value>no contact yet</value>
+    <comment>After a board's name, for a board the filter hides.</comment>
+  </data>
+  <data name="Relays.Missing" xml:space="preserve">
+    <value>The relay doesn't exist.</value>
+  </data>
+  <data name="Relays.NewGroup" xml:space="preserve">
+    <value>New group</value>
+  </data>
+  <data name="Relays.NoContact.FirstAnswer" xml:space="preserve">
+    <value>Waiting for its first answer.</value>
+  </data>
+  <data name="Relays.NoContact.MayBeWrong" xml:space="preserve">
+    <value>The states below may be wrong.</value>
+  </data>
+  <data name="Relays.NoContact.Named" xml:space="preserve">
+    <value>No contact with {0}</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Relays.NoContact.One" xml:space="preserve">
+    <value>No contact with the relay board</value>
+  </data>
+  <data name="Relays.NoContact.Since" xml:space="preserve">
+    <value>Since {0}. The states below may be wrong.</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Relays.NoContactYet.Named" xml:space="preserve">
+    <value>No contact with {0} yet</value>
+    <comment>{0} is the board's name.</comment>
+  </data>
+  <data name="Relays.NoContactYet.One" xml:space="preserve">
+    <value>No contact with the relay board yet</value>
+  </data>
+  <data name="Relays.OnBoards_One" xml:space="preserve">
+    <value>on {0} board</value>
+  </data>
+  <data name="Relays.OnBoards_Other" xml:space="preserve">
+    <value>on {0} boards</value>
+  </data>
+  <data name="Relays.OnCount" xml:space="preserve">
+    <value>{0} of {1} on</value>
+    <comment>How many of the shown relays and groups are on, e.g. "3 of 8 on".</comment>
+  </data>
+  <data name="Relays.Online.One" xml:space="preserve">
+    <value>Board online · updated {0}</value>
+    <comment>{0} is Relays.Updated.Now or Relays.Updated.MinutesAgo.</comment>
+  </data>
+  <data name="Relays.Online.Several" xml:space="preserve">
+    <value>Online · updated {0}</value>
+    <comment>As Relays.Online.One, under a board's name.</comment>
+  </data>
+  <data name="Relays.Problem.SeeSettings" xml:space="preserve">
+    <value>{0} See Settings.</value>
+    <comment>{0} is why the board refuses the connection, as Boards.Problem.* gives it.</comment>
+  </data>
+  <data name="Relays.RelayLabel" xml:space="preserve">
+    <value>RELAY {0}</value>
+    <comment>Over a relay's name: {0} is its number on the board.</comment>
+  </data>
+  <data name="Relays.Relays" xml:space="preserve">
+    <value>Relays</value>
+    <comment>The heading over the relay cards.</comment>
+  </data>
+  <data name="Relays.Save.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
+  </data>
+  <data name="Relays.Save.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+  <data name="Relays.Sentence.Off" xml:space="preserve">
+    <value>Off right now.</value>
+  </data>
+  <data name="Relays.Sentence.On" xml:space="preserve">
+    <value>On right now.</value>
+  </data>
+  <data name="Relays.Sentence.OnSince" xml:space="preserve">
+    <value>On since {0}.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceBy" xml:space="preserve">
+    <value>On since {0}, by {1}.</value>
+    <comment>{1} is the person's name.</comment>
+  </data>
+  <data name="Relays.Sentence.OnSinceBySchedule" xml:space="preserve">
+    <value>On since {0}, by a schedule.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceByYou" xml:space="preserve">
+    <value>On since {0}, by you.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceOutside" xml:space="preserve">
+    <value>On since {0}, outside the app.</value>
+  </data>
+  <data name="Relays.Sentence.TurnsOff" xml:space="preserve">
+    <value>{0} Turns off {1}.</value>
+    <comment>{0} is one of the sentences above, {1} a time.</comment>
+  </data>
+  <data name="Relays.Showing.Boards" xml:space="preserve">
+    <value>Showing {0} of {1} boards · {2} of {3} on</value>
+    <comment>While the board filter hides some boards.</comment>
+  </data>
+  <data name="Relays.Showing.Names" xml:space="preserve">
+    <value>Showing {0}</value>
+    <comment>{0} is the shown boards' names.</comment>
+  </data>
+  <data name="Relays.Status.LeaveIt" xml:space="preserve">
+    <value>Leave it</value>
+    <comment>Beside "Try again" under Relays.Status.Unconfirmed.</comment>
+  </data>
+  <data name="Relays.Status.Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Relays.Status.OffSince" xml:space="preserve">
+    <value>Off since {0}</value>
+  </data>
+  <data name="Relays.Status.OffSinceBy" xml:space="preserve">
+    <value>Off since {0} · {1}</value>
+    <comment>{1} is who turned it off.</comment>
+  </data>
+  <data name="Relays.Status.On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Relays.Status.OnSince" xml:space="preserve">
+    <value>On since {0}</value>
+  </data>
+  <data name="Relays.Status.OnSinceBy" xml:space="preserve">
+    <value>On since {0} · {1}</value>
+    <comment>{1} is who turned it on.</comment>
+  </data>
+  <data name="Relays.Status.OnSinceByOff" xml:space="preserve">
+    <value>On since {0} · {1} · off {2}</value>
+    <comment>{1} is who turned it on, {2} when it turns off.</comment>
+  </data>
+  <data name="Relays.Status.OnSinceOff" xml:space="preserve">
+    <value>On since {0} · off {1}</value>
+    <comment>{1} is when it turns off.</comment>
+  </data>
+  <data name="Relays.Status.ScheduleOn" xml:space="preserve">
+    <value>Schedule: on {0}</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Relays.Status.Unconfirmed" xml:space="preserve">
+    <value>The board didn't answer. The relay may or may not have switched.</value>
+  </data>
+  <data name="Relays.Status.Waiting" xml:space="preserve">
+    <value>Waiting for the board</value>
+    <comment>In place of every state before the board's first answer.</comment>
+  </data>
+  <data name="Relays.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+    <comment>Confirms Relays.ConfirmAllOff.</comment>
+  </data>
+  <data name="Relays.Unreachable.One" xml:space="preserve">
+    <value>Couldn't reach {0}. Its relays are as they were.</value>
+    <comment>{0} is a board's name.</comment>
+  </data>
+  <data name="Relays.Unreachable.Several" xml:space="preserve">
+    <value>Couldn't reach {0}. Their relays are as they were.</value>
+    <comment>{0} is the boards' names, as Relays.List.Last joins them.</comment>
+  </data>
+  <data name="Relays.Updated.MinutesAgo" xml:space="preserve">
+    <value>{0} min ago</value>
+  </data>
+  <data name="Relays.Updated.Now" xml:space="preserve">
+    <value>just now</value>
+  </data>
+  <data name="Relays.When.Date" xml:space="preserve">
+    <value>{0} {1}</value>
+    <comment>{0} is the date in Relays.When.DateFormat, {1} the time.</comment>
+  </data>
+  <data name="Relays.When.DateFormat" xml:space="preserve">
+    <value>d MMM</value>
+    <comment>A .NET date format for a day this year, e.g. "3 Nov". Not a sentence: change only the order and the parts.</comment>
+  </data>
+  <data name="Relays.When.Tomorrow" xml:space="preserve">
+    <value>tomorrow {0}</value>
+  </data>
+  <data name="Relays.When.Yesterday" xml:space="preserve">
+    <value>yesterday {0}</value>
+    <comment>{0} is a time, e.g. 14:02.</comment>
+  </data>
+  <data name="Relays.WhyUnknown" xml:space="preserve">
+    <value>Why is the time unknown for {0}?</value>
+    <comment>Read out by screen readers: {0} is the input's name.</comment>
+  </data>
+  <data name="Schedules.And" xml:space="preserve">
+    <value>{0} and {1}</value>
+    <comment>The last two days of a list, e.g. "Monday, Wednesday and Friday".</comment>
+  </data>
+  <data name="Schedules.Days" xml:space="preserve">
+    <value>Which days?</value>
+  </data>
+  <data name="Schedules.Delete" xml:space="preserve">
+    <value>Delete schedule</value>
+  </data>
+  <data name="Schedules.Delete.Title" xml:space="preserve">
+    <value>Delete the schedule?</value>
+  </data>
+  <data name="Schedules.EnterBoth" xml:space="preserve">
+    <value>Enter a time for both turning on and turning off.</value>
+  </data>
+  <data name="Schedules.EnterGroup" xml:space="preserve">
+    <value>Enter when the group turns on and off.</value>
+  </data>
+  <data name="Schedules.EnterRelay" xml:space="preserve">
+    <value>Enter when the relay turns on and off.</value>
+  </data>
+  <data name="Schedules.EveryDay" xml:space="preserve">
+    <value>Every day</value>
+  </data>
+  <data name="Schedules.GroupMissing" xml:space="preserve">
+    <value>The group doesn't exist.</value>
+  </data>
+  <data name="Schedules.Inline" xml:space="preserve">
+    <value>{0} {1}–{2}</value>
+    <comment>A schedule in an event: its days, then its times.</comment>
+  </data>
+  <data name="Schedules.Missing" xml:space="preserve">
+    <value>The schedule no longer exists.</value>
+  </data>
+  <data name="Schedules.NoDays" xml:space="preserve">
+    <value>No days chosen</value>
+  </data>
+  <data name="Schedules.NoDaysSentence" xml:space="preserve">
+    <value>No days chosen.</value>
+  </data>
+  <data name="Schedules.RelayMissing" xml:space="preserve">
+    <value>The relay doesn't exist.</value>
+  </data>
+  <data name="Schedules.Run" xml:space="preserve">
+    <value>{0}–{1}</value>
+    <comment>Three or more days in a row: the first and the last, e.g. "Mon–Fri".</comment>
+  </data>
+  <data name="Schedules.RunLong" xml:space="preserve">
+    <value>{0} to {1}</value>
+    <comment>E.g. "Monday to Friday".</comment>
+  </data>
+  <data name="Schedules.Save" xml:space="preserve">
+    <value>Save schedule</value>
+  </data>
+  <data name="Schedules.Save.InGroup" xml:space="preserve">
+    <value>This relay is in a group. Add the schedule to the group.</value>
+  </data>
+  <data name="Schedules.Save.NoDay" xml:space="preserve">
+    <value>Choose at least one day.</value>
+  </data>
+  <data name="Schedules.Save.NoTarget" xml:space="preserve">
+    <value>Choose a relay or a group.</value>
+  </data>
+  <data name="Schedules.Save.SameTime" xml:space="preserve">
+    <value>Turning on and turning off can't be at the same time.</value>
+  </data>
+  <data name="Schedules.Separator" xml:space="preserve">
+    <value>, </value>
+    <comment>Between days in a list.</comment>
+  </data>
+  <data name="Schedules.Summary.Group" xml:space="preserve">
+    <value>{0}: the group turns on at {1} and off at {2}.</value>
+  </data>
+  <data name="Schedules.Summary.GroupNextDay" xml:space="preserve">
+    <value>{0}: the group turns on at {1} and off at {2} the next day.</value>
+  </data>
+  <data name="Schedules.Summary.Relay" xml:space="preserve">
+    <value>{0}: the relay turns on at {1} and off at {2}.</value>
+    <comment>{0} is the days, {1} and {2} times.</comment>
+  </data>
+  <data name="Schedules.Summary.RelayNextDay" xml:space="preserve">
+    <value>{0}: the relay turns on at {1} and off at {2} the next day.</value>
+  </data>
+  <data name="Schedules.Times" xml:space="preserve">
+    <value>{0} – {1}</value>
+    <comment>A schedule's times in a list: on and off.</comment>
+  </data>
+  <data name="Schedules.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+  </data>
+  <data name="Schedules.TurnOn" xml:space="preserve">
+    <value>Turn on</value>
+  </data>
+  <data name="Schedules.Weekdays" xml:space="preserve">
+    <value>Weekdays</value>
+  </data>
+  <data name="Settings.Backups" xml:space="preserve">
+    <value>Backups</value>
+  </data>
+  <data name="Settings.Backups.Failed" xml:space="preserve">
+    <value>The copy couldn't be made. Try again in a while.</value>
+  </data>
+  <data name="Settings.Backups.Hint" xml:space="preserve">
+    <value>The app copies everything every night at 02:30 and keeps the latest 14. Download one now and then and keep it somewhere else.</value>
+  </data>
+  <data name="Settings.Backups.Latest" xml:space="preserve">
+    <value>Latest: {0} · {1}</value>
+    <comment>{0} is when the copy was made, {1} its size, e.g. "68 kB".</comment>
+  </data>
+  <data name="Settings.Backups.Made" xml:space="preserve">
+    <value>Copy made.</value>
+  </data>
+  <data name="Settings.Backups.Make" xml:space="preserve">
+    <value>Make a copy now</value>
+  </data>
+  <data name="Settings.Backups.None" xml:space="preserve">
+    <value>No copy yet.</value>
+  </data>
+  <data name="Settings.BoardLine" xml:space="preserve">
+    <value>{0} · {1}</value>
+    <comment>A board in the list: its model and its relays, e.g. "Velleman VM201 · 8 relays".</comment>
+  </data>
+  <data name="Settings.BoardLine.Host" xml:space="preserve">
+    <value>{0} · {1} · {2}</value>
+    <comment>As Settings.BoardLine, with the board's address.</comment>
+  </data>
+  <data name="Settings.Boards" xml:space="preserve">
+    <value>Relay boards</value>
+  </data>
+  <data name="Settings.Boards.Hint" xml:space="preserve">
+    <value>Tap a board to change its name, address or login, or to remove it.</value>
+  </data>
+  <data name="Settings.Debugging" xml:space="preserve">
+    <value>Debugging</value>
+  </data>
+  <data name="Settings.Debugging.Check" xml:space="preserve">
+    <value>Show the traffic to the relay board</value>
+  </data>
+  <data name="Settings.Debugging.Hint" xml:space="preserve">
+    <value>Only for you. Every message to and from the board shows for a moment at the bottom of the page, and the whole list under the Debug tab.</value>
+  </data>
+  <data name="Settings.Kilobytes" xml:space="preserve">
+    <value>{0} kB</value>
+  </data>
+  <data name="Settings.Megabytes" xml:space="preserve">
+    <value>{0:0.0} MB</value>
+  </data>
+  <data name="Settings.NoAddress" xml:space="preserve">
+    <value>No address yet</value>
+  </data>
+  <data name="Settings.NoContact" xml:space="preserve">
+    <value>No contact</value>
+  </data>
+  <data name="Settings.NoContactSince" xml:space="preserve">
+    <value>No contact since {0}</value>
+    <comment>{0} is a time, as Relays.When gives it.</comment>
+  </data>
+  <data name="Settings.NoContactYet" xml:space="preserve">
+    <value>No contact yet</value>
+  </data>
+  <data name="Settings.Online" xml:space="preserve">
+    <value>Online</value>
+  </data>
+  <data name="Settings.People" xml:space="preserve">
+    <value>People</value>
+  </data>
+  <data name="Settings.People.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
+  </data>
+  <data name="Settings.People.Gone" xml:space="preserve">
+    <value>That person no longer exists.</value>
+  </data>
+  <data name="Settings.People.Hint" xml:space="preserve">
+    <value>The names shown in the app and under Events.</value>
+  </data>
+  <data name="Settings.People.NameTooLong" xml:space="preserve">
+    <value>The name can be at most {0} characters.</value>
+  </data>
+  <data name="Settings.Relays_One" xml:space="preserve">
+    <value>{0} relay</value>
+  </data>
+  <data name="Settings.Relays_Other" xml:space="preserve">
+    <value>{0} relays</value>
+  </data>
+  <data name="Setup.About.Example" xml:space="preserve">
+    <value>Jane</value>
+    <comment>An example name.</comment>
+  </data>
+  <data name="Setup.About.Hint" xml:space="preserve">
+    <value>Shown in the app and under Events, e.g. "{0} turned on Compressor".</value>
+    <comment>{0} is the name typed, or Setup.About.Example.</comment>
+  </data>
+  <data name="Setup.About.Intro" xml:space="preserve">
+    <value>Your name in Contactor. Then four short questions about your relay board. You can change all of it later under Settings.</value>
+  </data>
+  <data name="Setup.About.Name" xml:space="preserve">
+    <value>Your name</value>
+  </data>
+  <data name="Setup.About.Need" xml:space="preserve">
+    <value>YOU'LL NEED</value>
+  </data>
+  <data name="Setup.About.NeedText" xml:space="preserve">
+    <value>The relay board switched on and plugged into the same network as this app. Your router lists its address among its connected devices.</value>
+  </data>
+  <data name="Setup.About.Title" xml:space="preserve">
+    <value>About you</value>
+  </data>
+  <data name="Setup.Access.Audience" xml:space="preserve">
+    <value>AUD tag</value>
+  </data>
+  <data name="Setup.Access.AudienceHint" xml:space="preserve">
+    <value>Zero Trust → Access controls → Applications → the application for {0} → Edit → Additional settings.</value>
+    <comment>{0} is the tunnel's address, or Setup.Access.YourAddress.</comment>
+  </data>
+  <data name="Setup.Access.TeamDomain" xml:space="preserve">
+    <value>Team domain</value>
+  </data>
+  <data name="Setup.Access.TeamDomainHint" xml:space="preserve">
+    <value>Zero Trust → Settings → Team name and domain.</value>
+  </data>
+  <data name="Setup.Access.YourAddress" xml:space="preserve">
+    <value>your address</value>
+  </data>
+  <data name="Setup.BoardFirst" xml:space="preserve">
+    <value>Choose your relay board first.</value>
+  </data>
+  <data name="Setup.Capabilities.Analog_One" xml:space="preserve">
+    <value>{0} analog input</value>
+  </data>
+  <data name="Setup.Capabilities.Analog_Other" xml:space="preserve">
+    <value>{0} analog inputs</value>
+  </data>
+  <data name="Setup.Capabilities.Inputs_One" xml:space="preserve">
+    <value>{0} input</value>
+  </data>
+  <data name="Setup.Capabilities.Inputs_Other" xml:space="preserve">
+    <value>{0} inputs</value>
+  </data>
+  <data name="Setup.Capabilities.Relays_One" xml:space="preserve">
+    <value>{0} relay</value>
+  </data>
+  <data name="Setup.Capabilities.Relays_Other" xml:space="preserve">
+    <value>{0} relays</value>
+  </data>
+  <data name="Setup.Capabilities.Separator" xml:space="preserve">
+    <value> · </value>
+    <comment>Between a model's relays and inputs: "8 relays · 1 input".</comment>
+  </data>
+  <data name="Setup.Choose.SignIn" xml:space="preserve">
+    <value>Choose how people sign in.</value>
+  </data>
+  <data name="Setup.Choose.WayIn" xml:space="preserve">
+    <value>Choose how people reach the app.</value>
+  </data>
+  <data name="Setup.Cloudflare.Address" xml:space="preserve">
+    <value>The address must be the tunnel's public hostname, e.g. relays.example.com.</value>
+  </data>
+  <data name="Setup.Cloudflare.Audience" xml:space="preserve">
+    <value>The AUD tag is the long code under the Access application's Additional settings.</value>
+  </data>
+  <data name="Setup.Cloudflare.TeamDomain" xml:space="preserve">
+    <value>The team domain must be your team's address at Cloudflare, e.g. myteam.cloudflareaccess.com.</value>
+  </data>
+  <data name="Setup.Cloudflare.Token" xml:space="preserve">
+    <value>The tunnel token is the long code after --token in the tunnel's install command.</value>
+  </data>
+  <data name="Setup.CloudflareAccess.AddressFirst" xml:space="preserve">
+    <value>Go back and save the tunnel's address first: people open Contactor there.</value>
+  </data>
+  <data name="Setup.CloudflareAccess.OnlyCloudflare" xml:space="preserve">
+    <value>Cloudflare Access only works when people reach the app through Cloudflare.</value>
+  </data>
+  <data name="Setup.Code.Intro" xml:space="preserve">
+    <value>First, show that you installed it. The app wrote a setup code to its log when it started.</value>
+  </data>
+  <data name="Setup.Code.Label" xml:space="preserve">
+    <value>Setup code</value>
+  </data>
+  <data name="Setup.Code.Title" xml:space="preserve">
+    <value>Welcome to Contactor</value>
+  </data>
+  <data name="Setup.Code.TooMany" xml:space="preserve">
+    <value>Too many wrong codes. Wait a minute, then try again.</value>
+  </data>
+  <data name="Setup.Code.Where" xml:space="preserve">
+    <value>WHERE IS IT?</value>
+  </data>
+  <data name="Setup.Code.WhereText" xml:space="preserve">
+    <value>In the app's log, e.g. {0}, or the log view of your container platform. A new code is made each time the app starts.</value>
+    <comment>{0} is a command, in a code font: docker logs contactor.</comment>
+  </data>
+  <data name="Setup.Code.Wrong" xml:space="preserve">
+    <value>That isn't the setup code. Check the log and try again.</value>
+  </data>
+  <data name="Setup.Done.Already" xml:space="preserve">
+    <value>This installation is set up already.</value>
+  </data>
+  <data name="Setup.Done.Board" xml:space="preserve">
+    <value>BOARD</value>
+  </data>
+  <data name="Setup.Done.BoardAt" xml:space="preserve">
+    <value>{0} at {1}</value>
+    <comment>A board's model and its address.</comment>
+  </data>
+  <data name="Setup.Done.BoardNoAddress" xml:space="preserve">
+    <value>{0}, no address yet</value>
+  </data>
+  <data name="Setup.Done.Group" xml:space="preserve">
+    <value>Make a group, e.g. a fan heater</value>
+  </data>
+  <data name="Setup.Done.Looking" xml:space="preserve">
+    <value>The app keeps looking for your relay board. You can change its address under Settings.</value>
+  </data>
+  <data name="Setup.Done.Next" xml:space="preserve">
+    <value>Good next steps</value>
+  </data>
+  <data name="Setup.Done.Ready" xml:space="preserve">
+    <value>Your relay board is ready.</value>
+  </data>
+  <data name="Setup.Done.Relays" xml:space="preserve">
+    <value>RELAYS</value>
+  </data>
+  <data name="Setup.Done.Schedule" xml:space="preserve">
+    <value>Add a schedule, e.g. to {0}</value>
+    <comment>{0} is a relay's name.</comment>
+  </data>
+  <data name="Setup.Done.Title" xml:space="preserve">
+    <value>All set</value>
+  </data>
+  <data name="Setup.Done.TitleName" xml:space="preserve">
+    <value>All set, {0}</value>
+    <comment>{0} is the person's name.</comment>
+  </data>
+  <data name="Setup.Elsewhere.Email" xml:space="preserve">
+    <value>Contactor now only answers through {0}. Open it there and sign in with your e-mail.</value>
+  </data>
+  <data name="Setup.Elsewhere.EmailGoesOn" xml:space="preserve">
+    <value>Contactor now only answers through {0}. Open it there and sign in with your e-mail: the guide goes on.</value>
+  </data>
+  <data name="Setup.Elsewhere.Tailscale" xml:space="preserve">
+    <value>Contactor now only answers through {0}. Open it there, on a phone or computer on your Tailscale network.</value>
+    <comment>{0} is the way in's name.</comment>
+  </data>
+  <data name="Setup.Elsewhere.TailscaleGoesOn" xml:space="preserve">
+    <value>Contactor now only answers through {0}. Open it there, on a phone or computer on your Tailscale network: the guide goes on.</value>
+  </data>
+  <data name="Setup.Elsewhere.Title" xml:space="preserve">
+    <value>Go on at your new address</value>
+  </data>
+  <data name="Setup.InUse" xml:space="preserve">
+    <value>{0} in use</value>
+  </data>
+  <data name="Setup.InUse.Hidden" xml:space="preserve">
+    <value>{0}, {1} hidden</value>
+    <comment>{0} is Setup.InUse or Setup.InUse.None, {1} a number.</comment>
+  </data>
+  <data name="Setup.InUse.None" xml:space="preserve">
+    <value>None in use</value>
+  </data>
+  <data name="Setup.None.OnlyHere" xml:space="preserve">
+    <value>No sign-in only works when the app is only on this network.</value>
+  </data>
+  <data name="Setup.None.Warning" xml:space="preserve">
+    <value>Anyone on your network can switch the relays, and the events can't say who did it. Choose a sign-in to reach the app from outside.</value>
+  </data>
+  <data name="Setup.NotRecommendedTag" xml:space="preserve">
+    <value>NOT RECOMMENDED</value>
+  </data>
+  <data name="Setup.Only.None" xml:space="preserve">
+    <value>Not available yet.</value>
+    <comment>Why a sign-in can't be chosen: no way in works with it.</comment>
+  </data>
+  <data name="Setup.Only.Or" xml:space="preserve">
+    <value> or </value>
+    <comment>Between the ways in of Setup.Only.With.</comment>
+  </data>
+  <data name="Setup.Only.This" xml:space="preserve">
+    <value>Only on this network.</value>
+    <comment>Why a sign-in can't be chosen: it works only on this network.</comment>
+  </data>
+  <data name="Setup.Only.With" xml:space="preserve">
+    <value>Only with {0}.</value>
+    <comment>{0} is the ways in it works with, e.g. "Cloudflare".</comment>
+  </data>
+  <data name="Setup.Open" xml:space="preserve">
+    <value>Open {0}</value>
+    <comment>{0} is the app's new address.</comment>
+  </data>
+  <data name="Setup.Part1" xml:space="preserve">
+    <value>PART 1 OF 2 · THE APP</value>
+  </data>
+  <data name="Setup.Part2" xml:space="preserve">
+    <value>PART 2 OF 2 · THE BOARD</value>
+  </data>
+  <data name="Setup.Recommended" xml:space="preserve">
+    <value>Recommended with {0}: {1}.</value>
+    <comment>{0} is the way in, {1} the sign-in.</comment>
+  </data>
+  <data name="Setup.RecommendedTag" xml:space="preserve">
+    <value>RECOMMENDED</value>
+  </data>
+  <data name="Setup.Refused.AccessDenied" xml:space="preserve">
+    <value>Access denied.</value>
+    <comment>The whole page for a request the sign-in turns away.</comment>
+  </data>
+  <data name="Setup.Refused.OwnNetwork" xml:space="preserve">
+    <value>Contactor can only be opened on its own network.</value>
+    <comment>The whole page for a request from outside the network, with "Only on this network".</comment>
+  </data>
+  <data name="Setup.RelayError" xml:space="preserve">
+    <value>Relay {0}: {1}</value>
+    <comment>A relay that couldn't be saved: its number and why.</comment>
+  </data>
+  <data name="Setup.SignIn.CloudflareAccess.Description" xml:space="preserve">
+    <value>A code by e-mail, through Cloudflare. Who may sign in is set in Cloudflare.</value>
+  </data>
+  <data name="Setup.SignIn.CloudflareAccess.Name" xml:space="preserve">
+    <value>Cloudflare Access</value>
+    <comment>A product's name.</comment>
+  </data>
+  <data name="Setup.SignIn.Label" xml:space="preserve">
+    <value>Sign-ins</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Setup.SignIn.None.Description" xml:space="preserve">
+    <value>Anyone who can open the app can switch the relays, and the events can't say who did it.</value>
+  </data>
+  <data name="Setup.SignIn.None.Name" xml:space="preserve">
+    <value>No sign-in</value>
+  </data>
+  <data name="Setup.SignIn.TailscaleIdentity.Description" xml:space="preserve">
+    <value>Your Tailscale account: Tailscale says who each person is. Who may come in is set in Tailscale.</value>
+  </data>
+  <data name="Setup.SignIn.TailscaleIdentity.Name" xml:space="preserve">
+    <value>Tailscale identity</value>
+  </data>
+  <data name="Setup.SignIn.Title" xml:space="preserve">
+    <value>How do people sign in?</value>
+  </data>
+  <data name="Setup.Simplest" xml:space="preserve">
+    <value>SIMPLEST</value>
+  </data>
+  <data name="Setup.Step" xml:space="preserve">
+    <value>STEP {0} OF {1}</value>
+  </data>
+  <data name="Setup.Tailscale.Answers" xml:space="preserve">
+    <value>Contactor answers at https://{0}.</value>
+  </data>
+  <data name="Setup.Tailscale.Approve" xml:space="preserve">
+    <value>Approve {0} in Tailscale's admin console, under Machines. Contactor goes on by itself.</value>
+    <comment>{0} is the app's name on the Tailscale network.</comment>
+  </data>
+  <data name="Setup.Tailscale.AuthKey" xml:space="preserve">
+    <value>The auth key is the long code that starts with tskey-, from Settings → Keys in Tailscale's admin console.</value>
+  </data>
+  <data name="Setup.Tailscale.CheckFailed" xml:space="preserve">
+    <value>Contactor couldn't ask Tailscale how it stands. It tries again.</value>
+  </data>
+  <data name="Setup.Tailscale.Expiry" xml:space="preserve">
+    <value>In Tailscale's admin console, under Machines, turn off key expiry for {0}, or it leaves the network after a few months. Under Access controls, let devices reach it only on port 443.</value>
+  </data>
+  <data name="Setup.Tailscale.Https" xml:space="preserve">
+    <value>Turn on HTTPS for your Tailscale network, with Funnel left off. Contactor goes on by itself.</value>
+  </data>
+  <data name="Setup.Tailscale.Joining" xml:space="preserve">
+    <value>Joining your Tailscale network</value>
+  </data>
+  <data name="Setup.Tailscale.KeyHint" xml:space="preserve">
+    <value>Tailscale's admin console → Settings → Keys → Generate auth key, not ephemeral. Under DNS, also turn on MagicDNS and HTTPS Certificates.</value>
+  </data>
+  <data name="Setup.Tailscale.KeyLabel" xml:space="preserve">
+    <value>Auth key</value>
+  </data>
+  <data name="Setup.Tailscale.KeyRefused" xml:space="preserve">
+    <value>Tailscale didn't take the auth key: {0}</value>
+    <comment>{0} is what Tailscale said, in its own words.</comment>
+  </data>
+  <data name="Setup.Tailscale.KeyTimedOut" xml:space="preserve">
+    <value>Tailscale didn't take the auth key: Tailscale didn't answer in time.</value>
+  </data>
+  <data name="Setup.Tailscale.Minute" xml:space="preserve">
+    <value>It can take a minute.</value>
+  </data>
+  <data name="Setup.Tailscale.Name" xml:space="preserve">
+    <value>The name may only have letters a to z, digits and dashes, e.g. contactor.</value>
+  </data>
+  <data name="Setup.Tailscale.NameHint" xml:space="preserve">
+    <value>People open Contactor at https://{0}.{1}.ts.net.</value>
+    <comment>{0} is the name, {1} "your-network" in italics.</comment>
+  </data>
+  <data name="Setup.Tailscale.NameLabel" xml:space="preserve">
+    <value>Name on your Tailscale network</value>
+  </data>
+  <data name="Setup.Tailscale.NeedsKey" xml:space="preserve">
+    <value>Tailscale needs an auth key: save one in the setup guide.</value>
+  </data>
+  <data name="Setup.Tailscale.NoServeAddress" xml:space="preserve">
+    <value>Contactor has no address for Tailscale Serve (Tailscale:ServeAddress).</value>
+  </data>
+  <data name="Setup.Tailscale.Online" xml:space="preserve">
+    <value>On your Tailscale network</value>
+  </data>
+  <data name="Setup.Tailscale.ServeFailed" xml:space="preserve">
+    <value>Tailscale Serve didn't start: {0}</value>
+    <comment>{0} is what Tailscale said, in its own words.</comment>
+  </data>
+  <data name="Setup.Tailscale.ServeNoAnswer" xml:space="preserve">
+    <value>Tailscale Serve didn't answer. Contactor tries again.</value>
+  </data>
+  <data name="Setup.Tailscale.ServeNotTaken" xml:space="preserve">
+    <value>Tailscale Serve didn't take the app. Contactor tries again.</value>
+  </data>
+  <data name="Setup.Tailscale.Stopped" xml:space="preserve">
+    <value>Tailscale is stopped on this machine.</value>
+  </data>
+  <data name="Setup.Tailscale.TurnOnHttps" xml:space="preserve">
+    <value>Open Tailscale to turn on HTTPS</value>
+  </data>
+  <data name="Setup.Tailscale.YourNetwork" xml:space="preserve">
+    <value>your-network</value>
+  </data>
+  <data name="Setup.TailscaleIdentity.OnlyTailscale" xml:space="preserve">
+    <value>Tailscale identity only works when people reach the app through Tailscale.</value>
+  </data>
+  <data name="Setup.TailscaleIdentity.Wait" xml:space="preserve">
+    <value>Wait until Contactor is on your Tailscale network: people open it there.</value>
+  </data>
+  <data name="Setup.ToRelays" xml:space="preserve">
+    <value>Go to Relays</value>
+  </data>
+  <data name="Setup.Tunnel.Address" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="Setup.Tunnel.AddressHint" xml:space="preserve">
+    <value>The tunnel's public hostname: where people will open Contactor. In Cloudflare, point it at {0}.</value>
+    <comment>{0} is the app's address in the container network, in a code font.</comment>
+  </data>
+  <data name="Setup.Tunnel.Answers" xml:space="preserve">
+    <value>Cloudflare answers at {0}.</value>
+  </data>
+  <data name="Setup.Tunnel.Connected" xml:space="preserve">
+    <value>Tunnel connected</value>
+  </data>
+  <data name="Setup.Tunnel.Minute" xml:space="preserve">
+    <value>It can take a minute. Check the token if it doesn't.</value>
+  </data>
+  <data name="Setup.Tunnel.Token" xml:space="preserve">
+    <value>Tunnel token</value>
+  </data>
+  <data name="Setup.Tunnel.TokenHint" xml:space="preserve">
+    <value>Zero Trust → Networks → Tunnels → your tunnel. It is the long code after {0} in the install command.</value>
+    <comment>{0} is "--token", in a code font.</comment>
+  </data>
+  <data name="Setup.Tunnel.Waiting" xml:space="preserve">
+    <value>Waiting for the tunnel to connect</value>
+  </data>
+  <data name="Setup.Unchanged" xml:space="preserve">
+    <value>unchanged</value>
+    <comment>In an empty secret field: the saved one stays.</comment>
+  </data>
+  <data name="Setup.WayIn.Cloudflare.Description" xml:space="preserve">
+    <value>Cloudflare Tunnel: a public link on your own domain. Needs a Cloudflare account and a domain.</value>
+  </data>
+  <data name="Setup.WayIn.Cloudflare.Name" xml:space="preserve">
+    <value>Cloudflare</value>
+    <comment>A product's name.</comment>
+  </data>
+  <data name="Setup.WayIn.Intro" xml:space="preserve">
+    <value>Where should people be able to open Contactor?</value>
+  </data>
+  <data name="Setup.WayIn.Label" xml:space="preserve">
+    <value>Ways in</value>
+    <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="Setup.WayIn.Local.Description" xml:space="preserve">
+    <value>At home or in the workshop, at the address of the machine Contactor runs on.</value>
+  </data>
+  <data name="Setup.WayIn.Local.Name" xml:space="preserve">
+    <value>Only on this network</value>
+  </data>
+  <data name="Setup.WayIn.Tailscale.Description" xml:space="preserve">
+    <value>Tailscale Serve: only phones and computers on your Tailscale network can open it. Each needs the Tailscale app.</value>
+  </data>
+  <data name="Setup.WayIn.Tailscale.Name" xml:space="preserve">
+    <value>Tailscale</value>
+    <comment>A product's name.</comment>
+  </data>
+  <data name="Setup.WayIn.Title" xml:space="preserve">
+    <value>How do people reach the app?</value>
+  </data>
+  <data name="Setup.WithSignIn" xml:space="preserve">
+    <value>With a sign-in, the events show who did what.</value>
+  </data>
+  <data name="Updates.Ask" xml:space="preserve">
+    <value>Update to {0}?</value>
+  </data>
+  <data name="Updates.Ask.Relays" xml:space="preserve">
+    <value>The relays stay as they are. Schedules and auto-offs catch up once it's back.</value>
+  </data>
+  <data name="Updates.Ask.Restart" xml:space="preserve">
+    <value>Contactor restarts. That takes about a minute, and the app doesn't answer meanwhile.</value>
+  </data>
+  <data name="Updates.Available" xml:space="preserve">
+    <value>Version {0} is available</value>
+  </data>
+  <data name="Updates.Backup" xml:space="preserve">
+    <value>Couldn't back up before updating</value>
+  </data>
+  <data name="Updates.Backup.Text" xml:space="preserve">
+    <value>Nothing was changed. Try again in a while.</value>
+  </data>
+  <data name="Updates.Cancelled" xml:space="preserve">
+    <value>The update was cancelled</value>
+  </data>
+  <data name="Updates.CheckFailed" xml:space="preserve">
+    <value>Couldn't check for updates.</value>
+  </data>
+  <data name="Updates.CheckFailedSince" xml:space="preserve">
+    <value>Couldn't check for updates. Last checked {0} at {1}.</value>
+    <comment>{0} is a day: Updates.Today, Updates.Yesterday or a date.</comment>
+  </data>
+  <data name="Updates.Checked" xml:space="preserve">
+    <value>Checked {0} at {1}.</value>
+    <comment>{0} is a day: Updates.Today, Updates.Yesterday or a date.</comment>
+  </data>
+  <data name="Updates.DayFormat" xml:space="preserve">
+    <value>d MMMM</value>
+    <comment>A .NET date format for a release's day, e.g. "20 November". Not a sentence: change only the order and the parts.</comment>
+  </data>
+  <data name="Updates.Development" xml:space="preserve">
+    <value>This is a development version of Contactor. It isn't updated from here.</value>
+  </data>
+  <data name="Updates.Done" xml:space="preserve">
+    <value>Updated to {0}</value>
+  </data>
+  <data name="Updates.Done.At" xml:space="preserve">
+    <value>At {0}.</value>
+  </data>
+  <data name="Updates.Done.AtBy" xml:space="preserve">
+    <value>At {0}, by {1}.</value>
+  </data>
+  <data name="Updates.Download" xml:space="preserve">
+    <value>Couldn't download {0}</value>
+  </data>
+  <data name="Updates.Download.Text" xml:space="preserve">
+    <value>Nothing was changed. Check the internet connection and try again.</value>
+  </data>
+  <data name="Updates.Failed" xml:space="preserve">
+    <value>The update to {0} didn't start</value>
+  </data>
+  <data name="Updates.Gigabytes" xml:space="preserve">
+    <value>{0:0.0} GB</value>
+  </data>
+  <data name="Updates.Have" xml:space="preserve">
+    <value>You have version {0}.</value>
+    <comment>{0} is the version, in bold.</comment>
+  </data>
+  <data name="Updates.Interrupted" xml:space="preserve">
+    <value>The update to {0} was interrupted</value>
+  </data>
+  <data name="Updates.Log" xml:space="preserve">
+    <value>What happened</value>
+  </data>
+  <data name="Updates.NewVersion" xml:space="preserve">
+    <value>the new version</value>
+  </data>
+  <data name="Updates.Newest" xml:space="preserve">
+    <value>You have the newest version, {0}.</value>
+    <comment>{0} is the version, in bold.</comment>
+  </data>
+  <data name="Updates.NoAnswer" xml:space="preserve">
+    <value>The update didn't start</value>
+  </data>
+  <data name="Updates.NoAnswer.Text" xml:space="preserve">
+    <value>The update helper on this machine didn't answer. Nothing was changed. Run the install command again to repair it, then try again.</value>
+  </data>
+  <data name="Updates.NoHelper" xml:space="preserve">
+    <value>Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose. Installed with the install command? Run it again: it adds what "Update now" needs.</value>
+  </data>
+  <data name="Updates.NoHelper.Short" xml:space="preserve">
+    <value>Contactor is updated where it was installed, e.g. in Portainer, Unraid or with Docker Compose.</value>
+  </data>
+  <data name="Updates.NoLog" xml:space="preserve">
+    <value>There is no log of this update.</value>
+  </data>
+  <data name="Updates.NotYet" xml:space="preserve">
+    <value>{0} can't be downloaded yet</value>
+  </data>
+  <data name="Updates.NothingChanged" xml:space="preserve">
+    <value>Nothing was changed.</value>
+  </data>
+  <data name="Updates.NothingChanged.Later" xml:space="preserve">
+    <value>Nothing was changed. Try again later.</value>
+  </data>
+  <data name="Updates.NothingChanged.TryAgain" xml:space="preserve">
+    <value>Nothing was changed. Try again.</value>
+  </data>
+  <data name="Updates.Now" xml:space="preserve">
+    <value>Update now</value>
+  </data>
+  <data name="Updates.Now.Hint" xml:space="preserve">
+    <value>Contactor restarts. That takes about a minute. The relays stay as they are, and schedules catch up afterwards.</value>
+  </data>
+  <data name="Updates.Refused.Development" xml:space="preserve">
+    <value>This is a development version: it isn't updated from here.</value>
+  </data>
+  <data name="Updates.Refused.Newest" xml:space="preserve">
+    <value>You have the newest version.</value>
+  </data>
+  <data name="Updates.Refused.NoHelper" xml:space="preserve">
+    <value>Contactor can't update itself on this machine.</value>
+  </data>
+  <data name="Updates.Refused.Running" xml:space="preserve">
+    <value>An update is already under way.</value>
+  </data>
+  <data name="Updates.Refused.Switching" xml:space="preserve">
+    <value>A group is starting or running on. Update once it's done.</value>
+  </data>
+  <data name="Updates.ShowLog" xml:space="preserve">
+    <value>Show what happened</value>
+  </data>
+  <data name="Updates.Signature" xml:space="preserve">
+    <value>{0} didn't pass the check that it's ours</value>
+    <comment>{0} is a version, or Updates.NewVersion with a capital.</comment>
+  </data>
+  <data name="Updates.Signature.Text" xml:space="preserve">
+    <value>So it wasn't installed. Nothing was changed. Try again later.</value>
+  </data>
+  <data name="Updates.Space" xml:space="preserve">
+    <value>Not enough room for {0}</value>
+  </data>
+  <data name="Updates.Space.Needs" xml:space="preserve">
+    <value>Nothing was changed. The update needs {0} of free disk space, and there's {1}. Make room and try again.</value>
+  </data>
+  <data name="Updates.Space.Text" xml:space="preserve">
+    <value>Nothing was changed. Make room on the disk and try again.</value>
+  </data>
+  <data name="Updates.Splash.Title" xml:space="preserve">
+    <value>Contactor is updating</value>
+  </data>
+  <data name="Updates.Splash.To" xml:space="preserve">
+    <value>To version {0}. This takes about a minute, and the page comes back by itself.</value>
+  </data>
+  <data name="Updates.Splash.ToNew" xml:space="preserve">
+    <value>To a new version. This takes about a minute, and the page comes back by itself.</value>
+  </data>
+  <data name="Updates.Stale" xml:space="preserve">
+    <value>The update to {0} didn't finish</value>
+  </data>
+  <data name="Updates.Started" xml:space="preserve">
+    <value>Started at {0}. The relays stay as they are.</value>
+  </data>
+  <data name="Updates.StartedBy" xml:space="preserve">
+    <value>Started by {0} at {1}. The relays stay as they are.</value>
+  </data>
+  <data name="Updates.Step.Backup" xml:space="preserve">
+    <value>Backing up</value>
+  </data>
+  <data name="Updates.Step.Check" xml:space="preserve">
+    <value>Checking the new version</value>
+  </data>
+  <data name="Updates.Step.Download" xml:space="preserve">
+    <value>Downloading {0}</value>
+  </data>
+  <data name="Updates.Step.Now" xml:space="preserve">
+    <value>{0}…</value>
+    <comment>The step under way.</comment>
+  </data>
+  <data name="Updates.Step.Restart" xml:space="preserve">
+    <value>Restarting</value>
+  </data>
+  <data name="Updates.Step.Verify" xml:space="preserve">
+    <value>Checking that it's ours</value>
+  </data>
+  <data name="Updates.Step.Waiting" xml:space="preserve">
+    <value>Waiting for the relays to finish switching</value>
+  </data>
+  <data name="Updates.Switching" xml:space="preserve">
+    <value>The update was stopped because the relays were still switching</value>
+  </data>
+  <data name="Updates.Switching.Text" xml:space="preserve">
+    <value>Try again later. Nothing was changed.</value>
+  </data>
+  <data name="Updates.Title" xml:space="preserve">
+    <value>Updates</value>
+  </data>
+  <data name="Updates.Today" xml:space="preserve">
+    <value>today</value>
+  </data>
+  <data name="Updates.Update" xml:space="preserve">
+    <value>Update</value>
+  </data>
+  <data name="Updates.Updating" xml:space="preserve">
+    <value>Updating from {0} to {1}.</value>
+    <comment>{0} and {1} are versions, in bold.</comment>
+  </data>
+  <data name="Updates.VersionBefore" xml:space="preserve">
+    <value>the version before</value>
+  </data>
+  <data name="Updates.WentBack" xml:space="preserve">
+    <value>The update to {0} didn't work</value>
+  </data>
+  <data name="Updates.WentBack.Text" xml:space="preserve">
+    <value>Contactor went back to {0} at {1}. Nothing was lost.</value>
+  </data>
+  <data name="Updates.WhatsNew" xml:space="preserve">
+    <value>What's new</value>
+  </data>
+  <data name="Updates.Yesterday" xml:space="preserve">
+    <value>yesterday</value>
+  </data>
+</root>

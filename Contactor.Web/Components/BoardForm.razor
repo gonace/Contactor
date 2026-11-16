@@ -8,7 +8,6 @@
 @inject BoardAddressHandler Handler
 @inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
-@inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
 @inject BoardProblemText ProblemText
 @inject TimeProvider Time
@@ -16,8 +15,8 @@
 
 @* One board's card: on Settings with one board ("Relay board"), and on a board's own page ("Board", with its name). *@
 <form class="card" @onsubmit="SaveAsync">
-    <h2>@(Title ?? Common["Common.Screen.RelayBoard"])</h2>
-    <p class="hint">@Texts["Boards.ModelLine", Model?.Name ?? Common["Common.NoModel"], Texts.Plural("Boards.Relays", RelayCount)]</p>
+    <h2>@(Title ?? Texts["Common.Screen.RelayBoard"])</h2>
+    <p class="hint">@Texts["Boards.ModelLine", Model?.Name ?? Texts["Common.NoModel"], Texts.Plural("Boards.Relays", RelayCount)]</p>
 
     @if (WithName)
     {
@@ -102,7 +101,7 @@
         <p class="@(_saved ? "saved" : "error")" role="alert">@_message</p>
     }
 
-    <button type="submit" class="save" disabled="@_busy">@Common["Common.Save"]</button>
+    <button type="submit" class="save" disabled="@_busy">@Texts["Common.Save"]</button>
 </form>
 
 @code {

@@ -42,10 +42,10 @@ public sealed class InputActionsHandler
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardRegistry _registry;
     private readonly RelayChanges _changes;
-    private readonly IStringLocalizer<InputsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly InputsText _inputText;
 
-    public InputActionsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes, IStringLocalizer<InputsTexts> texts, InputsText inputText)
+    public InputActionsHandler(IDbContextFactory<ContactorDbContext> dbFactory, BoardRegistry registry, RelayChanges changes, IStringLocalizer<Texts> texts, InputsText inputText)
     {
         _texts = texts;
         _inputText = inputText;

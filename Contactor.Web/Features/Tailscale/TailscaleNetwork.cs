@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Contactor.Web.Features.Access;
 using Contactor.Web.Features.Languages;
-using Contactor.Web.Resources;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Tailscale;
@@ -49,7 +48,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     // restarts of tailscaled, so a key that joined isn't used again (most keys are good for one join only).
     private string? _keyToJoinWith;
 
-    private static readonly UiText CheckFailed = UiText.Of<SetupTexts>("Setup.Tailscale.CheckFailed");
+    private static readonly UiText CheckFailed = UiText.Of("Setup.Tailscale.CheckFailed");
 
     public TailscaleNetwork(
         TailscaleSettings settings,
@@ -204,7 +203,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         if (mustLogIn && settings.AuthKey.Length == 0)
         {
             watch.LoggedIn = true;
-            watch.Problem = UiText.Of<SetupTexts>("Setup.Tailscale.NeedsKey");
+            watch.Problem = UiText.Of("Setup.Tailscale.NeedsKey");
             LogProblem(watch.Problem.English());
             return false;
         }
@@ -227,7 +226,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
             // A key Tailscale refused stays refused until a new one is saved; one that timed out is tried again at
             // the next check.
             watch.LoggedIn = !result.TimedOut;
-            watch.Problem = result.TimedOut ? UiText.Of<SetupTexts>("Setup.Tailscale.KeyTimedOut") : UiText.Of<SetupTexts>("Setup.Tailscale.KeyRefused", FirstLine(result, settings));
+            watch.Problem = result.TimedOut ? UiText.Of("Setup.Tailscale.KeyTimedOut") : UiText.Of("Setup.Tailscale.KeyRefused", FirstLine(result, settings));
             LogProblem(watch.Problem.English());
             return false;
         }
@@ -235,10 +234,10 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         switch (state?.BackendState)
         {
             case "NeedsMachineAuth":
-                watch.Problem = UiText.Of<SetupTexts>("Setup.Tailscale.Approve", settings.HostName);
+                watch.Problem = UiText.Of("Setup.Tailscale.Approve", settings.HostName);
                 return false;
             case "Stopped":
-                watch.Problem = UiText.Of<SetupTexts>("Setup.Tailscale.Stopped");
+                watch.Problem = UiText.Of("Setup.Tailscale.Stopped");
                 return false;
             case "Running":
                 break;
@@ -275,7 +274,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     {
         if (_options.ServeEndPoint is null)
         {
-            return (UiText.Of<SetupTexts>("Setup.Tailscale.NoServeAddress"), null);
+            return (UiText.Of("Setup.Tailscale.NoServeAddress"), null);
         }
 
         var result = await _process.RunAsync(["serve", "--bg", "--https=443", _options.Target], CommandTimeout, cancellationToken);
@@ -287,7 +286,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         var status = await _process.RunAsync(["serve", "status", "--json"], CommandTimeout, cancellationToken);
         return status.Succeeded && Regex.IsMatch(status.Output, $"\"Proxy\"\\s*:\\s*\"{Regex.Escape(_options.Target)}\"")
             ? (null, null)
-            : (UiText.Of<SetupTexts>("Setup.Tailscale.ServeNotTaken"), null);
+            : (UiText.Of("Setup.Tailscale.ServeNotTaken"), null);
     }
 
     // How far the watch got while this tailscaled runs.
@@ -380,12 +379,12 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     {
         if (HttpsLink(result.Output) is { } link)
         {
-            return (UiText.Of<SetupTexts>("Setup.Tailscale.Https"), link);
+            return (UiText.Of("Setup.Tailscale.Https"), link);
         }
 
         return result.TimedOut
-            ? (UiText.Of<SetupTexts>("Setup.Tailscale.ServeNoAnswer"), null)
-            : (UiText.Of<SetupTexts>("Setup.Tailscale.ServeFailed", FirstLine(result, settings)), null);
+            ? (UiText.Of("Setup.Tailscale.ServeNoAnswer"), null)
+            : (UiText.Of("Setup.Tailscale.ServeFailed", FirstLine(result, settings)), null);
     }
 
     /// <summary>

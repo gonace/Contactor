@@ -10,7 +10,6 @@
 @inject TimeProvider Time
 @inject LocalClock Clock
 @inject ILogger<BoardWhereStep> Log
-@inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
 @inject BoardProblemText ProblemText
 @inject AppLanguage Language
@@ -349,7 +348,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
     {
         // An exception that leaves the handler would end the page's live connection.
         Log.LogError(ex, "{What}", what);
-        await ErrorChanged.InvokeAsync(Common["Common.SomethingWrongTryAgain"]);
+        await ErrorChanged.InvokeAsync(Texts["Common.SomethingWrongTryAgain"]);
     }
 
     // From the board's read loop.

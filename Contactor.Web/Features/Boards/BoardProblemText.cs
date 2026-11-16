@@ -12,13 +12,11 @@ namespace Contactor.Web.Features.Boards;
 /// </summary>
 public sealed class BoardProblemText
 {
-    private readonly IStringLocalizer<BoardsTexts> _texts;
-    private readonly IStringLocalizer<CommonTexts> _common;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public BoardProblemText(IStringLocalizer<BoardsTexts> texts, IStringLocalizer<CommonTexts> common)
+    public BoardProblemText(IStringLocalizer<Texts> texts)
     {
         _texts = texts;
-        _common = common;
     }
 
 #pragma warning disable CA1720 // "Long" and "Short" are how long the text is, not types.
@@ -59,7 +57,7 @@ public sealed class BoardProblemText
     {
         ArgumentNullException.ThrowIfNull(problem);
         return problem is { Kind: ConnectionProblemKind.WrongModel, Found: { } found }
-            ? _texts["Boards.Problem.WrongModel.AddAgain", found.ModelName, _common["Common.AddBoard"].Value].Value
+            ? _texts["Boards.Problem.WrongModel.AddAgain", found.ModelName, _texts["Common.AddBoard"].Value].Value
             : null;
     }
 }
