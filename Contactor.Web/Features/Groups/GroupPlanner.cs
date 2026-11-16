@@ -190,7 +190,8 @@ public static class GroupPlanner
     /// Relays an ON was sent for that the board hasn't shown yet. A stop of some relays of a step doesn't finish while a
     /// relay turned on again during it still waits for its ON, so its run isn't taken for one outside the app. A stop of
     /// the whole group counts them as on: it turns them off too, from the bottom, and their OFF counts as done only once
-    /// that ON is no longer on its way.
+    /// that ON is no longer on its way. A stop of some relays counts the relays it stops, and those of the step just
+    /// below whose OFF it waits for, as on in the same way.
     /// </param>
     public static void Plan(
         IReadOnlyList<GroupStepInfo> steps,
@@ -614,13 +615,14 @@ public static class GroupPlanner
     /// <summary>
     /// Turns one relay off: every relay of the steps below goes off at once, and this one keeps running for its step's
     /// run-on time first if any were on. The other relays of its step stay as they are. Nothing happens when it is off
-    /// already.
+    /// already and no ON for it is on its way.
     /// </summary>
     /// <param name="position">The relay's position in the group's start order, from 1.</param>
     /// <param name="onOnItsWay">
     /// Relays an ON was sent for that the board hasn't shown yet. One below this relay's step counts as on: it goes off
     /// with the others below, after its ON, so nothing below is left on without this relay. When it is in the step just
-    /// below, this relay runs on only once that OFF is done.
+    /// below, this relay runs on only once that OFF is done. This relay itself counts as on too: its OFF goes after that
+    /// ON, in its place, and counts as done only once that ON is no longer on its way and the board shows it off.
     /// </param>
     public static void MemberOff(
         IReadOnlyList<GroupStepInfo> steps,
@@ -640,7 +642,9 @@ public static class GroupPlanner
 
         // The interlock first, as on every status; a trip stops the whole group, which this relay's OFF then keeps.
         Interlock(steps, state, runtime, now, commands);
-        if (!state.IsOn(relay.Channel))
+
+        // A relay whose ON is on its way counts as on, or that ON would leave it on once it lands.
+        if (!With(state, onOnItsWay).IsOn(relay.Channel))
         {
             return;
         }
@@ -917,10 +921,12 @@ public static class GroupPlanner
     // What a stop goes by: the board's state with the relays whose ON is on its way as on. Such a relay (e.g. one turned
     // on again while the others of its step stopped) is turned off as well, after its ON and from the bottom, so nothing
     // is left on once the stop is done and nothing below it outlives the step above. A stop of some relays leaves one
-    // turned on again in their step running. It counts only the relays of the step below theirs whose OFF it waits for
-    // (sent with the others below when one relay was turned off), so that OFF is done only once their ON is no longer on
-    // its way. Relays further below had their OFF sent at the same time, after their ON, and the board takes its
-    // commands in order: they don't hold up the run-on of the step above, nor set its time.
+    // turned on again in their step running. It counts the relays it stops, so the OFF of one turned off while its ON
+    // was on its way is done only once that ON is no longer on its way. Of the relays below, it counts only those of the
+    // step below theirs whose OFF it waits for (sent with the others below when one relay was turned off), so that OFF is
+    // done only once their ON is no longer on its way. Relays further below had their OFF sent at the same time, after
+    // their ON, and the board takes its commands in order: they don't hold up the run-on of the step above, nor set its
+    // time.
     private static BoardState StopState(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime, ChannelMask onOnItsWay)
     {
         if (runtime.Phase != GroupPhases.Stopping || onOnItsWay.IsEmpty)
@@ -937,7 +943,8 @@ public static class GroupPlanner
             && StoppingStep(steps, runtime) is { } stopping && pending > stopping && pending <= steps.Count
             ? Mask(steps[pending - 1].Relays)
             : ChannelMask.None;
-        return With(state, onOnItsWay & waited);
+        var stopped = Mask(Relays(steps).Select(r => r.Relay).Where(r => runtime.StopRelayIds.Contains(r.RelayId)));
+        return With(state, onOnItsWay & (waited | stopped));
     }
 
     // The board's state with these relays on: an ON for them is on its way.
