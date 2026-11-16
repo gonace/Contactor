@@ -43,6 +43,7 @@ public static class BoardCatalogue
         new(WaveshareModels.Relay30, WaveshareBoards.Create),
         new(DevantechModels.Eth002, DevantechBoards.Create),
         new(DevantechModels.Eth008, DevantechBoards.Create),
+        new(DevantechModels.Eth1610, DevantechBoards.Create),
         new(DevantechModels.Eth484, DevantechBoards.Create),
         new(DevantechModels.Eth8020, DevantechBoards.Create),
     ];
