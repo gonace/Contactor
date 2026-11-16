@@ -22,6 +22,7 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject GroupsHandler Groups
 @inject InputsHandler Inputs
+@inject InputActionsHandler InputActions
 @inject GroupSequencer Sequencer
 @inject ILogger<Relays> Log
 @inject RelayStatusText StatusText
@@ -250,6 +251,10 @@
     private BoardCounts _counts = BoardCounts.None;
     private IReadOnlyList<GroupView> _groups = [];
     private IReadOnlyList<InputView> _inputs = [];
+
+    // The inputs that control each relay and each group, by its id.
+    private ILookup<int, InputControl> _relayInputs = Array.Empty<InputControl>().ToLookup(c => 0);
+    private ILookup<int, InputControl> _groupInputs = Array.Empty<InputControl>().ToLookup(c => 0);
     private int? _failedGroupId;
     private string? _groupError;
     private ITimer? _tick;
@@ -447,6 +452,7 @@
                     <span class="label">@Texts["Relays.GroupLabel", chain]</span>
                     <span class="name">@group.Name</span>
                     <span class="status @(group.Runtime.Phase != GroupPhases.Idle && state.HasAnswered ? "busy" : null)">@(!state.HasAnswered ? StatusText.Waiting : missing is { } m ? GroupStatus.MissingRelay(m) : GroupStatus.For(group, state, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
+                    @InputLines(_groupInputs[group.Id])
                     @if (_failedGroupId == group.Id)
                     {
                         <span class="error" role="alert">@_groupError</span>
@@ -494,6 +500,7 @@
                 <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
                 <span class="name">@relay.Name</span>
                 <span class="status">@(state.HasAnswered ? StatusFor(relay, on) : StatusText.Waiting)</span>
+                @InputLines(_relayInputs[relay.Id])
                 @if (_failedRelayId == relay.Id && _inGroup)
                 {
                     <span class="error" role="alert">@Texts["Relays.InGroup"]</span>
@@ -525,6 +532,19 @@
                 </div>
             }
         </div>
+    };
+
+    // A line for each input that controls the relay or group, under its status: "(I) Door: on when it opens". An input
+    // can switch it as well as its button, so the card says so.
+    private RenderFragment InputLines(IEnumerable<InputControl> controls) => __builder =>
+    {
+        foreach (var control in controls)
+        {
+            <span class="input-line">
+                <span class="input-badge" aria-hidden="true">I</span>
+                <span><strong>@control.InputName</strong>: @InputsText.Does(control.WhenClosed, control.WhenOpened)</span>
+            </span>
+        }
     };
 
     private RenderFragment InputCard(InputView input) => __builder =>
@@ -583,6 +603,9 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         _groups = await Groups.ListAsync(CancellationToken.None);
         _inputs = await Inputs.ListAsync(CancellationToken.None);
+        var controls = await InputActions.ControlsAsync(CancellationToken.None);
+        _relayInputs = controls.Where(c => c.RelayId is not null).ToLookup(c => c.RelayId!.Value);
+        _groupInputs = controls.Where(c => c.GroupId is not null).ToLookup(c => c.GroupId!.Value);
         var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
         _relays = (await db.Relays.AsNoTracking().OrderBy(r => r.SortOrder).ThenBy(r => r.Channel).ToListAsync())
             .Where(r => Registry.HasRelay(r.BoardId, r.Channel) && !members.Contains(r.Id))

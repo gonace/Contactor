@@ -1248,6 +1248,21 @@
   <data name="Inputs.Controls.Hint" xml:space="preserve">
     <value>Som att trycka på knappen just då: en grupp startar och stannar i sin ordning, med sin efterkörning, och automatisk avstängning gäller fortfarande. Bara ändringar som appen ser när de händer gör något.</value>
   </data>
+  <data name="Inputs.Does.Both" xml:space="preserve">
+    <value>{0}, {1}</value>
+  </data>
+  <data name="Inputs.Does.OffCloses" xml:space="preserve">
+    <value>av när den sluts</value>
+  </data>
+  <data name="Inputs.Does.OffOpens" xml:space="preserve">
+    <value>av när den öppnas</value>
+  </data>
+  <data name="Inputs.Does.OnCloses" xml:space="preserve">
+    <value>på när den sluts</value>
+  </data>
+  <data name="Inputs.Does.OnOpens" xml:space="preserve">
+    <value>på när den öppnas</value>
+  </data>
   <data name="Inputs.Hide.Both" xml:space="preserve">
     <value>Dölj inaktiva</value>
   </data>

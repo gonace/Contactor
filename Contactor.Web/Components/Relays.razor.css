@@ -339,6 +339,40 @@ h1 {
     color: var(--muted);
 }
 
+/* An input that controls the relay or group: the Events screen's dashed "I" badge, small, then "Door: on when it opens". */
+.input-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.35;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+}
+
+.input-line > span:last-child {
+    min-width: 0;
+}
+
+.input-line strong {
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.input-badge {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    border: 1.5px dashed var(--line-dashed);
+}
+
 .error {
     margin: 0;
     font-size: 14px;
