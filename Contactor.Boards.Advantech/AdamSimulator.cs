@@ -352,7 +352,7 @@ public sealed class AdamSimulator : ISimulatedBoard
         Remember(hex);
         var pdu = frame.AsSpan(AdamApi.HeaderBytes);
         var function = pdu[0];
-        Trace(BoardTraceDirection.Sent, AdamTraceText.Request(frame), hex, isRoutine: function == AdamApi.ReadCoils);
+        Trace(BoardTraceDirection.Sent, AdamTraceText.Request(frame), hex, isRoutine: function is AdamApi.ReadCoils or AdamApi.ReadDiscreteInputs);
         var protocol = BinaryPrimitives.ReadUInt16BigEndian(frame.AsSpan(2));
         if (protocol != AdamApi.ProtocolId)
         {
