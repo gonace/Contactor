@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Updates.Title" xml:space="preserve">
+    <value>Uppdateringar</value>
+  </data>
+  <data name="Updates.Development" xml:space="preserve">
+    <value>Det här är en utvecklingsversion av Contactor. Den uppdateras inte härifrån.</value>
+  </data>
+  <data name="Updates.Updating" xml:space="preserve">
+    <value>Uppdaterar från {0} till {1}.</value>
+  </data>
+  <data name="Updates.Step.Now" xml:space="preserve">
+    <value>{0}…</value>
+  </data>
+  <data name="Updates.Step.Download" xml:space="preserve">
+    <value>Laddar ner {0}</value>
+  </data>
+  <data name="Updates.Step.Verify" xml:space="preserve">
+    <value>Kontrollerar att den kommer från oss</value>
+  </data>
+  <data name="Updates.Step.Waiting" xml:space="preserve">
+    <value>Väntar på att reläerna ska slå om klart</value>
+  </data>
+  <data name="Updates.Step.Backup" xml:space="preserve">
+    <value>Säkerhetskopierar</value>
+  </data>
+  <data name="Updates.Step.Restart" xml:space="preserve">
+    <value>Startar om</value>
+  </data>
+  <data name="Updates.Step.Check" xml:space="preserve">
+    <value>Kontrollerar den nya versionen</value>
+  </data>
+  <data name="Updates.StartedBy" xml:space="preserve">
+    <value>Startad av {0} kl. {1}. Reläerna stannar som de är.</value>
+  </data>
+  <data name="Updates.Started" xml:space="preserve">
+    <value>Startad kl. {0}. Reläerna stannar som de är.</value>
+  </data>
+  <data name="Updates.Newest" xml:space="preserve">
+    <value>Du har den senaste versionen, {0}.</value>
+  </data>
+  <data name="Updates.Have" xml:space="preserve">
+    <value>Du har version {0}.</value>
+  </data>
+  <data name="Updates.ShowLog" xml:space="preserve">
+    <value>Visa vad som hände</value>
+  </data>
+  <data name="Updates.Log" xml:space="preserve">
+    <value>Vad som hände</value>
+  </data>
+  <data name="Updates.NoLog" xml:space="preserve">
+    <value>Det finns ingen logg för den här uppdateringen.</value>
+  </data>
+  <data name="Updates.Available" xml:space="preserve">
+    <value>Version {0} finns</value>
+  </data>
+  <data name="Updates.WhatsNew" xml:space="preserve">
+    <value>Nyheter</value>
+  </data>
+  <data name="Updates.DayFormat" xml:space="preserve">
+    <value>d MMMM</value>
+  </data>
+  <data name="Updates.NoHelper" xml:space="preserve">
+    <value>Contactor uppdateras där den installerades, t.ex. i Portainer, Unraid eller med Docker Compose. Installerad med installationskommandot? Kör det igen: det lägger till det som "Uppdatera nu" behöver.</value>
+  </data>
+  <data name="Updates.NoHelper.Short" xml:space="preserve">
+    <value>Contactor uppdateras där den installerades, t.ex. i Portainer, Unraid eller med Docker Compose.</value>
+  </data>
+  <data name="Updates.Now" xml:space="preserve">
+    <value>Uppdatera nu</value>
+  </data>
+  <data name="Updates.Now.Hint" xml:space="preserve">
+    <value>Contactor startar om. Det tar ungefär en minut. Reläerna stannar som de är, och scheman kommer ikapp efteråt.</value>
+  </data>
+  <data name="Updates.Ask" xml:space="preserve">
+    <value>Uppdatera till {0}?</value>
+  </data>
+  <data name="Updates.Ask.Restart" xml:space="preserve">
+    <value>Contactor startar om. Det tar ungefär en minut, och appen svarar inte under tiden.</value>
+  </data>
+  <data name="Updates.Ask.Relays" xml:space="preserve">
+    <value>Reläerna stannar som de är. Scheman och automatiska avstängningar kommer ikapp när den är tillbaka.</value>
+  </data>
+  <data name="Updates.Update" xml:space="preserve">
+    <value>Uppdatera</value>
+  </data>
+  <data name="Updates.Splash.Title" xml:space="preserve">
+    <value>Contactor uppdateras</value>
+  </data>
+  <data name="Updates.Splash.ToNew" xml:space="preserve">
+    <value>Till en ny version. Det tar ungefär en minut, och sidan kommer tillbaka av sig själv.</value>
+  </data>
+  <data name="Updates.Splash.To" xml:space="preserve">
+    <value>Till version {0}. Det tar ungefär en minut, och sidan kommer tillbaka av sig själv.</value>
+  </data>
+  <data name="Updates.NewVersion" xml:space="preserve">
+    <value>den nya versionen</value>
+  </data>
+  <data name="Updates.VersionBefore" xml:space="preserve">
+    <value>versionen innan</value>
+  </data>
+  <data name="Updates.NothingChanged" xml:space="preserve">
+    <value>Inget ändrades.</value>
+  </data>
+  <data name="Updates.NothingChanged.TryAgain" xml:space="preserve">
+    <value>Inget ändrades. Försök igen.</value>
+  </data>
+  <data name="Updates.NothingChanged.Later" xml:space="preserve">
+    <value>Inget ändrades. Försök igen senare.</value>
+  </data>
+  <data name="Updates.NoAnswer" xml:space="preserve">
+    <value>Uppdateringen startade inte</value>
+  </data>
+  <data name="Updates.NoAnswer.Text" xml:space="preserve">
+    <value>Uppdateringshjälpen på den här datorn svarade inte. Inget ändrades. Kör installationskommandot igen för att laga den, och försök sedan igen.</value>
+  </data>
+  <data name="Updates.Stale" xml:space="preserve">
+    <value>Uppdateringen till {0} blev inte klar</value>
+  </data>
+  <data name="Updates.Done" xml:space="preserve">
+    <value>Uppdaterad till {0}</value>
+  </data>
+  <data name="Updates.Done.At" xml:space="preserve">
+    <value>Kl. {0}.</value>
+  </data>
+  <data name="Updates.Done.AtBy" xml:space="preserve">
+    <value>Kl. {0}, av {1}.</value>
+  </data>
+  <data name="Updates.WentBack" xml:space="preserve">
+    <value>Uppdateringen till {0} fungerade inte</value>
+  </data>
+  <data name="Updates.WentBack.Text" xml:space="preserve">
+    <value>Contactor gick tillbaka till {0} kl. {1}. Inget gick förlorat.</value>
+  </data>
+  <data name="Updates.Download" xml:space="preserve">
+    <value>Kunde inte ladda ner {0}</value>
+  </data>
+  <data name="Updates.Download.Text" xml:space="preserve">
+    <value>Inget ändrades. Kontrollera internetanslutningen och försök igen.</value>
+  </data>
+  <data name="Updates.Signature" xml:space="preserve">
+    <value>{0} klarade inte kontrollen att den kommer från oss</value>
+  </data>
+  <data name="Updates.Signature.Text" xml:space="preserve">
+    <value>Så den installerades inte. Inget ändrades. Försök igen senare.</value>
+  </data>
+  <data name="Updates.Space" xml:space="preserve">
+    <value>Inte tillräckligt med plats för {0}</value>
+  </data>
+  <data name="Updates.Space.Needs" xml:space="preserve">
+    <value>Inget ändrades. Uppdateringen behöver {0} ledigt diskutrymme, och det finns {1}. Gör plats och försök igen.</value>
+  </data>
+  <data name="Updates.Space.Text" xml:space="preserve">
+    <value>Inget ändrades. Gör plats på disken och försök igen.</value>
+  </data>
+  <data name="Updates.Gigabytes" xml:space="preserve">
+    <value>{0:0.0} GB</value>
+  </data>
+  <data name="Updates.Backup" xml:space="preserve">
+    <value>Kunde inte säkerhetskopiera före uppdateringen</value>
+  </data>
+  <data name="Updates.Backup.Text" xml:space="preserve">
+    <value>Inget ändrades. Försök igen om en stund.</value>
+  </data>
+  <data name="Updates.Cancelled" xml:space="preserve">
+    <value>Uppdateringen avbröts</value>
+  </data>
+  <data name="Updates.Switching" xml:space="preserve">
+    <value>Uppdateringen stoppades eftersom reläerna fortfarande slog om</value>
+  </data>
+  <data name="Updates.Switching.Text" xml:space="preserve">
+    <value>Försök igen senare. Inget ändrades.</value>
+  </data>
+  <data name="Updates.Interrupted" xml:space="preserve">
+    <value>Uppdateringen till {0} avbröts</value>
+  </data>
+  <data name="Updates.Failed" xml:space="preserve">
+    <value>Uppdateringen till {0} startade inte</value>
+  </data>
+  <data name="Updates.NotYet" xml:space="preserve">
+    <value>{0} kan inte laddas ner än</value>
+  </data>
+  <data name="Updates.CheckFailedSince" xml:space="preserve">
+    <value>Kunde inte söka efter uppdateringar. Senast kontrollerat {0} kl. {1}.</value>
+  </data>
+  <data name="Updates.CheckFailed" xml:space="preserve">
+    <value>Kunde inte söka efter uppdateringar.</value>
+  </data>
+  <data name="Updates.Checked" xml:space="preserve">
+    <value>Kontrollerat {0} kl. {1}.</value>
+  </data>
+  <data name="Updates.Today" xml:space="preserve">
+    <value>i dag</value>
+  </data>
+  <data name="Updates.Yesterday" xml:space="preserve">
+    <value>i går</value>
+  </data>
+  <data name="Updates.Refused.Development" xml:space="preserve">
+    <value>Det här är en utvecklingsversion: den uppdateras inte härifrån.</value>
+  </data>
+  <data name="Updates.Refused.NoHelper" xml:space="preserve">
+    <value>Contactor kan inte uppdatera sig själv på den här datorn.</value>
+  </data>
+  <data name="Updates.Refused.Running" xml:space="preserve">
+    <value>En uppdatering pågår redan.</value>
+  </data>
+  <data name="Updates.Refused.Newest" xml:space="preserve">
+    <value>Du har den senaste versionen.</value>
+  </data>
+  <data name="Updates.Refused.Switching" xml:space="preserve">
+    <value>En grupp startar eller efterkör. Uppdatera när den är klar.</value>
+  </data>
+</root>

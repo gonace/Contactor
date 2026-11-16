@@ -1,0 +1,627 @@
+using Contactor.Boards;
+using Contactor.Boards.Velleman;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+
+namespace Contactor.Tests.Velleman;
+
+/// <summary>
+/// The client against the simulator over real loopback sockets.
+/// </summary>
+public sealed class Vm201ClientTests
+{
+    private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(10);
+
+    [Fact]
+    public async Task Should_ConnectAndReportStatus_WhenBoardHasNoLogin()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetOutputsAsync(0x05);
+        await using var run = ClientRun.Start(simulator);
+
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0x05, run.Client.State.Outputs);
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.False(run.Client.State.IsOn(2));
+        Assert.NotNull(run.Client.State.LastContactUtc);
+    }
+
+    [Fact]
+    public async Task Should_LogIn_WhenBoardRequiresCredentials()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "secret");
+
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0, simulator.DeniedLoginCount);
+    }
+
+    [Fact]
+    public async Task Should_StayDisconnectedAndRetry_WhenPasswordIsWrong()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "wrong");
+
+        await WaitUntilAsync(() => simulator.DeniedLoginCount >= 2);
+
+        Assert.False(run.Client.State.IsConnected);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Should_UpdateState_WhenTurningRelaysOnAndOff()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        await run.Client.TurnOnAsync(Vm201Channel.Mask(3), TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => run.Client.State.IsOn(3));
+
+        await run.Client.TurnOffAsync(Vm201Channel.All, TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => run.Client.State.Outputs == 0);
+
+        Assert.Equal(0, simulator.Outputs);
+    }
+
+    [Fact]
+    public async Task Should_ReceivePushedStatus_WhenBoardChangesByItself()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+        List<Vm201State> changes = [];
+        run.Client.StateChanged += (_, state) =>
+        {
+            lock (changes)
+            {
+                changes.Add(state);
+            }
+        };
+
+        await simulator.SetOutputsAsync(0x81);
+        await simulator.SetInputAsync(true);
+        await WaitUntilAsync(() => run.Client.State.Input);
+
+        Assert.Equal(0x81, run.Client.State.Outputs);
+        lock (changes)
+        {
+            Assert.Contains(changes, s => s.Outputs == 0x81 && !s.Input);
+        }
+    }
+
+    [Fact]
+    public async Task Should_SendTimerDisable_WhenDisablingBoardTimers()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x0F);
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        await run.Client.DisableBoardTimersAsync(Vm201Channel.All, TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => run.Client.State.TimerMask == 0);
+        Assert.Equal(0, simulator.TimerMask);
+    }
+
+    [Fact]
+    public async Task Should_AnswerStatusRequest()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+        var before = run.Client.State.LastContactUtc;
+
+        await run.Client.RequestStatusAsync(TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => run.Client.State.LastContactUtc > before);
+    }
+
+    [Fact]
+    public async Task Should_ReconnectAndRestoreStatus_WhenConnectionDrops()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+        var lost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        run.Client.StateChanged += (_, state) =>
+        {
+            if (!state.IsConnected)
+            {
+                lost.TrySetResult();
+            }
+        };
+
+        simulator.DropConnections();
+        await lost.Task.WaitAsync(WaitTimeout, TestContext.Current.CancellationToken);
+        Assert.False(run.Client.State.IsConnected);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
+
+        // Changed while the client was away; the board's status after the new login is the truth.
+        await simulator.SetOutputsAsync(0x02);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0x02, run.Client.State.Outputs);
+        Assert.True(simulator.ConnectionCount >= 2);
+    }
+
+    [Fact]
+    public async Task Should_KeepLastKnownOutputs_WhenDisconnected()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetOutputsAsync(0x10);
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        simulator.RejectConnections = true;
+        simulator.DropConnections();
+        await WaitUntilAsync(() => !run.Client.State.IsConnected);
+
+        Assert.Equal(0x10, run.Client.State.Outputs);
+        Assert.NotNull(run.Client.State.LastContactUtc);
+    }
+
+    [Fact]
+    public async Task Should_Reconnect_WhenBoardGoesSilentWithoutClosing()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, keepAliveSeconds: 1);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        simulator.Unresponsive = true;
+        await WaitUntilAsync(() => !run.Client.State.IsConnected);
+
+        simulator.Unresponsive = false;
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_SendKeepAlive()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, keepAliveSeconds: 1);
+
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.StatusRequest) >= 2);
+
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_FailCommands_WhenNeverConnected()
+    {
+        var client = CreateClient(port: 1);
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.TurnOffAsync(0x01, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.RequestStatusAsync(TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.DisableBoardTimersAsync(0xFF, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Should_KeepConnection_WhenStateSubscriberThrows()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+        run.Client.StateChanged += (_, _) => throw new InvalidOperationException("Subscriber bug");
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        await simulator.SetOutputsAsync(0x40);
+
+        await WaitUntilAsync(() => run.Client.State.Outputs == 0x40);
+        Assert.Equal(1, simulator.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task Should_SayGoodbye_WhenStopped()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        await run.DisposeAsync();
+
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.Closed));
+        Assert.False(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_Throw_WhenRunTwice()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => run.Client.RunAsync(CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", "toolongname", "")]
+    [InlineData("127.0.0.1", "", "lösenord")]
+    public void Should_RejectOptions_WhenTheyCannotWork(string host, string username, string password)
+    {
+        var options = new Vm201Options { Host = host, Username = username, Password = password };
+
+        Assert.Throws<ArgumentException>(
+            () => new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance));
+    }
+
+    // A new installation gets the board's address in the setup guide: the app starts without one.
+    [Fact]
+    public void Should_StartWithoutAnAddress()
+    {
+        var client = new Vm201Client(Options.Create(new Vm201Options()), TimeProvider.System, NullLogger<Vm201Client>.Instance);
+
+        Assert.False(client.Endpoint.HasHost);
+    }
+
+    [Fact]
+    public async Task Should_TraceTheConnectionAndEveryPacket()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        var trace = new TraceLog();
+        await using var run = ClientRun.Start(simulator, traced: trace.Add);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        await run.Client.TurnOnAsync(Vm201Channel.Mask(1), TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => trace.Has(Vm201TraceKind.Sent, Vm201Command.On));
+
+        var entries = trace.Entries;
+        Assert.Equal(Vm201TraceKind.Connecting, entries[0].Kind);
+        Assert.Equal($"127.0.0.1:{simulator.Port}", entries[0].Detail);
+        Assert.Equal((Vm201TraceKind.Received, Vm201Command.LoggedIn), (entries[1].Kind, entries[1].Command));
+        Assert.Equal(9, entries.Count(e => e.Kind == Vm201TraceKind.Received && e.Command == Vm201Command.Name));
+        var on = entries.Single(e => e.Kind == Vm201TraceKind.Sent && e.Command == Vm201Command.On);
+        Assert.Equal(new byte[] { 0x02, 0x06, 0x4F, 0x01, 0xA8, 0x03 }, on.Frame.ToArray());
+    }
+
+    [Fact]
+    public async Task Should_TraceTheLoginWithoutItsContent()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        var trace = new TraceLog();
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "secret", traced: trace.Add);
+
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        var login = trace.Entries.Where(e => e.Command is Vm201Command.Username or Vm201Command.Password).ToList();
+        Assert.Equal(2, login.Count);
+        Assert.All(login, e => Assert.Equal(3, e.Frame.Length));
+        Assert.All(login, e => Assert.Equal(0, e.Data.Length));
+    }
+
+    [Fact]
+    public async Task Should_TraceWhyTheConnectionEnded_WhenThePasswordIsWrong()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        var trace = new TraceLog();
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "wrong", traced: trace.Add);
+
+        await WaitUntilAsync(() => trace.Entries.Any(e => e.Kind == Vm201TraceKind.Reconnecting));
+
+        var entries = trace.Entries;
+        Assert.Contains(entries, e => e.Kind == Vm201TraceKind.Received && e.Command == Vm201Command.AccessDenied);
+        Assert.Contains(entries, e => e.Kind == Vm201TraceKind.ConnectionLost && e.Detail!.Contains("rejected", StringComparison.Ordinal));
+        Assert.Equal("1", entries.First(e => e.Kind == Vm201TraceKind.Reconnecting).Detail);
+    }
+
+    [Fact]
+    public async Task Should_KeepTheConnection_WhenATraceSubscriberFails()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, traced: (_, _) => throw new InvalidOperationException("A bug."));
+
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        await run.Client.TurnOnAsync(Vm201Channel.Mask(2), TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => run.Client.State.IsOn(2));
+    }
+
+    [Fact]
+    public async Task Should_NotSend_WhenCommandIsCancelledWhileTheConnectionIsBusy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, ct);
+        await gate.Held.WaitAsync(WaitTimeout, ct);
+        using var cts = new CancellationTokenSource();
+        var cancelled = run.Client.TurnOnAsync(0x02, cts.Token);
+        await cts.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        gate.Release();
+        await hold;
+        await SendMarkerAsync(run.Client, simulator);
+
+        Assert.Equal([(Vm201Command.Off, WriterGate.HoldMask), (Vm201Command.On, Marker)], Sent(simulator));
+        Assert.Equal(Marker, simulator.Outputs);
+    }
+
+    [Fact]
+    public async Task Should_NotSend_WhenCommandIsCancelledBeforeTheCall()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.Client.TurnOnAsync(0x02, cts.Token));
+        await SendMarkerAsync(run.Client, simulator);
+
+        Assert.Equal([(Vm201Command.On, Marker)], Sent(simulator));
+    }
+
+    [Fact]
+    public async Task Should_ReportSuccess_WhenCancelledAfterTheWriterTookTheCommand()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        using var cts = new CancellationTokenSource();
+        var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, cts.Token);
+        await gate.Held.WaitAsync(WaitTimeout, ct);
+        await cts.CancelAsync();
+        gate.Release();
+
+        await hold;
+        await SendMarkerAsync(run.Client, simulator);
+        Assert.Equal([(Vm201Command.Off, WriterGate.HoldMask), (Vm201Command.On, Marker)], Sent(simulator));
+    }
+
+    [Fact]
+    public async Task Should_ThrowCancelled_WhenCancelledBeforeTheCallWhileNeverConnected()
+    {
+        var client = CreateClient(port: 1);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.TurnOnAsync(0x01, cts.Token));
+    }
+
+    [Fact]
+    public async Task Should_SendTheOtherCommandsInOrder_WhenOneIsCancelledInTheQueue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, ct);
+        await gate.Held.WaitAsync(WaitTimeout, ct);
+        using var cts = new CancellationTokenSource();
+        var first = run.Client.TurnOnAsync(0x01, ct);
+        var cancelled = run.Client.TurnOnAsync(0x02, cts.Token);
+        var third = run.Client.DisableBoardTimersAsync(0x04, ct);
+        var fourth = run.Client.TurnOffAsync(0x01, ct);
+        await cts.CancelAsync();
+        gate.Release();
+        await Task.WhenAll(hold, first, third, fourth);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        await SendMarkerAsync(run.Client, simulator);
+
+        Assert.Equal(
+            [
+                (Vm201Command.Off, WriterGate.HoldMask),
+                (Vm201Command.On, (byte)0x01),
+                (Vm201Command.TimerDisable, (byte)0x04),
+                (Vm201Command.Off, (byte)0x01),
+                (Vm201Command.On, Marker),
+            ],
+            Sent(simulator));
+    }
+
+    [Fact]
+    public async Task Should_ReportWhatWasSent_WhenCancelledWhileTheWriterTakesTheCommand()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        using var gate = new WriterGate();
+        await using var run = ClientRun.Start(simulator, traced: gate.Traced);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        List<byte> reportedSent = [];
+        for (var i = 1; i <= 100; i++)
+        {
+            var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, ct);
+            await gate.Held.WaitAsync(WaitTimeout, ct);
+            using var cts = new CancellationTokenSource();
+            var command = run.Client.DisableBoardTimersAsync((byte)i, cts.Token);
+
+            // The writer takes the command as soon as it is released, while the caller cancels it.
+            var release = Task.Run(gate.Release, ct);
+            cts.Cancel();
+            await release;
+            await hold;
+            try
+            {
+                await command;
+                reportedSent.Add((byte)i);
+            }
+            catch (OperationCanceledException)
+            {
+                // Not sent; the check below proves it.
+            }
+        }
+
+        await SendMarkerAsync(run.Client, simulator);
+
+        var received = Sent(simulator).Where(p => p.Command == Vm201Command.TimerDisable).Select(p => p.Mask);
+        Assert.Equal(reportedSent, received);
+    }
+
+    // Relay 7: no test above uses it for anything else.
+    private const byte Marker = 0x40;
+
+    // Every command sent before the marker has reached the simulator once the marker has: the client sends in order.
+    private static async Task SendMarkerAsync(Vm201Client client, Vm201Simulator simulator)
+    {
+        await client.TurnOnAsync(Marker, TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.On && p.Data.Span[0] == Marker));
+    }
+
+    // The commands the simulator got with a mask, in order; the keep-alive's status requests are left out.
+    private static List<(byte Command, byte Mask)> Sent(Vm201Simulator simulator)
+    {
+        return [.. simulator.ReceivedCommands
+            .Where(p => p.Command is Vm201Command.On or Vm201Command.Off or Vm201Command.TimerDisable)
+            .Select(p => (p.Command, p.Data.Span[0]))];
+    }
+
+    private static Vm201Client CreateClient(int port, string username = "", string password = "", int keepAliveSeconds = 15)
+    {
+        var options = new Vm201Options
+        {
+            Host = "127.0.0.1",
+            Port = port,
+            Username = username,
+            Password = password,
+            KeepAliveSeconds = keepAliveSeconds,
+        };
+        return new Vm201Client(Options.Create(options), TimeProvider.System, NullLogger<Vm201Client>.Instance);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + WaitTimeout;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                Assert.Fail("The condition was not met in time.");
+            }
+
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+    }
+
+    private sealed class ClientRun : IAsyncDisposable
+    {
+        private readonly CancellationTokenSource _cts;
+        private readonly Task _task;
+
+        private ClientRun(Vm201Client client, CancellationTokenSource cts, Task task)
+        {
+            Client = client;
+            _cts = cts;
+            _task = task;
+        }
+
+        public Vm201Client Client { get; }
+
+        public static ClientRun Start(
+            Vm201Simulator simulator,
+            string username = "",
+            string password = "",
+            int keepAliveSeconds = 15,
+            EventHandler<Vm201TraceEntry>? traced = null)
+        {
+            var client = CreateClient(simulator.Port, username, password, keepAliveSeconds);
+            client.Traced += traced;
+            var cts = new CancellationTokenSource();
+            return new ClientRun(client, cts, client.RunAsync(cts.Token));
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _cts.CancelAsync();
+            await _task.WaitAsync(WaitTimeout);
+            _cts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Holds the client's writer: the trace of a sent <see cref="HoldMask"/> OFF is raised on the writer, so the writer
+    /// waits there until <see cref="Release"/>, and the commands behind it wait in the queue.
+    /// </summary>
+    private sealed class WriterGate : IDisposable
+    {
+        public const byte HoldMask = 0x80;
+
+        private readonly SemaphoreSlim _release = new(0);
+
+        public SemaphoreSlim Held { get; } = new(0);
+
+        public void Traced(object? sender, Vm201TraceEntry entry)
+        {
+            if (entry.Kind == Vm201TraceKind.Sent && entry.Command == Vm201Command.Off && entry.Data.SequenceEqual([HoldMask]))
+            {
+                Held.Release();
+
+                // Bounded, so a failing test ends instead of holding the client for ever.
+                _release.Wait(WaitTimeout);
+            }
+        }
+
+        public void Release()
+        {
+            _release.Release();
+        }
+
+        public void Dispose()
+        {
+            _release.Dispose();
+            Held.Dispose();
+        }
+    }
+
+    private sealed class TraceLog
+    {
+        private readonly Lock _lock = new();
+        private readonly List<Vm201TraceEntry> _entries = [];
+
+        public IReadOnlyList<Vm201TraceEntry> Entries
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _entries];
+                }
+            }
+        }
+
+        public void Add(object? sender, Vm201TraceEntry entry)
+        {
+            lock (_lock)
+            {
+                _entries.Add(entry);
+            }
+        }
+
+        public bool Has(Vm201TraceKind kind, byte command)
+        {
+            return Entries.Any(e => e.Kind == kind && e.Command == command);
+        }
+    }
+}

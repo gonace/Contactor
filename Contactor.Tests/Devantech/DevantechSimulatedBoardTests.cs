@@ -283,7 +283,7 @@ public sealed class DevantechSimulatedBoardTests
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(1, true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SwitchRelayAsync(9, true));
-        Assert.Throws<ArgumentException>(() => new DevantechSimulator(Contactor.Boards.Vm201.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => new DevantechSimulator(Contactor.Boards.Velleman.Vm201Model.Model));
         Assert.Throws<ArgumentException>(() => new DevantechSimulator(DevantechModels.Eth008, "two words", NullLogger.Instance));
         Assert.False(simulator.HasLogin);
     }

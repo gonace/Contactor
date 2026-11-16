@@ -1,7 +1,6 @@
 using System.Net;
 using Contactor.Boards;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Boards;
@@ -41,7 +40,7 @@ public sealed class SetupTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
 
         Assert.Contains("Setup code", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 1 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 1 OF 5", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -54,7 +53,7 @@ public sealed class SetupTests
 
         // John signed in through the sign-in chosen in Part 1: the guide goes on at "About you".
         Assert.Contains("About you", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 5 OF 5", html, StringComparison.Ordinal);
         Assert.Contains("PART 1 OF 2", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Skip for now", html, StringComparison.Ordinal);
         Assert.Contains("value=\"John\"", html, StringComparison.Ordinal);
@@ -89,7 +88,7 @@ public sealed class SetupTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync(page, Cancel));
 
         Assert.Contains("About you", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 5 OF 5", html, StringComparison.Ordinal);
     }
 
     // The guide always starts where it stands: the board is chosen before anything after it.
@@ -101,7 +100,7 @@ public sealed class SetupTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/setup?step=3", Cancel));
 
-        Assert.Contains("STEP 4 OF 4", html, StringComparison.Ordinal);
+        Assert.Contains("STEP 5 OF 5", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -152,6 +151,19 @@ public sealed class SetupTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
 
         Assert.Contains("Waveshare Modbus PoE ETH Relay (B)", html, StringComparison.Ordinal);
+        Assert.Contains("The relay board has no address yet", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_Start_WithoutADaenetIp2Address()
+    {
+        var settings = new Dictionary<string, string?>(John) { ["Board:Type"] = "denkovi-daenetip2-v2-8", ["DaenetIp2:Host"] = "" };
+        await using var app = new TestWebApp("Development", settings);
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+
+        Assert.Contains("Denkovi DAEnetIP2 v2 8-relay kit", html, StringComparison.Ordinal);
         Assert.Contains("The relay board has no address yet", html, StringComparison.Ordinal);
     }
 
@@ -438,7 +450,7 @@ public sealed class SetupTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));
-        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, devantech-eth002, devantech-eth008, devantech-eth484, devantech-eth8020.", error.Message);
+        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, denkovi-smartden-ip-16r-mt, denkovi-daenetip2-v2-16, denkovi-daenetip2-v2-8, denkovi-daenetip2-v2-2, devantech-eth002, devantech-eth008, devantech-eth484, devantech-eth8020.", error.Message);
     }
 
     [Fact]

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Settings.Boards" xml:space="preserve">
+    <value>Reläkort</value>
+  </data>
+  <data name="Settings.Boards.Hint" xml:space="preserve">
+    <value>Tryck på ett kort för att ändra dess namn, adress eller inloggning, eller för att ta bort det.</value>
+  </data>
+  <data name="Settings.BoardLine" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Settings.BoardLine.Host" xml:space="preserve">
+    <value>{0} · {1} · {2}</value>
+  </data>
+  <data name="Settings.Relays_One" xml:space="preserve">
+    <value>{0} relä</value>
+  </data>
+  <data name="Settings.Relays_Other" xml:space="preserve">
+    <value>{0} reläer</value>
+  </data>
+  <data name="Settings.Online" xml:space="preserve">
+    <value>Anslutet</value>
+  </data>
+  <data name="Settings.NoAddress" xml:space="preserve">
+    <value>Ingen adress än</value>
+  </data>
+  <data name="Settings.NoContactYet" xml:space="preserve">
+    <value>Ingen kontakt än</value>
+  </data>
+  <data name="Settings.NoContactSince" xml:space="preserve">
+    <value>Ingen kontakt sedan {0}</value>
+  </data>
+  <data name="Settings.NoContact" xml:space="preserve">
+    <value>Ingen kontakt</value>
+  </data>
+  <data name="Settings.People" xml:space="preserve">
+    <value>Personer</value>
+  </data>
+  <data name="Settings.People.Hint" xml:space="preserve">
+    <value>Namnen som visas i appen och under Händelser.</value>
+  </data>
+  <data name="Settings.People.EnterName" xml:space="preserve">
+    <value>Skriv ett namn.</value>
+  </data>
+  <data name="Settings.People.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Settings.People.Gone" xml:space="preserve">
+    <value>Den personen finns inte längre.</value>
+  </data>
+  <data name="Settings.Backups" xml:space="preserve">
+    <value>Säkerhetskopior</value>
+  </data>
+  <data name="Settings.Backups.Hint" xml:space="preserve">
+    <value>Appen kopierar allt varje natt kl. 02:30 och behåller de 14 senaste. Ladda ner en då och då och spara den någon annanstans.</value>
+  </data>
+  <data name="Settings.Backups.Latest" xml:space="preserve">
+    <value>Senaste: {0} · {1}</value>
+  </data>
+  <data name="Settings.Backups.None" xml:space="preserve">
+    <value>Ingen kopia än.</value>
+  </data>
+  <data name="Settings.Backups.Make" xml:space="preserve">
+    <value>Gör en kopia nu</value>
+  </data>
+  <data name="Settings.Backups.Made" xml:space="preserve">
+    <value>Kopian är gjord.</value>
+  </data>
+  <data name="Settings.Backups.Failed" xml:space="preserve">
+    <value>Kopian kunde inte göras. Försök igen om en stund.</value>
+  </data>
+  <data name="Settings.Kilobytes" xml:space="preserve">
+    <value>{0} kB</value>
+  </data>
+  <data name="Settings.Megabytes" xml:space="preserve">
+    <value>{0:0.0} MB</value>
+  </data>
+  <data name="Settings.Debugging" xml:space="preserve">
+    <value>Debugging</value>
+  </data>
+  <data name="Settings.Debugging.Check" xml:space="preserve">
+    <value>Visa trafiken till reläkortet</value>
+  </data>
+  <data name="Settings.Debugging.Hint" xml:space="preserve">
+    <value>Bara för dig. Varje meddelande till och från kortet visas en stund längst ner på sidan, och hela listan under fliken Debug.</value>
+  </data>
+</root>

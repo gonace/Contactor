@@ -193,6 +193,10 @@
   <data name="Relays.By.Outside" xml:space="preserve">
     <value>outside the app</value>
   </data>
+  <data name="Relays.By.RemovedInput" xml:space="preserve">
+    <value>a removed input</value>
+    <comment>Who turned a relay on, in its status: an input that is no longer in the app, e.g. of a removed board.</comment>
+  </data>
   <data name="Relays.Status.Waiting" xml:space="preserve">
     <value>Waiting for the board</value>
     <comment>In place of every state before the board's first answer.</comment>

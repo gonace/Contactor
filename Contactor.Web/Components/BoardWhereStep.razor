@@ -12,6 +12,7 @@
 @inject ILogger<BoardWhereStep> Log
 @inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
+@inject AppLanguage Language
 
 @* "Where is the board?": its address, port and login, saved through BoardAddressHandler; "Next" waits up to 10 s for
    the board (BoardContact). Shared by the setup guide (the first board) and "Add a board" (BoardNew); the page has the
@@ -36,11 +37,15 @@
 
 @if (Model.HasLogin)
 {
-    <label for="no-login" class="check">
-        <input id="no-login" type="checkbox" @bind="Values.NoLogin" />
-        <span>@Texts[Model.PasswordOnly ? "Boards.NoPassword" : "Boards.NoLogin"]</span>
-    </label>
-    @if (!Values.NoLogin)
+    @* A board that always has a login (an SNMP community) gets no "no login" box. *@
+    @if (!Model.LoginRequired)
+    {
+        <label for="no-login" class="check">
+            <input id="no-login" type="checkbox" @bind="Values.NoLogin" />
+            <span>@Texts[Model.PasswordOnly ? "Boards.NoPassword" : "Boards.NoLogin"]</span>
+        </label>
+    }
+    @if (Model.LoginRequired || !Values.NoLogin)
     {
         <div class="fields">
             @if (!Model.PasswordOnly)
@@ -149,7 +154,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
             Port = board.Model is { } model && endpoint.Port == model.DefaultPort ? "" : endpoint.Port.ToString(CultureInfo.InvariantCulture),
             Username = login.Username,
             HasPassword = login.HasPassword,
-            NoLogin = login.Username.Length == 0 && !login.HasPassword,
+            NoLogin = board.Model is not { LoginRequired: true } && login.Username.Length == 0 && !login.HasPassword,
         };
     }
 
@@ -268,7 +273,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
 
         var (endpoint, login) = (Board.Endpoint, Board.Login);
         var error = await Address.SaveAsync(Board.BoardId, Values.Host, port, UserEmail, CancellationToken.None)
-            ?? (Model.HasLogin ? await Address.SaveLoginAsync(Board.BoardId, Values.Username, Values.NewPassword, Values.NoLogin, UserEmail, CancellationToken.None) : null);
+            ?? (Model.HasLogin ? await Address.SaveLoginAsync(Board.BoardId, Values.Username, Values.NewPassword, Values.NoLogin && !Model.LoginRequired, UserEmail, CancellationToken.None) : null);
         if (error is not null)
         {
             await ErrorChanged.InvokeAsync(error);
@@ -305,6 +310,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
 
     private async Task RefreshAsync(BoardState state)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(() =>

@@ -1,11 +1,13 @@
 @implements IDisposable
 @using System.Globalization
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Updates
 @inject UpdateService Updates
 @inject LocalClock Clock
 @inject CurrentUser CurrentUser
 @inject IStringLocalizer<UpdatesTexts> Texts
+@inject AppLanguage Language
 
 @* Settings → Updates: the running version, the newest release with what's new, "Update now" and how the update goes.
    The update helper on the host does the work (UpdateService). *@
@@ -254,6 +256,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);

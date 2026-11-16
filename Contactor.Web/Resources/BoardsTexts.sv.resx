@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Boards.Board" xml:space="preserve">
+    <value>Kort</value>
+  </data>
+  <data name="Boards.Name" xml:space="preserve">
+    <value>Namn</value>
+  </data>
+  <data name="Boards.Address" xml:space="preserve">
+    <value>Adress</value>
+  </data>
+  <data name="Boards.Port" xml:space="preserve">
+    <value>Port</value>
+  </data>
+  <data name="Boards.ModelLine" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Boards.Relays_One" xml:space="preserve">
+    <value>{0} relä</value>
+  </data>
+  <data name="Boards.Relays_Other" xml:space="preserve">
+    <value>{0} reläer</value>
+  </data>
+  <data name="Boards.AddressHint" xml:space="preserve">
+    <value>Reläkortets IP-adress på det lokala nätverket. Din router visar den bland sina anslutna enheter.</value>
+  </data>
+  <data name="Boards.NoPassword" xml:space="preserve">
+    <value>Kortet har inget lösenord</value>
+  </data>
+  <data name="Boards.NoLogin" xml:space="preserve">
+    <value>Kortet har ingen inloggning</value>
+  </data>
+  <data name="Boards.UserName" xml:space="preserve">
+    <value>Användarnamn</value>
+  </data>
+  <data name="Boards.Password" xml:space="preserve">
+    <value>Lösenord</value>
+  </data>
+  <data name="Boards.Password.Unchanged" xml:space="preserve">
+    <value>oförändrat</value>
+  </data>
+  <data name="Boards.Password.None" xml:space="preserve">
+    <value>inget</value>
+  </data>
+  <data name="Boards.Login.Hint" xml:space="preserve">
+    <value>Samma som på kortets egen webbsida. {0}</value>
+  </data>
+  <data name="Boards.Login.MaxLength" xml:space="preserve">
+    <value>Högst {0} tecken.</value>
+  </data>
+  <data name="Boards.Online" xml:space="preserve">
+    <value>Kortet är anslutet på {0}</value>
+  </data>
+  <data name="Boards.NoAddress" xml:space="preserve">
+    <value>Reläkortet har ingen adress än</value>
+  </data>
+  <data name="Boards.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet på {0}</value>
+  </data>
+  <data name="Boards.Saved" xml:space="preserve">
+    <value>Sparat. Appen ansluter till kortet igen.</value>
+  </data>
+  <data name="Boards.NotChosen" xml:space="preserve">
+    <value>Inget reläkort har valts än.</value>
+  </data>
+  <data name="Boards.BeingRemoved" xml:space="preserve">
+    <value>Reläkortet tas bort.</value>
+  </data>
+  <data name="Boards.Save.EnterName" xml:space="preserve">
+    <value>Skriv ett namn.</value>
+  </data>
+  <data name="Boards.Save.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Boards.Endpoint.NoHost" xml:space="preserve">
+    <value>Skriv reläkortets adress, t.ex. 192.168.1.50.</value>
+  </data>
+  <data name="Boards.Endpoint.NotAnAddress" xml:space="preserve">
+    <value>{0} är ingen adress. Skriv t.ex. 192.168.1.50.</value>
+  </data>
+  <data name="Boards.Endpoint.BadPort" xml:space="preserve">
+    <value>Porten är ett tal från 1 till 65535.</value>
+  </data>
+  <data name="Boards.Page.Missing" xml:space="preserve">
+    <value>Det här reläkortet finns inte i Contactor.</value>
+  </data>
+  <data name="Boards.Remove.Title" xml:space="preserve">
+    <value>Ta bort kortet</value>
+  </data>
+  <data name="Boards.Remove.Hint" xml:space="preserve">
+    <value>Tar bort kortet från Contactor. Dess reläer, grupper, scheman, ingångarnas åtgärder och händelser tas bort. Själva kortet ändras inte.</value>
+  </data>
+  <data name="Boards.Remove.Button" xml:space="preserve">
+    <value>Ta bort {0}</value>
+  </data>
+  <data name="Boards.Remove.Ask" xml:space="preserve">
+    <value>Ta bort {0}?</value>
+  </data>
+  <data name="Boards.Remove.Deletes" xml:space="preserve">
+    <value>Det här tas bort och kan inte ångras:</value>
+  </data>
+  <data name="Boards.Remove.Groups_One" xml:space="preserve">
+    <value>{0} grupp</value>
+  </data>
+  <data name="Boards.Remove.Groups_Other" xml:space="preserve">
+    <value>{0} grupper</value>
+  </data>
+  <data name="Boards.Remove.Schedules_One" xml:space="preserve">
+    <value>{0} schema</value>
+  </data>
+  <data name="Boards.Remove.Schedules_Other" xml:space="preserve">
+    <value>{0} scheman</value>
+  </data>
+  <data name="Boards.Remove.InputActions_One" xml:space="preserve">
+    <value>{0} ingångsåtgärd</value>
+  </data>
+  <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
+    <value>{0} ingångsåtgärder</value>
+  </data>
+  <data name="Boards.Remove.Events" xml:space="preserve">
+    <value>Alla händelser för {0}</value>
+  </data>
+  <data name="Boards.Remove.OffFirst" xml:space="preserve">
+    <value>Dess reläer stängs av först. Om en grupp efterkör kan du ta bort kortet när den är klar.</value>
+  </data>
+  <data name="Boards.Remove.NoContact" xml:space="preserve">
+    <value>{0} har ingen kontakt. Ett relä som är på förblir på, och Contactor kan inte stänga av det.</value>
+  </data>
+  <data name="Boards.Remove.Removing" xml:space="preserve">
+    <value>Tar bort…</value>
+  </data>
+  <data name="Boards.Remove.Confirm" xml:space="preserve">
+    <value>Ta bort</value>
+  </data>
+  <data name="Boards.Remove.Failed" xml:space="preserve">
+    <value>Kunde inte ta bort {0}. Inget togs bort.</value>
+  </data>
+  <data name="Boards.Remove.AlreadyRemoved" xml:space="preserve">
+    <value>Det här reläkortet är redan borttaget.</value>
+  </data>
+  <data name="Boards.Remove.Lost" xml:space="preserve">
+    <value>{0} har tappat kontakten, så dess reläer kunde inte stängas av. Inget togs bort.</value>
+  </data>
+  <data name="Boards.Remove.RunsOn" xml:space="preserve">
+    <value>{0} efterkör till {1}. Ta bort {2} när den är klar.</value>
+  </data>
+  <data name="Boards.Remove.NotOff" xml:space="preserve">
+    <value>Några av reläerna på {0} stängdes inte av. Inget togs bort. Försök igen.</value>
+  </data>
+  <data name="Boards.New.Step" xml:space="preserve">
+    <value>STEG {0} AV {1}</value>
+  </data>
+  <data name="Boards.New.NameHint" xml:space="preserve">
+    <value>Det du kallar det i Contactor, t.ex. "Garage". Du kan ändra det senare.</value>
+  </data>
+  <data name="Boards.New.NameExample" xml:space="preserve">
+    <value>T.ex. Garage</value>
+  </data>
+  <data name="Boards.New.Gone" xml:space="preserve">
+    <value>Det här reläkortet togs bort under tiden.</value>
+  </data>
+  <data name="Boards.New.Done" xml:space="preserve">
+    <value>Klart</value>
+  </data>
+  <data name="Boards.New.WithoutConnection" xml:space="preserve">
+    <value>Fortsätt utan anslutning</value>
+  </data>
+  <data name="Boards.New.ChooseBoard" xml:space="preserve">
+    <value>Välj ditt reläkort.</value>
+  </data>
+  <data name="Boards.Picker.Label" xml:space="preserve">
+    <value>KORT</value>
+  </data>
+  <data name="Boards.Picker.All" xml:space="preserve">
+    <value>Alla kort</value>
+  </data>
+  <data name="Boards.Picker.AllShort" xml:space="preserve">
+    <value>Alla</value>
+  </data>
+  <data name="Boards.Picker.Count_One" xml:space="preserve">
+    <value>{0} kort</value>
+  </data>
+  <data name="Boards.Picker.Count_Other" xml:space="preserve">
+    <value>{0} kort</value>
+  </data>
+  <data name="Boards.Picker.OnCount" xml:space="preserve">
+    <value>{0} av {1} på</value>
+  </data>
+  <data name="Boards.Picker.AllHint" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Boards.Picker.NoContact" xml:space="preserve">
+    <value>Ingen kontakt</value>
+  </data>
+  <data name="Boards.Picker.NoContactHidden" xml:space="preserve">
+    <value>: ingen kontakt</value>
+  </data>
+  <data name="Boards.Picker.Show" xml:space="preserve">
+    <value>Kort att visa</value>
+  </data>
+  <data name="Boards.Picker.AddChip" xml:space="preserve">
+    <value>Kort</value>
+  </data>
+  <data name="Boards.Picker.ShowAll" xml:space="preserve">
+    <value>Visa alla</value>
+  </data>
+  <data name="Boards.Model.Title" xml:space="preserve">
+    <value>Vilket reläkort?</value>
+  </data>
+  <data name="Boards.Model.Intro" xml:space="preserve">
+    <value>Välj märket först, sedan modellen. Båda står tryckta på kortet.</value>
+  </data>
+  <data name="Boards.Model.Brand" xml:space="preserve">
+    <value>Märke</value>
+  </data>
+  <data name="Boards.Model.ChooseBrand" xml:space="preserve">
+    <value>Välj märke</value>
+  </data>
+  <data name="Boards.Model.Model" xml:space="preserve">
+    <value>Modell</value>
+  </data>
+  <data name="Boards.Model.BrandFirst" xml:space="preserve">
+    <value>Välj märket först</value>
+  </data>
+  <data name="Boards.Model.ChooseModel" xml:space="preserve">
+    <value>Välj modell</value>
+  </data>
+  <data name="Boards.Model.NotListed" xml:space="preserve">
+    <value>Finns det inte i listan? Contactor visar bara de kort som den kan styra.</value>
+  </data>
+  <data name="Boards.Model.BrandModels" xml:space="preserve">
+    <value>Modell från {0}</value>
+  </data>
+  <data name="Boards.Model.Count_One" xml:space="preserve">
+    <value>{0} modell</value>
+  </data>
+  <data name="Boards.Model.Count_Other" xml:space="preserve">
+    <value>{0} modeller</value>
+  </data>
+  <data name="Boards.Relays.Title" xml:space="preserve">
+    <value>Namnge dina reläer</value>
+  </data>
+  <data name="Boards.Relays.Intro" xml:space="preserve">
+    <value>Döp varje relä efter det som det styr. "Prova" slår på det i {0} sekunder, så att du hör vilket det är. Bocka ur de som du inte använder.</value>
+  </data>
+  <data name="Boards.Relays.TryNeedsContact" xml:space="preserve">
+    <value>"Prova" fungerar när appen har kontakt med reläkortet.</value>
+  </data>
+  <data name="Boards.Relays.Try" xml:space="preserve">
+    <value>Prova</value>
+  </data>
+  <data name="Boards.Relays.TryLabel" xml:space="preserve">
+    <value>Prova relä {0}</value>
+  </data>
+  <data name="Boards.Relays.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Boards.Relays.InUse" xml:space="preserve">
+    <value>Används</value>
+  </data>
+  <data name="Boards.Relays.InGroup" xml:space="preserve">
+    <value>I gruppen {0}, som styr det.</value>
+  </data>
+  <data name="Boards.Relays.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Försök igen om en stund.</value>
+  </data>
+  <data name="Boards.Where.Title" xml:space="preserve">
+    <value>Var finns kortet?</value>
+  </data>
+  <data name="Boards.Where.Intro" xml:space="preserve">
+    <value>{0} · dess adress på ditt nätverk.</value>
+  </data>
+  <data name="Boards.Where.Hint" xml:space="preserve">
+    <value>Din router visar kortet bland sina anslutna enheter. Lämna porten tom om du inte har ändrat den på kortet.</value>
+  </data>
+  <data name="Boards.Where.Looking" xml:space="preserve">
+    <value>Letar efter kortet</value>
+  </data>
+  <data name="Boards.Where.At" xml:space="preserve">
+    <value>på {0}</value>
+  </data>
+  <data name="Boards.Where.NoAnswer" xml:space="preserve">
+    <value>Inget svar från {0}. Kontrollera att kortet har ström och nätverkskabel, och att adressen stämmer.</value>
+  </data>
+  <data name="Boards.Where.CheckAgain" xml:space="preserve">
+    <value>Kontrollera igen</value>
+  </data>
+  <data name="Boards.Where.Online" xml:space="preserve">
+    <value>Kortet är anslutet</value>
+  </data>
+  <data name="Boards.Where.Found_One" xml:space="preserve">
+    <value>Hittade {0} relä på {1}</value>
+  </data>
+  <data name="Boards.Where.Found_Other" xml:space="preserve">
+    <value>Hittade {0} reläer på {1}</value>
+  </data>
+  <data name="Boards.Where.Checked" xml:space="preserve">
+    <value>{0} · kontrollerat {1}</value>
+  </data>
+  <data name="Boards.LoginHint.PlainSymbols" xml:space="preserve">
+    <value>Högst {0} tecken: bokstäverna a–z, siffror och vanliga tecken.</value>
+  </data>
+  <data name="Boards.LoginHint.ListedSymbols" xml:space="preserve">
+    <value>Högst {0} tecken, {1} för båda tillsammans: bokstäverna a–z, siffror och {2}.</value>
+  </data>
+  <data name="Boards.LoginHint.TcpPassword" xml:space="preserve">
+    <value>TCP-lösenordet från kortets inställningssida, inte inloggningen till dess webbsida. Högst {0} tecken: bokstäver, siffror och vanliga tecken, inga mellanslag.</value>
+  </data>
+  <data name="Boards.LoginHint.SnmpCommunity" xml:space="preserve">
+    <value>Kortets Read-write Community från dess SNMP-inställningar, {0} till {1} tecken: bokstäver, siffror och vanliga tecken, inga mellanslag. På ett nytt kort är den {2}. Med fel community svarar kortet inte: kontrollera adressen och communityn.</value>
+  </data>
+  <data name="Boards.Login.TooLong.UserName" xml:space="preserve">
+    <value>Användarnamnet får vara högst {0} tecken på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.TooLong.Password" xml:space="preserve">
+    <value>Lösenordet får vara högst {0} tecken på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.UserName" xml:space="preserve">
+    <value>Användarnamnet får bara innehålla bokstäverna a–z, siffror och vanliga tecken.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.Password" xml:space="preserve">
+    <value>Lösenordet får bara innehålla bokstäverna a–z, siffror och vanliga tecken.</value>
+  </data>
+  <data name="Boards.Login.ListedCharacters.UserName" xml:space="preserve">
+    <value>Användarnamnet får bara innehålla bokstäverna a–z, siffror och {0} på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.ListedCharacters.Password" xml:space="preserve">
+    <value>Lösenordet får bara innehålla bokstäverna a–z, siffror och {0} på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.TooLongTogether" xml:space="preserve">
+    <value>Användarnamnet och lösenordet får vara högst {0} tecken tillsammans på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.PasswordOnly" xml:space="preserve">
+    <value>Kortet från {0} tar bara ett lösenord, inget användarnamn.</value>
+  </data>
+  <data name="Boards.Login.PasswordTooLong" xml:space="preserve">
+    <value>Lösenordet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Boards.Login.PasswordCharacters" xml:space="preserve">
+    <value>Lösenordet får bara innehålla bokstäverna a–z och A–Z, siffror och vanliga tecken, utan mellanslag.</value>
+  </data>
+  <data name="Boards.Login.CommunityLength" xml:space="preserve">
+    <value>Lösenordet, kortets read-write community, måste vara {0} till {1} tecken.</value>
+  </data>
+  <data name="Boards.Login.NoLoginWebPages" xml:space="preserve">
+    <value>{0} tar ingen inloggning: dess lösenord skyddar bara dess egna webbsidor.</value>
+  </data>
+  <data name="Boards.Login.NoLoginWebPage" xml:space="preserve">
+    <value>Kortet från {0} tar ingen inloggning: dess lösenord skyddar bara dess egen webbsida.</value>
+  </data>
+</root>

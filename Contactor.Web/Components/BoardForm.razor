@@ -9,6 +9,7 @@
 @inject CurrentUser CurrentUser
 @inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
+@inject AppLanguage Language
 
 @* One board's card: on Settings with one board ("Relay board"), and on a board's own page ("Board", with its name). *@
 <form class="card" @onsubmit="SaveAsync">
@@ -39,11 +40,15 @@
 
     @if (Model is { HasLogin: true } model)
     {
-        <label for="no-login" class="check">
-            <input id="no-login" type="checkbox" @bind="_noLogin" />
-            <span>@Texts[model.PasswordOnly ? "Boards.NoPassword" : "Boards.NoLogin"]</span>
-        </label>
-        @if (!_noLogin)
+        @* A board that always has a login (an SNMP community) gets no "no login" box. *@
+        @if (!model.LoginRequired)
+        {
+            <label for="no-login" class="check">
+                <input id="no-login" type="checkbox" @bind="_noLogin" />
+                <span>@Texts[model.PasswordOnly ? "Boards.NoPassword" : "Boards.NoLogin"]</span>
+            </label>
+        }
+        @if (model.LoginRequired || !_noLogin)
         {
             <div class="fields login">
                 @if (!model.PasswordOnly)
@@ -162,7 +167,7 @@
         var login = await Handler.GetLoginAsync(BoardId, CancellationToken.None);
         _username = login.Username;
         _hasPassword = login.HasPassword;
-        _noLogin = login.Username.Length == 0 && !login.HasPassword;
+        _noLogin = Model is not { LoginRequired: true } && login.Username.Length == 0 && !login.HasPassword;
         _newPassword = "";
     }
 
@@ -192,7 +197,7 @@
 
             error ??= await Handler.SaveAsync(BoardId, _host, port, _user.Email, CancellationToken.None);
             error ??= Model is { HasLogin: true }
-                ? await Handler.SaveLoginAsync(BoardId, _username, _newPassword, _noLogin, _user.Email, CancellationToken.None)
+                ? await Handler.SaveLoginAsync(BoardId, _username, _newPassword, _noLogin && Model is not { LoginRequired: true }, _user.Email, CancellationToken.None)
                 : null;
             (_message, _saved) = error is null ? (Texts["Boards.Saved"].Value, true) : (error, false);
             if (error is null)
@@ -217,6 +222,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);
