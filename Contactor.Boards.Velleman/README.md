@@ -2,7 +2,7 @@
 
 How the app talks to the VM201, the VM204 and the VM208. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is in `docs/ARCHITECTURE.md`.
 
-The three boards have different protocols, so each has its own types, named after the model (`Vm201*`, `Vm204*`, `Vm208*`), and its own section below.
+The app talks to the VM201 over its own TCP protocol, and to the VM204 and the VM208 over HTTP. The three boards have different protocols, so each has its own types, named after the model (`Vm201*`, `Vm204*`, `Vm208*`), and its own section below.
 
 ## Sources
 
@@ -20,7 +20,7 @@ The three boards have different protocols, so each has its own types, named afte
 
 ### Protocol
 
-TCP protocol (port 9760).
+The VM201 talks its own TCP protocol on port 9760.
 
 #### Packet format
 
@@ -111,7 +111,7 @@ The VM204 is not the VM201's protocol.
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `vm204` | Velleman VM204 | 4 | 4, and 1 analog input | none | user name and password |
+| `vm204` | Velleman VM204 | 4 | 4, and 1 analog input | none | user name and password; empty allowed |
 
 ### Protocol
 
@@ -166,23 +166,36 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
 
 ## To check on a real board
 
-> **Warning: check the first point of each list first, before anything is connected to the relays.**
+> **Warning: check the first three points of the VM201 list and the first two points of the VM204 and VM208 lists first,
+> before anything is connected to the relays.**
 
 ### VM201
 
 - Whether the physical relay state survives a power cut, and if so in which state.
-- How many TCP clients the board allows at once. Assume **one**: the app holds exactly one connection.
-- Whether the board closes idle connections. That is why `CMD_STATUS_REQ` is sent every 15 seconds as a keep-alive.
 - CMD_PULSE: that the time is a binary number (not ASCII digits), and the units lower case. Velleman's description gives
   only "pulse time: 1...99" and the units; the reference implementation doesn't send it.
 - CMD_PULSE: whether the board pushes `CMD_STATUS` both when the pulse starts and when it ends, what an ON or OFF of the
   relay during a pulse does to it (the simulator ends the pulse), what a second pulse does (the simulator starts it
   again), and what a time of 0 or above 99 does (the simulator ignores the packet).
+- How many TCP clients the board allows at once. Assume **one**: the app holds exactly one connection.
+- Whether the board closes idle connections. That is why `CMD_STATUS_REQ` is sent every 15 seconds as a keep-alive.
 
 ### VM204
 
-- To check on a real board: the status JSON as above, whether an input reads `true` closed or open, that the status right after a command already shows it, logins with symbols and the 48-character total (the firmware's `authUser` also reads past the end of the query), the key's length and characters (its buffer is 32 bytes and the terminator `gen_random` writes overruns it), that `relay/on` and `relay/off` answer properly (their handler in `httpServerUriNotFoundCallback` has a missing return), and days of polling every 2 s.
+- That `relay/on` and `relay/off` answer properly (their handler in `httpServerUriNotFoundCallback` has a missing return).
+- Whether an input reads `true` closed or open.
+- That the status right after a command already shows it.
+- Logins with symbols and the 48-character total (the firmware's `authUser` also reads past the end of the query).
+- The key's length and characters (its buffer is 32 bytes and the terminator `gen_random` writes overruns it).
+- Days of polling every 2 s.
+- The status JSON as above.
 
 ### VM208
 
-- To check on a real board: the status JSON as above, whether the input reads `true` closed or open (it is the raw pin level), that the answer to `/relay` already shows the change (if the firmware can't take its lock within 100 ms the relay isn't switched), that switching a relay stops its pulse or timer, that the board's own schedules and buttons show on the next poll, how it copes with polling every 2 s for days, and `/status` with an extension module plugged in.
+- That the answer to `/relay` already shows the change (if the firmware can't take its lock within 100 ms the relay isn't switched).
+- Whether the input reads `true` closed or open (it is the raw pin level).
+- That switching a relay stops its pulse or timer.
+- That the board's own schedules and buttons show on the next poll.
+- The status JSON as above.
+- How it copes with polling every 2 s for days.
+- `/status` with an extension module plugged in.

@@ -185,9 +185,10 @@ Set `Waveshare:ResetRelayModes` to `false` to keep the modes.
 
 ## To check on a real board
 
-> **Warning: check the first four points first, before anything is connected to the relays.**
+> **Warning: check the first five points first, before anything is connected to the relays.**
 
 - The relay states after a power cut: all off, or the last states.
+- If the mode registers stay after a power cut, and how a relay in linkage mode answers function 05.
 - The input bit order (bit 0 = input 1), and if a closed input reads 1.
 - What a relay that is on does when the app sets its mode back to normal at connect: does it keep its state? The app
   must turn nothing off at start.
@@ -199,6 +200,5 @@ Set `Waveshare:ResetRelayModes` to `false` to keep the modes.
   value other than FF00, 0000 or 5500.
 - How many TCP clients the board accepts at once, and if a second client closes the first.
 - That the board never sends data that the app did not ask for.
-- If the mode registers stay after a power cut, and how a relay in linkage mode answers function 05.
 - That the 16CH has no inputs, and that the 16CH and the 30CH answer as above.
 - How the board handles a poll every 2 s for days.

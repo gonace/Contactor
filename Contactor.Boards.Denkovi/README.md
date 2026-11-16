@@ -442,6 +442,7 @@ monitoring off or without P5 restart pins, and no analog events on the pins that
 
 The other points:
 
+- The pin states after a power cut, with "Save Outputs" on and off. The app must turn nothing off at start.
 - The communities of a new board: `000000000000` and `private` (table 4.1). That a get with the read-write community
   is answered (section 6.6.1 says it is).
 - What the board does with a wrong community, and with a set with the read-only community: no answer, as the app
@@ -457,4 +458,3 @@ The other points:
   example output (section 14.2.1) shows "enterprises.19865", not 42505.
 - Which error-status the board sends for an OID it doesn't have and for a value out of range.
 - That a set is echoed with the value set, and that the read right after it shows the new state.
-- The pin states after a power cut, with "Save Outputs" on and off. The app must turn nothing off at start.
