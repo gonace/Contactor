@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Denkovi;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -25,7 +26,7 @@ public sealed class SmartDenBoardTests
         Assert.Equal(502, model.DefaultPort);
         Assert.Equal(0, model.LoginMaxLength);
         Assert.True(SmartDenModels.IsSmartDen(model));
-        Assert.False(SmartDenModels.IsSmartDen(Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.False(SmartDenModels.IsSmartDen(Vm201Model.Model));
     }
 
     [Theory]

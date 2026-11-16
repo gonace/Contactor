@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using Contactor.Boards;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
 using Contactor.Web.Features.Boards;
@@ -386,7 +387,7 @@ public sealed class BoardAddingTests
     [Fact]
     public async Task Should_TurnTheRelaysOff_AndRemoveTheBoard_OnCancel_WhileItAnswers()
     {
-        await using var simulator = new Contactor.Boards.Velleman.Vm201Simulator();
+        await using var simulator = new Vm201Simulator();
         simulator.Start();
         await using var boards = await TwoBoards.StartAsync();
         var registry = boards.App.Services.GetRequiredService<BoardRegistry>();

@@ -47,6 +47,7 @@ English or Swedish.
 <p>
   <img src="docs/screenshots/setup.png" width="250" alt="The setup guide asks how people reach the app">
   <img src="docs/screenshots/relays-sv.png" width="250" alt="The relays in Swedish">
+  <img src="docs/screenshots/settings.png" width="250" alt="Settings: updates, the relay board and the language">
 </p>
 
 On a tablet the cards sit in two columns. On a computer a side menu replaces the tab bar:
