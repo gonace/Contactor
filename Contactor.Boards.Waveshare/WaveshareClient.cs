@@ -273,7 +273,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         try
         {
             var taken = new StrongBox<ulong>();
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
+            await _poller.RunSwitchesAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
             return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
@@ -289,9 +289,9 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
     }
 
-    // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's, and
-    // puts the relays the board took in <paramref name="taken"/>.
-    private async Task<WaveshareStatus> SwitchEachAsync(ulong mask, Func<int, WaveshareRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
+    // Under the poller's lock. Returns the board's state read after the switches, which the poller takes as a poll's,
+    // or none when that read failed, and puts the relays the board took in <paramref name="taken"/>.
+    private async Task<CommandReading<WaveshareStatus>> SwitchEachAsync(ulong mask, Func<int, WaveshareRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
         var unreadable = false;
@@ -330,22 +330,15 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
         try
         {
-            return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+            return new CommandReading<WaveshareStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException || IsNoAnswer(ex))
         {
             // Never a state the board didn't read: an echo of FC 05 doesn't show that the relay switched (a relay in
-            // linkage mode echoes and stays as it is), and a group would take a made-up "on" as confirmation. The last
-            // state read stays, and a read at once shows the truth; it counts as a poll of its own if it fails too. The
-            // command doesn't fail (what was taken was sent), so the poller's read after a failed command doesn't come:
-            // ask for it here.
-            if (_poller.State.Reading is not { } last)
-            {
-                throw;
-            }
-
-            _poller.PollNow();
-            return last;
+            // linkage mode echoes and stays as it is), and a group would take a made-up "on" as confirmation. The
+            // command doesn't fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last
+            // state read and reads the board at once, which counts as a poll of its own if it fails too.
+            return default;
         }
     }
 

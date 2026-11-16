@@ -293,7 +293,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         try
         {
             var taken = new StrongBox<ulong>();
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
+            await _poller.RunSwitchesAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
             return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
@@ -309,9 +309,9 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         }
     }
 
-    // Under the poller's lock. Returns the board's state after the switches, which the poller takes as a poll's, and
-    // puts the relays the board took in <paramref name="taken"/>.
-    private async Task<DevantechStatus> SwitchEachAsync(ulong mask, Func<int, DevantechRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
+    // Under the poller's lock. Returns the board's state read after the switches, which the poller takes as a poll's,
+    // or none when that read failed, and puts the relays the board took in <paramref name="taken"/>.
+    private async Task<CommandReading<DevantechStatus>> SwitchEachAsync(ulong mask, Func<int, DevantechRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         // The board locks again after 30 s without a command, so a command checks first. A board it can't unlock
         // switches nothing: that throws before any relay is sent.
@@ -365,21 +365,14 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
         try
         {
-            return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+            return new CommandReading<DevantechStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (IsNotTaken(ex) || IsNoAnswer(ex))
         {
-            // Never a state the board didn't read: a group would take a made-up "on" as confirmation. The last state
-            // read stays, and a read at once shows the truth; it counts as a poll of its own if it fails too. The
-            // command doesn't fail (what was taken was sent), so the poller's read after a failed command doesn't
-            // come: ask for it here.
-            if (_poller.State.Reading is not { } last)
-            {
-                throw;
-            }
-
-            _poller.PollNow();
-            return last;
+            // Never a state the board didn't read: a group would take a made-up "on" as confirmation. The command
+            // doesn't fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last state
+            // read and reads the board at once, which counts as a poll of its own if it fails too.
+            return default;
         }
     }
 

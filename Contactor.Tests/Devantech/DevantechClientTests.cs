@@ -698,23 +698,47 @@ public sealed class DevantechClientTests
     public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
     {
         // The switch is answered; the read after it gets no answer.
+        // The poll at once waits until the test has looked at the state the command left.
         var reads = 0;
+        using var hold = new ManualResetEventSlim();
+        T Held<T>(T answer)
+        {
+            if (Volatile.Read(ref reads) == 3)
+            {
+                hold.Wait(Cancel);
+            }
+
+            return answer;
+        }
+
         await using var board = ScriptedBoard.Start(request => request switch
         {
             [0x10] => [19, 2, 28],
             [0x7A] => [0xFF],
             [0x20, _, 0] => [0x00],
             [0x24] when Interlocked.Increment(ref reads) == 2 => [],
-            _ => [0b0001],
+            _ => Held<byte[]>([0b0001]),
         });
         await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var contact = run.Client.State.LastContactUtc;
 
         var sent = run.Client.TurnOnAsync(0b0001, Cancel);
         await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.PendingTimers == 2);
         run.Time.Advance(DevantechClient.RequestTimeout);
 
         Assert.Equal(0b0001UL, await sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+
+        // Issue #379: the read after the switches failed, so the command wasn't contact with the board.
+        try
+        {
+            await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3);
+            Assert.Equal(contact, run.Client.State.LastContactUtc);
+        }
+        finally
+        {
+            hold.Set();
+        }
 
         // The read at once, not in a minute, on a new connection.
         await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.WaitsOnly(run.PollInterval));

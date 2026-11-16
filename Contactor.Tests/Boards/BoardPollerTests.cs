@@ -204,6 +204,59 @@ public sealed class BoardPollerTests
         await run;
     }
 
+    // Issue #379: the switches went out, but the read after them failed. That is no contact with the board: the last
+    // reading and its time stay, the failed polls in a row aren't started over, and the board is read at once.
+    [Fact]
+    public async Task Should_NotCountACommand_AsAnAnsweredPoll_WhenItsReadFailed()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1, new IOException("a"), new IOException("b"));
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, FailuresBeforeLost = 2 };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        var contact = time.GetUtcNow();
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 2);
+        var changes = board.Changes.Count;
+
+        await poller.RunSwitchesAsync(_ => Task.FromResult(default(CommandReading<int>)), Cancel);
+
+        Assert.Equal(new PolledState<int>(true, 1, contact), poller.State);
+        Assert.Equal(changes, board.Changes.Count);
+
+        // The read at once fails too: two in a row lose the board.
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Lost, "b")));
+        Assert.Equal(3, board.Reads);
+        Assert.False(poller.State.IsConnected);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_TakeACommandsReading_AsAnAnsweredPoll()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1, new IOException("a"), new IOException("b"), new IOException("c"));
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, FailuresBeforeLost = 2 };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 2);
+
+        await poller.RunSwitchesAsync(_ => Task.FromResult(new CommandReading<int>(5)), Cancel);
+
+        Assert.Equal(new PolledState<int>(true, 5, time.GetUtcNow()), poller.State);
+
+        // The count started over: one more failed poll doesn't lose the board.
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 3);
+        Assert.True(poller.State.IsConnected);
+        await stop.CancelAsync();
+        await run;
+    }
+
     [Fact]
     public async Task Should_RefuseACommand_WhenThePollUnderWayLosesTheBoard()
     {

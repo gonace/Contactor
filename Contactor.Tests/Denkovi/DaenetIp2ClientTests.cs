@@ -385,12 +385,25 @@ public sealed class DaenetIp2ClientTests
     public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
     {
         // The set is answered; both tries of the read after it get no answer.
+        // The poll at once waits until the test has looked at the state the command left.
         var reads = 0;
+        using var hold = new ManualResetEventSlim();
+        T Held<T>(T answer)
+        {
+            if (Volatile.Read(ref reads) == 4)
+            {
+                hold.Wait(Cancel);
+            }
+
+            return answer;
+        }
+
         await using var board = ScriptedBoard.Start(request => request.PduType == DaenetIp2Api.SetRequest
             ? [Echo(request)]
-            : Interlocked.Increment(ref reads) is 2 or 3 ? [] : [Reply(request, 1)]);
+            : Interlocked.Increment(ref reads) is 2 or 3 ? [] : Held<IReadOnlyList<Datagram>>([Reply(request, 1)]));
         await using var run = ClientRun.Start(board.Port, DaenetIp2Models.Relays8, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var contact = run.Client.State.LastContactUtc;
 
         var sent = run.Client.TurnOnAsync(1, run.Stopping);
         await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.PendingTimers == 2);
@@ -399,6 +412,18 @@ public sealed class DaenetIp2ClientTests
         run.Time.Advance(DaenetIp2Client.RequestTimeout);
 
         Assert.Equal(1UL, await Done(sent));
+
+        // Issue #379: the read after the switches failed, so the command wasn't contact with the board.
+        try
+        {
+            await Wait.UntilAsync(() => Volatile.Read(ref reads) == 4);
+            Assert.Equal(contact, run.Client.State.LastContactUtc);
+        }
+        finally
+        {
+            hold.Set();
+        }
+
         await Wait.UntilAsync(() => Volatile.Read(ref reads) == 4 && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsOn(1));
         Assert.True(run.Client.State.IsConnected);

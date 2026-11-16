@@ -177,6 +177,21 @@ public sealed class BoardPoller<TReading> : IDisposable
     public async Task RunCommandAsync(Func<CancellationToken, Task<TReading>> command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+        await RunSwitchesAsync(async token => new CommandReading<TReading>(await command(token).ConfigureAwait(false)), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// As <see cref="RunCommandAsync"/>, for a command that switches the relays and then reads the board's state, and
+    /// whose read may fail once the switches went out. Such a command doesn't fail: it returns a
+    /// <see cref="CommandReading{TReading}"/> with no reading (its default value). That isn't an answered poll:
+    /// <see cref="State"/> keeps its last reading and its <see cref="PolledState{TReading}.LastContactUtc"/>, the failed
+    /// polls in a row aren't started over, and the board's state is read at once, as by <see cref="PollNow"/>, which
+    /// counts on its own if it fails too.
+    /// </summary>
+    public async Task RunSwitchesAsync(Func<CancellationToken, Task<CommandReading<TReading>>> command, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
         if (!State.IsConnected)
         {
             throw new BoardNotConnectedException();
@@ -192,7 +207,7 @@ public sealed class BoardPoller<TReading> : IDisposable
                 throw new BoardNotConnectedException();
             }
 
-            TReading reading;
+            CommandReading<TReading> reading;
             try
             {
                 reading = await command(cancellationToken).ConfigureAwait(false);
@@ -217,8 +232,15 @@ public sealed class BoardPoller<TReading> : IDisposable
                 throw;
             }
 
+            if (!reading.IsRead)
+            {
+                // The switches went out, but the board's state after them wasn't read: no contact, and a read at once.
+                PollNow();
+                return;
+            }
+
             _failures = 0;
-            Apply(reading, generation);
+            Apply(reading.Reading!, generation);
         }
         finally
         {
