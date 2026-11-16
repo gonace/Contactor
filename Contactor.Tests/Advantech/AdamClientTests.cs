@@ -53,6 +53,24 @@ public sealed class AdamClientTests
     }
 
     [Fact]
+    public async Task Should_ReadOnlyTheRelays_OnAModuleWithoutInputs()
+    {
+        // The ADAM-6260: six relays at the same coils, and no inputs, so no FC 02.
+        await using var simulator = new AdamSimulator(AdamModels.Adam6260);
+        simulator.Start();
+        await simulator.SwitchRelayAsync(2, true);
+        await using var run = ClientRun.Start(simulator.Port, model: AdamModels.Adam6260);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(new AdamStatus(0b10, 0), run.Client.State.Status);
+        Assert.Equal(1UL << 5, await run.Client.TurnOnAsync(1UL << 5, Cancel));
+
+        Assert.Equal((1UL << 5) | 0b10, run.Client.State.Relays);
+        Assert.Equal([ReadRelays(1), "00 02 00 00 00 06 01 05 00 15 FF 00", ReadRelays(3)], simulator.ReceivedRequests);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Inputs", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Should_SwitchOneRelayPerRequest_AndReadTheStateAfter()
     {
         await using var simulator = Started();
@@ -514,10 +532,10 @@ public sealed class AdamClientTests
         return simulator;
     }
 
-    private static AdamClient CreateClient(int port, TimeProvider time, int pollSeconds = 2, string host = "127.0.0.1")
+    private static AdamClient CreateClient(int port, TimeProvider time, int pollSeconds = 2, string host = "127.0.0.1", BoardModel? model = null)
     {
         var options = new AdamOptions { Host = host, Port = port, PollSeconds = pollSeconds };
-        return new AdamClient(Options.Create(options), AdamModels.Adam6060, time, NullLogger<AdamClient>.Instance);
+        return new AdamClient(Options.Create(options), model ?? AdamModels.Adam6060, time, NullLogger<AdamClient>.Instance);
     }
 
     private sealed class ClientRun : IAsyncDisposable
@@ -549,10 +567,10 @@ public sealed class AdamClientTests
 
         public List<AdamState> Changes => Copy(_changes);
 
-        public static ClientRun Start(int port, int pollSeconds = 2)
+        public static ClientRun Start(int port, int pollSeconds = 2, BoardModel? model = null)
         {
             var time = new ManualTimeProvider();
-            return new ClientRun(CreateClient(port, time, pollSeconds), time, TimeSpan.FromSeconds(pollSeconds), new CancellationTokenSource());
+            return new ClientRun(CreateClient(port, time, pollSeconds, model: model), time, TimeSpan.FromSeconds(pollSeconds), new CancellationTokenSource());
         }
 
         /// <summary>Moves the clock to the next poll, once the client waits for it, and waits until it was answered.</summary>

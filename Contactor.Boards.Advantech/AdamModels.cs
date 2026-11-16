@@ -18,7 +18,14 @@ public static class AdamModels
     /// </summary>
     public static BoardModel Adam6066 { get; } = Create("advantech-adam-6066", "ADAM-6066", relays: 6, inputs: 6);
 
-    public static IReadOnlyList<BoardModel> All { get; } = [Adam6060, Adam6066];
+    /// <summary>
+    /// The ADAM-6260: 6 relays (relay 1 Form A, relays 2 to 6 Form C, 250 VAC 5 A, 30 VDC 5 A) and no inputs, its relays
+    /// at the same coils as the ADAM-6060's. A Form C relay is one relay to the app. "ADAM-6200 Series User Manual",
+    /// section 2.5 and appendix A.1.7.
+    /// </summary>
+    public static BoardModel Adam6260 { get; } = Create("advantech-adam-6260", "ADAM-6260", relays: 6, inputs: 0);
+
+    public static IReadOnlyList<BoardModel> All { get; } = [Adam6060, Adam6066, Adam6260];
 
     /// <summary>Whether <paramref name="model"/> is one of these.</summary>
     public static bool IsAdam(BoardModel model)

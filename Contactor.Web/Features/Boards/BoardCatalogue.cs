@@ -53,6 +53,7 @@ public static class BoardCatalogue
         new(DevantechModels.Eth8020, DevantechBoards.Create),
         new(AdamModels.Adam6060, AdamBoards.Create),
         new(AdamModels.Adam6066, AdamBoards.Create),
+        new(AdamModels.Adam6260, AdamBoards.Create),
     ];
 
     /// <summary>The brands in alphabetical order, each with its models in the catalogue's order.</summary>

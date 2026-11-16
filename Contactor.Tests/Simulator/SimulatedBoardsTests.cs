@@ -148,6 +148,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     [Theory]
     [InlineData("advantech-adam-6060")]
     [InlineData("advantech-adam-6066")]
+    [InlineData("advantech-adam-6260")]
     public void Should_RunEachAdamModel_WithoutALogin(string type)
     {
         Assert.Null(_boards.Add(type, FreePort(), null, null));

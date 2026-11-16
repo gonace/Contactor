@@ -3,12 +3,13 @@
 How the app talks to the Advantech ADAM modules. What every board shares (`IRelayBoard`, `IBoardConnection`, the board
 catalogue) is in `docs/ARCHITECTURE.md`.
 
-This project connects Contactor to the ADAM-6060 and the ADAM-6066, two modules of Advantech's ADAM-6000 series. It has
-the codec, the client, the adapters for the app and a simulator. It has no web or database code. The types have the
-prefix `Adam`. `AdvantechBrand` has the brand.
+This project connects Contactor to three Advantech modules: the ADAM-6060 and the ADAM-6066 of the ADAM-6000 series, and
+the ADAM-6260 of the ADAM-6200 series. They speak the same Modbus TCP with the same relay coils, so they share one
+codec, one client, the adapters for the app and one simulator; the model says how many inputs there are. It has no web
+or database code. The types have the prefix `Adam`. `AdvantechBrand` has the brand.
 
 Nobody has tested a module with the app yet. The list in [To check on a real module](#to-check-on-a-real-module) shows
-what is not known. Above all, the manual doesn't settle which address goes in the frame for its coil 00017: see
+what is not known. Above all, the manuals don't settle which address goes in the frame for coil 00017: see
 [Addresses](#addresses).
 
 ## Sources
@@ -33,21 +34,60 @@ what is not known. Above all, the manual doesn't settle which address goes in th
 
 Edition 9 (August 2018) has the same examples and map.
 
+- Advantech's "ADAM-6200 Series User Manual", Edition 5, July 2021, part no. 2003620004 (a copy:
+  https://www.wolfautomation.com/content/advantech-adam-6200-userman.pdf), for the ADAM-6260:
+  - section 2.5, page 27: 5 Form C relays and 1 Form A, 250 VAC 5 A and 30 VDC 5 A, and no inputs (the ADAM-6266 has
+    the inputs); section 2.5.2, page 29: the terminals, RL0 with NO and COM only (Form A), RL1 to RL5 with NO, COM
+    and NC (Form C);
+  - page 57: the module's ports, "TCP Modbus TCP 502", and the "Host Idle (timeout)";
+  - section 4.3.2.7, page 61: Access Control;
+  - section 4.3.2.8, page 62: "User-defined Modbus Address": the 0X and 4X addresses can be changed;
+  - pages 76–80: the four DO modes, as on the ADAM-6000;
+  - section 4.3.3.6, page 83: the ADAM-6260's fail-safe values and Communication WDT;
+  - sections 4.3.4 and 4.3.5, pages 85–90: P2P and GCL;
+  - appendix A.1.1, page 130: the function codes, the same as the ADAM-6000's (01, 02, 03, 04, 05, 06, 08, 0F, 10);
+  - appendix A.1.7, pages 146–147: the ADAM-6260 map: the relays ("DO Value") at 00017 to 00022, as on the ADAM-6060,
+    and the pulse registers at 40001 to 40048;
+  - appendix B, e.g. page 153: the module's Modbus address in an ASCII command, "(Always 01)".
+
+  The ADAM-6200 manual has no frames at all, neither bytes nor examples; what a frame looks like comes from the
+  ADAM-6000 manual and Modbus TCP.
+
 ## Models
 
 | Catalogue id | Name | Relays | Inputs | Contacts |
 |---|---|---|---|---|
 | `advantech-adam-6060` | Advantech ADAM-6060 | 6 | 6 | Form A, 120 VAC 0.5 A, 30 VDC 1 A |
 | `advantech-adam-6066` | Advantech ADAM-6066 | 6 | 6 | Form A, 250 VAC 5 A, 30 VDC 3 A |
+| `advantech-adam-6260` | Advantech ADAM-6260 | 6 | 0 | relay 1 Form A, relays 2 to 6 Form C, 250 VAC 5 A, 30 VDC 5 A |
 
-Both have the same map and are switched the same way; only their relays' ratings differ. They use port 502 and have no
-login: Modbus has none, and the module's password (`00000000` from the factory) guards only its web page and its
-configuration. The ADAM-6000 manual names no port; port 502 is Modbus TCP's own, and the ADAM-6200 manual lists
-"TCP Modbus TCP 502".
+The three are switched the same way, at the same coils. The ADAM-6060 and the ADAM-6066 have the same map; only their
+relays' ratings differ. The ADAM-6260 has no inputs, so the app doesn't read any. A Form C relay is one relay to the
+app: on is its coil energized, whichever of its contacts the load is wired to.
 
-The modules have no pulse in the app. Their Pulse Output DO mode and the pulse registers (40013 to 40060: the low and
-high widths in 0.1 ms, an absolute and an incremental count) make a pulse train, at most 3 Hz, not one pulse of a given
-length.
+They use port 502 and have no login: Modbus has none, and the module's password (`00000000` from the factory) guards
+only its web page and its configuration. The ADAM-6000 manual names no port; port 502 is Modbus TCP's own, and the
+ADAM-6200 manual lists "TCP Modbus TCP 502".
+
+The modules have no pulse in the app. Their Pulse Output DO mode and the pulse registers (on the ADAM-6060 and ADAM-6066
+40013 to 40060, on the ADAM-6260 40001 to 40048: the low and high widths in 0.1 ms, an absolute and an incremental
+count) make a pulse train, not one pulse of a given length.
+
+### What the two manuals share
+
+The app treats the three modules alike only where both manuals say the same:
+
+- the function codes (ADAM-6000 section 7.3.2, ADAM-6200 appendix A.1.1);
+- the relays at coils 00017 to 00022, read and written (ADAM-6000 appendix B.2.8, ADAM-6200 appendix A.1.7);
+- the unit id 1 ("always 1", "Always 01");
+- port 502 (named only by the ADAM-6200 manual, and Modbus TCP's own);
+- the DO modes, the fail-safe values with the Communication WDT, Access Control, P2P and GCL, and the Modbus addresses
+  that the installer can move.
+
+The inputs (FC 02 at 00001 to 00006) come from the ADAM-6000 manual and are read only on the ADAM-6060 and ADAM-6066.
+Everything a frame looks like (the header, FF00 and 0000 in function 05, the bit order, the address in the frame) comes
+from the ADAM-6000 manual and Modbus TCP: the ADAM-6200 manual gives no frame. So [Addresses](#addresses) is as open for
+the ADAM-6260 as for the others.
 
 ## Protocol
 
@@ -64,7 +104,7 @@ Modbus TCP, section 7.3 and appendix B.
 | What | Function | Address in the frame | Data | Answer | Manual |
 |---|---|---|---|---|---|
 | Read the relays | 01 "Read coil status" | 0x0010 (coil 00017) | quantity = 6 | byte count 1, then a bit per relay, bit 0 = relay 1 | 7.3.2, B.2.8 |
-| Read the inputs | 02 "Read input status" | 0x0000 (00001) | quantity = 6 | byte count 1, then a bit per input, bit 0 = input 1 | 7.3.2, B.2.8 |
+| Read the inputs (not on the ADAM-6260) | 02 "Read input status" | 0x0000 (00001) | quantity = 6 | byte count 1, then a bit per input, bit 0 = input 1 | 7.3.2, B.2.8 |
 | Switch one relay | 05 "Force single coil" | 0x0010 + relay − 1 (coil 00017 + relay − 1) | FF00 on, 0000 off | the request, echoed | 7.3.2, B.2.8 |
 
 The app switches one relay with one function 05, so it never writes all relays at once: a change at the module in
@@ -96,8 +136,8 @@ input 1 is 00001, address 0x0000 (`AdamApi.RelayAddress` and `AdamApi.InputAddre
 a real module takes the examples' 17 instead, the app's relay 1 is relay 2 of the module's map. This must be checked on
 a real module before anyone uses it for a machine.
 
-The Modbus Address tab (page 64) lets the installer move these addresses. The app takes the factory map of appendix
-B.2.8: leave the tab as it is.
+The Modbus Address tab (ADAM-6000 page 64, ADAM-6200 section 4.3.2.8) lets the installer move these addresses. The
+app takes the factory map of the manuals' appendices: leave the tab as it is.
 
 ### Frames from the manual
 
@@ -124,7 +164,8 @@ The app's own frames, e.g. `00 07 00 00 00 06 01 01 00 10 00 06` (read the relay
 sends one request at a time. Each request waits for its answer.
 
 - Each request and each connection attempt has `AdamClient.RequestTimeout` (5 s) on `TimeProvider`.
-- A poll reads the relays (FC 01), then the inputs (FC 02). Both must be answered for the module to count as connected.
+- A poll reads the relays (FC 01), then the inputs (FC 02) on a model that has them. Each must be answered for the module
+  to count as connected.
 - The client reads the header first, and then only the length that the request expects: at most 260 bytes.
 - An answer with a wrong transaction id, protocol, unit, function, length, byte count or echo is unreadable. Then the
   client closes the connection, because the stream can be out of step. The next request opens a new connection.
@@ -175,11 +216,11 @@ module can invert its inputs ("Support inverted digital input status"); the app 
 The app reads the relays on every poll, so the module stays the source of truth. These settings switch relays without
 the app. The app sees each switch only as a change from outside:
 
-- The DO modes (pages 80–83): Pulse Output makes a pulse train; Low-to-High Delay and High-to-Low Delay switch a relay
+- The DO modes (ADAM-6000 pages 80–83, ADAM-6200 pages 76–80): Pulse Output makes a pulse train; Low-to-High Delay and High-to-Low Delay switch a relay
   some time after it was told to. Only the DO mode is plain on and off.
-- The fail-safe values and the Communication WDT (page 76): when the module has had no TCP packet for longer than its
+- The fail-safe values and the Communication WDT (ADAM-6000 page 76, ADAM-6200 page 83): when the module has had no TCP packet for longer than its
   host idle time, it turns on each relay whose FSV box is checked.
-- P2P (page 84) and GCL (chapter 8): another module's inputs, or the module's own logic, set its relays.
+- P2P and GCL (ADAM-6000 page 84 and chapter 8, ADAM-6200 sections 4.3.4 and 4.3.5): another module's inputs, or the module's own logic, set its relays.
 
 The app doesn't read or change these settings. Set them in Advantech's utility or on the module's web page: the DO mode
 for every relay that the app switches, no FSV box checked unless the installation wants that relay on when the network
@@ -204,10 +245,11 @@ to the Raspberry Pi's address.
 
 ## Simulator
 
-`AdamSimulator` simulates a module of a model, the ADAM-6060 or the ADAM-6066, on a local port. `Contactor.Simulator`
+`AdamSimulator` simulates a module of a model, the ADAM-6060, the ADAM-6066 or the ADAM-6260, on a local port. `Contactor.Simulator`
 offers port 8502, because port 502 needs rights that a developer doesn't have.
 
-- It answers function 01 at the relays (0x0010 to 0x0015), 02 at the inputs (0x0000 to 0x0005), 05 with FF00 and 0000,
+- It answers function 01 at the relays (0x0010 to 0x0015), 02 at the inputs (0x0000 to 0x0005; the ADAM-6260 has none,
+  so code 2), 05 with FF00 and 0000,
   and 0F at the relays. Its answer carries the request's transaction id and unit id, and a byte for each 8 bits asked
   for.
 - It gives an exception answer for a function it does not know (code 1), an address it does not have (code 2), and a
@@ -240,3 +282,11 @@ offers port 8502, because port 502 needs rights that a developer doesn't have.
 - What the Access Control does to a request from an address it doesn't list: no answer, a closed connection or an
   exception answer.
 - How the module handles a poll every 2 s for days.
+
+On the ADAM-6260 too:
+
+- All of the above but the inputs: the ADAM-6200 manual gives no frame, so the address in the frame, the unit id and
+  function 05's FF00 and 0000 are taken from the ADAM-6000 manual and Modbus TCP.
+- That FC 02 gets an exception answer, and that the app never sends one: it reads no inputs on this model.
+- Relay 1 (RL0, Form A) and relays 2 to 6 (RL1 to RL5, Form C): that on is the coil energized, the NO contact closed
+  and the NC contact open.

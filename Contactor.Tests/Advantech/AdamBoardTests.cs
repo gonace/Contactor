@@ -12,16 +12,17 @@ public sealed class AdamBoardTests
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Theory]
-    [InlineData("advantech-adam-6060", "ADAM-6060")]
-    [InlineData("advantech-adam-6066", "ADAM-6066")]
-    public void Should_DescribeTheModels(string id, string name)
+    [InlineData("advantech-adam-6060", "ADAM-6060", 6)]
+    [InlineData("advantech-adam-6066", "ADAM-6066", 6)]
+    [InlineData("advantech-adam-6260", "ADAM-6260", 0)]
+    public void Should_DescribeTheModels(string id, string name, int inputs)
     {
         var model = Assert.Single(AdamModels.All, m => m.Id == id);
 
         Assert.Equal("Advantech", model.Brand);
         Assert.Equal(name, model.ModelName);
         Assert.Equal(6, model.Capabilities.RelayCount);
-        Assert.Equal(6, model.Capabilities.InputCount);
+        Assert.Equal(inputs, model.Capabilities.InputCount);
         Assert.False(model.Capabilities.ReportsChanges);
         Assert.Null(model.Capabilities.Pulse);
         Assert.Equal(502, model.DefaultPort);

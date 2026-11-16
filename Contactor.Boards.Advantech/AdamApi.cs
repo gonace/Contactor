@@ -2,10 +2,11 @@ namespace Contactor.Boards.Advantech;
 
 /// <summary>
 /// The Advantech ADAM modules as they speak to the app: Modbus TCP, each frame a 7-byte MBAP header (transaction id,
-/// protocol id 0, length, unit id) and the Modbus PDU (function code and data), on one TCP connection. Source: the
-/// "ADAM-6000 Series User Manual", Edition 12 (November 2022), section 7.3 and appendix B. The module never sends
-/// anything by itself: the app polls it. See README.md for what the manual leaves open, above all which address is in
-/// the frame for a manual address such as 00017.
+/// protocol id 0, length, unit id) and the Modbus PDU (function code and data), on one TCP connection. Sources: the
+/// "ADAM-6000 Series User Manual", Edition 12 (November 2022), section 7.3 and appendix B, and for the ADAM-6260 the
+/// "ADAM-6200 Series User Manual", Edition 5 (July 2021), appendix A. The module never sends anything by itself: the
+/// app polls it. See README.md for what the manuals leave open, above all which address is in the frame for a manual
+/// address such as 00017.
 /// </summary>
 public static class AdamApi
 {
@@ -15,7 +16,10 @@ public static class AdamApi
     /// </summary>
     public const int DefaultPort = 502;
 
-    /// <summary>The unit id: "unit identifier - 1 (ADAM-6000 always 1)" (figure B.1).</summary>
+    /// <summary>
+    /// The unit id: "unit identifier - 1 (ADAM-6000 always 1)" (ADAM-6000 manual, figure B.1); the ADAM-6200 manual gives
+    /// the module's address as "Always 01" (appendix B).
+    /// </summary>
     public const byte UnitId = 0x01;
 
     /// <summary>The protocol id of every Modbus TCP frame.</summary>

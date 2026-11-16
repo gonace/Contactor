@@ -147,6 +147,7 @@ public sealed class BoardCatalogueTests
     [Theory]
     [InlineData("advantech-adam-6060")]
     [InlineData("ADVANTECH-ADAM-6066 ")]
+    [InlineData("advantech-adam-6260")]
     public async Task Should_BuildEachAdamModel(string type)
     {
         await using var board = Build(type);

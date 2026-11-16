@@ -202,6 +202,19 @@ public sealed class AdamSimulatedBoardTests
         Assert.Throws<ArgumentException>(() => new AdamSimulator(Contactor.Boards.Velleman.Vm201Model.Model));
     }
 
+    [Fact]
+    public async Task Should_HaveNoInputs_AsAnAdam6260()
+    {
+        await using var simulator = new AdamSimulator(AdamModels.Adam6260);
+        simulator.Start();
+        await simulator.SwitchRelayAsync(6, true);
+
+        Assert.Equal("00 01 00 00 00 04 01 01 01 20", await AskAsync(simulator, "00 01 00 00 00 06 01 01 00 10 00 06"));
+        Assert.Equal("00 02 00 00 00 03 01 82 02", await AskAsync(simulator, "00 02 00 00 00 06 01 02 00 00 00 01"));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(1, true));
+        Assert.Equal(ChannelMask.None, simulator.State.Inputs);
+    }
+
     private static AdamSimulator Started()
     {
         var simulator = new AdamSimulator(AdamModels.Adam6060);
