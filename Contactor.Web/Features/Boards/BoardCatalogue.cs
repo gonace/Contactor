@@ -1,12 +1,12 @@
 using Contactor.Boards;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.SmartDen;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
 using Contactor.Boards.Waveshare;
+using Contactor.Web.Features.Denkovi;
 using Contactor.Web.Features.Devantech;
-using Contactor.Web.Features.SmartDen;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Features.Vm204;
 using Contactor.Web.Features.Vm208;

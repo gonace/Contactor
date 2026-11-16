@@ -1,6 +1,6 @@
 using Contactor.Boards;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.SmartDen;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
 using Contactor.Boards.Vm208;
@@ -58,8 +58,8 @@ public static class SimulatorCatalogue
             (_, _, logger, time) => new WaveshareSimulator(model, logger) { TimeProvider = time })),
         new(
             SmartDenModels.Ip16RMt,
-            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The smartDEN takes no login.",
-            (_, _, logger, time) => new SmartDenSimulator(time, logger),
+            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Denkovi board takes no login.",
+            (_, _, logger, time) => new SmartDenSimulator(logger) { TimeProvider = time },
             SuggestedPort: 8502),
         .. DevantechModels.All.Select(model => new SimulatorModel(
             model,
