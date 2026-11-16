@@ -6,7 +6,6 @@ using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
 using Contactor.Web.Features.Boards;
-using Contactor.Web.Features.Setup;
 using Contactor.Web.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -312,7 +311,7 @@ public sealed class BoardProblemPagesTests
         using var page = await PageRenderer.StartAsync<BoardForm>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardForm.BoardId)] = id });
 
         await page.SubmitAsync(PageRenderer.With("class", "card"));
-        time.Advance(BoardContact.Timeout + TimeSpan.FromSeconds(1));
+        time.Advance(BoardForm.LoginFocusWindow + TimeSpan.FromSeconds(1));
         board.SetProblem(needed);
         await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("The board asks for a user name and password.", StringComparison.Ordinal));
         Assert.Empty(page.Focused);

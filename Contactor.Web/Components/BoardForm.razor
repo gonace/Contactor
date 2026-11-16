@@ -106,6 +106,12 @@
 </form>
 
 @code {
+    /// <summary>
+    /// How long after the person's Save a login problem still opens the login fields and takes the cursor: as long as
+    /// the setup guide waits for a board. Later, the person may be typing.
+    /// </summary>
+    public static readonly TimeSpan LoginFocusWindow = TimeSpan.FromSeconds(10);
+
     private static readonly BoardEndpoint NoEndpoint = new("", 0);
 
     private SignedInUser? _user;
@@ -204,13 +210,13 @@
         }
     }
 
-    // After the person's own Save only, and once: the first answer or problem after it ends the wait, and so do the
-    // 10 s the setup guide waits for a board. A problem that comes on its own later (e.g. the board's password was
-    // changed) moves nothing while the person may be typing.
+    // After the person's own Save only, and once: the first answer or problem after it ends the wait, and so does
+    // LoginFocusWindow. A problem that comes on its own later (e.g. the board's password was changed) moves nothing
+    // while the person may be typing.
     private void ReactToProblem()
     {
         var state = State;
-        if (_afterSave != AfterSave.None && Time.GetUtcNow() - _savedAt > BoardContact.Timeout)
+        if (_afterSave != AfterSave.None && Time.GetUtcNow() - _savedAt > LoginFocusWindow)
         {
             _afterSave = AfterSave.None;
         }
