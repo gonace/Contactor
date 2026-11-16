@@ -210,7 +210,10 @@ public sealed class BoardPollerTests
     public async Task Should_NotCountACommand_AsAnAnsweredPoll_WhenItsReadFailed()
     {
         var time = new ManualTimeProvider();
-        var board = new FakePolledBoard(1, new IOException("a"), new IOException("b"));
+        // The read at once waits until the test ends it. Else it can fail and lose the board before the asserts on the
+        // state the command left run (Issue #436).
+        var readAtOnce = new HangingRead();
+        var board = new FakePolledBoard(1, new IOException("a"), readAtOnce);
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, FailuresBeforeLost = 2 };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
@@ -225,7 +228,9 @@ public sealed class BoardPollerTests
         Assert.Equal(new PolledState<int>(true, 1, contact), poller.State);
         Assert.Equal(changes, board.Changes.Count);
 
-        // The read at once fails too: two in a row lose the board.
+        // The board is read at once, with no wait on the clock, and that read fails too: two in a row lose the board.
+        await WaitUntilAsync(() => readAtOnce.Started);
+        readAtOnce.Fail(new IOException("b"));
         await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Lost, "b")));
         Assert.Equal(3, board.Reads);
         Assert.False(poller.State.IsConnected);
