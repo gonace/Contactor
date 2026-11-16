@@ -128,7 +128,9 @@ public sealed class DaenetIp2BoardTests
         var length = new LoginProblem(LoginProblemKind.CommunityLength, MaxLength: 12, MinLength: 4);
         Assert.Null(connection.CheckLogin(new BoardLogin("", "123456789012")));
         Assert.Null(connection.CheckLogin(new BoardLogin("", "1234")));
-        Assert.Equal(length, connection.CheckLogin(BoardLogin.None));
+        var missing = new LoginProblem(LoginProblemKind.CommunityMissing);
+        Assert.Equal(missing, connection.CheckLogin(BoardLogin.None));
+        Assert.Equal("Type the password, the board's read-write community.", missing.ToString());
         Assert.Equal(length, connection.CheckLogin(new BoardLogin("", "123")));
         Assert.Equal(length, connection.CheckLogin(new BoardLogin("", "1234567890123")));
         Assert.Equal("The password, the board's read-write community, must be 4 to 12 characters.", length.ToString());

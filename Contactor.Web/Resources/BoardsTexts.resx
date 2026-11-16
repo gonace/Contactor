@@ -377,6 +377,9 @@
   <data name="Boards.Login.CommunityLength" xml:space="preserve">
     <value>The password, the board's read-write community, must be {0} to {1} characters.</value>
   </data>
+  <data name="Boards.Login.CommunityMissing" xml:space="preserve">
+    <value>Type the password, the board's read-write community.</value>
+  </data>
   <data name="Boards.Login.NoLoginWebPages" xml:space="preserve">
     <value>The {0} takes no login: its password only protects its own web pages.</value>
     <comment>{0} names the board, e.g. "VM208".</comment>

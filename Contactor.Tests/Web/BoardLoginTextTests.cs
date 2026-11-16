@@ -27,6 +27,7 @@ public sealed class BoardLoginTextTests
         new LoginProblem(LoginProblemKind.NoLoginWebPages, Board: "VM208"),
         new LoginProblem(LoginProblemKind.NoLoginWebPage, Board: "Waveshare"),
         new LoginProblem(LoginProblemKind.CommunityLength, MaxLength: 12, MinLength: 4),
+        new LoginProblem(LoginProblemKind.CommunityMissing),
     ];
 
     [Theory]

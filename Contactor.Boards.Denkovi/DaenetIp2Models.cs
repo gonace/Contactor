@@ -110,12 +110,17 @@ public static class DaenetIp2Models
 
     /// <summary>
     /// Why the board can't take this community, or null when it can: 4 to 12 characters (table 9.1 and section 6.6.1),
-    /// letters, digits and plain symbols without spaces, so each is one byte. Empty is refused: the board always has a
-    /// community.
+    /// letters, digits and plain symbols without spaces, so each is one byte. Empty is refused, in words of its own: the
+    /// board always has a community.
     /// </summary>
     public static LoginProblem? CheckCommunity(string community)
     {
         ArgumentNullException.ThrowIfNull(community);
+        if (community.Length == 0)
+        {
+            return new LoginProblem(LoginProblemKind.CommunityMissing);
+        }
+
         if (community.Length is < DaenetIp2Api.CommunityMinLength or > DaenetIp2Api.CommunityMaxLength)
         {
             return new LoginProblem(LoginProblemKind.CommunityLength, MaxLength: DaenetIp2Api.CommunityMaxLength, MinLength: DaenetIp2Api.CommunityMinLength);

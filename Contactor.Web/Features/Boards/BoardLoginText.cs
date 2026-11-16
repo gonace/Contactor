@@ -46,6 +46,7 @@ public sealed class BoardLoginText
             LoginProblemKind.PasswordCharacters => _texts["Boards.Login.PasswordCharacters"],
             LoginProblemKind.NoLoginWebPages => _texts["Boards.Login.NoLoginWebPages", problem.Board],
             LoginProblemKind.CommunityLength => _texts["Boards.Login.CommunityLength", problem.MinLength, problem.MaxLength],
+            LoginProblemKind.CommunityMissing => _texts["Boards.Login.CommunityMissing"],
             _ => _texts["Boards.Login.NoLoginWebPage", problem.Board],
         };
     }
