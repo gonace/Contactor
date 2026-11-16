@@ -82,6 +82,44 @@ public sealed class GroupEditorTests
         Assert.Equal(("Fan 1", "Heat"), (editor.Steps[0].Label, editor.Steps[1].Label));
     }
 
+    // Only the screen reader's label: a step is saved with its relay's name cut to what a step's name may be.
+    [Fact]
+    public void Should_CutALongRelayName_InAStepsLabel_AsItIsSaved()
+    {
+        var longName = new string('x', RelayGroupStep.NameMaxLength + 5);
+        var editor = new GroupEditor([new("", 3, 0, [new(11, 1, longName)])]);
+
+        Assert.Equal(longName[..RelayGroupStep.NameMaxLength], editor.Steps[0].Label);
+    }
+
+    // Someone else changed the group while this form has changes of its own: a relay the group no longer has isn't
+    // offered again from here, since another group may have taken it.
+    [Fact]
+    public void Should_OfferAgain_OnlyRelaysTheGroupStillHas_AfterAChangeElsewhere()
+    {
+        var editor = new GroupEditor(FanHeater);
+        editor.Remove(12);
+
+        editor.AddToStep(0, Fan2);
+
+        editor.FollowSaved([FanHeater[0], new("Fan 2", 3, 0, [new(13, 3, "Fan 2")])]);
+        Assert.Empty(editor.Removed);
+
+        editor.Remove(13);
+        Assert.Equal([13], editor.Removed.Select(r => r.RelayId));
+    }
+
+    [Fact]
+    public void Should_KeepOfferingARelayTheGroupStillHas_AfterAChangeElsewhere()
+    {
+        var editor = new GroupEditor(FanHeater);
+        editor.Remove(12);
+
+        editor.FollowSaved([FanHeater[0], FanHeater[1], new("Lamp", 3, 0, [new(14, 4, "Lamp")])]);
+
+        Assert.Equal([12], editor.Removed.Select(r => r.RelayId));
+    }
+
     [Fact]
     public void Should_MoveAWholeStep_ButNotPastTheEnds()
     {

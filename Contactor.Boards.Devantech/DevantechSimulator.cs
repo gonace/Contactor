@@ -13,10 +13,11 @@ namespace Contactor.Boards.Devantech;
 /// the models that answer it), supply volts (0x78, on the models that have it), serial number (0x77) and the TCP
 /// password (0x79, 0x7A, 0x7B). With a password each connection starts locked, and locks again after 30 s on
 /// <see cref="TimeProvider"/> without a command; a relay command while locked is refused (01). A command it doesn't
-/// know, or one the model doesn't have, gets no answer at all, as on the board. It reads each TCP packet as the commands in it, and a password as the rest of its
-/// packet. A pulse time switches the relay back by itself after the time on <see cref="TimeProvider"/>; a later command
-/// for the relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may
-/// connect at once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
+/// know, or one the model doesn't have, gets no answer at all, as on the board. It reads each TCP packet as the
+/// commands in it, and a password as the rest of its packet. A pulse time switches the relay back by itself after the
+/// time on <see cref="TimeProvider"/>; a later command for the relay ends its pulse, or starts it again. It never tells
+/// the app anything by itself. Several clients may connect at once. Used by the tests and, in development, by
+/// Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
 public sealed class DevantechSimulator : ISimulatedBoard
 {

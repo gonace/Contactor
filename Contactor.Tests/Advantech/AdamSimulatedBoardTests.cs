@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Advantech;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 
 namespace Contactor.Tests.Advantech;
@@ -199,7 +200,7 @@ public sealed class AdamSimulatedBoardTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(0, true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SwitchRelayAsync(7, true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SwitchRelayAsync(0, true));
-        Assert.Throws<ArgumentException>(() => new AdamSimulator(Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => new AdamSimulator(Vm201Model.Model));
     }
 
     [Fact]
