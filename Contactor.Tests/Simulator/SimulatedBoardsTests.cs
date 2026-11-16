@@ -18,6 +18,9 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 11, 18, 0, 0, TimeSpan.Zero);
 
+    // Every port FreePort has handed out in this test run, from any test.
+    private static readonly HashSet<int> HandedOut = [];
+
     private readonly SimulatedBoards _boards = new(NullLoggerFactory.Instance, new FixedTimeProvider(Now), Options.Create(new SimulatorOptions()));
 
     public async ValueTask DisposeAsync()
@@ -376,6 +379,14 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     }
 
     [Fact]
+    public void Should_HandOutEachFreePortOnce()
+    {
+        var ports = Enumerable.Range(0, 200).Select(_ => FreePort()).ToList();
+
+        Assert.Equal(ports.Count, ports.Distinct().Count());
+    }
+
+    [Fact]
     public void Should_StartOneVm201OnItsOwnPort_WhenTheSettingsNameNone()
     {
         var board = Assert.Single(SimulatorHostedService.DefaultBoards);
@@ -383,11 +394,25 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.Equal(("vm201", Vm201Model.DefaultPort, "", ""), (board.Type, board.Port, board.Username, board.Password));
     }
 
+    /// <summary>
+    /// A port nothing listens on, never one handed out before in this test run: the system can give the same free port
+    /// twice in a row, and a test that adds two boards would then see its second refused as taken.
+    /// </summary>
     internal static int FreePort()
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        while (true)
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            lock (HandedOut)
+            {
+                if (HandedOut.Add(port))
+                {
+                    return port;
+                }
+            }
+        }
     }
 
     private static async Task<ConnectedClient> ConnectAsync(int port, string username = "", string password = "")
