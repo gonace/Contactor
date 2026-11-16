@@ -43,6 +43,7 @@ global.json                 # SDK version and test runner (Microsoft.Testing.Pla
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
 Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel, BoardPoller. No dependencies.
+Contactor.Boards.Advantech/ # The Advantech ADAM-6060, ADAM-6066 and ADAM-6260 (Modbus TCP): codec, client, simulator and their adapters (AdamBoard, AdamConnection, AdamTraffic). No web/EF. README.md: their protocol
 Contactor.Boards.Denkovi/   # The Denkovi smartDEN IP-16R-MT (Modbus TCP) and the DAEnetIP2 v2 kits (SNMPv1 over UDP): codecs, clients, simulators and their adapters (SmartDen*, DaenetIp2*: Board, Connection, Traffic). No web/EF. README.md: their protocols
 Contactor.Boards.Devantech/ # The Devantech ETH002-B, ETH008-B, ETH1610, ETH484-B and ETH8020-B: binary TCP commands, client, simulator and its adapters (DevantechBoard, DevantechConnection, DevantechTraffic). No web/EF. README.md: its protocol
 Contactor.Boards.Velleman/  # The Velleman VM201 (packet codec), VM204 and VM208 (HTTP clients): their clients, simulators and adapters (Vm201Board, Vm204Connection, Vm208Traffic …). No web/EF. README.md: their protocols and routes
@@ -56,6 +57,7 @@ Contactor.Demo/           # The public demo: a proxy that gives each visitor the
 Contactor.AppHost/        # Aspire: runs everything locally (aspire run)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
+  Advantech/                # Modbus TCP codec, trace words, simulator + client against the simulator
   Boards/                   # ChannelMask, BoardPoller, board adapters
   Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
   Denkovi/                  # Modbus TCP and SNMPv1 codecs, trace words, simulators + clients against the simulators

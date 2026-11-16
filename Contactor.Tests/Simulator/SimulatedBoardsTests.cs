@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
+using Contactor.Boards.Advantech;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Velleman;
@@ -143,6 +144,22 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.Equal(17494, SimulatorCatalogue.Find(type)!.Port);
         Assert.Equal("The Devantech board takes a password only, no user name.", _boards.Add(type, FreePort(), "admin", "apple"));
         Assert.Equal("The password can be at most 32 characters.", _boards.Add(type, FreePort(), "", new string('a', 33)));
+    }
+
+    [Theory]
+    [InlineData("advantech-adam-6060")]
+    [InlineData("advantech-adam-6066")]
+    [InlineData("advantech-adam-6260")]
+    public void Should_RunEachAdamModel_WithoutALogin(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+
+        var board = Assert.Single(_boards.Boards).Board;
+        Assert.IsType<AdamSimulator>(board);
+        Assert.Equal(type, board.Model.Id);
+        Assert.False(board.HasLogin);
+        Assert.Equal((8502, 502), (SimulatorCatalogue.Find(type)!.Port, SimulatorCatalogue.Find(type)!.Model.DefaultPort));
+        Assert.Equal("The ADAM module takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
     }
 
     [Theory]

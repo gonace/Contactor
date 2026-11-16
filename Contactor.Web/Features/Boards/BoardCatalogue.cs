@@ -1,8 +1,10 @@
 using Contactor.Boards;
+using Contactor.Boards.Advantech;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
+using Contactor.Web.Features.Advantech;
 using Contactor.Web.Features.Denkovi;
 using Contactor.Web.Features.Devantech;
 using Contactor.Web.Features.Vm201;
@@ -50,6 +52,9 @@ public static class BoardCatalogue
         new(DevantechModels.Eth1610, DevantechBoards.Create),
         new(DevantechModels.Eth484, DevantechBoards.Create),
         new(DevantechModels.Eth8020, DevantechBoards.Create),
+        new(AdamModels.Adam6060, AdamBoards.Create),
+        new(AdamModels.Adam6066, AdamBoards.Create),
+        new(AdamModels.Adam6260, AdamBoards.Create),
     ];
 
     /// <summary>The brands in alphabetical order, each with its models in the catalogue's order.</summary>
