@@ -235,7 +235,7 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
         try
         {
             var taken = new StrongBox<ulong>();
-            await _poller.RunCommandAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
+            await _poller.RunSwitchesAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
             return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
@@ -252,9 +252,9 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
         }
     }
 
-    // Under the poller's lock. Returns the module's state after the switches, which the poller takes as a poll's, and
-    // puts the relays the module took in <paramref name="taken"/>.
-    private async Task<AdamStatus> SwitchEachAsync(ulong mask, Func<int, AdamRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
+    // Under the poller's lock. Returns the module's state read after the switches, which the poller takes as a poll's,
+    // or Unread when that read failed, and puts the relays the module took in <paramref name="taken"/>.
+    private async Task<CommandReading<AdamStatus>> SwitchEachAsync(ulong mask, Func<int, AdamRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
         var unreadable = false;
@@ -292,21 +292,14 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
 
         try
         {
-            return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+            return CommandReading<AdamStatus>.Read(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is AdamRefusedException or AdamProtocolException || IsNoAnswer(ex))
         {
-            // Never a state the module didn't read: an echo doesn't show that the relay switched. The last state read
-            // stays, and a read at once shows the truth; it counts as a poll of its own if it fails too. The command
-            // doesn't fail (what was taken was sent), so the poller's read after a failed command doesn't come: ask
-            // for it here.
-            if (_poller.State.Reading is not { } last)
-            {
-                throw;
-            }
-
-            _poller.PollNow();
-            return last;
+            // Never a state the module didn't read: an echo doesn't show that the relay switched. The command doesn't
+            // fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last state read and
+            // reads the board at once, which counts as a poll of its own if it fails too.
+            return CommandReading<AdamStatus>.Unread;
         }
     }
 

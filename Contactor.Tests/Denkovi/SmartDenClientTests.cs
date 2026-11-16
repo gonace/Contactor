@@ -445,21 +445,46 @@ public sealed class SmartDenClientTests
     public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
     {
         // The switches are answered; the read after them gets no answer on any connection.
+        // The poll at once waits until the test has looked at the state the command left.
         var reads = 0;
+        using var hold = new ManualResetEventSlim();
+        T Held<T>(T answer)
+        {
+            if (Volatile.Read(ref reads) == 3)
+            {
+                hold.Wait(Cancel);
+            }
+
+            return answer;
+        }
+
         await using var board = ScriptedBoard.Start(request => request[7] switch
         {
             SmartDenApi.WriteSingleCoil => request,
             _ when Interlocked.Increment(ref reads) == 2 => null,
-            _ => Relays(request, 1),
+            _ => Held(Relays(request, 1)),
         });
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var contact = run.Client.State.LastContactUtc;
 
         var sent = run.Client.TurnOnAsync(1, Cancel);
         await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.PendingTimers == 2);
         run.Time.Advance(SmartDenClient.RequestTimeout);
 
         Assert.Equal(1UL, await sent);
+
+        // Issue #379: the read after the switches failed, so the command wasn't contact with the board.
+        try
+        {
+            await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3);
+            Assert.Equal(contact, run.Client.State.LastContactUtc);
+        }
+        finally
+        {
+            hold.Set();
+        }
+
         await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.WaitsOnly(run.PollInterval));
         Assert.True(run.Client.State.IsOn(1));
         Assert.True(run.Client.State.IsConnected);
