@@ -265,7 +265,7 @@
     <value>Inget har hänt med den här gruppen än.</value>
   </data>
   <data name="Groups.Safety" xml:space="preserve">
-    <value>Appens förregling fungerar bara medan appen är igång. Där säkerheten hänger på den, t.ex. värme utan fläkt, måste den också kopplas in i installationen.</value>
+    <value>Appens interlock fungerar bara medan appen är igång. Där säkerheten hänger på den, t.ex. värme utan fläkt, måste den också kopplas in i installationen.</value>
   </data>
   <data name="Groups.Delete" xml:space="preserve">
     <value>Ta bort gruppen</value>
@@ -319,7 +319,7 @@
     <value>RELÄ {0} · NAMN I GRUPPEN</value>
   </data>
   <data name="Groups.New.Interlock" xml:space="preserve">
-    <value>Förregling: ett relä kan bara vara på när reläet ovanför är på. Slås det på ändå, t.ex. på kortet, stänger appen av det direkt.</value>
+    <value>Interlock: ett relä kan bara vara på när reläet ovanför är på. Slås det på ändå, t.ex. på kortet, stänger appen av det direkt.</value>
   </data>
   <data name="Groups.New.Preview" xml:space="preserve">
     <value>SÅ HÄR SER DEN UT I LISTAN</value>

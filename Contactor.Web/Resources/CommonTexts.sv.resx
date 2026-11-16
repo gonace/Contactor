@@ -25,7 +25,7 @@
     <value>Inställningar</value>
   </data>
   <data name="Common.Screen.Debug" xml:space="preserve">
-    <value>Felsökning</value>
+    <value>Debug</value>
   </data>
   <data name="Common.Screen.Setup" xml:space="preserve">
     <value>Installation</value>

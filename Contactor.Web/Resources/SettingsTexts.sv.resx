@@ -88,12 +88,12 @@
     <value>{0:0.0} MB</value>
   </data>
   <data name="Settings.Debugging" xml:space="preserve">
-    <value>Felsökning</value>
+    <value>Debugging</value>
   </data>
   <data name="Settings.Debugging.Check" xml:space="preserve">
     <value>Visa trafiken till reläkortet</value>
   </data>
   <data name="Settings.Debugging.Hint" xml:space="preserve">
-    <value>Bara för dig. Varje meddelande till och från kortet visas en stund längst ner på sidan, och hela listan under fliken Felsökning.</value>
+    <value>Bara för dig. Varje meddelande till och från kortet visas en stund längst ner på sidan, och hela listan under fliken Debug.</value>
   </data>
 </root>
