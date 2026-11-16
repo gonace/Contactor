@@ -20,7 +20,7 @@ public static class DevantechModels
     public const string Brand = "Devantech";
 
     /// <summary>
-    /// The pulse all four have (0x20 with a pulse time): 0.1 s to 25.5 s in steps of 0.1 s. Before the models, which
+    /// The pulse all five have (0x20 with a pulse time): 0.1 s to 25.5 s in steps of 0.1 s. Before the models, which
     /// take it.
     /// </summary>
     public static PulseAbility Pulse { get; } = new(DevantechApi.PulseUnit, DevantechApi.PulseUnit * DevantechApi.MaxPulseTime, DevantechApi.PulseUnit);
