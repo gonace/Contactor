@@ -1091,7 +1091,7 @@
     <value>Create group</value>
   </data>
   <data name="Groups.New.Interlock" xml:space="preserve">
-    <value>Interlock: a relay can only be on while the relay above it is on. If it's turned on anyway, e.g. at the board, the app turns it off at once.</value>
+    <value>Interlock: a relay can only be on while every relay in the step above it is on. If it's turned on anyway, e.g. at the board, the app turns it off at once.</value>
   </data>
   <data name="Groups.New.Interlock.Label" xml:space="preserve">
     <value>INTERLOCK</value>

@@ -41,6 +41,10 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     // Set by Dispose: no connection is opened after it, also by a request still under way.
     private int _disposed;
 
+    // True while a new connection's relay modes are put back to normal: its requests don't go once more on yet another
+    // connection.
+    private bool _checking;
+
     public WaveshareClient(IOptions<WaveshareOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<WaveshareClient> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -182,7 +186,8 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
     public void Dispose()
     {
-        // The poller first, so no poll or command starts on the connection being closed; then nothing opens a new one.
+        // The poller first, so no new poll or command starts; then nothing opens a new connection. A request already
+        // under way goes on until Close breaks its connection under it, and then fails as unanswered.
         _poller.Dispose();
         Interlocked.Exchange(ref _disposed, 1);
         Close();
@@ -193,7 +198,15 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         await OpenAsync(cancellationToken).ConfigureAwait(false);
         if (_options.ResetRelayModes && WaveshareModels.HasRelayModes(_model))
         {
-            await ResetRelayModesAsync(cancellationToken).ConfigureAwait(false);
+            _checking = true;
+            try
+            {
+                await ResetRelayModesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _checking = false;
+            }
         }
     }
 
@@ -429,18 +442,19 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     /// <summary>
     /// Sends one request and reads its answer, within <see cref="RequestTimeout"/>, on the open connection or a new one.
     /// Traces the request and anything but a good answer, which the caller traces as it knows what it says. Closes
-    /// the connection when the answer doesn't come or can't be read. When the connection was open from before and turns
-    /// out broken (the board may close one it found idle) before any of the answer came, the request goes once more on
-    /// a new connection: every request the client sends does the same when done twice (reading, switching one relay,
-    /// starting its pulse again, writing the relay modes to normal).
+    /// the connection when the answer doesn't come or can't be read. When the connection was open from before (not one
+    /// opened while connecting) and turns out broken (the board may close one it found idle) before any of the answer
+    /// came, the request goes once more on a new connection: every request the client sends does the same when done
+    /// twice (reading, switching one relay, starting its pulse again, writing the relay modes to normal).
     /// </summary>
     private async Task<byte[]> ExchangeAsync(WaveshareRequest request, bool routine, CancellationToken cancellationToken)
     {
-        var reused = _stream is not null;
+        // Not one just opened while connecting: that one goes nowhere else.
+        var reused = _stream is not null && !_checking;
         try
         {
             // None after an earlier request closed it (no answer, or an unreadable one).
-            if (!reused)
+            if (_stream is null)
             {
                 await OpenAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -451,7 +465,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         {
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
-            if (reused && ex is not TimeoutException)
+            if (reused)
             {
                 // Closed above, so the request goes on a new connection, and only once more: a new one isn't reused.
                 return await ExchangeAsync(request, routine, cancellationToken).ConfigureAwait(false);
@@ -557,7 +571,8 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     }
 
     // Nothing comes unasked from the board; bytes waiting now are left from an answer that came too late or were sent
-    // by something else. They are dropped, or with too many of them the connection is opened afresh at the next request.
+    // by something else. They are dropped. With too many of them the connection is closed: a request on a connection
+    // from before goes once more on a new one at once, and one on a new connection fails.
     private void SkipUnasked()
     {
         int available;
@@ -646,74 +661,6 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
             {
                 _logger.SubscriberFailed(ex);
             }
-        }
-    }
-
-    /// <summary>
-    /// The connection's stream as the codec reads it, counting what it read: a request whose answer came in part may
-    /// not go once more on a new connection.
-    /// </summary>
-    private sealed class CountingStream : Stream
-    {
-        private readonly Stream _inner;
-
-        public CountingStream(Stream inner)
-        {
-            _inner = inner;
-        }
-
-        public long BytesRead { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => false;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            var read = _inner.Read(buffer, offset, count);
-            BytesRead += read;
-            return read;
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            BytesRead += read;
-            return read;
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void SetLength(long value)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            throw new NotSupportedException();
         }
     }
 }

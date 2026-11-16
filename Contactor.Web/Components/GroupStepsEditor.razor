@@ -15,7 +15,7 @@
                 <span class="number" aria-hidden="true">@(stepIndex + 1)</span>
                 <div class="step-text">
                     <label class="label" for="@($"step-{stepIndex}")">@Texts["Groups.Step.Label", stepIndex + 1]</label>
-                    <input id="@($"step-{stepIndex}")" class="role" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="step.Name" @bind:event="oninput" @bind:after="ChangedAsync" autocomplete="off" />
+                    <input id="@($"step-{stepIndex}")" class="role" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="step.Name" @bind:event="oninput" autocomplete="off" />
                     @StepNote?.Invoke(stepIndex)
                 </div>
                 <div class="order">
@@ -64,7 +64,7 @@
             <li class="gap" aria-label="@Texts["Groups.Between", step.Label, below.Label]">
                 <label>
                     @Texts["Groups.StartWait"]
-                    <select @bind="below.StartDelaySec" @bind:after="ChangedAsync">
+                    <select @bind="below.StartDelaySec">
                         @foreach (var seconds in Choices(GroupsHandler.StartDelayChoices, below.StartDelaySec))
                         {
                             <option value="@seconds">@EventText.Seconds(seconds)</option>
@@ -73,7 +73,7 @@
                 </label>
                 <label>
                     @Texts["Groups.RunOn"]
-                    <select @bind="step.RunOnSec" @bind:after="ChangedAsync">
+                    <select @bind="step.RunOnSec">
                         @foreach (var seconds in Choices(GroupsHandler.RunOnChoices, step.RunOnSec))
                         {
                             <option value="@seconds">@(seconds == 0 ? Texts["Groups.RunOn.None"] : EventText.Seconds(seconds))</option>
@@ -147,10 +147,6 @@
     [Parameter]
     public EventCallback<(int Step, EditRelay Relay)> OnAdd { get; set; }
 
-    /// <summary>A step's name or a wait was changed.</summary>
-    [Parameter]
-    public EventCallback OnChange { get; set; }
-
     protected override void OnParametersSet()
     {
         ArgumentNullException.ThrowIfNull(Editor);
@@ -170,11 +166,6 @@
     private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)
     {
         return offered.Contains(current) ? offered : offered.Append(current).Order();
-    }
-
-    private Task ChangedAsync()
-    {
-        return OnChange.InvokeAsync();
     }
 
     private Task MoveAsync(int stepIndex, int by)

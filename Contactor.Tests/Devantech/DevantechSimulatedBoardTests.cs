@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
@@ -358,7 +359,7 @@ public sealed class DevantechSimulatedBoardTests
             await SendAsync(command);
             return DevantechProtocol.Hex(await BoundedAsync(
                 token => DevantechProtocol.ReadAnswerAsync(Stream, answerLength, token),
-                $"{answerLength} bytes in answer to {command}"));
+                string.Create(CultureInfo.InvariantCulture, $"{answerLength} bytes in answer to 0x{command.Replace(" ", " 0x", StringComparison.Ordinal)}")));
         }
 
         // A read of what the board sends next, e.g. 0 bytes once it closed the connection.
@@ -378,7 +379,7 @@ public sealed class DevantechSimulatedBoardTests
             }
             catch (OperationCanceledException) when (!Cancel.IsCancellationRequested)
             {
-                throw new TimeoutException($"The board did not send {what} within {ReadTimeout.TotalSeconds} s.");
+                throw new TimeoutException(string.Create(CultureInfo.InvariantCulture, $"The board did not send {what} within {ReadTimeout.TotalSeconds} s."));
             }
         }
 

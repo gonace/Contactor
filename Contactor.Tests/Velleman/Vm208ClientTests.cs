@@ -453,7 +453,6 @@ public sealed class Vm208ClientTests
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal) && t.IsError);
     }
 
-    // Moves the clock past each wait before a busy answer is asked again, until the command ends.
     // Issue #407: the board is removed while a command waits for its answer. The HTTP client is disposed only once that
     // command has ended, so it finishes as sent; a command after it is refused.
     [Fact]
@@ -485,6 +484,7 @@ public sealed class Vm208ClientTests
         Assert.DoesNotContain(run.Traces, t => t.IsError);
     }
 
+    // Moves the clock past each wait before a busy answer is asked again, until the command ends.
     private static async Task<T> PastBusyWaitsAsync<T>(ClientRun run, Task<T> command)
     {
         while (!command.IsCompleted)

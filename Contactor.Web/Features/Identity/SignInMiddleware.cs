@@ -60,7 +60,7 @@ public sealed partial class SignInMiddleware
     }
 
     // A refusal's words, in the app's language: the request already has its culture (UseRequestLocalization runs first).
-    private static IStringLocalizer<Texts> Texts(HttpContext context)
+    private static IStringLocalizer<Texts> Localizer(HttpContext context)
     {
         return context.RequestServices.GetRequiredService<IStringLocalizer<Texts>>();
     }
@@ -80,7 +80,7 @@ public sealed partial class SignInMiddleware
             WarnAboutOutside(context);
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync(Texts(context)["Setup.Refused.OwnNetwork"], context.RequestAborted);
+            await context.Response.WriteAsync(Localizer(context)["Setup.Refused.OwnNetwork"], context.RequestAborted);
             return;
         }
 
@@ -103,7 +103,7 @@ public sealed partial class SignInMiddleware
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync(Texts(context)["Setup.Refused.AccessDenied"], context.RequestAborted);
+            await context.Response.WriteAsync(Localizer(context)["Setup.Refused.AccessDenied"], context.RequestAborted);
             return;
         }
 

@@ -112,8 +112,7 @@
                                   Addable="Addable"
                                   OnMove="m => _wizard.Move(m.Step, m.By)"
                                   OnRemove="_wizard.Remove"
-                                  OnAdd="AddRelay"
-                                  OnChange="StepsChanged" />
+                                  OnAdd="AddRelay" />
             </div>
             <p class="info">@Texts["Groups.New.Interlock"]</p>
         }
@@ -267,11 +266,6 @@
         {
             _wizard.Toggle(relay.RelayId, relay.Channel, relay.Name, relay.BoardId);
         }
-    }
-
-    // A step's name or a wait changed in the step cards: the page draws again, so "Next" follows the steps' names.
-    private static void StepsChanged()
-    {
     }
 
     private void AddRelay((int Step, EditRelay Relay) add)

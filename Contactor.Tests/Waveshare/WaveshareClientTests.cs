@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Waveshare;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -471,6 +472,54 @@ public sealed class WaveshareClientTests
     }
 
     [Fact]
+    public async Task Should_AskAgainOnANewConnection_WhenTooManyBytesNobodyAskedForWait()
+    {
+        // The second poll's answer comes with more bytes after it than the client skips: the third poll closes that
+        // connection and goes on a new one at once, so no poll fails.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request =>
+            Interlocked.Increment(ref reads) == 2 ? [.. WaveshareModbus.WithCrc([1, 1, 1, 0]), .. new byte[5000]] : WaveshareModbus.WithCrc([1, 1, 1, 0]));
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.WaitsOnly(run.PollInterval));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Contains(run.Traces, t => t.Text == "No answer: The board sent 5000 bytes nobody asked for." && t.IsError);
+        Assert.Equal(3, board.Requests);
+        Assert.Equal(2, board.Connections);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_NotTryAnotherConnection_WhenANewOneBreaksAtItsRelayModes()
+    {
+        // The board closes the first connection at the relay modes' read: a connection just opened isn't one from
+        // before, so the read doesn't go once more on yet another, and the poller tries again with its backoff.
+        var modeReads = 0;
+        await using var board = ScriptedBoard.Start(
+            request => request[1] switch
+            {
+                WaveshareApi.ReadHoldingRegisters when Interlocked.Increment(ref modeReads) == 1 => [],
+                WaveshareApi.ReadHoldingRegisters => WaveshareModbus.WithCrc([1, 3, 16, .. new byte[16]]),
+                _ => AllOff(request),
+            },
+            closeAfter: request => request[1] == WaveshareApi.ReadHoldingRegisters && Volatile.Read(ref modeReads) == 1);
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected || (run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1))));
+
+        Assert.False(run.Client.State.IsConnected);
+        Assert.Equal((1, 1), (board.Connections, board.Requests));
+
+        run.Time.Advance(TimeSpan.FromSeconds(1));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal(2, board.Connections);
+    }
+
+    [Fact]
     public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
     {
         // The switch is answered; the read after it gets no answer.
@@ -787,7 +836,7 @@ public sealed class WaveshareClientTests
     public void Should_RefuseSettingsAndModelsItCantUse()
     {
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, WaveshareModels.Relay8, pollSeconds: 0));
-        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Vm201Model.Model));
     }
 
     // The run of a client disposed while it ran: it may end on the poller's lock being gone.

@@ -60,7 +60,10 @@ public sealed partial class TextsTests
             var keys = XDocument.Load(file).Root!.Elements("data").Select(d => (string)d.Attribute("name")!).ToList();
 
             Assert.True(keys.Count > 0, $"{Path.GetFileName(file)} has no texts.");
-            Assert.True(keys.SequenceEqual(keys.Order(StringComparer.Ordinal)), $"{Path.GetFileName(file)} isn't sorted by key.");
+            // Ordinal order: upper case before lower case, e.g. "Relays.RelayLabel" before "Relays.Relayed". The
+            // failure names the first key out of order.
+            var at = Enumerable.Range(1, keys.Count - 1).FirstOrDefault(i => string.CompareOrdinal(keys[i - 1], keys[i]) > 0);
+            Assert.True(at == 0, at == 0 ? "" : $"{Path.GetFileName(file)} isn't sorted by key: \"{keys[at]}\" goes before \"{keys[at - 1]}\" (ordinal order, upper case before lower case).");
         }
     }
 

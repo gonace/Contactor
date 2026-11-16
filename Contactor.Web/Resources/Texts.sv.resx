@@ -991,7 +991,7 @@
     <value>Skapa grupp</value>
   </data>
   <data name="Groups.New.Interlock" xml:space="preserve">
-    <value>Interlock: ett relä kan bara vara på när reläet ovanför är på. Slås det på ändå, t.ex. på kortet, stänger appen av det direkt.</value>
+    <value>Interlock: ett relä kan bara vara på när alla reläer i steget ovanför är på. Slås det på ändå, t.ex. på kortet, stänger appen av det direkt.</value>
   </data>
   <data name="Groups.New.Interlock.Label" xml:space="preserve">
     <value>INTERLOCK</value>

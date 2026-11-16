@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Denkovi;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -591,7 +592,7 @@ public sealed class DaenetIp2ClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(1, DaenetIp2Models.Relays8, TimeProvider.System, community: "thirteen-char"));
         Assert.Throws<ArgumentException>(() => new DaenetIp2Client(
             Options.Create(new DaenetIp2Options()),
-            Contactor.Boards.Velleman.Vm201Model.Model,
+            Vm201Model.Model,
             TimeProvider.System,
             NullLogger<DaenetIp2Client>.Instance));
         using var client = CreateClient(1, DaenetIp2Models.Relays8, TimeProvider.System);

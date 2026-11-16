@@ -278,7 +278,8 @@ the model is `PasswordOnly`, with no user name. The read-only community is never
 - 4 to 12 characters: table 9.1 gives the community as `OCTET STRING (SIZE (4..12))`, and section 6.6.1 says "max 12
   symbols". The app takes letters, digits and plain symbols without spaces, so each character is one byte
   (`DaenetIp2Models.CheckCommunity`). A shorter or longer one is refused in words: "The password, the board's
-  read-write community, must be 4 to 12 characters."
+  read-write community, must be 4 to 12 characters." An empty one gets its own words: "Type the password, the
+  board's read-write community."
 - The board always has a community, so the model is `LoginRequired`: the setup guide and Settings show the password
   field and the hint, and no "The board has no password" box. The hint names the factory community, `private`
   (table 4.1), so a person knows what to type on a new board.

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -719,6 +720,33 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
+    public async Task Should_AskAgainOnANewConnection_WhenTooManyBytesNobodyAskedForWait()
+    {
+        // The second poll's answer comes with more bytes after it than the client skips: the third poll closes that
+        // connection and goes on a new one at once, which is checked and unlocked first, so no poll fails.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [19, 2, 28],
+            [0x7A] => [0xFF],
+            [0x24] when Interlocked.Increment(ref reads) == 2 => [0, .. new byte[5000]],
+            _ => [0],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.WaitsOnly(run.PollInterval));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Contains(run.Traces, t => t.Text == "No answer: The board sent 5000 bytes nobody asked for." && t.IsError);
+        Assert.Equal(["10", "7A", "24", "24", "10", "7A", "24"], board.Received);
+        Assert.Equal(2, board.Connections);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
     public async Task Should_NotAskAgain_WhenPartOfTheAnswerCameBeforeTheBoardClosedTheConnection()
     {
         // The second poll's answer has one of its two bytes, and the board closes the connection: the poll counts as
@@ -885,7 +913,7 @@ public sealed class DevantechClientTests
     public void Should_RefuseSettingsAndModelsItCantUse()
     {
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, DevantechModels.Eth008, pollSeconds: 0));
-        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Vm201Model.Model));
         var error = Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, DevantechModels.Eth008, password: "smörgås"));
         Assert.DoesNotContain("smörgås", error.Message, StringComparison.Ordinal);
     }
