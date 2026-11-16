@@ -13,9 +13,10 @@ namespace Contactor.Boards.Devantech;
 /// its answer of a fixed length within <see cref="RequestTimeout"/>. Every new connection first checks that the board
 /// is the chosen model (0x10) and unlocks it with the password when it is locked (0x7A, 0x79); a command checks the lock
 /// again, since it comes back after 30 s without a command. A request without an answer or with a value its answer
-/// can't have closes the connection, and the next request opens a new one. Commands are never queued: without a
-/// connection they fail at once with <see cref="BoardNotConnectedException"/>, a poll under way gives way to them, and
-/// the board's state right after them is reported at once. The password is never logged or traced.
+/// can't have closes the connection, and the next request opens a new one. A request on a connection from before that
+/// turns out broken (the board may close one it found idle) goes once more on a new one. Commands are never queued:
+/// without a connection they fail at once with <see cref="BoardNotConnectedException"/>, a poll under way gives way to
+/// them, and the board's state right after them is reported at once. The password is never logged or traced.
 /// </summary>
 public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 {
@@ -39,6 +40,12 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     private NetworkStream? _stream;
     private DevantechStatus? _lastTraced;
     private int _wasConnected;
+
+    // Set by Dispose: no connection is opened after it, also by a request still under way.
+    private int _disposed;
+
+    // True while a new connection is checked and unlocked: its requests don't go once more on yet another one.
+    private bool _checking;
 
     public DevantechClient(IOptions<DevantechOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<DevantechClient> logger)
     {
@@ -188,8 +195,10 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
     public void Dispose()
     {
-        Close();
+        // The poller first, so no poll or command starts on the connection being closed; then nothing opens a new one.
         _poller.Dispose();
+        Interlocked.Exchange(ref _disposed, 1);
+        Close();
     }
 
     Task IPolledBoard<DevantechStatus>.ConnectAsync(CancellationToken cancellationToken)
@@ -280,7 +289,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
         // A poll under way gives way. The board switches one relay per command, and the whole mask goes out, as one
         // command on a board that takes a mask would: a group's interlock and "All off" rely on every OFF being sent.
-        // Only a command that gets no answer at all (the board is gone) stops it.
+        // Only a command that gets no answer at all, also on a new connection (the board is gone), stops it.
         try
         {
             var taken = new StrongBox<ulong>();
@@ -312,7 +321,8 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         var unreadable = false;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
-            // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
+            // No answer (IsNoAnswer), also on the new connection ExchangeAsync tries after a broken one, is thrown as it
+            // is and stops the rest: the poller counts it as a failed poll.
             try
             {
                 var request = requestFor(relay);
@@ -357,11 +367,12 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         {
             return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (IsNotTaken(ex))
+        catch (Exception ex) when (IsNotTaken(ex) || IsNoAnswer(ex))
         {
             // Never a state the board didn't read: a group would take a made-up "on" as confirmation. The last state
-            // read stays, and a read at once shows the truth. The command doesn't fail (what was taken was sent), so
-            // the poller's read after a failed command doesn't come: ask for it here.
+            // read stays, and a read at once shows the truth; it counts as a poll of its own if it fails too. The
+            // command doesn't fail (what was taken was sent), so the poller's read after a failed command doesn't
+            // come: ask for it here.
             if (_poller.State.Reading is not { } last)
             {
                 throw;
@@ -446,10 +457,15 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     /// <summary>
     /// Sends one command and reads its answer, within <see cref="RequestTimeout"/>, on the open connection or a new one.
     /// Traces the command and anything but an answer, which the caller traces as it knows what it says. Closes the
-    /// connection when the answer doesn't come.
+    /// connection when the answer doesn't come. When the connection was open from before and turns out broken (the
+    /// board may close one it found idle) before any of the answer came, the command goes once more on a new connection,
+    /// which is checked and unlocked first: every command the client sends does the same when done twice (reading,
+    /// switching one relay, starting its pulse again, the password).
     /// </summary>
     private async Task<byte[]> ExchangeAsync(DevantechRequest request, bool routine, CancellationToken cancellationToken)
     {
+        // Not one just opened to check and unlock it: that one goes nowhere else.
+        var reused = _stream is not null && !_checking;
         if (_stream is null)
         {
             try
@@ -474,10 +490,17 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         {
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+            if (reused)
+            {
+                // Closed above, so the command goes on a new connection, and only once more: a new one isn't reused.
+                return await ExchangeAsync(request, routine, cancellationToken).ConfigureAwait(false);
+            }
+
             throw;
         }
 
         var stream = _stream!;
+        var reader = new CountingStream(stream);
         Trace(BoardTraceDirection.Sent, DevantechTraceText.Request(request.Bytes), DevantechTraceText.RequestBytes(request.Bytes), isRoutine: routine);
         using var timeout = new CancellationTokenSource(RequestTimeout, _timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
@@ -485,7 +508,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         {
             // All bytes of a command in one write, and so one packet: the board takes a command split in two as two.
             await stream.WriteAsync(request.Bytes, linked.Token).ConfigureAwait(false);
-            return await DevantechProtocol.ReadAnswerAsync(stream, request.AnswerLength, linked.Token).ConfigureAwait(false);
+            return await DevantechProtocol.ReadAnswerAsync(reader, request.AnswerLength, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -506,6 +529,12 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             // One failed poll doesn't lose the connection, so it shows here.
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+            if (reused && reader.BytesRead == 0)
+            {
+                // Closed above, so the command goes on a new connection, and only once more: a new one isn't reused.
+                return await ExchangeAsync(request, routine, cancellationToken).ConfigureAwait(false);
+            }
+
             throw;
         }
     }
@@ -519,10 +548,12 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         await CheckAndUnlockAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    // Opens a new TCP connection, closing any before. Throws TimeoutException, SocketException or IOException.
+    // Opens a new TCP connection, closing any before. Throws TimeoutException, SocketException or IOException, also
+    // once the client is disposed.
     private async Task ConnectTcpAsync(CancellationToken cancellationToken)
     {
         Close();
+        ThrowIfDisposed();
         var endpoint = Endpoint;
         var tcp = new TcpClient { NoDelay = true };
         using (var timeout = new CancellationTokenSource(RequestTimeout, _timeProvider))
@@ -544,24 +575,49 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             }
         }
 
-        _tcp = tcp;
         _stream = tcp.GetStream();
+        Interlocked.Exchange(ref _tcp, tcp);
+
+        // Disposed while connecting: Dispose's Close may have come before the connection was kept.
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            Close();
+            ThrowIfDisposed();
+        }
+    }
+
+    // Once disposed, a request still under way gets no answer: it fails as one, and the command throws
+    // BoardNotConnectedException as for any request without an answer.
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            throw new IOException("The app closed the connection to the board.");
+        }
     }
 
     // On a new connection: the module id, then the lock.
     private async Task CheckAndUnlockAsync(CancellationToken cancellationToken)
     {
-        // Another model's relays are numbered and laid out otherwise: nothing is switched or read on it.
-        var info = await ExchangeAsync(DevantechProtocol.GetModuleInfo(), routine: false, cancellationToken).ConfigureAwait(false);
-        Trace(BoardTraceDirection.Received, DevantechTraceText.Module(info), DevantechProtocol.Hex(info));
-        if (DevantechModels.CheckModule(_model, info[0]) is { } wrongModel)
+        _checking = true;
+        try
         {
-            Close();
-            Trace(BoardTraceDirection.None, wrongModel, isError: true);
-            throw new DevantechWrongModelException(wrongModel);
-        }
+            // Another model's relays are numbered and laid out otherwise: nothing is switched or read on it.
+            var info = await ExchangeAsync(DevantechProtocol.GetModuleInfo(), routine: false, cancellationToken).ConfigureAwait(false);
+            Trace(BoardTraceDirection.Received, DevantechTraceText.Module(info), DevantechProtocol.Hex(info));
+            if (DevantechModels.CheckModule(_model, info[0]) is { } wrongModel)
+            {
+                Close();
+                Trace(BoardTraceDirection.None, wrongModel, isError: true);
+                throw new DevantechWrongModelException(wrongModel);
+            }
 
-        await UnlockAsync(cancellationToken).ConfigureAwait(false);
+            await UnlockAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _checking = false;
+        }
     }
 
     // The answer has a value it can't have: the connection is closed, since what comes next can't be trusted.
@@ -640,6 +696,74 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             {
                 _logger.SubscriberFailed(ex);
             }
+        }
+    }
+
+    /// <summary>
+    /// The connection's stream as the codec reads it, counting what it read: a request whose answer came in part may
+    /// not go once more on a new connection.
+    /// </summary>
+    private sealed class CountingStream : Stream
+    {
+        private readonly Stream _inner;
+
+        public CountingStream(Stream inner)
+        {
+            _inner = inner;
+        }
+
+        public long BytesRead { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = _inner.Read(buffer, offset, count);
+            BytesRead += read;
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            BytesRead += read;
+            return read;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
         }
     }
 }

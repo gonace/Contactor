@@ -90,14 +90,18 @@ Frames from the wiki, unit 1:
 - The client reads only the length that the request expects, at most 256 bytes.
 - An answer with a wrong unit, function, length, echo or CRC is unreadable. Then the client closes the connection,
   because the stream can be out of step. The next request opens a new connection.
-- A timeout also closes the connection.
+- A timeout also closes the connection. The next request opens a new one, so one lost answer doesn't lose the board.
+- When the connection was open from before and turns out broken (the board or the network can close a connection
+  that is idle), the client sends the request once more on a new connection. It does this only when no byte of the
+  answer came. Each request the client sends has the same result when done twice: reading the relays, the inputs or
+  the modes, switching one relay, starting its pulse again, and setting the modes to normal.
 - Bytes that wait before a request were not asked for. The client drops them and shows them on the Debug screen.
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the VM204 and the VM208.
 
 A command (ON, OFF or a pulse) switches the relays in the mask one at a time with function 05:
 
 - The client sends a request for every relay in the mask, also when the board refuses one.
-- A request with no answer stops the rest of the mask.
+- A request with no answer, also on a new connection, stops the rest of the mask: the board is gone.
 - When the board takes no relay, the command throws "The Waveshare board didn't take the command: …".
 - Otherwise it returns the relays the board confirmed. A refused relay, or one whose answer couldn't be read, isn't among them.
 - When a request gets no answer, the command throws "The Waveshare board didn't answer; the command may not have been
@@ -107,8 +111,9 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time wit
   answer, the board answered: the command is a refusal (`BoardRefusedException`), which does not count.
 - After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
   new state.
-- When that read gets an unreadable answer, the client keeps the last state it read and reads again at once. The echo
-  of function 05 is not proof that a relay switched: a relay in linkage mode echoes and stays as it is.
+- When that read gets an unreadable answer or no answer, the command returns the relays that the board took. The client
+  keeps the last state it read and reads again at once. The echo of function 05 is not proof that a relay switched: a
+  relay in linkage mode echoes and stays as it is.
 
 `WaveshareClient.PulseAsync` and `WaveshareBoard.PulseAsync` throw `ArgumentOutOfRangeException` for a length outside
 0.1 s to 3276.7 s, or not in steps of 0.1 s, before anything is sent.
@@ -201,4 +206,4 @@ Set `Waveshare:ResetRelayModes` to `false` to keep the modes.
 - How many TCP clients the board accepts at once, and if a second client closes the first.
 - That the board never sends data that the app did not ask for.
 - That the 16CH has no inputs, and that the 16CH and the 30CH answer as above.
-- How the board handles a poll every 2 s for days.
+- How the board handles a poll every 2 s for days, and if it closes a connection that is idle, and after how long.
