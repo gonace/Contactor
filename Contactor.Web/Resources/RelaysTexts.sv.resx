@@ -285,4 +285,7 @@
   <data name="Relays.By.RemovedInput" xml:space="preserve">
     <value>en borttagen ingång</value>
   </data>
+  <data name="Relays.Problem.SeeSettings" xml:space="preserve">
+    <value>{0} Se Inställningar.</value>
+  </data>
 </root>

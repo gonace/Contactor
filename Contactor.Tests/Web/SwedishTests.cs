@@ -258,16 +258,35 @@ public sealed class SwedishTests
         Assert.Empty(page.Errors);
     }
 
+    // Why the board refuses the connection, in Swedish: on Relays, on Settings and in the side menu.
+    [Fact]
+    public async Task Should_SayWhyTheBoardRefuses_InSwedish()
+    {
+        var board = Contactor.Tests.Boards.FakeRelayBoard.LostContact();
+        board.SetProblem(new Contactor.Boards.ConnectionProblem(Contactor.Boards.ConnectionProblemKind.LoginRefused, Contactor.Boards.Devantech.DevantechModels.Eth008));
+        await using var app = await SwedishAppAsync(board: board);
+        using var http = app.CreateClient();
+
+        var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+        var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
+
+        Assert.Contains("Lösenordet är fel. Se Inställningar.", relays, StringComparison.Ordinal);
+        Assert.Matches("<span class=\"no-contact\"[^>]*>Fel lösenord</span>", relays);
+        Assert.Contains("Lösenordet är fel.", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("The password is wrong.", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ingen kontakt med reläkortet på", settings, StringComparison.Ordinal);
+    }
+
     // The app with Swedish chosen; every request has it, whatever the browser asks for. With a clock, the app runs on
     // it.
-    private static async Task<TestWebApp> SwedishAppAsync(TimeProvider? time = null)
+    private static async Task<TestWebApp> SwedishAppAsync(TimeProvider? time = null, Contactor.Tests.Boards.FakeRelayBoard? board = null)
     {
         var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
             services =>
             {
-                TestWebApp.WithLostBoard(services);
+                TestWebApp.WithBoard(board ?? Contactor.Tests.Boards.FakeRelayBoard.LostContact())(services);
                 if (time is not null)
                 {
                     services.AddSingleton(time);

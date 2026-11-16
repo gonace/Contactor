@@ -4,11 +4,14 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Languages
+@using Contactor.Web.Features.Setup
 @inject BoardAddressHandler Handler
 @inject BoardRegistry Registry
 @inject CurrentUser CurrentUser
 @inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
+@inject BoardProblemText ProblemText
+@inject TimeProvider Time
 @inject AppLanguage Language
 
 @* One board's card: on Settings with one board ("Relay board"), and on a board's own page ("Board", with its name). *@
@@ -55,13 +58,13 @@
                 {
                     <div class="field">
                         <label for="username">@Texts["Boards.UserName"]</label>
-                        <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                        <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" @ref="_usernameField"
                                maxlength="@model.LoginMaxLength" @bind="_username" @bind:event="oninput" />
                     </div>
                 }
                 <div class="field">
                     <label for="password">@Texts["Boards.Password"]</label>
-                    <input id="password" type="password" autocomplete="new-password"
+                    <input id="password" type="password" autocomplete="new-password" @ref="_passwordField"
                            maxlength="@model.LoginMaxLength" placeholder="@Texts[_hasPassword ? "Boards.Password.Unchanged" : "Boards.Password.None"]"
                            @bind="_newPassword" @bind:event="oninput" />
                 </div>
@@ -77,6 +80,17 @@
     else if (!Endpoint.HasHost)
     {
         <p class="status offline" role="status">@Texts["Boards.NoAddress"]</p>
+    }
+    else if (State.Problem is { } problem)
+    {
+        @* Why the board refuses the connection. The model can't be changed here: another one is added again. *@
+        <div role="status">
+            <p class="status offline">@ProblemText.Long(problem)</p>
+            @if (ProblemText.AddAgain(problem) is { } again)
+            {
+                <p class="status-more">@again</p>
+            }
+        </div>
     }
     else
     {
@@ -106,6 +120,25 @@
     private bool _saved;
     private bool _busy;
     private int? _loadedFor;
+    private ElementReference _usernameField;
+    private ElementReference _passwordField;
+
+    // Saved by the person: a login problem the board reports next opens the login fields and takes the cursor, once.
+    private AfterSave _afterSave;
+    private DateTimeOffset _savedAt;
+    private bool _focusLogin;
+
+    private enum AfterSave
+    {
+        // Nothing to wait for.
+        None,
+
+        // The address or login moved while the old connection was still open: its end comes first.
+        Drop,
+
+        // Waiting for the board's answer or its problem.
+        Answer,
+    }
 
     /// <summary>The board's row.</summary>
     [Parameter]
@@ -162,6 +195,49 @@
         Registry.StateChanged -= OnBoardChanged;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusLogin)
+        {
+            _focusLogin = false;
+            await (Model is { PasswordOnly: false } ? _usernameField : _passwordField).FocusAsync();
+        }
+    }
+
+    // After the person's own Save only, and once: the first answer or problem after it ends the wait, and so do the
+    // 10 s the setup guide waits for a board. A problem that comes on its own later (e.g. the board's password was
+    // changed) moves nothing while the person may be typing.
+    private void ReactToProblem()
+    {
+        var state = State;
+        if (_afterSave != AfterSave.None && Time.GetUtcNow() - _savedAt > BoardContact.Timeout)
+        {
+            _afterSave = AfterSave.None;
+        }
+
+        if (_afterSave == AfterSave.Drop)
+        {
+            if (state.IsConnected)
+            {
+                return;
+            }
+
+            _afterSave = AfterSave.Answer;
+        }
+
+        if (_afterSave != AfterSave.Answer || (!state.IsConnected && state.Problem is null))
+        {
+            return;
+        }
+
+        _afterSave = AfterSave.None;
+        if (state.Problem is { Kind: ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused } && Model is { HasLogin: true })
+        {
+            _noLogin = false;
+            _focusLogin = true;
+        }
+    }
+
     private async Task LoadLoginAsync()
     {
         var login = await Handler.GetLoginAsync(BoardId, CancellationToken.None);
@@ -185,6 +261,7 @@
         }
 
         _busy = true;
+        var (endpoint, login) = (Live?.Endpoint, Live?.Login);
         try
         {
             // The name first: a name that can't be saved stops the rest, and one saved shows at once.
@@ -203,6 +280,10 @@
             if (error is null)
             {
                 await LoadLoginAsync();
+                var moved = Live is { } live && endpoint is not null && login is not null && BoardContact.HasMoved(live, endpoint, login);
+                _afterSave = moved && State.IsConnected ? AfterSave.Drop : AfterSave.Answer;
+                _savedAt = Time.GetUtcNow();
+                ReactToProblem();
             }
         }
         finally
@@ -225,7 +306,11 @@
         using var language = Language.Use();
         try
         {
-            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(() =>
+            {
+                ReactToProblem();
+                StateHasChanged();
+            });
         }
         catch (ObjectDisposedException)
         {

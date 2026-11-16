@@ -17,6 +17,7 @@
 @inject AppLanguage Language
 @inject IStringLocalizer<SettingsTexts> Texts
 @inject RelayStatusText RelayStatus
+@inject BoardProblemText ProblemText
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Settings"]])</PageTitle>
 
@@ -191,6 +192,7 @@
         var state = board.State;
         return state.IsConnected ? Texts["Settings.Online"]
             : !board.Endpoint.HasHost ? Texts["Settings.NoAddress"]
+            : state.Problem is { } problem ? ProblemText.Short(problem)
             : !state.HasAnswered ? Texts["Settings.NoContactYet"]
             : state.LastContactUtc is { } last ? Texts["Settings.NoContactSince", RelayStatus.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)]
             : Texts["Settings.NoContact"];

@@ -19,6 +19,7 @@ public static class BoardsServiceCollectionExtensions
         // The boards' messages. AddLanguages also adds the localization; adding it twice is harmless.
         services.AddLocalization();
         services.AddSingleton<BoardLoginText>();
+        services.AddSingleton<BoardProblemText>();
         services.AddSingleton<BoardAddressHandler>();
         services.AddSingleton<BoardRemoval>();
         services.AddSingleton<BoardTrafficSetting>();

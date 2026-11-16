@@ -4,14 +4,14 @@ using Contactor.Web.Features.Boards;
 namespace Contactor.Web.Features.Relays;
 
 /// <summary>
-/// What the board filter (<c>BoardPicker</c>) shows of each board's state: its contact, whether it has answered, and
-/// its relays. A page redraws for a board's new status only when it changes one of these, so a status that changes
+/// What the board filter (<c>BoardPicker</c>) shows of each board's state: its contact, whether it has answered, its
+/// relays, and why it refuses the connection. A page redraws for a board's new status only when it changes one of these, so a status that changes
 /// nothing (a poll's answer) doesn't redraw it. Safe from any thread: the statuses come from the boards' own loops.
 /// </summary>
 public sealed class ShownBoardStates
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<int, (bool Connected, bool Answered, ChannelMask Relays)> _shown = [];
+    private readonly Dictionary<int, (bool Connected, bool Answered, ChannelMask Relays, ConnectionProblemKind? Problem)> _shown = [];
 
     /// <summary>Starts again from these boards as they are now; a board that is gone is forgotten.</summary>
     public void Reset(IEnumerable<LiveBoard> boards)
@@ -47,8 +47,8 @@ public sealed class ShownBoardStates
         }
     }
 
-    private static (bool Connected, bool Answered, ChannelMask Relays) Of(BoardState state)
+    private static (bool Connected, bool Answered, ChannelMask Relays, ConnectionProblemKind? Problem) Of(BoardState state)
     {
-        return (state.IsConnected, state.HasAnswered, state.Relays);
+        return (state.IsConnected, state.HasAnswered, state.Relays, state.Problem?.Kind);
     }
 }

@@ -74,7 +74,7 @@
         else if (_step == StepWhere)
         {
             <BoardWhereStep @ref="_where" Board="board" Values="_whereFields" UserEmail="@_user?.Email" Busy="Busy"
-                            BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" />
+                            BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" ChooseModel="() => Back(StepWhere)" />
         }
         else
         {

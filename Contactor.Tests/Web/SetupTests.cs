@@ -844,7 +844,7 @@ public sealed class SetupTests
         var board = new FakeRelayBoard();
         using var contact = BoardContact.Watch(board);
 
-        Assert.True(await contact.WaitAsync(moved: false, WaitTimeout, TimeProvider.System, Cancel));
+        Assert.Equal(BoardContactResult.Connected, await contact.WaitAsync(moved: false, WaitTimeout, TimeProvider.System, Cancel));
     }
 
     [Fact]
@@ -860,7 +860,7 @@ public sealed class SetupTests
         board.SetConnected(false);
         board.SetConnected(true);
 
-        Assert.True(await wait);
+        Assert.Equal(BoardContactResult.Connected, await wait);
     }
 
     // The client reconnects at once: the board can be back at its new address before the save even returns.
@@ -872,7 +872,7 @@ public sealed class SetupTests
         board.SetConnected(false);
         board.SetConnected(true);
 
-        Assert.True(await contact.WaitAsync(moved: true, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
+        Assert.Equal(BoardContactResult.Connected, await contact.WaitAsync(moved: true, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
     }
 
     [Fact]
@@ -884,7 +884,7 @@ public sealed class SetupTests
 
         board.SetConnected(true);
 
-        Assert.True(await wait);
+        Assert.Equal(BoardContactResult.Connected, await wait);
     }
 
     [Fact]
@@ -893,7 +893,46 @@ public sealed class SetupTests
         var board = new FakeRelayBoard(connected: false);
         using var contact = BoardContact.Watch(board);
 
-        Assert.False(await contact.WaitAsync(moved: false, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
+        Assert.Equal(BoardContactResult.NoAnswer, await contact.WaitAsync(moved: false, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
+    }
+
+    // A board that refuses the connection says why at once: the wait ends then, not after its 10 s.
+    [Fact]
+    public async Task Should_EndTheWait_WhenTheBoardRefusesTheConnection()
+    {
+        var board = new FakeRelayBoard(connected: false);
+        var problem = new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model);
+        using var contact = BoardContact.Watch(board);
+        var wait = contact.WaitAsync(moved: true, TimeSpan.FromMinutes(5), TimeProvider.System, Cancel);
+        Assert.False(wait.IsCompleted);
+
+        board.SetProblem(problem);
+
+        Assert.Equal(new BoardContactResult(false, problem), await wait);
+    }
+
+    // A problem the board reported already, with nothing moved since, is the answer.
+    [Fact]
+    public async Task Should_GiveTheProblem_TheBoardReportedAlready()
+    {
+        var board = new FakeRelayBoard(connected: false);
+        var problem = new ConnectionProblem(ConnectionProblemKind.WrongModel, Contactor.Boards.Devantech.DevantechModels.Eth008);
+        board.SetProblem(problem);
+        using var contact = BoardContact.Watch(board);
+
+        Assert.Equal(new BoardContactResult(false, problem), await contact.WaitAsync(moved: false, TimeSpan.FromMinutes(5), TimeProvider.System, Cancel));
+    }
+
+    // A problem cleared (a new login) and no answer after it: no answer, not the problem from before.
+    [Fact]
+    public async Task Should_SayNoAnswer_WhenTheProblemIsClearedAndNothingComes()
+    {
+        var board = new FakeRelayBoard(connected: false);
+        board.SetProblem(new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model));
+        using var contact = BoardContact.Watch(board);
+        board.SetProblem(null);
+
+        Assert.Equal(BoardContactResult.NoAnswer, await contact.WaitAsync(moved: true, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
     }
 
     [Theory]
