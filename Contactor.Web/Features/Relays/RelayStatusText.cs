@@ -19,8 +19,8 @@ public enum TurnedOnBy
     /// <summary>Outside the app, e.g. with the board's own web page.</summary>
     Outside,
 
-    /// <summary>Someone else, by name.</summary>
-    Person,
+    /// <summary>Someone else or an input, by name.</summary>
+    Named,
 }
 
 /// <summary>
@@ -100,7 +100,7 @@ public sealed class RelayStatusText
     /// "Off right now.".
     /// </summary>
     /// <param name="by">Who turned it on.</param>
-    /// <param name="name">Their name, for <see cref="TurnedOnBy.Person"/>; with none, the sentence names nobody.</param>
+    /// <param name="name">Their name, for <see cref="TurnedOnBy.Named"/>; with none, the sentence names nobody.</param>
     public string Sentence(bool isOn, DateTime? onSinceLocal, TurnedOnBy by, string? name, DateTime? autoOffAtLocal, DateTime nowLocal)
     {
         if (!isOn)
@@ -119,7 +119,7 @@ public sealed class RelayStatusText
             TurnedOnBy.You => _texts["Relays.Sentence.OnSinceByYou", since],
             TurnedOnBy.Schedule => _texts["Relays.Sentence.OnSinceBySchedule", since],
             TurnedOnBy.Outside => _texts["Relays.Sentence.OnSinceOutside", since],
-            TurnedOnBy.Person when !string.IsNullOrEmpty(name) => _texts["Relays.Sentence.OnSinceBy", since, name],
+            TurnedOnBy.Named when !string.IsNullOrEmpty(name) => _texts["Relays.Sentence.OnSinceBy", since, name],
             _ => _texts["Relays.Sentence.OnSince", since],
         };
 
