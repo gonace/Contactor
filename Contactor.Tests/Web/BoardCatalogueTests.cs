@@ -117,6 +117,7 @@ public sealed class BoardCatalogueTests
     [Theory]
     [InlineData("devantech-eth002")]
     [InlineData("devantech-eth008")]
+    [InlineData("Devantech-ETH1610")]
     [InlineData("Devantech-ETH484")]
     [InlineData(" devantech-eth8020 ")]
     public async Task Should_BuildEachDevantechModel_WhenChosen(string type)
