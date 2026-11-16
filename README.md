@@ -22,17 +22,19 @@ English or Swedish.
 
 ## What it does
 
-- **Setup guide:** a few short questions: the language, how people reach the app and sign in, which relay board,
-  where it is, and what each relay switches, with "Try" to hear which one it is.
+- **Setup guide:** a few short questions: the language, how people reach the app and sign in, your name, which relay
+  board, where it is, and what each relay switches, with "Try" to hear which one it is.
 - **Relays:** one big ON/OFF button per relay, with who turned it on and when it goes off. "All off" turns everything
   off.
 - **Auto-off:** a relay that someone turns on goes off by itself after 1, 2 or 4 hours, or never, as set for that
   relay.
 - **Schedules:** on and off at set times on chosen days, also over midnight and across daylight saving changes.
 - **Groups in steps:** a group starts from the top, step by step, and stops from the bottom, with a wait and a run-on
-  time. A step can hold several relays, e.g. two fans, then two heaters. A group can have schedules too.
-- **Interlock:** a relay in a group may only be on while every relay in the steps above it is on. If one fan stops,
-  e.g. through a button on the board itself, the app turns both heaters off at once.
+  time. A step can hold several relays, e.g. two fans, then two heaters. A short guide creates a group, and a group can
+  have schedules too.
+- **Interlock:** a relay in a group may only be on while every relay in the steps above it is on. Whatever breaks that
+  order, e.g. a fan stopped with a button on the board itself, the app turns the relays below off at once: here both
+  heaters.
 - **Event log:** every change, by a person, a schedule, auto-off or at the board itself.
 - **Backups and updates:** a copy of the database every night, a download button, and "Update now" in Settings.
 
@@ -72,7 +74,8 @@ a qualified electrician.
 | Advantech ADAM-6060, ADAM-6066 and ADAM-6260, Modbus TCP | 6 plus 6 inputs, 6 plus 6 inputs, 6 | In the app and the simulator. Not yet tested on a real board. See [its README](Contactor.Boards.Advantech/README.md) |
 
 One installation can run several boards, of any of these models: the setup guide sets up the first, and Settings →
-"Add a board" adds more. Each manufacturer has a small project behind one interface, `IRelayBoard`.
+"Add a board" adds more. Each manufacturer has a small project behind one interface, `IRelayBoard`, so a new board needs its own project and
+nothing else in the app.
 
 ## How it runs
 
