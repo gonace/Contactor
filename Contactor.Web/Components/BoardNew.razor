@@ -363,7 +363,7 @@
             return false;
         }
 
-        var error = await Removal.RemoveAsync(boardId, turnOffFirst: false, _user.Email, CancellationToken.None);
+        var error = await Removal.CancelAddingAsync(boardId, _user.Email, CancellationToken.None);
         if (error is not null && error != Removal.AlreadyRemoved)
         {
             _error = error;

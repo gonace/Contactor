@@ -568,7 +568,11 @@
             EventActors.Schedule => RelayTexts["Relays.By.Schedule"],
             EventActors.AutoOff => RelayTexts["Relays.By.AutoOff"],
             EventActors.External => RelayTexts["Relays.By.Outside"],
-            _ => _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email),
+            _ when _names.TryGetValue(email, out var name) => name,
+
+            // An input that is no longer in the app (a removed board's) has no name, and isn't an e-mail.
+            _ when EventActors.TryInput(email, out _) => RelayTexts["Relays.By.RemovedInput"],
+            _ => IdentityRules.DisplayNameFor(email),
         };
     }
 
