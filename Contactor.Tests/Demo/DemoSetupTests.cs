@@ -150,7 +150,7 @@ public sealed class DemoSetupTests : IDisposable
         // A colour is only ever a token's value, light or dark; the rules and the pages use the tokens.
         var token = new Regex(@"^\s*--[a-z-]+:\s*#[0-9A-Fa-f]{3,8};$");
         var colour = new Regex(@"#[0-9A-Fa-f]{3,8}\b");
-        var css = System.Text.Encoding.UTF8.GetString(DemoPages.Stylesheet());
+        var css = System.Text.Encoding.UTF8.GetString(DemoPages.Stylesheet()).Replace("\r\n", "\n", StringComparison.Ordinal);
 
         var outsideTokens = css.Split('\n').Where(l => colour.IsMatch(l) && !token.IsMatch(l)).ToList();
         var pages = string.Concat(DemoPages.Page(new DemoOptions(), offersTemplate: true), DemoPages.Busy(), DemoPages.Ended(), DemoPages.NotStarted(), DemoPages.WentWrong());
