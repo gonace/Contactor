@@ -33,7 +33,11 @@ public sealed class ScheduleText
     }
 
     /// <summary>The day's shortest name, for its button: "Mo".</summary>
-    public static string Letter(ScheduleDays day) => Format.ShortestDayNames[(int)DayOfWeek(day)];
+    public static string Letter(ScheduleDays day)
+    {
+        var name = Format.AbbreviatedDayNames[(int)DayOfWeek(day)];
+        return name.Length <= 2 ? name : name[..2];
+    }
 
     /// <summary>The day's short name, for lists: "Mon".</summary>
     public static string ShortName(ScheduleDays day) => Format.AbbreviatedDayNames[(int)DayOfWeek(day)];
