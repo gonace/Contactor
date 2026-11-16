@@ -449,6 +449,37 @@ public sealed class Vm204ClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(80, pollSeconds: 0));
     }
 
+    // Issue #407: the board is removed while a command waits for its answer. The HTTP client is disposed only once that
+    // command has ended, so it finishes as sent; a command after it is refused.
+    [Fact]
+    public async Task Should_FinishTheCommandUnderWay_BeforeTheHttpClientIsDisposed()
+    {
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        board.HoldCommands = hold.Task;
+        var sent = run.Client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => board.Held == 1);
+
+        ValueTask disposing;
+        try
+        {
+            disposing = run.Client.DisposeAsync();
+            Assert.False(disposing.IsCompleted);
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffAsync(0b0001, Cancel).WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+        }
+        finally
+        {
+            hold.SetResult();
+        }
+
+        await sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel);
+        await disposing.AsTask().WaitAsync(TimeSpan.FromMinutes(1), Cancel);
+        Assert.Equal(0b0001, run.Client.State.Relays);
+        Assert.DoesNotContain(run.Traces, t => t.IsError);
+    }
+
     private static Vm204Client CreateClient(int port, string username = "", string password = "", int pollSeconds = 2, string host = "127.0.0.1", TimeProvider? time = null)
     {
         var options = new Vm204Options { Host = host, Port = port, Username = username, Password = password, PollSeconds = pollSeconds };
@@ -614,6 +645,7 @@ public sealed class Vm204ClientTests
         private readonly List<string> _targets = [];
         private int _relays;
         private int _hanging;
+        private int _held;
 
         private ScriptedBoard(TcpListener listener)
         {
@@ -633,6 +665,12 @@ public sealed class Vm204ClientTests
 
         /// <summary>Status requests left without an answer.</summary>
         public int Hanging => Volatile.Read(ref _hanging);
+
+        /// <summary>When set, a command is switched and answered only once this task ends.</summary>
+        public Task? HoldCommands { get; set; }
+
+        /// <summary>Commands that waited for <see cref="HoldCommands"/>.</summary>
+        public int Held => Volatile.Read(ref _held);
 
         public List<string> Targets
         {
@@ -709,6 +747,12 @@ public sealed class Vm204ClientTests
                     }
                     else
                     {
+                        if (HoldCommands is { } hold && (target.StartsWith(Vm204Api.RelayOnPath, StringComparison.Ordinal) || target.StartsWith(Vm204Api.RelayOffPath, StringComparison.Ordinal)))
+                        {
+                            Interlocked.Increment(ref _held);
+                            await hold.WaitAsync(_stop.Token);
+                        }
+
                         if (target.StartsWith(Vm204Api.RelayOnPath, StringComparison.Ordinal))
                         {
                             Interlocked.Or(ref _relays, Vm204TraceText.RelayMask(target.Split('?')[1]));
