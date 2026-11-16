@@ -416,6 +416,24 @@ public sealed class DevantechClientTests
         Assert.Contains(run.Traces, t => t.Text == "Password refused" && t.IsError);
         Assert.Contains(run.Traces, t => t.Text == "Connection lost: The Devantech board refused the password." && t.IsError);
         Assert.DoesNotContain(simulator.ReceivedRequests, r => r.StartsWith('2'));
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), run.Client.State.Problem);
+    }
+
+    // The password is a secret: the problem, and the state that carries it, never hold it.
+    [Fact]
+    public async Task Should_NeverPutThePassword_InTheProblemOrTheState()
+    {
+        const string secret = "Zq7pear";
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, "apple", time);
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008, password: secret, time: time);
+
+        await Wait.UntilAsync(() => run.Client.State.Problem is not null);
+
+        var state = run.Client.State;
+        Assert.DoesNotContain(secret, state.Problem!.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(secret, state.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(secret, DevantechBoard.ToBoardState(state).ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -428,6 +446,7 @@ public sealed class DevantechClientTests
 
         Assert.False(run.Client.State.IsConnected);
         Assert.Equal(["10", "7A"], simulator.ReceivedRequests);
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginNeeded, DevantechModels.Eth008), run.Client.State.Problem);
     }
 
     [Fact]
@@ -444,6 +463,37 @@ public sealed class DevantechClientTests
         Assert.Contains(run.Traces, t => t.Text == "Connection lost: The board at this address is an ETH484, not an ETH008." && t.IsError);
         Assert.All(simulator.ReceivedRequests, r => Assert.Equal("10", r));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+
+        // The catalogue's names, and reported once for the two refusals.
+        var problem = new ConnectionProblem(ConnectionProblemKind.WrongModel, DevantechModels.Eth008, DevantechModels.Eth484);
+        Assert.Equal(problem, run.Client.State.Problem);
+        Assert.Single(run.Changes, c => c.Problem is not null);
+        Assert.Equal("The board at this address is an ETH484-B, not an ETH008-B.", problem.ToString());
+    }
+
+    [Fact]
+    public async Task Should_SayItIsAnotherModel_ForAModuleIdTheAppDoesntSupport()
+    {
+        await using var board = ScriptedBoard.Start(packet => packet[0] == 0x10 ? [29, 2, 28] : []);
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth008);
+
+        await Wait.UntilAsync(() => run.Client.State.Problem is not null);
+
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.WrongModel, DevantechModels.Eth008), run.Client.State.Problem);
+        Assert.Contains(run.Traces, t => t.Text == "The board at this address is an ETH044, not an ETH008.");
+    }
+
+    [Theory]
+    [InlineData(18, "devantech-eth002")]
+    [InlineData(19, "devantech-eth008")]
+    [InlineData(52, "devantech-eth1610")]
+    [InlineData(20, "devantech-eth484")]
+    [InlineData(21, "devantech-eth8020")]
+    [InlineData(29, null)]
+    [InlineData(99, null)]
+    public void Should_FindTheCatalogueModel_ForAModuleId(byte moduleId, string? id)
+    {
+        Assert.Equal(id, DevantechModels.ModelFor(moduleId)?.Id);
     }
 
     [Fact]
@@ -809,9 +859,14 @@ public sealed class DevantechClientTests
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008, password: "pear", time: time);
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Password refused"));
 
+        await Wait.UntilAsync(() => run.Client.State.Problem is not null);
+
         run.Client.SetPassword("apple");
 
+        // The problem was about the old password.
+        Assert.Null(run.Client.State.Problem);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Problem);
         Assert.Equal("apple", run.Client.Password);
         Assert.Throws<ArgumentException>(() => run.Client.SetPassword("two words"));
         Assert.Equal("apple", run.Client.Password);

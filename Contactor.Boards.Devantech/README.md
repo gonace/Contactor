@@ -123,6 +123,18 @@ On each new connection, the client:
 2. Sends 0x7A. When the board is locked, the client sends the password. When the board refuses the password, or when
    there is no password, the connection fails, and the poller tries again.
 
+When the board refuses the connection in one of these ways, the state says why (`DevantechState.Problem`, a
+`ConnectionProblem`), so the screens can show it:
+
+- `WrongModel`, with the model expected and the model found, by the catalogue's names (module id 20 is the
+  "ETH484-B"; `DevantechModels.ModelFor`). For a module id of a model the app doesn't support, or doesn't know, the
+  found model is null.
+- `LoginNeeded`: the board is locked and the app has no password.
+- `LoginRefused`: the board refused the password.
+
+The problem never holds the password. `BoardPoller` clears it at the board's first answer, at a new address and at a
+new password (`SetPassword`). A connection that fails for another reason, such as no answer, has no problem.
+
 Then:
 
 - Each command and each connection attempt has 5 s on `TimeProvider`.

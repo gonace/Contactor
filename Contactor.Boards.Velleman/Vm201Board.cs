@@ -66,7 +66,8 @@ public sealed class Vm201Board : IRelayBoard
             state.IsConnected,
             new ChannelMask(state.Outputs),
             state.Input ? ChannelMask.Of(1) : ChannelMask.None,
-            state.LastContactUtc);
+            state.LastContactUtc,
+            state.Problem);
     }
 
     /// <summary>The board's channel mask: relays 1–8 only.</summary>

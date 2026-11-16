@@ -54,6 +54,53 @@ public sealed class Vm201ClientTests
     }
 
     [Fact]
+    public async Task Should_SayTheLoginWasRefused_WithoutTheLogin_AndClearItForANewLogin()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "Zq7wrong");
+
+        await WaitUntilAsync(() => run.Client.State.Problem is not null);
+
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model), run.Client.State.Problem);
+        Assert.DoesNotContain("Zq7wrong", run.Client.State.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Zq7wrong", Vm201Board.ToBoardState(run.Client.State).ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(run.Client.State.Problem, Vm201Board.ToBoardState(run.Client.State).Problem);
+
+        run.Client.SetLogin(Vm201Login.TryCreate("admin", "secret", out _)!);
+
+        Assert.Null(run.Client.State.Problem);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Problem);
+    }
+
+    [Fact]
+    public async Task Should_SayALoginIsNeeded_WhenTheBoardAsksAndTheAppHasNone_AndClearItAtANewAddress()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator);
+
+        await WaitUntilAsync(() => run.Client.State.Problem is not null);
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginNeeded, Vm201Model.Model), run.Client.State.Problem);
+
+        run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", 1));
+
+        Assert.Equal(Vm201State.Initial, run.Client.State);
+    }
+
+    [Fact]
+    public async Task Should_ReportNoProblem_ForABoardThatDoesntAnswer()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "secret");
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Null(run.Client.State.Problem);
+    }
+
+    [Fact]
     public async Task Should_UpdateState_WhenTurningRelaysOnAndOff()
     {
         await using var simulator = new Vm201Simulator();

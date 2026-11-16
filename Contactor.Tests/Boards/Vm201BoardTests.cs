@@ -31,6 +31,16 @@ public sealed class Vm201BoardTests
     }
 
     [Fact]
+    public void Should_PassTheProblemOn()
+    {
+        var problem = new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model);
+
+        var state = Vm201Board.ToBoardState(Vm201State.Initial with { Problem = problem });
+
+        Assert.Equal(BoardState.Initial with { Problem = problem }, state);
+    }
+
+    [Fact]
     public void Should_SendRelaysOneToEight_AndRefuseOthers()
     {
         Assert.Equal(0b1000_0001, Vm201Board.ToMask(ChannelMask.Of([1, 8])));

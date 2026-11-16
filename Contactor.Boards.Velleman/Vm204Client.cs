@@ -86,7 +86,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         get
         {
             var state = _poller.State;
-            return new Vm204State(state.IsConnected, state.Reading, state.LastContactUtc);
+            return new Vm204State(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
         }
     }
 
@@ -183,7 +183,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             return;
         }
 
-        var vm204State = new Vm204State(state.IsConnected, state.Reading, state.LastContactUtc);
+        var vm204State = new Vm204State(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
 
         // Each subscriber on its own: one that fails must not keep the state from the others.
         foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<Vm204State>>())
@@ -293,8 +293,12 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             hideAnswer: true).ConfigureAwait(false);
         if (answer.StatusCode == HttpStatusCode.BadRequest)
         {
+            // The board asks for a login whenever one is set on it: with none, it needs one; with one, it refused it.
             Vm204Log.AccessDenied(_logger);
-            throw new Vm204AccessDeniedException();
+            var kind = login.IsNone ? ConnectionProblemKind.LoginNeeded : ConnectionProblemKind.LoginRefused;
+            throw new Vm204AccessDeniedException(
+                "The VM204 refused the user name or password.",
+                new ConnectionProblem(kind, Vm204Model.Model));
         }
 
         EnsureOk(answer);
@@ -310,7 +314,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         if (answer.StatusCode == HttpStatusCode.BadRequest)
         {
             Interlocked.CompareExchange(ref _key, null, key);
-            throw new Vm204AccessDeniedException("The VM204 refused the key; the app logs in again.");
+            throw new Vm204AccessDeniedException("The VM204 refused the key; the app logs in again.", problem: null);
         }
 
         EnsureOk(answer);
