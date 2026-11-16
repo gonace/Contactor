@@ -81,36 +81,45 @@ public sealed class RelayDetailPageTests
         }
     }
 
+    // On a clock of the test's own, so the times on the page don't depend on the time of day (after 22:00 the auto-off
+    // would be "tomorrow"), at 13:00 in the app's time zone.
     [Theory]
     [InlineData("john@example.com", "by you")]
     [InlineData(EventActors.External, "outside the app")]
     public async Task Should_SayWhoTurnedTheRelayOn(string actor, string who)
     {
         var board = new FakeRelayBoard();
+        var time = new FixedTimeProvider(new DateTimeOffset(2026, 11, 4, 12, 0, 0, TimeSpan.Zero));
         await using var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
-            TestWebApp.WithBoard(board));
+            services =>
+            {
+                TestWebApp.WithBoard(board)(services);
+                services.AddSingleton<TimeProvider>(time);
+            });
         using var http = app.CreateClient();
         await board.TurnOnAsync(ChannelMask.Of(3), Cancel);
         var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
 
-        // The app notes the change it didn't make first, as made outside the app; the test's actor replaces that.
+        // The app notes the change it didn't make first, as made outside the app: its event and its run, saved
+        // together. Only then the test's actor replaces that run, so the app's note can't overwrite it afterwards.
         await Wait.UntilAsync(() =>
         {
             using var db = factory.CreateDbContext();
-            return db.RelayRuntimes.Single(r => r.RelayId == 3).TurnedOnBy is not null;
+            return db.EventLog.Any(e => e.RelayId == 3 && e.Action == EventActions.On && e.Actor == EventActors.External);
         });
         await using (var db = await factory.CreateDbContextAsync(Cancel))
         {
             var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == 3, Cancel);
-            (runtime.OnSinceUtc, runtime.TurnedOnBy) = (DateTime.UtcNow, actor);
+            Assert.Equal(EventActors.External, runtime.TurnedOnBy);
+            (runtime.OnSinceUtc, runtime.TurnedOnBy) = (time.GetUtcNow().UtcDateTime, actor);
             await db.SaveChangesAsync(Cancel);
         }
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/3", Cancel));
 
-        Assert.Matches($"<p[^>]*>On since [0-2][0-9]:[0-5][0-9], {who}\\.( Turns off [0-2][0-9]:[0-5][0-9]\\.)?</p>", html);
+        Assert.Matches($"<p[^>]*>On since 13:00, {who}\\. Turns off 15:00\\.</p>", html);
     }
 
     private static TestWebApp CreateApp()

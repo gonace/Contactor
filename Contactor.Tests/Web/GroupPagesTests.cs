@@ -92,10 +92,7 @@ public sealed class GroupPagesTests
             var group = new RelayGroup { BoardId = 1, Name = "Workshop heat", Icon = GroupIcons.Flame, MaxOnMinutes = 120 };
             group.AddStep("Fans", [1, 2], runOnSec: 180);
             group.AddStep("Heaters", [3, 4]);
-            db.RelayGroups.Add(group);
-            await db.SaveChangesAsync(Cancel);
-            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
-            await db.SaveChangesAsync(Cancel);
+            await db.AddWithRuntimesAsync(group);
             id = group.Id;
         }
 
@@ -190,10 +187,7 @@ public sealed class GroupPagesTests
         var group = new RelayGroup { BoardId = 1, Name = "Fan heater – Lathe", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
         group.AddStep("Fan", 1, runOnSec: 300);
         group.AddStep("Heat", 2);
-        db.RelayGroups.Add(group);
-        await db.SaveChangesAsync(Cancel);
-        db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
-        await db.SaveChangesAsync(Cancel);
+        await db.AddWithRuntimesAsync(group);
         return group.Id;
     }
 }
