@@ -43,6 +43,7 @@ global.json                 # SDK version and test runner (Microsoft.Testing.Pla
 Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
 Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel, BoardPoller. No dependencies.
+Contactor.Boards.Denkovi/   # The Denkovi smartDEN IP-16R-MT: Modbus TCP codec, client, simulator and its adapters (SmartDenBoard, SmartDenConnection, SmartDenTraffic). No web/EF. README.md: its protocol
 Contactor.Boards.Devantech/ # The Devantech ETH002-B, ETH008-B, ETH484-B and ETH8020-B: binary TCP commands, client, simulator and its adapters (DevantechBoard, DevantechConnection, DevantechTraffic). No web/EF. README.md: its protocol
 Contactor.Boards.Velleman/  # The Velleman VM201 (packet codec), VM204 and VM208 (HTTP clients): their clients, simulators and adapters (Vm201Board, Vm204Connection, Vm208Traffic …). No web/EF. README.md: their protocols and routes
 Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and its adapters (WaveshareBoard, WaveshareConnection, WaveshareTraffic). No web/EF. README.md: its protocol
@@ -57,6 +58,7 @@ Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resi
 Contactor.Tests/          # The only test project
   Boards/                   # ChannelMask, BoardPoller, board adapters
   Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
+  Denkovi/                  # Modbus TCP codec, trace words, simulator + client against the simulator
   Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
   Simulator/                # The simulator's boards and page
   Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, trace words, connections + clients against the simulator

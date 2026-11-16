@@ -1,7 +1,9 @@
 using Contactor.Boards;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
+using Contactor.Web.Features.Denkovi;
 using Contactor.Web.Features.Devantech;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Features.Vm204;
@@ -39,6 +41,7 @@ public static class BoardCatalogue
         new(WaveshareModels.Relay8C, WaveshareBoards.Create),
         new(WaveshareModels.Relay16, WaveshareBoards.Create),
         new(WaveshareModels.Relay30, WaveshareBoards.Create),
+        new(SmartDenModels.Ip16RMt, SmartDenBoards.Create),
         new(DevantechModels.Eth002, DevantechBoards.Create),
         new(DevantechModels.Eth008, DevantechBoards.Create),
         new(DevantechModels.Eth484, DevantechBoards.Create),
