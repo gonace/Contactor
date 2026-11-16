@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Contactor.Boards.Vm201;
+using Contactor.Boards.Velleman;
 using Contactor.Demo;
 using Contactor.Tests.Web;
 using Contactor.Web.Persistence;

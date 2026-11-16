@@ -25,7 +25,7 @@ public sealed class SmartDenBoardTests
         Assert.Equal(502, model.DefaultPort);
         Assert.Equal(0, model.LoginMaxLength);
         Assert.True(SmartDenModels.IsSmartDen(model));
-        Assert.False(SmartDenModels.IsSmartDen(Contactor.Boards.Vm201.Vm201Model.Model));
+        Assert.False(SmartDenModels.IsSmartDen(Contactor.Boards.Velleman.Vm201Model.Model));
     }
 
     [Theory]

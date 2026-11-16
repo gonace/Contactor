@@ -490,7 +490,7 @@ public sealed class SmartDenClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, pollSeconds: 0));
         Assert.Throws<ArgumentException>(() => new SmartDenClient(
             Options.Create(new SmartDenOptions()),
-            Contactor.Boards.Vm201.Vm201Model.Model,
+            Contactor.Boards.Velleman.Vm201Model.Model,
             TimeProvider.System,
             NullLogger<SmartDenClient>.Instance));
     }

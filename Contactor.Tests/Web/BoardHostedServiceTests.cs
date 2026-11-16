@@ -1,4 +1,4 @@
-using Contactor.Boards.Vm201;
+using Contactor.Boards.Velleman;
 using Contactor.Web;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;

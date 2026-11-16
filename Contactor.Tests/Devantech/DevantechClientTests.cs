@@ -628,7 +628,7 @@ public sealed class DevantechClientTests
     public void Should_RefuseSettingsAndModelsItCantUse()
     {
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, DevantechModels.Eth008, pollSeconds: 0));
-        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Vm201.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, Contactor.Boards.Velleman.Vm201Model.Model));
         var error = Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, DevantechModels.Eth008, password: "smörgås"));
         Assert.DoesNotContain("smörgås", error.Message, StringComparison.Ordinal);
     }

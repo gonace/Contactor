@@ -3,9 +3,7 @@
   <Project Path="Contactor.Boards/Contactor.Boards.csproj" />
   <Project Path="Contactor.Boards.Denkovi/Contactor.Boards.Denkovi.csproj" />
   <Project Path="Contactor.Boards.Devantech/Contactor.Boards.Devantech.csproj" />
-  <Project Path="Contactor.Boards.Vm201/Contactor.Boards.Vm201.csproj" />
-  <Project Path="Contactor.Boards.Vm204/Contactor.Boards.Vm204.csproj" />
-  <Project Path="Contactor.Boards.Vm208/Contactor.Boards.Vm208.csproj" />
+  <Project Path="Contactor.Boards.Velleman/Contactor.Boards.Velleman.csproj" />
   <Project Path="Contactor.Boards.Waveshare/Contactor.Boards.Waveshare.csproj" />
   <Project Path="Contactor.Demo/Contactor.Demo.csproj" />
   <Project Path="Contactor.ServiceDefaults/Contactor.ServiceDefaults.csproj" />
