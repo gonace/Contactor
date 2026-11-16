@@ -454,6 +454,37 @@ public sealed class Vm208ClientTests
     }
 
     // Moves the clock past each wait before a busy answer is asked again, until the command ends.
+    // Issue #407: the board is removed while a command waits for its answer. The HTTP client is disposed only once that
+    // command has ended, so it finishes as sent; a command after it is refused.
+    [Fact]
+    public async Task Should_FinishTheCommandUnderWay_BeforeTheHttpClientIsDisposed()
+    {
+        await using var board = ScriptedBoard.Start();
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        board.HoldCommands = hold.Task;
+        var sent = run.Client.TurnOnAsync(0b0001, Cancel);
+        await Wait.UntilAsync(() => board.Held == 1);
+
+        ValueTask disposing;
+        try
+        {
+            disposing = run.Client.DisposeAsync();
+            Assert.False(disposing.IsCompleted);
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffAsync(0b0001, Cancel).WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+        }
+        finally
+        {
+            hold.SetResult();
+        }
+
+        Assert.Equal(0b0001, await sent.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+        await disposing.AsTask().WaitAsync(TimeSpan.FromMinutes(1), Cancel);
+        Assert.Equal(0b0001, run.Client.State.Relays);
+        Assert.DoesNotContain(run.Traces, t => t.IsError);
+    }
+
     private static async Task<T> PastBusyWaitsAsync<T>(ClientRun run, Task<T> command)
     {
         while (!command.IsCompleted)
@@ -797,6 +828,7 @@ public sealed class Vm208ClientTests
         private readonly List<string> _requests = [];
         private int _relays;
         private int _hanging;
+        private int _held;
         private int _handled;
         private int _switched;
         private int _dropNext;
@@ -843,6 +875,12 @@ public sealed class Vm208ClientTests
 
         /// <summary>Requests left without an answer.</summary>
         public int Hanging => Volatile.Read(ref _hanging);
+
+        /// <summary>When set, a command is switched and answered only once this task ends.</summary>
+        public Task? HoldCommands { get; set; }
+
+        /// <summary>Commands that waited for <see cref="HoldCommands"/>.</summary>
+        public int Held => Volatile.Read(ref _held);
 
         public List<string> Requests
         {
@@ -926,6 +964,12 @@ public sealed class Vm208ClientTests
                         Interlocked.Increment(ref _hanging);
                         await Task.Delay(Timeout.Infinite, _stop.Token);
                         return;
+                    }
+
+                    if (command is not null && HoldCommands is { } hold)
+                    {
+                        Interlocked.Increment(ref _held);
+                        await hold.WaitAsync(_stop.Token);
                     }
 
                     var badForCommand = command is { } refused && (BadAnswerFor & (1 << (refused.Relay - 1))) != 0;

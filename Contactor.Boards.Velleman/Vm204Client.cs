@@ -13,7 +13,7 @@ namespace Contactor.Boards.Velleman;
 /// <see cref="BoardNotConnectedException"/>, a poll under way gives way to them, and the board's answer to one, its
 /// status right after, is reported at once.
 /// </summary>
-public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
+public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long a request may take before it counts as unanswered.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -156,10 +156,23 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         _poller.PollNow();
     }
 
+    /// <summary>
+    /// Disposes the HTTP client once the poll or command under way has ended (at most the poller's
+    /// <see cref="BoardPoller{TReading}.DisposeWait"/>): nothing new starts, and no request is still using it. A command
+    /// that outlasts the wait throws <see cref="BoardNotConnectedException"/>.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        await _poller.DisposeAsync().ConfigureAwait(false);
+        Dispose();
+    }
+
     public void Dispose()
     {
-        _http.Dispose();
+        // The poller first, so no poll or command starts on the HTTP client being disposed, and one under way that it
+        // cuts off ends as BoardNotConnectedException, uncounted.
         _poller.Dispose();
+        _http.Dispose();
     }
 
     // The poller calls these one at a time, never while a command runs.
