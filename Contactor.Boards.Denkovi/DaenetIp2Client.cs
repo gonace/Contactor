@@ -639,8 +639,10 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             throw;
         }
 
-        _socket = socket;
+        // Kept with a full fence before the check below, against Dispose's flag before its Close: either that Close
+        // finds this socket, or the check finds the flag.
         _remote = new IPEndPoint(address, endpoint.Port);
+        Interlocked.Exchange(ref _socket, socket);
 
         // Disposed while the name was looked up: Dispose's Close may have come before the socket was kept.
         if (Volatile.Read(ref _disposed) == 1)

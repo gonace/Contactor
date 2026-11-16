@@ -706,11 +706,19 @@ public sealed class BoardPollerTests
             },
             Cancel);
 
-        poller.Dispose();
+        try
+        {
+            poller.Dispose();
 
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => waiting);
-        Assert.False(sent);
-        answer.SetResult(2);
+            // Bounded, so a command that hangs fails the test instead of holding it up.
+            await Assert.ThrowsAsync<BoardNotConnectedException>(() => waiting.WaitAsync(TimeSpan.FromMinutes(1), Cancel));
+            Assert.False(sent);
+        }
+        finally
+        {
+            answer.TrySetResult(2);
+        }
+
         await first;
         await run;
     }

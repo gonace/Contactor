@@ -246,9 +246,10 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             }
             catch (Exception ex) when (IsDisposed && !cancellationToken.IsCancellationRequested)
             {
-                // Disposed while it ran and outlasted DisposeWait, so the board's code may have closed the connection
-                // under it (a null or disposed stream): whatever it throws means "not carried out for sure", as for
-                // any board that went away. Not counted: nothing polls any more.
+                // Dispose began while it ran: the board's code may close the connection under it (at once after
+                // Dispose, or after DisposeWait after DisposeAsync), so it may meet a null or disposed stream. Whatever
+                // it throws once Dispose began means "not carried out for sure", as for any board that went away. Not
+                // counted: nothing polls any more.
                 throw new BoardNotConnectedException("The relay board was closed while the command ran; it may not have been carried out.", ex);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)

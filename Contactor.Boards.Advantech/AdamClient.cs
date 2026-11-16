@@ -463,8 +463,10 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable, IAsyncDi
             throw;
         }
 
-        _tcp = tcp;
+        // Kept with a full fence before the check below, against Dispose's flag before its Close: either that Close
+        // finds this connection, or the check finds the flag.
         _stream = tcp.GetStream();
+        Interlocked.Exchange(ref _tcp, tcp);
 
         // Disposed while connecting: Dispose's Close may have come before the connection was kept.
         if (Volatile.Read(ref _disposed) == 1)
