@@ -118,7 +118,7 @@ public sealed class DevantechProtocolTests
     [InlineData("FF 01", 0b0000_0001UL)]
     [InlineData("00 00 00 81", 0b1000_0001UL)]
     [InlineData("FF FF FF 00", 0UL)]
-    [InlineData("80 01", 0x0001_0080UL)]
+    [InlineData("80 01", 0x0000_8001UL)]
     public void Should_ReadTheInputs_HighByteFirst(string answer, ulong expected)
     {
         Assert.Equal(expected, DevantechProtocol.Inputs(Bytes(answer), 8));
@@ -130,7 +130,7 @@ public sealed class DevantechProtocolTests
         Assert.Equal("05 00 08", DevantechProtocol.Hex(DevantechProtocol.OutputBytes(0b0101 | (1UL << 19), 3)));
         Assert.Equal("00 00 00 81", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0b1000_0001, 4)));
         Assert.Equal("00 81", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0b1000_0001, 2)));
-        Assert.Equal("80 01", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0x0001_0080, 2)));
+        Assert.Equal("80 01", DevantechProtocol.Hex(DevantechProtocol.InputBytes(0x0000_8001, 2)));
     }
 
     [Fact]
