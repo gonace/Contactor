@@ -36,6 +36,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
     // The relays an OFF was sent for that the board's status doesn't show yet, as of the pass under way. Under _gate.
     private ChannelMask _offOnItsWay;
+
+    // The relays an ON was sent for that the board's status doesn't show yet, as of the pass under way. Under _gate.
+    private ChannelMask _onOnItsWay;
     private int _reconnected;
     private int _disposed;
 
@@ -170,7 +173,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
             {
                 if (group.Id == groupId)
                 {
-                    GroupPlanner.Stop(steps, state, runtime, actor, now, commands);
+                    GroupPlanner.Stop(steps, state, runtime, actor, now, commands, _onOnItsWay);
                 }
 
                 return null;
@@ -185,7 +188,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         await RunAsync(
             (group, steps, state, runtime, now, commands) =>
             {
-                GroupPlanner.Stop(steps, state, runtime, actor, now, commands);
+                GroupPlanner.Stop(steps, state, runtime, actor, now, commands, _onOnItsWay);
                 return null;
             },
             cancellationToken);
@@ -308,7 +311,8 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
             _offOnItsWay = ChannelMask.Of(state.Relays.Channels.Where(c => _expected.IsPending(c, on: false)));
 
             // A relay turned on again while the others of its step stop: that stop finishes only once the board shows it.
-            var onOnItsWay = ChannelMask.Of(_board.Capabilities.AllRelays.Except(state.Relays).Channels.Where(c => _expected.IsPending(c, on: true)));
+            // "Turn off" turns it off too, after that ON.
+            _onOnItsWay = ChannelMask.Of(_board.Capabilities.AllRelays.Except(state.Relays).Channels.Where(c => _expected.IsPending(c, on: true)));
             if (!state.IsConnected || Volatile.Read(ref _disposed) == 1)
             {
                 if (request is not null)
@@ -402,7 +406,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 if (commands.IsEmpty)
                 {
-                    GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay, onOnItsWay);
+                    GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay, _onOnItsWay);
                 }
 
                 GroupPlanner.GiveOwnerlessAutoOff(steps, state, runtime, group.MaxOnMinutes, now);
