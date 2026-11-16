@@ -4,7 +4,6 @@ using Contactor.Web.Components;
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
-using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -239,7 +238,7 @@ public sealed class SwedishTests
     {
         using var swedish = TestCulture.Language("sv");
 
-        Assert.Equal(size, Settings.Size(TestTexts.For<SettingsTexts>(), bytes));
+        Assert.Equal(size, Settings.Size(TestTexts.Localizer, bytes));
     }
 
     // A change from a thread of the test's own, in English (the relays' "In use", a group made): the page redraws, and

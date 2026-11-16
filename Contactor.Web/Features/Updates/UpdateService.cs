@@ -96,7 +96,7 @@ public sealed partial class UpdateService : BackgroundService
     private readonly AppBuild _build;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<UpdateService> _logger;
-    private readonly IStringLocalizer<UpdatesTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Lock _lock = new();
 
@@ -117,7 +117,7 @@ public sealed partial class UpdateService : BackgroundService
         AppBuild build,
         TimeProvider timeProvider,
         ILogger<UpdateService> logger,
-        IStringLocalizer<UpdatesTexts> texts)
+        IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _folder = folder;

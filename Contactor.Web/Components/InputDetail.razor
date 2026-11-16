@@ -16,21 +16,20 @@
 @inject NavigationManager Navigation
 @inject RelayStatusText StatusText
 @inject InputsText InputsText
-@inject IStringLocalizer<InputsTexts> Texts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", _input?.Name ?? Common["Common.Screen.Input"].Value])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", _input?.Name ?? Texts["Common.Screen.Input"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            @Common["Common.Screen.Relays"]
+            @Texts["Common.Screen.Relays"]
         </a>
         @if (_input is not null)
         {
             @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
-            <button type="submit" form="input-form" class="save-top" disabled="@_busy">@Common["Common.Save"]</button>
+            <button type="submit" form="input-form" class="save-top" disabled="@_busy">@Texts["Common.Save"]</button>
         }
     </header>
 
@@ -110,8 +109,8 @@
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>@Common["Common.Screen.Events"]</h2>
-                        <a href="events">@Common["Common.AllEvents"]</a>
+                        <h2>@Texts["Common.Screen.Events"]</h2>
+                        <a href="events">@Texts["Common.AllEvents"]</a>
                     </div>
                     @if (_events.Count == 0)
                     {
@@ -141,7 +140,7 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">@Common["Common.Save"]</button>
+                <button type="submit" disabled="@_busy">@Texts["Common.Save"]</button>
             </div>
         </form>
     }

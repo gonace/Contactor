@@ -24,7 +24,7 @@ public sealed class GroupSequencer : BackgroundService, IBoardWatcher
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
     private readonly BoardParts<BoardSequencer> _boards;
-    private readonly IStringLocalizer<GroupsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
     public GroupSequencer(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -32,7 +32,7 @@ public sealed class GroupSequencer : BackgroundService, IBoardWatcher
         RelayChanges changes,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
-        IStringLocalizer<GroupsTexts> texts)
+        IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         ArgumentNullException.ThrowIfNull(loggerFactory);

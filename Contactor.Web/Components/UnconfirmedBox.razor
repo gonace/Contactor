@@ -1,12 +1,11 @@
 @using Contactor.Web.Features.Relays
 @inject RelayStatusText StatusText
-@inject IStringLocalizer<RelaysTexts> Texts
 
 @* A press the board didn't confirm: the message, and the two choices. Nothing is guessed or queued; the person decides.
    On the Relays screen's cards and the Relay screen's status card. *@
 <p class="unconfirmed-text" role="alert">@StatusText.Unconfirmed</p>
 <div class="unconfirmed-actions">
-    <button type="button" class="try-again" disabled="@(!CanTryAgain)" @onclick="OnTryAgain">@Common["Common.TryAgain"]</button>
+    <button type="button" class="try-again" disabled="@(!CanTryAgain)" @onclick="OnTryAgain">@Texts["Common.TryAgain"]</button>
     <button type="button" class="leave-it" @onclick="OnLeave">@Texts["Relays.Status.LeaveIt"]</button>
 </div>
 

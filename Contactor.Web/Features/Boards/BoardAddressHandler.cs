@@ -23,7 +23,7 @@ public sealed class BoardAddressHandler
     private readonly BoardRegistry _registry;
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
-    private readonly IStringLocalizer<BoardsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly BoardLoginText _login;
 
     public BoardAddressHandler(
@@ -31,7 +31,7 @@ public sealed class BoardAddressHandler
         BoardRegistry registry,
         LocalClock clock,
         RelayChanges changes,
-        IStringLocalizer<BoardsTexts> texts,
+        IStringLocalizer<Texts> texts,
         BoardLoginText login)
     {
         _texts = texts;

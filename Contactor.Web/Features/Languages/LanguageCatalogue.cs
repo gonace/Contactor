@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Contactor.Web.Features.Languages;
 
 /// <summary>A language the app's texts are in.</summary>
-/// <param name="Code">Its culture's name, e.g. <c>en</c>; the resource files of its texts end in it (<c>*.sv.resx</c>).</param>
+/// <param name="Code">Its culture's name, e.g. <c>en</c>; its texts' resource file ends in it (<c>Texts.sv.resx</c>).</param>
 /// <param name="Name">Its name in itself, as the choice shows it, e.g. "English" or "Svenska".</param>
 public sealed record Language(string Code, string Name)
 {

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Globalization;
 using System.Resources;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Contactor.Web.Components;
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Resources;
@@ -14,35 +15,53 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The UI's texts in their resource files (<c>Contactor.Web/Resources/</c>, one per area): every key the code uses has
-/// an English text, every language has a text for every key with the same placeholders, and the helpers for texts
-/// with a count or with markup inside.
+/// The UI's texts in their resource files (<c>Contactor.Web/Resources/</c>, one per language, sorted by key): every key
+/// the code uses has an English text, every language has a text for every key with the same placeholders, and the
+/// helpers for texts with a count or with markup inside.
 /// </summary>
 public sealed partial class TextsTests
 {
     private static readonly string WebFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Contactor.Web"));
 
-    // Every area's texts: a marker class in Contactor.Web.Resources, named after its area ("Common" for CommonTexts).
-    private static IReadOnlyList<Type> Areas => [.. typeof(CommonTexts).Assembly.GetTypes()
-        .Where(t => t.Namespace == typeof(CommonTexts).Namespace && t.Name.EndsWith("Texts", StringComparison.Ordinal))];
+    private static readonly string ResourcesFolder = Path.Combine(WebFolder, "Resources");
 
     [Fact]
     public void Should_HaveATextInEveryLanguage_ForEveryKey()
     {
-        Assert.NotEmpty(Areas);
-        var problems = new List<string>();
-        foreach (var area in Areas)
+        var english = Read(CultureInfo.InvariantCulture);
+        Assert.NotNull(english);
+        Assert.NotEmpty(english);
+        var problems = Check(english, null, "English");
+        foreach (var language in LanguageCatalogue.Default.All.Skip(1))
         {
-            var english = Texts(area, CultureInfo.InvariantCulture);
-            Assert.NotNull(english);
-            problems.AddRange(Check(english, null, area.Name));
-            foreach (var language in LanguageCatalogue.Default.All.Skip(1))
-            {
-                problems.AddRange(Check(english, Texts(area, language.Culture) ?? new Dictionary<string, string>(), $"{area.Name} in {language.Code}"));
-            }
+            problems.AddRange(Check(english, Read(language.Culture) ?? new Dictionary<string, string>(), language.Code));
         }
 
         Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void Should_HaveOneFile_PerLanguage()
+    {
+        var expected = LanguageCatalogue.Default.All.Skip(1).Select(l => $"Texts.{l.Code}.resx").Prepend("Texts.resx").Order(StringComparer.Ordinal);
+
+        var files = Directory.EnumerateFiles(ResourcesFolder, "*.resx").Select(Path.GetFileName).Order(StringComparer.Ordinal);
+
+        Assert.Equal(expected, files);
+    }
+
+    [Fact]
+    public void Should_KeepEveryFile_SortedByKey()
+    {
+        var files = Directory.EnumerateFiles(ResourcesFolder, "*.resx").ToList();
+        Assert.NotEmpty(files);
+        foreach (var file in files)
+        {
+            var keys = XDocument.Load(file).Root!.Elements("data").Select(d => (string)d.Attribute("name")!).ToList();
+
+            Assert.True(keys.Count > 0, $"{Path.GetFileName(file)} has no texts.");
+            Assert.True(keys.SequenceEqual(keys.Order(StringComparer.Ordinal)), $"{Path.GetFileName(file)} isn't sorted by key.");
+        }
     }
 
     [Fact]
@@ -52,28 +71,25 @@ public sealed partial class TextsTests
         // standard format ("d", "t") would follow the language's own long or short forms instead of the pattern.
         var formats = 0;
         var problems = new List<string>();
-        foreach (var area in Areas)
+        foreach (var language in LanguageCatalogue.Default.All)
         {
-            foreach (var language in LanguageCatalogue.Default.All)
+            var texts = Read(language == LanguageCatalogue.Default.Fallback ? CultureInfo.InvariantCulture : language.Culture) ?? [];
+            foreach (var (key, format) in texts.Where(t => t.Key.EndsWith("Format", StringComparison.Ordinal)))
             {
-                var texts = Texts(area, language == LanguageCatalogue.Default.Fallback ? CultureInfo.InvariantCulture : language.Culture) ?? [];
-                foreach (var (key, format) in texts.Where(t => t.Key.EndsWith("Format", StringComparison.Ordinal)))
+                formats++;
+                if (format.Trim().Length <= 1)
                 {
-                    formats++;
-                    if (format.Trim().Length <= 1)
-                    {
-                        problems.Add($"{key} in {language.Code}: \"{format}\" is a standard format");
-                        continue;
-                    }
+                    problems.Add($"{key} in {language.Code}: \"{format}\" is a standard format");
+                    continue;
+                }
 
-                    try
-                    {
-                        _ = new DateTime(2026, 9, 3, 14, 2, 0).ToString(format, language.Culture);
-                    }
-                    catch (FormatException)
-                    {
-                        problems.Add($"{key} in {language.Code}: \"{format}\" isn't a date format");
-                    }
+                try
+                {
+                    _ = new DateTime(2026, 9, 3, 14, 2, 0).ToString(format, language.Culture);
+                }
+                catch (FormatException)
+                {
+                    problems.Add($"{key} in {language.Code}: \"{format}\" isn't a date format");
                 }
             }
         }
@@ -122,7 +138,7 @@ public sealed partial class TextsTests
     [Fact]
     public void Should_HaveAnEnglishText_ForEveryKeyTheCodeUses()
     {
-        var english = Areas.ToDictionary(a => Area(a), a => (IReadOnlyDictionary<string, string>)Texts(a, CultureInfo.InvariantCulture)!);
+        var english = Read(CultureInfo.InvariantCulture)!;
         var files = Directory.EnumerateFiles(WebFolder, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".razor", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal))
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
@@ -138,12 +154,9 @@ public sealed partial class TextsTests
     [Fact]
     public void Should_FindAKeyWithoutAText_AlsoWithAnUnderscore()
     {
-        var english = new Dictionary<string, IReadOnlyDictionary<string, string>>
-        {
-            ["Common"] = new Dictionary<string, string> { ["Common.Save"] = "Save", ["Common.Relays_One"] = "{0} relay", ["Common.Relays_Other"] = "{0} relays" },
-        };
+        var english = new Dictionary<string, string> { ["Common.Save"] = "Save", ["Common.Relays_One"] = "{0} relay", ["Common.Relays_Other"] = "{0} relays" };
         var code = """
-            @Common["Common.Save"] @Common["Common.Missing_Key"] @Common.Plural("Common.Relays", 2) @Common["Common.Relays_Other"]
+            @Texts["Common.Save"] @Texts["Common.Missing_Key"] @Texts.Plural("Common.Relays", 2) @Texts["Common.Relays_Other"]
             "Other.Thing" "Common.Gone"
             /// <see cref="Common.Elsewhere"/> <param name="Common.Param">
             filename="Common.Filed"
@@ -204,16 +217,16 @@ public sealed partial class TextsTests
     }
 
     [Fact]
-    public async Task Should_ReadTheCommonTexts_ThroughTheLocalizer()
+    public async Task Should_ReadTheTexts_ThroughTheLocalizer()
     {
         await using var app = new TestWebApp();
-        var common = app.Services.GetRequiredService<IStringLocalizer<CommonTexts>>();
+        var texts = app.Services.GetRequiredService<IStringLocalizer<Texts>>();
 
-        var title = common["Common.PageTitle", common["Common.Screen.Relays"]];
+        var title = texts["Common.PageTitle", texts["Common.Screen.Relays"]];
 
         Assert.False(title.ResourceNotFound);
         Assert.Equal("Relays · Contactor", title.Value);
-        Assert.True(common["Common.NoSuchKey"].ResourceNotFound);
+        Assert.True(texts["Common.NoSuchKey"].ResourceNotFound);
     }
 
     /// <summary>
@@ -267,13 +280,15 @@ public sealed partial class TextsTests
 
     /// <summary>
     /// The keys <paramref name="files"/> use that have no English text: every string literal that starts with an area,
-    /// e.g. "Common.Save". A plural's key, as <see cref="Plurals.Plural"/> takes it, needs its "_One" and "_Other". A
-    /// key put together in code (an interpolated string) isn't seen: write keys whole.
+    /// the first part of an English key, e.g. "Common.Save". A plural's key, as <see cref="Plurals.Plural"/> takes it,
+    /// needs its "_One" and "_Other". A key put together in code (an interpolated string) isn't seen: write keys whole.
     /// </summary>
-    private static (int Count, List<string> Missing) MissingKeys(IEnumerable<(string Name, string Text)> files, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> english)
+    private static (int Count, List<string> Missing) MissingKeys(IEnumerable<(string Name, string Text)> files, IReadOnlyDictionary<string, string> english)
     {
+        var areas = english.Keys.Where(k => k.Contains('.', StringComparison.Ordinal)).Select(k => Regex.Escape(k[..k.IndexOf('.', StringComparison.Ordinal)])).Distinct();
+
         // Not a name in a doc comment, e.g. <see cref="Groups.GroupsHandler"/>.
-        var used = new Regex($"(?<!\\b(?:cref|name)=)\"((?:{string.Join('|', english.Keys)})\\.[A-Za-z0-9._]+)\"");
+        var used = new Regex($"(?<!\\b(?:cref|name)=)\"((?:{string.Join('|', areas)})\\.[A-Za-z0-9._]+)\"");
         var missing = new List<string>();
         var count = 0;
         foreach (var (name, text) in files)
@@ -282,8 +297,7 @@ public sealed partial class TextsTests
             {
                 count++;
                 var key = match.Groups[1].Value;
-                var texts = english[key[..key.IndexOf('.', StringComparison.Ordinal)]];
-                if (!texts.ContainsKey(key) && !(texts.ContainsKey(key + Plurals.One) && texts.ContainsKey(key + Plurals.Other)))
+                if (!english.ContainsKey(key) && !(english.ContainsKey(key + Plurals.One) && english.ContainsKey(key + Plurals.Other)))
                 {
                     missing.Add($"{name}: {key}");
                 }
@@ -293,15 +307,12 @@ public sealed partial class TextsTests
         return (count, missing);
     }
 
-    // The area's texts in exactly this language, without falling back; null when the language has no file.
-    private static Dictionary<string, string>? Texts(Type area, CultureInfo culture)
+    // The texts in exactly this language, without falling back; null when the language has no file.
+    private static Dictionary<string, string>? Read(CultureInfo culture)
     {
-        var set = new ResourceManager(area).GetResourceSet(culture, createIfNotExists: true, tryParents: false);
+        var set = new ResourceManager(typeof(Texts)).GetResourceSet(culture, createIfNotExists: true, tryParents: false);
         return set?.Cast<DictionaryEntry>().ToDictionary(e => (string)e.Key, e => (string)e.Value!);
     }
-
-    // "Common" for CommonTexts: the first part of each of its keys.
-    private static string Area(Type area) => area.Name[..^"Texts".Length];
 
     [GeneratedRegex(@"\{(\d+)(?:[,:][^}]*)?\}")]
     private static partial Regex PlaceholderPattern();

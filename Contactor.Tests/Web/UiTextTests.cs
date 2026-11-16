@@ -1,5 +1,4 @@
 using Contactor.Web.Features.Languages;
-using Contactor.Web.Resources;
 
 namespace Contactor.Tests.Web;
 
@@ -9,28 +8,28 @@ public sealed class UiTextTests
     [Fact]
     public void Should_SayTheSameWords_OnAPageAndInTheLogs()
     {
-        var text = UiText.Of<SetupTexts>("Setup.Tailscale.Approve", "relays");
+        var text = UiText.Of("Setup.Tailscale.Approve", "relays");
 
         Assert.Equal("Approve relays in Tailscale's admin console, under Machines. Contactor goes on by itself.", text.English());
-        Assert.Equal(text.English(), text.In(TestTexts.For<SetupTexts>()));
+        Assert.Equal(text.English(), text.In(TestTexts.Localizer));
         Assert.Equal(text.English(), text.ToString());
     }
 
     [Fact]
     public void Should_KeepTheValueAsWritten_WithBracesInIt()
     {
-        var text = UiText.Of<SetupTexts>("Setup.Tailscale.ServeFailed", "{0} {oops}");
+        var text = UiText.Of("Setup.Tailscale.ServeFailed", "{0} {oops}");
 
         Assert.Equal("Tailscale Serve didn't start: {0} {oops}", text.English());
-        Assert.Equal(text.English(), text.In(TestTexts.For<SetupTexts>()));
+        Assert.Equal(text.English(), text.In(TestTexts.Localizer));
     }
 
     [Fact]
     public void Should_BeEqual_WithTheSameKeyAndValues()
     {
-        Assert.Equal(UiText.Of<SetupTexts>("Setup.Tailscale.Approve", "relays"), UiText.Of<SetupTexts>("Setup.Tailscale.Approve", "relays"));
-        Assert.NotEqual(UiText.Of<SetupTexts>("Setup.Tailscale.Approve", "relays"), UiText.Of<SetupTexts>("Setup.Tailscale.Approve", "other"));
-        Assert.NotEqual(UiText.Of<SetupTexts>("Setup.Tailscale.Stopped"), UiText.Of<SetupTexts>("Setup.Tailscale.CheckFailed"));
+        Assert.Equal(UiText.Of("Setup.Tailscale.Approve", "relays"), UiText.Of("Setup.Tailscale.Approve", "relays"));
+        Assert.NotEqual(UiText.Of("Setup.Tailscale.Approve", "relays"), UiText.Of("Setup.Tailscale.Approve", "other"));
+        Assert.NotEqual(UiText.Of("Setup.Tailscale.Stopped"), UiText.Of("Setup.Tailscale.CheckFailed"));
     }
 
     [Fact]
@@ -38,6 +37,6 @@ public sealed class UiTextTests
     {
         using var swedish = TestCulture.Formats("sv-SE");
 
-        Assert.Equal("Tailscale is stopped on this machine.", UiText.Of<SetupTexts>("Setup.Tailscale.Stopped").English());
+        Assert.Equal("Tailscale is stopped on this machine.", UiText.Of("Setup.Tailscale.Stopped").English());
     }
 }

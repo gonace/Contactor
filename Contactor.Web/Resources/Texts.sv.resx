@@ -1,0 +1,2409 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Boards.Address" xml:space="preserve">
+    <value>Adress</value>
+  </data>
+  <data name="Boards.AddressHint" xml:space="preserve">
+    <value>Reläkortets IP-adress på det lokala nätverket. Din router visar den bland sina anslutna enheter.</value>
+  </data>
+  <data name="Boards.BeingRemoved" xml:space="preserve">
+    <value>Reläkortet tas bort.</value>
+  </data>
+  <data name="Boards.Board" xml:space="preserve">
+    <value>Kort</value>
+  </data>
+  <data name="Boards.Endpoint.BadPort" xml:space="preserve">
+    <value>Porten är ett tal från 1 till 65535.</value>
+  </data>
+  <data name="Boards.Endpoint.NoHost" xml:space="preserve">
+    <value>Skriv reläkortets adress, t.ex. 192.168.1.50.</value>
+  </data>
+  <data name="Boards.Endpoint.NotAnAddress" xml:space="preserve">
+    <value>{0} är ingen adress. Skriv t.ex. 192.168.1.50.</value>
+  </data>
+  <data name="Boards.Login.CommunityLength" xml:space="preserve">
+    <value>Lösenordet, kortets read-write community, måste vara {0} till {1} tecken.</value>
+  </data>
+  <data name="Boards.Login.CommunityMissing" xml:space="preserve">
+    <value>Skriv lösenordet, kortets read-write community.</value>
+  </data>
+  <data name="Boards.Login.Hint" xml:space="preserve">
+    <value>Samma som på kortets egen webbsida. {0}</value>
+  </data>
+  <data name="Boards.Login.ListedCharacters.Password" xml:space="preserve">
+    <value>Lösenordet får bara innehålla bokstäverna a–z, siffror och {0} på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.ListedCharacters.UserName" xml:space="preserve">
+    <value>Användarnamnet får bara innehålla bokstäverna a–z, siffror och {0} på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.MaxLength" xml:space="preserve">
+    <value>Högst {0} tecken.</value>
+  </data>
+  <data name="Boards.Login.NoLoginWebPage" xml:space="preserve">
+    <value>Kortet från {0} tar ingen inloggning: dess lösenord skyddar bara dess egen webbsida.</value>
+  </data>
+  <data name="Boards.Login.NoLoginWebPages" xml:space="preserve">
+    <value>{0} tar ingen inloggning: dess lösenord skyddar bara dess egna webbsidor.</value>
+  </data>
+  <data name="Boards.Login.PasswordCharacters" xml:space="preserve">
+    <value>Lösenordet får bara innehålla bokstäverna a–z och A–Z, siffror och vanliga tecken, utan mellanslag.</value>
+  </data>
+  <data name="Boards.Login.PasswordOnly" xml:space="preserve">
+    <value>Kortet från {0} tar bara ett lösenord, inget användarnamn.</value>
+  </data>
+  <data name="Boards.Login.PasswordTooLong" xml:space="preserve">
+    <value>Lösenordet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.Password" xml:space="preserve">
+    <value>Lösenordet får bara innehålla bokstäverna a–z, siffror och vanliga tecken.</value>
+  </data>
+  <data name="Boards.Login.PlainCharacters.UserName" xml:space="preserve">
+    <value>Användarnamnet får bara innehålla bokstäverna a–z, siffror och vanliga tecken.</value>
+  </data>
+  <data name="Boards.Login.TooLong.Password" xml:space="preserve">
+    <value>Lösenordet får vara högst {0} tecken på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.TooLong.UserName" xml:space="preserve">
+    <value>Användarnamnet får vara högst {0} tecken på reläkortet.</value>
+  </data>
+  <data name="Boards.Login.TooLongTogether" xml:space="preserve">
+    <value>Användarnamnet och lösenordet får vara högst {0} tecken tillsammans på reläkortet.</value>
+  </data>
+  <data name="Boards.LoginHint.ListedSymbols" xml:space="preserve">
+    <value>Högst {0} tecken, {1} för båda tillsammans: bokstäverna a–z, siffror och {2}.</value>
+  </data>
+  <data name="Boards.LoginHint.PlainSymbols" xml:space="preserve">
+    <value>Högst {0} tecken: bokstäverna a–z, siffror och vanliga tecken.</value>
+  </data>
+  <data name="Boards.LoginHint.SnmpCommunity" xml:space="preserve">
+    <value>Kortets Read-write Community från dess SNMP-inställningar, {0} till {1} tecken: bokstäver, siffror och vanliga tecken, inga mellanslag. På ett nytt kort är den {2}. Med fel community svarar kortet inte: kontrollera adressen och communityn.</value>
+  </data>
+  <data name="Boards.LoginHint.TcpPassword" xml:space="preserve">
+    <value>TCP-lösenordet från kortets inställningssida, inte inloggningen till dess webbsida. Högst {0} tecken: bokstäver, siffror och vanliga tecken, inga mellanslag.</value>
+  </data>
+  <data name="Boards.Model.Brand" xml:space="preserve">
+    <value>Märke</value>
+  </data>
+  <data name="Boards.Model.BrandFirst" xml:space="preserve">
+    <value>Välj märket först</value>
+  </data>
+  <data name="Boards.Model.BrandModels" xml:space="preserve">
+    <value>Modell från {0}</value>
+  </data>
+  <data name="Boards.Model.ChooseBrand" xml:space="preserve">
+    <value>Välj märke</value>
+  </data>
+  <data name="Boards.Model.ChooseModel" xml:space="preserve">
+    <value>Välj modell</value>
+  </data>
+  <data name="Boards.Model.Count_One" xml:space="preserve">
+    <value>{0} modell</value>
+  </data>
+  <data name="Boards.Model.Count_Other" xml:space="preserve">
+    <value>{0} modeller</value>
+  </data>
+  <data name="Boards.Model.Intro" xml:space="preserve">
+    <value>Välj märket först, sedan modellen. Båda står tryckta på kortet.</value>
+  </data>
+  <data name="Boards.Model.Model" xml:space="preserve">
+    <value>Modell</value>
+  </data>
+  <data name="Boards.Model.NotListed" xml:space="preserve">
+    <value>Finns det inte i listan? Contactor visar bara de kort som den kan styra.</value>
+  </data>
+  <data name="Boards.Model.Title" xml:space="preserve">
+    <value>Vilket reläkort?</value>
+  </data>
+  <data name="Boards.ModelLine" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Boards.Name" xml:space="preserve">
+    <value>Namn</value>
+  </data>
+  <data name="Boards.New.ChooseBoard" xml:space="preserve">
+    <value>Välj ditt reläkort.</value>
+  </data>
+  <data name="Boards.New.Done" xml:space="preserve">
+    <value>Klart</value>
+  </data>
+  <data name="Boards.New.Gone" xml:space="preserve">
+    <value>Det här reläkortet togs bort under tiden.</value>
+  </data>
+  <data name="Boards.New.NameExample" xml:space="preserve">
+    <value>T.ex. Garage</value>
+  </data>
+  <data name="Boards.New.NameHint" xml:space="preserve">
+    <value>Det du kallar det i Contactor, t.ex. "Garage". Du kan ändra det senare.</value>
+  </data>
+  <data name="Boards.New.Step" xml:space="preserve">
+    <value>STEG {0} AV {1}</value>
+  </data>
+  <data name="Boards.New.WithoutConnection" xml:space="preserve">
+    <value>Fortsätt utan anslutning</value>
+  </data>
+  <data name="Boards.NoAddress" xml:space="preserve">
+    <value>Reläkortet har ingen adress än</value>
+  </data>
+  <data name="Boards.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet på {0}</value>
+  </data>
+  <data name="Boards.NoLogin" xml:space="preserve">
+    <value>Kortet har ingen inloggning</value>
+  </data>
+  <data name="Boards.NoPassword" xml:space="preserve">
+    <value>Kortet har inget lösenord</value>
+  </data>
+  <data name="Boards.NotChosen" xml:space="preserve">
+    <value>Inget reläkort har valts än.</value>
+  </data>
+  <data name="Boards.Online" xml:space="preserve">
+    <value>Kortet är anslutet på {0}</value>
+  </data>
+  <data name="Boards.Page.Missing" xml:space="preserve">
+    <value>Det här reläkortet finns inte i Contactor.</value>
+  </data>
+  <data name="Boards.Password" xml:space="preserve">
+    <value>Lösenord</value>
+  </data>
+  <data name="Boards.Password.None" xml:space="preserve">
+    <value>inget</value>
+  </data>
+  <data name="Boards.Password.Unchanged" xml:space="preserve">
+    <value>oförändrat</value>
+  </data>
+  <data name="Boards.Picker.AddChip" xml:space="preserve">
+    <value>Kort</value>
+  </data>
+  <data name="Boards.Picker.All" xml:space="preserve">
+    <value>Alla kort</value>
+  </data>
+  <data name="Boards.Picker.AllHint" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Boards.Picker.AllShort" xml:space="preserve">
+    <value>Alla</value>
+  </data>
+  <data name="Boards.Picker.Count_One" xml:space="preserve">
+    <value>{0} kort</value>
+  </data>
+  <data name="Boards.Picker.Count_Other" xml:space="preserve">
+    <value>{0} kort</value>
+  </data>
+  <data name="Boards.Picker.Label" xml:space="preserve">
+    <value>KORT</value>
+  </data>
+  <data name="Boards.Picker.NoContact" xml:space="preserve">
+    <value>Ingen kontakt</value>
+  </data>
+  <data name="Boards.Picker.NoContactHidden" xml:space="preserve">
+    <value>: ingen kontakt</value>
+  </data>
+  <data name="Boards.Picker.OnCount" xml:space="preserve">
+    <value>{0} av {1} på</value>
+  </data>
+  <data name="Boards.Picker.Show" xml:space="preserve">
+    <value>Kort att visa</value>
+  </data>
+  <data name="Boards.Picker.ShowAll" xml:space="preserve">
+    <value>Visa alla</value>
+  </data>
+  <data name="Boards.Port" xml:space="preserve">
+    <value>Port</value>
+  </data>
+  <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
+    <value>Kortet vill ha ett användarnamn och lösenord.</value>
+  </data>
+  <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
+    <value>Kortet vill ha ett lösenord.</value>
+  </data>
+  <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
+    <value>Behöver inloggning</value>
+  </data>
+  <data name="Boards.Problem.Short.PasswordNeeded" xml:space="preserve">
+    <value>Behöver lösenord</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongLogin" xml:space="preserve">
+    <value>Fel inloggning</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongModel" xml:space="preserve">
+    <value>Fel modell</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongPassword" xml:space="preserve">
+    <value>Fel lösenord</value>
+  </data>
+  <data name="Boards.Problem.WrongLogin" xml:space="preserve">
+    <value>Användarnamnet eller lösenordet är fel.</value>
+  </data>
+  <data name="Boards.Problem.WrongModel" xml:space="preserve">
+    <value>Kortet på den här adressen är ett {0}, inte ett {1}.</value>
+  </data>
+  <data name="Boards.Problem.WrongModel.AddAgain" xml:space="preserve">
+    <value>Lägg till det igen som ett {0} med "{1}" och ta sedan bort det här.</value>
+  </data>
+  <data name="Boards.Problem.WrongModel.Unknown" xml:space="preserve">
+    <value>Kortet på den här adressen är en annan modell, inte ett {0}.</value>
+  </data>
+  <data name="Boards.Problem.WrongPassword" xml:space="preserve">
+    <value>Lösenordet är fel.</value>
+  </data>
+  <data name="Boards.Relays.InGroup" xml:space="preserve">
+    <value>I gruppen {0}, som styr det.</value>
+  </data>
+  <data name="Boards.Relays.InUse" xml:space="preserve">
+    <value>Används</value>
+  </data>
+  <data name="Boards.Relays.Intro" xml:space="preserve">
+    <value>Döp varje relä efter det som det styr. "Prova" slår på det i {0} sekunder, så att du hör vilket det är. Bocka ur de som du inte använder.</value>
+  </data>
+  <data name="Boards.Relays.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Försök igen om en stund.</value>
+  </data>
+  <data name="Boards.Relays.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Boards.Relays.Title" xml:space="preserve">
+    <value>Namnge dina reläer</value>
+  </data>
+  <data name="Boards.Relays.Try" xml:space="preserve">
+    <value>Prova</value>
+  </data>
+  <data name="Boards.Relays.TryLabel" xml:space="preserve">
+    <value>Prova relä {0}</value>
+  </data>
+  <data name="Boards.Relays.TryNeedsContact" xml:space="preserve">
+    <value>"Prova" fungerar när appen har kontakt med reläkortet.</value>
+  </data>
+  <data name="Boards.Relays_One" xml:space="preserve">
+    <value>{0} relä</value>
+  </data>
+  <data name="Boards.Relays_Other" xml:space="preserve">
+    <value>{0} reläer</value>
+  </data>
+  <data name="Boards.Remove.AlreadyRemoved" xml:space="preserve">
+    <value>Det här reläkortet är redan borttaget.</value>
+  </data>
+  <data name="Boards.Remove.Ask" xml:space="preserve">
+    <value>Ta bort {0}?</value>
+  </data>
+  <data name="Boards.Remove.Button" xml:space="preserve">
+    <value>Ta bort {0}</value>
+  </data>
+  <data name="Boards.Remove.Confirm" xml:space="preserve">
+    <value>Ta bort</value>
+  </data>
+  <data name="Boards.Remove.Deletes" xml:space="preserve">
+    <value>Det här tas bort och kan inte ångras:</value>
+  </data>
+  <data name="Boards.Remove.Events" xml:space="preserve">
+    <value>Alla händelser för {0}</value>
+  </data>
+  <data name="Boards.Remove.Failed" xml:space="preserve">
+    <value>Kunde inte ta bort {0}. Inget togs bort.</value>
+  </data>
+  <data name="Boards.Remove.Groups_One" xml:space="preserve">
+    <value>{0} grupp</value>
+  </data>
+  <data name="Boards.Remove.Groups_Other" xml:space="preserve">
+    <value>{0} grupper</value>
+  </data>
+  <data name="Boards.Remove.Hint" xml:space="preserve">
+    <value>Tar bort kortet från Contactor. Dess reläer, grupper, scheman, ingångarnas åtgärder och händelser tas bort. Själva kortet ändras inte.</value>
+  </data>
+  <data name="Boards.Remove.InputActions_One" xml:space="preserve">
+    <value>{0} ingångsåtgärd</value>
+  </data>
+  <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
+    <value>{0} ingångsåtgärder</value>
+  </data>
+  <data name="Boards.Remove.Lost" xml:space="preserve">
+    <value>{0} har tappat kontakten, så dess reläer kunde inte stängas av. Inget togs bort.</value>
+  </data>
+  <data name="Boards.Remove.NoContact" xml:space="preserve">
+    <value>{0} har ingen kontakt. Ett relä som är på förblir på, och Contactor kan inte stänga av det.</value>
+  </data>
+  <data name="Boards.Remove.NotOff" xml:space="preserve">
+    <value>Några av reläerna på {0} stängdes inte av. Inget togs bort. Försök igen.</value>
+  </data>
+  <data name="Boards.Remove.OffFirst" xml:space="preserve">
+    <value>Dess reläer stängs av först. Om en grupp efterkör kan du ta bort kortet när den är klar.</value>
+  </data>
+  <data name="Boards.Remove.Removing" xml:space="preserve">
+    <value>Tar bort…</value>
+  </data>
+  <data name="Boards.Remove.RunsOn" xml:space="preserve">
+    <value>{0} efterkör till {1}. Ta bort {2} när den är klar.</value>
+  </data>
+  <data name="Boards.Remove.Schedules_One" xml:space="preserve">
+    <value>{0} schema</value>
+  </data>
+  <data name="Boards.Remove.Schedules_Other" xml:space="preserve">
+    <value>{0} scheman</value>
+  </data>
+  <data name="Boards.Remove.Title" xml:space="preserve">
+    <value>Ta bort kortet</value>
+  </data>
+  <data name="Boards.Save.EnterName" xml:space="preserve">
+    <value>Skriv ett namn.</value>
+  </data>
+  <data name="Boards.Save.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Boards.Saved" xml:space="preserve">
+    <value>Sparat. Appen ansluter till kortet igen.</value>
+  </data>
+  <data name="Boards.UserName" xml:space="preserve">
+    <value>Användarnamn</value>
+  </data>
+  <data name="Boards.Where.At" xml:space="preserve">
+    <value>på {0}</value>
+  </data>
+  <data name="Boards.Where.CheckAgain" xml:space="preserve">
+    <value>Kontrollera igen</value>
+  </data>
+  <data name="Boards.Where.Checked" xml:space="preserve">
+    <value>{0} · kontrollerat {1}</value>
+  </data>
+  <data name="Boards.Where.ChooseModel" xml:space="preserve">
+    <value>Välj modell</value>
+  </data>
+  <data name="Boards.Where.Found_One" xml:space="preserve">
+    <value>Hittade {0} relä på {1}</value>
+  </data>
+  <data name="Boards.Where.Found_Other" xml:space="preserve">
+    <value>Hittade {0} reläer på {1}</value>
+  </data>
+  <data name="Boards.Where.Hint" xml:space="preserve">
+    <value>Din router visar kortet bland sina anslutna enheter. Lämna porten tom om du inte har ändrat den på kortet.</value>
+  </data>
+  <data name="Boards.Where.Intro" xml:space="preserve">
+    <value>{0} · dess adress på ditt nätverk.</value>
+  </data>
+  <data name="Boards.Where.Looking" xml:space="preserve">
+    <value>Letar efter kortet</value>
+  </data>
+  <data name="Boards.Where.NoAnswer" xml:space="preserve">
+    <value>Inget svar från {0}. Kontrollera att kortet har ström och nätverkskabel, och att adressen stämmer.</value>
+  </data>
+  <data name="Boards.Where.Online" xml:space="preserve">
+    <value>Kortet är anslutet</value>
+  </data>
+  <data name="Boards.Where.Title" xml:space="preserve">
+    <value>Var finns kortet?</value>
+  </data>
+  <data name="Common.Add" xml:space="preserve">
+    <value>Lägg till</value>
+  </data>
+  <data name="Common.AddBoard" xml:space="preserve">
+    <value>Lägg till reläkort</value>
+  </data>
+  <data name="Common.AllEvents" xml:space="preserve">
+    <value>Alla händelser</value>
+  </data>
+  <data name="Common.Back" xml:space="preserve">
+    <value>Tillbaka</value>
+  </data>
+  <data name="Common.BoardNotResponding" xml:space="preserve">
+    <value>Reläkortet svarar inte. Försök igen.</value>
+  </data>
+  <data name="Common.BoardTraffic" xml:space="preserve">
+    <value>Trafik till reläkortet</value>
+  </data>
+  <data name="Common.Cancel" xml:space="preserve">
+    <value>Avbryt</value>
+  </data>
+  <data name="Common.Delete" xml:space="preserve">
+    <value>Ta bort</value>
+  </data>
+  <data name="Common.Download" xml:space="preserve">
+    <value>Ladda ner</value>
+  </data>
+  <data name="Common.Hours" xml:space="preserve">
+    <value>{0} tim</value>
+  </data>
+  <data name="Common.Language" xml:space="preserve">
+    <value>Språk</value>
+  </data>
+  <data name="Common.Language.Hint" xml:space="preserve">
+    <value>Ett språk för alla som använder appen. Alla öppna sidor byter till det.</value>
+  </data>
+  <data name="Common.Language.Intro" xml:space="preserve">
+    <value>Språket i Contactor, för alla som använder det. Du kan ändra det senare under Inställningar.</value>
+  </data>
+  <data name="Common.Language.NotSaved" xml:space="preserve">
+    <value>Språket kunde inte sparas. Försök igen.</value>
+  </data>
+  <data name="Common.MainMenu" xml:space="preserve">
+    <value>Huvudmeny</value>
+  </data>
+  <data name="Common.NameAndState" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="Common.Never" xml:space="preserve">
+    <value>Aldrig</value>
+  </data>
+  <data name="Common.Next" xml:space="preserve">
+    <value>Nästa</value>
+  </data>
+  <data name="Common.NoBoard" xml:space="preserve">
+    <value>Det finns inget reläkort i Contactor. Lägg till ett för att styra dess reläer här.</value>
+  </data>
+  <data name="Common.NoConnection" xml:space="preserve">
+    <value>Ingen anslutning till appen.</value>
+  </data>
+  <data name="Common.NoModel" xml:space="preserve">
+    <value>Ingen modell vald</value>
+  </data>
+  <data name="Common.PageTitle" xml:space="preserve">
+    <value>{0} · Contactor</value>
+  </data>
+  <data name="Common.Reconnecting" xml:space="preserve">
+    <value>Ansluter igen…</value>
+  </data>
+  <data name="Common.ReloadPage" xml:space="preserve">
+    <value>Ladda om sidan</value>
+  </data>
+  <data name="Common.Save" xml:space="preserve">
+    <value>Spara</value>
+  </data>
+  <data name="Common.Saved" xml:space="preserve">
+    <value>Sparat.</value>
+  </data>
+  <data name="Common.Schedule.Active" xml:space="preserve">
+    <value>Aktivt</value>
+  </data>
+  <data name="Common.Schedule.Paused" xml:space="preserve">
+    <value>Pausat</value>
+  </data>
+  <data name="Common.Screen.AddBoard" xml:space="preserve">
+    <value>Lägg till reläkort</value>
+  </data>
+  <data name="Common.Screen.Debug" xml:space="preserve">
+    <value>Debug</value>
+  </data>
+  <data name="Common.Screen.EditSchedule" xml:space="preserve">
+    <value>Ändra schema</value>
+  </data>
+  <data name="Common.Screen.Events" xml:space="preserve">
+    <value>Händelser</value>
+  </data>
+  <data name="Common.Screen.Group" xml:space="preserve">
+    <value>Grupp</value>
+  </data>
+  <data name="Common.Screen.Input" xml:space="preserve">
+    <value>Ingång</value>
+  </data>
+  <data name="Common.Screen.NewGroup" xml:space="preserve">
+    <value>Ny grupp</value>
+  </data>
+  <data name="Common.Screen.NewSchedule" xml:space="preserve">
+    <value>Nytt schema</value>
+  </data>
+  <data name="Common.Screen.Relay" xml:space="preserve">
+    <value>Relä</value>
+  </data>
+  <data name="Common.Screen.RelayBoard" xml:space="preserve">
+    <value>Reläkort</value>
+  </data>
+  <data name="Common.Screen.Relays" xml:space="preserve">
+    <value>Reläer</value>
+  </data>
+  <data name="Common.Screen.Settings" xml:space="preserve">
+    <value>Inställningar</value>
+  </data>
+  <data name="Common.Screen.Setup" xml:space="preserve">
+    <value>Installation</value>
+  </data>
+  <data name="Common.SomethingWrong" xml:space="preserve">
+    <value>Något gick fel.</value>
+  </data>
+  <data name="Common.SomethingWrongTryAgain" xml:space="preserve">
+    <value>Något gick fel. Försök igen.</value>
+  </data>
+  <data name="Common.Switch.Off" xml:space="preserve">
+    <value>AV</value>
+  </data>
+  <data name="Common.Switch.On" xml:space="preserve">
+    <value>PÅ</value>
+  </data>
+  <data name="Common.TryAgain" xml:space="preserve">
+    <value>Försök igen</value>
+  </data>
+  <data name="Common.TurnOff" xml:space="preserve">
+    <value>Stäng av {0}</value>
+  </data>
+  <data name="Common.TurnOn" xml:space="preserve">
+    <value>Slå på {0}</value>
+  </data>
+  <data name="Common.Version" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="Common.Version.Commit" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Common.Version.Development" xml:space="preserve">
+    <value>Utvecklingsversion</value>
+  </data>
+  <data name="Debug.Clear" xml:space="preserve">
+    <value>Rensa</value>
+  </data>
+  <data name="Debug.Connection" xml:space="preserve">
+    <value>anslutning</value>
+  </data>
+  <data name="Debug.Empty" xml:space="preserve">
+    <value>Ingen trafik än.</value>
+  </data>
+  <data name="Debug.FromBoard" xml:space="preserve">
+    <value>från kortet</value>
+  </data>
+  <data name="Debug.Hint.One" xml:space="preserve">
+    <value>Allt som skickats till och från reläkortet sedan appen startade, det senaste först. Högst {0} rader. Inget sparas. Kort: {1}</value>
+  </data>
+  <data name="Debug.Hint.Several" xml:space="preserve">
+    <value>Allt som skickats till och från reläkorten sedan appen startade, det senaste först. Högst {0} rader. Inget sparas.</value>
+  </data>
+  <data name="Debug.LeftOut_One" xml:space="preserve">
+    <value>{0:N0} rutinsteg utelämnat, till exempel statuskontroller som inte ändrade något.</value>
+  </data>
+  <data name="Debug.LeftOut_Other" xml:space="preserve">
+    <value>{0:N0} rutinsteg utelämnade, till exempel statuskontroller som inte ändrade något.</value>
+  </data>
+  <data name="Debug.ToBoard" xml:space="preserve">
+    <value>till kortet</value>
+  </data>
+  <data name="Events.Activate" xml:space="preserve">
+    <value>{0} gjorde reläet aktivt</value>
+  </data>
+  <data name="Events.Board.Address" xml:space="preserve">
+    <value>{0} satte reläkortets adress till {1}</value>
+  </data>
+  <data name="Events.Board.AddressFrom" xml:space="preserve">
+    <value>{0} ändrade reläkortets adress från {1} till {2}</value>
+  </data>
+  <data name="Events.Board.Login" xml:space="preserve">
+    <value>{0} ändrade reläkortets inloggning</value>
+  </data>
+  <data name="Events.Board.Lost" xml:space="preserve">
+    <value>{0} tappade kontakten med appen</value>
+  </data>
+  <data name="Events.Board.ModesNotReset" xml:space="preserve">
+    <value>{0} kunde inte få sina reläer i normalläge, så dess ingångar kan slå om dem</value>
+  </data>
+  <data name="Events.Board.ModesReset" xml:space="preserve">
+    <value>{0} fick sina reläer i normalläge, så att dess ingångar inte slår om dem</value>
+  </data>
+  <data name="Events.Board.Removed" xml:space="preserve">
+    <value>{0} tog bort reläkortet {1} ({2})</value>
+  </data>
+  <data name="Events.Board.RemovedNoModel" xml:space="preserve">
+    <value>{0} tog bort reläkortet {1}</value>
+  </data>
+  <data name="Events.Board.Renamed" xml:space="preserve">
+    <value>{0} bytte namn på reläkortet till {1}</value>
+  </data>
+  <data name="Events.Board.RenamedFrom" xml:space="preserve">
+    <value>{0} bytte namn på reläkortet från {1} till {2}</value>
+  </data>
+  <data name="Events.Board.Restored" xml:space="preserve">
+    <value>{0} fick kontakt igen</value>
+  </data>
+  <data name="Events.Board.TimersOff" xml:space="preserve">
+    <value>{0} fick sina egna timers avstängda</value>
+  </data>
+  <data name="Events.Day.Format" xml:space="preserve">
+    <value>dddd d MMM</value>
+  </data>
+  <data name="Events.Day.Today" xml:space="preserve">
+    <value>I dag</value>
+  </data>
+  <data name="Events.Day.YearFormat" xml:space="preserve">
+    <value>dddd d MMM yyyy</value>
+  </data>
+  <data name="Events.Day.Yesterday" xml:space="preserve">
+    <value>I går</value>
+  </data>
+  <data name="Events.Deactivate" xml:space="preserve">
+    <value>{0} gjorde reläet inaktivt</value>
+  </data>
+  <data name="Events.Empty" xml:space="preserve">
+    <value>Inga händelser än.</value>
+  </data>
+  <data name="Events.Filter.All" xml:space="preserve">
+    <value>Alla</value>
+  </data>
+  <data name="Events.Filter.Automatic" xml:space="preserve">
+    <value>Automatiska</value>
+  </data>
+  <data name="Events.Filter.People" xml:space="preserve">
+    <value>Personer</value>
+  </data>
+  <data name="Events.Group.Create" xml:space="preserve">
+    <value>{0} skapade gruppen</value>
+  </data>
+  <data name="Events.Group.Delete" xml:space="preserve">
+    <value>{0} tog bort gruppen</value>
+  </data>
+  <data name="Events.Group.Edit" xml:space="preserve">
+    <value>{0} ändrade gruppen</value>
+  </data>
+  <data name="Events.Group.Off" xml:space="preserve">
+    <value>{0} stängde av gruppen</value>
+  </data>
+  <data name="Events.Group.OffAfter" xml:space="preserve">
+    <value>{0} stängde av gruppen efter {1}</value>
+  </data>
+  <data name="Events.Group.On" xml:space="preserve">
+    <value>{0} slog på gruppen</value>
+  </data>
+  <data name="Events.Group.RunOnEnd" xml:space="preserve">
+    <value>{0} {1} av</value>
+  </data>
+  <data name="Events.Group.RunOnStart" xml:space="preserve">
+    <value>{0} i {2}: {1}</value>
+  </data>
+  <data name="Events.Group.StartFailed" xml:space="preserve">
+    <value>{0} kunde inte starta {1}</value>
+  </data>
+  <data name="Events.Group.Target" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Events.Group.Trip" xml:space="preserve">
+    <value>{0} {1} stängdes av. {2} måste vara på först.</value>
+  </data>
+  <data name="Events.Group.TripStarted" xml:space="preserve">
+    <value>{0} {1} slogs på för efterkörning</value>
+  </data>
+  <data name="Events.Input" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="Events.Length.AMoment" xml:space="preserve">
+    <value>ett ögonblick</value>
+  </data>
+  <data name="Events.Length.AWhile" xml:space="preserve">
+    <value>en stund</value>
+  </data>
+  <data name="Events.Length.Hours" xml:space="preserve">
+    <value>{0} tim</value>
+  </data>
+  <data name="Events.Length.Minutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="Events.Length.MinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+  </data>
+  <data name="Events.Length.Seconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
+  <data name="Events.List.And" xml:space="preserve">
+    <value> och </value>
+  </data>
+  <data name="Events.More" xml:space="preserve">
+    <value>Visa fler</value>
+  </data>
+  <data name="Events.Off" xml:space="preserve">
+    <value>{0} stängde av</value>
+  </data>
+  <data name="Events.OffAfter" xml:space="preserve">
+    <value>{0} stängde av efter {1}</value>
+  </data>
+  <data name="Events.On" xml:space="preserve">
+    <value>{0} slog på</value>
+  </data>
+  <data name="Events.Other" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="Events.Pulse" xml:space="preserve">
+    <value>{0} provkörde i {1}</value>
+  </data>
+  <data name="Events.RemovedGroup" xml:space="preserve">
+    <value>en borttagen grupp</value>
+  </data>
+  <data name="Events.RemovedInput" xml:space="preserve">
+    <value>En borttagen ingång</value>
+  </data>
+  <data name="Events.RemovedRelay" xml:space="preserve">
+    <value>ett borttaget relä</value>
+  </data>
+  <data name="Events.Rename" xml:space="preserve">
+    <value>{0} bytte namn på {1} till</value>
+  </data>
+  <data name="Events.Schedule.Added" xml:space="preserve">
+    <value>{0} lade till schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.AddedOne" xml:space="preserve">
+    <value>{0} lade till ett schema</value>
+  </data>
+  <data name="Events.Schedule.Changed" xml:space="preserve">
+    <value>{0} ändrade schemat till {1}</value>
+  </data>
+  <data name="Events.Schedule.ChangedOne" xml:space="preserve">
+    <value>{0} ändrade ett schema</value>
+  </data>
+  <data name="Events.Schedule.Deleted" xml:space="preserve">
+    <value>{0} tog bort schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.DeletedOne" xml:space="preserve">
+    <value>{0} tog bort ett schema</value>
+  </data>
+  <data name="Events.Schedule.Paused" xml:space="preserve">
+    <value>{0} pausade schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.PausedOne" xml:space="preserve">
+    <value>{0} pausade ett schema</value>
+  </data>
+  <data name="Events.Schedule.Resumed" xml:space="preserve">
+    <value>{0} återupptog schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.ResumedOne" xml:space="preserve">
+    <value>{0} återupptog ett schema</value>
+  </data>
+  <data name="Events.Short.AutoOff" xml:space="preserve">
+    <value>automatiskt</value>
+  </data>
+  <data name="Events.Short.Outside" xml:space="preserve">
+    <value>utanför appen</value>
+  </data>
+  <data name="Events.Short.RemovedInput" xml:space="preserve">
+    <value>en borttagen ingång</value>
+  </data>
+  <data name="Events.Short.Schedule" xml:space="preserve">
+    <value>schema</value>
+  </data>
+  <data name="Events.Short.System" xml:space="preserve">
+    <value>systemet</value>
+  </data>
+  <data name="Events.TheRelay" xml:space="preserve">
+    <value>reläet</value>
+  </data>
+  <data name="Events.TheRelayAbove" xml:space="preserve">
+    <value>reläet ovanför</value>
+  </data>
+  <data name="Events.TimeUnknown" xml:space="preserve">
+    <value> · okänd tid</value>
+  </data>
+  <data name="Events.Unknown" xml:space="preserve">
+    <value>?</value>
+  </data>
+  <data name="Events.Update.Because.Backup" xml:space="preserve">
+    <value>databasen kunde inte säkerhetskopieras</value>
+  </data>
+  <data name="Events.Update.Because.Download" xml:space="preserve">
+    <value>den kunde inte laddas ner</value>
+  </data>
+  <data name="Events.Update.Because.Interrupted" xml:space="preserve">
+    <value>den avbröts</value>
+  </data>
+  <data name="Events.Update.Because.Other" xml:space="preserve">
+    <value>den startade inte</value>
+  </data>
+  <data name="Events.Update.Because.Signature" xml:space="preserve">
+    <value>den klarade inte kontrollen att den kommer från oss</value>
+  </data>
+  <data name="Events.Update.Because.Space" xml:space="preserve">
+    <value>det fanns inte tillräckligt med plats</value>
+  </data>
+  <data name="Events.Update.Cancelled" xml:space="preserve">
+    <value>{0} uppdaterades inte till {1}: uppdateringen avbröts</value>
+  </data>
+  <data name="Events.Update.Current" xml:space="preserve">
+    <value>{0} hittade inget nyare än {1} att ladda ner</value>
+  </data>
+  <data name="Events.Update.Done" xml:space="preserve">
+    <value>{0} uppdaterades till {1}</value>
+  </data>
+  <data name="Events.Update.Failed" xml:space="preserve">
+    <value>{0} uppdaterades inte till {1}: {2}. Inget ändrades</value>
+  </data>
+  <data name="Events.Update.Log" xml:space="preserve">
+    <value>Ladda ner dess logg</value>
+  </data>
+  <data name="Events.Update.NewVersion" xml:space="preserve">
+    <value>en ny version</value>
+  </data>
+  <data name="Events.Update.Requested" xml:space="preserve">
+    <value>{0} startade uppdateringen till {1}</value>
+  </data>
+  <data name="Events.Update.Switching" xml:space="preserve">
+    <value>{0} uppdaterades inte till {1}: reläerna slog fortfarande om. Inget ändrades</value>
+  </data>
+  <data name="Events.Update.VersionBefore" xml:space="preserve">
+    <value>versionen innan</value>
+  </data>
+  <data name="Events.Update.VersionItRuns" xml:space="preserve">
+    <value>versionen som körs</value>
+  </data>
+  <data name="Events.Update.WentBack" xml:space="preserve">
+    <value>{0} gick tillbaka till {1}: uppdateringen till {2} fungerade inte</value>
+  </data>
+  <data name="Events.Who.AutoOff" xml:space="preserve">
+    <value>Automatisk avstängning</value>
+  </data>
+  <data name="Events.Who.Board" xml:space="preserve">
+    <value>Kortet</value>
+  </data>
+  <data name="Events.Who.Contactor" xml:space="preserve">
+    <value>Contactor</value>
+  </data>
+  <data name="Events.Who.Outside" xml:space="preserve">
+    <value>Någon utanför appen</value>
+  </data>
+  <data name="Events.Who.RunOn" xml:space="preserve">
+    <value>Efterkörning</value>
+  </data>
+  <data name="Events.Who.RunOnDone" xml:space="preserve">
+    <value>Efterkörning klar:</value>
+  </data>
+  <data name="Events.Who.SafetyShutOff" xml:space="preserve">
+    <value>Säkerhetsavstängning:</value>
+  </data>
+  <data name="Events.Who.Schedule" xml:space="preserve">
+    <value>Schemat</value>
+  </data>
+  <data name="Events.Who.System" xml:space="preserve">
+    <value>Systemet</value>
+  </data>
+  <data name="Events.Who.TheGroup" xml:space="preserve">
+    <value>Gruppen</value>
+  </data>
+  <data name="Events.WhyTimeUnknown" xml:space="preserve">
+    <value>Appen hade ingen kontakt med kortet när ingången ändrades, så den märkte ändringen först vid den här tiden. Den kan ha hänt när som helst innan.</value>
+  </data>
+  <data name="Events.WhyUnknown" xml:space="preserve">
+    <value>Varför är tiden okänd för {0}?</value>
+  </data>
+  <data name="Groups.AddRelayToStep" xml:space="preserve">
+    <value>Lägg till ett relä i det här steget</value>
+  </data>
+  <data name="Groups.AddStep" xml:space="preserve">
+    <value>Lägg till ett steg</value>
+  </data>
+  <data name="Groups.Between" xml:space="preserve">
+    <value>Mellan {0} och {1}</value>
+  </data>
+  <data name="Groups.Chain" xml:space="preserve">
+    <value>RELÄ {0}</value>
+  </data>
+  <data name="Groups.ChangedElsewhere" xml:space="preserve">
+    <value>Någon annan ändrade gruppen medan du hade sidan öppen. Om du sparar skrivs deras ändring över.</value>
+  </data>
+  <data name="Groups.Delete" xml:space="preserve">
+    <value>Ta bort gruppen</value>
+  </data>
+  <data name="Groups.Delete.Text" xml:space="preserve">
+    <value>Dess reläer blir vanliga reläer igen, som slås om ett och ett. Gruppens scheman tas också bort.</value>
+  </data>
+  <data name="Groups.Delete.Title" xml:space="preserve">
+    <value>Ta bort gruppen?</value>
+  </data>
+  <data name="Groups.Delete.TurnOffFirst" xml:space="preserve">
+    <value>Stäng av gruppen innan du tar bort den.</value>
+  </data>
+  <data name="Groups.Gone" xml:space="preserve">
+    <value>Gruppen finns inte längre.</value>
+  </data>
+  <data name="Groups.Icon" xml:space="preserve">
+    <value>Ikon</value>
+  </data>
+  <data name="Groups.Icon.Air" xml:space="preserve">
+    <value>Luft</value>
+  </data>
+  <data name="Groups.Icon.Fan" xml:space="preserve">
+    <value>Fläkt</value>
+  </data>
+  <data name="Groups.Icon.Heat" xml:space="preserve">
+    <value>Värme</value>
+  </data>
+  <data name="Groups.Icon.Light" xml:space="preserve">
+    <value>Ljus</value>
+  </data>
+  <data name="Groups.Icon.Paint" xml:space="preserve">
+    <value>Färg</value>
+  </data>
+  <data name="Groups.Icon.Power" xml:space="preserve">
+    <value>Ström</value>
+  </data>
+  <data name="Groups.Icon.Pump" xml:space="preserve">
+    <value>Pump</value>
+  </data>
+  <data name="Groups.Icon.Tools" xml:space="preserve">
+    <value>Verktyg</value>
+  </data>
+  <data name="Groups.LimitHint" xml:space="preserve">
+    <value>Gäller när någon slår på gruppen för hand. Den stannar i sin stoppordning, med sina efterkörningstider.</value>
+  </data>
+  <data name="Groups.List.Separator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="Groups.Member.KeepsRunning" xml:space="preserve">
+    <value>Går i {0} till</value>
+  </data>
+  <data name="Groups.Member.Needs" xml:space="preserve">
+    <value>Kräver att {0} är på</value>
+  </data>
+  <data name="Groups.Member.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Groups.Member.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Groups.Member.StartsIn" xml:space="preserve">
+    <value>Startar om {0}</value>
+  </data>
+  <data name="Groups.Missing" xml:space="preserve">
+    <value>Gruppen finns inte.</value>
+  </data>
+  <data name="Groups.MissingRelay" xml:space="preserve">
+    <value>Kan inte köras: relä {0} finns inte på kortet</value>
+  </data>
+  <data name="Groups.MoveDown" xml:space="preserve">
+    <value>Flytta ner {0}</value>
+  </data>
+  <data name="Groups.MoveUp" xml:space="preserve">
+    <value>Flytta upp {0}</value>
+  </data>
+  <data name="Groups.NameLabel" xml:space="preserve">
+    <value>GRUPP · NAMN</value>
+  </data>
+  <data name="Groups.New.AutoOff" xml:space="preserve">
+    <value>STÄNGS AV AUTOMATISKT</value>
+  </data>
+  <data name="Groups.New.AutoOffAfter" xml:space="preserve">
+    <value>Efter {0}. Du kan ändra det på gruppens sida.</value>
+  </data>
+  <data name="Groups.New.Chosen" xml:space="preserve">
+    <value>{0} valda</value>
+  </data>
+  <data name="Groups.New.ChosenTooFew" xml:space="preserve">
+    <value>{0} valda · välj minst {1}</value>
+  </data>
+  <data name="Groups.New.Create" xml:space="preserve">
+    <value>Skapa grupp</value>
+  </data>
+  <data name="Groups.New.Interlock" xml:space="preserve">
+    <value>Interlock: ett relä kan bara vara på när reläet ovanför är på. Slås det på ändå, t.ex. på kortet, stänger appen av det direkt.</value>
+  </data>
+  <data name="Groups.New.Interlock.Label" xml:space="preserve">
+    <value>INTERLOCK</value>
+  </data>
+  <data name="Groups.New.Lead1" xml:space="preserve">
+    <value>Ikonen visas på gruppens kort i listan över reläer.</value>
+  </data>
+  <data name="Groups.New.Lead2" xml:space="preserve">
+    <value>Välj två eller fler. Ordningen du väljer dem i är startordningen. Du kan ändra den i nästa steg.</value>
+  </data>
+  <data name="Groups.New.Lead3" xml:space="preserve">
+    <value>Gruppen startar uppifrån och stannar nerifrån. Ställ in väntetiderna mellan stegen.</value>
+  </data>
+  <data name="Groups.New.Lead4" xml:space="preserve">
+    <value>Kontrollera att den gör det du väntar dig.</value>
+  </data>
+  <data name="Groups.New.Name" xml:space="preserve">
+    <value>Namn</value>
+  </data>
+  <data name="Groups.New.NameExample" xml:space="preserve">
+    <value>T.ex. Värmefläkt – Svarv</value>
+  </data>
+  <data name="Groups.New.NoneChosen" xml:space="preserve">
+    <value>Inga valda än</value>
+  </data>
+  <data name="Groups.New.OnBoard" xml:space="preserve">
+    <value>PÅ {0}</value>
+  </data>
+  <data name="Groups.New.Preview" xml:space="preserve">
+    <value>SÅ HÄR SER DEN UT I LISTAN</value>
+  </data>
+  <data name="Groups.New.RelayNumber" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="Groups.New.RoleLabel" xml:space="preserve">
+    <value>RELÄ {0} · NAMN I GRUPPEN</value>
+  </data>
+  <data name="Groups.New.Step" xml:space="preserve">
+    <value>STEG {0} AV {1}</value>
+  </data>
+  <data name="Groups.New.Title1" xml:space="preserve">
+    <value>Namn och ikon</value>
+  </data>
+  <data name="Groups.New.Title2" xml:space="preserve">
+    <value>Vilka reläer?</value>
+  </data>
+  <data name="Groups.New.Title3" xml:space="preserve">
+    <value>Ordning och regler</value>
+  </data>
+  <data name="Groups.New.Title4" xml:space="preserve">
+    <value>Granska och skapa</value>
+  </data>
+  <data name="Groups.New.WhenOff" xml:space="preserve">
+    <value>NÄR GRUPPEN STÄNGS AV</value>
+  </data>
+  <data name="Groups.New.WhenOn" xml:space="preserve">
+    <value>NÄR GRUPPEN SLÅS PÅ</value>
+  </data>
+  <data name="Groups.NoContactMembers" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Stegen och deras reläer kan ändras när kortet svarar.</value>
+  </data>
+  <data name="Groups.NoEvents" xml:space="preserve">
+    <value>Inget har hänt med den här gruppen än.</value>
+  </data>
+  <data name="Groups.NoSchedules" xml:space="preserve">
+    <value>Inga scheman. Lägg till ett för att slå på gruppen vid bestämda tider.</value>
+  </data>
+  <data name="Groups.Note.ControlledBy" xml:space="preserve">
+    <value>Styrs av {0}</value>
+  </data>
+  <data name="Groups.Note.Free" xml:space="preserve">
+    <value>Ledigt</value>
+  </data>
+  <data name="Groups.Note.HasSchedules" xml:space="preserve">
+    <value>Har egna scheman</value>
+  </data>
+  <data name="Groups.Note.InGroup" xml:space="preserve">
+    <value>Redan i {0}</value>
+  </data>
+  <data name="Groups.Note.InactiveFree" xml:space="preserve">
+    <value>Inaktivt · ledigt</value>
+  </data>
+  <data name="Groups.OneBoard" xml:space="preserve">
+    <value>En grupps reläer sitter alla på samma kort.</value>
+  </data>
+  <data name="Groups.Plan.Arrow" xml:space="preserve">
+    <value> → </value>
+  </data>
+  <data name="Groups.Plan.Interlock" xml:space="preserve">
+    <value>{0} kan bara vara på när {1} är på.</value>
+  </data>
+  <data name="Groups.Plan.Off" xml:space="preserve">
+    <value>{0} av</value>
+  </data>
+  <data name="Groups.Plan.RunsOn" xml:space="preserve">
+    <value>Efterkörning i {1}: {0}, sedan av</value>
+  </data>
+  <data name="Groups.Plan.Separator" xml:space="preserve">
+    <value> </value>
+  </data>
+  <data name="Groups.Plan.Then" xml:space="preserve">
+    <value>{0} → vänta {1} → {2}</value>
+  </data>
+  <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
+    <value>Kräver att {0} är på.</value>
+  </data>
+  <data name="Groups.Refusal.NotInGroup" xml:space="preserve">
+    <value>Det reläet är inte med i gruppen.</value>
+  </data>
+  <data name="Groups.RelayOption" xml:space="preserve">
+    <value>Relä {0} · {1}</value>
+  </data>
+  <data name="Groups.RelayToAdd" xml:space="preserve">
+    <value>Relä att lägga till</value>
+  </data>
+  <data name="Groups.Remove" xml:space="preserve">
+    <value>Ta bort</value>
+  </data>
+  <data name="Groups.RemoveRelay" xml:space="preserve">
+    <value>Ta bort {0} från gruppen</value>
+  </data>
+  <data name="Groups.RunOn" xml:space="preserve">
+    <value>Efterkörning vid stopp</value>
+  </data>
+  <data name="Groups.RunOn.None" xml:space="preserve">
+    <value>Ingen</value>
+  </data>
+  <data name="Groups.Safety" xml:space="preserve">
+    <value>Appens interlock fungerar bara medan appen är igång. Där säkerheten hänger på den, t.ex. värme utan fläkt, måste den också kopplas in i installationen.</value>
+  </data>
+  <data name="Groups.Save.Controlled" xml:space="preserve">
+    <value>{0} styrs av ingången {1}. Ta bort det där först.</value>
+  </data>
+  <data name="Groups.Save.EmptyStep" xml:space="preserve">
+    <value>Varje steg behöver minst ett relä.</value>
+  </data>
+  <data name="Groups.Save.HasSchedules" xml:space="preserve">
+    <value>{0} har egna scheman. Ta bort dem först.</value>
+  </data>
+  <data name="Groups.Save.Icon" xml:space="preserve">
+    <value>Välj en ikon.</value>
+  </data>
+  <data name="Groups.Save.InGroup" xml:space="preserve">
+    <value>{0} är redan i {1}.</value>
+  </data>
+  <data name="Groups.Save.Limit" xml:space="preserve">
+    <value>Välj hur länge gruppen får vara på.</value>
+  </data>
+  <data name="Groups.Save.Name" xml:space="preserve">
+    <value>Ge gruppen ett namn.</value>
+  </data>
+  <data name="Groups.Save.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Groups.Save.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Den behövs för att se att reläerna är av.</value>
+  </data>
+  <data name="Groups.Save.NoRelay" xml:space="preserve">
+    <value>Det reläet finns inte.</value>
+  </data>
+  <data name="Groups.Save.OneBoard" xml:space="preserve">
+    <value>Alla reläer i en grupp måste sitta på samma kort.</value>
+  </data>
+  <data name="Groups.Save.RelayOn" xml:space="preserve">
+    <value>Stäng av {0} först.</value>
+  </data>
+  <data name="Groups.Save.RoleTooLong" xml:space="preserve">
+    <value>Stegets namn får vara högst {0} tecken.</value>
+  </data>
+  <data name="Groups.Save.RunOn" xml:space="preserve">
+    <value>Efterkörningen får vara högst {0} minuter.</value>
+  </data>
+  <data name="Groups.Save.TooFew" xml:space="preserve">
+    <value>Välj minst {0} reläer.</value>
+  </data>
+  <data name="Groups.Save.TurnOffFirst" xml:space="preserve">
+    <value>Stäng av gruppen, och reläerna du lägger till, innan du ändrar dess steg eller deras reläer.</value>
+  </data>
+  <data name="Groups.Save.Twice" xml:space="preserve">
+    <value>Ett relä kan bara vara med i gruppen en gång.</value>
+  </data>
+  <data name="Groups.Save.Wait" xml:space="preserve">
+    <value>Väntan vid start är {0}–{1} sekunder.</value>
+  </data>
+  <data name="Groups.StartWait" xml:space="preserve">
+    <value>Vid start, vänta</value>
+  </data>
+  <data name="Groups.Status.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Groups.Status.Only" xml:space="preserve">
+    <value>{0} · bara {1}</value>
+  </data>
+  <data name="Groups.Status.OutOfOrder" xml:space="preserve">
+    <value>Fel ordning · stängs av</value>
+  </data>
+  <data name="Groups.Status.ScheduleOn" xml:space="preserve">
+    <value>Schema: på {0}</value>
+  </data>
+  <data name="Groups.Status.StartingIn" xml:space="preserve">
+    <value>Startar · {0} om {1}</value>
+  </data>
+  <data name="Groups.Status.StartingStep" xml:space="preserve">
+    <value>Startar · steg {0} av {1}</value>
+  </data>
+  <data name="Groups.Status.Stopping" xml:space="preserve">
+    <value>Stängs av</value>
+  </data>
+  <data name="Groups.Status.StoppingRunOn" xml:space="preserve">
+    <value>Stängs av · efterkörning i {1}: {0}</value>
+  </data>
+  <data name="Groups.Step.Label" xml:space="preserve">
+    <value>STEG {0} · NAMN</value>
+  </data>
+  <data name="Groups.Step.Only" xml:space="preserve">
+    <value>Bara {0} på</value>
+  </data>
+  <data name="Groups.Step.StartsFirst" xml:space="preserve">
+    <value>Av · startar först</value>
+  </data>
+  <data name="Groups.Steps" xml:space="preserve">
+    <value>Steg i startordning</value>
+  </data>
+  <data name="Groups.Steps.Hint" xml:space="preserve">
+    <value>Startar uppifrån, stannar nerifrån. Reläerna i ett steg slår om tillsammans. Ett relä kan bara vara på när alla reläer i steget ovanför är på.</value>
+  </data>
+  <data name="Groups.Steps.HintOn" xml:space="preserve">
+    <value>På {0}. Startar uppifrån, stannar nerifrån. Reläerna i ett steg slår om tillsammans. Ett relä kan bara vara på när alla reläer i steget ovanför är på.</value>
+  </data>
+  <data name="Groups.TurnOff" xml:space="preserve">
+    <value>STÄNG AV GRUPPEN</value>
+  </data>
+  <data name="Groups.TurnOffToChange" xml:space="preserve">
+    <value>Stäng av gruppen för att ändra dess steg eller deras reläer.</value>
+  </data>
+  <data name="Groups.TurnOn" xml:space="preserve">
+    <value>SLÅ PÅ GRUPPEN</value>
+  </data>
+  <data name="Inputs.Active" xml:space="preserve">
+    <value>{0}: visas i listan. Bocka ur för ingångar som inte är kopplade till något.</value>
+  </data>
+  <data name="Inputs.ActiveWord" xml:space="preserve">
+    <value>Aktiv</value>
+  </data>
+  <data name="Inputs.Add" xml:space="preserve">
+    <value>+ Lägg till en grupp eller ett relä</value>
+  </data>
+  <data name="Inputs.AddLabel" xml:space="preserve">
+    <value>Lägg till en grupp eller ett relä</value>
+  </data>
+  <data name="Inputs.Closed" xml:space="preserve">
+    <value>Sluten</value>
+  </data>
+  <data name="Inputs.Closes" xml:space="preserve">
+    <value>NÄR DEN SLUTS</value>
+  </data>
+  <data name="Inputs.Controls" xml:space="preserve">
+    <value>Grupper och reläer</value>
+  </data>
+  <data name="Inputs.Controls.Hint" xml:space="preserve">
+    <value>Som att trycka på knappen just då: en grupp startar och stannar i sin ordning, med sin efterkörning, och automatisk avstängning gäller fortfarande. Bara ändringar som appen ser när de händer gör något.</value>
+  </data>
+  <data name="Inputs.Hide.Both" xml:space="preserve">
+    <value>Dölj inaktiva</value>
+  </data>
+  <data name="Inputs.Hide.Inputs" xml:space="preserve">
+    <value>Dölj inaktiva ingångar</value>
+  </data>
+  <data name="Inputs.Hide.Relays" xml:space="preserve">
+    <value>Dölj inaktiva reläer</value>
+  </data>
+  <data name="Inputs.Missing" xml:space="preserve">
+    <value>Ingången finns inte.</value>
+  </data>
+  <data name="Inputs.NameLabel" xml:space="preserve">
+    <value>INGÅNG {0} · NAMN</value>
+  </data>
+  <data name="Inputs.NoEvents" xml:space="preserve">
+    <value>Den här ingången har inte ändrats än.</value>
+  </data>
+  <data name="Inputs.Nothing" xml:space="preserve">
+    <value>Inget</value>
+  </data>
+  <data name="Inputs.NothingToAdd" xml:space="preserve">
+    <value>Det finns inget mer att lägga till: den här ingången styr alla grupper och reläer.</value>
+  </data>
+  <data name="Inputs.Now" xml:space="preserve">
+    <value>NU</value>
+  </data>
+  <data name="Inputs.Open" xml:space="preserve">
+    <value>Öppen</value>
+  </data>
+  <data name="Inputs.Opens" xml:space="preserve">
+    <value>NÄR DEN ÖPPNAS</value>
+  </data>
+  <data name="Inputs.Remove" xml:space="preserve">
+    <value>Ta bort</value>
+  </data>
+  <data name="Inputs.Save.EnterName" xml:space="preserve">
+    <value>Skriv ett namn.</value>
+  </data>
+  <data name="Inputs.Save.GroupGone" xml:space="preserve">
+    <value>Den gruppen finns inte längre.</value>
+  </data>
+  <data name="Inputs.Save.GroupOtherBoard" xml:space="preserve">
+    <value>Den gruppen sitter på ett annat kort: en ingång styr bara sitt eget korts grupper.</value>
+  </data>
+  <data name="Inputs.Save.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Inputs.Save.NoRelay" xml:space="preserve">
+    <value>Kortet har inget relä {0}.</value>
+  </data>
+  <data name="Inputs.Save.NoSuchRelay" xml:space="preserve">
+    <value>Kortet har inget sådant relä.</value>
+  </data>
+  <data name="Inputs.Save.RelayInGroup" xml:space="preserve">
+    <value>Relä {0} är med i en grupp nu: lägg till gruppen i stället.</value>
+  </data>
+  <data name="Inputs.Save.RelayOtherBoard" xml:space="preserve">
+    <value>Det reläet sitter på ett annat kort: en ingång styr bara sitt eget korts reläer.</value>
+  </data>
+  <data name="Inputs.Save.Twice" xml:space="preserve">
+    <value>{0} finns två gånger i listan.</value>
+  </data>
+  <data name="Inputs.Show.Both_One" xml:space="preserve">
+    <value>Visa {0} inaktiv</value>
+  </data>
+  <data name="Inputs.Show.Both_Other" xml:space="preserve">
+    <value>Visa {0} inaktiva</value>
+  </data>
+  <data name="Inputs.Show.Inputs_One" xml:space="preserve">
+    <value>Visa {0} inaktiv ingång</value>
+  </data>
+  <data name="Inputs.Show.Inputs_Other" xml:space="preserve">
+    <value>Visa {0} inaktiva ingångar</value>
+  </data>
+  <data name="Inputs.Show.Relays_One" xml:space="preserve">
+    <value>Visa {0} inaktivt relä</value>
+  </data>
+  <data name="Inputs.Show.Relays_Other" xml:space="preserve">
+    <value>Visa {0} inaktiva reläer</value>
+  </data>
+  <data name="Inputs.Since" xml:space="preserve">
+    <value>{0} sedan {1}</value>
+  </data>
+  <data name="Inputs.SinceUnknown" xml:space="preserve">
+    <value>{0} sedan okänd tid</value>
+  </data>
+  <data name="Inputs.Stale" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet: det här kan vara inaktuellt.</value>
+  </data>
+  <data name="Inputs.Target.Group" xml:space="preserve">
+    <value>Grupp: {0}</value>
+  </data>
+  <data name="Inputs.Target.Relay" xml:space="preserve">
+    <value>Relä {0}: {1}</value>
+  </data>
+  <data name="Inputs.TurnOff" xml:space="preserve">
+    <value>Stäng av</value>
+  </data>
+  <data name="Inputs.TurnOn" xml:space="preserve">
+    <value>Slå på</value>
+  </data>
+  <data name="Inputs.WhenCloses" xml:space="preserve">
+    <value>{0}: när ingången sluts</value>
+  </data>
+  <data name="Inputs.WhenOpens" xml:space="preserve">
+    <value>{0}: när ingången öppnas</value>
+  </data>
+  <data name="Inputs.WhyUnknown" xml:space="preserve">
+    <value>Kortet berättar bara för appen vad en ingång visar nu, inte sedan när. Appen har inte sett den här ingången ändras sedan den installerades eller senast saknade kontakt med kortet en stund, t.ex. efter en krasch eller ett strömavbrott.</value>
+  </data>
+  <data name="Inputs.WhyUnknownLabel" xml:space="preserve">
+    <value>Varför är tiden okänd?</value>
+  </data>
+  <data name="Relays.AllBoardsOff" xml:space="preserve">
+    <value>Stäng av alla kort</value>
+  </data>
+  <data name="Relays.AllOff" xml:space="preserve">
+    <value>Allt av</value>
+  </data>
+  <data name="Relays.AllOffOn" xml:space="preserve">
+    <value>Allt av på {0}</value>
+  </data>
+  <data name="Relays.By.AutoOff" xml:space="preserve">
+    <value>automatiskt</value>
+  </data>
+  <data name="Relays.By.Outside" xml:space="preserve">
+    <value>utanför appen</value>
+  </data>
+  <data name="Relays.By.RemovedInput" xml:space="preserve">
+    <value>en borttagen ingång</value>
+  </data>
+  <data name="Relays.By.Schedule" xml:space="preserve">
+    <value>schema</value>
+  </data>
+  <data name="Relays.By.You" xml:space="preserve">
+    <value>du</value>
+  </data>
+  <data name="Relays.Chip.Off" xml:space="preserve">
+    <value> (av)</value>
+  </data>
+  <data name="Relays.Chip.On" xml:space="preserve">
+    <value> (på)</value>
+  </data>
+  <data name="Relays.Chip.Partly" xml:space="preserve">
+    <value> (delvis på)</value>
+  </data>
+  <data name="Relays.Chip.Unknown" xml:space="preserve">
+    <value> (okänt)</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.All" xml:space="preserve">
+    <value>Stäng av alla {1} påslagna reläer {0}?</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.Every" xml:space="preserve">
+    <value>Stäng av alla reläer {0}?</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.One" xml:space="preserve">
+    <value>Stäng av 1 påslaget relä {0}?</value>
+  </data>
+  <data name="Relays.ConfirmAllOff.Text" xml:space="preserve">
+    <value>Grupper stängs av i sin egen ordning. Ett kort utan kontakt lämnas som det är.</value>
+  </data>
+  <data name="Relays.DefaultName" xml:space="preserve">
+    <value>Relä {0}</value>
+  </data>
+  <data name="Relays.Detail.Active" xml:space="preserve">
+    <value>{0}: visas i listan. Bocka ur för reläer som inte används.</value>
+  </data>
+  <data name="Relays.Detail.ActiveWord" xml:space="preserve">
+    <value>Aktiv</value>
+  </data>
+  <data name="Relays.Detail.InGroup" xml:space="preserve">
+    <value>Det här reläet är med i gruppen {0} och styrs därifrån, i gruppens ordning.</value>
+  </data>
+  <data name="Relays.Detail.Limit" xml:space="preserve">
+    <value>Stäng av automatiskt efter</value>
+  </data>
+  <data name="Relays.Detail.LimitHint" xml:space="preserve">
+    <value>Gäller när någon slår på reläet för hand.</value>
+  </data>
+  <data name="Relays.Detail.LimitNow" xml:space="preserve">
+    <value>Reläet har varit på längre än så och stängs av när du sparar.</value>
+  </data>
+  <data name="Relays.Detail.NameLabel" xml:space="preserve">
+    <value>RELÄ {0} · NAMN</value>
+  </data>
+  <data name="Relays.Detail.NoEvents" xml:space="preserve">
+    <value>Inget har hänt med det här reläet än.</value>
+  </data>
+  <data name="Relays.Detail.NoSchedules" xml:space="preserve">
+    <value>Inga scheman. Lägg till ett för att slå på reläet vid bestämda tider.</value>
+  </data>
+  <data name="Relays.Detail.OpenGroup" xml:space="preserve">
+    <value>Öppna gruppen</value>
+  </data>
+  <data name="Relays.Detail.Schedules" xml:space="preserve">
+    <value>Scheman</value>
+  </data>
+  <data name="Relays.Detail.TurnOff" xml:space="preserve">
+    <value>STÄNG AV</value>
+  </data>
+  <data name="Relays.Detail.TurnOn" xml:space="preserve">
+    <value>SLÅ PÅ</value>
+  </data>
+  <data name="Relays.GroupLabel" xml:space="preserve">
+    <value>GRUPP · {0}</value>
+  </data>
+  <data name="Relays.Groups" xml:space="preserve">
+    <value>Grupper</value>
+  </data>
+  <data name="Relays.Hi" xml:space="preserve">
+    <value>Hej {0}</value>
+  </data>
+  <data name="Relays.InGroup" xml:space="preserve">
+    <value>Det här reläet är med i en grupp och styrs från gruppen.</value>
+  </data>
+  <data name="Relays.InputLabel" xml:space="preserve">
+    <value>INGÅNG {0}</value>
+  </data>
+  <data name="Relays.Inputs" xml:space="preserve">
+    <value>Ingångar</value>
+  </data>
+  <data name="Relays.List.Last" xml:space="preserve">
+    <value>{0} och {1}</value>
+  </data>
+  <data name="Relays.List.Separator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="Relays.Lost.None" xml:space="preserve">
+    <value>ingen kontakt</value>
+  </data>
+  <data name="Relays.Lost.Since" xml:space="preserve">
+    <value>ingen kontakt sedan {0}</value>
+  </data>
+  <data name="Relays.Lost.Yet" xml:space="preserve">
+    <value>ingen kontakt än</value>
+  </data>
+  <data name="Relays.Missing" xml:space="preserve">
+    <value>Reläet finns inte.</value>
+  </data>
+  <data name="Relays.NewGroup" xml:space="preserve">
+    <value>Ny grupp</value>
+  </data>
+  <data name="Relays.NoContact.FirstAnswer" xml:space="preserve">
+    <value>Väntar på dess första svar.</value>
+  </data>
+  <data name="Relays.NoContact.MayBeWrong" xml:space="preserve">
+    <value>Lägena nedan kan vara fel.</value>
+  </data>
+  <data name="Relays.NoContact.Named" xml:space="preserve">
+    <value>Ingen kontakt med {0}</value>
+  </data>
+  <data name="Relays.NoContact.One" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet</value>
+  </data>
+  <data name="Relays.NoContact.Since" xml:space="preserve">
+    <value>Sedan {0}. Lägena nedan kan vara fel.</value>
+  </data>
+  <data name="Relays.NoContactYet.Named" xml:space="preserve">
+    <value>Ingen kontakt med {0} än</value>
+  </data>
+  <data name="Relays.NoContactYet.One" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet än</value>
+  </data>
+  <data name="Relays.OnBoards_One" xml:space="preserve">
+    <value>på {0} kort</value>
+  </data>
+  <data name="Relays.OnBoards_Other" xml:space="preserve">
+    <value>på {0} kort</value>
+  </data>
+  <data name="Relays.OnCount" xml:space="preserve">
+    <value>{0} av {1} på</value>
+  </data>
+  <data name="Relays.Online.One" xml:space="preserve">
+    <value>Kortet är anslutet · uppdaterat {0}</value>
+  </data>
+  <data name="Relays.Online.Several" xml:space="preserve">
+    <value>Anslutet · uppdaterat {0}</value>
+  </data>
+  <data name="Relays.Problem.SeeSettings" xml:space="preserve">
+    <value>{0} Se Inställningar.</value>
+  </data>
+  <data name="Relays.RelayLabel" xml:space="preserve">
+    <value>RELÄ {0}</value>
+  </data>
+  <data name="Relays.Relays" xml:space="preserve">
+    <value>Reläer</value>
+  </data>
+  <data name="Relays.Save.EnterName" xml:space="preserve">
+    <value>Skriv ett namn.</value>
+  </data>
+  <data name="Relays.Save.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Relays.Sentence.Off" xml:space="preserve">
+    <value>Av just nu.</value>
+  </data>
+  <data name="Relays.Sentence.On" xml:space="preserve">
+    <value>På just nu.</value>
+  </data>
+  <data name="Relays.Sentence.OnSince" xml:space="preserve">
+    <value>På sedan {0}.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceBy" xml:space="preserve">
+    <value>På sedan {0}, av {1}.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceBySchedule" xml:space="preserve">
+    <value>På sedan {0}, av ett schema.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceByYou" xml:space="preserve">
+    <value>På sedan {0}, av dig.</value>
+  </data>
+  <data name="Relays.Sentence.OnSinceOutside" xml:space="preserve">
+    <value>På sedan {0}, utanför appen.</value>
+  </data>
+  <data name="Relays.Sentence.TurnsOff" xml:space="preserve">
+    <value>{0} Stängs av {1}.</value>
+  </data>
+  <data name="Relays.Showing.Boards" xml:space="preserve">
+    <value>Visar {0} av {1} kort · {2} av {3} på</value>
+  </data>
+  <data name="Relays.Showing.Names" xml:space="preserve">
+    <value>Visar {0}</value>
+  </data>
+  <data name="Relays.Status.LeaveIt" xml:space="preserve">
+    <value>Låt vara</value>
+  </data>
+  <data name="Relays.Status.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Relays.Status.OffSince" xml:space="preserve">
+    <value>Av sedan {0}</value>
+  </data>
+  <data name="Relays.Status.OffSinceBy" xml:space="preserve">
+    <value>Av sedan {0} · {1}</value>
+  </data>
+  <data name="Relays.Status.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Relays.Status.OnSince" xml:space="preserve">
+    <value>På sedan {0}</value>
+  </data>
+  <data name="Relays.Status.OnSinceBy" xml:space="preserve">
+    <value>På sedan {0} · {1}</value>
+  </data>
+  <data name="Relays.Status.OnSinceByOff" xml:space="preserve">
+    <value>På sedan {0} · {1} · stängs av {2}</value>
+  </data>
+  <data name="Relays.Status.OnSinceOff" xml:space="preserve">
+    <value>På sedan {0} · stängs av {1}</value>
+  </data>
+  <data name="Relays.Status.ScheduleOn" xml:space="preserve">
+    <value>Schema: på {0}</value>
+  </data>
+  <data name="Relays.Status.Unconfirmed" xml:space="preserve">
+    <value>Kortet svarade inte. Reläet kan ha slagits om, eller inte.</value>
+  </data>
+  <data name="Relays.Status.Waiting" xml:space="preserve">
+    <value>Väntar på kortet</value>
+  </data>
+  <data name="Relays.TurnOff" xml:space="preserve">
+    <value>Stäng av</value>
+  </data>
+  <data name="Relays.Unreachable.One" xml:space="preserve">
+    <value>Fick inte kontakt med {0}. Dess reläer är som förut.</value>
+  </data>
+  <data name="Relays.Unreachable.Several" xml:space="preserve">
+    <value>Fick inte kontakt med {0}. Deras reläer är som förut.</value>
+  </data>
+  <data name="Relays.Updated.MinutesAgo" xml:space="preserve">
+    <value>för {0} min sedan</value>
+  </data>
+  <data name="Relays.Updated.Now" xml:space="preserve">
+    <value>nyss</value>
+  </data>
+  <data name="Relays.When.Date" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="Relays.When.DateFormat" xml:space="preserve">
+    <value>d MMM</value>
+  </data>
+  <data name="Relays.When.Tomorrow" xml:space="preserve">
+    <value>i morgon {0}</value>
+  </data>
+  <data name="Relays.When.Yesterday" xml:space="preserve">
+    <value>i går {0}</value>
+  </data>
+  <data name="Relays.WhyUnknown" xml:space="preserve">
+    <value>Varför är tiden okänd för {0}?</value>
+  </data>
+  <data name="Schedules.And" xml:space="preserve">
+    <value>{0} och {1}</value>
+  </data>
+  <data name="Schedules.Days" xml:space="preserve">
+    <value>Vilka dagar?</value>
+  </data>
+  <data name="Schedules.Delete" xml:space="preserve">
+    <value>Ta bort schema</value>
+  </data>
+  <data name="Schedules.Delete.Title" xml:space="preserve">
+    <value>Ta bort schemat?</value>
+  </data>
+  <data name="Schedules.EnterBoth" xml:space="preserve">
+    <value>Ange en tid både för att slå på och för att stänga av.</value>
+  </data>
+  <data name="Schedules.EnterGroup" xml:space="preserve">
+    <value>Ange när gruppen ska slås på och stängas av.</value>
+  </data>
+  <data name="Schedules.EnterRelay" xml:space="preserve">
+    <value>Ange när reläet ska slås på och stängas av.</value>
+  </data>
+  <data name="Schedules.EveryDay" xml:space="preserve">
+    <value>Varje dag</value>
+  </data>
+  <data name="Schedules.GroupMissing" xml:space="preserve">
+    <value>Gruppen finns inte.</value>
+  </data>
+  <data name="Schedules.Inline" xml:space="preserve">
+    <value>{0} {1}–{2}</value>
+  </data>
+  <data name="Schedules.Missing" xml:space="preserve">
+    <value>Schemat finns inte längre.</value>
+  </data>
+  <data name="Schedules.NoDays" xml:space="preserve">
+    <value>Inga dagar valda</value>
+  </data>
+  <data name="Schedules.NoDaysSentence" xml:space="preserve">
+    <value>Inga dagar valda.</value>
+  </data>
+  <data name="Schedules.RelayMissing" xml:space="preserve">
+    <value>Reläet finns inte.</value>
+  </data>
+  <data name="Schedules.Run" xml:space="preserve">
+    <value>{0}–{1}</value>
+  </data>
+  <data name="Schedules.RunLong" xml:space="preserve">
+    <value>{0} till {1}</value>
+  </data>
+  <data name="Schedules.Save" xml:space="preserve">
+    <value>Spara schema</value>
+  </data>
+  <data name="Schedules.Save.InGroup" xml:space="preserve">
+    <value>Det här reläet är med i en grupp. Lägg till schemat på gruppen.</value>
+  </data>
+  <data name="Schedules.Save.NoDay" xml:space="preserve">
+    <value>Välj minst en dag.</value>
+  </data>
+  <data name="Schedules.Save.NoTarget" xml:space="preserve">
+    <value>Välj ett relä eller en grupp.</value>
+  </data>
+  <data name="Schedules.Save.SameTime" xml:space="preserve">
+    <value>Slå på och stäng av kan inte vara vid samma tid.</value>
+  </data>
+  <data name="Schedules.Separator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="Schedules.Summary.Group" xml:space="preserve">
+    <value>{0}: gruppen slås på kl. {1} och stängs av kl. {2}.</value>
+  </data>
+  <data name="Schedules.Summary.GroupNextDay" xml:space="preserve">
+    <value>{0}: gruppen slås på kl. {1} och stängs av kl. {2} dagen efter.</value>
+  </data>
+  <data name="Schedules.Summary.Relay" xml:space="preserve">
+    <value>{0}: reläet slås på kl. {1} och stängs av kl. {2}.</value>
+  </data>
+  <data name="Schedules.Summary.RelayNextDay" xml:space="preserve">
+    <value>{0}: reläet slås på kl. {1} och stängs av kl. {2} dagen efter.</value>
+  </data>
+  <data name="Schedules.Times" xml:space="preserve">
+    <value>{0} – {1}</value>
+  </data>
+  <data name="Schedules.TurnOff" xml:space="preserve">
+    <value>Stäng av</value>
+  </data>
+  <data name="Schedules.TurnOn" xml:space="preserve">
+    <value>Slå på</value>
+  </data>
+  <data name="Schedules.Weekdays" xml:space="preserve">
+    <value>Vardagar</value>
+  </data>
+  <data name="Settings.Backups" xml:space="preserve">
+    <value>Säkerhetskopior</value>
+  </data>
+  <data name="Settings.Backups.Failed" xml:space="preserve">
+    <value>Kopian kunde inte göras. Försök igen om en stund.</value>
+  </data>
+  <data name="Settings.Backups.Hint" xml:space="preserve">
+    <value>Appen kopierar allt varje natt kl. 02:30 och behåller de 14 senaste. Ladda ner en då och då och spara den någon annanstans.</value>
+  </data>
+  <data name="Settings.Backups.Latest" xml:space="preserve">
+    <value>Senaste: {0} · {1}</value>
+  </data>
+  <data name="Settings.Backups.Made" xml:space="preserve">
+    <value>Kopian är gjord.</value>
+  </data>
+  <data name="Settings.Backups.Make" xml:space="preserve">
+    <value>Gör en kopia nu</value>
+  </data>
+  <data name="Settings.Backups.None" xml:space="preserve">
+    <value>Ingen kopia än.</value>
+  </data>
+  <data name="Settings.BoardLine" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Settings.BoardLine.Host" xml:space="preserve">
+    <value>{0} · {1} · {2}</value>
+  </data>
+  <data name="Settings.Boards" xml:space="preserve">
+    <value>Reläkort</value>
+  </data>
+  <data name="Settings.Boards.Hint" xml:space="preserve">
+    <value>Tryck på ett kort för att ändra dess namn, adress eller inloggning, eller för att ta bort det.</value>
+  </data>
+  <data name="Settings.Debugging" xml:space="preserve">
+    <value>Debugging</value>
+  </data>
+  <data name="Settings.Debugging.Check" xml:space="preserve">
+    <value>Visa trafiken till reläkortet</value>
+  </data>
+  <data name="Settings.Debugging.Hint" xml:space="preserve">
+    <value>Bara för dig. Varje meddelande till och från kortet visas en stund längst ner på sidan, och hela listan under fliken Debug.</value>
+  </data>
+  <data name="Settings.Kilobytes" xml:space="preserve">
+    <value>{0} kB</value>
+  </data>
+  <data name="Settings.Megabytes" xml:space="preserve">
+    <value>{0:0.0} MB</value>
+  </data>
+  <data name="Settings.NoAddress" xml:space="preserve">
+    <value>Ingen adress än</value>
+  </data>
+  <data name="Settings.NoContact" xml:space="preserve">
+    <value>Ingen kontakt</value>
+  </data>
+  <data name="Settings.NoContactSince" xml:space="preserve">
+    <value>Ingen kontakt sedan {0}</value>
+  </data>
+  <data name="Settings.NoContactYet" xml:space="preserve">
+    <value>Ingen kontakt än</value>
+  </data>
+  <data name="Settings.Online" xml:space="preserve">
+    <value>Anslutet</value>
+  </data>
+  <data name="Settings.People" xml:space="preserve">
+    <value>Personer</value>
+  </data>
+  <data name="Settings.People.EnterName" xml:space="preserve">
+    <value>Skriv ett namn.</value>
+  </data>
+  <data name="Settings.People.Gone" xml:space="preserve">
+    <value>Den personen finns inte längre.</value>
+  </data>
+  <data name="Settings.People.Hint" xml:space="preserve">
+    <value>Namnen som visas i appen och under Händelser.</value>
+  </data>
+  <data name="Settings.People.NameTooLong" xml:space="preserve">
+    <value>Namnet får vara högst {0} tecken.</value>
+  </data>
+  <data name="Settings.Relays_One" xml:space="preserve">
+    <value>{0} relä</value>
+  </data>
+  <data name="Settings.Relays_Other" xml:space="preserve">
+    <value>{0} reläer</value>
+  </data>
+  <data name="Setup.About.Example" xml:space="preserve">
+    <value>Anna</value>
+  </data>
+  <data name="Setup.About.Hint" xml:space="preserve">
+    <value>Visas i appen och under Händelser, t.ex. "{0} slog på Kompressor".</value>
+  </data>
+  <data name="Setup.About.Intro" xml:space="preserve">
+    <value>Ditt namn i Contactor. Sedan fyra korta frågor om ditt reläkort. Du kan ändra allt senare under Inställningar.</value>
+  </data>
+  <data name="Setup.About.Name" xml:space="preserve">
+    <value>Ditt namn</value>
+  </data>
+  <data name="Setup.About.Need" xml:space="preserve">
+    <value>DET HÄR BEHÖVER DU</value>
+  </data>
+  <data name="Setup.About.NeedText" xml:space="preserve">
+    <value>Reläkortet påslaget och anslutet till samma nätverk som den här appen. Din router visar dess adress bland sina anslutna enheter.</value>
+  </data>
+  <data name="Setup.About.Title" xml:space="preserve">
+    <value>Om dig</value>
+  </data>
+  <data name="Setup.Access.Audience" xml:space="preserve">
+    <value>AUD-tagg</value>
+  </data>
+  <data name="Setup.Access.AudienceHint" xml:space="preserve">
+    <value>Zero Trust → Access controls → Applications → applikationen för {0} → Edit → Additional settings.</value>
+  </data>
+  <data name="Setup.Access.TeamDomain" xml:space="preserve">
+    <value>Teamdomän</value>
+  </data>
+  <data name="Setup.Access.TeamDomainHint" xml:space="preserve">
+    <value>Zero Trust → Settings → Team name and domain.</value>
+  </data>
+  <data name="Setup.Access.YourAddress" xml:space="preserve">
+    <value>din adress</value>
+  </data>
+  <data name="Setup.BoardFirst" xml:space="preserve">
+    <value>Välj ditt reläkort först.</value>
+  </data>
+  <data name="Setup.Capabilities.Analog_One" xml:space="preserve">
+    <value>{0} analog ingång</value>
+  </data>
+  <data name="Setup.Capabilities.Analog_Other" xml:space="preserve">
+    <value>{0} analoga ingångar</value>
+  </data>
+  <data name="Setup.Capabilities.Inputs_One" xml:space="preserve">
+    <value>{0} ingång</value>
+  </data>
+  <data name="Setup.Capabilities.Inputs_Other" xml:space="preserve">
+    <value>{0} ingångar</value>
+  </data>
+  <data name="Setup.Capabilities.Relays_One" xml:space="preserve">
+    <value>{0} relä</value>
+  </data>
+  <data name="Setup.Capabilities.Relays_Other" xml:space="preserve">
+    <value>{0} reläer</value>
+  </data>
+  <data name="Setup.Capabilities.Separator" xml:space="preserve">
+    <value> · </value>
+  </data>
+  <data name="Setup.Choose.SignIn" xml:space="preserve">
+    <value>Välj hur folk loggar in.</value>
+  </data>
+  <data name="Setup.Choose.WayIn" xml:space="preserve">
+    <value>Välj hur folk når appen.</value>
+  </data>
+  <data name="Setup.Cloudflare.Address" xml:space="preserve">
+    <value>Adressen måste vara tunnelns publika värdnamn, t.ex. relays.example.com.</value>
+  </data>
+  <data name="Setup.Cloudflare.Audience" xml:space="preserve">
+    <value>AUD-taggen är den långa koden under Access-applikationens Additional settings.</value>
+  </data>
+  <data name="Setup.Cloudflare.TeamDomain" xml:space="preserve">
+    <value>Teamdomänen måste vara ditt teams adress hos Cloudflare, t.ex. myteam.cloudflareaccess.com.</value>
+  </data>
+  <data name="Setup.Cloudflare.Token" xml:space="preserve">
+    <value>Tunneltoken är den långa koden efter --token i tunnelns installationskommando.</value>
+  </data>
+  <data name="Setup.CloudflareAccess.AddressFirst" xml:space="preserve">
+    <value>Gå tillbaka och spara tunnelns adress först: det är där folk öppnar Contactor.</value>
+  </data>
+  <data name="Setup.CloudflareAccess.OnlyCloudflare" xml:space="preserve">
+    <value>Cloudflare Access fungerar bara när folk når appen genom Cloudflare.</value>
+  </data>
+  <data name="Setup.Code.Intro" xml:space="preserve">
+    <value>Visa först att det var du som installerade den. Appen skrev en installationskod i sin logg när den startade.</value>
+  </data>
+  <data name="Setup.Code.Label" xml:space="preserve">
+    <value>Installationskod</value>
+  </data>
+  <data name="Setup.Code.Title" xml:space="preserve">
+    <value>Välkommen till Contactor</value>
+  </data>
+  <data name="Setup.Code.TooMany" xml:space="preserve">
+    <value>För många felaktiga koder. Vänta en minut och försök sedan igen.</value>
+  </data>
+  <data name="Setup.Code.Where" xml:space="preserve">
+    <value>VAR FINNS DEN?</value>
+  </data>
+  <data name="Setup.Code.WhereText" xml:space="preserve">
+    <value>I appens logg, t.ex. {0}, eller i loggvyn på din containerplattform. En ny kod skapas varje gång appen startar.</value>
+  </data>
+  <data name="Setup.Code.Wrong" xml:space="preserve">
+    <value>Det är inte installationskoden. Titta i loggen och försök igen.</value>
+  </data>
+  <data name="Setup.Done.Already" xml:space="preserve">
+    <value>Den här installationen är redan klar.</value>
+  </data>
+  <data name="Setup.Done.Board" xml:space="preserve">
+    <value>KORT</value>
+  </data>
+  <data name="Setup.Done.BoardAt" xml:space="preserve">
+    <value>{0} på {1}</value>
+  </data>
+  <data name="Setup.Done.BoardNoAddress" xml:space="preserve">
+    <value>{0}, ingen adress än</value>
+  </data>
+  <data name="Setup.Done.Group" xml:space="preserve">
+    <value>Skapa en grupp, t.ex. en värmefläkt</value>
+  </data>
+  <data name="Setup.Done.Looking" xml:space="preserve">
+    <value>Appen fortsätter att leta efter ditt reläkort. Du kan ändra dess adress under Inställningar.</value>
+  </data>
+  <data name="Setup.Done.Next" xml:space="preserve">
+    <value>Bra nästa steg</value>
+  </data>
+  <data name="Setup.Done.Ready" xml:space="preserve">
+    <value>Ditt reläkort är redo.</value>
+  </data>
+  <data name="Setup.Done.Relays" xml:space="preserve">
+    <value>RELÄER</value>
+  </data>
+  <data name="Setup.Done.Schedule" xml:space="preserve">
+    <value>Lägg till ett schema, t.ex. för {0}</value>
+  </data>
+  <data name="Setup.Done.Title" xml:space="preserve">
+    <value>Allt klart</value>
+  </data>
+  <data name="Setup.Done.TitleName" xml:space="preserve">
+    <value>Allt klart, {0}</value>
+  </data>
+  <data name="Setup.Elsewhere.Email" xml:space="preserve">
+    <value>Contactor svarar nu bara genom {0}. Öppna den där och logga in med din e-post.</value>
+  </data>
+  <data name="Setup.Elsewhere.EmailGoesOn" xml:space="preserve">
+    <value>Contactor svarar nu bara genom {0}. Öppna den där och logga in med din e-post: guiden fortsätter där.</value>
+  </data>
+  <data name="Setup.Elsewhere.Tailscale" xml:space="preserve">
+    <value>Contactor svarar nu bara genom {0}. Öppna den där, på en telefon eller dator på ditt Tailscale-nätverk.</value>
+  </data>
+  <data name="Setup.Elsewhere.TailscaleGoesOn" xml:space="preserve">
+    <value>Contactor svarar nu bara genom {0}. Öppna den där, på en telefon eller dator på ditt Tailscale-nätverk: guiden fortsätter där.</value>
+  </data>
+  <data name="Setup.Elsewhere.Title" xml:space="preserve">
+    <value>Fortsätt på din nya adress</value>
+  </data>
+  <data name="Setup.InUse" xml:space="preserve">
+    <value>{0} används</value>
+  </data>
+  <data name="Setup.InUse.Hidden" xml:space="preserve">
+    <value>{0}, {1} dolda</value>
+  </data>
+  <data name="Setup.InUse.None" xml:space="preserve">
+    <value>Inga används</value>
+  </data>
+  <data name="Setup.None.OnlyHere" xml:space="preserve">
+    <value>"Ingen inloggning" fungerar bara när appen bara finns på det här nätverket.</value>
+  </data>
+  <data name="Setup.None.Warning" xml:space="preserve">
+    <value>Alla på ditt nätverk kan styra reläerna, och händelserna kan inte visa vem som gjorde det. Välj en inloggning för att nå appen utifrån.</value>
+  </data>
+  <data name="Setup.NotRecommendedTag" xml:space="preserve">
+    <value>REKOMMENDERAS INTE</value>
+  </data>
+  <data name="Setup.Only.None" xml:space="preserve">
+    <value>Finns inte än.</value>
+  </data>
+  <data name="Setup.Only.Or" xml:space="preserve">
+    <value> eller </value>
+  </data>
+  <data name="Setup.Only.This" xml:space="preserve">
+    <value>Bara på det här nätverket.</value>
+  </data>
+  <data name="Setup.Only.With" xml:space="preserve">
+    <value>Bara med {0}.</value>
+  </data>
+  <data name="Setup.Open" xml:space="preserve">
+    <value>Öppna {0}</value>
+  </data>
+  <data name="Setup.Part1" xml:space="preserve">
+    <value>DEL 1 AV 2 · APPEN</value>
+  </data>
+  <data name="Setup.Part2" xml:space="preserve">
+    <value>DEL 2 AV 2 · KORTET</value>
+  </data>
+  <data name="Setup.Recommended" xml:space="preserve">
+    <value>Rekommenderas med {0}: {1}.</value>
+  </data>
+  <data name="Setup.RecommendedTag" xml:space="preserve">
+    <value>REKOMMENDERAS</value>
+  </data>
+  <data name="Setup.Refused.AccessDenied" xml:space="preserve">
+    <value>Åtkomst nekad.</value>
+  </data>
+  <data name="Setup.Refused.OwnNetwork" xml:space="preserve">
+    <value>Contactor kan bara öppnas på sitt eget nätverk.</value>
+  </data>
+  <data name="Setup.RelayError" xml:space="preserve">
+    <value>Relä {0}: {1}</value>
+  </data>
+  <data name="Setup.SignIn.CloudflareAccess.Description" xml:space="preserve">
+    <value>En kod via e-post, genom Cloudflare. Vem som får logga in ställs in i Cloudflare.</value>
+  </data>
+  <data name="Setup.SignIn.CloudflareAccess.Name" xml:space="preserve">
+    <value>Cloudflare Access</value>
+  </data>
+  <data name="Setup.SignIn.Label" xml:space="preserve">
+    <value>Inloggningar</value>
+  </data>
+  <data name="Setup.SignIn.None.Description" xml:space="preserve">
+    <value>Alla som kan öppna appen kan styra reläerna, och händelserna kan inte visa vem som gjorde det.</value>
+  </data>
+  <data name="Setup.SignIn.None.Name" xml:space="preserve">
+    <value>Ingen inloggning</value>
+  </data>
+  <data name="Setup.SignIn.TailscaleIdentity.Description" xml:space="preserve">
+    <value>Ditt Tailscale-konto: Tailscale talar om vem varje person är. Vem som får komma in ställs in i Tailscale.</value>
+  </data>
+  <data name="Setup.SignIn.TailscaleIdentity.Name" xml:space="preserve">
+    <value>Tailscale-identitet</value>
+  </data>
+  <data name="Setup.SignIn.Title" xml:space="preserve">
+    <value>Hur loggar folk in?</value>
+  </data>
+  <data name="Setup.Simplest" xml:space="preserve">
+    <value>ENKLAST</value>
+  </data>
+  <data name="Setup.Step" xml:space="preserve">
+    <value>STEG {0} AV {1}</value>
+  </data>
+  <data name="Setup.Tailscale.Answers" xml:space="preserve">
+    <value>Contactor svarar på https://{0}.</value>
+  </data>
+  <data name="Setup.Tailscale.Approve" xml:space="preserve">
+    <value>Godkänn {0} i Tailscales admin console, under Machines. Contactor fortsätter av sig själv.</value>
+  </data>
+  <data name="Setup.Tailscale.AuthKey" xml:space="preserve">
+    <value>Auth-nyckeln är den långa koden som börjar med tskey-, från Settings → Keys i Tailscales admin console.</value>
+  </data>
+  <data name="Setup.Tailscale.CheckFailed" xml:space="preserve">
+    <value>Contactor kunde inte fråga Tailscale hur det står till. Den försöker igen.</value>
+  </data>
+  <data name="Setup.Tailscale.Expiry" xml:space="preserve">
+    <value>I Tailscales admin console, under Machines, stänger du av key expiry för {0}, annars lämnar den nätverket efter några månader. Under Access controls låter du enheter nå den bara på port 443.</value>
+  </data>
+  <data name="Setup.Tailscale.Https" xml:space="preserve">
+    <value>Slå på HTTPS för ditt Tailscale-nätverk, med Funnel avstängt. Contactor fortsätter av sig själv.</value>
+  </data>
+  <data name="Setup.Tailscale.Joining" xml:space="preserve">
+    <value>Ansluter till ditt Tailscale-nätverk</value>
+  </data>
+  <data name="Setup.Tailscale.KeyHint" xml:space="preserve">
+    <value>Tailscales admin console → Settings → Keys → Generate auth key, inte ephemeral. Under DNS slår du också på MagicDNS och HTTPS Certificates.</value>
+  </data>
+  <data name="Setup.Tailscale.KeyLabel" xml:space="preserve">
+    <value>Auth-nyckel</value>
+  </data>
+  <data name="Setup.Tailscale.KeyRefused" xml:space="preserve">
+    <value>Tailscale tog inte emot auth-nyckeln: {0}</value>
+  </data>
+  <data name="Setup.Tailscale.KeyTimedOut" xml:space="preserve">
+    <value>Tailscale tog inte emot auth-nyckeln: Tailscale svarade inte i tid.</value>
+  </data>
+  <data name="Setup.Tailscale.Minute" xml:space="preserve">
+    <value>Det kan ta en minut.</value>
+  </data>
+  <data name="Setup.Tailscale.Name" xml:space="preserve">
+    <value>Namnet får bara innehålla bokstäverna a till z, siffror och bindestreck, t.ex. contactor.</value>
+  </data>
+  <data name="Setup.Tailscale.NameHint" xml:space="preserve">
+    <value>Folk öppnar Contactor på https://{0}.{1}.ts.net.</value>
+  </data>
+  <data name="Setup.Tailscale.NameLabel" xml:space="preserve">
+    <value>Namn på ditt Tailscale-nätverk</value>
+  </data>
+  <data name="Setup.Tailscale.NeedsKey" xml:space="preserve">
+    <value>Tailscale behöver en auth-nyckel: spara en i installationsguiden.</value>
+  </data>
+  <data name="Setup.Tailscale.NoServeAddress" xml:space="preserve">
+    <value>Contactor har ingen adress för Tailscale Serve (Tailscale:ServeAddress).</value>
+  </data>
+  <data name="Setup.Tailscale.Online" xml:space="preserve">
+    <value>På ditt Tailscale-nätverk</value>
+  </data>
+  <data name="Setup.Tailscale.ServeFailed" xml:space="preserve">
+    <value>Tailscale Serve startade inte: {0}</value>
+  </data>
+  <data name="Setup.Tailscale.ServeNoAnswer" xml:space="preserve">
+    <value>Tailscale Serve svarade inte. Contactor försöker igen.</value>
+  </data>
+  <data name="Setup.Tailscale.ServeNotTaken" xml:space="preserve">
+    <value>Tailscale Serve tog inte emot appen. Contactor försöker igen.</value>
+  </data>
+  <data name="Setup.Tailscale.Stopped" xml:space="preserve">
+    <value>Tailscale är stoppat på den här datorn.</value>
+  </data>
+  <data name="Setup.Tailscale.TurnOnHttps" xml:space="preserve">
+    <value>Öppna Tailscale för att slå på HTTPS</value>
+  </data>
+  <data name="Setup.Tailscale.YourNetwork" xml:space="preserve">
+    <value>ditt-natverk</value>
+  </data>
+  <data name="Setup.TailscaleIdentity.OnlyTailscale" xml:space="preserve">
+    <value>Tailscale-identitet fungerar bara när folk når appen genom Tailscale.</value>
+  </data>
+  <data name="Setup.TailscaleIdentity.Wait" xml:space="preserve">
+    <value>Vänta tills Contactor finns på ditt Tailscale-nätverk: det är där folk öppnar den.</value>
+  </data>
+  <data name="Setup.ToRelays" xml:space="preserve">
+    <value>Gå till Reläer</value>
+  </data>
+  <data name="Setup.Tunnel.Address" xml:space="preserve">
+    <value>Adress</value>
+  </data>
+  <data name="Setup.Tunnel.AddressHint" xml:space="preserve">
+    <value>Tunnelns publika värdnamn: där folk ska öppna Contactor. Peka det mot {0} i Cloudflare.</value>
+  </data>
+  <data name="Setup.Tunnel.Answers" xml:space="preserve">
+    <value>Cloudflare svarar på {0}.</value>
+  </data>
+  <data name="Setup.Tunnel.Connected" xml:space="preserve">
+    <value>Tunneln är ansluten</value>
+  </data>
+  <data name="Setup.Tunnel.Minute" xml:space="preserve">
+    <value>Det kan ta en minut. Kontrollera token om den inte ansluter.</value>
+  </data>
+  <data name="Setup.Tunnel.Token" xml:space="preserve">
+    <value>Tunneltoken</value>
+  </data>
+  <data name="Setup.Tunnel.TokenHint" xml:space="preserve">
+    <value>Zero Trust → Networks → Tunnels → din tunnel. Det är den långa koden efter {0} i installationskommandot.</value>
+  </data>
+  <data name="Setup.Tunnel.Waiting" xml:space="preserve">
+    <value>Väntar på att tunneln ska ansluta</value>
+  </data>
+  <data name="Setup.Unchanged" xml:space="preserve">
+    <value>oförändrad</value>
+  </data>
+  <data name="Setup.WayIn.Cloudflare.Description" xml:space="preserve">
+    <value>Cloudflare Tunnel: en publik länk på din egen domän. Kräver ett Cloudflare-konto och en domän.</value>
+  </data>
+  <data name="Setup.WayIn.Cloudflare.Name" xml:space="preserve">
+    <value>Cloudflare</value>
+  </data>
+  <data name="Setup.WayIn.Intro" xml:space="preserve">
+    <value>Var ska folk kunna öppna Contactor?</value>
+  </data>
+  <data name="Setup.WayIn.Label" xml:space="preserve">
+    <value>Åtkomst</value>
+  </data>
+  <data name="Setup.WayIn.Local.Description" xml:space="preserve">
+    <value>Hemma eller i verkstaden, på adressen till datorn som Contactor körs på.</value>
+  </data>
+  <data name="Setup.WayIn.Local.Name" xml:space="preserve">
+    <value>Bara på det här nätverket</value>
+  </data>
+  <data name="Setup.WayIn.Tailscale.Description" xml:space="preserve">
+    <value>Tailscale Serve: bara telefoner och datorer på ditt Tailscale-nätverk kan öppna den. Var och en behöver Tailscale-appen.</value>
+  </data>
+  <data name="Setup.WayIn.Tailscale.Name" xml:space="preserve">
+    <value>Tailscale</value>
+  </data>
+  <data name="Setup.WayIn.Title" xml:space="preserve">
+    <value>Hur når folk appen?</value>
+  </data>
+  <data name="Setup.WithSignIn" xml:space="preserve">
+    <value>Med en inloggning visar händelserna vem som gjorde vad.</value>
+  </data>
+  <data name="Updates.Ask" xml:space="preserve">
+    <value>Uppdatera till {0}?</value>
+  </data>
+  <data name="Updates.Ask.Relays" xml:space="preserve">
+    <value>Reläerna stannar som de är. Scheman och automatiska avstängningar kommer ikapp när den är tillbaka.</value>
+  </data>
+  <data name="Updates.Ask.Restart" xml:space="preserve">
+    <value>Contactor startar om. Det tar ungefär en minut, och appen svarar inte under tiden.</value>
+  </data>
+  <data name="Updates.Available" xml:space="preserve">
+    <value>Version {0} finns</value>
+  </data>
+  <data name="Updates.Backup" xml:space="preserve">
+    <value>Kunde inte säkerhetskopiera före uppdateringen</value>
+  </data>
+  <data name="Updates.Backup.Text" xml:space="preserve">
+    <value>Inget ändrades. Försök igen om en stund.</value>
+  </data>
+  <data name="Updates.Cancelled" xml:space="preserve">
+    <value>Uppdateringen avbröts</value>
+  </data>
+  <data name="Updates.CheckFailed" xml:space="preserve">
+    <value>Kunde inte söka efter uppdateringar.</value>
+  </data>
+  <data name="Updates.CheckFailedSince" xml:space="preserve">
+    <value>Kunde inte söka efter uppdateringar. Senast kontrollerat {0} kl. {1}.</value>
+  </data>
+  <data name="Updates.Checked" xml:space="preserve">
+    <value>Kontrollerat {0} kl. {1}.</value>
+  </data>
+  <data name="Updates.DayFormat" xml:space="preserve">
+    <value>d MMMM</value>
+  </data>
+  <data name="Updates.Development" xml:space="preserve">
+    <value>Det här är en utvecklingsversion av Contactor. Den uppdateras inte härifrån.</value>
+  </data>
+  <data name="Updates.Done" xml:space="preserve">
+    <value>Uppdaterad till {0}</value>
+  </data>
+  <data name="Updates.Done.At" xml:space="preserve">
+    <value>Kl. {0}.</value>
+  </data>
+  <data name="Updates.Done.AtBy" xml:space="preserve">
+    <value>Kl. {0}, av {1}.</value>
+  </data>
+  <data name="Updates.Download" xml:space="preserve">
+    <value>Kunde inte ladda ner {0}</value>
+  </data>
+  <data name="Updates.Download.Text" xml:space="preserve">
+    <value>Inget ändrades. Kontrollera internetanslutningen och försök igen.</value>
+  </data>
+  <data name="Updates.Failed" xml:space="preserve">
+    <value>Uppdateringen till {0} startade inte</value>
+  </data>
+  <data name="Updates.Gigabytes" xml:space="preserve">
+    <value>{0:0.0} GB</value>
+  </data>
+  <data name="Updates.Have" xml:space="preserve">
+    <value>Du har version {0}.</value>
+  </data>
+  <data name="Updates.Interrupted" xml:space="preserve">
+    <value>Uppdateringen till {0} avbröts</value>
+  </data>
+  <data name="Updates.Log" xml:space="preserve">
+    <value>Vad som hände</value>
+  </data>
+  <data name="Updates.NewVersion" xml:space="preserve">
+    <value>den nya versionen</value>
+  </data>
+  <data name="Updates.Newest" xml:space="preserve">
+    <value>Du har den senaste versionen, {0}.</value>
+  </data>
+  <data name="Updates.NoAnswer" xml:space="preserve">
+    <value>Uppdateringen startade inte</value>
+  </data>
+  <data name="Updates.NoAnswer.Text" xml:space="preserve">
+    <value>Uppdateringshjälpen på den här datorn svarade inte. Inget ändrades. Kör installationskommandot igen för att laga den, och försök sedan igen.</value>
+  </data>
+  <data name="Updates.NoHelper" xml:space="preserve">
+    <value>Contactor uppdateras där den installerades, t.ex. i Portainer, Unraid eller med Docker Compose. Installerad med installationskommandot? Kör det igen: det lägger till det som "Uppdatera nu" behöver.</value>
+  </data>
+  <data name="Updates.NoHelper.Short" xml:space="preserve">
+    <value>Contactor uppdateras där den installerades, t.ex. i Portainer, Unraid eller med Docker Compose.</value>
+  </data>
+  <data name="Updates.NoLog" xml:space="preserve">
+    <value>Det finns ingen logg för den här uppdateringen.</value>
+  </data>
+  <data name="Updates.NotYet" xml:space="preserve">
+    <value>{0} kan inte laddas ner än</value>
+  </data>
+  <data name="Updates.NothingChanged" xml:space="preserve">
+    <value>Inget ändrades.</value>
+  </data>
+  <data name="Updates.NothingChanged.Later" xml:space="preserve">
+    <value>Inget ändrades. Försök igen senare.</value>
+  </data>
+  <data name="Updates.NothingChanged.TryAgain" xml:space="preserve">
+    <value>Inget ändrades. Försök igen.</value>
+  </data>
+  <data name="Updates.Now" xml:space="preserve">
+    <value>Uppdatera nu</value>
+  </data>
+  <data name="Updates.Now.Hint" xml:space="preserve">
+    <value>Contactor startar om. Det tar ungefär en minut. Reläerna stannar som de är, och scheman kommer ikapp efteråt.</value>
+  </data>
+  <data name="Updates.Refused.Development" xml:space="preserve">
+    <value>Det här är en utvecklingsversion: den uppdateras inte härifrån.</value>
+  </data>
+  <data name="Updates.Refused.Newest" xml:space="preserve">
+    <value>Du har den senaste versionen.</value>
+  </data>
+  <data name="Updates.Refused.NoHelper" xml:space="preserve">
+    <value>Contactor kan inte uppdatera sig själv på den här datorn.</value>
+  </data>
+  <data name="Updates.Refused.Running" xml:space="preserve">
+    <value>En uppdatering pågår redan.</value>
+  </data>
+  <data name="Updates.Refused.Switching" xml:space="preserve">
+    <value>En grupp startar eller efterkör. Uppdatera när den är klar.</value>
+  </data>
+  <data name="Updates.ShowLog" xml:space="preserve">
+    <value>Visa vad som hände</value>
+  </data>
+  <data name="Updates.Signature" xml:space="preserve">
+    <value>{0} klarade inte kontrollen att den kommer från oss</value>
+  </data>
+  <data name="Updates.Signature.Text" xml:space="preserve">
+    <value>Så den installerades inte. Inget ändrades. Försök igen senare.</value>
+  </data>
+  <data name="Updates.Space" xml:space="preserve">
+    <value>Inte tillräckligt med plats för {0}</value>
+  </data>
+  <data name="Updates.Space.Needs" xml:space="preserve">
+    <value>Inget ändrades. Uppdateringen behöver {0} ledigt diskutrymme, och det finns {1}. Gör plats och försök igen.</value>
+  </data>
+  <data name="Updates.Space.Text" xml:space="preserve">
+    <value>Inget ändrades. Gör plats på disken och försök igen.</value>
+  </data>
+  <data name="Updates.Splash.Title" xml:space="preserve">
+    <value>Contactor uppdateras</value>
+  </data>
+  <data name="Updates.Splash.To" xml:space="preserve">
+    <value>Till version {0}. Det tar ungefär en minut, och sidan kommer tillbaka av sig själv.</value>
+  </data>
+  <data name="Updates.Splash.ToNew" xml:space="preserve">
+    <value>Till en ny version. Det tar ungefär en minut, och sidan kommer tillbaka av sig själv.</value>
+  </data>
+  <data name="Updates.Stale" xml:space="preserve">
+    <value>Uppdateringen till {0} blev inte klar</value>
+  </data>
+  <data name="Updates.Started" xml:space="preserve">
+    <value>Startad kl. {0}. Reläerna stannar som de är.</value>
+  </data>
+  <data name="Updates.StartedBy" xml:space="preserve">
+    <value>Startad av {0} kl. {1}. Reläerna stannar som de är.</value>
+  </data>
+  <data name="Updates.Step.Backup" xml:space="preserve">
+    <value>Säkerhetskopierar</value>
+  </data>
+  <data name="Updates.Step.Check" xml:space="preserve">
+    <value>Kontrollerar den nya versionen</value>
+  </data>
+  <data name="Updates.Step.Download" xml:space="preserve">
+    <value>Laddar ner {0}</value>
+  </data>
+  <data name="Updates.Step.Now" xml:space="preserve">
+    <value>{0}…</value>
+  </data>
+  <data name="Updates.Step.Restart" xml:space="preserve">
+    <value>Startar om</value>
+  </data>
+  <data name="Updates.Step.Verify" xml:space="preserve">
+    <value>Kontrollerar att den kommer från oss</value>
+  </data>
+  <data name="Updates.Step.Waiting" xml:space="preserve">
+    <value>Väntar på att reläerna ska slå om klart</value>
+  </data>
+  <data name="Updates.Switching" xml:space="preserve">
+    <value>Uppdateringen stoppades eftersom reläerna fortfarande slog om</value>
+  </data>
+  <data name="Updates.Switching.Text" xml:space="preserve">
+    <value>Försök igen senare. Inget ändrades.</value>
+  </data>
+  <data name="Updates.Title" xml:space="preserve">
+    <value>Uppdateringar</value>
+  </data>
+  <data name="Updates.Today" xml:space="preserve">
+    <value>i dag</value>
+  </data>
+  <data name="Updates.Update" xml:space="preserve">
+    <value>Uppdatera</value>
+  </data>
+  <data name="Updates.Updating" xml:space="preserve">
+    <value>Uppdaterar från {0} till {1}.</value>
+  </data>
+  <data name="Updates.VersionBefore" xml:space="preserve">
+    <value>versionen innan</value>
+  </data>
+  <data name="Updates.WentBack" xml:space="preserve">
+    <value>Uppdateringen till {0} fungerade inte</value>
+  </data>
+  <data name="Updates.WentBack.Text" xml:space="preserve">
+    <value>Contactor gick tillbaka till {0} kl. {1}. Inget gick förlorat.</value>
+  </data>
+  <data name="Updates.WhatsNew" xml:space="preserve">
+    <value>Nyheter</value>
+  </data>
+  <data name="Updates.Yesterday" xml:space="preserve">
+    <value>i går</value>
+  </data>
+</root>

@@ -28,7 +28,7 @@ public sealed class AppBuildTests
     [InlineData(null, "Development version")]
     public void Should_ShowTheVersion_AsTheAppWritesIt(string? informational, string text)
     {
-        Assert.Equal(text, AppBuild.Of(informational).Text(TestTexts.For<Contactor.Web.Resources.CommonTexts>()));
+        Assert.Equal(text, AppBuild.Of(informational).Text(TestTexts.Localizer));
     }
 
     [Fact]

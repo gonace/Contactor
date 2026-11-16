@@ -15,15 +15,14 @@
 @inject LocalClock Clock
 @inject BoardTrafficSetting Debugging
 @inject AppLanguage Language
-@inject IStringLocalizer<SettingsTexts> Texts
 @inject RelayStatusText RelayStatus
 @inject BoardProblemText ProblemText
 
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Settings"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Settings"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>@Common["Common.Screen.Settings"]</h1>
+        <h1>@Texts["Common.Screen.Settings"]</h1>
     </header>
 
     <main class="content">
@@ -35,7 +34,7 @@
             {
                 @* One board: its card as it always was. *@
                 <div class="board-stack">
-                    <BoardForm BoardId="only.BoardId" Title="@Common["Common.Screen.RelayBoard"]" @key="only.BoardId" />
+                    <BoardForm BoardId="only.BoardId" Title="@Texts["Common.Screen.RelayBoard"]" @key="only.BoardId" />
                     @AddBoard
                 </div>
             }
@@ -45,7 +44,7 @@
                     <h2>@Texts["Settings.Boards"]</h2>
                     @if (Boards.Count == 0)
                     {
-                        <p class="hint">@Common["Common.NoBoard"]</p>
+                        <p class="hint">@Texts["Common.NoBoard"]</p>
                     }
                     else
                     {
@@ -80,7 +79,7 @@
                             <div class="row">
                                 <input id="@($"name-{person.Index}")" type="text" maxlength="@Contactor.Web.Persistence.User.DisplayNameMaxLength"
                                        autocomplete="off" @bind="person.Name" @bind:event="oninput" />
-                                <button type="submit" class="small" disabled="@_busy">@Common["Common.Save"]</button>
+                                <button type="submit" class="small" disabled="@_busy">@Texts["Common.Save"]</button>
                             </div>
                         </div>
                         @if (person.Message is not null)
@@ -112,7 +111,7 @@
                     <button type="button" class="secondary" disabled="@_busy" @onclick="BackupNowAsync">@Texts["Settings.Backups.Make"]</button>
                     @if (_latest is not null)
                     {
-                        <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">@Common["Common.Download"]</a>
+                        <a class="download" href="@BackupEndpoints.LatestPath.TrimStart('/')" download data-enhance-nav="false">@Texts["Common.Download"]</a>
                     }
                 </div>
             </section>
@@ -152,11 +151,11 @@
     {
         <a href="board/new" class="add-board">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            @Common["Common.AddBoard"]
+            @Texts["Common.AddBoard"]
         </a>
     };
 
-    private string VersionText => AppBuild.Current.Text(Common);
+    private string VersionText => AppBuild.Current.Text(Texts);
 
     private SignedInUser? _user;
     private List<Person> _people = [];
@@ -187,7 +186,7 @@
     // "Velleman VM201 · 8 relays · 192.168.1.50"
     private string BoardLine(LiveBoard board)
     {
-        var model = board.Model?.Name ?? Common["Common.NoModel"];
+        var model = board.Model?.Name ?? Texts["Common.NoModel"];
         var relays = Texts.Plural("Settings.Relays", board.Capabilities.RelayCount);
         return board.Endpoint.HasHost
             ? Texts["Settings.BoardLine.Host", model, relays, board.Endpoint.Host]
@@ -222,7 +221,7 @@
         try
         {
             var error = await Users.RenameAsync(person.Email, person.Name, CancellationToken.None);
-            (person.Message, person.Saved) = error is null ? (Common["Common.Saved"].Value, true) : (error, false);
+            (person.Message, person.Saved) = error is null ? (Texts["Common.Saved"].Value, true) : (error, false);
             if (error is null)
             {
                 person.Name = person.Name.Trim();
@@ -271,7 +270,7 @@
     }
 
     /// <summary>A backup's size: "68 kB" under a megabyte, otherwise "1.3 MB", in the language's number format.</summary>
-    public static string Size(IStringLocalizer<SettingsTexts> texts, long bytes)
+    public static string Size(IStringLocalizer<Texts> texts, long bytes)
     {
         ArgumentNullException.ThrowIfNull(texts);
         return bytes < 1024 * 1024

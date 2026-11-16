@@ -25,23 +25,20 @@
 @inject ILogger<GroupDetail> Log
 @inject RelayStatusText StatusText
 @inject GroupStatusText GroupStatus
-@inject IStringLocalizer<GroupsTexts> Texts
-@inject IStringLocalizer<RelaysTexts> RelayTexts
-@inject IStringLocalizer<BoardsTexts> BoardTexts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", _group?.Name ?? Common["Common.Screen.Group"].Value])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", _group?.Name ?? Texts["Common.Screen.Group"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            @Common["Common.Screen.Relays"]
+            @Texts["Common.Screen.Relays"]
         </a>
         @if (_group is not null)
         {
             @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
-            <button type="submit" form="group-form" class="save-top" disabled="@_busy">@Common["Common.Save"]</button>
+            <button type="submit" form="group-form" class="save-top" disabled="@_busy">@Texts["Common.Save"]</button>
         }
     </header>
 
@@ -122,7 +119,7 @@
                                         var blockedBy = BlockedBy(relay.RelayId);
                                         <li class="relay" @key="relay.RelayId">
                                             <div class="relay-text">
-                                                <span class="label">@RelayTexts["Relays.RelayLabel", relay.Channel]</span>
+                                                <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
                                                 <span class="relay-name">@relay.Name</span>
                                                 @if (CanChangeMembers && _editor.RelayCount > RelayGroup.MinMembers)
                                                 {
@@ -135,13 +132,13 @@
                                                         class="member-toggle"
                                                         data-vibrate
                                                         aria-pressed="@(on ? "true" : "false")"
-                                                        aria-label="@Common[on ? "Common.TurnOff" : "Common.TurnOn", relay.Name]"
+                                                        aria-label="@Texts[on ? "Common.TurnOff" : "Common.TurnOn", relay.Name]"
                                                         disabled="@(!State.IsConnected || _busy || OrderChanged || Missing is not null || (!on && blockedBy is not null))"
-                                                        @onclick="() => ToggleMemberAsync(relay.RelayId, on)">@Common[on ? "Common.Switch.On" : "Common.Switch.Off"]</button>
+                                                        @onclick="() => ToggleMemberAsync(relay.RelayId, on)">@Texts[on ? "Common.Switch.On" : "Common.Switch.Off"]</button>
                                             }
                                             else
                                             {
-                                                <button type="button" class="member-toggle unknown" aria-label="@Common["Common.NameAndState", relay.Name, StatusText.Waiting]" disabled>–</button>
+                                                <button type="button" class="member-toggle unknown" aria-label="@Texts["Common.NameAndState", relay.Name, StatusText.Waiting]" disabled>–</button>
                                             }
                                             @if (_memberError is { } error && error.RelayId == relay.RelayId)
                                             {
@@ -216,11 +213,11 @@
                 </section>
 
                 <section class="limits">
-                    <h2>@RelayTexts["Relays.Detail.Limit"]</h2>
+                    <h2>@Texts["Relays.Detail.Limit"]</h2>
                     <div class="choices">
                         @foreach (var limit in RelaySettingsHandler.Limits)
                         {
-                            <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@(limit is { } m ? Common["Common.Hours", m / 60] : Common["Common.Never"])</button>
+                            <button type="button" aria-pressed="@(_maxOnMinutes == limit ? "true" : "false")" @onclick="() => _maxOnMinutes = limit">@(limit is { } m ? Texts["Common.Hours", m / 60] : Texts["Common.Never"])</button>
                         }
                     </div>
                     <p class="hint">@Texts["Groups.LimitHint"]</p>
@@ -228,8 +225,8 @@
 
                 <section class="schedules">
                     <div class="section-head">
-                        <h2>@RelayTexts["Relays.Detail.Schedules"]</h2>
-                        <a href="group/@Id/schedule/new">@Common["Common.Add"]</a>
+                        <h2>@Texts["Relays.Detail.Schedules"]</h2>
+                        <a href="group/@Id/schedule/new">@Texts["Common.Add"]</a>
                     </div>
                     @if (_schedules.Count == 0)
                     {
@@ -247,15 +244,15 @@
                                     aria-pressed="@(schedule.IsEnabled ? "true" : "false")"
                                     aria-label="@($"{ScheduleText.ShortDays(schedule.Days)} {ScheduleText.Times(schedule.OnTime, schedule.OffTime)}")"
                                     disabled="@_busy"
-                                    @onclick="() => SetEnabledAsync(schedule)">@Common[schedule.IsEnabled ? "Common.Schedule.Active" : "Common.Schedule.Paused"]</button>
+                                    @onclick="() => SetEnabledAsync(schedule)">@Texts[schedule.IsEnabled ? "Common.Schedule.Active" : "Common.Schedule.Paused"]</button>
                         </div>
                     }
                 </section>
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>@Common["Common.Screen.Events"]</h2>
-                        <a href="events">@Common["Common.AllEvents"]</a>
+                        <h2>@Texts["Common.Screen.Events"]</h2>
+                        <a href="events">@Texts["Common.AllEvents"]</a>
                     </div>
                     @if (_events.Count == 0)
                     {
@@ -298,7 +295,7 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">@Common["Common.Save"]</button>
+                <button type="submit" disabled="@_busy">@Texts["Common.Save"]</button>
             </div>
         </form>
 
@@ -309,8 +306,8 @@
                     <h2 id="confirm-title">@Texts["Groups.Delete.Title"]</h2>
                     <p>@Texts["Groups.Delete.Text"]</p>
                     <div class="dialog-buttons">
-                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Common["Common.Cancel"]</button>
-                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">@Common["Common.Delete"]</button>
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Texts["Common.Cancel"]</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">@Texts["Common.Delete"]</button>
                     </div>
                 </div>
             </div>
@@ -344,7 +341,7 @@
     private SignedInUser? _user;
     private bool _loaded;
     private bool _busy;
-    private string SomethingWentWrong => Common["Common.SomethingWrongTryAgain"];
+    private string SomethingWentWrong => Texts["Common.SomethingWrongTryAgain"];
 
     private ITimer? _tick;
     private bool _changedElsewhere;
@@ -546,8 +543,8 @@
                 }
             </select>
             <div class="add-buttons">
-                <button type="button" class="cancel" @onclick="() => _addingTo = null">@Common["Common.Cancel"]</button>
-                <button type="button" class="confirm" @onclick="AddRelay">@Common["Common.Add"]</button>
+                <button type="button" class="cancel" @onclick="() => _addingTo = null">@Texts["Common.Cancel"]</button>
+                <button type="button" class="confirm" @onclick="AddRelay">@Texts["Common.Add"]</button>
             </div>
         </div>
     };
@@ -561,18 +558,18 @@
 
         if (email == _user?.Email)
         {
-            return RelayTexts["Relays.By.You"];
+            return Texts["Relays.By.You"];
         }
 
         return email switch
         {
-            EventActors.Schedule => RelayTexts["Relays.By.Schedule"],
-            EventActors.AutoOff => RelayTexts["Relays.By.AutoOff"],
-            EventActors.External => RelayTexts["Relays.By.Outside"],
+            EventActors.Schedule => Texts["Relays.By.Schedule"],
+            EventActors.AutoOff => Texts["Relays.By.AutoOff"],
+            EventActors.External => Texts["Relays.By.Outside"],
             _ when _names.TryGetValue(email, out var name) => name,
 
             // An input that is no longer in the app (a removed board's) has no name, and isn't an e-mail.
-            _ when EventActors.TryInput(email, out _) => RelayTexts["Relays.By.RemovedInput"],
+            _ when EventActors.TryInput(email, out _) => Texts["Relays.By.RemovedInput"],
             _ => IdentityRules.DisplayNameFor(email),
         };
     }
@@ -599,11 +596,11 @@
         }
         catch (BoardClosedException)
         {
-            _toggleError = BoardTexts["Boards.BeingRemoved"];
+            _toggleError = Texts["Boards.BeingRemoved"];
         }
         catch (BoardNotConnectedException)
         {
-            _toggleError = Common["Common.BoardNotResponding"];
+            _toggleError = Texts["Common.BoardNotResponding"];
         }
         catch (Exception ex)
         {
@@ -635,11 +632,11 @@
         }
         catch (BoardClosedException)
         {
-            _memberError = (relayId, BoardTexts["Boards.BeingRemoved"]);
+            _memberError = (relayId, Texts["Boards.BeingRemoved"]);
         }
         catch (BoardNotConnectedException)
         {
-            _memberError = (relayId, Common["Common.BoardNotResponding"]);
+            _memberError = (relayId, Texts["Common.BoardNotResponding"]);
         }
         catch (Exception ex)
         {

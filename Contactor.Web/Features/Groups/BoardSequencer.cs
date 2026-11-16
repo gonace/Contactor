@@ -28,7 +28,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     private readonly RelayChanges _changes;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<BoardSequencer> _logger;
-    private readonly IStringLocalizer<GroupsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly CancellationTokenSource _ended = new();
@@ -53,7 +53,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         RelayChanges changes,
         TimeProvider timeProvider,
         ILogger<BoardSequencer> logger,
-        IStringLocalizer<GroupsTexts> texts)
+        IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _board = board;

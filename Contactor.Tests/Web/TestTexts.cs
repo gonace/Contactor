@@ -20,24 +20,25 @@ internal static class TestTexts
     private static readonly ResourceManagerStringLocalizerFactory Factory =
         new(Options.Create(new LocalizationOptions()), NullLoggerFactory.Instance);
 
-    public static RelayStatusText RelayStatus { get; } = new(For<RelaysTexts>());
+    /// <summary>The texts, as the app reads them: <c>IStringLocalizer&lt;Texts&gt;</c>.</summary>
+    public static IStringLocalizer<Texts> Localizer { get; } = new StringLocalizer<Texts>(Factory);
 
-    public static BoardsText Boards { get; } = new(For<RelaysTexts>());
+    public static RelayStatusText RelayStatus { get; } = new(Localizer);
 
-    public static ScheduleText Schedules { get; } = new(For<SchedulesTexts>());
+    public static BoardsText Boards { get; } = new(Localizer);
 
-    public static InputsText Inputs { get; } = new(For<InputsTexts>(), RelayStatus);
+    public static ScheduleText Schedules { get; } = new(Localizer);
 
-    public static EventText Events { get; } = new(For<EventsTexts>(), Schedules, Inputs);
+    public static InputsText Inputs { get; } = new(Localizer, RelayStatus);
+
+    public static EventText Events { get; } = new(Localizer, Schedules, Inputs);
 
     /// <summary>The Events screen's handler, for what it says without its database: the days' headings.</summary>
-    public static EventsHandler EventsHandler { get; } = new(null!, null!, Events, For<EventsTexts>());
+    public static EventsHandler EventsHandler { get; } = new(null!, null!, Events, Localizer);
 
-    public static GroupStatusText GroupStatus { get; } = new(For<GroupsTexts>(), RelayStatus, Events);
+    public static GroupStatusText GroupStatus { get; } = new(Localizer, RelayStatus, Events);
 
-    public static GroupPlanText GroupPlan { get; } = new(For<GroupsTexts>(), Events);
+    public static GroupPlanText GroupPlan { get; } = new(Localizer, Events);
 
-    public static SetupText Setup { get; } = new(For<SetupTexts>());
-
-    public static IStringLocalizer<T> For<T>() => new StringLocalizer<T>(Factory);
+    public static SetupText Setup { get; } = new(Localizer);
 }

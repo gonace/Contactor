@@ -14,10 +14,9 @@
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject ILogger<BoardNew> Log
-@inject IStringLocalizer<BoardsTexts> Texts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.AddBoard"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.AddBoard"]])</PageTitle>
 
 <div class="screen">
     <header class="header" inert="@_sheetOpen">
@@ -27,14 +26,14 @@
             {
                 <a href="settings" class="back">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                    @Common["Common.Cancel"]
+                    @Texts["Common.Cancel"]
                 </a>
             }
             else
             {
                 <button type="button" class="back" disabled="@Busy" @onclick="CancelAsync">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                    @Common["Common.Cancel"]
+                    @Texts["Common.Cancel"]
                 </button>
             }
         }
@@ -43,7 +42,7 @@
             var shown = _step;
             <button type="button" class="back" disabled="@Busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                @Common["Common.Back"]
+                @Texts["Common.Back"]
             </button>
         }
         <span class="step-count">@Texts["Boards.New.Step", _step, StepCount]</span>
@@ -93,7 +92,7 @@
         }
         @if (step < StepRelays)
         {
-            <button type="button" disabled="@(Busy || gone || (step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(step)">@Common["Common.Next"]</button>
+            <button type="button" disabled="@(Busy || gone || (step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(step)">@Texts["Common.Next"]</button>
         }
         else
         {
@@ -105,7 +104,7 @@
         }
         @if (step > StepBoard)
         {
-            <button type="button" class="link" disabled="@Busy" @onclick="CancelAsync">@Common["Common.Cancel"]</button>
+            <button type="button" class="link" disabled="@Busy" @onclick="CancelAsync">@Texts["Common.Cancel"]</button>
         }
     </div>
 </div>
@@ -385,7 +384,7 @@
     {
         // An exception that leaves the handler would end the page's live connection.
         Log.LogError(ex, "{What}", what);
-        _error = Common["Common.SomethingWrongTryAgain"];
+        _error = Texts["Common.SomethingWrongTryAgain"];
     }
 
     // A board added or removed elsewhere: the default name, or this board removed meanwhile.

@@ -8,8 +8,6 @@
 @inject SetupHandler Setup
 @inject BoardRegistry Registry
 @inject ILogger<BoardRelaysStep> Log
-@inject IStringLocalizer<BoardsTexts> Texts
-@inject IStringLocalizer<RelaysTexts> RelayTexts
 @inject AppLanguage Language
 
 @* "Name your relays": a name and "In use" for each relay of the board, and "Try". Shared by the setup guide (the first
@@ -27,7 +25,7 @@
     {
         var on = Board.State.IsOn(relay.Channel);
         <li class="relay" @key="relay.Id">
-            <label class="label" for="@($"relay-{relay.Id}")">@RelayTexts["Relays.RelayLabel", relay.Channel]</label>
+            <label class="label" for="@($"relay-{relay.Id}")">@Texts["Relays.RelayLabel", relay.Channel]</label>
             <div class="row">
                 <input id="@($"relay-{relay.Id}")" type="text" maxlength="@Relay.NameMaxLength" autocomplete="off"
                        placeholder="@relay.DefaultName" @bind="relay.Name" @bind:event="oninput" />
@@ -133,12 +131,12 @@
         }
         catch (RelayInGroupException)
         {
-            relay.Error = RelayTexts["Relays.InGroup"];
+            relay.Error = Texts["Relays.InGroup"];
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "\"Try\" failed for relay {RelayId}", relay.Id);
-            relay.Error = Common["Common.SomethingWrongTryAgain"];
+            relay.Error = Texts["Common.SomethingWrongTryAgain"];
         }
         finally
         {

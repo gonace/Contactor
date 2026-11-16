@@ -10,16 +10,15 @@
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject ILogger<BoardPage> Log
-@inject IStringLocalizer<BoardsTexts> Texts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", _name ?? Common["Common.Screen.RelayBoard"].Value])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", _name ?? Texts["Common.Screen.RelayBoard"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
         <a href="settings" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            @Common["Common.Screen.Settings"]
+            @Texts["Common.Screen.Settings"]
         </a>
         @if (_name is not null)
         {
@@ -80,7 +79,7 @@
                     <p class="warning" role="status">@Texts["Boards.Remove.NoContact", preview.Name]</p>
                 }
                 <div class="dialog-buttons">
-                    <button type="button" class="cancel" disabled="@_busy" @onclick="Cancel">@Common["Common.Cancel"]</button>
+                    <button type="button" class="cancel" disabled="@_busy" @onclick="Cancel">@Texts["Common.Cancel"]</button>
                     <button type="button" class="confirm" disabled="@_busy" @onclick="() => RemoveAsync(hasContact)">@Texts[_busy ? "Boards.Remove.Removing" : "Boards.Remove.Confirm"]</button>
                 </div>
             </div>

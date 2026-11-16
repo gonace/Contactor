@@ -10,9 +10,9 @@ namespace Contactor.Web.Features.Boards;
 /// </summary>
 public sealed class BoardLoginText
 {
-    private readonly IStringLocalizer<BoardsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public BoardLoginText(IStringLocalizer<BoardsTexts> texts)
+    public BoardLoginText(IStringLocalizer<Texts> texts)
     {
         _texts = texts;
     }

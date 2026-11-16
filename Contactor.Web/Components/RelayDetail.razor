@@ -21,22 +21,20 @@
 @inject NavigationManager Navigation
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject RelayStatusText StatusText
-@inject IStringLocalizer<RelaysTexts> Texts
-@inject IStringLocalizer<BoardsTexts> BoardTexts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", _relay?.Name ?? Common["Common.Screen.Relay"].Value])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", _relay?.Name ?? Texts["Common.Screen.Relay"].Value])</PageTitle>
 
 <div class="screen">
     <header class="header">
         <a href="" class="back">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-            @Common["Common.Screen.Relays"]
+            @Texts["Common.Screen.Relays"]
         </a>
         @if (_relay is not null)
         {
             @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
-            <button type="submit" form="relay-form" class="save-top" disabled="@_busy">@Common["Common.Save"]</button>
+            <button type="submit" form="relay-form" class="save-top" disabled="@_busy">@Texts["Common.Save"]</button>
         }
     </header>
 
@@ -92,7 +90,7 @@
                         }
                         else if (_beingRemoved)
                         {
-                            <p class="error" role="alert">@BoardTexts["Boards.BeingRemoved"]</p>
+                            <p class="error" role="alert">@Texts["Boards.BeingRemoved"]</p>
                         }
                         else
                         {
@@ -121,7 +119,7 @@
                 <section class="schedules">
                     <div class="section-head">
                         <h2>@Texts["Relays.Detail.Schedules"]</h2>
-                        <a href="relay/@Id/schedule/new">@Common["Common.Add"]</a>
+                        <a href="relay/@Id/schedule/new">@Texts["Common.Add"]</a>
                     </div>
                     @if (_schedules.Count == 0)
                     {
@@ -139,7 +137,7 @@
                                     aria-pressed="@(schedule.IsEnabled ? "true" : "false")"
                                     aria-label="@($"{ScheduleText.ShortDays(schedule.Days)} {ScheduleText.Times(schedule.OnTime, schedule.OffTime)}")"
                                     disabled="@_busy"
-                                    @onclick="() => SetEnabledAsync(schedule)">@Common[schedule.IsEnabled ? "Common.Schedule.Active" : "Common.Schedule.Paused"]</button>
+                                    @onclick="() => SetEnabledAsync(schedule)">@Texts[schedule.IsEnabled ? "Common.Schedule.Active" : "Common.Schedule.Paused"]</button>
                         </div>
                     }
                 </section>
@@ -147,8 +145,8 @@
 
                 <section class="events">
                     <div class="section-head">
-                        <h2>@Common["Common.Screen.Events"]</h2>
-                        <a href="events">@Common["Common.AllEvents"]</a>
+                        <h2>@Texts["Common.Screen.Events"]</h2>
+                        <a href="events">@Texts["Common.AllEvents"]</a>
                     </div>
                     @if (_events.Count == 0)
                     {
@@ -178,7 +176,7 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
-                <button type="submit" disabled="@_busy">@Common["Common.Save"]</button>
+                <button type="submit" disabled="@_busy">@Texts["Common.Save"]</button>
             </div>
         </form>
     }
@@ -306,7 +304,7 @@
 
     private string LimitLabel(int? minutes)
     {
-        return minutes is { } m ? Common["Common.Hours", m / 60] : Common["Common.Never"];
+        return minutes is { } m ? Texts["Common.Hours", m / 60] : Texts["Common.Never"];
     }
 
     private Task ToggleAsync()

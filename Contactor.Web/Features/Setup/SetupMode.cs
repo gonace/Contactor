@@ -53,7 +53,7 @@ public sealed class SetupMode
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         context.Response.ContentType = "text/plain; charset=utf-8";
         // In the app's language: the request already has its culture (UseRequestLocalization runs first).
-        var texts = context.RequestServices.GetRequiredService<IStringLocalizer<SetupTexts>>();
+        var texts = context.RequestServices.GetRequiredService<IStringLocalizer<Texts>>();
         await context.Response.WriteAsync(texts["Setup.Refused.AccessDenied"], context.RequestAborted);
         return false;
     }
