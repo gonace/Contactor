@@ -16,7 +16,7 @@ namespace Contactor.Boards.Waveshare;
 /// Commands are never queued: without a connection they fail at once with <see cref="BoardNotConnectedException"/>, a
 /// poll under way gives way to them, and the board's state right after them is reported at once. Modbus has no login.
 /// </summary>
-public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
+public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long a request may take before it counts as unanswered; also the limit to connect.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -167,6 +167,17 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
 
         _poller.PollNow();
+    }
+
+    /// <summary>
+    /// Ends the connection once the poll or command under way has ended (at most the poller's
+    /// <see cref="BoardPoller{TReading}.DisposeWait"/>): nothing new starts, and nothing is left using the connection
+    /// when it closes. A command that outlasts the wait throws <see cref="BoardNotConnectedException"/>.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        await _poller.DisposeAsync().ConfigureAwait(false);
+        Dispose();
     }
 
     public void Dispose()

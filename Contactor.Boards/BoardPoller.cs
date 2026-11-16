@@ -54,12 +54,13 @@ public interface IPolledBoard<TReading>
 /// to 30 s while it keeps failing. Commands go through <see cref="RunCommandAsync"/>: never behind a poll, and never
 /// to a board that is lost. Protocol-neutral: the board's own code does the talking.
 /// </summary>
-public sealed class BoardPoller<TReading> : IDisposable
+public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
 {
     public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
     public static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
     public const int DefaultFailuresBeforeLost = 3;
+    public static readonly TimeSpan DefaultDisposeWait = TimeSpan.FromSeconds(15);
 
     private readonly IPolledBoard<TReading> _board;
     private readonly TimeProvider _timeProvider;
@@ -86,6 +87,11 @@ public sealed class BoardPoller<TReading> : IDisposable
     private int _failures;
     private bool _lost;
     private int _running;
+
+    // Disposing: no new connect, poll or command, and the run ends. The lock and this source are left to the collector,
+    // so a command still waiting on the lock gets BoardNotConnectedException instead of a lock that is gone.
+    private readonly CancellationTokenSource _disposing = new();
+    private int _disposed;
 
     /// <param name="board">The board to poll.</param>
     /// <param name="timeProvider">The clock for the waits and <see cref="PolledState{TReading}.LastContactUtc"/>.</param>
@@ -120,6 +126,20 @@ public sealed class BoardPoller<TReading> : IDisposable
             field = value;
         }
     } = DefaultFailuresBeforeLost;
+
+    /// <summary>
+    /// How long <see cref="DisposeAsync"/> waits for a connect, poll or command under way to end, so the board's code can
+    /// close its connection without one still using it.
+    /// </summary>
+    public TimeSpan DisposeWait
+    {
+        get;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            field = value;
+        }
+    } = DefaultDisposeWait;
 
     /// <summary>The latest state.</summary>
     public PolledState<TReading> State => Volatile.Read(ref _state);
@@ -192,17 +212,29 @@ public sealed class BoardPoller<TReading> : IDisposable
     public async Task RunSwitchesAsync(Func<CancellationToken, Task<CommandReading<TReading>>> command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
-        if (!State.IsConnected)
+        if (IsDisposed || !State.IsConnected)
         {
             throw new BoardNotConnectedException();
         }
 
         var generation = Volatile.Read(ref _generation);
         Cancel(ref _poll);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using (var waiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposing.Token))
+        {
+            try
+            {
+                await _gate.WaitAsync(waiting.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Disposed while it waited: it never went out.
+                throw new BoardNotConnectedException();
+            }
+        }
+
         try
         {
-            if (!State.IsConnected)
+            if (IsDisposed || !State.IsConnected)
             {
                 throw new BoardNotConnectedException();
             }
@@ -211,6 +243,13 @@ public sealed class BoardPoller<TReading> : IDisposable
             try
             {
                 reading = await command(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsDisposed && !cancellationToken.IsCancellationRequested)
+            {
+                // Disposed while it ran and outlasted DisposeWait, so the board's code may have closed the connection
+                // under it (a null or disposed stream): whatever it throws means "not carried out for sure", as for
+                // any board that went away. Not counted: nothing polls any more.
+                throw new BoardNotConnectedException("The relay board was closed while the command ran; it may not have been carried out.", ex);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
@@ -244,15 +283,49 @@ public sealed class BoardPoller<TReading> : IDisposable
         }
         finally
         {
-            ReleaseGate();
+            _gate.Release();
         }
     }
 
-    /// <summary>Frees the lock; call it once <see cref="RunAsync"/> has ended.</summary>
+    /// <summary>
+    /// Stops new work at once: the run ends, and a command that comes after, or still waits for the lock, throws
+    /// <see cref="BoardNotConnectedException"/>. Doesn't wait for the work under way; <see cref="DisposeAsync"/> does.
+    /// </summary>
     public void Dispose()
     {
-        _gate.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
+        Cancel(ref _poll);
+        _disposing.Cancel();
     }
+
+    /// <summary>
+    /// As <see cref="Dispose"/>, then waits for the connect, poll or command under way to end, at most
+    /// <see cref="DisposeWait"/>, so the board's code can close its connection with nothing still using it. A
+    /// command that outlasts the wait throws <see cref="BoardNotConnectedException"/>, whatever the closed connection
+    /// makes it throw.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        using var bound = new CancellationTokenSource(DisposeWait, _timeProvider);
+        try
+        {
+            await _gate.WaitAsync(bound.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Still under way after DisposeWait: it ends as a command that lost its board.
+            return;
+        }
+
+        _gate.Release();
+    }
+
+    private bool IsDisposed => Volatile.Read(ref _disposed) == 1;
 
     /// <summary>Connects and polls until <paramref name="cancellationToken"/> is cancelled. Call it once.</summary>
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -262,6 +335,9 @@ public sealed class BoardPoller<TReading> : IDisposable
             throw new InvalidOperationException("The poller is already running.");
         }
 
+        // Disposing ends the run as the caller's cancel does.
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposing.Token);
+        cancellationToken = stopping.Token;
         try
         {
             var backoff = MinBackoff;
@@ -336,7 +412,7 @@ public sealed class BoardPoller<TReading> : IDisposable
             }
             finally
             {
-                ReleaseGate();
+                _gate.Release();
             }
 
             // A PollNow from before the connection is no reason to poll twice.
@@ -378,7 +454,7 @@ public sealed class BoardPoller<TReading> : IDisposable
                 finally
                 {
                     Volatile.Write(ref _poll, null);
-                    ReleaseGate();
+                    _gate.Release();
                 }
 
                 await WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -410,7 +486,7 @@ public sealed class BoardPoller<TReading> : IDisposable
                 }
                 finally
                 {
-                    ReleaseGate();
+                    _gate.Release();
                 }
             }
         }
@@ -476,18 +552,6 @@ public sealed class BoardPoller<TReading> : IDisposable
         // Ends the wait at once, so the poller connects again without polling a board that is gone.
         Volatile.Read(ref _wake).TrySetResult();
         return true;
-    }
-
-    // A command still running when the poller is disposed finds the lock gone; nothing waits on it any more.
-    private void ReleaseGate()
-    {
-        try
-        {
-            _gate.Release();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
     }
 
     // Callers hold _gate.

@@ -631,8 +631,137 @@ public sealed class BoardPollerTests
 
         await command;
         Assert.Equal(2, poller.State.Reading);
-        await stop.CancelAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => run);
+
+        // Disposing ends the run, as a cancel does.
+        await run;
+    }
+
+    // Issue #396: the board's code closes its connection once DisposeAsync has ended, so the command under way finishes
+    // first. Nothing new starts meanwhile.
+    [Fact]
+    public async Task Should_WaitForTheCommandUnderWay_BeforeDisposeEnds()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        var run = poller.RunAsync(Cancel);
+        await WaitForPollAsync(board, time, reads: 1);
+        var answer = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var command = poller.RunCommandAsync(
+            _ =>
+            {
+                started.SetResult();
+                return answer.Task;
+            },
+            Cancel);
+        await started.Task;
+
+        var disposing = poller.DisposeAsync().AsTask();
+
+        Assert.False(disposing.IsCompleted);
+        var sent = false;
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => poller.RunCommandAsync(
+            _ =>
+            {
+                sent = true;
+                return Task.FromResult(3);
+            },
+            Cancel));
+        Assert.False(sent);
+        Assert.False(disposing.IsCompleted);
+
+        answer.SetResult(2);
+        await command;
+        await disposing;
+        await run;
+        Assert.Equal(1, board.Reads);
+    }
+
+    // A command still waiting for the lock when the poller is disposed never goes out, and doesn't hang.
+    [Fact]
+    public async Task Should_RefuseACommandWaitingForTheLock_WhenDisposed()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        var run = poller.RunAsync(Cancel);
+        await WaitForPollAsync(board, time, reads: 1);
+        var answer = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = poller.RunCommandAsync(
+            _ =>
+            {
+                started.SetResult();
+                return answer.Task;
+            },
+            Cancel);
+        await started.Task;
+        var sent = false;
+        var waiting = poller.RunCommandAsync(
+            _ =>
+            {
+                sent = true;
+                return Task.FromResult(3);
+            },
+            Cancel);
+
+        poller.Dispose();
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => waiting);
+        Assert.False(sent);
+        answer.SetResult(2);
+        await first;
+        await run;
+    }
+
+    // The wait is bounded: a command that outlasts DisposeWait meets the closed connection, and whatever that makes it
+    // throw (here a disposed stream) reaches the caller as BoardNotConnectedException.
+    [Fact]
+    public async Task Should_StopWaitingAfterDisposeWait_AndRefuseWhatTheClosedConnectionThrows()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval, DisposeWait = TimeSpan.FromSeconds(5) };
+        var run = poller.RunAsync(Cancel);
+        await WaitForPollAsync(board, time, reads: 1);
+        var answer = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var command = poller.RunCommandAsync(
+            _ =>
+            {
+                started.SetResult();
+                return answer.Task;
+            },
+            Cancel);
+        await started.Task;
+
+        var disposing = poller.DisposeAsync().AsTask();
+        await WaitUntilAsync(() => time.WaitsOnly(TimeSpan.FromSeconds(5)));
+        time.Advance(TimeSpan.FromSeconds(5));
+        await disposing;
+
+        answer.SetException(new ObjectDisposedException("stream"));
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => command);
+        Assert.IsType<ObjectDisposedException>(error.InnerException);
+        await run;
+        Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Lost);
+    }
+
+    [Fact]
+    public async Task Should_RefuseACommand_AfterDispose()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        var run = poller.RunAsync(Cancel);
+        await WaitForPollAsync(board, time, reads: 1);
+
+        await poller.DisposeAsync();
+        await run;
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => poller.RunCommandAsync(_ => Task.FromResult(3), Cancel));
+        poller.Dispose();
     }
 
     // Another board may be at a new address: the state is forgotten and reported so, and an answer from before that

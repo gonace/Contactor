@@ -16,7 +16,7 @@ namespace Contactor.Boards.Advantech;
 /// Commands are never queued: without a connection they fail at once with <see cref="BoardNotConnectedException"/>, a
 /// poll under way gives way to them, and the module's state right after them is reported at once. Modbus has no login.
 /// </summary>
-public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
+public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long a request may take before it counts as unanswered; also the limit to connect.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -43,6 +43,7 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
     private NetworkStream? _stream;
     private AdamStatus? _lastTraced;
     private int _wasConnected;
+    private int _disposed;
     private int _transaction;
 
     public AdamClient(IOptions<AdamOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<AdamClient> logger)
@@ -142,9 +143,22 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
         _poller.PollNow();
     }
 
+    /// <summary>
+    /// Ends the connection once the poll or command under way has ended (at most the poller's
+    /// <see cref="BoardPoller{TReading}.DisposeWait"/>): nothing new starts, and nothing is left using the connection
+    /// when it closes. A command that outlasts the wait throws <see cref="BoardNotConnectedException"/>.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        await _poller.DisposeAsync().ConfigureAwait(false);
+        Dispose();
+    }
+
     public void Dispose()
     {
+        // The poller first, so no poll or command starts on the connection being closed; then nothing opens a new one.
         _poller.Dispose();
+        Interlocked.Exchange(ref _disposed, 1);
         Close();
     }
 
@@ -429,6 +443,7 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
     private async Task OpenAsync(CancellationToken cancellationToken)
     {
         Close();
+        ThrowIfDisposed();
         var endpoint = Endpoint;
         var tcp = new TcpClient { NoDelay = true };
         using var timeout = new CancellationTokenSource(RequestTimeout, _timeProvider);
@@ -450,6 +465,22 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable
 
         _tcp = tcp;
         _stream = tcp.GetStream();
+
+        // Disposed while connecting: Dispose's Close may have come before the connection was kept.
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            Close();
+            ThrowIfDisposed();
+        }
+    }
+
+    // Once disposed, a request still under way gets no answer: it fails as one, and opens no new connection.
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            throw new IOException("The app closed the connection to the board.");
+        }
     }
 
     // Nothing comes unasked from the module; bytes waiting now are left from an answer that came too late or were sent
