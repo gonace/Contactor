@@ -259,7 +259,8 @@ try {
         }, false, 'content'],
         ['schedule', 'schedule/1', null, false],
         ['events', 'events', null, false],
-        ['settings', 'settings', null, false, 'content'],
+        // Just tall enough for the Language card to end above the tab bar.
+        ['settings', 'settings', null, false, 915],
     ];
     await shoot(browser, 'light', shots);
     await shoot(browser, 'dark', shots.filter(([name]) => name === 'relays'));
