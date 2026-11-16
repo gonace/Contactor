@@ -1372,6 +1372,22 @@
   <data name="Inputs.Controls.Hint" xml:space="preserve">
     <value>Like pressing the button at that moment: a group starts and stops in its order, with its run-on, and auto-off still applies. Only changes the app sees as they happen do anything.</value>
   </data>
+  <data name="Inputs.Does.Both" xml:space="preserve">
+    <value>{0}, {1}</value>
+    <comment>What an input does to a relay or group, on its card on Relays: {0} is Inputs.Does.OnCloses or OffCloses, {1} OnOpens or OffOpens.</comment>
+  </data>
+  <data name="Inputs.Does.OffCloses" xml:space="preserve">
+    <value>off when it closes</value>
+  </data>
+  <data name="Inputs.Does.OffOpens" xml:space="preserve">
+    <value>off when it opens</value>
+  </data>
+  <data name="Inputs.Does.OnCloses" xml:space="preserve">
+    <value>on when it closes</value>
+  </data>
+  <data name="Inputs.Does.OnOpens" xml:space="preserve">
+    <value>on when it opens</value>
+  </data>
   <data name="Inputs.Hide.Both" xml:space="preserve">
     <value>Hide inactive</value>
   </data>

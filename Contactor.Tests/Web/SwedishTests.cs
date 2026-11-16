@@ -47,6 +47,24 @@ public sealed class SwedishTests
         Assert.DoesNotContain("All off", html, StringComparison.Ordinal);
     }
 
+    // The line for an input that controls a relay, in the Input screen's Swedish words.
+    [Fact]
+    public async Task Should_SayWhatAnInputDoes_OnTheRelaysCard_InSwedish()
+    {
+        await using var app = await SwedishAppAsync();
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).Name = "Tryckvakt";
+            db.InputActions.Add(new InputAction { InputId = 1, RelayId = 3, WhenClosed = true, WhenOpened = false });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        using var http = app.CreateClient();
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+
+        Assert.Matches("<strong[^>]*>Tryckvakt</strong>: på när den sluts, av när den öppnas", html);
+    }
+
     [Fact]
     public async Task Should_ShowARelaysPage_AndItsEvents_InSwedish()
     {

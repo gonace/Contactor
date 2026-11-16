@@ -118,6 +118,9 @@ function seed() {
     // The board's input, named, and known since its change below (see "Once the board has answered").
     db.prepare('UPDATE "Input" SET "Name" = \'Door – Workshop\' WHERE "BoardId" = 1 AND "Channel" = 1').run();
     db.prepare('UPDATE "BoardRuntime" SET "LongGapEndedUtc" = NULL WHERE "BoardId" = 1').run();
+    // The door turns the fan heaters off when it opens: a line on the group's card.
+    db.prepare('INSERT INTO "InputAction" ("InputId", "RelayId", "GroupId", "WhenClosed", "WhenOpened") VALUES (?, NULL, 1, NULL, 0)')
+        .run(db.prepare('SELECT "Id" FROM "Input" WHERE "BoardId" = 1 AND "Channel" = 1').get().Id);
 
     const schedule = db.prepare('INSERT INTO "Schedule" ("RelayId", "GroupId", "Days", "OnTime", "OffTime", "IsEnabled", "CreatedBy") VALUES (?, ?, ?, ?, ?, 1, ?)');
     schedule.run(relay(5), null, 31, '06:30', '08:00', 'jane@example.com');

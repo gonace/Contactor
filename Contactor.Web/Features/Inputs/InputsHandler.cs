@@ -175,6 +175,17 @@ public sealed class InputsText
             : _texts["Inputs.Target.Relay", target.Channel?.ToString(CultureInfo.CurrentCulture) ?? "", target.Name];
     }
 
+    /// <summary>
+    /// What an input does to a relay or group, in the Input screen's terms: "on when it closes, off when it opens",
+    /// "on when it opens". Empty when it does nothing.
+    /// </summary>
+    public string Does(bool? whenClosed, bool? whenOpened)
+    {
+        var closes = whenClosed is { } close ? _texts[close ? "Inputs.Does.OnCloses" : "Inputs.Does.OffCloses"].Value : null;
+        var opens = whenOpened is { } open ? _texts[open ? "Inputs.Does.OnOpens" : "Inputs.Does.OffOpens"].Value : null;
+        return closes is not null && opens is not null ? _texts["Inputs.Does.Both", closes, opens] : closes ?? opens ?? "";
+    }
+
     /// <summary>An input's status line: "Open since 14:02", or "Open since unknown" when the app didn't see the change.</summary>
     /// <param name="input">The input, with its latest logged change.</param>
     /// <param name="on">What the board reads now: on is closed.</param>

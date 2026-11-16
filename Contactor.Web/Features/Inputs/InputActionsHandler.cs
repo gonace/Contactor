@@ -33,6 +33,13 @@ public sealed record InputActionTarget(int? RelayId, int? Channel, int? GroupId,
 public sealed record InputActionRow(InputActionTarget Target, bool? WhenClosed, bool? WhenOpened);
 
 /// <summary>
+/// An input that controls a relay or a group, for the line on its card on the Relays screen: exactly one of
+/// <paramref name="RelayId"/> and <paramref name="GroupId"/>. <paramref name="WhenClosed"/> and
+/// <paramref name="WhenOpened"/> as in <see cref="InputActionRow"/>; at least one of them does something.
+/// </summary>
+public sealed record InputControl(int InputId, string InputName, int? RelayId, int? GroupId, bool? WhenClosed, bool? WhenOpened);
+
+/// <summary>
 /// The relays and groups an input controls, on the Input screen. A relay in a group is only controlled through its
 /// group, and a relay an input controls can't join a group (<see cref="Groups.GroupsHandler"/>), as with a relay's
 /// own schedules. An input only controls relays and groups on its own board (across boards is issue #204).
@@ -86,6 +93,38 @@ public sealed class InputActionsHandler
                 new InputActionTarget(a.RelayId, a.Channel, a.GroupId, a.GroupName ?? a.RelayName ?? ""),
                 a.WhenClosed,
                 a.WhenOpened))];
+    }
+
+    /// <summary>
+    /// Every input that controls a relay or a group, for the Relays screen's cards, by board and input. Only what an
+    /// input would act on: an input its board has, a relay or group on its own board, and an action that does something
+    /// (<see cref="InputActionService"/>).
+    /// </summary>
+    public async Task<IReadOnlyList<InputControl>> ControlsAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var controls = await db.InputActions.AsNoTracking()
+            .Where(a => a.WhenClosed != null || a.WhenOpened != null)
+            .Join(db.Inputs, a => a.InputId, i => i.Id, (a, i) => new
+            {
+                i.BoardId,
+                i.Channel,
+                InputName = i.Name,
+                a.InputId,
+                a.RelayId,
+                RelayBoardId = a.Relay == null ? (int?)null : a.Relay.BoardId,
+                a.GroupId,
+                GroupBoardId = a.Group == null ? (int?)null : a.Group.BoardId,
+                a.WhenClosed,
+                a.WhenOpened,
+            })
+            .Where(c => c.RelayBoardId == c.BoardId || c.GroupBoardId == c.BoardId)
+            .ToListAsync(cancellationToken);
+        return [.. controls
+            .Where(c => _registry.HasInput(c.BoardId, c.Channel))
+            .OrderBy(c => c.BoardId)
+            .ThenBy(c => c.Channel)
+            .Select(c => new InputControl(c.InputId, c.InputName, c.RelayId, c.GroupId, c.WhenClosed, c.WhenOpened))];
     }
 
     /// <summary>
