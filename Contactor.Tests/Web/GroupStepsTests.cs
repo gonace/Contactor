@@ -589,10 +589,26 @@ public sealed class GroupStepsTests
         GroupPlanner.MemberOff(steps, State(1, 2), _runtime, 1, John, T0, off, Mask(3));
 
         Assert.Equal((ChannelMask.None, Mask(2, 3)), (off.On, off.Off));
-        var confirmed = new GroupCommands();
-        GroupPlanner.Plan(steps, State(1), _runtime, T0.AddSeconds(0.5), confirmed);
+
+        // The board shows only the fan on, with the heater's ON still counted as on its way (its ON and OFF both
+        // landed between two polls). The pump's OFF is done: the fan runs on for its own run-on, not the heater's.
+        GroupCommands Plan(DateTime now, ChannelMask onOnItsWay = default)
+        {
+            var commands = new GroupCommands();
+            GroupPlanner.Plan(steps, State(1), _runtime, now, commands, onOnItsWay: onOnItsWay);
+            return commands;
+        }
+
+        var confirmed = Plan(T0.AddSeconds(0.5), Mask(3));
         Assert.Equal(ChannelMask.None, confirmed.Off);
-        Assert.Contains(confirmed.Events, e => e.Action == EventActions.RunOnStart && e.RelayId == 21);
+        var runOn = Assert.Single(confirmed.Events);
+        Assert.Equal((EventActions.RunOnStart, (int?)21), (runOn.Action, runOn.RelayId));
+        Assert.Equal(T0.AddSeconds(60.5), _runtime.NextStepAtUtc);
+        Assert.True(Plan(T0.AddSeconds(30.6)).IsEmpty);
+
+        var end = Plan(T0.AddSeconds(60.5));
+        Assert.Equal(Mask(1), end.Off);
+        Assert.Contains(end.Events, e => e.Action == EventActions.RunOnEnd && e.RelayId == 21);
     }
 
     // Issue #412, a lower step: Heater 1 is turned off while its own ON is on its way and the board doesn't show it yet.
