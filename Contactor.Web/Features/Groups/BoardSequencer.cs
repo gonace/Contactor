@@ -227,7 +227,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
                 else
                 {
-                    GroupPlanner.MemberOff(steps, state, runtime, position, actor, now, commands);
+                    GroupPlanner.MemberOff(steps, state, runtime, position, actor, now, commands, _onOnItsWay);
                 }
 
                 return refusal;

@@ -537,6 +537,47 @@ public sealed class GroupSequencerTests
         Assert.Equal((ChannelMask.None, GroupPhases.Idle, (string?)null), (board.State.Relays, runtime.Phase, runtime.TurnedOnBy));
     }
 
+    // Issue #406: Heater 1 is turned on, and Fan 1 off while that ON is still on its way. The heater's OFF goes first,
+    // after its ON; Fan 1 runs on once the board shows the heater off, then stops. The interlock never trips.
+    [Fact]
+    public async Task Should_TurnAHeaterOffFirst_WhenAFanIsTurnedOffWhileTheHeatersOnIsOnItsWay()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var board = rig.Second!;
+        int Relay(int channel) => rig.SecondRelayId(channel);
+        var id = await CreateAsync(rig, FansHeaters with { Steps = [new GroupStepDraft("Fans", [Relay(1), Relay(2)], 3, 180), new GroupStepDraft("Heaters", [Relay(3), Relay(4)], 3, 0)] });
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Relay(1), on: true, John, Cancel));
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Relay(2), on: true, John, Cancel));
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(ChannelMask.Of([1, 2]), board.State.Relays);
+
+        board.HoldStatus = true;
+        rig.Time.Now += TimeSpan.FromSeconds(1);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Relay(3), on: true, John, Cancel));
+        rig.Time.Now += TimeSpan.FromSeconds(0.2);
+        var sent = board.Sent.Count;
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Relay(1), on: false, John, Cancel));
+        Assert.Equal([(ChannelMask.Of(3), false)], board.Sent.Skip(sent));
+
+        // The board shows the heater's ON and then its OFF: Fan 1 runs on once that ON is no longer on its way.
+        board.ReleaseStatus();
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(ChannelMask.Of([1, 2]), board.State.Relays);
+        rig.Time.Now += ExpectedChanges.Lifetime;
+        await rig.Groups.StepAsync(Cancel);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(ChannelMask.Of([1, 2]), board.State.Relays);
+
+        rig.Time.Now += TimeSpan.FromSeconds(180);
+        await rig.Groups.StepAsync(Cancel);
+        await rig.Groups.StepAsync(Cancel);
+
+        var runtime = await RuntimeAsync(rig, id);
+        Assert.Equal((ChannelMask.Of(2), GroupPhases.Idle), (board.State.Relays, runtime.Phase));
+        Assert.DoesNotContain(await rig.EventsAsync(), e => e.Action == EventActions.InterlockTrip);
+    }
+
     [Fact]
     public async Task Should_SendTheFansOnceMore_WhenATripsOnWasLostInAReconnect()
     {
