@@ -133,7 +133,7 @@ When the board refuses the connection in one of these ways, the state says why (
 - `LoginRefused`: the board refused the password.
 
 The problem never holds the password. `BoardPoller` clears it at the board's first answer, at a new address and at a
-new password (`SetPassword`). A connection that fails for another reason, such as no answer, has no problem.
+new password (`SetPassword`). A connection that fails for another reason, such as no answer, clears it.
 
 Then:
 

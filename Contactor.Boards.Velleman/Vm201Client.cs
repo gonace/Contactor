@@ -299,13 +299,16 @@ public sealed class Vm201Client
         var loggedIn = false;
         Session? session = null;
         using var tcp = new TcpClient { NoDelay = true };
-        var endpoint = Endpoint;
-        var askedWithoutLogin = new StrongBox<bool>();
+
+        // Before the address: a SetEndpoint in between moves on from both, so nothing from this connection is kept.
         int logins;
         lock (_stateLock)
         {
             logins = _logins;
         }
+
+        var endpoint = Endpoint;
+        var askedWithoutLogin = new StrongBox<bool>();
 
         try
         {
@@ -371,11 +374,12 @@ public sealed class Vm201Client
         }
         catch (Vm201AccessDeniedException)
         {
+            // Not once the app moved the connection: the refusal may be for the login or address before. A move that
+            // comes after this check, also from a trace's subscriber, is caught by SetProblem.
+            var current = !cancellationToken.IsCancellationRequested;
             Vm201Log.AccessDenied(_logger);
             Trace(Vm201TraceKind.ConnectionLost, detail: "The board rejected the user name or password.");
-
-            // Not once the app moved the connection: the refusal may be for the login or address before.
-            if (!cancellationToken.IsCancellationRequested)
+            if (current)
             {
                 var kind = askedWithoutLogin.Value ? ConnectionProblemKind.LoginNeeded : ConnectionProblemKind.LoginRefused;
                 SetProblem(new ConnectionProblem(kind, Vm201Model.Model), logins);
@@ -385,6 +389,9 @@ public sealed class Vm201Client
         {
             Vm201Log.ConnectionLost(_logger, ex.Message);
             Trace(Vm201TraceKind.ConnectionLost, detail: ex.Message);
+
+            // No answer: the board no longer says why, so the screens say "no contact" again.
+            ClearProblem(logins);
         }
 #pragma warning disable CA1031 // The reconnect loop must survive anything a connection throws.
         catch (Exception ex)
@@ -392,6 +399,7 @@ public sealed class Vm201Client
         {
             Vm201Log.UnexpectedError(_logger, ex);
             Trace(Vm201TraceKind.ConnectionLost, detail: ex.Message);
+            ClearProblem(logins);
         }
         finally
         {
@@ -589,6 +597,18 @@ public sealed class Vm201Client
             }
 
             SetState(state with { Problem = problem });
+        }
+    }
+
+    // Only for the address and login the connection was for: a problem a newer one reported stays.
+    private void ClearProblem(int logins)
+    {
+        lock (_stateLock)
+        {
+            if (logins == _logins)
+            {
+                ClearProblem();
+            }
         }
     }
 

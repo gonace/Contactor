@@ -884,6 +884,31 @@ public sealed class BoardPollerTests
         await run;
     }
 
+    // A refusal that comes as the login changes (here while the board's code reports the lost connection) is about the
+    // old login, and is dropped.
+    [Fact]
+    public async Task Should_DropAProblem_FromAConnectBeforeARestart()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        board.OnLost = () =>
+        {
+            board.ConnectError = null;
+            board.HangConnect = true;
+            poller.Restart();
+        };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+
+        await WaitUntilAsync(() => board.Connects == 2);
+
+        Assert.Null(poller.State.Problem);
+        Assert.DoesNotContain(board.Changes, c => c.Problem is not null);
+        await stop.CancelAsync();
+        await run;
+    }
+
     // A refusal from the board at the old address that comes after the move says nothing about the new one.
     [Fact]
     public async Task Should_DropAProblem_FromAConnectToTheBoardBefore()
@@ -1046,6 +1071,9 @@ public sealed class BoardPollerTests
         /// <summary>What a connect fails with, e.g. an exception that says why the board refused it; null: it doesn't.</summary>
         public Exception? ConnectError { get; set; }
 
+        /// <summary>Called once, the first time the poller reports the connection lost, before the poller goes on.</summary>
+        public Action? OnLost { get; set; }
+
         /// <summary>When set, a connect ends when the test ends this, whether or not it is cancelled.</summary>
         public TaskCompletionSource? HeldConnect { get; set; }
 
@@ -1112,6 +1140,12 @@ public sealed class BoardPollerTests
             lock (_lock)
             {
                 _steps.Add((kind, detail));
+            }
+
+            if (kind == BoardPollStep.Lost && OnLost is { } onLost)
+            {
+                OnLost = null;
+                onLost();
             }
         }
     }

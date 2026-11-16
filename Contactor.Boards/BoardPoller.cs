@@ -508,13 +508,14 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             }
             else
             {
+                _board.OnStep(BoardPollStep.Lost, ex.Message);
+
+                // Why the board refused, or null when it didn't say (e.g. no answer at all). A Forget or Restart since
+                // the connect began, also one that came just now, drops it (SetProblem).
                 if (!connected)
                 {
-                    // Why the board refused, or null when it didn't say (e.g. no answer at all).
                     SetProblem((ex as IConnectionProblemSource)?.Problem, generation, restarts);
                 }
-
-                _board.OnStep(BoardPollStep.Lost, ex.Message);
             }
         }
         finally

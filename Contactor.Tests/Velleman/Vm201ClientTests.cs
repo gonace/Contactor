@@ -90,13 +90,68 @@ public sealed class Vm201ClientTests
     }
 
     [Fact]
-    public async Task Should_ReportNoProblem_ForABoardThatDoesntAnswer()
+    public async Task Should_ReportNoProblem_ForABoardThatTakesTheLogin()
     {
         await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
         simulator.Start();
         await using var run = ClientRun.Start(simulator, username: "admin", password: "secret");
         await WaitUntilAsync(() => run.Client.State.IsConnected);
 
+        Assert.Null(run.Client.State.Problem);
+    }
+
+    // A board that refused the login and then stops answering (unplugged) no longer says why: "no contact" again.
+    [Fact]
+    public async Task Should_ClearTheProblem_WhenTheBoardStopsAnswering()
+    {
+        var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        var lost = 0;
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "wrong", traced: (_, entry) =>
+        {
+            if (entry.Kind == Vm201TraceKind.ConnectionLost && entry.Detail != "The board rejected the user name or password.")
+            {
+                Interlocked.Increment(ref lost);
+            }
+        });
+        await WaitUntilAsync(() => run.Client.State.Problem is not null);
+
+        await simulator.DisposeAsync();
+
+        await WaitUntilAsync(() => Volatile.Read(ref lost) > 0);
+        Assert.Null(run.Client.State.Problem);
+        Assert.False(run.Client.State.IsConnected);
+    }
+
+    // A refusal that comes as the login changes is about the old login: the new one's connection says its own.
+    [Fact]
+    public async Task Should_DropARefusal_ThatComesAsTheLoginChanges()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        var changed = 0;
+        var problemsAfter = 0;
+        Vm201Client? client = null;
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "wrong", traced: (_, entry) =>
+        {
+            // The refusal's trace comes before the client records it: the login changes right there.
+            if (Volatile.Read(ref client) is { } watched && entry.Detail == "The board rejected the user name or password." && Interlocked.Exchange(ref changed, 1) == 0)
+            {
+                watched.SetLogin(Vm201Login.TryCreate("admin", "secret", out LoginProblem? _)!);
+            }
+        });
+        run.Client.StateChanged += (_, state) =>
+        {
+            if (Volatile.Read(ref changed) == 1 && state.Problem is not null)
+            {
+                Interlocked.Increment(ref problemsAfter);
+            }
+        };
+        Volatile.Write(ref client, run.Client);
+
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(0, Volatile.Read(ref problemsAfter));
         Assert.Null(run.Client.State.Problem);
     }
 
