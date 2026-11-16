@@ -282,4 +282,7 @@
   <data name="Relays.Save.NameTooLong" xml:space="preserve">
     <value>Namnet får vara högst {0} tecken.</value>
   </data>
+  <data name="Relays.By.RemovedInput" xml:space="preserve">
+    <value>en borttagen ingång</value>
+  </data>
 </root>

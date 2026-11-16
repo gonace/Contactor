@@ -18,9 +18,6 @@
   <data name="Inputs.Open" xml:space="preserve">
     <value>Öppen</value>
   </data>
-  <data name="Inputs.Unknown" xml:space="preserve">
-    <value>En ingång</value>
-  </data>
   <data name="Inputs.Since" xml:space="preserve">
     <value>{0} sedan {1}</value>
   </data>
