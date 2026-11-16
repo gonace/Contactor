@@ -111,7 +111,7 @@ The VM204 is not the VM201's protocol.
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `vm204` | Velleman VM204 | 4 | 4, and 1 analog input | none | user name and password; empty allowed |
+| `vm204` | Velleman VM204 | 4 | 4, and 1 analog input | none | user name and password, can be empty |
 
 ### Protocol
 
@@ -166,7 +166,7 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
 
 ## To check on a real board
 
-> **Warning: check the first three points of the VM201 list and the first two points of the VM204 and VM208 lists first,
+> **Warning: check the first three points of the VM201 list and the first two points of the VM204 list and the first three points of the VM208 list first,
 > before anything is connected to the relays.**
 
 ### VM201
