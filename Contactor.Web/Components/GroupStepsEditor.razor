@@ -1,0 +1,227 @@
+@* A group's steps as cards, the same on the group's page and in "New group": each step's name, its relays with
+   "Remove", "+ Add a relay to this step", up/down for the whole step, the waits between two steps and "+ Add a step"
+   under the last. The page owns the GroupEditor and says what each change does; what only one page shows (a step's
+   state, a relay's ON/OFF) comes in through StepNote and RelayEnd. *@
+@using Contactor.Web.Features.Groups
+@using Contactor.Web.Persistence
+
+<ol class="steps">
+    @for (var s = 0; s < Editor.Steps.Count; s++)
+    {
+        var stepIndex = s;
+        var step = Editor.Steps[stepIndex];
+        <li class="step @(StepClass?.Invoke(stepIndex))" @key="step">
+            <div class="step-row">
+                <span class="number" aria-hidden="true">@(stepIndex + 1)</span>
+                <div class="step-text">
+                    <label class="label" for="@($"step-{stepIndex}")">@Texts["Groups.Step.Label", stepIndex + 1]</label>
+                    <input id="@($"step-{stepIndex}")" class="role" type="text" maxlength="@RelayGroupStep.NameMaxLength" @bind="step.Name" @bind:event="oninput" @bind:after="ChangedAsync" autocomplete="off" />
+                    @StepNote?.Invoke(stepIndex)
+                </div>
+                <div class="order">
+                    <button type="button" aria-label="@Texts["Groups.MoveUp", step.Label]" disabled="@(!CanChange || stepIndex == 0)" @onclick="() => MoveAsync(stepIndex, -1)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
+                    </button>
+                    <button type="button" aria-label="@Texts["Groups.MoveDown", step.Label]" disabled="@(!CanChange || stepIndex == Editor.Steps.Count - 1)" @onclick="() => MoveAsync(stepIndex, 1)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <ul class="relays">
+                @foreach (var relay in step.Relays)
+                {
+                    <li class="relay" @key="relay.RelayId">
+                        <div class="relay-text">
+                            <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
+                            <span class="relay-name">@relay.Name</span>
+                            @if (CanChange && Editor.RelayCount > RelayGroup.MinMembers)
+                            {
+                                <button type="button" class="remove" aria-label="@Texts["Groups.RemoveRelay", relay.Name]" @onclick="() => RemoveAsync(relay.RelayId)">@Texts["Groups.Remove"]</button>
+                            }
+                        </div>
+                        @RelayEnd?.Invoke(relay)
+                    </li>
+                }
+            </ul>
+            @if (CanAdd)
+            {
+                @if (_addingTo == stepIndex)
+                {
+                    @AddPicker(stepIndex)
+                }
+                else
+                {
+                    <button type="button" class="add-button" @onclick="() => StartAdding(stepIndex)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                        @Texts["Groups.AddRelayToStep"]
+                    </button>
+                }
+            }
+        </li>
+        @if (stepIndex < Editor.Steps.Count - 1)
+        {
+            var below = Editor.Steps[stepIndex + 1];
+            <li class="gap" aria-label="@Texts["Groups.Between", step.Label, below.Label]">
+                <label>
+                    @Texts["Groups.StartWait"]
+                    <select @bind="below.StartDelaySec" @bind:after="ChangedAsync">
+                        @foreach (var seconds in Choices(GroupsHandler.StartDelayChoices, below.StartDelaySec))
+                        {
+                            <option value="@seconds">@EventText.Seconds(seconds)</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    @Texts["Groups.RunOn"]
+                    <select @bind="step.RunOnSec" @bind:after="ChangedAsync">
+                        @foreach (var seconds in Choices(GroupsHandler.RunOnChoices, step.RunOnSec))
+                        {
+                            <option value="@seconds">@(seconds == 0 ? Texts["Groups.RunOn.None"] : EventText.Seconds(seconds))</option>
+                        }
+                    </select>
+                </label>
+            </li>
+        }
+    }
+</ol>
+@if (CanAdd)
+{
+    @if (_addingTo == NewStep)
+    {
+        @AddPicker(NewStep)
+    }
+    else
+    {
+        <button type="button" class="add-button add-step" @onclick="() => StartAdding(NewStep)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            @Texts["Groups.AddStep"]
+        </button>
+    }
+}
+
+@code {
+    // Where "Add" puts a relay in OnAdd: a step's index, or a new step last.
+    private const int NewStep = GroupEditor.NewStep;
+
+    private GroupEditor? _shown;
+    private int? _addingTo;
+    private int _addRelayId;
+
+    /// <summary>The steps being edited; a new editor (e.g. the group as saved again) closes an open relay list.</summary>
+    [Parameter, EditorRequired]
+    public GroupEditor Editor { get; set; } = default!;
+
+    /// <summary>Whether the relays and the steps' order can change: up/down and "Remove".</summary>
+    [Parameter]
+    public bool CanChange { get; set; } = true;
+
+    /// <summary>Whether a relay can be added: "+ Add a relay to this step" and "+ Add a step".</summary>
+    [Parameter]
+    public bool CanAdd { get; set; }
+
+    /// <summary>The relays that can be added, in the order the list shows them.</summary>
+    [Parameter]
+    public IReadOnlyList<EditRelay> Addable { get; set; } = [];
+
+    /// <summary>A step's extra classes by its index, e.g. "on".</summary>
+    [Parameter]
+    public Func<int, string?>? StepClass { get; set; }
+
+    /// <summary>What shows under a step's name, by the step's index, e.g. its state.</summary>
+    [Parameter]
+    public RenderFragment<int>? StepNote { get; set; }
+
+    /// <summary>What shows to the right of a relay, e.g. its ON/OFF.</summary>
+    [Parameter]
+    public RenderFragment<EditRelay>? RelayEnd { get; set; }
+
+    /// <summary>Up (-1) or down (+1) for the step at an index.</summary>
+    [Parameter]
+    public EventCallback<(int Step, int By)> OnMove { get; set; }
+
+    /// <summary>"Remove" for a relay, by its id.</summary>
+    [Parameter]
+    public EventCallback<int> OnRemove { get; set; }
+
+    /// <summary>"Add" for a relay: to the step at an index, or <see cref="GroupEditor.NewStep"/>.</summary>
+    [Parameter]
+    public EventCallback<(int Step, EditRelay Relay)> OnAdd { get; set; }
+
+    /// <summary>A step's name or a wait was changed.</summary>
+    [Parameter]
+    public EventCallback OnChange { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        ArgumentNullException.ThrowIfNull(Editor);
+        if (!ReferenceEquals(_shown, Editor))
+        {
+            _shown = Editor;
+            _addingTo = null;
+        }
+
+        if (_addRelayId == 0 || Addable.All(r => r.RelayId != _addRelayId))
+        {
+            _addRelayId = Addable.FirstOrDefault()?.RelayId ?? 0;
+        }
+    }
+
+    // A wait that is no longer offered, e.g. from an older version, stays in the list while it is the step's.
+    private static IEnumerable<int> Choices(IReadOnlyList<int> offered, int current)
+    {
+        return offered.Contains(current) ? offered : offered.Append(current).Order();
+    }
+
+    private Task ChangedAsync()
+    {
+        return OnChange.InvokeAsync();
+    }
+
+    private Task MoveAsync(int stepIndex, int by)
+    {
+        _addingTo = null;
+        return OnMove.InvokeAsync((stepIndex, by));
+    }
+
+    private Task RemoveAsync(int relayId)
+    {
+        _addingTo = null;
+        return OnRemove.InvokeAsync(relayId);
+    }
+
+    private void StartAdding(int target)
+    {
+        _addingTo = target;
+        _addRelayId = Addable.FirstOrDefault()?.RelayId ?? 0;
+    }
+
+    private async Task AddRelayAsync()
+    {
+        if (_addingTo is not { } target || Addable.FirstOrDefault(r => r.RelayId == _addRelayId) is not { } relay)
+        {
+            return;
+        }
+
+        _addingTo = null;
+        await OnAdd.InvokeAsync((target, relay));
+        _addRelayId = Addable.FirstOrDefault(r => r.RelayId != relay.RelayId)?.RelayId ?? 0;
+    }
+
+    // The relay list "+ Add a relay to this step" and "+ Add a step" open.
+    private RenderFragment AddPicker(int target) => __builder =>
+    {
+        <div class="add">
+            <label for="@($"add-relay-{target}")" class="visually-hidden">@Texts["Groups.RelayToAdd"]</label>
+            <select id="@($"add-relay-{target}")" @bind="_addRelayId">
+                @foreach (var relay in Addable)
+                {
+                    <option value="@relay.RelayId">@Texts["Groups.RelayOption", relay.Channel, relay.Name]</option>
+                }
+            </select>
+            <div class="add-buttons">
+                <button type="button" class="cancel" @onclick="() => _addingTo = null">@Texts["Common.Cancel"]</button>
+                <button type="button" class="confirm" @onclick="AddRelayAsync">@Texts["Common.Add"]</button>
+            </div>
+        </div>
+    };
+}

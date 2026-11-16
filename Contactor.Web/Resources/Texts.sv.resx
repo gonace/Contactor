@@ -1023,12 +1023,6 @@
   <data name="Groups.New.Preview" xml:space="preserve">
     <value>SÅ HÄR SER DEN UT I LISTAN</value>
   </data>
-  <data name="Groups.New.RelayNumber" xml:space="preserve">
-    <value>relä {0}</value>
-  </data>
-  <data name="Groups.New.RoleLabel" xml:space="preserve">
-    <value>RELÄ {0} · NAMN I GRUPPEN</value>
-  </data>
   <data name="Groups.New.Step" xml:space="preserve">
     <value>STEG {0} AV {1}</value>
   </data>

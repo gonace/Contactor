@@ -1124,13 +1124,6 @@
   <data name="Groups.New.Preview" xml:space="preserve">
     <value>HOW IT LOOKS IN THE LIST</value>
   </data>
-  <data name="Groups.New.RelayNumber" xml:space="preserve">
-    <value>relay {0}</value>
-    <comment>A relay without a name in the group, by its number.</comment>
-  </data>
-  <data name="Groups.New.RoleLabel" xml:space="preserve">
-    <value>RELAY {0} · NAME IN THE GROUP</value>
-  </data>
   <data name="Groups.New.Step" xml:space="preserve">
     <value>STEP {0} OF {1}</value>
   </data>

@@ -524,11 +524,11 @@ public sealed class SeveralBoardsTests
     {
         var wizard = new GroupWizard();
 
-        wizard.Toggle(5, "Fan", boardId: 2);
-        wizard.Toggle(1, "Heat", boardId: 1);
-        wizard.Toggle(6, "Heat", boardId: 2);
+        wizard.Toggle(5, 1, "Fan", boardId: 2);
+        wizard.Toggle(1, 1, "Heat", boardId: 1);
+        wizard.Toggle(6, 2, "Heat", boardId: 2);
 
-        Assert.Equal([5, 6], wizard.Members.Select(m => m.RelayId));
+        Assert.Equal([5, 6], wizard.Editor.Relays.Select(r => r.RelayId));
         Assert.True(wizard.FitsBoard(2));
         Assert.False(wizard.FitsBoard(1));
     }

@@ -100,11 +100,18 @@ internal sealed class PageRenderer : Renderer
     }
 
     /// <summary>Presses the first button whose attributes match, through its <c>onclick</c>.</summary>
-    public async Task ClickAsync(Func<IReadOnlyDictionary<string, object?>, bool> match)
+    public Task ClickAsync(Func<IReadOnlyDictionary<string, object?>, bool> match)
+    {
+        return ClickAsync(match, 0);
+    }
+
+    /// <summary>Presses the button whose attributes match that comes <paramref name="index"/>th on the page, from 0.</summary>
+    public async Task ClickAsync(Func<IReadOnlyDictionary<string, object?>, bool> match, int index)
     {
         await Dispatcher.InvokeAsync(async () =>
         {
-            var element = Find(_rootId, match) ?? throw new InvalidOperationException("No such element on the page.");
+            var skip = index;
+            var element = Find(_rootId, attributes => match(attributes) && skip-- == 0) ?? throw new InvalidOperationException("No such element on the page.");
             var handler = element.Handlers.TryGetValue("onclick", out var id) ? id : throw new InvalidOperationException($"It has no onclick: {string.Join(", ", element.Attributes.Select(a => $"{a.Key}={a.Value}"))}.");
             await DispatchEventAsync(handler, null, new MouseEventArgs());
         });
