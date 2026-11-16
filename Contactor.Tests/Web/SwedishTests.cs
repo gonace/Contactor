@@ -135,17 +135,10 @@ public sealed class SwedishTests
         int id;
         await using (var db = await factory.CreateDbContextAsync(Cancel))
         {
-            // The group and its runtime in one transaction, as the app saves a new group: the running group sequencer
-            // makes a runtime for a group it finds without one.
-            await using var transaction = await db.Database.BeginTransactionAsync(Cancel);
             var group = new RelayGroup { BoardId = 1, Name = "Fläktvärmare", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
             group.AddStep("Fläkt", 1, runOnSec: 300);
             group.AddStep("Värme", 2);
-            db.RelayGroups.Add(group);
-            await db.SaveChangesAsync(Cancel);
-            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
-            await db.SaveChangesAsync(Cancel);
-            await transaction.CommitAsync(Cancel);
+            await db.AddWithRuntimesAsync(group);
             id = group.Id;
         }
 

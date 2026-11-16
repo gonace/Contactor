@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Denkovi;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -660,7 +661,7 @@ public sealed class SmartDenClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, pollSeconds: 0));
         Assert.Throws<ArgumentException>(() => new SmartDenClient(
             Options.Create(new SmartDenOptions()),
-            Contactor.Boards.Velleman.Vm201Model.Model,
+            Vm201Model.Model,
             TimeProvider.System,
             NullLogger<SmartDenClient>.Instance));
     }

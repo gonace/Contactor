@@ -206,7 +206,8 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
     public void Dispose()
     {
-        // The poller first, so no poll or command starts on the connection being closed; then nothing opens a new one.
+        // The poller first, so no new poll or command starts; then nothing opens a new connection. A request already
+        // under way goes on until Close breaks its connection under it, and then fails as unanswered.
         _poller.Dispose();
         Interlocked.Exchange(ref _disposed, 1);
         Close();
@@ -637,7 +638,8 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     }
 
     // Nothing comes unasked from the board; bytes waiting now are left from an answer that came too late or was too
-    // long. They are dropped, or with too many of them the connection is opened afresh at the next request.
+    // long. They are dropped. With too many of them the connection is closed: a command on a connection from before
+    // goes once more on a new one at once, and one on a new connection fails.
     private void SkipUnasked()
     {
         int available;
@@ -704,74 +706,6 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             {
                 _logger.SubscriberFailed(ex);
             }
-        }
-    }
-
-    /// <summary>
-    /// The connection's stream as the codec reads it, counting what it read: a request whose answer came in part may
-    /// not go once more on a new connection.
-    /// </summary>
-    private sealed class CountingStream : Stream
-    {
-        private readonly Stream _inner;
-
-        public CountingStream(Stream inner)
-        {
-            _inner = inner;
-        }
-
-        public long BytesRead { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => false;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            var read = _inner.Read(buffer, offset, count);
-            BytesRead += read;
-            return read;
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            BytesRead += read;
-            return read;
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void SetLength(long value)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            throw new NotSupportedException();
         }
     }
 }

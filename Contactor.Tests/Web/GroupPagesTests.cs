@@ -1,4 +1,7 @@
 using System.Net;
+using System.Text.RegularExpressions;
+using Contactor.Boards;
+using Contactor.Tests.Boards;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Contactor.Web.Persistence;
@@ -47,6 +50,35 @@ public sealed class GroupPagesTests
         Assert.DoesNotContain("TURN ON THE GROUP", screen, StringComparison.Ordinal);
         Assert.DoesNotContain("Needs Fan to be on", screen, StringComparison.Ordinal);
         Assert.Equal(2, screen.Split("class=\"member-toggle unknown\"").Length - 1);
+        Assert.Equal(2, Regex.Count(screen, "<li class=\"step +unknown\""));
+    }
+
+    // A step's card lights up only while every relay in it is on, here from the board's last known state.
+    [Fact]
+    public async Task Should_LightAStep_OnlyWhileAllItsRelaysAreOn()
+    {
+        var board = new FakeRelayBoard();
+        await board.TurnOnAsync(ChannelMask.Of([1, 2, 3]), Cancel);
+        board.SetConnected(false);
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
+            TestWebApp.WithBoard(board));
+        using var http = app.CreateClient();
+        await http.GetStringAsync("/", Cancel);
+        int id;
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { BoardId = 1, Name = "Workshop heat", Icon = GroupIcons.Flame, MaxOnMinutes = 120 };
+            group.AddStep("Fans", [1, 2]);
+            group.AddStep("Heaters", [3, 4]);
+            await db.AddWithRuntimesAsync(group);
+            id = group.Id;
+        }
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
+
+        Assert.Equal(["on", ""], Regex.Matches(html, "<li class=\"step ([^\"]*)\"").Select(m => m.Groups[1].Value.Trim()));
     }
 
     [Fact]

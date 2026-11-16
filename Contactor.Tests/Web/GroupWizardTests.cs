@@ -171,6 +171,48 @@ public sealed class GroupWizardTests
         Assert.True(wizard.FitsBoard(Board + 1));
     }
 
+    // Only a relay alone in its step takes the step's name and waits with it: one taken out of a two-relay step and
+    // picked again is a new step of its own, named after itself.
+    [Fact]
+    public void Should_NotGiveARelayFromASharedStep_ThatStepsNameAndWaits()
+    {
+        var wizard = AtStepTwo();
+        wizard.Toggle(1, 1, "Relay 1", Board);
+        wizard.Toggle(2, 2, "Relay 2", Board);
+        wizard.Toggle(3, 3, "Relay 3", Board);
+        wizard.Remove(2);
+        wizard.Add(0, new EditRelay(2, 2, "Relay 2"), Board);
+        wizard.Editor.Steps[0].Name = "Fans";
+        wizard.Editor.Steps[0].RunOnSec = 300;
+
+        wizard.Toggle(2, 2, "Relay 2", Board);
+        wizard.Toggle(2, 2, "Relay 2", Board);
+
+        Assert.Equal([[1], [3], [2]], wizard.Draft.Steps.Select(s => s.RelayIds.ToArray()));
+        Assert.Equal(("Relay 2", RelayGroupStep.DefaultRunOnSec), (wizard.Editor.Steps[2].Name, wizard.Editor.Steps[2].RunOnSec));
+    }
+
+    // A relay alone in its step, taken out and added to another step, leaves its old step's name behind: picked again
+    // later as a step of its own, it is named after itself.
+    [Fact]
+    public void Should_ForgetAnUnpickedStepsName_OnceItsRelayJoinsAnotherStep()
+    {
+        var wizard = AtStepTwo();
+        wizard.Toggle(1, 1, "Relay 1", Board);
+        wizard.Toggle(2, 2, "Relay 2", Board);
+        wizard.Toggle(3, 3, "Relay 3", Board);
+        wizard.Editor.Steps[2].Name = "Heat";
+        wizard.Editor.Steps[2].RunOnSec = 300;
+        wizard.Remove(3);
+        wizard.Add(0, new EditRelay(3, 3, "Relay 3"), Board);
+
+        wizard.Toggle(3, 3, "Relay 3", Board);
+        wizard.Toggle(3, 3, "Relay 3", Board);
+
+        Assert.Equal([[1], [2], [3]], wizard.Draft.Steps.Select(s => s.RelayIds.ToArray()));
+        Assert.Equal(("Relay 3", RelayGroupStep.DefaultRunOnSec), (wizard.Editor.Steps[2].Name, wizard.Editor.Steps[2].RunOnSec));
+    }
+
     private static int[] RelayIds(GroupWizard wizard)
     {
         return [.. wizard.Editor.Relays.Select(r => r.RelayId)];

@@ -142,6 +142,23 @@ public sealed class GroupNewTests
         Assert.Equal([$"Fan: {relays[0]}", $"Relay 2: {relays[1]} {relays[2]}"], await SavedStepsAsync(app));
     }
 
+    // "+ Add a relay to this step" offers only the board's relays not picked yet.
+    [Fact]
+    public async Task Should_OfferOnlyRelaysNotPickedYet_ToAdd()
+    {
+        await using var app = await StartAppAsync();
+        var relays = await RelaysAsync(app);
+        using var page = await AtOrderAndRulesAsync(app, relays.Take(3));
+
+        await page.ClickAsync(Button("Add a relay to this step"));
+        var text = await page.TextAsync();
+
+        Assert.DoesNotContain("Relay 1 · Relay 1", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Relay 3 · Relay 3", text, StringComparison.Ordinal);
+        Assert.Contains("Relay 4 · Relay 4", text, StringComparison.Ordinal);
+        Assert.Contains("Relay 8 · Relay 8", text, StringComparison.Ordinal);
+    }
+
     private static async Task<TestWebApp> StartAppAsync()
     {
         var app = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
