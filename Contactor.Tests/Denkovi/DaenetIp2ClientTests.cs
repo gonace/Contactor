@@ -324,6 +324,9 @@ public sealed class DaenetIp2ClientTests
     [Fact]
     public async Task Should_NeverTakeTheAnswer_FromAnotherAddress()
     {
+        // macOS has only 127.0.0.1 until another loopback address is added (sudo ifconfig lo0 alias 127.0.0.2).
+        Assert.SkipUnless(CanBindUdp(IPAddress.Parse("127.0.0.2")), "This computer can't bind to 127.0.0.2.");
+
         // The right answer, with the right id and community, from the board's port but only ever from another address.
         await using var board = ScriptedBoard.Start(
             request => [new Datagram(DaenetIp2Snmp.Response(request.RequestId, Community, request.Oid, 0b0101), FromElsewhere: true)],
@@ -780,6 +783,20 @@ public sealed class DaenetIp2ClientTests
             {
                 _messages.Add(formatter(state, exception));
             }
+        }
+    }
+
+    private static bool CanBindUdp(IPAddress address)
+    {
+        using var socket = new Socket(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+        try
+        {
+            socket.Bind(new IPEndPoint(address, 0));
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
         }
     }
 }
