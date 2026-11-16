@@ -34,6 +34,25 @@ public sealed class DevantechSimulatedBoardTests
     }
 
     [Fact]
+    public async Task Should_LayOutTheEth1610_AsItsManualSpecifies()
+    {
+        await using var simulator = Started(DevantechModels.Eth1610);
+        await simulator.SwitchRelayAsync(1, true);
+        await simulator.SwitchRelayAsync(3, true);
+        await simulator.SwitchRelayAsync(10, true);
+        await simulator.SetInputAsync(1, true);
+        await simulator.SetInputAsync(9, true);
+        await simulator.SetInputAsync(16, true);
+        using var board = await Board.ConnectAsync(simulator);
+
+        Assert.Equal("34 02 1C", await board.AskAsync("10", 3));
+        Assert.Equal("05 02", await board.AskAsync("24", 2));
+        Assert.Equal("81 01", await board.AskAsync("25", 2));
+        Assert.Equal("00", await board.AskAsync("20 0A 00", 1));
+        Assert.Equal("05 02", await board.AskAsync("24", 2));
+    }
+
+    [Fact]
     public async Task Should_SwitchARelayBack_AfterItsPulseTime_OnItsOwnClock()
     {
         var time = new ManualTimeProvider();
