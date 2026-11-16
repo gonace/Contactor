@@ -2,6 +2,7 @@
 @implements IDisposable
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Persistence
 @using Microsoft.EntityFrameworkCore
@@ -11,6 +12,7 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
 @inject IStringLocalizer<EventsTexts> Texts
+@inject AppLanguage Language
 
 <PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Events"]])</PageTitle>
 
@@ -205,6 +207,7 @@
 
     private async Task RefreshAsync(bool reload)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(async () =>

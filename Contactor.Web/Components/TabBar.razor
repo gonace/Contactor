@@ -2,6 +2,7 @@
 @using Contactor.Boards
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Persistence
 @using Microsoft.EntityFrameworkCore
@@ -12,6 +13,7 @@
 @inject TimeProvider TimeProvider
 @inject ILogger<TabBar> Log
 @inject RelayChanges Changes
+@inject AppLanguage Language
 
 <div class="bottom @(SideMenuOnly ? "side-only" : null)">
     @if (_debugging)
@@ -216,6 +218,7 @@
 
     private async Task RefreshListAsync(bool reload)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(async () =>
@@ -286,6 +289,7 @@
 
     private async Task ReloadAsync()
     {
+        using var language = Language.Use();
         try
         {
             var on = await Debugging.IsOnAsync(_email!, CancellationToken.None);
@@ -365,6 +369,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);

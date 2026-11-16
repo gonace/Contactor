@@ -175,6 +175,10 @@
   <data name="Boards.New.NameHint" xml:space="preserve">
     <value>What you call it in Contactor, e.g. "Garage". You can change it later.</value>
   </data>
+  <data name="Boards.New.NameExample" xml:space="preserve">
+    <value>E.g. Garage</value>
+    <comment>In the empty name field before a model is chosen.</comment>
+  </data>
   <data name="Boards.New.Gone" xml:space="preserve">
     <value>This relay board was removed meanwhile.</value>
   </data>

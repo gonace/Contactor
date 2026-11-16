@@ -91,12 +91,16 @@ public sealed partial class TextsTests
             ["Common.PageTitle"] = "{0} · Contactor",
             ["Common.Braces"] = "{{0}} is no placeholder",
             ["Common.Relays_One"] = "{0} relay",
+            ["Common.Separator"] = " ",
+            ["Common.Between"] = " · ",
         };
         var translated = new Dictionary<string, string>
         {
             ["Common.PageTitle"] = "Contactor · {1}",
             ["Common.Braces"] = "{{0}} är ingen",
             ["Common.Relays_One"] = " ",
+            ["Common.Separator"] = " ",
+            ["Common.Between"] = "",
             ["Common.Gone"] = "Borta",
         };
 
@@ -107,6 +111,7 @@ public sealed partial class TextsTests
                 "Test: Common.Save has no text",
                 "Test: Common.PageTitle has placeholders 1 instead of 0",
                 "Test: Common.Relays_One has no text",
+                "Test: Common.Between has no text",
                 "Test: Common.Gone isn't in English",
             ],
             problems);
@@ -238,7 +243,8 @@ public sealed partial class TextsTests
 
         foreach (var (key, text) in english)
         {
-            if (!texts.TryGetValue(key, out var translated) || string.IsNullOrWhiteSpace(translated))
+            // Only a separator that is blank in English, e.g. Groups.Plan.Separator's " ", may be blank in a language.
+            if (!texts.TryGetValue(key, out var translated) || translated.Length == 0 || (string.IsNullOrWhiteSpace(translated) && !string.IsNullOrWhiteSpace(text)))
             {
                 problems.Add($"{name}: {key} has no text");
             }
