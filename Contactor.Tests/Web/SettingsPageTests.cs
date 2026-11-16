@@ -137,6 +137,62 @@ public sealed class SettingsPageTests
         }
     }
 
+    // On a desktop two columns, each its own stack: the workshop's own things on the left, the app itself on the right.
+    // On a phone and a tablet the same cards are one column, in this order: the left column's, then the right's.
+    [Fact]
+    public async Task Should_PutTheCardsInTwoColumns_WithOneBoard()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
+        using var http = app.CreateClient();
+
+        var (left, right) = Columns(WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel)));
+
+        AssertInOrder(left, "class=\"board-stack\"", "id=\"host\"", "Add a board", ">People</h2>", ">Backups</h2>");
+        AssertInOrder(right, ">Updates</h2>", "id=\"language\"", ">Debugging</h2>");
+    }
+
+    [Fact]
+    public async Task Should_PutTheBoardsList_InTheLeftColumn_WithTwoBoards()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        using var http = boards.App.CreateClient();
+
+        var (left, right) = Columns(WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel)));
+
+        AssertInOrder(left, ">Relay boards</h2>", "href=\"board/1\"", $"href=\"board/{boards.BarnId}\"", "Add a board", ">People</h2>", ">Backups</h2>");
+        AssertInOrder(right, ">Updates</h2>", "id=\"language\"", ">Debugging</h2>");
+        Assert.DoesNotContain("board/", right, StringComparison.Ordinal);
+    }
+
+    // The page's two columns: what is in the first, and what is in the second. The second ends the page's content: after
+    // its last card comes only its own </div>, so a card after the column is caught.
+    private static (string Left, string Right) Columns(string html)
+    {
+        var content = html.IndexOf("<main class=\"content\"", StringComparison.Ordinal);
+        var first = html.IndexOf("<div class=\"column\"", content, StringComparison.Ordinal);
+        var second = html.IndexOf("<div class=\"column\"", first + 1, StringComparison.Ordinal);
+        var end = html.IndexOf("</main>", content, StringComparison.Ordinal);
+        Assert.True(content >= 0 && first > content && second > first && end > second, "Settings has two columns.");
+        var lastCard = html.LastIndexOf("</section>", end, StringComparison.Ordinal);
+        Assert.True(lastCard > second, "The second column ends with a card.");
+        var tail = string.Concat(html[lastCard..end].Where(c => !char.IsWhiteSpace(c)));
+        Assert.Equal("</section></div>", tail);
+        return (html[first..second], html[second..lastCard]);
+    }
+
+    private static void AssertInOrder(string html, params string[] parts)
+    {
+        var at = -1;
+        foreach (var part in parts)
+        {
+            var next = html.IndexOf(part, at + 1, StringComparison.Ordinal);
+            Assert.True(next > at, $"\"{part}\" comes after what is before it.");
+            at = next;
+        }
+    }
+
     [Theory]
     [InlineData(68 * 1024, "68 kB")]
     [InlineData(100, "1 kB")]
