@@ -66,7 +66,7 @@
   </data>
   <data name="Groups.Chain" xml:space="preserve">
     <value>RELAY {0}</value>
-    <comment>A group's relays by number, e.g. "RELAY 1 → 2".</comment>
+    <comment>A group's relays by number, a step's joined by "+", e.g. "RELAY 1 + 2 → 3 + 4".</comment>
   </data>
   <data name="Groups.Plan.Then" xml:space="preserve">
     <value>{0} → wait {1} → {2}</value>
@@ -113,7 +113,7 @@
     <value>The group no longer exists.</value>
   </data>
   <data name="Groups.Save.TurnOffFirst" xml:space="preserve">
-    <value>Turn off the group, and the relays you add, before you change its relays or their order.</value>
+    <value>Turn off the group, and the relays you add, before you change its steps or their relays.</value>
   </data>
   <data name="Groups.Delete.TurnOffFirst" xml:space="preserve">
     <value>Turn off the group before deleting it.</value>
@@ -146,7 +146,7 @@
     <value>All the relays of a group must be on one board.</value>
   </data>
   <data name="Groups.Save.RoleTooLong" xml:space="preserve">
-    <value>The name in the group can be at most {0} characters.</value>
+    <value>The step's name can be at most {0} characters.</value>
   </data>
   <data name="Groups.Save.Wait" xml:space="preserve">
     <value>The wait on start is {0}–{1} seconds.</value>
@@ -182,20 +182,45 @@
   <data name="Groups.Icon" xml:space="preserve">
     <value>Icon</value>
   </data>
+  <data name="Groups.Icon.Fan" xml:space="preserve">
+    <value>Fan</value>
+    <comment>The names under the eight group icons.</comment>
+  </data>
+  <data name="Groups.Icon.Heat" xml:space="preserve">
+    <value>Heat</value>
+  </data>
+  <data name="Groups.Icon.Light" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="Groups.Icon.Air" xml:space="preserve">
+    <value>Air</value>
+  </data>
+  <data name="Groups.Icon.Paint" xml:space="preserve">
+    <value>Paint</value>
+  </data>
+  <data name="Groups.Icon.Pump" xml:space="preserve">
+    <value>Pump</value>
+  </data>
+  <data name="Groups.Icon.Tools" xml:space="preserve">
+    <value>Tools</value>
+  </data>
+  <data name="Groups.Icon.Power" xml:space="preserve">
+    <value>Power</value>
+  </data>
   <data name="Groups.TurnOn" xml:space="preserve">
     <value>TURN ON THE GROUP</value>
   </data>
   <data name="Groups.TurnOff" xml:space="preserve">
     <value>TURN OFF THE GROUP</value>
   </data>
-  <data name="Groups.Members" xml:space="preserve">
-    <value>Relays in start order</value>
+  <data name="Groups.Steps" xml:space="preserve">
+    <value>Steps in start order</value>
   </data>
-  <data name="Groups.Members.Hint" xml:space="preserve">
-    <value>Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</value>
+  <data name="Groups.Steps.Hint" xml:space="preserve">
+    <value>Starts from the top, stops from the bottom. The relays in a step switch together. A relay can only be on while every relay in the step above it is on.</value>
   </data>
-  <data name="Groups.Members.HintOn" xml:space="preserve">
-    <value>On {0}. Starts from the top, stops from the bottom. A relay can only be on while the relay above it is on.</value>
+  <data name="Groups.Steps.HintOn" xml:space="preserve">
+    <value>On {0}. Starts from the top, stops from the bottom. The relays in a step switch together. A relay can only be on while every relay in the step above it is on.</value>
     <comment>{0} is the board's name, with two or more boards.</comment>
   </data>
   <data name="Groups.MoveUp" xml:space="preserve">
@@ -206,7 +231,22 @@
     <value>Move {0} down</value>
   </data>
   <data name="Groups.Remove" xml:space="preserve">
-    <value>Remove from the group</value>
+    <value>Remove</value>
+  </data>
+  <data name="Groups.RemoveRelay" xml:space="preserve">
+    <value>Remove {0} from the group</value>
+    <comment>For a screen reader: {0} is the relay's name.</comment>
+  </data>
+  <data name="Groups.Step.Label" xml:space="preserve">
+    <value>STEP {0} · NAME</value>
+    <comment>Over a step's name field: {0} is its place in the start order, from 1.</comment>
+  </data>
+  <data name="Groups.Step.StartsFirst" xml:space="preserve">
+    <value>Off · starts first</value>
+  </data>
+  <data name="Groups.Step.Only" xml:space="preserve">
+    <value>Only {0} on</value>
+    <comment>A step with only some of its relays on: {0} lists them, e.g. "Fan 1" or "Fan 1, Fan 2".</comment>
   </data>
   <data name="Groups.Between" xml:space="preserve">
     <value>Between {0} and {1}</value>
@@ -222,10 +262,10 @@
     <value>None</value>
   </data>
   <data name="Groups.NoContactMembers" xml:space="preserve">
-    <value>No contact with the relay board. The relays and their order can be changed once the board responds.</value>
+    <value>No contact with the relay board. The steps and their relays can be changed once the board responds.</value>
   </data>
   <data name="Groups.TurnOffToChange" xml:space="preserve">
-    <value>Turn the group off to change its relays or their order.</value>
+    <value>Turn the group off to change its steps or their relays.</value>
   </data>
   <data name="Groups.RelayToAdd" xml:space="preserve">
     <value>Relay to add</value>
@@ -234,8 +274,11 @@
     <value>Relay {0} · {1}</value>
     <comment>{0} is the relay's number, {1} its name.</comment>
   </data>
-  <data name="Groups.AddRelay" xml:space="preserve">
-    <value>Add relay</value>
+  <data name="Groups.AddRelayToStep" xml:space="preserve">
+    <value>Add a relay to this step</value>
+  </data>
+  <data name="Groups.AddStep" xml:space="preserve">
+    <value>Add a step</value>
   </data>
   <data name="Groups.LimitHint" xml:space="preserve">
     <value>Applies when someone turns the group on by hand. It stops in its stop order, with its run-on times.</value>

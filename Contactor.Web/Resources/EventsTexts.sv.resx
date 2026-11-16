@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Events.Who.Contactor" xml:space="preserve">
+    <value>Contactor</value>
+  </data>
+  <data name="Events.Who.Board" xml:space="preserve">
+    <value>Kortet</value>
+  </data>
+  <data name="Events.Who.Schedule" xml:space="preserve">
+    <value>Schemat</value>
+  </data>
+  <data name="Events.Who.AutoOff" xml:space="preserve">
+    <value>Automatisk avstängning</value>
+  </data>
+  <data name="Events.Who.Outside" xml:space="preserve">
+    <value>Någon utanför appen</value>
+  </data>
+  <data name="Events.Who.System" xml:space="preserve">
+    <value>Systemet</value>
+  </data>
+  <data name="Events.Who.RunOn" xml:space="preserve">
+    <value>Efterkörning</value>
+  </data>
+  <data name="Events.Who.RunOnDone" xml:space="preserve">
+    <value>Efterkörning klar:</value>
+  </data>
+  <data name="Events.Who.SafetyShutOff" xml:space="preserve">
+    <value>Säkerhetsavstängning:</value>
+  </data>
+  <data name="Events.Who.TheGroup" xml:space="preserve">
+    <value>Gruppen</value>
+  </data>
+  <data name="Events.TheRelay" xml:space="preserve">
+    <value>reläet</value>
+  </data>
+  <data name="Events.TheRelayAbove" xml:space="preserve">
+    <value>reläet ovanför</value>
+  </data>
+  <data name="Events.Short.Schedule" xml:space="preserve">
+    <value>schema</value>
+  </data>
+  <data name="Events.Short.AutoOff" xml:space="preserve">
+    <value>automatiskt</value>
+  </data>
+  <data name="Events.Short.Outside" xml:space="preserve">
+    <value>utanför appen</value>
+  </data>
+  <data name="Events.Short.System" xml:space="preserve">
+    <value>systemet</value>
+  </data>
+  <data name="Events.Update.Requested" xml:space="preserve">
+    <value>{0} startade uppdateringen till {1}</value>
+  </data>
+  <data name="Events.Update.Done" xml:space="preserve">
+    <value>{0} uppdaterades till {1}</value>
+  </data>
+  <data name="Events.Update.WentBack" xml:space="preserve">
+    <value>{0} gick tillbaka till {1}: uppdateringen till {2} fungerade inte</value>
+  </data>
+  <data name="Events.Update.Current" xml:space="preserve">
+    <value>{0} hittade inget nyare än {1} att ladda ner</value>
+  </data>
+  <data name="Events.Update.Cancelled" xml:space="preserve">
+    <value>{0} uppdaterades inte till {1}: uppdateringen avbröts</value>
+  </data>
+  <data name="Events.Update.Switching" xml:space="preserve">
+    <value>{0} uppdaterades inte till {1}: reläerna slog fortfarande om. Inget ändrades</value>
+  </data>
+  <data name="Events.Update.Failed" xml:space="preserve">
+    <value>{0} uppdaterades inte till {1}: {2}. Inget ändrades</value>
+  </data>
+  <data name="Events.Update.NewVersion" xml:space="preserve">
+    <value>en ny version</value>
+  </data>
+  <data name="Events.Update.VersionBefore" xml:space="preserve">
+    <value>versionen innan</value>
+  </data>
+  <data name="Events.Update.VersionItRuns" xml:space="preserve">
+    <value>versionen som körs</value>
+  </data>
+  <data name="Events.Update.Because.Download" xml:space="preserve">
+    <value>den kunde inte laddas ner</value>
+  </data>
+  <data name="Events.Update.Because.Signature" xml:space="preserve">
+    <value>den klarade inte kontrollen att den kommer från oss</value>
+  </data>
+  <data name="Events.Update.Because.Space" xml:space="preserve">
+    <value>det fanns inte tillräckligt med plats</value>
+  </data>
+  <data name="Events.Update.Because.Backup" xml:space="preserve">
+    <value>databasen kunde inte säkerhetskopieras</value>
+  </data>
+  <data name="Events.Update.Because.Interrupted" xml:space="preserve">
+    <value>den avbröts</value>
+  </data>
+  <data name="Events.Update.Because.Other" xml:space="preserve">
+    <value>den startade inte</value>
+  </data>
+  <data name="Events.Update.Log" xml:space="preserve">
+    <value>Ladda ner dess logg</value>
+  </data>
+  <data name="Events.Group.On" xml:space="preserve">
+    <value>{0} slog på gruppen</value>
+  </data>
+  <data name="Events.Group.OffAfter" xml:space="preserve">
+    <value>{0} stängde av gruppen efter {1}</value>
+  </data>
+  <data name="Events.Group.Off" xml:space="preserve">
+    <value>{0} stängde av gruppen</value>
+  </data>
+  <data name="Events.Group.RunOnStart" xml:space="preserve">
+    <value>{0} i {2}: {1}</value>
+  </data>
+  <data name="Events.Group.RunOnEnd" xml:space="preserve">
+    <value>{0} {1} av</value>
+  </data>
+  <data name="Events.Group.Trip" xml:space="preserve">
+    <value>{0} {1} stängdes av. {2} måste vara på först.</value>
+  </data>
+  <data name="Events.Group.TripStarted" xml:space="preserve">
+    <value>{0} {1} slogs på för efterkörning</value>
+  </data>
+  <data name="Events.Group.StartFailed" xml:space="preserve">
+    <value>{0} kunde inte starta {1}</value>
+  </data>
+  <data name="Events.Group.Create" xml:space="preserve">
+    <value>{0} skapade gruppen</value>
+  </data>
+  <data name="Events.Group.Edit" xml:space="preserve">
+    <value>{0} ändrade gruppen</value>
+  </data>
+  <data name="Events.Group.Delete" xml:space="preserve">
+    <value>{0} tog bort gruppen</value>
+  </data>
+  <data name="Events.Group.Target" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Events.List.And" xml:space="preserve">
+    <value> och </value>
+  </data>
+  <data name="Events.On" xml:space="preserve">
+    <value>{0} slog på</value>
+  </data>
+  <data name="Events.OffAfter" xml:space="preserve">
+    <value>{0} stängde av efter {1}</value>
+  </data>
+  <data name="Events.Off" xml:space="preserve">
+    <value>{0} stängde av</value>
+  </data>
+  <data name="Events.Pulse" xml:space="preserve">
+    <value>{0} provkörde i {1}</value>
+  </data>
+  <data name="Events.Rename" xml:space="preserve">
+    <value>{0} bytte namn på {1} till</value>
+  </data>
+  <data name="Events.Activate" xml:space="preserve">
+    <value>{0} gjorde reläet aktivt</value>
+  </data>
+  <data name="Events.Deactivate" xml:space="preserve">
+    <value>{0} gjorde reläet inaktivt</value>
+  </data>
+  <data name="Events.Schedule.Added" xml:space="preserve">
+    <value>{0} lade till schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.AddedOne" xml:space="preserve">
+    <value>{0} lade till ett schema</value>
+  </data>
+  <data name="Events.Schedule.Paused" xml:space="preserve">
+    <value>{0} pausade schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.PausedOne" xml:space="preserve">
+    <value>{0} pausade ett schema</value>
+  </data>
+  <data name="Events.Schedule.Resumed" xml:space="preserve">
+    <value>{0} återupptog schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.ResumedOne" xml:space="preserve">
+    <value>{0} återupptog ett schema</value>
+  </data>
+  <data name="Events.Schedule.Changed" xml:space="preserve">
+    <value>{0} ändrade schemat till {1}</value>
+  </data>
+  <data name="Events.Schedule.ChangedOne" xml:space="preserve">
+    <value>{0} ändrade ett schema</value>
+  </data>
+  <data name="Events.Schedule.Deleted" xml:space="preserve">
+    <value>{0} tog bort schemat {1}</value>
+  </data>
+  <data name="Events.Schedule.DeletedOne" xml:space="preserve">
+    <value>{0} tog bort ett schema</value>
+  </data>
+  <data name="Events.Board.Lost" xml:space="preserve">
+    <value>{0} tappade kontakten med appen</value>
+  </data>
+  <data name="Events.Board.Restored" xml:space="preserve">
+    <value>{0} fick kontakt igen</value>
+  </data>
+  <data name="Events.Board.TimersOff" xml:space="preserve">
+    <value>{0} fick sina egna timers avstängda</value>
+  </data>
+  <data name="Events.Board.ModesReset" xml:space="preserve">
+    <value>{0} fick sina reläer i normalläge, så att dess ingångar inte slår om dem</value>
+  </data>
+  <data name="Events.Board.ModesNotReset" xml:space="preserve">
+    <value>{0} kunde inte få sina reläer i normalläge, så dess ingångar kan slå om dem</value>
+  </data>
+  <data name="Events.Board.Login" xml:space="preserve">
+    <value>{0} ändrade reläkortets inloggning</value>
+  </data>
+  <data name="Events.Board.RenamedFrom" xml:space="preserve">
+    <value>{0} bytte namn på reläkortet från {1} till {2}</value>
+  </data>
+  <data name="Events.Board.Renamed" xml:space="preserve">
+    <value>{0} bytte namn på reläkortet till {1}</value>
+  </data>
+  <data name="Events.Board.AddressFrom" xml:space="preserve">
+    <value>{0} ändrade reläkortets adress från {1} till {2}</value>
+  </data>
+  <data name="Events.Board.Address" xml:space="preserve">
+    <value>{0} satte reläkortets adress till {1}</value>
+  </data>
+  <data name="Events.Other" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="Events.Input" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="Events.Unknown" xml:space="preserve">
+    <value>?</value>
+  </data>
+  <data name="Events.Length.AWhile" xml:space="preserve">
+    <value>en stund</value>
+  </data>
+  <data name="Events.Length.AMoment" xml:space="preserve">
+    <value>ett ögonblick</value>
+  </data>
+  <data name="Events.Length.Seconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
+  <data name="Events.Length.MinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+  </data>
+  <data name="Events.Length.Minutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="Events.Length.Hours" xml:space="preserve">
+    <value>{0} tim</value>
+  </data>
+  <data name="Events.TimeUnknown" xml:space="preserve">
+    <value> · okänd tid</value>
+  </data>
+  <data name="Events.WhyUnknown" xml:space="preserve">
+    <value>Varför är tiden okänd för {0}?</value>
+  </data>
+  <data name="Events.WhyTimeUnknown" xml:space="preserve">
+    <value>Appen hade ingen kontakt med kortet när ingången ändrades, så den märkte ändringen först vid den här tiden. Den kan ha hänt när som helst innan.</value>
+  </data>
+  <data name="Events.Filter.All" xml:space="preserve">
+    <value>Alla</value>
+  </data>
+  <data name="Events.Filter.People" xml:space="preserve">
+    <value>Personer</value>
+  </data>
+  <data name="Events.Filter.Automatic" xml:space="preserve">
+    <value>Automatiska</value>
+  </data>
+  <data name="Events.Empty" xml:space="preserve">
+    <value>Inga händelser än.</value>
+  </data>
+  <data name="Events.More" xml:space="preserve">
+    <value>Visa fler</value>
+  </data>
+  <data name="Events.Day.Today" xml:space="preserve">
+    <value>I dag</value>
+  </data>
+  <data name="Events.Day.Yesterday" xml:space="preserve">
+    <value>I går</value>
+  </data>
+  <data name="Events.Day.Format" xml:space="preserve">
+    <value>dddd d MMM</value>
+  </data>
+  <data name="Events.Day.YearFormat" xml:space="preserve">
+    <value>dddd d MMM yyyy</value>
+  </data>
+  <data name="Events.RemovedRelay" xml:space="preserve">
+    <value>ett borttaget relä</value>
+  </data>
+  <data name="Events.RemovedGroup" xml:space="preserve">
+    <value>en borttagen grupp</value>
+  </data>
+  <data name="Events.RemovedInput" xml:space="preserve">
+    <value>En borttagen ingång</value>
+  </data>
+  <data name="Events.Short.RemovedInput" xml:space="preserve">
+    <value>en borttagen ingång</value>
+  </data>
+  <data name="Events.Board.Removed" xml:space="preserve">
+    <value>{0} tog bort reläkortet {1} ({2})</value>
+  </data>
+  <data name="Events.Board.RemovedNoModel" xml:space="preserve">
+    <value>{0} tog bort reläkortet {1}</value>
+  </data>
+</root>

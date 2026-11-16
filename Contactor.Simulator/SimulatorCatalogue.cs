@@ -1,9 +1,7 @@
 using Contactor.Boards;
-using Contactor.Boards.DAEnetIP2v2;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 
 namespace Contactor.Simulator;
@@ -35,7 +33,7 @@ public static class SimulatorCatalogue
             (username, password) =>
             {
                 Vm201Login.TryCreate(username, password, out var error);
-                return error;
+                return error?.ToString();
             },
             (username, password, logger, time) => new Vm201Simulator(username, password, logger) { TimeProvider = time }),
         new(
@@ -43,7 +41,7 @@ public static class SimulatorCatalogue
             (username, password) =>
             {
                 Vm204Login.TryCreate(username, password, out var error);
-                return error;
+                return error?.ToString();
             },
             (username, password, logger, time) => new Vm204Simulator(username, password, logger) { TimeProvider = time },
             SuggestedPort: 8204),
@@ -56,16 +54,16 @@ public static class SimulatorCatalogue
             model,
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Waveshare board takes no login.",
             (_, _, logger, time) => new WaveshareSimulator(model, logger) { TimeProvider = time })),
-        .. DAEnetIP2v2Models.All.Select(model => new SimulatorModel(
-            model,
-            (username, password) => username.Length <= 64 && password.Length <= 64 ? null : "The user name and password can be at most 64 characters.",
-            (username, password, logger, _) => new DAEnetIP2v2Simulator(model, username, password, logger),
-            SuggestedPort: 8182)),
+        new(
+            SmartDenModels.Ip16RMt,
+            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The Denkovi board takes no login.",
+            (_, _, logger, time) => new SmartDenSimulator(logger) { TimeProvider = time },
+            SuggestedPort: 8502),
         .. DevantechModels.All.Select(model => new SimulatorModel(
             model,
             (username, password) => username.Length > 0
                 ? "The Devantech board takes a password only, no user name."
-                : DevantechModels.CheckPassword(password),
+                : DevantechModels.CheckPassword(password)?.ToString(),
             (_, password, logger, time) => new DevantechSimulator(model, password, logger) { TimeProvider = time })),
     ];
 

@@ -1,6 +1,5 @@
 using Contactor.Boards;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
@@ -39,7 +38,9 @@ public sealed class BoardRegistryTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.RefreshAsync(Cancel));
         Assert.Throws<InvalidOperationException>(() => board.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760)));
         Assert.Throws<InvalidOperationException>(() => board.SetLogin(BoardLogin.None));
-        Assert.Equal("No relay board has been chosen yet.", board.CheckLogin(BoardLogin.None));
+        Assert.Equal("No relay board has been chosen yet.", Assert.Throws<InvalidOperationException>(() => board.CheckLogin(BoardLogin.None)).Message);
+        Assert.False(board.TryCheckLogin(new BoardLogin("admin", "secret"), out var problem));
+        Assert.Null(problem);
     }
 
     [Fact]

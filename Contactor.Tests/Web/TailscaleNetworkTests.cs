@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -56,7 +58,7 @@ public sealed class TailscaleNetworkTests
 
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
         Assert.False(network.Network.Status.Online);
-        Assert.Equal(HttpsHint, network.Network.Status.Problem);
+        Assert.Equal(HttpsHint, network.Network.Status.Problem?.English());
         Assert.Equal(new Uri("https://login.tailscale.com/f/serve?node=nExample"), network.Network.Status.Link);
         Assert.Contains($"Tailscale: {HttpsHint} https://login.tailscale.com/f/serve?node=nExample", network.Logger.Lines);
 
@@ -82,9 +84,9 @@ public sealed class TailscaleNetworkTests
 
         tailscale.State = "Stopped";
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
-        await WaitUntilAsync(() => network.Network.Status.Problem != HttpsHint);
+        await WaitUntilAsync(() => network.Network.Status.Problem?.English() != HttpsHint);
 
-        Assert.Equal("Tailscale is stopped on this machine.", network.Network.Status.Problem);
+        Assert.Equal("Tailscale is stopped on this machine.", network.Network.Status.Problem?.English());
         Assert.Null(network.Network.Status.Link);
     }
 
@@ -99,8 +101,8 @@ public sealed class TailscaleNetworkTests
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
         await WaitUntilAsync(() => time.PendingTimers == 1);
 
-        Assert.StartsWith("Tailscale didn't take the auth key: backend error: invalid key:", network.Network.Status.Problem, StringComparison.Ordinal);
-        Assert.DoesNotContain(AuthKey, network.Network.Status.Problem, StringComparison.Ordinal);
+        Assert.StartsWith("Tailscale didn't take the auth key: backend error: invalid key:", network.Network.Status.Problem?.English(), StringComparison.Ordinal);
+        Assert.DoesNotContain(AuthKey, network.Network.Status.Problem?.English(), StringComparison.Ordinal);
         Assert.DoesNotContain(network.Logger.Lines, l => l.Contains(AuthKey, StringComparison.Ordinal));
         Assert.Single(tailscale.LogIns);
     }
@@ -112,7 +114,9 @@ public sealed class TailscaleNetworkTests
         var tailscale = new FakeTailscale { LogIn = new TailscaleCommandResult(-1, "", TimedOut: true) };
         await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
 
-        await WaitUntilAsync(() => tailscale.LogIns.Count == 1 && time.PendingTimers == 1);
+        await WaitUntilAsync(() => tailscale.LogIns.Count == 1 && time.PendingTimers == 1 && network.Network.Status.Problem is not null);
+        Assert.Equal(UiText.Of<SetupTexts>("Setup.Tailscale.KeyTimedOut"), network.Network.Status.Problem);
+        Assert.Equal("Tailscale didn't take the auth key: Tailscale didn't answer in time.", network.Network.Status.Problem?.English());
         tailscale.LogIn = new TailscaleCommandResult(0, "");
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
 
@@ -197,7 +201,8 @@ public sealed class TailscaleNetworkTests
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
 
         Assert.False(network.Network.Status.Online);
-        Assert.Equal(new TailscaleStatus(false, Address, HttpsHint, new Uri("https://login.tailscale.com/f/serve?node=nExample")), network.Network.Status);
+        Assert.Equal(new TailscaleStatus(false, Address, UiText.Of<SetupTexts>("Setup.Tailscale.Https"), new Uri("https://login.tailscale.com/f/serve?node=nExample")), network.Network.Status);
+        Assert.Equal(HttpsHint, network.Network.Status.Problem?.English());
     }
 
     // Only Tailscale's own page over https is a link; anything else is no link, and serving failed as it says.
@@ -212,7 +217,7 @@ public sealed class TailscaleNetworkTests
 
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
 
-        Assert.Equal("Tailscale Serve didn't start: To enable, visit:", network.Network.Status.Problem);
+        Assert.Equal("Tailscale Serve didn't start: To enable, visit:", network.Network.Status.Problem?.English());
         Assert.Null(network.Network.Status.Link);
     }
 
@@ -270,7 +275,7 @@ public sealed class TailscaleNetworkTests
 
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
 
-        Assert.Contains("Tailscale:ServeAddress", network.Network.Status.Problem, StringComparison.Ordinal);
+        Assert.Contains("Tailscale:ServeAddress", network.Network.Status.Problem?.English(), StringComparison.Ordinal);
         Assert.DoesNotContain(tailscale.Commands, c => c.StartsWith("serve --bg", StringComparison.Ordinal));
     }
 
@@ -282,7 +287,7 @@ public sealed class TailscaleNetworkTests
         await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
 
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
-        Assert.Equal("Contactor couldn't ask Tailscale how it stands. It tries again.", network.Network.Status.Problem);
+        Assert.Equal("Contactor couldn't ask Tailscale how it stands. It tries again.", network.Network.Status.Problem?.English());
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
 
         await WaitUntilAsync(() => network.Network.Status.Online);
@@ -297,7 +302,7 @@ public sealed class TailscaleNetworkTests
 
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
 
-        Assert.Equal("Approve relays in Tailscale's admin console, under Machines. Contactor goes on by itself.", network.Network.Status.Problem);
+        Assert.Equal("Approve relays in Tailscale's admin console, under Machines. Contactor goes on by itself.", network.Network.Status.Problem?.English());
         Assert.Empty(tailscale.LogIns);
     }
 

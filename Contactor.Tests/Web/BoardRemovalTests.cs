@@ -1,9 +1,10 @@
 using System.Net;
 using Contactor.Boards;
-using Contactor.Boards.Vm201;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -96,6 +97,7 @@ public sealed class BoardRemovalTests
         await using (var check = await boards.Factory.CreateDbContextAsync(Cancel))
         {
             Assert.True(await check.Boards.AnyAsync(b => b.Id == boards.BarnId, Cancel));
+            Assert.False(await check.EventLog.AnyAsync(e => e.Action == EventActions.BoardRemoved, Cancel));
         }
 
         var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
@@ -364,6 +366,171 @@ public sealed class BoardRemovalTests
         Assert.Null(await removal.RemoveAsync(boards.BarnId, turnOffFirst: false, John, Cancel));
         Assert.Empty(lost.Sent);
         Assert.Null(registry.Find(boards.BarnId));
+    }
+
+    // Who removed it stays on Events, with no board, after the board's own events are gone: its name and model as they
+    // were, since its row is gone.
+    [Fact]
+    public async Task Should_LogWhoRemovedTheBoard_InAnEventThatStays()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        await SeedAsync(boards, boards.BarnId);
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Boards.Where(b => b.Id == boards.BarnId).ExecuteUpdateAsync(b => b.SetProperty(x => x.Type, "vm204"), Cancel);
+        }
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var removed = await db.EventLog.SingleAsync(e => e.Action == EventActions.BoardRemoved, Cancel);
+            Assert.Equal((null, null, null, null, John), (removed.BoardId, removed.RelayId, removed.GroupId, removed.InputId, removed.Actor));
+            Assert.Equal("""{"name":"Barn","model":"Velleman VM204"}""", removed.Details);
+        }
+
+        var rows = await boards.App.Services.GetRequiredService<EventsHandler>().GetAsync(EventFilter.All, null, 50, Cancel);
+        var row = Assert.Single(rows, r => r.View.What.StartsWith("removed relay board", StringComparison.Ordinal));
+        Assert.Equal(("removed relay board Barn (Velleman VM204)", true, null), (row.View.What, row.View.IsPerson, row.Board));
+        Assert.Contains(row, await boards.App.Services.GetRequiredService<EventsHandler>().GetAsync(EventFilter.People, null, 50, Cancel, boards: [1]));
+    }
+
+    // The deletes and the removal's event are saved together: an event that can't be saved leaves every row of the board.
+    [Fact]
+    public async Task Should_RemoveNothing_WhenTheRemovalsEventCantBeSaved()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        await SeedAsync(boards, boards.BarnId);
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "CREATE TRIGGER no_removal BEFORE INSERT ON \"EventLog\" WHEN NEW.\"Action\" = 'board-removed' BEGIN SELECT RAISE(ABORT, 'x'); END;", Cancel);
+        }
+
+        var before = await CountAsync(boards, boards.BarnId);
+        await Assert.ThrowsAnyAsync<Exception>(() => boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        // Its events too; the board running again may log more of its own meanwhile.
+        var after = await CountAsync(boards, boards.BarnId);
+        Assert.Equal(before with { Events = 0 }, after with { Events = 0 });
+        Assert.True(after.Events >= before.Events);
+        await using (var check = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.True(await check.Boards.AnyAsync(b => b.Id == boards.BarnId, Cancel));
+        }
+
+        Assert.NotNull(boards.App.Services.GetRequiredService<BoardRegistry>().Find(boards.BarnId));
+    }
+
+    // The event names the board as it is at the delete, after its relays are off: here renamed meanwhile.
+    [Fact]
+    public async Task Should_NameTheBoard_AsItIsAtTheDelete()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        registry.BoardsChanged += (_, _) =>
+        {
+            using var db = boards.Factory.CreateDbContext();
+            db.Boards.Where(b => b.Id == boards.BarnId).ExecuteUpdate(b => b.SetProperty(x => x.Name, "Garage"));
+        };
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        await using var check = await boards.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal("""{"name":"Garage"}""", (await check.EventLog.SingleAsync(e => e.Action == EventActions.BoardRemoved, Cancel)).Details);
+    }
+
+    // Events that stay (from another board, or about no board) and name a removed board's relay, group or input by id
+    // never show the id: the name the event saved, otherwise plain words. Those that still resolve are as before.
+    [Fact]
+    public async Task Should_ShowARemovedBoardsRelayGroupAndInputPlainly()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var groupId = await SeedAsync(boards, boards.BarnId);
+        var barnRelay = await RelayIdAsync(boards, boards.BarnId, 2);
+        var firstRelay = await RelayIdAsync(boards, 1, 2);
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var barnInput = await db.Inputs.Where(i => i.BoardId == boards.BarnId && i.Channel == 1).Select(i => i.Id).SingleAsync(Cancel);
+            var at = new DateTime(2026, 11, 15, 12, 0, 0, DateTimeKind.Utc);
+            db.EventLog.AddRange(
+                new EventLogEntry { TimestampUtc = at, BoardId = 1, RelayId = barnRelay, Actor = EventActors.ForInput(barnInput), Action = EventActions.On },
+                new EventLogEntry { TimestampUtc = at.AddSeconds(1), GroupId = groupId, Actor = John, Action = EventActions.GroupOn },
+                new EventLogEntry { TimestampUtc = at.AddSeconds(2), GroupId = groupId, Actor = John, Action = EventActions.GroupDelete, Details = """{"name":"Heater"}""" },
+                new EventLogEntry { TimestampUtc = at.AddSeconds(3), InputId = barnInput, Actor = EventActors.External, Action = EventActions.InputChanged, Details = """{"on":true}""" },
+                new EventLogEntry { TimestampUtc = at.AddSeconds(4), BoardId = 1, RelayId = firstRelay, Actor = John, Action = EventActions.On });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        var rows = await boards.App.Services.GetRequiredService<EventsHandler>().GetAsync(EventFilter.All, null, 50, Cancel);
+        var views = rows.Select(r => (r.View.Who, r.View.What, r.View.Target)).ToList();
+        Assert.Contains(("A removed input", "turned on", "a removed relay"), views);
+        Assert.Contains(("A removed input:", "Closed", null), views);
+        Assert.Contains(views, v => v.What == "turned on the group" && v.Target == "a removed group");
+        Assert.Contains(views, v => v.What == "deleted the group" && v.Target == "Heater");
+        Assert.Contains(views, v => v.What == "turned on" && v.Target == "Relay 2");
+    }
+
+    // A relay and a group that a removed board's input turned on (their owner "input:n" with no input left), and a
+    // relay it turned off: the Relays, Relay and Group screens say "a removed input" and don't break.
+    [Fact]
+    public async Task Should_ShowARemovedInput_AsWhoSwitchedARelay()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var on = await RelayIdAsync(boards, 1, 2);
+        var off = await RelayIdAsync(boards, 1, 3);
+        int groupId;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { BoardId = 1, Name = "Heater", SortOrder = 1 };
+            group.AddStep("Fan", await RelayIdAsync(boards, 1, 5), startDelaySec: 1);
+            group.AddStep("Heat", await RelayIdAsync(boards, 1, 6), startDelaySec: 1);
+            db.RelayGroups.Add(group);
+            await db.SaveChangesAsync(Cancel);
+            groupId = group.Id;
+        }
+
+        boards.First.SetRelay(2, true);
+        await boards.App.Services.GetRequiredService<GroupSequencer>().StartGroupAsync(groupId, John, Cancel);
+        await Wait.UntilAsync(() =>
+        {
+            using var check = boards.Factory.CreateDbContext();
+            return check.RelayRuntimes.Any(r => r.RelayId == on && r.OnSinceUtc != null)
+                && check.GroupRuntimes.Any(r => r.GroupId == groupId && r.Phase == GroupPhases.Idle && r.OnSinceUtc != null);
+        });
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var input = EventActors.ForInput(await db.Inputs.Where(i => i.BoardId == boards.BarnId && i.Channel == 1).Select(i => i.Id).SingleAsync(Cancel));
+            await db.RelayRuntimes.Where(r => r.RelayId == on).ExecuteUpdateAsync(r => r.SetProperty(x => x.TurnedOnBy, input), Cancel);
+            await db.GroupRuntimes.Where(r => r.GroupId == groupId).ExecuteUpdateAsync(r => r.SetProperty(x => x.TurnedOnBy, input), Cancel);
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = new DateTime(2026, 11, 15, 12, 0, 0, DateTimeKind.Utc), BoardId = 1, RelayId = off, Actor = input, Action = EventActions.Off });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        Assert.Null(await boards.App.Services.GetRequiredService<BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
+
+        using (var relays = await PageRenderer.StartAsync<Contactor.Web.Components.Relays>(boards.App.Services, John, "John"))
+        {
+            var text = await relays.TextAsync();
+            Assert.Empty(relays.Errors);
+
+            // The relay, the one turned off, and the group.
+            Assert.Equal(3, text.Split("· a removed input").Length - 1);
+        }
+
+        using (var relay = await PageRenderer.StartAsync<Contactor.Web.Components.RelayDetail>(
+            boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = on }))
+        {
+            Assert.Empty(relay.Errors);
+            Assert.Contains(", by a removed input.", await relay.TextAsync(), StringComparison.Ordinal);
+        }
+
+        using var groupPage = await PageRenderer.StartAsync<Contactor.Web.Components.GroupDetail>(
+            boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = groupId });
+        Assert.Empty(groupPage.Errors);
+        Assert.Contains("· a removed input", await groupPage.TextAsync(), StringComparison.Ordinal);
     }
 
     // The last board can be removed too, as any other: its relays turned off first, everything about it deleted.

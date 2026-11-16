@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Contactor.Web.Features.Access;
+using Contactor.Web.Features.Languages;
+using Contactor.Web.Resources;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Tailscale;
@@ -13,7 +15,7 @@ namespace Contactor.Web.Features.Tailscale;
 /// Where to fix the problem, for the guide to show as a link: only Tailscale's page to turn on HTTPS, on
 /// <c>https://login.tailscale.com</c>. Null for every other problem.
 /// </param>
-public sealed record TailscaleStatus(bool Online, string? Address, string? Problem, Uri? Link = null)
+public sealed record TailscaleStatus(bool Online, string? Address, UiText? Problem, Uri? Link = null)
 {
     public static readonly TailscaleStatus Offline = new(false, null, null);
 }
@@ -47,7 +49,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     // restarts of tailscaled, so a key that joined isn't used again (most keys are good for one join only).
     private string? _keyToJoinWith;
 
-    private const string CheckFailed = "Contactor couldn't ask Tailscale how it stands. It tries again.";
+    private static readonly UiText CheckFailed = UiText.Of<SetupTexts>("Setup.Tailscale.CheckFailed");
 
     public TailscaleNetwork(
         TailscaleSettings settings,
@@ -202,8 +204,8 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         if (mustLogIn && settings.AuthKey.Length == 0)
         {
             watch.LoggedIn = true;
-            watch.Problem = "Tailscale needs an auth key: save one in the setup guide.";
-            LogProblem(watch.Problem);
+            watch.Problem = UiText.Of<SetupTexts>("Setup.Tailscale.NeedsKey");
+            LogProblem(watch.Problem.English());
             return false;
         }
 
@@ -225,18 +227,18 @@ public sealed partial class TailscaleNetwork : IAccessMethod
             // A key Tailscale refused stays refused until a new one is saved; one that timed out is tried again at
             // the next check.
             watch.LoggedIn = !result.TimedOut;
-            watch.Problem = $"Tailscale didn't take the auth key: {FirstLine(result, settings)}";
-            LogProblem(watch.Problem);
+            watch.Problem = result.TimedOut ? UiText.Of<SetupTexts>("Setup.Tailscale.KeyTimedOut") : UiText.Of<SetupTexts>("Setup.Tailscale.KeyRefused", FirstLine(result, settings));
+            LogProblem(watch.Problem.English());
             return false;
         }
 
         switch (state?.BackendState)
         {
             case "NeedsMachineAuth":
-                watch.Problem = $"Approve {settings.HostName} in Tailscale's admin console, under Machines. Contactor goes on by itself.";
+                watch.Problem = UiText.Of<SetupTexts>("Setup.Tailscale.Approve", settings.HostName);
                 return false;
             case "Stopped":
-                watch.Problem = "Tailscale is stopped on this machine.";
+                watch.Problem = UiText.Of<SetupTexts>("Setup.Tailscale.Stopped");
                 return false;
             case "Running":
                 break;
@@ -255,11 +257,11 @@ public sealed partial class TailscaleNetwork : IAccessMethod
             watch.Served = watch.Problem is null;
             if (watch.Link is { } link)
             {
-                LogProblemWithLink(watch.Problem!, link);
+                LogProblemWithLink(watch.Problem!.English(), link);
             }
             else if (!watch.Served)
             {
-                LogProblem(watch.Problem!);
+                LogProblem(watch.Problem!.English());
             }
         }
 
@@ -269,11 +271,11 @@ public sealed partial class TailscaleNetwork : IAccessMethod
     // Has Tailscale Serve pass HTTPS requests to the app's address for it. Null when it does, else what stops it, with
     // Tailscale's page to fix it when there is one. tailscale can exit 0 without serving (HTTPS not turned on), so Serve's
     // own status is the proof.
-    private async Task<(string? Problem, Uri? Link)> ServeAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
+    private async Task<(UiText? Problem, Uri? Link)> ServeAsync(TailscaleNetworkSettings settings, CancellationToken cancellationToken)
     {
         if (_options.ServeEndPoint is null)
         {
-            return ("Contactor has no address for Tailscale Serve (Tailscale:ServeAddress).", null);
+            return (UiText.Of<SetupTexts>("Setup.Tailscale.NoServeAddress"), null);
         }
 
         var result = await _process.RunAsync(["serve", "--bg", "--https=443", _options.Target], CommandTimeout, cancellationToken);
@@ -285,7 +287,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         var status = await _process.RunAsync(["serve", "status", "--json"], CommandTimeout, cancellationToken);
         return status.Succeeded && Regex.IsMatch(status.Output, $"\"Proxy\"\\s*:\\s*\"{Regex.Escape(_options.Target)}\"")
             ? (null, null)
-            : ("Tailscale Serve didn't take the app. Contactor tries again.", null);
+            : (UiText.Of<SetupTexts>("Setup.Tailscale.ServeNotTaken"), null);
     }
 
     // How far the watch got while this tailscaled runs.
@@ -305,7 +307,7 @@ public sealed partial class TailscaleNetwork : IAccessMethod
         public bool Served { get; set; }
 
         // A new problem drops the link of the one before.
-        public string? Problem
+        public UiText? Problem
         {
             get;
             set
@@ -374,16 +376,16 @@ public sealed partial class TailscaleNetwork : IAccessMethod
 
     // Tailscale Serve over HTTPS needs HTTPS turned on for the Tailscale network; tailscale then gives a link to do so,
     // which the guide shows as a link of its own. A link it can't read (e.g. far too long) is said as tailscale wrote it.
-    private static (string Problem, Uri? Link) ServeProblem(TailscaleCommandResult result, TailscaleNetworkSettings settings)
+    private static (UiText Problem, Uri? Link) ServeProblem(TailscaleCommandResult result, TailscaleNetworkSettings settings)
     {
         if (HttpsLink(result.Output) is { } link)
         {
-            return ("Turn on HTTPS for your Tailscale network, with Funnel left off. Contactor goes on by itself.", link);
+            return (UiText.Of<SetupTexts>("Setup.Tailscale.Https"), link);
         }
 
         return result.TimedOut
-            ? ("Tailscale Serve didn't answer. Contactor tries again.", null)
-            : ($"Tailscale Serve didn't start: {FirstLine(result, settings)}", null);
+            ? (UiText.Of<SetupTexts>("Setup.Tailscale.ServeNoAnswer"), null)
+            : (UiText.Of<SetupTexts>("Setup.Tailscale.ServeFailed", FirstLine(result, settings)), null);
     }
 
     /// <summary>
@@ -405,14 +407,10 @@ public sealed partial class TailscaleNetwork : IAccessMethod
             : null;
     }
 
-    // The first line tailscale wrote, short, and never with the auth key in it.
+    // The first line tailscale wrote, short, and never with the auth key in it. Not for a command that timed out: the
+    // problems say that in their own words.
     private static string FirstLine(TailscaleCommandResult result, TailscaleNetworkSettings settings)
     {
-        if (result.TimedOut)
-        {
-            return "Tailscale didn't answer in time.";
-        }
-
         var line = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? $"exit code {result.ExitCode}";
         if (settings.AuthKey.Length > 0)
         {

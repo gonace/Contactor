@@ -1,4 +1,6 @@
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -16,7 +18,7 @@ public sealed record CloudflareAccessSettings(string TeamDomain, string Audience
     public Uri CertificatesUri => new($"https://{TeamDomain}/cdn-cgi/access/certs");
 
     /// <summary>What is wrong with them, in plain words, or null when they can be used.</summary>
-    public string? Problem => CloudflareSettings.CheckAccess(TeamDomain, Audience);
+    public UiText? Problem => CloudflareSettings.CheckAccess(TeamDomain, Audience);
 }
 
 /// <summary>The tunnel's settings: its token, and the address people open.</summary>
@@ -77,7 +79,7 @@ public sealed partial class CloudflareSettings : IDisposable
     /// Saves the tunnel's token and the address people open, and starts the tunnel again with them. Returns what is
     /// wrong in plain words, and saves nothing then.
     /// </summary>
-    public async Task<string?> SaveTunnelAsync(string? token, string? address, CancellationToken cancellationToken)
+    public async Task<UiText?> SaveTunnelAsync(string? token, string? address, CancellationToken cancellationToken)
     {
         token = token?.Trim() ?? "";
         address = NormalizeHost(address);
@@ -103,7 +105,7 @@ public sealed partial class CloudflareSettings : IDisposable
     /// Saves Cloudflare Access's team domain and AUD tag; the next request is checked against them. Returns what is
     /// wrong in plain words, and saves nothing then.
     /// </summary>
-    public async Task<string?> SaveAccessAsync(string? teamDomain, string? audience, CancellationToken cancellationToken)
+    public async Task<UiText?> SaveAccessAsync(string? teamDomain, string? audience, CancellationToken cancellationToken)
     {
         teamDomain = NormalizeHost(teamDomain);
         audience = audience?.Trim() ?? "";
@@ -123,8 +125,8 @@ public sealed partial class CloudflareSettings : IDisposable
         _gate.Dispose();
     }
 
-    /// <summary>What is wrong with Cloudflare Access's settings, in plain words, or null.</summary>
-    public static string? CheckAccess(string? teamDomain, string? audience)
+    /// <summary>What is wrong with Cloudflare Access's settings, or null; a page puts it in words.</summary>
+    public static UiText? CheckAccess(string? teamDomain, string? audience)
     {
         // The app fetches its signing keys from the team domain: whoever controls it decides who may sign in. Access's
         // team domains are always <team>.cloudflareaccess.com, so nothing else is taken.
@@ -135,28 +137,28 @@ public sealed partial class CloudflareSettings : IDisposable
             || teamDomain.Length == TeamDomainSuffix.Length
             || teamDomain[..^TeamDomainSuffix.Length].Contains('.', StringComparison.Ordinal))
         {
-            return "The team domain must be your team's address at Cloudflare, e.g. myteam.cloudflareaccess.com.";
+            return UiText.Of<SetupTexts>("Setup.Cloudflare.TeamDomain");
         }
 
         if (string.IsNullOrEmpty(audience) || audience.Length > CloudflareSetting.AudienceMaxLength || audience.Any(char.IsWhiteSpace))
         {
-            return "The AUD tag is the long code under the Access application's Additional settings.";
+            return UiText.Of<SetupTexts>("Setup.Cloudflare.Audience");
         }
 
         return null;
     }
 
-    /// <summary>What is wrong with the tunnel's settings, in plain words, or null.</summary>
-    public static string? CheckTunnel(string token, string? address)
+    /// <summary>What is wrong with the tunnel's settings, or null; a page puts it in words.</summary>
+    public static UiText? CheckTunnel(string token, string? address)
     {
         if (token.Length == 0 || token.Length > CloudflareSetting.TunnelTokenMaxLength || token.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))
         {
-            return "The tunnel token is the long code after --token in the tunnel's install command.";
+            return UiText.Of<SetupTexts>("Setup.Cloudflare.Token");
         }
 
         if (string.IsNullOrEmpty(address) || Uri.CheckHostName(address) != UriHostNameType.Dns || !address.Contains('.', StringComparison.Ordinal))
         {
-            return "The address must be the tunnel's public hostname, e.g. relays.example.com.";
+            return UiText.Of<SetupTexts>("Setup.Cloudflare.Address");
         }
 
         return null;

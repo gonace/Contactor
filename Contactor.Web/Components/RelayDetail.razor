@@ -5,6 +5,7 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Schedules
 @using Contactor.Web.Persistence
@@ -22,6 +23,7 @@
 @inject RelayStatusText StatusText
 @inject IStringLocalizer<RelaysTexts> Texts
 @inject IStringLocalizer<BoardsTexts> BoardTexts
+@inject AppLanguage Language
 
 <PageTitle>@(Common["Common.PageTitle", _relay?.Name ?? Common["Common.Screen.Relay"].Value])</PageTitle>
 
@@ -293,7 +295,11 @@
             _ when email == _user?.Email => (TurnedOnBy.You, null),
             EventActors.Schedule => (TurnedOnBy.Schedule, null),
             EventActors.External => (TurnedOnBy.Outside, null),
-            _ => (TurnedOnBy.Person, _names.TryGetValue(email, out var name) ? name : IdentityRules.DisplayNameFor(email)),
+            _ when _names.TryGetValue(email, out var name) => (TurnedOnBy.Person, name),
+
+            // An input that is no longer in the app (a removed board's) has no name, and isn't an e-mail.
+            _ when EventActors.TryInput(email, out _) => (TurnedOnBy.Person, Texts["Relays.By.RemovedInput"]),
+            _ => (TurnedOnBy.Person, IdentityRules.DisplayNameFor(email)),
         };
     }
 
@@ -412,6 +418,7 @@
 
     private async Task RefreshAsync(bool reload)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(async () =>

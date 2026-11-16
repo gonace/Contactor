@@ -9,7 +9,10 @@ public sealed class Relay
     public const int NameMaxLength = 40;
     public const int DefaultMaxOnMinutes = 120;
 
-    /// <summary>The name a relay is seeded with, until someone gives it one: "Relay 3", after its channel.</summary>
+    /// <summary>
+    /// The name a relay is seeded with, until someone gives it one: "Relay 3", after its channel. Saved data, so it stays
+    /// as it was saved; the setup guide shows and saves the app's language's (Relays.DefaultName).
+    /// </summary>
     public static string DefaultName(int channel)
     {
         return $"Relay {channel}";

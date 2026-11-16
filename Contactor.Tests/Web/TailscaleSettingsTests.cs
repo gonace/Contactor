@@ -58,7 +58,7 @@ public sealed class TailscaleSettingsTests
     [InlineData(AuthKey, "Contactor", "name")]
     public void Should_RefuseWhatTailscaleWouldNot_InPlainWords(string authKey, string hostName, string about)
     {
-        Assert.Contains(about, TailscaleSettings.Check(authKey, hostName), StringComparison.Ordinal);
+        Assert.Contains(about, TailscaleSettings.Check(authKey, hostName)?.English(), StringComparison.Ordinal);
     }
 
     [Fact]

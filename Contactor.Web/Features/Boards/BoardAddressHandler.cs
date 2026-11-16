@@ -24,15 +24,18 @@ public sealed class BoardAddressHandler
     private readonly LocalClock _clock;
     private readonly RelayChanges _changes;
     private readonly IStringLocalizer<BoardsTexts> _texts;
+    private readonly BoardLoginText _login;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
         BoardRegistry registry,
         LocalClock clock,
         RelayChanges changes,
-        IStringLocalizer<BoardsTexts> texts)
+        IStringLocalizer<BoardsTexts> texts,
+        BoardLoginText login)
     {
         _texts = texts;
+        _login = login;
         _dbFactory = dbFactory;
         _registry = registry;
         _clock = clock;
@@ -124,15 +127,16 @@ public sealed class BoardAddressHandler
         var current = await LoginInUseAsync(boardId, cancellationToken);
         var password = none ? "" : string.IsNullOrEmpty(newPassword) ? current.Password : newPassword;
         var login = new BoardLogin(none ? "" : username?.Trim() ?? "", password);
-        // Without a model there is no login to check: said in the app's language, as the other returns are.
-        if (connection.Model is null)
+        // Without a model there is no login to check, also when the board is removed meanwhile: said in the app's
+        // language, as the other returns are.
+        if (!connection.TryCheckLogin(login, out var problem))
         {
             return _texts["Boards.NotChosen"];
         }
 
-        if (connection.CheckLogin(login) is { } error)
+        if (problem is not null)
         {
-            return error;
+            return _login.Problem(problem);
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);

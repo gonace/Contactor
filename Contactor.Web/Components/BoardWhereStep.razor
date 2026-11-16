@@ -11,6 +11,8 @@
 @inject LocalClock Clock
 @inject ILogger<BoardWhereStep> Log
 @inject IStringLocalizer<BoardsTexts> Texts
+@inject BoardLoginText LoginText
+@inject AppLanguage Language
 
 @* "Where is the board?": its address, port and login, saved through BoardAddressHandler; "Next" waits up to 10 s for
    the board (BoardContact). Shared by the setup guide (the first board) and "Add a board" (BoardNew); the page has the
@@ -57,7 +59,7 @@
                        @bind="Values.NewPassword" @bind:event="oninput" />
             </div>
         </div>
-        <p class="hint">@(Model.PasswordOnly ? Model.LoginHint : Texts["Boards.Login.Hint", Model.LoginHint ?? Texts["Boards.Login.MaxLength", Model.LoginMaxLength].Value])</p>
+        <p class="hint">@LoginText.Hint(Model)</p>
     }
 }
 
@@ -304,6 +306,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
 
     private async Task RefreshAsync(BoardState state)
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(() =>

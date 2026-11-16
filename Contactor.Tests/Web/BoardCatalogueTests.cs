@@ -1,9 +1,7 @@
 using Contactor.Boards;
-using Contactor.Boards.DAEnetIP2v2;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
@@ -80,6 +78,23 @@ public sealed class BoardCatalogueTests
     }
 
     [Theory]
+    [InlineData("denkovi-smartden-ip-16r-mt")]
+    [InlineData(" DENKOVI-SMARTDEN-IP-16R-MT ")]
+    public async Task Should_BuildTheSmartDenModel_WhenChosen(string type)
+    {
+        await using var board = Build(type);
+
+        Assert.Same(SmartDenModels.Ip16RMt, board.Model);
+        var smartDen = Assert.IsType<SmartDenBoard>(board.Board);
+        Assert.Same(board.Model.Capabilities, smartDen.Capabilities);
+        Assert.Same(board.Model, board.Services.GetRequiredService<SmartDenClient>().Model);
+        Assert.IsType<SmartDenConnection>(board.Connection);
+        Assert.IsType<SmartDenTraffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(502, board.Connection.Endpoint.Port);
+    }
+
+    [Theory]
     [InlineData("devantech-eth002")]
     [InlineData("devantech-eth008")]
     [InlineData("Devantech-ETH484")]
@@ -97,21 +112,6 @@ public sealed class BoardCatalogueTests
         Assert.IsType<DevantechTraffic>(board.Traffic);
         Assert.False(board.Connection.Endpoint.HasHost);
         Assert.Equal(17494, board.Connection.Endpoint.Port);
-    }
-
-    [Theory]
-    [InlineData("denkovi-daenetip2v2-8", 8)]
-    [InlineData("denkovi-daenetip2v2-16", 16)]
-    public async Task Should_BuildBothDAEnetIP2v2Variants(string type, int relayCount)
-    {
-        await using var board = Build(type);
-
-        Assert.Contains(board.Model, DAEnetIP2v2Models.All);
-        Assert.Equal(relayCount, board.Model.Capabilities.RelayCount);
-        Assert.IsType<DAEnetIP2v2Board>(board.Board);
-        Assert.IsType<DAEnetIP2v2Connection>(board.Connection);
-        Assert.IsType<DAEnetIP2v2Traffic>(board.Traffic);
-        Assert.Equal(80, board.Connection.Endpoint.Port);
     }
 
     [Fact]

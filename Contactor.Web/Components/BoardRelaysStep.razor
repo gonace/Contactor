@@ -1,6 +1,7 @@
 @implements IDisposable
 @using Contactor.Boards
 @using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
 @using Contactor.Web.Features.Setup
 @using Contactor.Web.Persistence
@@ -9,6 +10,7 @@
 @inject ILogger<BoardRelaysStep> Log
 @inject IStringLocalizer<BoardsTexts> Texts
 @inject IStringLocalizer<RelaysTexts> RelayTexts
+@inject AppLanguage Language
 
 @* "Name your relays": a name and "In use" for each relay of the board, and "Try". Shared by the setup guide (the first
    board) and "Add a board" (BoardNew); the page keeps the rows (LoadAsync) and saves them (SaveAsync). *@
@@ -28,7 +30,7 @@
             <label class="label" for="@($"relay-{relay.Id}")">@RelayTexts["Relays.RelayLabel", relay.Channel]</label>
             <div class="row">
                 <input id="@($"relay-{relay.Id}")" type="text" maxlength="@Relay.NameMaxLength" autocomplete="off"
-                       placeholder="@Relay.DefaultName(relay.Channel)" @bind="relay.Name" @bind:event="oninput" />
+                       placeholder="@relay.DefaultName" @bind="relay.Name" @bind:event="oninput" />
                 <button type="button" class="small try" aria-pressed="@(on ? "true" : "false")"
                         aria-label="@Texts["Boards.Relays.TryLabel", relay.Channel]"
                         disabled="@(on || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
@@ -155,6 +157,7 @@
 
     private async Task RefreshAsync()
     {
+        using var language = Language.Use();
         try
         {
             await InvokeAsync(StateHasChanged);
@@ -176,6 +179,7 @@
             Name = relay.HasDefaultName ? "" : relay.Name;
             IsActive = relay.IsActive;
             GroupName = relay.GroupName;
+            DefaultName = relay.DefaultName;
         }
 
         public int Id { get; }
@@ -189,11 +193,14 @@
 
         public string? GroupName { get; }
 
+        /// <summary>The name an empty field gives it, in the app's language: the field's placeholder.</summary>
+        public string DefaultName { get; }
+
         public bool Trying { get; set; }
 
         public string? Error { get; set; }
 
         /// <summary>Its name as a summary shows it.</summary>
-        public string Shown => string.IsNullOrWhiteSpace(Name) ? Relay.DefaultName(Channel) : Name.Trim();
+        public string Shown => string.IsNullOrWhiteSpace(Name) ? DefaultName : Name.Trim();
     }
 }

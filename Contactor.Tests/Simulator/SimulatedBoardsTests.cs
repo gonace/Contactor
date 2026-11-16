@@ -1,10 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Simulator;
 using Contactor.Tests.Web;
@@ -85,6 +84,23 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.False(board.HasLogin);
         Assert.Equal(4196, SimulatorCatalogue.Find(type)!.Port);
         Assert.Equal("The Waveshare board takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
+    }
+
+    [Theory]
+    [InlineData("denkovi-smartden-ip-16r-mt")]
+    [InlineData(" DENKOVI-SMARTDEN-IP-16R-MT ")]
+    public void Should_RunTheSmartDen_WithoutALogin(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+
+        var board = Assert.Single(_boards.Boards).Board;
+        Assert.IsType<SmartDenSimulator>(board);
+        Assert.Same(SmartDenModels.Ip16RMt, board.Model);
+        Assert.False(board.HasLogin);
+
+        // Port 502 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8502, 502), (SimulatorCatalogue.Find(type)!.Port, SmartDenModels.Ip16RMt.DefaultPort));
+        Assert.Equal("The Denkovi board takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
     }
 
     [Theory]

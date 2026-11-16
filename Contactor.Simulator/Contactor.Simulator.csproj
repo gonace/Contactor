@@ -6,11 +6,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contactor.ServiceDefaults\Contactor.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Contactor.Boards.Denkovi\Contactor.Boards.Denkovi.csproj" />
     <ProjectReference Include="..\Contactor.Boards.Devantech\Contactor.Boards.Devantech.csproj" />
-    <ProjectReference Include="..\Contactor.Boards.DAEnetIP2v2\Contactor.Boards.DAEnetIP2v2.csproj" />
-    <ProjectReference Include="..\Contactor.Boards.Vm201\Contactor.Boards.Vm201.csproj" />
-    <ProjectReference Include="..\Contactor.Boards.Vm204\Contactor.Boards.Vm204.csproj" />
-    <ProjectReference Include="..\Contactor.Boards.Vm208\Contactor.Boards.Vm208.csproj" />
+    <ProjectReference Include="..\Contactor.Boards.Velleman\Contactor.Boards.Velleman.csproj" />
     <ProjectReference Include="..\Contactor.Boards.Waveshare\Contactor.Boards.Waveshare.csproj" />
   </ItemGroup>
 

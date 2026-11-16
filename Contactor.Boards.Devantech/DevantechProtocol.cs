@@ -77,7 +77,7 @@ public static class DevantechProtocol
         ArgumentException.ThrowIfNullOrEmpty(password);
         if (DevantechModels.CheckPassword(password) is { } error)
         {
-            throw new ArgumentException(error, nameof(password));
+            throw new ArgumentException(error.ToString(), nameof(password));
         }
 
         return new([DevantechApi.Password, .. Encoding.ASCII.GetBytes(password)], 1);

@@ -168,6 +168,6 @@ public sealed class DevantechProtocolTests
     [InlineData("smörgås", "The password can only contain letters a–z and A–Z, digits and plain symbols, without spaces.")]
     public void Should_CheckThePassword(string password, string? message)
     {
-        Assert.Equal(message, DevantechModels.CheckPassword(password));
+        Assert.Equal(message, DevantechModels.CheckPassword(password)?.ToString());
     }
 }

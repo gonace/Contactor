@@ -207,7 +207,7 @@ public sealed class WaveshareSimulatedBoardTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(1, true));
         await Assert.ThrowsAsync<InvalidOperationException>(() => simulator.SetRelayModeAsync(1, WaveshareApi.ModeLinkage));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SwitchRelayAsync(31, true));
-        Assert.Throws<ArgumentException>(() => new WaveshareSimulator(Contactor.Boards.Vm201.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => new WaveshareSimulator(Contactor.Boards.Velleman.Vm201Model.Model));
     }
 
     private static async Task<string> AskAsync(WaveshareSimulator simulator, string request)

@@ -1,4 +1,6 @@
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
+using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Tailscale;
@@ -45,7 +47,7 @@ public sealed partial class TailscaleSettings : IDisposable
     /// Saves the auth key and the app's name, and starts Tailscale again with them when they changed. Returns what is
     /// wrong in plain words, and saves nothing then.
     /// </summary>
-    public async Task<string?> SaveAsync(string? authKey, string? hostName, CancellationToken cancellationToken)
+    public async Task<UiText?> SaveAsync(string? authKey, string? hostName, CancellationToken cancellationToken)
     {
         authKey = authKey?.Trim() ?? "";
         hostName = hostName?.Trim().ToLowerInvariant() ?? "";
@@ -93,8 +95,8 @@ public sealed partial class TailscaleSettings : IDisposable
         _gate.Dispose();
     }
 
-    /// <summary>What is wrong with Tailscale's settings, in plain words, or null.</summary>
-    public static string? Check(string authKey, string hostName)
+    /// <summary>What is wrong with Tailscale's settings, or null; a page puts it in words.</summary>
+    public static UiText? Check(string authKey, string hostName)
     {
         ArgumentNullException.ThrowIfNull(authKey);
         ArgumentNullException.ThrowIfNull(hostName);
@@ -103,7 +105,7 @@ public sealed partial class TailscaleSettings : IDisposable
             || authKey.Length > TailscaleSetting.AuthKeyMaxLength
             || authKey.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))
         {
-            return "The auth key is the long code that starts with tskey-, from Settings → Keys in Tailscale's admin console.";
+            return UiText.Of<SetupTexts>("Setup.Tailscale.AuthKey");
         }
 
         // One DNS label: the first part of the app's address on the Tailscale network.
@@ -113,7 +115,7 @@ public sealed partial class TailscaleSettings : IDisposable
             || hostName.EndsWith('-')
             || !hostName.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-'))
         {
-            return "The name may only have letters a to z, digits and dashes, e.g. contactor.";
+            return UiText.Of<SetupTexts>("Setup.Tailscale.Name");
         }
 
         return null;

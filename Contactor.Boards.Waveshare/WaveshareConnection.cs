@@ -38,16 +38,14 @@ public sealed class WaveshareConnection : IBoardConnection
     {
         if (CheckLogin(login) is { } error)
         {
-            throw new ArgumentException(error, nameof(login));
+            throw new ArgumentException(error.ToString(), nameof(login));
         }
     }
 
-    public string? CheckLogin(BoardLogin login)
+    public LoginProblem? CheckLogin(BoardLogin login)
     {
         ArgumentNullException.ThrowIfNull(login);
-        return login.IsNone
-            ? null
-            : "The Waveshare board takes no login: its password only protects its own web page.";
+        return login.IsNone ? null : new LoginProblem(LoginProblemKind.NoLoginWebPage, Board: "Waveshare");
     }
 
     public Task RunAsync(CancellationToken cancellationToken)
