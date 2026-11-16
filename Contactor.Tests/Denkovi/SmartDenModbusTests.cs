@@ -64,12 +64,13 @@ public sealed class SmartDenModbusTests
     }
 
     [Theory]
-    [InlineData("00 01 00 00 00 04 00 01 01 05", 3, 0b101UL)]
-    [InlineData("00 01 00 00 00 05 00 01 02 59 0B", 13, 0x0B59UL)]
-    public async Task Should_ReadTheManualsRelayAnswers(string answer, ushort count, ulong relays)
+    [InlineData("00 01 00 00 00 04 00 01 01 05", 0, 3, 0b101UL)]
+    [InlineData("00 01 00 00 00 05 00 01 02 59 0B", 3, 13, 0x0B59UL)]
+    public async Task Should_ReadTheManualsRelayAnswers(string answer, ushort address, ushort count, ulong relays)
     {
-        // Table 10.10, and table 10.11 with its length 4 put right: the unit, the function, the count and 2 bytes are 5.
-        var request = SmartDenModbus.ReadCoils(1, 0, count);
+        // Tables 10.8 and 10.10, and tables 10.9 and 10.11, with 10.11's length 4 put right: the unit, the function,
+        // the count and 2 bytes are 5. Bit 0 is the first relay asked for: relay 1, or relay 4.
+        var request = SmartDenModbus.ReadCoils(1, address, count);
 
         var frame = await ReadAsync(request, answer);
 
@@ -130,6 +131,63 @@ public sealed class SmartDenModbusTests
 
         Assert.Equal(code, error.Code);
         Assert.Equal(answer, SmartDenModbus.Hex([.. error.Frame]));
+    }
+
+    [Theory]
+    [InlineData("00 02 00 00 00 03 00 85 01", 1)]
+    [InlineData("00 02 00 00 00 03 00 85 02", 2)]
+    [InlineData("00 02 00 00 00 03 00 85 03", 3)]
+    public async Task Should_ThrowRefused_ForTheManualsExceptionAnswerToASwitch(string answer, byte code)
+    {
+        // Table 10.15, to table 10.13's request.
+        var error = await Assert.ThrowsAsync<SmartDenRefusedException>(() => ReadAsync(SmartDenModbus.WriteSingleCoil(2, 2, on: true), answer));
+
+        Assert.Equal(code, error.Code);
+        Assert.Equal(answer, SmartDenModbus.Hex([.. error.Frame]));
+    }
+
+    [Theory]
+    [InlineData("00 05 00 00 00 03 00 86 01", 1)]
+    [InlineData("00 05 00 00 00 03 00 86 02", 2)]
+    [InlineData("00 05 00 00 00 03 00 86 03", 3)]
+    public async Task Should_ThrowRefused_ForTheManualsExceptionAnswerToAPulse(string answer, byte code)
+    {
+        // Table 10.26, to table 10.24's request.
+        var error = await Assert.ThrowsAsync<SmartDenRefusedException>(() => ReadAsync(SmartDenModbus.Pulse(5, 10, TimeSpan.FromSeconds(3)), answer));
+
+        Assert.Equal(code, error.Code);
+        Assert.Equal(answer, SmartDenModbus.Hex([.. error.Frame]));
+    }
+
+    [Fact]
+    public async Task Should_SkipTheLateAnswerToARequestGivenUpOn_Once()
+    {
+        // The answer to transaction 1 comes first, then the answer to transaction 2, which is the one asked for.
+        using var stream = new MemoryStream(Bytes("00 01 00 00 00 05 00 01 02 FF FF 00 02 00 00 00 06 00 05 00 00 FF 00"));
+        HashSet<ushort> late = [1];
+        List<string> skipped = [];
+
+        var echo = await SmartDenModbus.ReadAnswerAsync(stream, SmartDenModbus.WriteSingleCoil(2, 1, on: true), Cancel, late, f => skipped.Add(SmartDenModbus.Hex(f)));
+
+        Assert.Equal("00 02 00 00 00 06 00 05 00 00 FF 00", SmartDenModbus.Hex(echo));
+        Assert.Equal(["00 01 00 00 00 05 00 01 02 FF FF"], skipped);
+        Assert.Empty(late);
+    }
+
+    [Theory]
+    [InlineData("00 01 00 00 00 05 00 01 02 FF FF", "The answer is for transaction 1, not 3.")]
+    [InlineData("00 07 00 00 00 05 00 01 02 FF FF", "The answer is for transaction 7, not 3.")]
+    [InlineData("00 02 00 01 00 05 00 01 02 FF FF", "The late answer to transaction 2 isn't a Modbus frame.")]
+    [InlineData("00 02 00 00 FF FF 00 01", "The late answer to transaction 2 isn't a Modbus frame.")]
+    public async Task Should_SkipOnlyAWholeLateAnswer_ToARequestGivenUpOn(string answers, string message)
+    {
+        // Only transaction 2 was given up on; transaction 1 was answered, and 7 was never sent.
+        using var stream = new MemoryStream(Bytes(answers));
+
+        var error = await Assert.ThrowsAsync<SmartDenProtocolException>(
+            () => SmartDenModbus.ReadAnswerAsync(stream, SmartDenModbus.WriteSingleCoil(3, 1, on: true), Cancel, new HashSet<ushort> { 2 }));
+
+        Assert.Equal(message, error.Message);
     }
 
     [Theory]

@@ -12,6 +12,8 @@ namespace Contactor.Boards.Denkovi;
 /// connection (the board takes one at a time) and one request at a time (the poller sees to it), each waiting for its
 /// answer, which must come within <see cref="RequestTimeout"/>. A request without an answer or with an unreadable one
 /// closes the connection, since what comes next can't be trusted to be in step, and the next request opens a new one.
+/// A poll that a command cancels keeps the connection, as the board may refuse a new one while it holds the old: its
+/// late answer is skipped by its transaction id.
 /// Commands are never queued: without a connection they fail at once with <see cref="BoardNotConnectedException"/>, a
 /// poll under way gives way to them, and the board's state right after them is reported at once. Modbus has no login.
 /// </summary>
@@ -23,10 +25,17 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
     // Bytes waiting before a request were sent unasked; more than this and the connection is opened afresh.
     private const int MaxSkippedBytes = 4096;
 
+    // Requests given up on whose answer may still come; more than this and the connection is opened afresh.
+    private const int MaxLateAnswers = 8;
+
     private readonly BoardModel _model;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SmartDenClient> _logger;
     private readonly BoardPoller<SmartDenStatus> _poller;
+
+    // The transaction ids of requests on this connection that a command cancelled: their answers may still come. Only
+    // used under the poller's lock, as the connection.
+    private readonly HashSet<ushort> _late = [];
 
     private BoardEndpoint _endpoint;
 
@@ -152,8 +161,8 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
 
     public void Dispose()
     {
-        Close();
         _poller.Dispose();
+        Close();
     }
 
     Task IPolledBoard<SmartDenStatus>.ConnectAsync(CancellationToken cancellationToken)
@@ -239,7 +248,7 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
 
         // A poll under way gives way. The board switches one relay per request, and the whole mask goes out, as one
         // command on a board that takes a mask would: a group's interlock and "All off" rely on every OFF being sent.
-        // Only a request that gets no answer at all (the board is gone) stops it.
+        // Only a request that gets no answer at all, also on a new connection (the board is gone), stops it.
         try
         {
             var taken = new StrongBox<ulong>();
@@ -268,7 +277,8 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
         var unreadable = false;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
-            // No answer (IsNoAnswer) is thrown as it is and stops the rest: the poller counts it as a failed poll.
+            // No answer (IsNoAnswer), also on the new connection ExchangeAsync tries after a broken one, is thrown as it
+            // is and stops the rest: the poller counts it as a failed poll.
             try
             {
                 var answer = await ExchangeAsync(requestFor(relay), routine: false, cancellationToken).ConfigureAwait(false);
@@ -301,11 +311,12 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
         {
             return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is SmartDenRefusedException or SmartDenProtocolException)
+        catch (Exception ex) when (ex is SmartDenRefusedException or SmartDenProtocolException || IsNoAnswer(ex))
         {
             // Never a state the board didn't read: an echo doesn't show that the relay switched. The last state read
-            // stays, and a read at once shows the truth. The command doesn't fail (what was taken was sent), so the
-            // poller's read after a failed command doesn't come: ask for it here.
+            // stays, and a read at once shows the truth; it counts as a poll of its own if it fails too. The command
+            // doesn't fail (what was taken was sent), so the poller's read after a failed command doesn't come: ask
+            // for it here.
             if (_poller.State.Reading is not { } last)
             {
                 throw;
@@ -332,14 +343,17 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
     /// <summary>
     /// Sends one request and reads its answer, within <see cref="RequestTimeout"/>, on the open connection or a new one.
     /// Traces the request and anything but a good answer, which the caller traces as it knows what it says. Closes
-    /// the connection when the answer doesn't come or can't be read.
+    /// the connection when the answer doesn't come or can't be read. When the connection was open from before and turns
+    /// out broken (the board may close one it found idle), the request goes once more on a new connection: reading the
+    /// relays, switching one or starting its pulse does the same when done twice.
     /// </summary>
-    private async Task<byte[]> ExchangeAsync(SmartDenRequest request, bool routine, CancellationToken cancellationToken)
+    private async Task<byte[]> ExchangeAsync(SmartDenRequest request, bool routine, CancellationToken cancellationToken, bool again = true)
     {
+        var reused = _stream is not null;
         try
         {
-            // None after an earlier request closed it (no answer, an unreadable one, or a poll a command cancelled).
-            if (_stream is null)
+            // None after an earlier request closed it (no answer, or an unreadable one).
+            if (!reused)
             {
                 await OpenAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -350,17 +364,24 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
         {
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+            if (reused && again && ex is not TimeoutException)
+            {
+                return await ExchangeAsync(request, routine, cancellationToken, again: false).ConfigureAwait(false);
+            }
+
             throw;
         }
 
         var stream = _stream!;
+        var reader = new CountingStream(stream);
         Trace(BoardTraceDirection.Sent, SmartDenTraceText.Request(request.Frame), SmartDenModbus.Hex(request.Frame), isRoutine: routine);
         using var timeout = new CancellationTokenSource(RequestTimeout, _timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
-            await stream.WriteAsync(request.Frame, linked.Token).ConfigureAwait(false);
-            return await SmartDenModbus.ReadAnswerAsync(stream, request, linked.Token).ConfigureAwait(false);
+            // The frame goes whole or not at all: only the timeout stops it, never a command taking the poll's place.
+            await stream.WriteAsync(request.Frame, timeout.Token).ConfigureAwait(false);
+            return await SmartDenModbus.ReadAnswerAsync(reader, request, linked.Token, _late, SkippedLate).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -371,9 +392,19 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
         }
         catch (OperationCanceledException)
         {
-            // A command took the poll's place, or the app stops: the answer may still come, out of step. The next
-            // request opens a new connection.
-            Close();
+            // A command took the poll's place, or the app stops. The connection stays: the board takes one at a time,
+            // and may refuse a new one while it holds this. The answer may still come; the next request skips it by its
+            // transaction id. Only when part of it was read already, or too many are given up on, is the connection
+            // out of step and opened afresh.
+            if (reader.BytesRead > 0 || _late.Count >= MaxLateAnswers)
+            {
+                Close();
+            }
+            else
+            {
+                _late.Add(request.TransactionId);
+            }
+
             throw;
         }
         catch (SmartDenRefusedException ex)
@@ -393,8 +424,19 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
             // One failed poll doesn't lose the connection, so it shows here.
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+            if (reused && again && reader.BytesRead == 0)
+            {
+                return await ExchangeAsync(request, routine, cancellationToken, again: false).ConfigureAwait(false);
+            }
+
             throw;
         }
+    }
+
+    // The answer to a request given up on, which came after all: dropped.
+    private void SkippedLate(byte[] frame)
+    {
+        Trace(BoardTraceDirection.Received, "Skipped a late answer nobody waited for", SmartDenModbus.Hex(frame), isRoutine: true);
     }
 
     // Opens a new connection to the board, closing any before. Throws TimeoutException, SocketException or IOException.
@@ -439,7 +481,8 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
             throw new IOException("The connection to the board broke.", ex);
         }
 
-        if (available <= 0)
+        // A late answer waits to be skipped by its transaction id (ExchangeAsync), not dropped half read.
+        if (available <= 0 || _late.Count > 0)
         {
             return;
         }
@@ -451,7 +494,7 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
         }
 
         var skipped = new byte[available];
-        var read = _stream!.Read(skipped);
+        var read = _stream?.Read(skipped) ?? 0;
         Trace(
             BoardTraceDirection.Received,
             string.Create(CultureInfo.InvariantCulture, $"Skipped {read} bytes nobody asked for"),
@@ -463,6 +506,7 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
     {
         var tcp = Interlocked.Exchange(ref _tcp, null);
         _stream = null;
+        _late.Clear();
         tcp?.Dispose();
     }
 
@@ -497,6 +541,74 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable
             {
                 _logger.SubscriberFailed(ex);
             }
+        }
+    }
+
+    /// <summary>
+    /// The connection's stream as the codec reads it, counting what it read: an answer read in part when a command
+    /// takes the poll's place leaves the connection out of step.
+    /// </summary>
+    private sealed class CountingStream : Stream
+    {
+        private readonly Stream _inner;
+
+        public CountingStream(Stream inner)
+        {
+            _inner = inner;
+        }
+
+        public long BytesRead { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = _inner.Read(buffer, offset, count);
+            BytesRead += read;
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            BytesRead += read;
+            return read;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
         }
     }
 }

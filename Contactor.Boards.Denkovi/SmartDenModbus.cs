@@ -93,17 +93,49 @@ public static class SmartDenModbus
     /// count the request gives (a read) or the echo it must be (a write). Returns the whole frame. Throws
     /// <see cref="SmartDenRefusedException"/> for an exception answer, <see cref="SmartDenProtocolException"/> for
     /// anything else that isn't the answer, and <see cref="IOException"/> when the stream ends first. Reads at most
-    /// <see cref="SmartDenApi.MaxFrameBytes"/> bytes.
+    /// <see cref="SmartDenApi.MaxFrameBytes"/> bytes per frame.
     /// </summary>
-    public static async Task<byte[]> ReadAnswerAsync(Stream stream, SmartDenRequest request, CancellationToken cancellationToken)
+    /// <param name="late">
+    /// Transaction ids of earlier requests on this connection whose answer nobody waited for: an answer to one of them
+    /// may still come first. It is read by its header's length and dropped, and its id taken out, so each is skipped
+    /// once at most. Null: none.
+    /// </param>
+    /// <param name="skipped">Called with each late answer that was dropped, for the trace.</param>
+    public static async Task<byte[]> ReadAnswerAsync(
+        Stream stream,
+        SmartDenRequest request,
+        CancellationToken cancellationToken,
+        ICollection<ushort>? late = null,
+        Action<byte[]>? skipped = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(request);
-        var head = new byte[SmartDenApi.HeaderBytes + 1];
-        await ReadExactlyAsync(stream, head, cancellationToken).ConfigureAwait(false);
-        var transaction = BinaryPrimitives.ReadUInt16BigEndian(head);
-        var protocol = BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(2));
-        var length = BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(4));
+        byte[] head;
+        ushort transaction;
+        ushort protocol;
+        ushort length;
+        while (true)
+        {
+            head = new byte[SmartDenApi.HeaderBytes + 1];
+            await ReadExactlyAsync(stream, head, cancellationToken).ConfigureAwait(false);
+            transaction = BinaryPrimitives.ReadUInt16BigEndian(head);
+            protocol = BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(2));
+            length = BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(4));
+            if (transaction == request.TransactionId || late is null || !late.Remove(transaction))
+            {
+                break;
+            }
+
+            // The answer to a request given up on: only its length matters, to find the next frame.
+            if (protocol != SmartDenApi.ProtocolId || length is < 2 or > SmartDenApi.MaxLength)
+            {
+                throw new SmartDenProtocolException($"The late answer to transaction {transaction} isn't a Modbus frame.", head);
+            }
+
+            var dropped = await ReadRestAsync(stream, head, length - 2, cancellationToken).ConfigureAwait(false);
+            skipped?.Invoke(dropped);
+        }
+
         if (transaction != request.TransactionId)
         {
             throw new SmartDenProtocolException($"The answer is for transaction {transaction}, not {request.TransactionId}.", head);

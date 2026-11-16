@@ -287,16 +287,57 @@ public sealed class SmartDenClientTests
     }
 
     [Fact]
-    public async Task Should_SendACommandAtOnce_DuringAPoll_OnANewConnection()
+    public async Task Should_SendACommandAtOnce_DuringAPoll_OnTheSameConnection()
     {
-        // The poll's read gets no answer while the command comes; the command takes its place, and goes on a new
-        // connection, since the poll's answer could still come on the old one.
-        var holdReads = 0;
-        await using var board = ScriptedBoard.Start(request => request[7] switch
+        // The board takes one connection at a time: the command takes the poll's place on the connection it has, and
+        // the poll's answer never comes.
+        await using var simulator = Started();
+        var connections = 0;
+        simulator.Traced += (_, e) =>
         {
-            SmartDenApi.WriteSingleCoil => request,
-            _ when Volatile.Read(ref holdReads) == 1 => null,
-            _ => Relays(request, 0),
+            if (e.Text.StartsWith("The app connected", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref connections);
+            }
+        };
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        simulator.NoAnswer = true;
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.UnansweredCount == 1 && run.Time.WaitsOnly(SmartDenClient.RequestTimeout));
+        simulator.NoAnswer = false;
+
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+
+        Assert.Equal(1UL, simulator.Relays);
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.Equal(1, simulator.ConnectionCount);
+        Assert.Equal(1, Volatile.Read(ref connections));
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_SkipThePollsLateAnswer_BeforeTheCommandsOwn()
+    {
+        // The poll's answer comes after all, just before the command's echo, on the same connection.
+        byte[]? held = null;
+        var holdReads = 0;
+        await using var board = ScriptedBoard.Start(request =>
+        {
+            if (request[7] == SmartDenApi.WriteSingleCoil)
+            {
+                byte[] answer = [.. Interlocked.Exchange(ref held, null) ?? [], .. request];
+                return answer;
+            }
+
+            if (Volatile.Read(ref holdReads) == 1)
+            {
+                Volatile.Write(ref held, Relays(request, 0b10));
+                return null;
+            }
+
+            return Relays(request, 0);
         });
         await using var run = ClientRun.Start(board.Port);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
@@ -308,9 +349,54 @@ public sealed class SmartDenClientTests
 
         Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
 
-        Assert.Equal(2, board.Connections);
+        Assert.Equal(1, board.Connections);
+        Assert.Contains(run.Traces, t => t.Text == "Skipped a late answer nobody waited for" && t.Bytes == "00 02 00 00 00 05 00 01 02 02 00");
         Assert.True(run.Client.State.IsConnected);
-        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer", StringComparison.Ordinal));
+        Assert.DoesNotContain(run.Changes, s => s.IsOn(2));
+    }
+
+    [Fact]
+    public async Task Should_SendEveryOff_OnANewConnection_WhenTheBoardClosedTheOldOne()
+    {
+        await using var simulator = Started();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        await simulator.SwitchRelayAsync(1, true);
+        await simulator.SwitchRelayAsync(2, true);
+        await simulator.SwitchRelayAsync(3, true);
+
+        // The board closes the connection, e.g. as idle; "All off" comes before the next poll.
+        simulator.DropConnections();
+        Assert.Equal(0b111UL, await run.Client.TurnOffAsync(0b111, Cancel));
+
+        Assert.Equal(0UL, simulator.Relays);
+        Assert.Equal(0UL, run.Client.State.Relays);
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(1, simulator.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
+    {
+        // The switches are answered; the read after them gets no answer on any connection.
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request[7] switch
+        {
+            SmartDenApi.WriteSingleCoil => request,
+            _ when Interlocked.Increment(ref reads) == 2 => null,
+            _ => Relays(request, 1),
+        });
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var sent = run.Client.TurnOnAsync(1, Cancel);
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 2 && run.Time.PendingTimers == 2);
+        run.Time.Advance(SmartDenClient.RequestTimeout);
+
+        Assert.Equal(1UL, await sent);
+        await Wait.UntilAsync(() => Volatile.Read(ref reads) == 3 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.True(run.Client.State.IsConnected);
     }
 
     [Fact]

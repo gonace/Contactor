@@ -78,8 +78,14 @@ takes 5, as Modbus TCP says. `SmartDenModbusTests` checks these frames byte for 
 - The client reads the header first, and then only the length that the request expects: at most 260 bytes.
 - An answer with a wrong transaction id, protocol, unit, function, length, byte count or echo is unreadable. Then the
   client closes the connection, because the stream can be out of step. The next request opens a new connection.
-- A timeout also closes the connection, and so does a poll that a command cancels. The next request opens a new one, so
-  one lost answer doesn't lose the board.
+- A timeout also closes the connection. The next request opens a new one, so one lost answer doesn't lose the board.
+- When the connection was open from before and turns out broken (the board can close a connection it finds idle), the
+  client sends the request once more on a new connection. Reading the relays, switching one or starting its pulse has the
+  same result when done twice.
+- A poll that a command cancels keeps the connection, because the board may refuse a new one while it holds the old one.
+  The poll's answer can still come. The next request reads it and drops it by its transaction id ("Skipped a late answer
+  nobody waited for"). When part of that answer was read already, or 8 answers are still to come, the client opens a
+  new connection.
 - Bytes that wait before a request were not asked for. The client drops them and shows them on the Debug screen.
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the other polled boards.
 
@@ -87,7 +93,7 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
 
 - The client sends a request for every relay in the mask, also when the board refuses one or its answer can't be read.
   "All off" and a group's interlock depend on every OFF being sent.
-- A request with no answer stops the rest of the mask.
+- A request with no answer, also on a new connection, stops the rest of the mask: the board is gone.
 - An empty mask sends nothing and returns no relays.
 - When the board takes no relay, the command throws "The smartDEN board didn't take the command: …"
   (`BoardNotConnectedException`). A refusal never leaves the client as `BoardRefusedException`.
@@ -99,8 +105,8 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
   poll, and also a command with an answer that cannot be read. When the board refused every relay with an exception
   answer, the board answered: that does not count.
 - After the switches, the client reads the relays in the same command. The poller takes that as the new state.
-- When that read gets an unreadable answer, the client keeps the last state it read and reads again at once. An echo is
-  not proof that a relay switched.
+- When that read gets an unreadable answer or no answer, the command returns the relays that the board took. The client
+  keeps the last state it read and reads again at once. An echo is not proof that a relay switched.
 
 `SmartDenClient.PulseAsync` and `SmartDenBoard.PulseAsync` throw `ArgumentOutOfRangeException` for a length outside
 0.1 s to 6553.5 s, or not in steps of 0.1 s, before anything is sent.
@@ -153,8 +159,9 @@ rights that a developer doesn't have.
 - A header with a length no Modbus frame has (below 2 or above 254) closes the connection, as nothing after it can be
   read in step. A client that goes away in the middle of a frame closes only its own connection. The simulator takes
   the next connection as usual.
-- It takes one connection at a time, as the manual says. A new connection closes the one before. The manual doesn't say
-  what the board does: see below.
+- It takes one connection at a time, as the manual says. While one is open, it closes a new one at once. A connection
+  whose client closed it doesn't count. With `NewConnectionTakesOver`, a new connection closes the one before instead.
+  The manual doesn't say which one the board does: see below.
 - Relays can be switched "at the board", and connections can be dropped or refused.
 - For the tests, `NoAnswer` stops all answers and `FailRelays` refuses functions 05, 06 and 0F for some relays with code 4.
 
@@ -162,15 +169,17 @@ rights that a developer doesn't have.
 
 - The factory address, and that Modbus TCP is on at port 502 (section 8.13: "Enable Modbus-TCP").
 - That unit id 0 is answered, and which unit ids the board takes.
-- What the board does with a second TCP connection while one is open: does it refuse the new one, or close the old one?
-  If it refuses the new one, a connection that the app lost without the board's knowledge blocks the app until the
-  board's idle timeout (5 min).
+- What the board does with a second TCP connection while one is open: does it refuse the new one, or does the new one
+  take over? The simulator refuses it. If the board refuses it, a connection that the app lost without the board's
+  knowledge blocks the app until the board's idle timeout (5 min).
 - That the idle timeout never closes the app's connection: the app polls every 2 s.
-- The coil bit order (bit 0 = relay 1, bit 15 = relay 16), and the length the board sends for a read of 16 relays (5, or
-  4 as table 10.11 says).
+- The coil bit order (bit 0 = relay 1, bit 15 = relay 16).
+- The length in the header of an answer with 2 bytes of relays: 5, as Modbus TCP says, or 4, as table 10.11 says. The
+  app takes only 5.
 - That function 05 echoes the request, and that the read right after it shows the new state.
 - The pulse (function 06 at 0x0000 to 0x000F): that it turns the relay on and then off, the unit of 100 ms, the limits
   (1 to 65535), and what a function 05 or a second pulse does to a pulse that runs.
+- What a pulse does to a relay that is already on: does the relay go off after the length, or stay on?
 - Which exception codes the board sends for a coil out of range, a quantity above 16, and a function 05 value other than
   FF00, 0000 or FF02.
 - The relay states after a power cut, with "Save Outputs" on and off. The app must turn nothing off at start.

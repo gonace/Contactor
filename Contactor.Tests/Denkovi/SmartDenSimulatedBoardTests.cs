@@ -126,9 +126,30 @@ public sealed class SmartDenSimulatedBoardTests
     }
 
     [Fact]
-    public async Task Should_TakeOneConnectionAtATime_TheNewOneClosingTheOneBefore()
+    public async Task Should_RefuseASecondConnection_WhileOneIsOpen()
     {
         await using var simulator = Started();
+        using var first = await ConnectAsync(simulator);
+        await Wait.UntilAsync(() => simulator.ConnectionCount == 1);
+
+        using (var second = await ConnectAsync(simulator))
+        {
+            Assert.Equal(0, await second.GetStream().ReadAsync(new byte[1], Cancel));
+        }
+
+        Assert.Equal(1, simulator.ConnectionCount);
+        Assert.Equal("00 01 00 00 00 05 00 01 02 00 00", await AskAsync(first.GetStream(), "00 01 00 00 00 06 00 01 00 00 00 10"));
+
+        // Once the first is closed, the next one is taken, also before the board saw the close by itself.
+        first.Dispose();
+        Assert.Equal("00 02 00 00 00 05 00 01 02 00 00", await AskAsync(simulator, "00 02 00 00 00 06 00 01 00 00 00 10"));
+    }
+
+    [Fact]
+    public async Task Should_LetANewConnectionTakeOver_WhenSetTo()
+    {
+        await using var simulator = new SmartDenSimulator { NewConnectionTakesOver = true };
+        simulator.Start();
         using var first = await ConnectAsync(simulator);
         await Wait.UntilAsync(() => simulator.ConnectionCount == 1);
 

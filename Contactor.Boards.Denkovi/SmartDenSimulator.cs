@@ -14,8 +14,9 @@ namespace Contactor.Boards.Denkovi;
 /// its time on <see cref="TimeProvider"/>. A request with a bad address, quantity, value or length gets a Modbus
 /// exception answer; one for another protocol gets none. A frame whose header gives a length no Modbus frame has
 /// closes the connection, as nothing after it can be read in step. It has no configuration registers: FC 03 and FC 10
-/// are refused as "no such address". It takes one connection at a time, as the board: a new one closes the one before
-/// (see README.md). It never tells the app anything by itself, as the real board. Used by the tests and, in
+/// are refused as "no such address". It takes one connection at a time, as the manual says the board does: a new one is
+/// closed at once while another is open, or, with <see cref="NewConnectionTakesOver"/>, closes the one before (the manual
+/// doesn't say which; see README.md). It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
 public sealed class SmartDenSimulator : ISimulatedBoard
@@ -117,6 +118,12 @@ public sealed class SmartDenSimulator : ISimulatedBoard
 
     /// <summary>When true, new connections are closed at once, as if the board were unreachable.</summary>
     public bool RejectConnections { get; set; }
+
+    /// <summary>
+    /// When true, a new connection closes the one open before; when false (the default), a new connection is closed at
+    /// once while another is open. A connection whose client closed it doesn't count as open.
+    /// </summary>
+    public bool NewConnectionTakesOver { get; set; }
 
     /// <summary>When true, requests are read but never answered, as if the board hung.</summary>
     public bool NoAnswer { get; set; }
@@ -221,22 +228,50 @@ public sealed class SmartDenSimulator : ISimulatedBoard
                 continue;
             }
 
-            handlers.Add(HandleConnectionAsync(tcp, TakeOver(tcp), cancellationToken));
+            try
+            {
+                if (Admit(tcp) is { } remote)
+                {
+                    handlers.Add(HandleConnectionAsync(tcp, remote, cancellationToken));
+                }
+            }
+#pragma warning disable CA1031 // One connection that can't be taken must not stop the board taking the next.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                Remove(tcp);
+                tcp.Dispose();
+                _logger.SimulatorConnectionFailed(ex);
+            }
         }
 
         await Task.WhenAll(handlers).ConfigureAwait(false);
     }
 
-    // One connection at a time, as the board: the new one closes every one before it. Returns where it comes from.
-    private string TakeOver(TcpClient tcp)
+    // One connection at a time, as the board: while one is open, the new one is closed at once, or takes its place
+    // (NewConnectionTakesOver). Returns where it comes from, or null when it was closed.
+    private string? Admit(TcpClient tcp)
     {
-        var remote = tcp.Client.RemoteEndPoint?.ToString() ?? "unknown";
+        var remote = RemoteOf(tcp);
         lock (_connectionsLock)
         {
             foreach (var earlier in _connections.Keys)
             {
-                Remove(earlier);
-                Trace(BoardTraceDirection.None, "Closed the connection before: one connection at a time", null);
+                if (IsClosedByClient(earlier))
+                {
+                    Remove(earlier);
+                }
+                else if (NewConnectionTakesOver)
+                {
+                    Remove(earlier);
+                    Trace(BoardTraceDirection.None, "Closed the connection before: one connection at a time", null);
+                }
+                else
+                {
+                    tcp.Dispose();
+                    Trace(BoardTraceDirection.None, $"Refused a connection from {remote}: one connection at a time", null, isError: true);
+                    return null;
+                }
             }
 
             _connections[tcp] = remote;
@@ -245,6 +280,32 @@ public sealed class SmartDenSimulator : ISimulatedBoard
         RaiseChanged();
         Trace(BoardTraceDirection.None, $"The app connected from {remote}", null);
         return remote;
+    }
+
+    // Whether the client closed the connection, though its handler hasn't seen that yet: readable with nothing to read.
+    // A connection its handler closed meanwhile has no socket any more.
+    private static bool IsClosedByClient(TcpClient tcp)
+    {
+        try
+        {
+            return tcp.Client is not { } socket || (socket.Poll(0, SelectMode.SelectRead) && socket.Available == 0);
+        }
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+        {
+            return true;
+        }
+    }
+
+    private static string RemoteOf(TcpClient tcp)
+    {
+        try
+        {
+            return tcp.Client?.RemoteEndPoint?.ToString() ?? "unknown";
+        }
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+        {
+            return "unknown";
+        }
     }
 
     private void Remove(TcpClient tcp)
