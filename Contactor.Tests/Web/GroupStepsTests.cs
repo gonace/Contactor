@@ -494,6 +494,28 @@ public sealed class GroupStepsTests
         Assert.Equal(GroupPhases.Idle, _runtime.Phase);
     }
 
+    // Issue #398, with Fan 2's OFF still on its way and Fan 1's own OFF already shown: the board shows only Fan 2 on,
+    // and Fan 1's ON is on its way. "Turn off" sends Fan 1's OFF at once with its step's, not 5 s later when that OFF
+    // times out.
+    [Fact]
+    public void Should_SendAFansOff_WithItsStepsOff_WhenTheBoardDoesntShowItsOnYet()
+    {
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 1, John, T0, new GroupCommands());
+        GroupPlanner.MemberOff(FansHeaters, State(1, 2), _runtime, 2, John, T0.AddSeconds(0.5), new GroupCommands());
+        GroupPlanner.MemberOn(FansHeaters, State(1, 2), _runtime, 1, John, 120, T0.AddSeconds(0.7), new GroupCommands(), Mask(1, 2));
+
+        var stop = new GroupCommands();
+        GroupPlanner.Stop(FansHeaters, State(2), _runtime, John, T0.AddSeconds(0.8), stop, Mask(1));
+
+        Assert.Equal((ChannelMask.None, Mask(1)), (stop.On, stop.Off));
+        Assert.Equal((1, false, T0.AddSeconds(0.8)), (_runtime.PendingStep, _runtime.PendingOn, _runtime.PendingSinceUtc!.Value));
+        Assert.True(Plan(State(), T0.AddSeconds(0.9), onOnItsWay: Mask(1)).IsEmpty);
+        Assert.True(Plan(State(1), T0.AddSeconds(1)).IsEmpty);
+        Plan(State(), T0.AddSeconds(1.1));
+        Plan(State(), T0.AddSeconds(1.2));
+        Assert.Equal(GroupPhases.Idle, _runtime.Phase);
+    }
+
     // Issue #398, one step lower. Heater 1 is turned on again while Heater 2 stops, and "Turn off" comes before its ON
     // shows. The heater goes off first, after its ON; the fans stay on and then run on. Turning the fans off at once
     // would leave the heater on below them once its ON lands.
