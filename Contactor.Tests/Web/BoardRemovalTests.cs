@@ -1,6 +1,6 @@
 using System.Net;
 using Contactor.Boards;
-using Contactor.Boards.Vm201;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Boards;
