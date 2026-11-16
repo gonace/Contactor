@@ -450,7 +450,7 @@ public sealed class SetupTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));
-        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, denkovi-smartden-ip-16r-mt, denkovi-daenetip2-v2-16, denkovi-daenetip2-v2-8, denkovi-daenetip2-v2-2, devantech-eth002, devantech-eth008, devantech-eth484, devantech-eth8020, advantech-adam-6060, advantech-adam-6066.", error.Message);
+        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, denkovi-smartden-ip-16r-mt, denkovi-daenetip2-v2-16, denkovi-daenetip2-v2-8, denkovi-daenetip2-v2-2, devantech-eth002, devantech-eth008, devantech-eth1610, devantech-eth484, devantech-eth8020, advantech-adam-6060, advantech-adam-6066.", error.Message);
     }
 
     [Fact]

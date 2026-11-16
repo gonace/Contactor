@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Boards;
 
-/// <summary>The Devantech boards as the app sees them: the four models, their state, their relays and the password.</summary>
+/// <summary>The Devantech boards as the app sees them: the five models, their state, their relays and the password.</summary>
 public sealed class DevantechBoardTests
 {
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
@@ -14,6 +14,7 @@ public sealed class DevantechBoardTests
     [Theory]
     [InlineData("devantech-eth002", "Devantech ETH002-B", 2, 0, 0, 18)]
     [InlineData("devantech-eth008", "Devantech ETH008-B", 8, 0, 0, 19)]
+    [InlineData("devantech-eth1610", "Devantech ETH1610", 10, 0, 16, 52)]
     [InlineData("devantech-eth484", "Devantech ETH484-B", 4, 8, 4, 20)]
     [InlineData("devantech-eth8020", "Devantech ETH8020-B", 20, 8, 8, 21)]
     public void Should_DescribeEachModel(string id, string name, int relays, int inputs, int analog, byte moduleId)
