@@ -96,6 +96,24 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 
 ---
 
+## Adding a relay board
+
+- **Protocol from the manufacturer's manual only.** Name the manual, its date and the section for every command and answer format, in the board's README. Never guess a format, and never mix two interfaces. If something isn't documented, stop and ask.
+- **The simulator speaks the manual's format, not the client's.** Each board's tests include the manual's own example answer, byte for byte, parsed by the client.
+- **Switch one relay without touching the others.** Never read a whole port, change a bit and write it back: a change at the board in between would be overwritten. Use the board's per-relay command; if it has none, ask.
+- **Keep the `IRelayBoard` contract,** as the existing boards do:
+  - return the relays the board took, and 0 for an empty mask;
+  - keep sending the other relays when one fails ("All off" and the interlock depend on it);
+  - reopen the connection after a failure instead of staying closed;
+  - outside `RunCommandAsync`, a refusal is a `BoardNotConnectedException`.
+- **"Connected" only after the board's first valid answer.** A wrong password says so in plain words, through `LoginProblem` and `LoginHint`.
+- **Bound every input:** a size limit on every answer, a length check on every packet. The simulator survives malformed packets and a dropped connection.
+- **Time through `TimeProvider`:** timeouts in the code, and a fake clock in the tests. Never a real-time wait.
+- **One project per manufacturer** (`Contactor.Boards.<Manufacturer>`), one file per type with the model as prefix, tests in `Contactor.Tests/<Manufacturer>/`. Copy the structure of the closest existing board.
+- **Everything a board needs:** the catalogue, the simulator, `SimulatedBoardsTests`, texts in English and Swedish resx, `docs/ARCHITECTURE.md`, the README's board table, `appsettings.json`, the structure in this file, and a list in the board's README of what to check on a real board.
+- **Prove it:** a Release build with 0 warnings (warnings are errors) and every test passing, run on the pushed commit. Paste the real output in the pull request. Never write "0 warnings" or "tests pass" without running them.
+- **Start from the latest `main`.** A pull request that touches the same files as another open one is stacked on it.
+
 ## Testing
 
 - **Codec:** encode/decode, checksum, the verified example (`02 06 4F 01 A8 03`, in `Contactor.Boards.Vm201/README.md`), split and merged TCP packets, and an invalid checksum.
