@@ -85,6 +85,13 @@ public enum LoginHintKind
     /// letters, digits and plain symbols, no spaces.
     /// </summary>
     TcpPassword,
+
+    /// <summary>
+    /// The read-write community from the board's SNMP settings, at most <see cref="LoginHint.MaxLength"/> characters:
+    /// letters, digits and plain symbols, no spaces. A wrong community gets no answer at all, so the hint says to check
+    /// the address and the community.
+    /// </summary>
+    SnmpCommunity,
 }
 
 /// <summary>A model's rule for its login, which the app puts in words for the Settings screen and the setup guide.</summary>

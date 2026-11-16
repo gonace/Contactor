@@ -55,7 +55,8 @@ public sealed class BoardLoginText
         {
             LoginHintKind.PlainSymbols => _texts["Boards.LoginHint.PlainSymbols", hint.MaxLength],
             LoginHintKind.ListedSymbols => _texts["Boards.LoginHint.ListedSymbols", hint.MaxLength, hint.TotalMaxLength, hint.Symbols],
-            _ => _texts["Boards.LoginHint.TcpPassword", hint.MaxLength],
+            LoginHintKind.TcpPassword => _texts["Boards.LoginHint.TcpPassword", hint.MaxLength],
+            _ => _texts["Boards.LoginHint.SnmpCommunity", hint.MaxLength],
         };
     }
 }

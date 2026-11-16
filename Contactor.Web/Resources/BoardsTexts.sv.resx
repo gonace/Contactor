@@ -318,6 +318,9 @@
   <data name="Boards.LoginHint.TcpPassword" xml:space="preserve">
     <value>TCP-lösenordet från kortets inställningssida, inte inloggningen till dess webbsida. Högst {0} tecken: bokstäver, siffror och vanliga tecken, inga mellanslag.</value>
   </data>
+  <data name="Boards.LoginHint.SnmpCommunity" xml:space="preserve">
+    <value>Kortets Read-write Community från dess SNMP-inställningar, högst {0} tecken: bokstäver, siffror och vanliga tecken, inga mellanslag. Med fel community svarar kortet inte: kontrollera adressen och communityn.</value>
+  </data>
   <data name="Boards.Login.TooLong.UserName" xml:space="preserve">
     <value>Användarnamnet får vara högst {0} tecken på reläkortet.</value>
   </data>

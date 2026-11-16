@@ -104,6 +104,26 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     }
 
     [Theory]
+    [InlineData("denkovi-daenetip2-v2-16")]
+    [InlineData("denkovi-daenetip2-v2-8")]
+    [InlineData(" DENKOVI-DAENETIP2-V2-2 ")]
+    public void Should_RunEachDaenetIp2Kit_WithTheFactoryOrItsOwnCommunity(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        Assert.Null(_boards.Add(type, FreePort(), "", "apple"));
+
+        var boards = _boards.Boards;
+        Assert.All(boards, b => Assert.IsType<DaenetIp2Simulator>(b.Board));
+        Assert.All(boards, b => Assert.Equal(type.Trim().ToLowerInvariant(), b.Board.Model.Id));
+        Assert.All(boards, b => Assert.True(b.Board.HasLogin));
+
+        // Port 161 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8161, 161), (SimulatorCatalogue.Find(type)!.Port, DaenetIp2Api.DefaultPort));
+        Assert.Equal("The DAEnetIP2 v2 takes its read-write community as the password, no user name.", _boards.Add(type, FreePort(), "admin", "apple"));
+        Assert.Equal("The password can be at most 12 characters.", _boards.Add(type, FreePort(), "", "thirteen-char"));
+    }
+
+    [Theory]
     [InlineData("devantech-eth002")]
     [InlineData("devantech-eth008")]
     [InlineData("devantech-eth484")]
