@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Advantech;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -562,7 +563,7 @@ public sealed class AdamClientTests
         Assert.Throws<ArgumentException>(() => CreateClient(1, TimeProvider.System, pollSeconds: 0));
         Assert.Throws<ArgumentException>(() => new AdamClient(
             Options.Create(new AdamOptions()),
-            Contactor.Boards.Velleman.Vm201Model.Model,
+            Vm201Model.Model,
             TimeProvider.System,
             NullLogger<AdamClient>.Instance));
     }

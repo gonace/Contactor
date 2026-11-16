@@ -371,7 +371,7 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         {
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
-            if (reused && again && ex is not TimeoutException)
+            if (reused && again)
             {
                 return await ExchangeAsync(request, routine, cancellationToken, again: false).ConfigureAwait(false);
             }
@@ -567,74 +567,6 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
             {
                 _logger.SubscriberFailed(ex);
             }
-        }
-    }
-
-    /// <summary>
-    /// The connection's stream as the codec reads it, counting what it read: an answer read in part when a command
-    /// takes the poll's place leaves the connection out of step.
-    /// </summary>
-    private sealed class CountingStream : Stream
-    {
-        private readonly Stream _inner;
-
-        public CountingStream(Stream inner)
-        {
-            _inner = inner;
-        }
-
-        public long BytesRead { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => false;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            var read = _inner.Read(buffer, offset, count);
-            BytesRead += read;
-            return read;
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            BytesRead += read;
-            return read;
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void SetLength(long value)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            throw new NotSupportedException();
         }
     }
 }

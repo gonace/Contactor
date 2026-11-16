@@ -497,6 +497,40 @@ public sealed class GroupSequencerTests
         Assert.Contains(await rig.EventsAsync(), e => e.Action == EventActions.On && e.RelayId == Fan(1) && e.Actor == John);
     }
 
+    // As above, but the board never shows Fan 1's ON: the stop waits for it only while it is on its way, 5 s from when
+    // it was sent, and then finishes.
+    [Fact]
+    public async Task Should_FinishTheStop_OnceAFanTurnedOnAgainIsNoLongerOnItsWay()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var board = rig.Second!;
+        int Fan(int channel) => rig.SecondRelayId(channel);
+        var id = await CreateAsync(rig, new GroupDraft("Barn fans", GroupIcons.Fan, 120, [new GroupStepDraft("Fans", [Fan(1), Fan(2)], 3, 180)]));
+        await rig.Groups.StartGroupAsync(id, John, Cancel);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: false, John, Cancel));
+        await rig.Groups.StepAsync(Cancel);
+
+        board.HoldStatus = true;
+        rig.Time.Now += TimeSpan.FromSeconds(0.5);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(2), on: false, John, Cancel));
+        rig.Time.Now += TimeSpan.FromSeconds(0.5);
+        Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: true, John, Cancel));
+        var sentOn = rig.Time.Now;
+
+        rig.Time.Now += TimeSpan.FromSeconds(0.2);
+        board.SetRelay(2, on: false);
+        await rig.Groups.StepAsync(Cancel);
+        rig.Time.Now = sentOn + ExpectedChanges.Lifetime - TimeSpan.FromMilliseconds(1);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(GroupPhases.Stopping, (await RuntimeAsync(rig, id)).Phase);
+
+        rig.Time.Now = sentOn + ExpectedChanges.Lifetime;
+        await rig.Groups.StepAsync(Cancel);
+
+        Assert.Equal((ChannelMask.None, GroupPhases.Idle), (board.State.Relays, (await RuntimeAsync(rig, id)).Phase));
+    }
+
     // Issue #398: as above, and "Turn off" comes while Fan 1's ON is still on its way. Its OFF goes after that ON, and
     // the group ends with every relay off and no run.
     [Fact]

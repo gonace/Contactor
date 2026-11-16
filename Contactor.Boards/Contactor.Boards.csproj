@@ -4,4 +4,12 @@
     <RootNamespace>Contactor.Boards</RootNamespace>
   </PropertyGroup>
 
+  <!-- CountingStream: one copy for the clients that read Modbus TCP or the Devantech commands. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Contactor.Boards.Advantech" />
+    <InternalsVisibleTo Include="Contactor.Boards.Denkovi" />
+    <InternalsVisibleTo Include="Contactor.Boards.Devantech" />
+    <InternalsVisibleTo Include="Contactor.Boards.Waveshare" />
+  </ItemGroup>
+
 </Project>
