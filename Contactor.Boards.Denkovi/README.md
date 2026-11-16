@@ -1,14 +1,14 @@
-# The Denkovi boards (`Contactor.Boards.Denkovi`)
+# Denkovi
 
 How the app talks to the Denkovi boards. What every board shares (`IRelayBoard`, `IBoardConnection`, the board
 catalogue) is in `docs/ARCHITECTURE.md`.
 
 This project connects Contactor to the Denkovi relay boards. Today it has two: the smartDEN IP-16R-MT (Modbus TCP) and
-the DAEnetIP2 v2 with a Denkovi relay board (SNMPv1, see [The DAEnetIP2 v2](#the-daenetip2-v2)). For each it has the
+the DAEnetIP2 v2 with a Denkovi relay board (SNMPv1, see [The DAEnetIP2 v2](#daenetip2-v2)). For each it has the
 codec, the client, the adapters for the app and a simulator. It has no web or database code. The types of each board
 have the board's name as a prefix (`SmartDen*`, `DaenetIp2*`). `DenkoviBrand` has the brand that they share.
 
-The sections up to "To check on a real board" are about the smartDEN IP-16R-MT.
+The sections under "smartDEN IP-16R-MT" are about the smartDEN IP-16R-MT.
 
 ## Sources
 
@@ -20,19 +20,40 @@ The sections up to "To check on a real board" are about the smartDEN IP-16R-MT.
   - section 8.13: the Modbus TCP settings (port 502, idle timeout 5 min, one TCP connection at a time);
   - section 10.2: the Modbus TCP protocol, tables 10.6 to 10.29.
 - The product page: https://denkovi.com/smartden-modbus-tcp-ip-ethernet-16-relay-board
+- Denkovi's "DAEnetIP2 v2 User Manual", 21 April 2020:
+  - table 4.1: the default settings (SNMP on UDP port 161, the read-only community `000000000000`, the read-write
+    community `private`, P3 and P5 as outputs);
+  - section 6.3: "Save Outputs";
+  - section 6.5: SNMP access only from one network ("Network IP" and "Network Mask") and from two MAC addresses;
+  - section 6.6.1: the SNMP agent's port and the two communities, at most 12 characters each. The read-write community
+    is "used in read/write operations";
+  - sections 6.7, 6.9 and 6.10: the direction of each pin, the analog events and the ICMP monitoring, which can set P5's
+    pins;
+  - section 7: which of these wins over a set from the app;
+  - section 8: the HTTP API, which writes a whole port at once (`iochange.cgi?…&01=00&02=FF`). The app doesn't use it;
+  - section 9: SNMPv1, `snmpget` and `snmpset` of one OID at a time, no `snmpwalk`. The read-only community is for
+    reading, the read-write community for changing;
+  - tables 9.4 and 9.5: the OIDs of P3 and P5;
+  - section 12 (appendix 3), steps 3.1 to 3.3: which ports each relay board is on;
+  - section 14.2.3: the example `snmpget` and `snmpset` commands;
+  - section 15 (appendix 9) and figure 15.1: an output is 3.3 V at "1" and 0.25 V at "0", and "1" switches a relay on
+    through a transistor.
+- SNMPv1 itself: RFC 1157 (the messages and the 484-byte limit) and its BER encoding.
+
+## smartDEN IP-16R-MT
 
 Nobody has tested the board with the app yet. The list in "To check on a real board" shows what is not known.
 
-## Model
+### Models
 
-| Catalogue id | Name | Relays | Inputs |
-|---|---|---|---|
-| `denkovi-smartden-ip-16r-mt` | Denkovi smartDEN IP-16R-MT | 16 | 0 |
+| Catalogue id | Name | Relays | Inputs | Pulse | Login |
+|---|---|---|---|---|---|
+| `denkovi-smartden-ip-16r-mt` | Denkovi smartDEN IP-16R-MT | 16 | 0 | 0.1 s to 6553.5 s | none |
 
 The board uses port 502 and has no login: Modbus has none, and the password of the board's web page doesn't guard
 Modbus. The other smartDEN IP-16R models (SNMP, MQTT) don't speak Modbus TCP, and the app doesn't support them.
 
-## Protocol
+### Protocol
 
 Modbus TCP, section 10.2 of the manual.
 
@@ -73,7 +94,7 @@ Frames from the manual:
 Table 10.11 gives the length 0x0004, but the unit id, the function, the byte count and two bytes of data are 5. The app
 takes 5, as Modbus TCP says. `SmartDenModbusTests` checks these frames byte for byte.
 
-## Client
+### The app's client
 
 `SmartDenClient` keeps one TCP connection and sends one request at a time. Each request waits for its answer.
 
@@ -118,20 +139,7 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
 `Contactor.Web` registers them. `SmartDenTraceText` puts each frame in plain words. The polls and the answers that
 change nothing are routine.
 
-## What the board does by itself
-
-The app reads the board's relays on every poll, so the board stays the source of truth. These board settings switch
-relays without the app. The app sees each switch only as a change from outside:
-
-- "Save Outputs" (section 8.2): the board keeps the relay states in its memory and sets them again after a restart.
-- The week schedule (sections 8.9 and 10.2, registers 0x6100 to 0x671D): up to 30 rows that switch relays at set times.
-- The pulse mode of each relay (sections 8.6 and 10.2, registers 0x6000 to 0x600F): when it isn't 0, the board turns
-  the relay off again after that time each time it goes on, also after an ON from the app.
-
-The app doesn't read or change these settings. Set them on the board's web page: the week schedule off, and the pulse
-mode 0 for every relay that the app switches.
-
-## Settings
+### Settings
 
 The `SmartDen` section:
 
@@ -146,7 +154,7 @@ The `SmartDen` section:
 When `Host` is empty, the setup guide asks for the address. Modbus TCP has no encryption and no login. Keep the board
 on a trusted network, and never open port 502 to the internet.
 
-## Simulator
+### The simulator
 
 `SmartDenSimulator` simulates the board on a local port. `Contactor.Simulator` offers port 8502, because port 502 needs
 rights that a developer doesn't have.
@@ -168,63 +176,34 @@ rights that a developer doesn't have.
 - Relays can be switched "at the board", and connections can be dropped or refused.
 - For the tests, `NoAnswer` stops all answers and `FailRelays` refuses functions 05, 06 and 0F for some relays with code 4.
 
-## To check on a real board
+### Settings on the board that switch relays without the app
 
-- The factory address, and that Modbus TCP is on at port 502 (section 8.13: "Enable Modbus-TCP").
-- That unit id 0 is answered, and which unit ids the board takes.
-- What the board does with a second TCP connection while one is open: does it refuse the new one, or does the new one
-  take over? The simulator refuses it. If the board refuses it, a connection that the app lost without the board's
-  knowledge blocks the app until the board's idle timeout (5 min).
-- That the idle timeout never closes the app's connection: the app polls every 2 s.
-- The coil bit order (bit 0 = relay 1, bit 15 = relay 16).
-- The length in the header of an answer with 2 bytes of relays: 5, as Modbus TCP says, or 4, as table 10.11 says. The
-  app takes only 5.
-- That function 05 echoes the request, and that the read right after it shows the new state.
-- The pulse (function 06 at 0x0000 to 0x000F): that it turns the relay on and then off, the unit of 100 ms, the limits
-  (1 to 65535), and what a function 05 or a second pulse does to a pulse that runs.
-- What a pulse does to a relay that is already on: does the relay go off after the length, or stay on?
-- Which exception codes the board sends for a coil out of range, a quantity above 16, and a function 05 value other than
-  FF00, 0000 or FF02.
-- The relay states after a power cut, with "Save Outputs" on and off. The app must turn nothing off at start.
-- How the board handles a poll every 2 s for days.
+The app reads the board's relays on every poll, so the board stays the source of truth. These board settings switch
+relays without the app. The app sees each switch only as a change from outside:
 
-## The DAEnetIP2 v2
+- "Save Outputs" (section 8.2): the board keeps the relay states in its memory and sets them again after a restart.
+- The week schedule (sections 8.9 and 10.2, registers 0x6100 to 0x671D): up to 30 rows that switch relays at set times.
+- The pulse mode of each relay (sections 8.6 and 10.2, registers 0x6000 to 0x600F): when it isn't 0, the board turns
+  the relay off again after that time each time it goes on, also after an ON from the app.
+
+The app doesn't read or change these settings. Set them on the board's web page: the week schedule off, and the pulse
+mode 0 for every relay that the app switches.
+
+## DAEnetIP2 v2
 
 The DAEnetIP2 v2 is an IP controller with two 8-bit digital output ports, P3 and P5. Denkovi sells it as a kit, with a
 cable and a Denkovi relay board on those ports. The app supports three kits. The types have the prefix `DaenetIp2`.
 
-Nobody has tested a kit with the app yet. The list in [To check on a real kit](#to-check-on-a-real-kit) shows what is not
+Nobody has tested a kit with the app yet. The list in [On a DAEnetIP2 v2 kit](#on-a-daenetip2-v2-kit) shows what is not
 known. Issue #371 is for a check on real boards; it doesn't block the app's support.
-
-### Sources
-
-- Denkovi's "DAEnetIP2 v2 User Manual", 21 April 2020:
-  - table 4.1: the default settings (SNMP on UDP port 161, the read-only community `000000000000`, the read-write
-    community `private`, P3 and P5 as outputs);
-  - section 6.3: "Save Outputs";
-  - section 6.5: SNMP access only from one network ("Network IP" and "Network Mask") and from two MAC addresses;
-  - section 6.6.1: the SNMP agent's port and the two communities, at most 12 characters each. The read-write community
-    is "used in read/write operations";
-  - sections 6.7, 6.9 and 6.10: the direction of each pin, the analog events and the ICMP monitoring, which can set P5's
-    pins;
-  - section 7: which of these wins over a set from the app;
-  - section 8: the HTTP API, which writes a whole port at once (`iochange.cgi?…&01=00&02=FF`). The app doesn't use it;
-  - section 9: SNMPv1, `snmpget` and `snmpset` of one OID at a time, no `snmpwalk`. The read-only community is for
-    reading, the read-write community for changing;
-  - tables 9.4 and 9.5: the OIDs of P3 and P5;
-  - section 12 (appendix 3), steps 3.1 to 3.3: which ports each relay board is on;
-  - section 14.2.3: the example `snmpget` and `snmpset` commands;
-  - section 15 (appendix 9) and figure 15.1: an output is 3.3 V at "1" and 0.25 V at "0", and "1" switches a relay on
-    through a transistor.
-- SNMPv1 itself: RFC 1157 (the messages and the 484-byte limit) and its BER encoding.
 
 ### Models
 
-| Catalogue id | Name | Relays | On pins |
-|---|---|---|---|
-| `denkovi-daenetip2-v2-16` | Denkovi DAEnetIP2 v2 16-relay kit | 16 | relays 1 to 8 on P3.1 to P3.8, relays 9 to 16 on P5.1 to P5.8 |
-| `denkovi-daenetip2-v2-8` | Denkovi DAEnetIP2 v2 8-relay kit | 8 | P5.1 to P5.8 |
-| `denkovi-daenetip2-v2-2` | Denkovi DAEnetIP2 v2 2-relay kit | 2 | relay 1 on P5.7, relay 2 on P5.8 |
+| Catalogue id | Name | Relays | On pins | Pulse | Login |
+|---|---|---|---|---|---|
+| `denkovi-daenetip2-v2-16` | Denkovi DAEnetIP2 v2 16-relay kit | 16 | relays 1 to 8 on P3.1 to P3.8, relays 9 to 16 on P5.1 to P5.8 | none | read-write community |
+| `denkovi-daenetip2-v2-8` | Denkovi DAEnetIP2 v2 8-relay kit | 8 | P5.1 to P5.8 | none | read-write community |
+| `denkovi-daenetip2-v2-2` | Denkovi DAEnetIP2 v2 2-relay kit | 2 | relay 1 on P5.7, relay 2 on P5.8 | none | read-write community |
 
 The manual says which ports each relay board is on (section 12, steps 3.1 to 3.3), but not which pin is which relay.
 The app takes the manual's order: P3 before P5 (as in tables 5.1, 9.4 and 9.5, and in section 8), and pin 1 before pin
@@ -236,30 +215,6 @@ below.
 
 The kits have no inputs and no pulse in the app. The board can't pulse one relay by itself over SNMP: its only pulse is
 the restart pulse of its ICMP monitoring (`cfgResetPulse`), which the app doesn't use.
-
-### Login: the read-write community
-
-Every SNMP request carries a community, a word that works as a password. SNMPv1 sends it as plain text. The board has
-two (section 6.6.1): the read-only community, for reading, and the read-write community, which is "used in read/write
-operations". So one secret does both, and the app asks only for the read-write community. It is the login's password;
-the model is `PasswordOnly`, with no user name. The read-only community is never needed.
-
-- 4 to 12 characters: table 9.1 gives the community as `OCTET STRING (SIZE (4..12))`, and section 6.6.1 says "max 12
-  symbols". The app takes letters, digits and plain symbols without spaces, so each character is one byte
-  (`DaenetIp2Models.CheckCommunity`). A shorter or longer one is refused in words: "The password, the board's
-  read-write community, must be 4 to 12 characters."
-- The board always has a community, so the model is `LoginRequired`: the setup guide and Settings show the password
-  field and the hint, and no "The board has no password" box. The hint names the factory community, `private`
-  (table 4.1), so a person knows what to type on a new board.
-- The community is a secret, like any board's password. It is never logged, traced or shown. The Debug screen shows the
-  PDU of each message only, never the whole datagram, because the community is before the PDU. A datagram that the app
-  can't read shows only its length.
-- A wrong community gets no answer at all: SNMPv1 drops a message that isn't authentic (RFC 1157, section 4.1). So the
-  app can't tell a wrong community from a wrong address. The login's hint says it: "With a wrong community the board
-  doesn't answer: check the address and the community." The trace says the same after each request without an answer.
-- With no community saved yet (a board added in the app starts so), the app sends an empty one, and the board doesn't
-  answer. `DaenetIp2Connection.SetLogin` still takes no login for that, as every board does
-  (`IBoardConnection.SetLogin`).
 
 ### Protocol
 
@@ -313,7 +268,31 @@ An answer is the answer to a request only when it has all of these (`DaenetIp2Sn
 - the request's OID, and an `INTEGER` from 0 to 1 for a pin, or from 0 to 255 for a port;
 - for a set, the value that was set.
 
-### Client
+#### Login: the read-write community
+
+Every SNMP request carries a community, a word that works as a password. SNMPv1 sends it as plain text. The board has
+two (section 6.6.1): the read-only community, for reading, and the read-write community, which is "used in read/write
+operations". So one secret does both, and the app asks only for the read-write community. It is the login's password;
+the model is `PasswordOnly`, with no user name. The read-only community is never needed.
+
+- 4 to 12 characters: table 9.1 gives the community as `OCTET STRING (SIZE (4..12))`, and section 6.6.1 says "max 12
+  symbols". The app takes letters, digits and plain symbols without spaces, so each character is one byte
+  (`DaenetIp2Models.CheckCommunity`). A shorter or longer one is refused in words: "The password, the board's
+  read-write community, must be 4 to 12 characters."
+- The board always has a community, so the model is `LoginRequired`: the setup guide and Settings show the password
+  field and the hint, and no "The board has no password" box. The hint names the factory community, `private`
+  (table 4.1), so a person knows what to type on a new board.
+- The community is a secret, like any board's password. It is never logged, traced or shown. The Debug screen shows the
+  PDU of each message only, never the whole datagram, because the community is before the PDU. A datagram that the app
+  can't read shows only its length.
+- A wrong community gets no answer at all: SNMPv1 drops a message that isn't authentic (RFC 1157, section 4.1). So the
+  app can't tell a wrong community from a wrong address. The login's hint says it: "With a wrong community the board
+  doesn't answer: check the address and the community." The trace says the same after each request without an answer.
+- With no community saved yet (a board added in the app starts so), the app sends an empty one, and the board doesn't
+  answer. `DaenetIp2Connection.SetLogin` still takes no login for that, as every board does
+  (`IBoardConnection.SetLogin`).
+
+### The app's client
 
 `DaenetIp2Client` has one UDP socket and sends one request at a time. Each request waits for its answer.
 
@@ -365,22 +344,6 @@ A command (ON or OFF) switches the relays in the mask one at a time, as on the s
 `Contactor.Web` registers them (`DaenetIp2Boards`). `DaenetIp2TraceText` puts each message in plain words, e.g. "Turn on
 relay 3 (P3.3)". The polls and the answers that change nothing are routine.
 
-### What the board does by itself
-
-The app reads the ports on every poll, so the board stays the source of truth. These board settings switch pins without
-the app. The app sees each switch only as a change from outside:
-
-- "Save Outputs" (section 6.3, `cfgNewMode` bit 0): the board sets the pins again after a restart.
-- "Reset I/O Ports on Restart" (section 6.10.2): the board sets every pin of P3 and P5 to "0" at a restart.
-- The ICMP monitoring (section 6.10): it pulses the P5 pins in `cfgP5DupRST` to restart another device. It wins over a
-  set from the app (section 7).
-- The analog events (section 6.9): they set a P5 pin by an analog input's level. They also win over a set from the app
-  (section 7).
-- The direction of each pin (section 6.7, `cfgP3Dir` and `cfgP5Dir`): a pin set as an input switches no relay.
-
-The app doesn't read or change these settings. Set them on the board's web page: P3 and P5 as outputs, the ICMP
-monitoring off or without P5 restart pins, and no analog events on the pins that the app switches.
-
 ### Settings
 
 The `DaenetIp2` section:
@@ -400,7 +363,7 @@ no encryption, and the community goes as plain text. Keep the board on a trusted
 from the internet (the manual's appendix 4 shows how; don't). If the board's SNMP access is limited to one network
 (section 6.5), that network must hold the app's address.
 
-### Simulator
+### The simulator
 
 `DaenetIp2Simulator` simulates a kit on a local UDP port. `Contactor.Simulator` offers port 8161, because port 161 needs
 rights that a developer doesn't have.
@@ -420,7 +383,47 @@ rights that a developer doesn't have.
 - Like the board, it takes a community of 4 to 12 characters only.
 - Its trace shows the PDU of each message, never the community.
 
-### To check on a real kit
+### Settings on the board that switch relays without the app
+
+The app reads the ports on every poll, so the board stays the source of truth. These board settings switch pins without
+the app. The app sees each switch only as a change from outside:
+
+- "Save Outputs" (section 6.3, `cfgNewMode` bit 0): the board sets the pins again after a restart.
+- "Reset I/O Ports on Restart" (section 6.10.2): the board sets every pin of P3 and P5 to "0" at a restart.
+- The ICMP monitoring (section 6.10): it pulses the P5 pins in `cfgP5DupRST` to restart another device. It wins over a
+  set from the app (section 7).
+- The analog events (section 6.9): they set a P5 pin by an analog input's level. They also win over a set from the app
+  (section 7).
+- The direction of each pin (section 6.7, `cfgP3Dir` and `cfgP5Dir`): a pin set as an input switches no relay.
+
+The app doesn't read or change these settings. Set them on the board's web page: P3 and P5 as outputs, the ICMP
+monitoring off or without P5 restart pins, and no analog events on the pins that the app switches.
+
+## To check on a real board
+
+### On the smartDEN IP-16R-MT
+
+> **Warning: check the first four points first, before anything is connected to the relays.**
+
+- The coil bit order (bit 0 = relay 1, bit 15 = relay 16).
+- The relay states after a power cut, with "Save Outputs" on and off. The app must turn nothing off at start.
+- The pulse (function 06 at 0x0000 to 0x000F): that it turns the relay on and then off, the unit of 100 ms, the limits
+  (1 to 65535), and what a function 05 or a second pulse does to a pulse that runs.
+- What a pulse does to a relay that is already on: does the relay go off after the length, or stay on?
+- The factory address, and that Modbus TCP is on at port 502 (section 8.13: "Enable Modbus-TCP").
+- That unit id 0 is answered, and which unit ids the board takes.
+- What the board does with a second TCP connection while one is open: does it refuse the new one, or does the new one
+  take over? The simulator refuses it. If the board refuses it, a connection that the app lost without the board's
+  knowledge blocks the app until the board's idle timeout (5 min).
+- That the idle timeout never closes the app's connection: the app polls every 2 s.
+- The length in the header of an answer with 2 bytes of relays: 5, as Modbus TCP says, or 4, as table 10.11 says. The
+  app takes only 5.
+- That function 05 echoes the request, and that the read right after it shows the new state.
+- Which exception codes the board sends for a coil out of range, a quantity above 16, and a function 05 value other than
+  FF00, 0000 or FF02.
+- How the board handles a poll every 2 s for days.
+
+### On a DAEnetIP2 v2 kit
 
 > **Warning: check these four first, before anything is connected to the relays.** If one is wrong, the app's OFF can
 > turn a machine ON, or switch another relay than the one named on the screen. The manual doesn't say them for the

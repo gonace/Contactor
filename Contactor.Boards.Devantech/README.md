@@ -1,4 +1,4 @@
-# The Devantech ETH relay boards (`Contactor.Boards.Devantech`)
+# Devantech
 
 How the app talks to these boards. What every board shares (`IRelayBoard`, `IBoardConnection`, the board catalogue) is
 in `docs/ARCHITECTURE.md`.
@@ -27,13 +27,13 @@ is not known.
 
 ## Models
 
-| Catalogue id | Name | Relays | Inputs | Module id | Bytes of 0x24 | Bytes of 0x25 |
-|---|---|---|---|---|---|---|
-| `devantech-eth002` | Devantech ETH002-B | 2 | 0 | 18 | 1 | none |
-| `devantech-eth008` | Devantech ETH008-B | 8 | 0 | 19 | 1 | none |
-| `devantech-eth1610` | Devantech ETH1610 | 10 | 0 (see below) | 52 | 2 | 2, not read |
-| `devantech-eth484` | Devantech ETH484-B | 4 | 8 | 20 | 2 | 2 |
-| `devantech-eth8020` | Devantech ETH8020-B | 20 | 8 | 21 | 3 | 4 |
+| Catalogue id | Name | Relays | Inputs | Module id | Bytes of 0x24 | Bytes of 0x25 | Pulse | Login |
+|---|---|---|---|---|---|---|---|---|
+| `devantech-eth002` | Devantech ETH002-B | 2 | 0 | 18 | 1 | none | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth008` | Devantech ETH008-B | 8 | 0 | 19 | 1 | none | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth1610` | Devantech ETH1610 | 10 | 0 (see below) | 52 | 2 | 2, not read | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth484` | Devantech ETH484-B | 4 | 8 | 20 | 2 | 2 | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth8020` | Devantech ETH8020-B | 20 | 8 | 21 | 3 | 4 | 0.1 s to 25.5 s | optional TCP password |
 
 All five use port 17494. Their only login is an optional TCP password. `DevantechModels` has the five models and
 their layouts. The original ETH002, ETH008, ETH484 and ETH8020 have the same module ids, so the app also takes them.
@@ -100,7 +100,7 @@ Exchanges from the documents and the recorded session:
 
 `DevantechProtocolTests` and `DevantechSimulatedBoardTests` check these exchanges byte for byte.
 
-## Password
+### Password
 
 The TCP password is set on the board's configuration page. It is not the login of the board's web page.
 
@@ -112,7 +112,7 @@ The TCP password is set on the board's configuration page. It is not the login o
 - The app takes at most 32 characters: letters, digits and plain symbols, without spaces.
 - The app never logs or traces the password. The Debug screen shows its command as `79 …`.
 
-## Client
+## The app's client
 
 `DevantechClient` keeps one TCP connection and sends one command at a time. Each command waits for its answer.
 
@@ -171,7 +171,7 @@ The `Devantech` section applies to all five models:
 
 When `Host` is empty, the setup guide asks for the address.
 
-## Simulator
+## The simulator
 
 `DevantechSimulator` simulates each of the five models on a local port. `Contactor.Simulator` offers port 17494.
 
@@ -190,6 +190,14 @@ When `Host` is empty, the setup guide asks for the address.
 
 ## To check on a real board
 
+> **Warning: check the first five points first, before anything is connected to the relays.**
+
+- The layouts of the ETH484-B and the ETH8020-B: the byte orders of 0x24 and 0x25, and the input bit order.
+- That an input bit of 1 means a closed contact.
+- The relay states after a power cut, with "Latched Outputs" on and off. The recorded ETH008-B had all relays off.
+- The ETH1610's 0x24 and 0x23: that relays 9 and 10 are bits 0 and 1 of the second byte.
+- The pulse: that the relay goes off by itself after `tt` × 100 ms, and what a 0x20, 0x21 or a second pulse for the
+  relay does to a pulse that runs.
 - What 0x20 and 0x21 answer while the board is locked. The app expects `01`.
 - If the board answers 0x24 and 0x25 while it is locked.
 - Which commands keep the board unlocked: if a poll (0x24, 0x25) counts as activity for the 30 s lock.
@@ -197,13 +205,7 @@ When `Host` is empty, the setup guide asks for the address.
 - What 0x79 answers when the board has no password.
 - The ETH1610's 0x25: which bit is which input, what an input is on the terminals (its manual shows 16 analog inputs
   and no digital ones), and that a set bit means an active input. Then the app can read them.
-- The ETH1610's 0x24 and 0x23: that relays 9 and 10 are bits 0 and 1 of the second byte.
 - If the ETH1610 answers 0x78, which its manual does not list.
-- The layouts of the ETH484-B and the ETH8020-B: the byte orders of 0x24 and 0x25, and the input bit order.
-- That an input bit of 1 means a closed contact.
-- The relay states after a power cut, with "Latched Outputs" on and off. The recorded ETH008-B had all relays off.
 - How many TCP clients the board accepts. The documents say five.
-- The pulse: that the relay goes off by itself after `tt` × 100 ms, and what a 0x20, 0x21 or a second pulse for the
-  relay does to a pulse that runs.
 - That the board never sends data that the app did not ask for.
 - How the board handles a poll every 2 s for days.
