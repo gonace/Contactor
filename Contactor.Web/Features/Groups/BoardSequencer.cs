@@ -306,6 +306,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
             // A relay the app sent an OFF for still shows on until the board's status catches up: it counts as off for
             // what may come on, so a status from before the OFF never lets a relay below it on.
             _offOnItsWay = ChannelMask.Of(state.Relays.Channels.Where(c => _expected.IsPending(c, on: false)));
+
+            // A relay turned on again while the others of its step stop: that stop finishes only once the board shows it.
+            var onOnItsWay = ChannelMask.Of(_board.Capabilities.AllRelays.Except(state.Relays).Channels.Where(c => _expected.IsPending(c, on: true)));
             if (!state.IsConnected || Volatile.Read(ref _disposed) == 1)
             {
                 if (request is not null)
@@ -399,7 +402,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 if (commands.IsEmpty)
                 {
-                    GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay);
+                    GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay, onOnItsWay);
                 }
 
                 GroupPlanner.GiveOwnerlessAutoOff(steps, state, runtime, group.MaxOnMinutes, now);
