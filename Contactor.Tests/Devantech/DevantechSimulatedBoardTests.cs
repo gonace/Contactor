@@ -10,6 +10,9 @@ namespace Contactor.Tests.Devantech;
 /// <summary>The simulated board over loopback, with raw bytes, as the real board answers them.</summary>
 public sealed class DevantechSimulatedBoardTests
 {
+    // Far longer than the simulator takes to answer over loopback; only reached when an answer is short or missing.
+    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(5);
+
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -304,7 +307,7 @@ public sealed class DevantechSimulatedBoardTests
         simulator.DropConnections();
 
         await Wait.UntilAsync(() => simulator.State.Clients.Count == 0);
-        Assert.Equal(0, await board.Stream.ReadAsync(new byte[1], Cancel));
+        Assert.Equal(0, await board.ReadAsync(new byte[1]));
     }
 
     [Fact]
@@ -336,7 +339,7 @@ public sealed class DevantechSimulatedBoardTests
             Stream = tcp.GetStream();
         }
 
-        public NetworkStream Stream { get; }
+        private NetworkStream Stream { get; }
 
         public static async Task<Board> ConnectAsync(DevantechSimulator simulator)
         {
@@ -353,7 +356,30 @@ public sealed class DevantechSimulatedBoardTests
         public async Task<string> AskAsync(string command, int answerLength)
         {
             await SendAsync(command);
-            return DevantechProtocol.Hex(await DevantechProtocol.ReadAnswerAsync(Stream, answerLength, Cancel));
+            return DevantechProtocol.Hex(await BoundedAsync(
+                token => DevantechProtocol.ReadAnswerAsync(Stream, answerLength, token),
+                $"{answerLength} bytes in answer to {command}"));
+        }
+
+        // A read of what the board sends next, e.g. 0 bytes once it closed the connection.
+        public Task<int> ReadAsync(byte[] buffer)
+        {
+            return BoundedAsync(token => Stream.ReadAsync(buffer, token).AsTask(), "the board's next bytes");
+        }
+
+        // A short answer or none must fail the test, not hang the run until it is stopped.
+        private static async Task<T> BoundedAsync<T>(Func<CancellationToken, Task<T>> read, string what)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+            timeout.CancelAfter(ReadTimeout);
+            try
+            {
+                return await read(timeout.Token);
+            }
+            catch (OperationCanceledException) when (!Cancel.IsCancellationRequested)
+            {
+                throw new TimeoutException($"The board did not send {what} within {ReadTimeout.TotalSeconds} s.");
+            }
         }
 
         public void Dispose()
