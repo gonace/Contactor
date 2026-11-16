@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -61,6 +62,9 @@ public sealed class DevantechSimulatedBoardTests
         Assert.Equal("FF 03", await board.AskAsync("24", 2));
         Assert.Equal("01", await board.AskAsync("20 0B 00", 1));
         Assert.Equal(0b11_1111_1111UL, simulator.Relays);
+
+        // The app doesn't use its inputs (their order isn't in the manual), so none can be set at the board.
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(1, true));
     }
 
     [Fact]
@@ -77,7 +81,6 @@ public sealed class DevantechSimulatedBoardTests
         await using var eth008 = Started(DevantechModels.Eth008);
         using var other = await Board.ConnectAsync(eth008);
         Assert.Equal("78", await other.AskAsync("78", 1));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(1, true));
     }
 
     [Fact]
@@ -311,7 +314,7 @@ public sealed class DevantechSimulatedBoardTests
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetInputAsync(1, true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SwitchRelayAsync(9, true));
-        Assert.Throws<ArgumentException>(() => new DevantechSimulator(Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.Throws<ArgumentException>(() => new DevantechSimulator(Vm201Model.Model));
         Assert.Throws<ArgumentException>(() => new DevantechSimulator(DevantechModels.Eth008, "two words", NullLogger.Instance));
         Assert.False(simulator.HasLogin);
     }

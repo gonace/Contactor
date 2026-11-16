@@ -262,8 +262,8 @@ the app. The app sees each switch only as a change from outside:
 
 The app doesn't read or change these settings. Set them in Advantech's utility or on the module's web page: the DO mode
 for every relay that the app switches, no FSV box checked unless the installation wants that relay on when the network
-is lost (with the WDT on, every unchecked relay then goes off), and P2P and GCL off for those relays. The app polls every 2 s, so a host idle time longer than that never
-starts the WDT while the app runs.
+is lost (with the WDT on, every unchecked relay then most likely goes off), and P2P and GCL off for those relays. The
+app polls every 2 s, so a host idle time longer than that never starts the WDT while the app runs.
 
 ## To check on a real board
 

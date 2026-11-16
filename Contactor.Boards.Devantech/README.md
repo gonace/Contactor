@@ -96,7 +96,7 @@ Exchanges from the documents and the recorded session:
 | `7A` | `FF` | No password |
 | `79 61 70 70 6C 65` | `01` | The password "apple" is right |
 | `25` | none | The ETH008-B has no inputs |
-| `20 02 32` | `00` | ETH1610: relay 2 on for 5 s, the example of its manual (p. 17) |
+| `20 02 32` | `00` | ETH1610: relay 2 on for 5 s, the command of its manual's example (p. 17). The `00` isn't printed there: it comes from "Board will return 0 for success" |
 
 `DevantechProtocolTests` and `DevantechSimulatedBoardTests` check these exchanges byte for byte.
 

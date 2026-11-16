@@ -103,6 +103,13 @@ relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
 
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change, a pulse that ends by itself on its `TimeProvider` and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
 
+### Settings on the board that switch relays without the app
+
+- **The board's own timer programs** switch relays without the app, so they compete with the app's schedules. `CMD_STATUS` shows which are active (byte 2), and `CMD_TMR_ENA`, `CMD_TMR_DIS` and `CMD_TMR_TOGGLE` turn them on and off by channel mask.
+- **What the app does:** with `Vm201:DisableBoardTimers` (on by default), `Vm201TimersService` sends `CMD_TMR_DIS 0xFF` at the board's first answer, and logs it as `board-timers-disabled` with Actor `system`. It does that again when the app starts again, and at the first answer after a new address (it may be another VM201). If the connection is lost before the command goes out, it tries again on the next connection. It doesn't send it on a reconnect to the same address, so a timer program turned on again at the board stays on until then.
+- **What the app sees:** the board pushes `CMD_STATUS` at every change, also one made by a timer program. The app logs a change it didn't ask for with Actor `external`, and a group's interlock checks every status.
+- **What to set:** keep `Vm201:DisableBoardTimers` on, and make the schedules in the app, not on the board. With it off, the app leaves the board's timer programs as they are.
+
 ## VM204
 
 The VM204 is not the VM201's protocol.

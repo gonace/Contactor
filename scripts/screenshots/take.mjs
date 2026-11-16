@@ -146,15 +146,20 @@ function setUp() {
     db.close();
 }
 
+// A shot's height is the phone's, a number, or 'content': as tall as the page, so the tab bar covers nothing.
 async function shoot(browser, colorScheme, shots) {
     const page = await browser.newPage({ ...phone, colorScheme });
     for (const [name, path, act, fullPage, height] of shots) {
-        await page.setViewportSize({ width: phone.viewport.width, height: height ?? phone.viewport.height });
+        await page.setViewportSize({ width: phone.viewport.width, height: typeof height === 'number' ? height : phone.viewport.height });
         await page.goto(base + path);
         await page.waitForFunction(() => window.Blazor !== undefined);
         await page.waitForTimeout(1200);
         if (act) {
             await act(page);
+        }
+        if (height === 'content') {
+            await page.setViewportSize({ width: phone.viewport.width, height: await page.evaluate(() => document.documentElement.scrollHeight) });
+            await page.waitForTimeout(300);
         }
         await page.screenshot({ path: join(out, `${name}${colorScheme === 'dark' ? '-dark' : ''}.png`), fullPage: !!fullPage });
     }
@@ -162,7 +167,8 @@ async function shoot(browser, colorScheme, shots) {
 }
 
 try {
-    execFileSync('dotnet', ['build', 'Contactor.slnx', '-v', 'q'], { stdio: 'inherit' });
+    // Without the commit in the version: the shots can't name the commit they end up in, so they show none.
+    execFileSync('dotnet', ['build', 'Contactor.slnx', '-v', 'q', '-p:IncludeSourceRevisionInInformationalVersion=false'], { stdio: 'inherit' });
     start('Contactor.Simulator', {
         ASPNETCORE_URLS: simulatorBase,
         Simulator__Boards__0__Type: 'vm201',
@@ -231,7 +237,8 @@ try {
     await john.close();
 
     const shots = [
-        ['relays', '', null, false],
+        // The whole page, so the tab bar doesn't hide the Inputs card.
+        ['relays', '', null, false, 'content'],
         // The steps as cards, right under the top of the screen, on a phone just short enough to end with them.
         ['group', 'group/1', async (page) => {
             await page.evaluate(() => {
@@ -246,13 +253,16 @@ try {
             await page.click('.next button');
             await page.click('button.option:has-text("RELAY 6")');
             await page.click('button.option:has-text("RELAY 7")');
-        }, false],
+            // The clicks scroll the page down to Relay 7; back to the top, with the step and its heading.
+            await page.evaluate(() => window.scrollTo(0, 0));
+            await page.waitForTimeout(300);
+        }, false, 'content'],
         ['schedule', 'schedule/1', null, false],
         ['events', 'events', null, false],
         ['settings', 'settings', null, false],
     ];
     await shoot(browser, 'light', shots);
-    await shoot(browser, 'dark', shots.filter(([name]) => name === 'relays' || name === 'group'));
+    await shoot(browser, 'dark', shots.filter(([name]) => name === 'relays'));
     // The wider layouts (from 768 px a tablet, from 1024 px a desktop).
     for (const [name, path, width, height] of [
         ['relays-tablet', '', 834, 1194],

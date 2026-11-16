@@ -51,6 +51,24 @@ public sealed class GroupEditor
         }
     }
 
+    /// <summary>
+    /// Follows the group as saved elsewhere while this form keeps its own changes: only the relays the group now has
+    /// are offered again from here once taken out, so one that another group took since isn't.
+    /// </summary>
+    public void FollowSaved(IReadOnlyList<GroupStepInfo> steps)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+        _saved.Clear();
+        _saved.UnionWith(steps.SelectMany(s => s.Relays).Select(r => r.RelayId));
+        _removed.RemoveAll(r => !_saved.Contains(r.RelayId));
+    }
+
+    /// <summary>A step named after a relay: its name, cut to what a step's name may be.</summary>
+    internal static string StepName(string relayName)
+    {
+        return relayName.Length > RelayGroupStep.NameMaxLength ? relayName[..RelayGroupStep.NameMaxLength] : relayName;
+    }
+
     /// <summary>Whether the steps hold the same relays, in the same order, as the group as saved.</summary>
     public bool HasSameRelays(IReadOnlyList<GroupStepInfo> steps)
     {
@@ -94,8 +112,7 @@ public sealed class GroupEditor
             return;
         }
 
-        var name = relay.Name.Length > RelayGroupStep.NameMaxLength ? relay.Name[..RelayGroupStep.NameMaxLength] : relay.Name;
-        _steps.Add(new EditStep(name, RelayGroupStep.DefaultStartDelaySec, RelayGroupStep.DefaultRunOnSec, [relay]));
+        _steps.Add(new EditStep(StepName(relay.Name), RelayGroupStep.DefaultStartDelaySec, RelayGroupStep.DefaultRunOnSec, [relay]));
         _removed.RemoveAll(r => r.RelayId == relay.RelayId);
     }
 
@@ -152,7 +169,7 @@ public sealed class EditStep
     public string Name { get; set; }
 
     /// <summary>Its name, or while that is empty its first relay's: what it is saved as, e.g. for a screen reader.</summary>
-    public string Label => string.IsNullOrWhiteSpace(Name) ? Relays.FirstOrDefault()?.Name ?? "" : Name.Trim();
+    public string Label => string.IsNullOrWhiteSpace(Name) ? GroupEditor.StepName(Relays.FirstOrDefault()?.Name ?? "") : Name.Trim();
 
     /// <summary>The wait before it starts, once the step above is on. Unused for the first.</summary>
     public int StartDelaySec { get; set; }

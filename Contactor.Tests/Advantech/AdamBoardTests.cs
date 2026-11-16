@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Advantech;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -28,7 +29,7 @@ public sealed class AdamBoardTests
         Assert.Equal(502, model.DefaultPort);
         Assert.Equal(0, model.LoginMaxLength);
         Assert.True(AdamModels.IsAdam(model));
-        Assert.False(AdamModels.IsAdam(Contactor.Boards.Velleman.Vm201Model.Model));
+        Assert.False(AdamModels.IsAdam(Vm201Model.Model));
     }
 
     [Fact]

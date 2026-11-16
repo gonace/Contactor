@@ -286,7 +286,8 @@
         _outlook = (await Outlook.GetAsync(CancellationToken.None)).GetValueOrDefault(Id);
     }
 
-    // Who turned the relay on, for the status sentence: the viewer, a schedule, outside the app, or someone by name.
+    // Who turned the relay on, for the status sentence: the viewer, a schedule, outside the app, or someone or an
+    // input by name.
     private (TurnedOnBy By, string? Name) WhoTurnedOn(string? email)
     {
         return email switch
@@ -295,11 +296,11 @@
             _ when email == _user?.Email => (TurnedOnBy.You, null),
             EventActors.Schedule => (TurnedOnBy.Schedule, null),
             EventActors.External => (TurnedOnBy.Outside, null),
-            _ when _names.TryGetValue(email, out var name) => (TurnedOnBy.Person, name),
+            _ when _names.TryGetValue(email, out var name) => (TurnedOnBy.Named, name),
 
             // An input that is no longer in the app (a removed board's) has no name, and isn't an e-mail.
-            _ when EventActors.TryInput(email, out _) => (TurnedOnBy.Person, Texts["Relays.By.RemovedInput"]),
-            _ => (TurnedOnBy.Person, IdentityRules.DisplayNameFor(email)),
+            _ when EventActors.TryInput(email, out _) => (TurnedOnBy.Named, Texts["Relays.By.RemovedInput"]),
+            _ => (TurnedOnBy.Named, IdentityRules.DisplayNameFor(email)),
         };
     }
 
