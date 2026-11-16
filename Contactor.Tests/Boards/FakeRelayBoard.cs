@@ -271,6 +271,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
         StateChanged?.Invoke(this, state);
     }
 
+    /// <summary>The board refuses the connection on purpose, or no longer says why, and its client reports it.</summary>
+    public void SetProblem(ConnectionProblem? problem)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = _state with { Problem = problem };
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
+
     /// <summary>The connection opens or ends, and the board reports it, as a real board's client does.</summary>
     public void SetConnected(bool connected)
     {

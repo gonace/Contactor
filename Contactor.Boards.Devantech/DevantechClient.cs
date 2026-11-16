@@ -101,7 +101,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         get
         {
             var state = _poller.State;
-            return new DevantechState(state.IsConnected, state.Reading, state.LastContactUtc);
+            return new DevantechState(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
         }
     }
 
@@ -236,7 +236,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             return;
         }
 
-        var devantechState = new DevantechState(state.IsConnected, state.Reading, state.LastContactUtc);
+        var devantechState = new DevantechState(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
 
         // Each subscriber on its own: one that fails must not keep the state from the others.
         foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<DevantechState>>())
@@ -430,7 +430,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         {
             const string message = "The Devantech board asks for a password. Enter it on the Settings screen.";
             Trace(BoardTraceDirection.None, message, isError: true);
-            throw new DevantechAccessDeniedException(message);
+            throw new DevantechAccessDeniedException(message, new ConnectionProblem(ConnectionProblemKind.LoginNeeded, _model));
         }
 
         var result = (await ExchangeAsync(DevantechProtocol.Password(password), routine: false, cancellationToken).ConfigureAwait(false))[0];
@@ -442,7 +442,9 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         Trace(BoardTraceDirection.Received, DevantechTraceText.PasswordAnswer(result), DevantechProtocol.Hex([result]), isError: result != DevantechApi.PasswordAccepted);
         if (result != DevantechApi.PasswordAccepted)
         {
-            throw new DevantechAccessDeniedException();
+            throw new DevantechAccessDeniedException(
+                "The Devantech board refused the password.",
+                new ConnectionProblem(ConnectionProblemKind.LoginRefused, _model));
         }
     }
 
@@ -613,7 +615,9 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             {
                 Close();
                 Trace(BoardTraceDirection.None, wrongModel, isError: true);
-                throw new DevantechWrongModelException(wrongModel);
+                throw new DevantechWrongModelException(
+                    wrongModel,
+                    new ConnectionProblem(ConnectionProblemKind.WrongModel, _model, DevantechModels.ModelFor(info[0])));
             }
 
             await UnlockAsync(cancellationToken).ConfigureAwait(false);

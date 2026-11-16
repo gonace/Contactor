@@ -388,4 +388,46 @@
     <value>The {0} board takes no login: its password only protects its own web page.</value>
     <comment>{0} is the board's brand, e.g. "Waveshare"; the text already says "board".</comment>
   </data>
+  <data name="Boards.Problem.WrongModel" xml:space="preserve">
+    <value>The board at this address is an {0}, not an {1}.</value>
+    <comment>{0} is the model found at the address, {1} the model chosen, both as the board list names them, e.g. "ETH484-B".</comment>
+  </data>
+  <data name="Boards.Problem.WrongModel.Unknown" xml:space="preserve">
+    <value>The board at this address is another model, not an {0}.</value>
+    <comment>{0} is the model chosen, e.g. "ETH008-B".</comment>
+  </data>
+  <data name="Boards.Problem.WrongModel.AddAgain" xml:space="preserve">
+    <value>Add it again as an {0} with '{1}', then remove this one.</value>
+    <comment>{0} is the model found at the address; {1} is Common.AddBoard.</comment>
+  </data>
+  <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
+    <value>The board asks for a password.</value>
+  </data>
+  <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
+    <value>The board asks for a user name and password.</value>
+  </data>
+  <data name="Boards.Problem.WrongPassword" xml:space="preserve">
+    <value>The password is wrong.</value>
+  </data>
+  <data name="Boards.Problem.WrongLogin" xml:space="preserve">
+    <value>The user name or password is wrong.</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongModel" xml:space="preserve">
+    <value>Wrong model</value>
+  </data>
+  <data name="Boards.Problem.Short.PasswordNeeded" xml:space="preserve">
+    <value>Needs a password</value>
+  </data>
+  <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
+    <value>Needs a login</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongPassword" xml:space="preserve">
+    <value>Wrong password</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongLogin" xml:space="preserve">
+    <value>Wrong login</value>
+  </data>
+  <data name="Boards.Where.ChooseModel" xml:space="preserve">
+    <value>Choose model</value>
+  </data>
 </root>

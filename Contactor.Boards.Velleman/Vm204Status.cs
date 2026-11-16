@@ -39,7 +39,8 @@ public sealed record Vm204Status(byte Relays, byte Inputs, int? Analog)
 /// <param name="IsConnected">Logged in, and the board answered a poll on the current connection.</param>
 /// <param name="Status">The last answer, or null before the first.</param>
 /// <param name="LastContactUtc">When the board last answered a poll, or null if it never has.</param>
-public sealed record Vm204State(bool IsConnected, Vm204Status? Status, DateTimeOffset? LastContactUtc)
+/// <param name="Problem">Why the board refused the last login: a login needed, or refused.</param>
+public sealed record Vm204State(bool IsConnected, Vm204Status? Status, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null)
 {
     public static Vm204State Initial { get; } = new(false, null, null);
 

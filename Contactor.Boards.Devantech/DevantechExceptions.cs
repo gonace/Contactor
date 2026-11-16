@@ -53,7 +53,7 @@ public sealed class DevantechRefusedException : Exception
 }
 
 /// <summary>The board refused the password, or asks for one and the app has none.</summary>
-public sealed class DevantechAccessDeniedException : Exception
+public sealed class DevantechAccessDeniedException : Exception, IConnectionProblemSource
 {
     public DevantechAccessDeniedException()
         : base("The Devantech board refused the password.")
@@ -69,10 +69,21 @@ public sealed class DevantechAccessDeniedException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <param name="message">What is wrong, in English, without the password.</param>
+    /// <param name="problem">Which of the two it is, for the screens.</param>
+    public DevantechAccessDeniedException(string message, ConnectionProblem problem)
+        : base(message)
+    {
+        Problem = problem;
+    }
+
+    /// <summary>A password needed or refused; null when not given.</summary>
+    public ConnectionProblem? Problem { get; }
 }
 
 /// <summary>Another model of board is at the address: the app switches nothing on it.</summary>
-public sealed class DevantechWrongModelException : Exception
+public sealed class DevantechWrongModelException : Exception, IConnectionProblemSource
 {
     public DevantechWrongModelException()
         : base("The board at this address is another model.")
@@ -88,4 +99,15 @@ public sealed class DevantechWrongModelException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <param name="message">What is wrong, in English.</param>
+    /// <param name="problem">The model expected and the one found, for the screens.</param>
+    public DevantechWrongModelException(string message, ConnectionProblem problem)
+        : base(message)
+    {
+        Problem = problem;
+    }
+
+    /// <summary>The model expected and the one found; null when not given.</summary>
+    public ConnectionProblem? Problem { get; }
 }

@@ -9,7 +9,11 @@ namespace Contactor.Boards;
 /// <param name="Relays">The relays that are on.</param>
 /// <param name="Inputs">The digital inputs that are on.</param>
 /// <param name="LastContactUtc">When the board last reported its state, or null if it never has.</param>
-public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc)
+/// <param name="Problem">
+/// Why the board refused the last connection on purpose, e.g. another model or a wrong password; null while it answers,
+/// and when it doesn't answer at all or can't tell.
+/// </param>
+public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null)
 {
     public static BoardState Initial { get; } = new(false, ChannelMask.None, ChannelMask.None, null);
 

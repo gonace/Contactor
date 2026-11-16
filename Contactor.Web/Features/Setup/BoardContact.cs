@@ -2,6 +2,16 @@ using Contactor.Boards;
 
 namespace Contactor.Web.Features.Setup;
 
+/// <summary>What <see cref="BoardContact.WaitAsync"/> found: the board connected, refused the connection, or no answer.</summary>
+/// <param name="IsConnected">The board answered.</param>
+/// <param name="Problem">Why the board refuses the connection; null when it answered or didn't answer at all.</param>
+public sealed record BoardContactResult(bool IsConnected, ConnectionProblem? Problem)
+{
+    public static BoardContactResult Connected { get; } = new(true, null);
+
+    public static BoardContactResult NoAnswer { get; } = new(false, null);
+}
+
 /// <summary>
 /// Waits for one board to answer (its <see cref="Boards.LiveBoard"/>, found by its row id), for the setup guide's "Board
 /// online" check. Start watching before the address or login is saved: the client reconnects at once, and a watch that
@@ -18,6 +28,9 @@ public sealed class BoardContact : IDisposable
 
     // Whether a connection open when the watch started has ended since (or there was none).
     private bool _ended;
+
+    // The wait under way, told when the board refuses the connection; null while none waits.
+    private TaskCompletionSource<ConnectionProblem>? _refused;
 
     private BoardContact(IRelayBoard board)
     {
@@ -97,28 +110,49 @@ public sealed class BoardContact : IDisposable
     }
 
     /// <summary>
-    /// True as soon as the board is connected, false if it isn't within <paramref name="timeout"/>. With
+    /// Connected as soon as the board is, the problem as soon as the board refuses the connection (e.g. another model or
+    /// a wrong password), and no answer if neither comes within <paramref name="timeout"/>. With
     /// <paramref name="moved"/> (the address or login was changed after the watch started) a connection that was
-    /// already open doesn't count: it is to the old address. Only one made after it ended does.
+    /// already open doesn't count: it is to the old address. Only one made after it ended does. A problem from before
+    /// a move doesn't count either: the board's connection clears it when it moves, and drops one still on its way.
     /// </summary>
-    public async Task<bool> WaitAsync(bool moved, TimeSpan timeout, TimeProvider time, CancellationToken cancellationToken)
+    public async Task<BoardContactResult> WaitAsync(bool moved, TimeSpan timeout, TimeProvider time, CancellationToken cancellationToken)
     {
+        var refused = new TaskCompletionSource<ConnectionProblem>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
-            if (_board.State.IsConnected && (_ended || !moved))
+            var state = _board.State;
+            if (state.IsConnected && (_ended || !moved))
             {
-                return true;
+                return BoardContactResult.Connected;
             }
+
+            // A problem the board reported already is the answer at once. That holds after a move too, only because the
+            // board's connection clears its problem synchronously in SetEndpoint and SetLogin, before the save returns:
+            // what is left is about the new address and login.
+            if (!state.IsConnected && state.Problem is { } problem)
+            {
+                return new BoardContactResult(false, problem);
+            }
+
+            _refused = refused;
         }
 
         try
         {
-            await _reconnected.Task.WaitAsync(timeout, time, cancellationToken);
-            return true;
+            var first = await Task.WhenAny(_reconnected.Task, refused.Task).WaitAsync(timeout, time, cancellationToken);
+            return first == _reconnected.Task ? BoardContactResult.Connected : new BoardContactResult(false, await refused.Task);
         }
         catch (TimeoutException)
         {
-            return false;
+            return BoardContactResult.NoAnswer;
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _refused = null;
+            }
         }
     }
 
@@ -134,6 +168,10 @@ public sealed class BoardContact : IDisposable
             if (!state.IsConnected)
             {
                 _ended = true;
+                if (state.Problem is { } problem)
+                {
+                    _refused?.TrySetResult(problem);
+                }
             }
             else if (_ended)
             {

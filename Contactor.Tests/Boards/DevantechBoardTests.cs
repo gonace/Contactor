@@ -43,6 +43,16 @@ public sealed class DevantechBoardTests
     }
 
     [Fact]
+    public void Should_PassTheProblemOn()
+    {
+        var problem = new ConnectionProblem(ConnectionProblemKind.WrongModel, DevantechModels.Eth008, DevantechModels.Eth484);
+
+        var state = DevantechBoard.ToBoardState(DevantechState.Initial with { Problem = problem });
+
+        Assert.Equal(BoardState.Initial with { Problem = problem }, state);
+    }
+
+    [Fact]
     public async Task Should_RefuseRelaysTheModelHasNot_BeforeAnythingIsSent()
     {
         using var client = Client(new DevantechOptions { Host = "127.0.0.1" }, DevantechModels.Eth484);

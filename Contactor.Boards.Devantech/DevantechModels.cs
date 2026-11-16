@@ -89,6 +89,15 @@ public static class DevantechModels
     }
 
     /// <summary>
+    /// The model in the board catalogue a module id stands for, e.g. <see cref="Eth484"/> for 20; null for an id of a
+    /// board the app doesn't support or doesn't know.
+    /// </summary>
+    public static BoardModel? ModelFor(byte moduleId)
+    {
+        return All.FirstOrDefault(m => Layouts[m.Id].ModuleId == moduleId);
+    }
+
+    /// <summary>
     /// Why the board at the address isn't <paramref name="model"/>, in words for the Debug screen, e.g. "The board at
     /// this address is an ETH484, not an ETH008."; null when it is.
     /// </summary>

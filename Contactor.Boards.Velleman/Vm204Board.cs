@@ -61,7 +61,7 @@ public sealed class Vm204Board : IRelayBoard
     public static BoardState ToBoardState(Vm204State state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem);
     }
 
     /// <summary>The board's relay mask: relays 1–4 only.</summary>

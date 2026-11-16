@@ -59,7 +59,7 @@ public sealed class DevantechBoard : IRelayBoard
     public static BoardState ToBoardState(DevantechState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem);
     }
 
     // Only relays the model has; throws before anything is sent.

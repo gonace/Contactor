@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -36,6 +37,10 @@ public sealed class Vm201Client
     private readonly Lock _stateLock = new();
     private BoardEndpoint _endpoint;
     private Vm201Login _login;
+
+    // Which address and login a connection is for: SetEndpoint and SetLogin move on to the next, so a refused login
+    // from the connection before is dropped. Under _stateLock.
+    private int _logins;
 
     // The current connection attempt (connect, session and the wait after it); SetEndpoint cancels it to move at once.
     private CancellationTokenSource? _attempt;
@@ -87,6 +92,14 @@ public sealed class Vm201Client
         }
 
         Vm201Log.LoginChanged(_logger, login.IsNone);
+
+        // The problem was about the old login.
+        lock (_stateLock)
+        {
+            _logins++;
+            ClearProblem();
+        }
+
         Reconnect();
     }
 
@@ -107,10 +120,14 @@ public sealed class Vm201Client
 
         // Another board may be at the new address: nothing is known about it until it answers, and a status from the
         // old one still on its way is dropped (ApplyStatus). A state that already says so isn't raised again, e.g.
-        // when the saved address is set at start.
-        if (!Equals(State, Vm201State.Initial))
+        // when the saved address is set at start. A problem was about the old address: Initial has none.
+        lock (_stateLock)
         {
-            SetState(Vm201State.Initial);
+            _logins++;
+            if (!Equals(State, Vm201State.Initial))
+            {
+                SetState(Vm201State.Initial);
+            }
         }
 
         Reconnect();
@@ -282,7 +299,17 @@ public sealed class Vm201Client
         var loggedIn = false;
         Session? session = null;
         using var tcp = new TcpClient { NoDelay = true };
+
+        // Before the address: a SetEndpoint in between moves on from both, so nothing from this connection is kept.
+        int logins;
+        lock (_stateLock)
+        {
+            logins = _logins;
+        }
+
         var endpoint = Endpoint;
+        var askedWithoutLogin = new StrongBox<bool>();
+
         try
         {
             Vm201Log.Connecting(_logger, endpoint.Host, endpoint.Port);
@@ -300,12 +327,16 @@ public sealed class Vm201Client
                 detail: count.ToString(System.Globalization.CultureInfo.InvariantCulture));
             var reader = new Vm201PacketReader(stream, decoder);
             await WithTimeoutAsync(
-                token => LoginAsync(stream, reader, token),
+                token => LoginAsync(stream, reader, askedWithoutLogin, token),
                 LoginTimeout,
                 "log in",
                 cancellationToken).ConfigureAwait(false);
             loggedIn = true;
             Vm201Log.LoggedIn(_logger, endpoint.Host, endpoint.Port);
+            lock (_stateLock)
+            {
+                ClearProblem();
+            }
 
             session = new Session();
             Volatile.Write(ref _session, session);
@@ -343,13 +374,24 @@ public sealed class Vm201Client
         }
         catch (Vm201AccessDeniedException)
         {
+            // Not once the app moved the connection: the refusal may be for the login or address before. A move that
+            // comes after this check, also from a trace's subscriber, is caught by SetProblem.
+            var current = !cancellationToken.IsCancellationRequested;
             Vm201Log.AccessDenied(_logger);
             Trace(Vm201TraceKind.ConnectionLost, detail: "The board rejected the user name or password.");
+            if (current)
+            {
+                var kind = askedWithoutLogin.Value ? ConnectionProblemKind.LoginNeeded : ConnectionProblemKind.LoginRefused;
+                SetProblem(new ConnectionProblem(kind, Vm201Model.Model), logins);
+            }
         }
         catch (Exception ex) when (ex is IOException or SocketException or TimeoutException or OperationCanceledException)
         {
             Vm201Log.ConnectionLost(_logger, ex.Message);
             Trace(Vm201TraceKind.ConnectionLost, detail: ex.Message);
+
+            // No answer: the board no longer says why, so the screens say "no contact" again.
+            ClearProblem(logins);
         }
 #pragma warning disable CA1031 // The reconnect loop must survive anything a connection throws.
         catch (Exception ex)
@@ -357,6 +399,7 @@ public sealed class Vm201Client
         {
             Vm201Log.UnexpectedError(_logger, ex);
             Trace(Vm201TraceKind.ConnectionLost, detail: ex.Message);
+            ClearProblem(logins);
         }
         finally
         {
@@ -368,7 +411,8 @@ public sealed class Vm201Client
         return loggedIn;
     }
 
-    private async Task LoginAsync(Stream stream, Vm201PacketReader reader, CancellationToken cancellationToken)
+    // Sets askedWithoutLogin when the board asks for a login and the app has none: its refusal then means one is needed.
+    private async Task LoginAsync(Stream stream, Vm201PacketReader reader, StrongBox<bool> askedWithoutLogin, CancellationToken cancellationToken)
     {
         while (true)
         {
@@ -381,6 +425,7 @@ public sealed class Vm201Client
                 case Vm201Command.Auth:
                     Vm201Log.LoginRequired(_logger);
                     var login = Login;
+                    askedWithoutLogin.Value = login.IsNone;
                     await SendAsync(
                         stream,
                         Vm201PacketCodec.Encode(Vm201Command.Username, Vm201PacketCodec.EncodeCredential(login.Username)),
@@ -538,6 +583,43 @@ public sealed class Vm201Client
 
         var data = packet.Data.Span;
         SetState(new Vm201State(true, data[0], data[1], (data[2] & 1) != 0, _timeProvider.GetUtcNow()), from);
+    }
+
+    // Only for the address and login the connection was for; the same problem again is no change.
+    private void SetProblem(ConnectionProblem problem, int logins)
+    {
+        lock (_stateLock)
+        {
+            var state = State;
+            if (logins != _logins || Equals(state.Problem, problem))
+            {
+                return;
+            }
+
+            SetState(state with { Problem = problem });
+        }
+    }
+
+    // Only for the address and login the connection was for: a problem a newer one reported stays.
+    private void ClearProblem(int logins)
+    {
+        lock (_stateLock)
+        {
+            if (logins == _logins)
+            {
+                ClearProblem();
+            }
+        }
+    }
+
+    // Callers hold _stateLock.
+    private void ClearProblem()
+    {
+        var state = State;
+        if (state.Problem is not null)
+        {
+            SetState(state with { Problem = null });
+        }
     }
 
     private void SetDisconnected()

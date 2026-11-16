@@ -108,6 +108,45 @@ public sealed class Vm201TimersServiceTests
         }
     }
 
+    // The board asks for a login first: the states that say so don't count as its first answer, and its timers are
+    // disabled once, when the right login gets it to answer.
+    [Fact]
+    public async Task Should_DisableBoardTimersOnce_AfterTheBoardAskedForALogin()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x0F);
+        await using var database = CreateDatabase(simulator, disableBoardTimers: true);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        await database.Services.UseBoardAsync("vm201");
+        var client = database.Services.BoardService<Vm201Client>();
+        var services = StartOrder(database);
+
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
+        try
+        {
+            await WaitUntilAsync(() => client.State.Problem is { Kind: ConnectionProblemKind.LoginNeeded });
+
+            client.SetLogin(Vm201Login.TryCreate("admin", "secret", out _)!);
+
+            await WaitUntilAsync(() => simulator.TimerMask == 0);
+            await WaitUntilAsync(() => CountEventsAsync(database).GetAwaiter().GetResult() == 1);
+        }
+        finally
+        {
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
+        }
+
+        Assert.Equal(1, simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.TimerDisable));
+    }
+
     // Switching boards while the app runs: the VM201's connection and timers stop with it, and a VM201 chosen again
     // is a new board, whose timers are disabled again.
     [Fact]

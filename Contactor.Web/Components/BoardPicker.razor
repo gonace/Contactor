@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Contactor.Web.Features.Languages
 @inject IStringLocalizer<BoardsTexts> Texts
+@inject BoardProblemText ProblemText
 
 @* The board filter of Relays, Events and Debug: below 1024 px a row of chips under the heading, on a desktop a list
    in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the choice in the screen's own cookie
@@ -38,7 +39,8 @@
                     @(state.HasAnswered ? Texts["Boards.Picker.OnCount", count.On, count.Active] : "")
                     @if (!state.IsConnected)
                     {
-                        @(state.HasAnswered ? " · " : "")<span class="no-contact">@Texts["Boards.Picker.NoContact"]</span>
+                        @* Why, when the board says: "Wrong password". *@
+                        @(state.HasAnswered ? " · " : "")<span class="no-contact">@(state.Problem is { } problem ? ProblemText.Short(problem) : Texts["Boards.Picker.NoContact"])</span>
                     }
                 </span>
                 @Lamps(board)

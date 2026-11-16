@@ -20,7 +20,11 @@ public enum BoardPollStep
 /// <param name="IsConnected">Connected, and the board answered a poll on the current connection.</param>
 /// <param name="Reading">The last answer, kept while disconnected; default until the first.</param>
 /// <param name="LastContactUtc">When the board last answered a poll, or null if it never has.</param>
-public sealed record PolledState<TReading>(bool IsConnected, TReading? Reading, DateTimeOffset? LastContactUtc);
+/// <param name="Problem">
+/// Why the board refused the last connect on purpose (<see cref="IConnectionProblemSource"/>); null while it answers, and
+/// when the last connect failed for another reason.
+/// </param>
+public sealed record PolledState<TReading>(bool IsConnected, TReading? Reading, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null);
 
 /// <summary>
 /// A board that doesn't report changes by itself, as <see cref="BoardPoller{TReading}"/> drives it. The poller calls
@@ -29,7 +33,10 @@ public sealed record PolledState<TReading>(bool IsConnected, TReading? Reading, 
 /// </summary>
 public interface IPolledBoard<TReading>
 {
-    /// <summary>Opens a connection, e.g. logs in. Throws when it can't; the poller tries again later.</summary>
+    /// <summary>
+    /// Opens a connection, e.g. logs in. Throws when it can't; the poller tries again later. An exception that is an
+    /// <see cref="IConnectionProblemSource"/> says why the board refused it, for <see cref="PolledState{TReading}.Problem"/>.
+    /// </summary>
     Task ConnectAsync(CancellationToken cancellationToken);
 
     /// <summary>
@@ -75,6 +82,10 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     // state is written, and its change reported, under _stateLock, so a dropped answer can't overtake the reset.
     private readonly Lock _stateLock = new();
     private int _generation;
+
+    // Which login the connect was for: Restart moves on to the next, so a problem from the attempt before is dropped.
+    // Under _stateLock, as _generation.
+    private int _restarts;
     private TaskCompletionSource _wake = NewWake();
 
     // The current attempt (connect, polls and the wait after it); Restart cancels it.
@@ -153,9 +164,25 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
         }
     }
 
-    /// <summary>Ends the current connection, attempt or wait, and connects again at once, e.g. with a new address.</summary>
+    /// <summary>
+    /// Ends the current connection, attempt or wait, and connects again at once, e.g. with a new address or login. The
+    /// <see cref="PolledState{TReading}.Problem"/> is cleared, since it was about the last login, and a problem from the
+    /// attempt before still on its way is dropped.
+    /// </summary>
     public void Restart()
     {
+        lock (_stateLock)
+        {
+            _restarts++;
+            var state = _state;
+            if (state.Problem is not null)
+            {
+                var after = state with { Problem = null };
+                Volatile.Write(ref _state, after);
+                _board.OnStateChanged(after);
+            }
+        }
+
         Cancel(ref _attempt);
     }
 
@@ -400,7 +427,15 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     {
         var answered = false;
         var lost = false;
-        var generation = Volatile.Read(ref _generation);
+        var connected = false;
+        int generation;
+        int restarts;
+        lock (_stateLock)
+        {
+            generation = _generation;
+            restarts = _restarts;
+        }
+
         try
         {
             _board.OnStep(BoardPollStep.Connecting, null);
@@ -408,6 +443,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             try
             {
                 await _board.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                connected = true;
                 _failures = 0;
                 _lost = false;
             }
@@ -473,6 +509,13 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             else
             {
                 _board.OnStep(BoardPollStep.Lost, ex.Message);
+
+                // Why the board refused, or null when it didn't say (e.g. no answer at all). A Forget or Restart since
+                // the connect began, also one that came just now, drops it (SetProblem).
+                if (!connected)
+                {
+                    SetProblem((ex as IConnectionProblemSource)?.Problem, generation, restarts);
+                }
             }
         }
         finally
@@ -533,6 +576,24 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             {
                 _board.OnStateChanged(after);
             }
+        }
+    }
+
+    // A problem from a connect for a board Forget has moved on from, or a login Restart has moved on from, is dropped.
+    // The same problem again is no change to report.
+    private void SetProblem(ConnectionProblem? problem, int generation, int restarts)
+    {
+        lock (_stateLock)
+        {
+            var state = _state;
+            if (generation != _generation || restarts != _restarts || Equals(state.Problem, problem))
+            {
+                return;
+            }
+
+            var after = state with { Problem = problem };
+            Volatile.Write(ref _state, after);
+            _board.OnStateChanged(after);
         }
     }
 

@@ -332,4 +332,8 @@
   <data name="Relays.Save.NameTooLong" xml:space="preserve">
     <value>The name can be at most {0} characters.</value>
   </data>
+  <data name="Relays.Problem.SeeSettings" xml:space="preserve">
+    <value>{0} See Settings.</value>
+    <comment>{0} is why the board refuses the connection, as Boards.Problem.* gives it.</comment>
+  </data>
 </root>

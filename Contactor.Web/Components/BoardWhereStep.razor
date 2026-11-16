@@ -12,6 +12,7 @@
 @inject ILogger<BoardWhereStep> Log
 @inject IStringLocalizer<BoardsTexts> Texts
 @inject BoardLoginText LoginText
+@inject BoardProblemText ProblemText
 @inject AppLanguage Language
 
 @* "Where is the board?": its address, port and login, saved through BoardAddressHandler; "Next" waits up to 10 s for
@@ -52,13 +53,13 @@
             {
                 <div class="field">
                     <label for="username">@Texts["Boards.UserName"]</label>
-                    <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+                    <input id="username" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" @ref="_username"
                            maxlength="@Model.LoginMaxLength" @bind="Values.Username" @bind:event="oninput" />
                 </div>
             }
             <div class="field">
                 <label for="password">@Texts["Boards.Password"]</label>
-                <input id="password" type="password" autocomplete="new-password"
+                <input id="password" type="password" autocomplete="new-password" @ref="_password"
                        maxlength="@Model.LoginMaxLength" placeholder="@Texts[Values.HasPassword ? "Boards.Password.Unchanged" : "Boards.Password.None"]"
                        @bind="Values.NewPassword" @bind:event="oninput" />
             </div>
@@ -76,9 +77,17 @@
 }
 else if (_notFound)
 {
+    @* Why the board refused, when it says; else "No answer". Another model is changed on the model step. *@
     <div class="not-found" role="alert">
-        <span>@Texts["Boards.Where.NoAnswer", Board.Endpoint]</span>
-        <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">@Texts["Boards.Where.CheckAgain"]</button>
+        <span>@(_problem is { } problem ? ProblemText.Long(problem) : Texts["Boards.Where.NoAnswer", Board.Endpoint])</span>
+        @if (_problem is { Kind: ConnectionProblemKind.WrongModel })
+        {
+            <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="ChooseModelAsync">@Texts["Boards.Where.ChooseModel"]</button>
+        }
+        else
+        {
+            <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">@Texts["Boards.Where.CheckAgain"]</button>
+        }
     </div>
 }
 else if (Board.State.IsConnected && Board.Endpoint.HasHost)
@@ -133,9 +142,21 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
     [Parameter]
     public EventCallback<string?> ErrorChanged { get; set; }
 
+    /// <summary>"Choose model", when another model is at the address: the page goes back to its model step.</summary>
+    [Parameter]
+    public EventCallback ChooseModel { get; set; }
+
     private ElementReference _heading;
+    private ElementReference _username;
+    private ElementReference _password;
     private bool _checking;
     private bool _notFound;
+
+    // Why the board refused the last check; null when it answered, or didn't answer at all.
+    private ConnectionProblem? _problem;
+
+    // A login problem that just appeared: the login fields take the focus once they are drawn.
+    private bool _focusLogin;
     private bool _busy;
     private int _watched;
 
@@ -198,6 +219,15 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusLogin)
+        {
+            _focusLogin = false;
+            await (Model.PasswordOnly ? _password : _username).FocusAsync();
+        }
+    }
+
     protected override void OnParametersSet()
     {
         if (_watched != Board.BoardId)
@@ -237,12 +267,14 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
             _checking = true;
             StateHasChanged();
             // "Check again" with nothing changed asks the board itself, so the check is a real one.
-            var found = !goOn && !Values.Moving && Board.State.IsConnected
-                ? await BoardContact.AskAsync(Board, BoardContact.Timeout, Time, CancellationToken.None)
+            var result = !goOn && !Values.Moving && Board.State.IsConnected
+                ? await BoardContact.AskAsync(Board, BoardContact.Timeout, Time, CancellationToken.None) ? BoardContactResult.Connected : BoardContactResult.NoAnswer
                 : await contact.WaitAsync(Values.Moving, BoardContact.Timeout, Time, CancellationToken.None);
+            var found = result.IsConnected;
             Values.CheckedAt = found ? Clock.Now : null;
             _checking = false;
             _notFound = !found;
+            ShowProblem(result.Problem);
             return found && goOn;
         }
         catch (Exception ex)
@@ -254,6 +286,27 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
         {
             _checking = false;
             await SetBusyAsync(false);
+        }
+    }
+
+    // A login problem that wasn't shown before opens the login fields and puts the cursor in them, once: a person who
+    // ticked "no password" and checks again isn't moved back.
+    private void ShowProblem(ConnectionProblem? problem)
+    {
+        var before = _problem;
+        _problem = problem;
+        if (problem is { Kind: ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused } && before?.Kind != problem.Kind && Model.HasLogin)
+        {
+            Values.NoLogin = false;
+            _focusLogin = true;
+        }
+    }
+
+    private async Task ChooseModelAsync()
+    {
+        if (!Busy && !_busy)
+        {
+            await ChooseModel.InvokeAsync();
         }
     }
 
@@ -319,6 +372,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
                 if (state.IsConnected && !_checking)
                 {
                     _notFound = false;
+                    _problem = null;
                 }
 
                 StateHasChanged();

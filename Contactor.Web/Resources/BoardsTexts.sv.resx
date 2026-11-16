@@ -363,4 +363,43 @@
   <data name="Boards.Login.NoLoginWebPage" xml:space="preserve">
     <value>Kortet från {0} tar ingen inloggning: dess lösenord skyddar bara dess egen webbsida.</value>
   </data>
+  <data name="Boards.Problem.WrongModel" xml:space="preserve">
+    <value>Kortet på den här adressen är ett {0}, inte ett {1}.</value>
+  </data>
+  <data name="Boards.Problem.WrongModel.Unknown" xml:space="preserve">
+    <value>Kortet på den här adressen är en annan modell, inte ett {0}.</value>
+  </data>
+  <data name="Boards.Problem.WrongModel.AddAgain" xml:space="preserve">
+    <value>Lägg till det igen som ett {0} med "{1}" och ta sedan bort det här.</value>
+  </data>
+  <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
+    <value>Kortet vill ha ett lösenord.</value>
+  </data>
+  <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
+    <value>Kortet vill ha ett användarnamn och lösenord.</value>
+  </data>
+  <data name="Boards.Problem.WrongPassword" xml:space="preserve">
+    <value>Lösenordet är fel.</value>
+  </data>
+  <data name="Boards.Problem.WrongLogin" xml:space="preserve">
+    <value>Användarnamnet eller lösenordet är fel.</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongModel" xml:space="preserve">
+    <value>Fel modell</value>
+  </data>
+  <data name="Boards.Problem.Short.PasswordNeeded" xml:space="preserve">
+    <value>Behöver lösenord</value>
+  </data>
+  <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
+    <value>Behöver inloggning</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongPassword" xml:space="preserve">
+    <value>Fel lösenord</value>
+  </data>
+  <data name="Boards.Problem.Short.WrongLogin" xml:space="preserve">
+    <value>Fel inloggning</value>
+  </data>
+  <data name="Boards.Where.ChooseModel" xml:space="preserve">
+    <value>Välj modell</value>
+  </data>
 </root>

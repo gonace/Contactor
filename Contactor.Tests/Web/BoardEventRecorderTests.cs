@@ -161,6 +161,58 @@ public sealed class BoardEventRecorderTests
         }
     }
 
+    // Why a board refuses the connection comes as states of their own, before its first answer and after a loss. They
+    // change nothing that is recorded: the new board's first status is still taken as at start, and a change made
+    // while contact was lost is still logged when it comes back.
+    [Fact]
+    public async Task Should_RecordNothingMore_ForTheReasonsABoardRefusesTheConnection()
+    {
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: 1);
+        var problem = new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model);
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddBoards(configuration);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
+        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            board.SetRelay(1, on: true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.RelayId == 1) == 1);
+
+            // Lost, refused twice, and relay 1 turned off at the board meanwhile: logged when contact is back.
+            board.SetConnected(false);
+            board.SetProblem(problem);
+            board.SetProblem(null);
+            board.SetRelay(1, on: false);
+            board.SetConnected(true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.RelayId == 1) == 2);
+            Assert.Contains(Events(database), e => e is { RelayId: 1, Action: EventActions.Off, Actor: EventActors.External });
+
+            // A new address with a board that refuses first: its relay 2, on, is its starting point, not a change.
+            board.Forget();
+            board.SetProblem(problem);
+            board.SetProblem(null);
+            board.SetRelayAndInput(relay: 2, input: 1, on: true);
+            board.SetConnected(true);
+            board.SetInput(1, on: false);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Any(e => e.Action == EventActions.InputChanged));
+
+            Assert.DoesNotContain(Events(database), e => e.RelayId == 2);
+        }
+        finally
+        {
+            await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
     // A board with several inputs, e.g. the VM204: each change is logged with its input.
     [Fact]
     public async Task Should_LogEveryInput_WithItsNumber()

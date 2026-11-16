@@ -10,12 +10,17 @@ namespace Contactor.Boards.Velleman;
 /// <param name="TimerMask">Bit per channel; 1 = the board's own timer program is active.</param>
 /// <param name="Input">The board's input; true = on.</param>
 /// <param name="LastContactUtc">When the board last reported its status, or null if it never has.</param>
+/// <param name="Problem">
+/// Why the board refused the last login: a login needed, or refused. Cleared at the next login and when the address or
+/// the login changes.
+/// </param>
 public sealed record Vm201State(
     bool IsConnected,
     byte Outputs,
     byte TimerMask,
     bool Input,
-    DateTimeOffset? LastContactUtc)
+    DateTimeOffset? LastContactUtc,
+    ConnectionProblem? Problem = null)
 {
     public static Vm201State Initial { get; } = new(false, 0, 0, false, null);
 

@@ -772,6 +772,166 @@ public sealed class BoardPollerTests
         poller.Dispose();
     }
 
+    private static readonly BoardModel Model = new("x", "Brand", "X1", new BoardCapabilities(1, 0, false), 1, 8);
+
+    private static readonly ConnectionProblem Refused = new(ConnectionProblemKind.LoginRefused, Model);
+
+    [Fact]
+    public async Task Should_ReportWhyTheBoardRefusedTheConnect_OnceForTheSameProblem()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+
+        await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(1));
+        Assert.Equal([new PolledState<int>(false, 0, null, Refused)], board.Changes);
+        Assert.Equal(Refused, poller.State.Problem);
+
+        // The same refusal again: nothing new to report.
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(2));
+        Assert.Equal(2, board.Connects);
+        Assert.Single(board.Changes);
+
+        await stop.CancelAsync();
+        await run;
+        Assert.Equal(Refused, poller.State.Problem);
+    }
+
+    [Fact]
+    public async Task Should_ClearTheProblem_WhenTheNextConnectGetsNoAnswer()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(1));
+
+        board.ConnectError = new TimeoutException("no answer");
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(2));
+
+        Assert.Null(poller.State.Problem);
+        Assert.Equal(new PolledState<int>(false, 0, null), board.Changes[^1]);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_ClearTheProblem_AtTheFirstAnswer()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(1));
+
+        board.ConnectError = null;
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitForPollAsync(board, time, reads: 1);
+
+        Assert.Equal(new PolledState<int>(true, 1, time.GetUtcNow()), poller.State);
+        Assert.Equal(poller.State, board.Changes[^1]);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_ClearTheProblem_WhenForgotten()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(1));
+
+        poller.Forget();
+
+        Assert.Equal(new PolledState<int>(false, 0, null), poller.State);
+        Assert.Equal(poller.State, board.Changes[^1]);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task Should_ClearTheProblem_WhenRestartedWithANewLogin()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(1));
+
+        board.HangConnect = true;
+        poller.Restart();
+
+        Assert.Null(poller.State.Problem);
+        Assert.Equal(new PolledState<int>(false, 0, null), board.Changes[^1]);
+        await WaitUntilAsync(() => board.Connects == 2);
+
+        // A restart while nothing is wrong reports nothing.
+        var reported = board.Changes.Count;
+        poller.Restart();
+        await WaitUntilAsync(() => board.Connects == 3);
+        Assert.Equal(reported, board.Changes.Count);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    // A refusal that comes as the login changes (here while the board's code reports the lost connection) is about the
+    // old login, and is dropped.
+    [Fact]
+    public async Task Should_DropAProblem_FromAConnectBeforeARestart()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        board.OnLost = () =>
+        {
+            board.ConnectError = null;
+            board.HangConnect = true;
+            poller.Restart();
+        };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+
+        await WaitUntilAsync(() => board.Connects == 2);
+
+        Assert.Null(poller.State.Problem);
+        Assert.DoesNotContain(board.Changes, c => c.Problem is not null);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    // A refusal from the board at the old address that comes after the move says nothing about the new one.
+    [Fact]
+    public async Task Should_DropAProblem_FromAConnectToTheBoardBefore()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1);
+        var connect = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        board.HeldConnect = connect;
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.Connects == 1);
+
+        poller.Forget();
+        connect.SetException(new ProblemException(Refused));
+        await WaitUntilAsync(() => board.Steps.Any(s => s.Kind == BoardPollStep.Lost));
+
+        Assert.Null(poller.State.Problem);
+        Assert.DoesNotContain(board.Changes, c => c.Problem is not null);
+        await stop.CancelAsync();
+        await run;
+    }
+
     // Another board may be at a new address: the state is forgotten and reported so, and an answer from before that
     // is still on its way (here a command's) is dropped.
     [Fact]
@@ -812,6 +972,12 @@ public sealed class BoardPollerTests
 
         await stop.CancelAsync();
         await run;
+    }
+
+    // Until every connect failed and the poller waits this long for the next one.
+    private static Task WaitForConnectWaitAsync(FakePolledBoard board, ManualTimeProvider time, TimeSpan wait)
+    {
+        return WaitUntilAsync(() => board.Connects > 0 && board.Steps.Count(s => s.Kind == BoardPollStep.Waiting) == board.Connects && time.WaitsOnly(wait));
     }
 
     // Until the board answered this many polls and the poller waits for the next one.
@@ -902,6 +1068,15 @@ public sealed class BoardPollerTests
         /// <summary>When true, a connect hangs until cancelled, and then fails with an IOException, not a cancellation.</summary>
         public bool HangConnect { get; set; }
 
+        /// <summary>What a connect fails with, e.g. an exception that says why the board refused it; null: it doesn't.</summary>
+        public Exception? ConnectError { get; set; }
+
+        /// <summary>Called once, the first time the poller reports the connection lost, before the poller goes on.</summary>
+        public Action? OnLost { get; set; }
+
+        /// <summary>When set, a connect ends when the test ends this, whether or not it is cancelled.</summary>
+        public TaskCompletionSource? HeldConnect { get; set; }
+
         public Task ConnectAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _connects);
@@ -910,6 +1085,16 @@ public sealed class BoardPollerTests
                 var aborted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 cancellationToken.Register(() => aborted.TrySetException(new IOException("The socket was closed.")));
                 return aborted.Task;
+            }
+
+            if (HeldConnect is { } held)
+            {
+                return held.Task;
+            }
+
+            if (ConnectError is { } error)
+            {
+                return Task.FromException(error);
             }
 
             return FailConnect ? Task.FromException(new IOException("refused")) : Task.CompletedTask;
@@ -956,7 +1141,25 @@ public sealed class BoardPollerTests
             {
                 _steps.Add((kind, detail));
             }
+
+            if (kind == BoardPollStep.Lost && OnLost is { } onLost)
+            {
+                OnLost = null;
+                onLost();
+            }
         }
+    }
+
+    /// <summary>A connect the board refused on purpose, saying why.</summary>
+    private sealed class ProblemException : Exception, IConnectionProblemSource
+    {
+        public ProblemException(ConnectionProblem problem)
+            : base(problem.ToString())
+        {
+            Problem = problem;
+        }
+
+        public ConnectionProblem? Problem { get; }
     }
 
     /// <summary>A read that waits until the test ends it, as a request to a board that doesn't answer.</summary>

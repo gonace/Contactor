@@ -26,6 +26,7 @@
 @inject ILogger<Relays> Log
 @inject RelayStatusText StatusText
 @inject BoardsText BoardsText
+@inject BoardProblemText ProblemText
 @inject GroupStatusText GroupStatus
 @inject InputsText InputsText
 @inject IStringLocalizer<RelaysTexts> Texts
@@ -408,15 +409,16 @@
             <div class="offline" role="status">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
                 <div>
+                    @* Why, when the board says: "The password is wrong. See Settings." in place of the line under the heading. *@
                     @if (state.HasAnswered)
                     {
                         <strong>@(boardName is null ? Texts["Relays.NoContact.One"] : Texts["Relays.NoContact.Named", boardName])</strong>
-                        <span>@(state.LastContactUtc is { } last ? Texts["Relays.NoContact.Since", StatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)] : Texts["Relays.NoContact.MayBeWrong"])</span>
+                        <span>@(state.Problem is { } problem ? Texts["Relays.Problem.SeeSettings", ProblemText.Long(problem)] : state.LastContactUtc is { } last ? Texts["Relays.NoContact.Since", StatusText.When(Clock.ToLocal(last.UtcDateTime), Clock.Now)] : Texts["Relays.NoContact.MayBeWrong"])</span>
                     }
                     else
                     {
                         <strong>@(boardName is null ? Texts["Relays.NoContactYet.One"] : Texts["Relays.NoContactYet.Named", boardName])</strong>
-                        <span>@Texts["Relays.NoContact.FirstAnswer"]</span>
+                        <span>@(state.Problem is { } problem ? Texts["Relays.Problem.SeeSettings", ProblemText.Long(problem)] : Texts["Relays.NoContact.FirstAnswer"])</span>
                     }
                 </div>
             </div>

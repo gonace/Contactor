@@ -67,6 +67,29 @@ public sealed class Vm204ClientTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
         Assert.Contains(run.Traces, t => t.Text == "Wrong user name or password" && t.IsError);
         Assert.All(run.Traces, t => Assert.DoesNotContain("vm204", $"{t.Text} {t.Bytes}", StringComparison.Ordinal));
+
+        // Why, once: the second refusal is the same. Never the password.
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm204Model.Model), run.Client.State.Problem);
+        Assert.Single(run.Changes, c => c.Problem is not null);
+        Assert.DoesNotContain("vm204", run.Client.State.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("vm204", Vm204Board.ToBoardState(run.Client.State).ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_SayALoginIsNeeded_WhenTheAppHasNone_AndClearItForANewLogin()
+    {
+        await using var simulator = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.Problem is not null);
+
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginNeeded, Vm204Model.Model), run.Client.State.Problem);
+
+        run.Client.SetLogin(Vm204Login.TryCreate("admin", "VM204", out _)!);
+
+        Assert.Null(run.Client.State.Problem);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Problem);
     }
 
     [Fact]
@@ -182,6 +205,9 @@ public sealed class Vm204ClientTests
         Assert.True(run.Client.State.IsConnected);
         Assert.Equal(2, simulator.ReceivedTargets.Count(t => t.StartsWith(Vm204Api.AuthPath, StringComparison.Ordinal)));
         Assert.Contains(run.Traces, t => t.Text == "The board refused the key" && t.IsError);
+
+        // A refused key is no problem with the login: the app gets a new one by itself.
+        Assert.DoesNotContain(run.Changes, c => c.Problem is not null);
     }
 
     [Fact]
