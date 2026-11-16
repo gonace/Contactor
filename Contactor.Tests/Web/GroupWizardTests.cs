@@ -74,14 +74,13 @@ public sealed class GroupWizardTests
         wizard.Toggle(2, 2, "Relay 2", Board);
         Assert.True(wizard.GoOn(2));
 
+        wizard.Editor.Steps[0].Name = " Fan ";
         wizard.Editor.Steps[1].Name = " ";
-        Assert.False(wizard.GoOn(3));
-        wizard.Editor.Steps[1].Name = " Heat ";
         Assert.True(wizard.GoOn(3));
 
         Assert.False(wizard.GoOn(4));
         Assert.Equal(GroupWizard.StepCount, wizard.Step);
-        Assert.Equal("Heat", wizard.StepDrafts[1].RoleName);
+        Assert.Equal(["Fan", "Relay 2"], wizard.StepDrafts.Select(s => s.RoleName));
     }
 
     [Fact]

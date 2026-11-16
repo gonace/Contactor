@@ -122,18 +122,24 @@ public sealed class GroupNewTests
         Assert.Equal([$"Relay 2: {relays[1]}", $"Relay 1: {relays[0]}"], await SavedStepsAsync(app));
     }
 
-    // "Next" waits for every step to have a name.
+    // A step's name may be left empty, as on the group's page: "Next" doesn't wait for it, the plan says its first
+    // relay's name, and the step is saved with that name.
     [Fact]
-    public async Task Should_GoOn_OnlyWithEveryStepNamed()
+    public async Task Should_GoOn_WithAnEmptyStepName_AndSaveItAsItsFirstRelaysName()
     {
         await using var app = await StartAppAsync();
         var relays = await RelaysAsync(app);
-        using var page = await AtOrderAndRulesAsync(app, relays.Take(2));
+        using var page = await AtOrderAndRulesAsync(app, relays.Take(3));
+        await JoinStepAboveAsync(page, relays[2], channel: 3, step: 1);
 
+        await page.TypeAsync(PageRenderer.With("id", "step-0"), "Fan");
         await page.TypeAsync(PageRenderer.With("id", "step-1"), " ");
-        Assert.True(await NextDisabledAsync(page));
-        await page.TypeAsync(PageRenderer.With("id", "step-1"), "Heat");
         Assert.False(await NextDisabledAsync(page));
+
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("Fan → wait 3 s → Relay 2", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(Button("Create group"));
+        Assert.Equal([$"Fan: {relays[0]}", $"Relay 2: {relays[1]} {relays[2]}"], await SavedStepsAsync(app));
     }
 
     private static async Task<TestWebApp> StartAppAsync()

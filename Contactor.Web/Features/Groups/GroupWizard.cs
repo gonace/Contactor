@@ -33,7 +33,8 @@ public sealed class GroupWizard
     {
         1 => !string.IsNullOrWhiteSpace(Name),
         2 => _editor.RelayCount >= RelayGroup.MinMembers,
-        3 => _editor.Steps.All(s => !string.IsNullOrWhiteSpace(s.Name)),
+        // A step's name may be empty, as on the group's page: it is then saved as its first relay's.
+        3 => _editor.RelayCount >= RelayGroup.MinMembers,
         _ => false,
     };
 
@@ -41,10 +42,11 @@ public sealed class GroupWizard
     public GroupDraft Draft => new(Name, Icon, RelayGroup.DefaultMaxOnMinutes, _editor.Drafts);
 
     /// <summary>
-    /// The steps in start order for the plan in words: each by its first relay, with the step's name and times.
+    /// The steps in start order for the plan in words: each by its first relay, with the step's name (its first relay's
+    /// while empty, as it is saved) and times.
     /// </summary>
     public IReadOnlyList<GroupMemberDraft> StepDrafts =>
-        [.. _editor.Steps.Select(s => new GroupMemberDraft(s.Relays[0].RelayId, s.Name.Trim(), s.StartDelaySec, s.RunOnSec))];
+        [.. _editor.Steps.Select(s => new GroupMemberDraft(s.Relays[0].RelayId, s.Label, s.StartDelaySec, s.RunOnSec))];
 
     /// <summary>The relay's place in the start order, from 1 (the steps' relays one after another), or 0 when not picked.</summary>
     public int OrderOf(int relayId)
