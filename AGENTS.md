@@ -34,7 +34,7 @@ The relays drive real machines. Each rule is told in full in its section of `doc
 - Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` and Tailscale (`tailscaled`, `tailscale`) copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi. The public demo has its own image (`ghcr.io/gonace/contactor-demo`) from `Contactor.Demo/Dockerfile`, run with `deploy/demo/compose.yml` (`docs/DEMO.md`).
 - Local development with Aspire 13.5.4, pinned on purpose: later releases hang at startup on Windows. Its dashboard's advisories GHSA-f7vh-h5g3-7jrh (its cookie reaching a container opened from it) and GHSA-4g86-54fm-h9h8 (anyone who reaches it can delete its telemetry) are suppressed in the AppHost only, which runs no container but our own app's image and serves the dashboard on localhost; the dashboard isn't in the image. Raise the version once a release starts on Windows (issue #18). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the app as its image against it, as on a real installation, on http://localhost:8080 with `/data` in the Docker volume `contactor-dev`; it needs Docker Desktop. It also runs the public demo as `contactor-demo` on http://localhost:5070, which starts its own copies of the app and the simulator from their build output; the AppHost is the one place the demo is set up for development. `dotnet run --project Contactor.Web` runs the app on its own, on this computer only, against `dotnet run --project Contactor.Simulator`.
 
-No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Vm201/`, `Web/` …). Don't create more test projects.
+No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Velleman/`, `Web/` …). Don't create more test projects.
 
 ```
 Contactor.slnx
@@ -44,9 +44,7 @@ Directory.Build.props       # Shared build settings
 Directory.Packages.props    # Central package management: every package version is here
 Contactor.Boards/           # What any relay board is to the app: IRelayBoard, IBoardConnection, IBoardTraffic, BoardModel, BoardPoller. No dependencies.
 Contactor.Boards.Devantech/ # The Devantech ETH002-B, ETH008-B, ETH484-B and ETH8020-B: binary TCP commands, client, simulator and its adapters (DevantechBoard, DevantechConnection, DevantechTraffic). No web/EF. README.md: its protocol
-Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its adapters (Vm201Board, Vm201Connection, Vm201Traffic). No web/EF. README.md: its protocol
-Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF. README.md: its routes
-Contactor.Boards.Vm208/     # The VM208: HTTP client, simulator and its adapters (Vm208Board, Vm208Connection, Vm208Traffic). No web/EF. README.md: its routes
+Contactor.Boards.Velleman/  # The Velleman VM201 (packet codec), VM204 and VM208 (HTTP clients): their clients, simulators and adapters (Vm201Board, Vm204Connection, Vm208Traffic …). No web/EF. README.md: their protocols and routes
 Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and its adapters (WaveshareBoard, WaveshareConnection, WaveshareTraffic). No web/EF. README.md: its protocol
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
@@ -61,9 +59,7 @@ Contactor.Tests/          # The only test project
   Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
   Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
   Simulator/                # The simulator's boards and page
-  Vm201/                    # Codec + client against the simulator
-  Vm204/                    # JSON, login, trace words + client against the simulator
-  Vm208/                    # JSON, trace words, connection + client against the simulator
+  Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, trace words, connections + clients against the simulator
   Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 install/
@@ -116,7 +112,7 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 
 ## Testing
 
-- **Codec:** encode/decode, checksum, the verified example (`02 06 4F 01 A8 03`, in `Contactor.Boards.Vm201/README.md`), split and merged TCP packets, and an invalid checksum.
+- **Codec:** encode/decode, checksum, the verified example (`02 06 4F 01 A8 03`, in `Contactor.Boards.Velleman/README.md`), split and merged TCP packets, and an invalid checksum.
 - **Client against the simulator:** login with and without auth, wrong password, pushed status, reconnect after a disconnect.
 - **Scheduling:** with an injected `TimeProvider`. Test weekdays, over midnight, both daylight saving changes, overlaps and the reconciliation at start.
 - **Auto-off:** that it triggers, and not for relays turned on by a schedule.

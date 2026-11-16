@@ -1,5 +1,5 @@
 using Contactor.Boards;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

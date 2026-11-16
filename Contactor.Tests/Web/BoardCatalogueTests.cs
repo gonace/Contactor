@@ -1,8 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
-using Contactor.Boards.Vm201;
-using Contactor.Boards.Vm204;
-using Contactor.Boards.Vm208;
+using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
