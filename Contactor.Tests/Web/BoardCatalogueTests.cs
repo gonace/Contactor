@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Boards.Advantech;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Vm201;
 using Contactor.Boards.Vm204;
@@ -107,6 +108,24 @@ public sealed class BoardCatalogueTests
         Assert.Equal("", board.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Vm208Options>>().Value.Host);
     }
 
+    [Theory]
+    [InlineData("advantech-adam-6060")]
+    [InlineData("ADVANTECH-ADAM-6066 ")]
+    public async Task Should_BuildEachAdvantechAdam6000Model(string type)
+    {
+        await using var board = Build(type);
+
+        Assert.Contains(board.Model, Adam6000Models.All);
+        Assert.Equal(type.Trim().ToLowerInvariant(), board.Model.Id);
+        var adam = Assert.IsType<Adam6000Board>(board.Board);
+        Assert.Same(board.Model.Capabilities, adam.Capabilities);
+        Assert.Same(board.Model, board.Services.GetRequiredService<Adam6000Client>().Model);
+        Assert.IsType<Adam6000Connection>(board.Connection);
+        Assert.IsType<Adam6000Traffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(502, board.Connection.Endpoint.Port);
+    }
+
     // Checked when the board is built, so a wrong setting fails where it is chosen, not later on the connection.
     [Fact]
     public void Should_RefuseToBuild_WithSettingsTheBoardCannotTake()
@@ -128,7 +147,7 @@ public sealed class BoardCatalogueTests
     [Fact]
     public void Should_ListTheBrands_InAlphabeticalOrder_EachWithItsModels()
     {
-        Assert.Equal(["Devantech", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
+        Assert.Equal(["Advantech", "Devantech", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
         Assert.Equal(
             ["VM201", "VM204", "VM208"],
             BoardCatalogue.Brands.Single(m => m.Name == "Velleman").Models.Select(m => m.ModelName));

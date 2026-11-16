@@ -48,6 +48,7 @@ Contactor.Boards.Vm201/     # The VM201: packet codec, client, simulator and its
 Contactor.Boards.Vm204/     # The VM204: HTTP client, simulator and its adapters (Vm204Board, Vm204Connection, Vm204Traffic). No web/EF. README.md: its routes
 Contactor.Boards.Vm208/     # The VM208: HTTP client, simulator and its adapters (Vm208Board, Vm208Connection, Vm208Traffic). No web/EF. README.md: its routes
 Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and its adapters (WaveshareBoard, WaveshareConnection, WaveshareTraffic). No web/EF. README.md: its protocol
+Contactor.Boards.Advantech/ # Advantech ADAM modules: Modbus TCP framing, separate series maps/clients, simulators and adapters. No web/EF. README.md: protocols and hardware checks
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
   Resources/                # The UI's texts: one .resx per area with its marker class (CommonTexts); not a feature
@@ -65,6 +66,7 @@ Contactor.Tests/          # The only test project
   Vm204/                    # JSON, login, trace words + client against the simulator
   Vm208/                    # JSON, trace words, connection + client against the simulator
   Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
+  Advantech/                # Modbus TCP framing, series maps, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 install/
   install.sh                # The one-command install (curl … | sh), the only file attached to each GitHub Release
