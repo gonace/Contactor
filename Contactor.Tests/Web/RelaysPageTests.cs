@@ -64,17 +64,16 @@ public sealed class RelaysPageTests
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
+            List<RelayGroup> groups = [];
             for (var g = 0; g < 4; g++)
             {
                 var group = new RelayGroup { BoardId = 1, Name = $"Group {g + 1}", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
                 group.AddStep("Fan", (g * 2) + 1);
                 group.AddStep("Heat", (g * 2) + 2);
-                db.RelayGroups.Add(group);
+                groups.Add(group);
             }
 
-            await db.SaveChangesAsync(Cancel);
-            db.GroupRuntimes.AddRange(db.RelayGroups.Select(g => new GroupRuntime { GroupId = g.Id }));
-            await db.SaveChangesAsync(Cancel);
+            await db.AddWithRuntimesAsync([.. groups]);
         }
 
         using var http = app.CreateClient();
@@ -98,11 +97,8 @@ public sealed class RelaysPageTests
             var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
             group.AddStep("Fan", 1);
             group.AddStep("Heat", 2);
-            db.RelayGroups.Add(group);
             await db.Relays.Where(r => r.Id > 2).ExecuteUpdateAsync(r => r.SetProperty(x => x.IsActive, false), Cancel);
-            await db.SaveChangesAsync(Cancel);
-            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
-            await db.SaveChangesAsync(Cancel);
+            await db.AddWithRuntimesAsync(group);
         }
 
         using var http = app.CreateClient();
@@ -126,10 +122,7 @@ public sealed class RelaysPageTests
             var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
             group.AddStep("Fan", 1);
             group.AddStep("Heat", 2);
-            db.RelayGroups.Add(group);
-            await db.SaveChangesAsync(Cancel);
-            db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
-            await db.SaveChangesAsync(Cancel);
+            await db.AddWithRuntimesAsync(group);
         }
 
         using var http = app.CreateClient();

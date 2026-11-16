@@ -424,10 +424,7 @@ public sealed partial class RelaysBoardsPageTests
         var group = new RelayGroup { BoardId = boards.BarnId, Name = "Barn fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
         group.AddStep("Fan", await RelayIdAsync(boards, boards.BarnId, 1));
         group.AddStep("Heat", await RelayIdAsync(boards, boards.BarnId, 2));
-        db.RelayGroups.Add(group);
-        await db.SaveChangesAsync(Cancel);
-        db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
-        await db.SaveChangesAsync(Cancel);
+        await db.AddWithRuntimesAsync(group);
         return group.Id;
     }
 
@@ -553,10 +550,7 @@ public sealed partial class RelaysBoardsPageTests
         var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
         group.AddStep("Fan", await RelayIdAsync(boards, 1, 1));
         group.AddStep("Heat", await RelayIdAsync(boards, 1, 2));
-        db.RelayGroups.Add(group);
-        await db.SaveChangesAsync(Cancel);
-        db.GroupRuntimes.Add(new GroupRuntime { GroupId = group.Id });
-        await db.SaveChangesAsync(Cancel);
+        await db.AddWithRuntimesAsync(group);
         return group.Id;
     }
 
