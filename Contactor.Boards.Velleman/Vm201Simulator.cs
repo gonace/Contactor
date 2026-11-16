@@ -134,7 +134,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        _logger.SimulatorListening(Port);
+        Vm201Log.SimulatorListening(_logger, Port);
     }
 
     /// <summary>Changes the outputs as the board's web page, buttons or timers would, and pushes the status.</summary>
@@ -377,7 +377,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
         if (packet.Data.Length != 1)
         {
-            _logger.IgnoredPacket((char)packet.Command);
+            Vm201Log.IgnoredPacket(_logger, (char)packet.Command);
             return;
         }
 
@@ -396,7 +396,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
         if (change is null)
         {
-            _logger.IgnoredPacket((char)packet.Command);
+            Vm201Log.IgnoredPacket(_logger, (char)packet.Command);
             return;
         }
 
@@ -422,7 +422,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         var data = packet.Data.Span;
         if (data.Length != 3 || Vm201Pulse.Decode(data[1], data[2]) is not { } length)
         {
-            _logger.IgnoredPacket((char)packet.Command);
+            Vm201Log.IgnoredPacket(_logger, (char)packet.Command);
             return;
         }
 
@@ -557,7 +557,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm201Log.SubscriberFailed(_logger, ex);
             }
         }
     }
@@ -579,7 +579,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm201Log.SubscriberFailed(_logger, ex);
             }
         }
     }

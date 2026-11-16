@@ -105,7 +105,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             return;
         }
 
-        _logger.EndpointChanged(endpoint.Host, endpoint.Port);
+        Vm204Log.EndpointChanged(_logger, endpoint.Host, endpoint.Port);
         Volatile.Write(ref _key, null);
 
         // Another board may be at the new address: nothing is known about it until it answers.
@@ -122,7 +122,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             return;
         }
 
-        _logger.LoginChanged(login.IsNone);
+        Vm204Log.LoginChanged(_logger, login.IsNone);
         Volatile.Write(ref _key, null);
         _poller.Restart();
     }
@@ -196,7 +196,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm204Log.SubscriberFailed(_logger, ex);
             }
         }
     }
@@ -211,11 +211,11 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
                 break;
             case BoardPollStep.Lost:
                 ForgetLastStatus();
-                _logger.ConnectionLost(detail);
+                Vm204Log.ConnectionLost(_logger, detail);
                 Trace(BoardTraceDirection.None, $"Connection lost: {detail}", isError: true);
                 break;
             case BoardPollStep.Waiting:
-                _logger.Reconnecting(detail);
+                Vm204Log.Reconnecting(_logger, detail);
                 Trace(BoardTraceDirection.None, $"Trying again in {detail} s");
                 break;
             case BoardPollStep.Stopped:
@@ -293,7 +293,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             hideAnswer: true).ConfigureAwait(false);
         if (answer.StatusCode == HttpStatusCode.BadRequest)
         {
-            _logger.AccessDenied();
+            Vm204Log.AccessDenied(_logger);
             throw new Vm204AccessDeniedException();
         }
 
@@ -301,7 +301,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
         var key = Vm204Json.ReadKey(answer.Body);
         Volatile.Write(ref _key, key);
         var endpoint = Endpoint;
-        _logger.LoggedIn(endpoint.Host, endpoint.Port);
+        Vm204Log.LoggedIn(_logger, endpoint.Host, endpoint.Port);
         return key;
     }
 
@@ -454,7 +454,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm204Log.SubscriberFailed(_logger, ex);
             }
         }
     }

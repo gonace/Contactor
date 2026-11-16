@@ -100,7 +100,7 @@ public sealed class Vm201Board : IRelayBoard
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm201Log.SubscriberFailed(_logger, ex);
             }
         }
     }

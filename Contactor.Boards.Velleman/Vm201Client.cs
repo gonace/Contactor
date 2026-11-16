@@ -86,7 +86,7 @@ public sealed class Vm201Client
             return;
         }
 
-        _logger.LoginChanged(login.IsNone);
+        Vm201Log.LoginChanged(_logger, login.IsNone);
         Reconnect();
     }
 
@@ -103,7 +103,7 @@ public sealed class Vm201Client
             return;
         }
 
-        _logger.EndpointChanged(endpoint.Host, endpoint.Port);
+        Vm201Log.EndpointChanged(_logger, endpoint.Host, endpoint.Port);
 
         // Another board may be at the new address: nothing is known about it until it answers, and a status from the
         // old one still on its way is dropped (ApplyStatus). A state that already says so isn't raised again, e.g.
@@ -218,7 +218,7 @@ public sealed class Vm201Client
                     continue;
                 }
 
-                _logger.Reconnecting(backoff.TotalSeconds);
+                Vm201Log.Reconnecting(_logger, backoff.TotalSeconds);
                 Trace(Vm201TraceKind.Reconnecting, detail: ((int)backoff.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 try
                 {
@@ -285,7 +285,7 @@ public sealed class Vm201Client
         var endpoint = Endpoint;
         try
         {
-            _logger.Connecting(endpoint.Host, endpoint.Port);
+            Vm201Log.Connecting(_logger, endpoint.Host, endpoint.Port);
             Trace(Vm201TraceKind.Connecting, detail: $"{endpoint.Host}:{endpoint.Port}");
             await WithTimeoutAsync(
                 token => tcp.ConnectAsync(endpoint.Host, endpoint.Port, token).AsTask(),
@@ -305,7 +305,7 @@ public sealed class Vm201Client
                 "log in",
                 cancellationToken).ConfigureAwait(false);
             loggedIn = true;
-            _logger.LoggedIn(endpoint.Host, endpoint.Port);
+            Vm201Log.LoggedIn(_logger, endpoint.Host, endpoint.Port);
 
             session = new Session();
             Volatile.Write(ref _session, session);
@@ -332,7 +332,7 @@ public sealed class Vm201Client
             {
                 // Rethrows the loop's failure for the log below; a clean close by the board just returns.
                 await first.ConfigureAwait(false);
-                _logger.ClosedByBoard();
+                Vm201Log.ClosedByBoard(_logger);
                 Trace(Vm201TraceKind.ConnectionLost, detail: "The board closed the connection.");
             }
         }
@@ -343,19 +343,19 @@ public sealed class Vm201Client
         }
         catch (Vm201AccessDeniedException)
         {
-            _logger.AccessDenied();
+            Vm201Log.AccessDenied(_logger);
             Trace(Vm201TraceKind.ConnectionLost, detail: "The board rejected the user name or password.");
         }
         catch (Exception ex) when (ex is IOException or SocketException or TimeoutException or OperationCanceledException)
         {
-            _logger.ConnectionLost(ex.Message);
+            Vm201Log.ConnectionLost(_logger, ex.Message);
             Trace(Vm201TraceKind.ConnectionLost, detail: ex.Message);
         }
 #pragma warning disable CA1031 // The reconnect loop must survive anything a connection throws.
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            _logger.UnexpectedError(ex);
+            Vm201Log.UnexpectedError(_logger, ex);
             Trace(Vm201TraceKind.ConnectionLost, detail: ex.Message);
         }
         finally
@@ -379,7 +379,7 @@ public sealed class Vm201Client
                 case Vm201Command.LoggedIn:
                     return;
                 case Vm201Command.Auth:
-                    _logger.LoginRequired();
+                    Vm201Log.LoginRequired(_logger);
                     var login = Login;
                     await SendAsync(
                         stream,
@@ -395,7 +395,7 @@ public sealed class Vm201Client
                 case Vm201Command.Closed:
                     throw new IOException("The VM201 closed the connection during login.");
                 default:
-                    _logger.IgnoredPacket((char)packet.Command);
+                    Vm201Log.IgnoredPacket(_logger, (char)packet.Command);
                     break;
             }
         }
@@ -427,7 +427,7 @@ public sealed class Vm201Client
                 case Vm201Command.Closed:
                     return;
                 default:
-                    _logger.IgnoredPacket((char)packet.Command);
+                    Vm201Log.IgnoredPacket(_logger, (char)packet.Command);
                     break;
             }
         }
@@ -475,7 +475,8 @@ public sealed class Vm201Client
     {
         if (_options.LogPackets && _logger.IsEnabled(LogLevel.Information))
         {
-            _logger.PacketSent(Vm201PacketTrace.Describe(packet));
+            var described = Vm201PacketTrace.Describe(packet);
+            Vm201Log.PacketSent(_logger, described);
         }
 
         await stream.WriteAsync(packet, cancellationToken).ConfigureAwait(false);
@@ -489,7 +490,8 @@ public sealed class Vm201Client
     {
         if (_options.LogPackets && _logger.IsEnabled(LogLevel.Information))
         {
-            _logger.PacketReceived(Vm201PacketTrace.Describe(Vm201PacketCodec.Encode(packet.Command, packet.Data.Span)));
+            var described = Vm201PacketTrace.Describe(Vm201PacketCodec.Encode(packet.Command, packet.Data.Span));
+            Vm201Log.PacketReceived(_logger, described);
         }
 
         if (Traced is not null)
@@ -520,7 +522,7 @@ public sealed class Vm201Client
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm201Log.SubscriberFailed(_logger, ex);
             }
         }
     }
@@ -530,7 +532,7 @@ public sealed class Vm201Client
     {
         if (packet.Data.Length != Vm201Command.StatusDataLength)
         {
-            _logger.InvalidStatus(packet.Data.Length);
+            Vm201Log.InvalidStatus(_logger, packet.Data.Length);
             return;
         }
 
@@ -584,7 +586,7 @@ public sealed class Vm201Client
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm201Log.SubscriberFailed(_logger, ex);
             }
         }
     }

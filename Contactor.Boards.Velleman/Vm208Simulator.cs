@@ -137,7 +137,7 @@ public sealed class Vm208Simulator : ISimulatedBoard
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        _logger.SimulatorListening(Port);
+        Vm208Log.SimulatorListening(_logger, Port);
     }
 
     public Task SwitchRelayAsync(int relay, bool turnOn)
@@ -548,7 +548,7 @@ public sealed class Vm208Simulator : ISimulatedBoard
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm208Log.SubscriberFailed(_logger, ex);
             }
         }
     }
@@ -570,7 +570,7 @@ public sealed class Vm208Simulator : ISimulatedBoard
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm208Log.SubscriberFailed(_logger, ex);
             }
         }
     }

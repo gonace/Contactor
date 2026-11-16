@@ -97,7 +97,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
             return;
         }
 
-        _logger.EndpointChanged(endpoint.Host, endpoint.Port);
+        Vm208Log.EndpointChanged(_logger, endpoint.Host, endpoint.Port);
 
         // Another board may be at the new address: nothing is known about it until it answers.
         _poller.Forget();
@@ -202,7 +202,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
         if (state.IsConnected && !wasConnected)
         {
             var endpoint = Endpoint;
-            _logger.Connected(endpoint.Host, endpoint.Port);
+            Vm208Log.Connected(_logger, endpoint.Host, endpoint.Port);
         }
 
         if (StateChanged is not { } handlers)
@@ -223,7 +223,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm208Log.SubscriberFailed(_logger, ex);
             }
         }
     }
@@ -238,11 +238,11 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
                 break;
             case BoardPollStep.Lost:
                 ForgetLastStatus();
-                _logger.ConnectionLost(detail);
+                Vm208Log.ConnectionLost(_logger, detail);
                 Trace(BoardTraceDirection.None, $"Connection lost: {detail}", isError: true);
                 break;
             case BoardPollStep.Waiting:
-                _logger.Reconnecting(detail);
+                Vm208Log.Reconnecting(_logger, detail);
                 Trace(BoardTraceDirection.None, $"Trying again in {detail} s");
                 break;
             case BoardPollStep.Stopped:
@@ -501,7 +501,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                _logger.SubscriberFailed(ex);
+                Vm208Log.SubscriberFailed(_logger, ex);
             }
         }
     }

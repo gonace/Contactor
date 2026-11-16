@@ -113,7 +113,7 @@ public sealed class Vm201PacketDecoder
         if (discarded > 0)
         {
             DiscardedByteCount += discarded;
-            _logger.DiscardedBytes(discarded);
+            Vm201Log.DiscardedBytes(_logger, discarded);
             Discarded?.Invoke(this, discarded);
         }
 
