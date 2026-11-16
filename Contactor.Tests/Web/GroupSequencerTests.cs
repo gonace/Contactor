@@ -564,6 +564,8 @@ public sealed class GroupSequencerTests
         board.ReleaseStatus();
         await rig.Groups.StepAsync(Cancel);
         Assert.Equal(ChannelMask.Of([1, 2]), board.State.Relays);
+        var waiting = await RuntimeAsync(rig, id);
+        Assert.Equal((2, false, (DateTime?)null), (waiting.PendingStep, waiting.PendingOn, waiting.NextStepAtUtc));
         rig.Time.Now += ExpectedChanges.Lifetime;
         await rig.Groups.StepAsync(Cancel);
         await rig.Groups.StepAsync(Cancel);
