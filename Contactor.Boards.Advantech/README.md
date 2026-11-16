@@ -34,3 +34,27 @@ The Host Idle timeout is configurable. The manual's example shows 720 seconds an
 - Confirm response framing, exception responses, reconnect after a dropped connection and reported state after reconnection.
 - Review the module's Access Control and Communication WDT / Fail Safe Value settings, including what happens to outputs after a network loss.
 - Confirm the relay contact type and model-specific rating against the load and wiring.
+
+## ADAM-6200 series: ADAM-6260
+
+The ADAM-6260 is supported separately from the ADAM-6000 series. The only shared protocol type is `ModbusTcpFrame`, which handles the common seven-byte Modbus TCP MBAP header and bounded PDU. It has its own model, register map, client, simulator and adapters. Although both manuals list relay outputs at `00017–00022`, the series-specific maps remain separate: the ADAM-6200 manual also describes user-defined 0X/4X addresses, so a device configured with a changed map needs explicit support and hardware verification.
+
+| Channels | ADAM-6000 (6060/6066) | ADAM-6200 (6260) |
+|---|---|---|
+| Relays | `00017–00022`, FC01 read / FC05 per-relay write | `00017–00022`, FC01 read / FC05 per-relay write |
+| Digital inputs | `00001–00006`, FC02 read | None |
+| Pulse configuration | Manual documents pulse trains on the relay outputs | `40001–40012` low width, `40013–40024` high width, `40025–40036` absolute count, `40037–40048` incremental count (Appendix A.1.7, p. 146) |
+
+ADAM-6260 contact type is five Form C and one Form A. Its contact rating is 250 VAC at 5 A and 30 VDC at 5 A (section 2.5, p. 27). The coil state is what Contactor shows as ON; Form C normally-closed wiring does not invert the app state. The module has six relay outputs and no digital inputs.
+
+The module's TCP Modbus port is 502 (section 4.3.2.2, p. 58). The manual does not specify a Modbus TCP Unit ID or a maximum number of simultaneous Modbus TCP connections. The app defaults Unit ID to 1 and makes it configurable. Its administrator password (default `00000000`) is for utility/configuration access; the manual does not describe password authentication in Modbus requests. Access Control can limit control to configured IP or MAC addresses (section 4.3.2.7, p. 61). Host Idle is configurable and the Communication WDT can drive configured fail-safe values when no TCP packet arrives before that timeout (sections 4.3.2.2 and 4.3.3.6, pp. 58, 83). The manual does not give a connection limit.
+
+The manual describes continuous or finite pulse trains, with low/high width in 0.1 ms units (section 4.3.3.3, pp. 78–79); it does not give the numeric width/count range for the ADAM-6260 map or a maximum relay pulse frequency. This integration does not expose Contactor's one-shot `PulseAsync`. The ADAM-6200 manual gives no byte-for-byte Modbus TCP example request/answer for the ADAM-6260; Appendix A.1.1 lists supported function codes and Appendix A.1.7 gives its addresses.
+
+## Check the ADAM-6260 on real hardware
+
+- Confirm the configured Modbus TCP Unit ID and whether the device's 0X/4X address map was changed from its manual defaults.
+- Read all six relay states, then switch each relay individually and confirm other relays remain unchanged.
+- Confirm response framing, Modbus exception handling and reconnect after a dropped connection.
+- Verify Access Control and Host Idle / Communication WDT fail-safe behavior with the installed firmware.
+- Confirm the Form C/Form A terminals and the 250 VAC / 5 A and 30 VDC / 5 A ratings against the load and wiring.

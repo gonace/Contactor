@@ -123,6 +123,20 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.Equal("The ADAM module takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
     }
 
+    [Fact]
+    public void Should_RunTheAdvantechAdam6200Model_WithoutALogin()
+    {
+        const string type = "advantech-adam-6260";
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+
+        var board = Assert.Single(_boards.Boards).Board;
+        Assert.IsType<Adam6200Simulator>(board);
+        Assert.Equal(type, board.Model.Id);
+        Assert.False(board.HasLogin);
+        Assert.Equal((8526, 502), (SimulatorCatalogue.Find(type)!.Port, SimulatorCatalogue.Find(type)!.Model.DefaultPort));
+        Assert.Equal("The ADAM module takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
+    }
+
     [Theory]
     [InlineData("vm209", 9760, null, null, "Choose a model.")]
     [InlineData("vm208", 9760, "admin", "secret", "The VM208 takes no login.")]

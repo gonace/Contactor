@@ -51,6 +51,7 @@ qualified electrician.
 |---|---|---|
 | Velleman VM201 (WMRC201), ethernet | 8, plus 1 input | Supported |
 | Advantech ADAM-6060 and ADAM-6066 | 6 each, plus 6 inputs each | In the app and the simulator; not yet tested on a real board. See [its README](Contactor.Boards.Advantech/README.md) |
+| Advantech ADAM-6260 | 6 | In the app and the simulator; not yet tested on a real board. See [its README](Contactor.Boards.Advantech/README.md) |
 | Velleman VM204 (WMRC204), ethernet | 4, plus 4 inputs and 1 analog input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
 | Velleman VM208, ethernet or WLAN | 4, plus 1 input | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only |
 | Waveshare Modbus PoE ETH Relay, (B), (C), 16CH and 30CH | 8, 8 plus 8 inputs, 8 plus 8 inputs, 16, 30 | In the app and the simulator; not yet tested on a real board, and `deploy/` sets up a VM201 only. See [its README](Contactor.Boards.Waveshare/README.md) |

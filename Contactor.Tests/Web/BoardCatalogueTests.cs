@@ -126,6 +126,23 @@ public sealed class BoardCatalogueTests
         Assert.Equal(502, board.Connection.Endpoint.Port);
     }
 
+    [Fact]
+    public async Task Should_BuildTheAdvantechAdam6200Model()
+    {
+        await using var board = Build("advantech-adam-6260", settings: new() { ["AdvantechAdam6200:UnitId"] = "7" });
+
+        Assert.Same(Adam6200Models.Adam6260, board.Model);
+        var adam = Assert.IsType<Adam6200Board>(board.Board);
+        Assert.Same(board.Model.Capabilities, adam.Capabilities);
+        Assert.Equal(0, adam.Capabilities.InputCount);
+        Assert.Equal(7, board.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Adam6200Options>>().Value.UnitId);
+        Assert.Same(board.Model, board.Services.GetRequiredService<Adam6200Client>().Model);
+        Assert.IsType<Adam6200Connection>(board.Connection);
+        Assert.IsType<Adam6200Traffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(502, board.Connection.Endpoint.Port);
+    }
+
     // Checked when the board is built, so a wrong setting fails where it is chosen, not later on the connection.
     [Fact]
     public void Should_RefuseToBuild_WithSettingsTheBoardCannotTake()

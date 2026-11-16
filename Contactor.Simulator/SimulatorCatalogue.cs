@@ -67,6 +67,11 @@ public static class SimulatorCatalogue
             (username, password) => username.Length == 0 && password.Length == 0 ? null : "The ADAM module takes no login.",
             (_, _, logger, time) => new Adam6000Simulator(model, logger, time),
             SuggestedPort: 8502)),
+        .. Adam6200Models.All.Select(model => new SimulatorModel(
+            model,
+            (username, password) => username.Length == 0 && password.Length == 0 ? null : "The ADAM module takes no login.",
+            (_, _, logger, time) => new Adam6200Simulator(model, logger, time),
+            SuggestedPort: 8526)),
     ];
 
     /// <summary>The model with this id, ignoring case and spaces around it, or null.</summary>

@@ -40,6 +40,7 @@ public static class BoardCatalogue
         new(Vm208Model.Model, Vm208Boards.Create),
         new(Adam6000Models.Adam6060, Adam6000Boards.Create),
         new(Adam6000Models.Adam6066, Adam6000Boards.Create),
+        new(Adam6200Models.Adam6260, Adam6200Boards.Create),
         new(WaveshareModels.Relay8, WaveshareBoards.Create),
         new(WaveshareModels.Relay8B, WaveshareBoards.Create),
         new(WaveshareModels.Relay8C, WaveshareBoards.Create),
