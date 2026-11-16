@@ -2,14 +2,13 @@ using Contactor.Boards;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Velleman;
 using Contactor.Web.Features.Boards;
-using Contactor.Web.Resources;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>Why a board refuses the connection, in words: "password" words for a password alone, "login" words else.</summary>
 public sealed class BoardProblemTextTests
 {
-    private static readonly BoardProblemText Problem = new(TestTexts.For<BoardsTexts>(), TestTexts.For<CommonTexts>());
+    private static readonly BoardProblemText Problem = new(TestTexts.Localizer);
 
     public static TheoryData<ConnectionProblem, string, string> English { get; } = new()
     {

@@ -20,11 +20,9 @@
 @inject NavigationManager Navigation
 @inject AppLanguage Language
 @inject ILogger<SetupGuide> Log
-@inject IStringLocalizer<SetupTexts> Texts
-@inject IStringLocalizer<BoardsTexts> BoardTexts
 @inject SetupText SetupText
 
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Setup"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Setup"]])</PageTitle>
 
 <div class="screen">
     @* While a list of "Which relay board?" is open, everything but the list and its field takes no focus or clicks
@@ -35,7 +33,7 @@
             var shown = _step;
             <button type="button" class="back" disabled="@Busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                @Common["Common.Back"]
+                @Texts["Common.Back"]
             </button>
         }
         else
@@ -57,8 +55,8 @@
         @if (_step == StepLanguage)
         {
             <div class="intro">
-                <h1 id="language-heading" tabindex="-1" @ref="_heading">@Common["Common.Language"]</h1>
-                <p>@Common["Common.Language.Intro"]</p>
+                <h1 id="language-heading" tabindex="-1" @ref="_heading">@Texts["Common.Language"]</h1>
+                <p>@Texts["Common.Language.Intro"]</p>
             </div>
             <LanguagePicker LabelledBy="language-heading" />
         }
@@ -111,7 +109,7 @@
             var board = Chosen;
             var connected = board?.State.IsConnected == true;
             var endpoint = board?.Endpoint;
-            var modelName = board?.Model?.Name ?? Common["Common.Screen.RelayBoard"];
+            var modelName = board?.Model?.Name ?? Texts["Common.Screen.RelayBoard"];
             <div class="intro">
                 <span class="done-mark" aria-hidden="true">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"></path></svg>
@@ -152,10 +150,10 @@
         else if (_step < StepDone)
         {
             var shown = _step;
-            <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">@Common["Common.Next"]</button>
+            <button type="button" disabled="@(Busy || (_step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(shown)">@Texts["Common.Next"]</button>
             @if (_step == StepWhere)
             {
-                <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">@BoardTexts["Boards.New.WithoutConnection"]</button>
+                <button type="button" class="link" disabled="@Busy" @onclick="GoOnWithoutConnectionAsync">@Texts["Boards.New.WithoutConnection"]</button>
             }
         }
         else
@@ -661,7 +659,7 @@
 
         if (BoardCatalogue.Find(_type) is not { } chosen)
         {
-            _error = BoardTexts["Boards.New.ChooseBoard"];
+            _error = Texts["Boards.New.ChooseBoard"];
             return;
         }
 
@@ -735,7 +733,7 @@
     {
         // An exception that leaves the handler would end the page's live connection.
         Log.LogError(ex, "{What}", what);
-        _error = Common["Common.SomethingWrongTryAgain"];
+        _error = Texts["Common.SomethingWrongTryAgain"];
     }
 
     // From a board's read loop: the guide's own board's, for "All set".

@@ -25,9 +25,9 @@ public sealed class ScheduleText
 
     private static readonly ScheduleDays Weekend = ScheduleDays.Saturday | ScheduleDays.Sunday;
 
-    private readonly IStringLocalizer<SchedulesTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public ScheduleText(IStringLocalizer<SchedulesTexts> texts)
+    public ScheduleText(IStringLocalizer<Texts> texts)
     {
         _texts = texts;
     }

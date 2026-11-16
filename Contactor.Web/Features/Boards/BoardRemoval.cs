@@ -48,7 +48,7 @@ public sealed partial class BoardRemoval : IDisposable
     private readonly LocalClock _clock;
     private readonly TimeProvider _time;
     private readonly ILogger<BoardRemoval> _logger;
-    private readonly IStringLocalizer<BoardsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
     // One removal at a time: a failed one's restore can't meet another's.
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -62,7 +62,7 @@ public sealed partial class BoardRemoval : IDisposable
         LocalClock clock,
         TimeProvider time,
         ILogger<BoardRemoval> logger,
-        IStringLocalizer<BoardsTexts> texts)
+        IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _dbFactory = dbFactory;

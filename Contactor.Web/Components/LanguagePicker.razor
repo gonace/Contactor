@@ -11,7 +11,7 @@
     <div class="language">
         @if (LabelledBy is null)
         {
-            <label for="language">@Common["Common.Language"]</label>
+            <label for="language">@Texts["Common.Language"]</label>
         }
         <select id="language" @key="_shown" aria-labelledby="@LabelledBy" disabled="@_busy" @onchange="ChooseAsync">
             @foreach (var language in Language.All)
@@ -21,11 +21,11 @@
         </select>
         @if (_error)
         {
-            <p class="error" role="alert">@Common["Common.Language.NotSaved"]</p>
+            <p class="error" role="alert">@Texts["Common.Language.NotSaved"]</p>
         }
         else if (LabelledBy is null)
         {
-            <p class="hint">@Common["Common.Language.Hint"]</p>
+            <p class="hint">@Texts["Common.Language.Hint"]</p>
         }
     </div>
 }

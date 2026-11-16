@@ -11,10 +11,8 @@
 @inject NavigationManager Navigation
 @inject ILogger<GroupNew> Log
 @inject GroupPlanText Plan
-@inject IStringLocalizer<GroupsTexts> Texts
-@inject IStringLocalizer<RelaysTexts> RelayTexts
 
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.NewGroup"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.NewGroup"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -22,7 +20,7 @@
         {
             <a href="" class="back">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                @Common["Common.Cancel"]
+                @Texts["Common.Cancel"]
             </a>
         }
         else
@@ -30,7 +28,7 @@
             var shown = _wizard.Step;
             <button type="button" class="back" disabled="@_busy" @onclick="() => Back(shown)">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
-                @Common["Common.Back"]
+                @Texts["Common.Back"]
             </button>
         }
         <span class="step-count">@Texts["Groups.New.Step", _wizard.Step, GroupWizard.StepCount]</span>
@@ -170,7 +168,7 @@
                     <span class="name">@draft.Name.Trim()</span>
                     <span class="note">@Texts["Groups.Status.Off"]</span>
                 </span>
-                <span class="off" aria-hidden="true">@Common["Common.Switch.Off"]</span>
+                <span class="off" aria-hidden="true">@Texts["Common.Switch.Off"]</span>
             </div>
             <dl class="plan">
                 <div>
@@ -201,7 +199,7 @@
         @if (_wizard.Step < GroupWizard.StepCount)
         {
             var shown = _wizard.Step;
-            <button type="button" disabled="@(!_wizard.CanGoOn)" @onclick="() => GoOn(shown)">@Common["Common.Next"]</button>
+            <button type="button" disabled="@(!_wizard.CanGoOn)" @onclick="() => GoOn(shown)">@Texts["Common.Next"]</button>
         }
         else
         {
@@ -213,7 +211,7 @@
 <TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
 
 @code {
-    // Each step's heading and the line under it, as keys of GroupsTexts.
+    // Each step's heading and the line under it, as keys of Texts.
     private static readonly (string Title, string Lead)[] Steps =
     [
         ("Groups.New.Title1", "Groups.New.Lead1"),
@@ -242,7 +240,7 @@
                 }
             </span>
             <span class="option-text">
-                <span class="label">@RelayTexts["Relays.RelayLabel", relay.Channel]</span>
+                <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
                 <span class="name">@relay.Name</span>
                 <span class="note">@Plan.Note(relay)</span>
             </span>
@@ -303,7 +301,7 @@
     private string PreviewLabel(GroupDraft draft)
     {
         var channels = string.Join(" → ", draft.RelayIds.Select(ChannelOf));
-        return RelayTexts["Relays.GroupLabel", BoardLabel is { } board ? $"{board} {channels}" : Texts["Groups.Chain", channels].Value];
+        return Texts["Relays.GroupLabel", BoardLabel is { } board ? $"{board} {channels}" : Texts["Groups.Chain", channels].Value];
     }
 
     private void Pick(GroupCandidate relay)
@@ -354,7 +352,7 @@
         {
             // An exception that leaves the handler would end the page's live connection.
             Log.LogError(ex, "Creating a group failed");
-            _error = Common["Common.SomethingWrongTryAgain"];
+            _error = Texts["Common.SomethingWrongTryAgain"];
         }
         finally
         {

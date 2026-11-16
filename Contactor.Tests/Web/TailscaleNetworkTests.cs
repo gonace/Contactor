@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Tailscale;
 using Contactor.Web.Persistence;
-using Contactor.Web.Resources;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -115,7 +114,7 @@ public sealed class TailscaleNetworkTests
         await using var network = await StartAsync(tailscale, AuthKey, "relays", time);
 
         await WaitUntilAsync(() => tailscale.LogIns.Count == 1 && time.PendingTimers == 1 && network.Network.Status.Problem is not null);
-        Assert.Equal(UiText.Of<SetupTexts>("Setup.Tailscale.KeyTimedOut"), network.Network.Status.Problem);
+        Assert.Equal(UiText.Of("Setup.Tailscale.KeyTimedOut"), network.Network.Status.Problem);
         Assert.Equal("Tailscale didn't take the auth key: Tailscale didn't answer in time.", network.Network.Status.Problem?.English());
         tailscale.LogIn = new TailscaleCommandResult(0, "");
         await AdvanceAsync(time, TailscaleNetwork.CheckEvery);
@@ -201,7 +200,7 @@ public sealed class TailscaleNetworkTests
         await WaitUntilAsync(() => network.Network.Status.Problem is not null);
 
         Assert.False(network.Network.Status.Online);
-        Assert.Equal(new TailscaleStatus(false, Address, UiText.Of<SetupTexts>("Setup.Tailscale.Https"), new Uri("https://login.tailscale.com/f/serve?node=nExample")), network.Network.Status);
+        Assert.Equal(new TailscaleStatus(false, Address, UiText.Of("Setup.Tailscale.Https"), new Uri("https://login.tailscale.com/f/serve?node=nExample")), network.Network.Status);
         Assert.Equal(HttpsHint, network.Network.Status.Problem?.English());
     }
 

@@ -8,12 +8,11 @@
 @inject SignInChoice SignIn
 @inject NavigationManager Navigation
 @inject AppLanguage Language
-@inject IStringLocalizer<SetupTexts> Texts
 
 @*
     Without the live connection: typing the code gives the browser a cookie, which only an ordinary page's answer can.
 *@
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Setup"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Setup"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -49,7 +48,7 @@
             </div>
         </main>
         <div class="next">
-            <button type="submit">@Common["Common.Next"]</button>
+            <button type="submit">@Texts["Common.Next"]</button>
         </div>
     </form>
 </div>

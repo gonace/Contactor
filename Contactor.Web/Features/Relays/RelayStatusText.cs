@@ -29,9 +29,9 @@ public enum TurnedOnBy
 /// </summary>
 public sealed class RelayStatusText
 {
-    private readonly IStringLocalizer<RelaysTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public RelayStatusText(IStringLocalizer<RelaysTexts> texts)
+    public RelayStatusText(IStringLocalizer<Texts> texts)
     {
         _texts = texts;
     }

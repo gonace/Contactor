@@ -34,9 +34,9 @@ public sealed class EventsHandler
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly LocalClock _clock;
     private readonly EventText _text;
-    private readonly IStringLocalizer<EventsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public EventsHandler(IDbContextFactory<ContactorDbContext> dbFactory, LocalClock clock, EventText text, IStringLocalizer<EventsTexts> texts)
+    public EventsHandler(IDbContextFactory<ContactorDbContext> dbFactory, LocalClock clock, EventText text, IStringLocalizer<Texts> texts)
     {
         _text = text;
         _texts = texts;

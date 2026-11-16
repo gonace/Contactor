@@ -3,14 +3,13 @@ using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Velleman;
 using Contactor.Web.Features.Boards;
-using Contactor.Web.Resources;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>A board's login in words: the same English the board libraries' codes have as their ToString.</summary>
 public sealed class BoardLoginTextTests
 {
-    private static readonly BoardLoginText Login = new(TestTexts.For<BoardsTexts>());
+    private static readonly BoardLoginText Login = new(TestTexts.Localizer);
 
     public static TheoryData<LoginProblem> Problems { get; } =
     [

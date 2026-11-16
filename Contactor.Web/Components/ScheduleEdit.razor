@@ -12,13 +12,12 @@
 @inject GroupsHandler Groups
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
-@inject IStringLocalizer<SchedulesTexts> Texts
 
-<PageTitle>@(Common["Common.PageTitle", Common[IsNew ? "Common.Screen.NewSchedule" : "Common.Screen.EditSchedule"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts[IsNew ? "Common.Screen.NewSchedule" : "Common.Screen.EditSchedule"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <a href="@BackUrl" class="back">@Common["Common.Cancel"]</a>
+        <a href="@BackUrl" class="back">@Texts["Common.Cancel"]</a>
     </header>
 
     @if (_loaded && _target is null)
@@ -32,7 +31,7 @@
         <form class="form" @onsubmit="SaveAsync">
             <main class="content">
                 <div class="title">
-                    <h1>@Common[IsNew ? "Common.Screen.NewSchedule" : "Common.Screen.EditSchedule"]</h1>
+                    <h1>@Texts[IsNew ? "Common.Screen.NewSchedule" : "Common.Screen.EditSchedule"]</h1>
                     <p>@target.Name</p>
                 </div>
 
@@ -86,8 +85,8 @@
                     <h2 id="confirm-title">@Texts["Schedules.Delete.Title"]</h2>
                     <p>@ScheduleText.Summary(_saved!.Days, _saved.OnTime, _saved.OffTime, IsGroup)</p>
                     <div class="dialog-buttons">
-                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Common["Common.Cancel"]</button>
-                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">@Common["Common.Delete"]</button>
+                        <button type="button" class="cancel" @onclick="() => _confirmDelete = false">@Texts["Common.Cancel"]</button>
+                        <button type="button" class="confirm" disabled="@_busy" @onclick="DeleteAsync">@Texts["Common.Delete"]</button>
                     </div>
                 </div>
             </div>

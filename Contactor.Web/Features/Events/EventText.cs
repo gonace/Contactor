@@ -41,11 +41,11 @@ public sealed record EventView(bool IsPerson, string Badge, string Who, string L
 /// </summary>
 public sealed class EventText
 {
-    private readonly IStringLocalizer<EventsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
     private readonly ScheduleText _schedules;
     private readonly InputsText _inputs;
 
-    public EventText(IStringLocalizer<EventsTexts> texts, ScheduleText schedules, InputsText inputs)
+    public EventText(IStringLocalizer<Texts> texts, ScheduleText schedules, InputsText inputs)
     {
         _texts = texts;
         _schedules = schedules;

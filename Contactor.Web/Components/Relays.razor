@@ -29,12 +29,9 @@
 @inject BoardProblemText ProblemText
 @inject GroupStatusText GroupStatus
 @inject InputsText InputsText
-@inject IStringLocalizer<RelaysTexts> Texts
-@inject IStringLocalizer<BoardsTexts> BoardTexts
-@inject IStringLocalizer<GroupsTexts> GroupTexts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Relays"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Relays"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
@@ -98,10 +95,10 @@
     {
         @* Every board removed: nothing to show or switch. *@
         <div class="connection">
-            <p class="no-board" role="status">@Common["Common.NoBoard"]</p>
+            <p class="no-board" role="status">@Texts["Common.NoBoard"]</p>
             <a href="board/new" class="add-board">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                @Common["Common.AddBoard"]
+                @Texts["Common.AddBoard"]
             </a>
         </div>
     }
@@ -115,7 +112,7 @@
             @ConnectionLine(State, null)
             @if (_allOffFailedBoardId is not null)
             {
-                <p class="error" role="alert">@Common["Common.BoardNotResponding"]</p>
+                <p class="error" role="alert">@Texts["Common.BoardNotResponding"]</p>
             }
         </div>
     }
@@ -147,14 +144,14 @@
                 <section class="section board" aria-labelledby="@($"board-{board.BoardId}")" @key="board.BoardId">
                     <div class="board-head">
                         <h2 class="board-name" id="@($"board-{board.BoardId}")">@board.Name</h2>
-                        <span class="model">@(board.Model?.Name ?? Common["Common.NoModel"])@(state.HasAnswered ? $" · {Texts["Relays.OnCount", count.On, count.Active]}" : "")</span>
+                        <span class="model">@(board.Model?.Name ?? Texts["Common.NoModel"])@(state.HasAnswered ? $" · {Texts["Relays.OnCount", count.On, count.Active]}" : "")</span>
                         <button type="button" class="board-off" data-vibrate aria-label="@Texts["Relays.AllOffOn", board.Name]" disabled="@(!state.IsConnected || _busy)" @onclick="() => TurnBoardOffAsync(board.BoardId)">@Texts["Relays.AllOff"]</button>
                     </div>
                     <div class="board-line">
                         @ConnectionLine(state, board.Name)
                         @if (_allOffFailedBoardId == board.BoardId)
                         {
-                            <p class="error" role="alert">@Common["Common.BoardNotResponding"]</p>
+                            <p class="error" role="alert">@Texts["Common.BoardNotResponding"]</p>
                         }
                     </div>
                     @if (relays.Count > 0)
@@ -238,7 +235,7 @@
                 <h2 id="confirm-title">@BoardsText.ConfirmAllOff(RelaysOnNow, Boards.Count)</h2>
                 <p>@Texts["Relays.ConfirmAllOff.Text"]</p>
                 <div class="dialog-buttons">
-                    <button type="button" class="cancel" @onclick="() => _confirmAllBoards = false">@Common["Common.Cancel"]</button>
+                    <button type="button" class="cancel" @onclick="() => _confirmAllBoards = false">@Texts["Common.Cancel"]</button>
                     <button type="button" class="confirm" data-vibrate disabled="@(_busy || !AnyConnected)" @onclick="TurnOffAllBoardsAsync">@Texts["Relays.TurnOff"]</button>
                 </div>
             </div>
@@ -461,16 +458,16 @@
                             data-vibrate
                             class="toggle"
                             aria-pressed="@(groupOn ? "true" : "false")"
-                            aria-label="@Common[groupOn ? "Common.TurnOff" : "Common.TurnOn", group.Name]"
+                            aria-label="@Texts[groupOn ? "Common.TurnOff" : "Common.TurnOn", group.Name]"
                             disabled="@(!state.IsConnected || _busy || missing is not null)"
-                            @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@Common[groupOn ? "Common.Switch.On" : "Common.Switch.Off"]</button>
+                            @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@Texts[groupOn ? "Common.Switch.On" : "Common.Switch.Off"]</button>
                 }
                 else
                 {
-                    <button type="button" class="toggle unknown" aria-label="@Common["Common.NameAndState", group.Name, StatusText.Waiting]" disabled>–</button>
+                    <button type="button" class="toggle unknown" aria-label="@Texts["Common.NameAndState", group.Name, StatusText.Waiting]" disabled>–</button>
                 }
             </div>
-            <ol class="chips" aria-label="@GroupTexts["Groups.Steps"]">
+            <ol class="chips" aria-label="@Texts["Groups.Steps"]">
                 @for (var i = 0; i < group.Steps.Count; i++)
                 {
                     var step = group.Steps[i];
@@ -503,7 +500,7 @@
                 }
                 else if (_failedRelayId == relay.Id && _beingRemoved)
                 {
-                    <span class="error" role="alert">@BoardTexts["Boards.BeingRemoved"]</span>
+                    <span class="error" role="alert">@Texts["Boards.BeingRemoved"]</span>
                 }
             </a>
             @if (state.HasAnswered)
@@ -512,13 +509,13 @@
                         data-vibrate
                         class="toggle"
                         aria-pressed="@(on ? "true" : "false")"
-                        aria-label="@Common[on ? "Common.TurnOff" : "Common.TurnOn", relay.Name]"
+                        aria-label="@Texts[on ? "Common.TurnOff" : "Common.TurnOn", relay.Name]"
                         disabled="@(!state.IsConnected || _busy)"
-                        @onclick="() => ToggleAsync(relay, on)">@Common[on ? "Common.Switch.On" : "Common.Switch.Off"]</button>
+                        @onclick="() => ToggleAsync(relay, on)">@Texts[on ? "Common.Switch.On" : "Common.Switch.Off"]</button>
             }
             else
             {
-                <button type="button" class="toggle unknown" aria-label="@Common["Common.NameAndState", relay.Name, StatusText.Waiting]" disabled>–</button>
+                <button type="button" class="toggle unknown" aria-label="@Texts["Common.NameAndState", relay.Name, StatusText.Waiting]" disabled>–</button>
             }
             @if (_unconfirmed is { } unconfirmed && unconfirmed.RelayId == relay.Id)
             {
@@ -716,19 +713,19 @@
         catch (BoardClosedException)
         {
             _failedGroupId = groupId;
-            _groupError = BoardTexts["Boards.BeingRemoved"];
+            _groupError = Texts["Boards.BeingRemoved"];
         }
         catch (BoardNotConnectedException)
         {
             _failedGroupId = groupId;
-            _groupError = Common["Common.BoardNotResponding"];
+            _groupError = Texts["Common.BoardNotResponding"];
         }
         catch (Exception ex)
         {
             // An exception that leaves the handler would end the page's live connection.
             Log.LogError(ex, "Starting or stopping group {GroupId} failed", groupId);
             _failedGroupId = groupId;
-            _groupError = Common["Common.SomethingWrongTryAgain"];
+            _groupError = Texts["Common.SomethingWrongTryAgain"];
         }
         finally
         {
@@ -770,7 +767,7 @@
         {
             // An exception that leaves the handler would end the page's live connection.
             Log.LogError(ex, "Turning off every board failed");
-            _allBoardsMessage = Common["Common.SomethingWrongTryAgain"];
+            _allBoardsMessage = Texts["Common.SomethingWrongTryAgain"];
         }
         finally
         {

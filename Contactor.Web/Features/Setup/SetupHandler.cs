@@ -48,8 +48,7 @@ public sealed class SetupHandler
     private readonly LocalClock _clock;
     private readonly TimeProvider _time;
     private readonly ILogger<SetupHandler> _logger;
-    private readonly IStringLocalizer<SetupTexts> _texts;
-    private readonly IStringLocalizer<RelaysTexts> _relayTexts;
+    private readonly IStringLocalizer<Texts> _texts;
 
     // Once done it stays done, so the relay list needn't ask the database on every visit.
     private volatile bool _done;
@@ -63,11 +62,9 @@ public sealed class SetupHandler
         LocalClock clock,
         TimeProvider time,
         ILogger<SetupHandler> logger,
-        IStringLocalizer<SetupTexts> texts,
-        IStringLocalizer<RelaysTexts> relayTexts)
+        IStringLocalizer<Texts> texts)
     {
         _texts = texts;
-        _relayTexts = relayTexts;
         _dbFactory = dbFactory;
         _choice = choice;
         _registry = registry;
@@ -161,7 +158,7 @@ public sealed class SetupHandler
     // The name an empty field gives a relay, in the app's language, as its placeholder shows it.
     private string DefaultName(int channel)
     {
-        return _relayTexts["Relays.DefaultName", channel];
+        return _texts["Relays.DefaultName", channel];
     }
 
     /// <summary>

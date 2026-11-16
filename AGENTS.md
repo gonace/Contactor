@@ -50,7 +50,7 @@ Contactor.Boards.Velleman/  # The Velleman VM201 (packet codec), VM204 and VM208
 Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and its adapters (WaveshareBoard, WaveshareConnection, WaveshareTraffic). No web/EF. README.md: its protocol
 Contactor.Web/            # Blazor app, EF Core, background services, identity
   Persistence/              # DbContext, entities (one file per entity) and migrations; not a feature
-  Resources/                # The UI's texts: one .resx per area with its marker class (CommonTexts); not a feature
+  Resources/                # The UI's texts: one .resx per language (Texts.resx, Texts.sv.resx), sorted by key, with the marker class Texts; not a feature
   Features/<Feature>/       # One folder per feature; Features/Boards is the board catalogue, Features/<Board> what only that board has
 Contactor.Simulator/      # Development: simulated boards, each on its own port, with a page to drive them and see their traffic
 Contactor.Demo/           # The public demo: a proxy that gives each visitor their own app and simulator, each a process on 127.0.0.1, and the Workshop template ("Skip setup"). Dockerfile: its image (ghcr.io/gonace/contactor-demo)

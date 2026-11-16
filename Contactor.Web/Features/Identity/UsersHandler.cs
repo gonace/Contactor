@@ -17,9 +17,9 @@ public sealed class UsersHandler
 {
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly RelayChanges _changes;
-    private readonly IStringLocalizer<SettingsTexts> _texts;
+    private readonly IStringLocalizer<Texts> _texts;
 
-    public UsersHandler(IDbContextFactory<ContactorDbContext> dbFactory, RelayChanges changes, IStringLocalizer<SettingsTexts> texts)
+    public UsersHandler(IDbContextFactory<ContactorDbContext> dbFactory, RelayChanges changes, IStringLocalizer<Texts> texts)
     {
         _texts = texts;
         _dbFactory = dbFactory;

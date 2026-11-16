@@ -67,7 +67,7 @@ public sealed record UpdateBoxView(
     string? LogId)
 {
     /// <summary>The box for <paramref name="snapshot"/>, at <paramref name="clock"/>'s time, in the app's language.</summary>
-    public static UpdateBoxView For(UpdateSnapshot snapshot, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
+    public static UpdateBoxView For(UpdateSnapshot snapshot, LocalClock clock, IStringLocalizer<Texts> texts)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(clock);
@@ -154,7 +154,7 @@ public sealed record UpdateBoxView(
     }
 
     // How the update ended, in plain words; null for one that has nothing to say (nothing newer, nothing offered).
-    private static UpdateResultView? ResultFor(HelperStatus status, bool stale, string? offered, string? by, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
+    private static UpdateResultView? ResultFor(HelperStatus status, bool stale, string? offered, string? by, LocalClock clock, IStringLocalizer<Texts> texts)
     {
         string to = status.To ?? offered ?? texts["Updates.NewVersion"];
         if (stale)
@@ -195,7 +195,7 @@ public sealed record UpdateBoxView(
         return new UpdateResultView(title, text, IsAlert: true, IsDone: false);
     }
 
-    private static string Room(HelperStatus status, IStringLocalizer<UpdatesTexts> texts)
+    private static string Room(HelperStatus status, IStringLocalizer<Texts> texts)
     {
         return status is { NeedMegabytes: { } need, FreeMegabytes: { } free }
             ? texts["Updates.Space.Needs", texts["Updates.Gigabytes", need / 1024.0], texts["Updates.Gigabytes", free / 1024.0]]
@@ -209,7 +209,7 @@ public sealed record UpdateBoxView(
     }
 
     // The steps, each done, under way or still to come.
-    private static IReadOnlyList<UpdateStepView> StepsFor(string current, string to, IStringLocalizer<UpdatesTexts> texts)
+    private static IReadOnlyList<UpdateStepView> StepsFor(string current, string to, IStringLocalizer<Texts> texts)
     {
         var at = current switch
         {
@@ -232,7 +232,7 @@ public sealed record UpdateBoxView(
     }
 
     // "Checked today at 06:12.", or that it couldn't be checked.
-    private static string? Checked(ReleaseCheck releases, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
+    private static string? Checked(ReleaseCheck releases, LocalClock clock, IStringLocalizer<Texts> texts)
     {
         if (releases.Failed || releases.CheckedUtc is null)
         {
@@ -244,7 +244,7 @@ public sealed record UpdateBoxView(
         return texts["Updates.Checked", Day(releases.CheckedUtc.Value, clock, texts), Time(releases.CheckedUtc.Value, clock)];
     }
 
-    private static string Day(DateTime utc, LocalClock clock, IStringLocalizer<UpdatesTexts> texts)
+    private static string Day(DateTime utc, LocalClock clock, IStringLocalizer<Texts> texts)
     {
         var local = clock.ToLocal(utc).Date;
         var today = clock.Now.Date;

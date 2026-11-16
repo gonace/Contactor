@@ -4,8 +4,8 @@
 @using Contactor.Web.Components
 @using Microsoft.Extensions.Localization
 @using Contactor.Web.Resources
-@* The shared texts, in every component; an area's own texts are injected where they are used. *@
-@inject IStringLocalizer<CommonTexts> Common
+@* The UI's texts, in every component. *@
+@inject IStringLocalizer<Texts> Texts
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Schedules
 @* The event and schedule words several screens show, e.g. a length ("5 min") or a schedule's days ("Mon–Fri"). The

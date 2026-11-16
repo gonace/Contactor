@@ -12,14 +12,13 @@
 @inject RelayChanges Changes
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
-@inject IStringLocalizer<DebugTexts> Texts
 @inject AppLanguage Language
 
-<PageTitle>@(Common["Common.PageTitle", Common["Common.Screen.Debug"]])</PageTitle>
+<PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Debug"]])</PageTitle>
 
 <div class="screen">
     <header class="header">
-        <h1>@Common["Common.Screen.Debug"]</h1>
+        <h1>@Texts["Common.Screen.Debug"]</h1>
         @if (Several)
         {
             <p class="hint">@Texts["Debug.Hint.Several", BoardTrace.Capacity]</p>
