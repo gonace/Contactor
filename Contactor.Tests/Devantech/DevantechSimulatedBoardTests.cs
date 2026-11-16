@@ -34,7 +34,7 @@ public sealed class DevantechSimulatedBoardTests
     }
 
     [Fact]
-    public async Task Should_LayOutTheEth1610_AsItsManualSpecifies()
+    public async Task Should_SimulateTheEth1610_RelayAndInputLayout()
     {
         await using var simulator = Started(DevantechModels.Eth1610);
         await simulator.SwitchRelayAsync(1, true);
