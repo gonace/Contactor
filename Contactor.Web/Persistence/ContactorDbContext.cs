@@ -27,6 +27,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<Input> Inputs => Set<Input>();
 
+    public DbSet<AnalogInput> AnalogInputs => Set<AnalogInput>();
+
     public DbSet<Board> Boards => Set<Board>();
 
     public DbSet<BoardRuntime> BoardRuntimes => Set<BoardRuntime>();
@@ -100,6 +102,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<EventLogEntry>(ConfigureEventLog);
         modelBuilder.Entity<RelayRuntime>(ConfigureRelayRuntime);
         modelBuilder.Entity<Input>(ConfigureInput);
+        modelBuilder.Entity<AnalogInput>(ConfigureAnalogInput);
         modelBuilder.Entity<Board>(ConfigureBoard);
         modelBuilder.Entity<BoardRuntime>(ConfigureBoardRuntime);
         modelBuilder.Entity<RelayGroup>(ConfigureRelayGroup);
@@ -283,6 +286,27 @@ public sealed class ContactorDbContext : DbContext
         input.HasIndex(i => new { i.BoardId, i.Channel }).IsUnique();
         input.HasOne<Board>().WithMany().HasForeignKey(i => i.BoardId).OnDelete(DeleteBehavior.Cascade);
         input.Property(i => i.Name).HasMaxLength(Input.NameMaxLength);
+    }
+
+    private static void ConfigureAnalogInput(EntityTypeBuilder<AnalogInput> input)
+    {
+        var units = string.Join(", ", AnalogUnits.All.Select(u => $"'{u}'"));
+        input.ToTable("AnalogInput", t =>
+        {
+            t.HasCheckConstraint("CK_AnalogInput_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
+            t.HasCheckConstraint("CK_AnalogInput_Unit", $"\"Unit\" IN ({units})");
+
+            // A scale has both points, or there is none.
+            t.HasCheckConstraint(
+                "CK_AnalogInput_Scale",
+                "(\"Volts1\" IS NULL AND \"Value1\" IS NULL AND \"Volts2\" IS NULL AND \"Value2\" IS NULL) OR " +
+                "(\"Volts1\" IS NOT NULL AND \"Value1\" IS NOT NULL AND \"Volts2\" IS NOT NULL AND \"Value2\" IS NOT NULL)");
+        });
+        input.HasIndex(i => new { i.BoardId, i.Channel }).IsUnique();
+        input.HasOne<Board>().WithMany().HasForeignKey(i => i.BoardId).OnDelete(DeleteBehavior.Cascade);
+        input.Property(i => i.Name).HasMaxLength(AnalogInput.NameMaxLength);
+        input.Property(i => i.Unit).HasMaxLength(AnalogUnits.MaxLength);
+        input.Property(i => i.UnitText).HasMaxLength(AnalogInput.UnitTextMaxLength);
     }
 
     private static void ConfigureInputAction(EntityTypeBuilder<InputAction> action)

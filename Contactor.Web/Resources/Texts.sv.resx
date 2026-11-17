@@ -12,6 +12,36 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Analog.Missing" xml:space="preserve">
+    <value>Den analoga ingången finns inte.</value>
+  </data>
+  <data name="Analog.Save.BothPoints" xml:space="preserve">
+    <value>Fyll i skalans båda punkter, eller ingen av dem.</value>
+  </data>
+  <data name="Analog.Save.ChooseUnit" xml:space="preserve">
+    <value>Välj en enhet.</value>
+  </data>
+  <data name="Analog.Save.EnterUnit" xml:space="preserve">
+    <value>Skriv enheten.</value>
+  </data>
+  <data name="Analog.Save.NeedsScale" xml:space="preserve">
+    <value>Den här enheten behöver en skala: fyll i båda punkterna.</value>
+  </data>
+  <data name="Analog.Save.SameValues" xml:space="preserve">
+    <value>De två punkterna behöver olika värden.</value>
+  </data>
+  <data name="Analog.Save.SameVolts" xml:space="preserve">
+    <value>De två punkterna behöver olika spänningar.</value>
+  </data>
+  <data name="Analog.Save.UnitTooLong" xml:space="preserve">
+    <value>Enheten får vara högst {0} tecken.</value>
+  </data>
+  <data name="Analog.Save.ValueRange" xml:space="preserve">
+    <value>Ett värde måste vara från {0} till {1}.</value>
+  </data>
+  <data name="Analog.Save.VoltsRange" xml:space="preserve">
+    <value>En spänning måste vara från 0 till {0} V.</value>
+  </data>
   <data name="Boards.Address" xml:space="preserve">
     <value>Adress</value>
   </data>

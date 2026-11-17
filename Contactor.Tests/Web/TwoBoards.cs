@@ -50,7 +50,7 @@ internal sealed class TwoBoards : IAsyncDisposable
             barnId = row.Id;
         }
 
-        await app.Services.SeedBoardAsync(barnId, barn.Capabilities.RelayCount, barn.Capabilities.InputCount, TestContext.Current.CancellationToken);
+        await app.Services.SeedBoardAsync(barnId, barn.Capabilities, TestContext.Current.CancellationToken);
         await using (var db = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken))
         {
             await db.Relays.Where(r => r.BoardId == barnId && r.Channel == 1).ExecuteUpdateAsync(r => r.SetProperty(x => x.Name, "Barn light"), TestContext.Current.CancellationToken);

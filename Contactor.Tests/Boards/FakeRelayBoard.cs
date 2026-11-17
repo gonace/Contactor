@@ -11,9 +11,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     private readonly Lock _lock = new();
     private BoardState _state;
 
-    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null)
+    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null, AnalogAbility? analog = null)
     {
-        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true, Pulse: pulse);
+        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true, analog, pulse);
         _state = new BoardState(connected, ChannelMask.None, ChannelMask.None, connected ? DateTimeOffset.UnixEpoch : null);
     }
 

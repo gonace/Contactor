@@ -81,7 +81,7 @@ public sealed partial class BoardChoice : IDisposable
         {
             if (model is not null)
             {
-                await _app.SeedBoardAsync(model.Capabilities.RelayCount, model.Capabilities.InputCount, cancellationToken);
+                await _app.SeedBoardAsync(model.Capabilities, cancellationToken);
             }
 
             await _registry.LoadAsync(cancellationToken);
@@ -122,7 +122,7 @@ public sealed partial class BoardChoice : IDisposable
         {
             // Rows first: from the new model on, the screens and services count on a row for every relay. The board's
             // row comes with them.
-            await _app.SeedBoardAsync(model.Capabilities.RelayCount, model.Capabilities.InputCount, cancellationToken);
+            await _app.SeedBoardAsync(model.Capabilities, cancellationToken);
             int boardId;
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {

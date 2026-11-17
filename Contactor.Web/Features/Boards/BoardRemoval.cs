@@ -347,6 +347,7 @@ public sealed partial class BoardRemoval : IDisposable
         await db.RelayRuntimes.Where(r => of.RelayIds.Contains(r.RelayId)).ExecuteDeleteAsync(cancellationToken);
         await of.Relays.ExecuteDeleteAsync(cancellationToken);
         await db.Inputs.Where(i => i.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
+        await db.AnalogInputs.Where(i => i.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
         await db.EventLog.Where(e => e.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
         await db.BoardRuntimes.Where(r => r.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
         await KeepNextBoardsAddressAsync(db, boardId, cancellationToken);

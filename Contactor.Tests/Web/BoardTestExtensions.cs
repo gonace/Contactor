@@ -28,7 +28,7 @@ internal static class BoardTestExtensions
         var cancel = TestContext.Current.CancellationToken;
         if (seed)
         {
-            await services.SeedBoardAsync(board.Capabilities.RelayCount, board.Capabilities.InputCount, cancel);
+            await services.SeedBoardAsync(board.Capabilities, cancel);
         }
 
         int boardId;

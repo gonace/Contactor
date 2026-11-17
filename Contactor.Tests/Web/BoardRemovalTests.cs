@@ -27,10 +27,13 @@ public sealed class BoardRemovalTests
     [Fact]
     public async Task Should_DeleteEverythingAboutTheBoard_AndNothingOfAnother()
     {
-        await using var boards = await TwoBoards.StartAsync();
+        // Both boards with analog inputs: Barn's own, and rows for the first board's.
+        await using var boards = await TwoBoards.StartAsync(new FakeRelayBoard(relayCount: 4, inputCount: 2, analog: new AnalogAbility(2, 1023, 5m)));
+        await boards.App.Services.SeedBoardAsync(1, new BoardCapabilities(8, 1, true, new AnalogAbility(1, 1023, 5m)), Cancel);
         await SeedAsync(boards, 1);
         await SeedAsync(boards, boards.BarnId);
         var firstBefore = await CountAsync(boards, 1);
+        Assert.Equal((1, 2), (firstBefore.AnalogInputs, (await CountAsync(boards, boards.BarnId)).AnalogInputs));
 
         // Board 1's input acting on one of Barn's relays goes with Barn; board 1's own actions stay.
         int crossId;
@@ -86,6 +89,8 @@ public sealed class BoardRemovalTests
             await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER keep_board BEFORE DELETE ON \"Board\" BEGIN SELECT RAISE(ABORT, 'kept'); END;", Cancel);
         }
 
+        // And the rows of that model, as a VM201's would have: loaded again, a board gets the rows its model lacks.
+        await boards.App.Services.SeedBoardAsync(boards.BarnId, BoardCatalogue.Find("vm201")!.Model.Capabilities, Cancel);
         var before = await CountAsync(boards, boards.BarnId);
         var removal = boards.App.Services.GetRequiredService<BoardRemoval>();
         await Assert.ThrowsAnyAsync<Exception>(() => removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
@@ -691,7 +696,8 @@ public sealed class BoardRemovalTests
             await db.Schedules.CountAsync(s => (s.RelayId != null && relayIds.Contains(s.RelayId.Value)) || (s.GroupId != null && groupIds.Contains(s.GroupId.Value)), Cancel),
             await db.InputActions.CountAsync(a => inputIds.Contains(a.InputId) || (a.RelayId != null && relayIds.Contains(a.RelayId.Value)) || (a.GroupId != null && groupIds.Contains(a.GroupId.Value)), Cancel),
             await db.EventLog.CountAsync(e => e.BoardId == boardId, Cancel),
-            await db.BoardRuntimes.CountAsync(r => r.BoardId == boardId, Cancel));
+            await db.BoardRuntimes.CountAsync(r => r.BoardId == boardId, Cancel),
+            await db.AnalogInputs.CountAsync(i => i.BoardId == boardId, Cancel));
     }
 
     private static async Task<int> RelayIdAsync(TwoBoards boards, int boardId, int channel)
@@ -700,8 +706,8 @@ public sealed class BoardRemovalTests
         return await db.Relays.Where(r => r.BoardId == boardId && r.Channel == channel).Select(r => r.Id).SingleAsync(Cancel);
     }
 
-    private sealed record Counts(int Relays, int RelayRuntimes, int Inputs, int Groups, int Members, int GroupRuntimes, int Schedules, int InputActions, int Events, int BoardRuntimes)
+    private sealed record Counts(int Relays, int RelayRuntimes, int Inputs, int Groups, int Members, int GroupRuntimes, int Schedules, int InputActions, int Events, int BoardRuntimes, int AnalogInputs)
     {
-        public static Counts None { get; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        public static Counts None { get; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 }

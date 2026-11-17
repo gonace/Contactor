@@ -16,6 +16,41 @@ public sealed class BoardRegistryTests
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
+    // Boards saved before this version seeded analog inputs: each gets the rows its model lacks when it is loaded, the
+    // first board and the others alike, and rows already there keep their names and scales.
+    [Fact]
+    public async Task Should_SeedTheRowsABoardLacks_WhenItIsLoaded_AndKeepThoseItHas()
+    {
+        await using var database = await DatabaseAsync();
+        var first = await AddRowAsync(database, type: "vm201", sortOrder: 1, name: "Workshop");
+        var garage = await AddRowAsync(database, type: "vm204", sortOrder: 2, name: "Garage");
+        var barn = await AddRowAsync(database, type: "vm204", sortOrder: 3, name: "Barn");
+        var vm204 = Vm204Model.Model.Capabilities;
+        await database.Services.SeedBoardAsync(first, 8, 1, Cancel);
+        await database.Services.SeedBoardAsync(garage, vm204.RelayCount, vm204.InputCount, Cancel);
+        await database.Services.SeedBoardAsync(barn, vm204, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var input = await db.AnalogInputs.SingleAsync(i => i.BoardId == barn && i.Channel == 1, Cancel);
+            (input.Name, input.Unit, input.Volts1, input.Value1, input.Volts2, input.Value2) = ("Paint shop", AnalogUnits.Celsius, 0m, -20m, 5m, 80m);
+            await db.SaveChangesAsync(Cancel);
+            Assert.False(await db.AnalogInputs.AnyAsync(i => i.BoardId == garage, Cancel));
+        }
+
+        await Registry(database).LoadAsync(Cancel);
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var rows = await db.AnalogInputs.AsNoTracking().OrderBy(i => i.BoardId).ThenBy(i => i.Channel).ToListAsync(Cancel);
+            Assert.Equal(
+                [.. Enumerable.Range(1, vm204.AnalogInputCount).Select(c => (garage, c, $"Analog {c}", false)),
+                 .. Enumerable.Range(1, vm204.AnalogInputCount).Select(c => (barn, c, c == 1 ? "Paint shop" : $"Analog {c}", c == 1))],
+                rows.Select(i => (i.BoardId, i.Channel, i.Name, i.HasScale)));
+            Assert.Equal((AnalogUnits.Celsius, 80m), (rows.Single(i => i.BoardId == barn && i.Channel == 1).Unit, rows.Single(i => i.BoardId == barn && i.Channel == 1).Value2));
+            Assert.Equal(8, await db.Relays.CountAsync(r => r.BoardId == first, Cancel));
+        }
+    }
+
     [Fact]
     public async Task Should_HaveNoRelaysAndRefuseCommands_BeforeItsModelIsChosen()
     {

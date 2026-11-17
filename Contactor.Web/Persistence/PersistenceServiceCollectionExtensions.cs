@@ -83,17 +83,44 @@ public static class PersistenceServiceCollectionExtensions
     }
 
     /// <summary>
+    /// As <see cref="SeedBoardAsync(IServiceProvider, int, int, CancellationToken)"/>, for a board with what
+    /// <paramref name="capabilities"/> says: its relays, inputs and analog inputs.
+    /// </summary>
+    public static Task SeedBoardAsync(this IServiceProvider services, BoardCapabilities capabilities, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        return services.SeedFirstBoardAsync(capabilities.RelayCount, capabilities.InputCount, capabilities.AnalogInputCount, cancellationToken);
+    }
+
+    /// <summary>
+    /// As <see cref="SeedBoardAsync(IServiceProvider, BoardCapabilities, CancellationToken)"/>, for the board on this
+    /// row, which must exist.
+    /// </summary>
+    public static Task SeedBoardAsync(this IServiceProvider services, int boardId, BoardCapabilities capabilities, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        return services.SeedBoardAsync(boardId, capabilities.RelayCount, capabilities.InputCount, capabilities.AnalogInputCount, cancellationToken);
+    }
+
+    /// <summary>
     /// Adds the rows a board with <paramref name="relayCount"/> relays and <paramref name="inputCount"/> inputs needs:
     /// the board itself and its runtime row when there is none yet, and a relay, its runtime row and an input for each
     /// channel from 1, found by its channel; the database gives a new row its id, which needn't be its channel.
-    /// Existing rows are left as they are, also relays and inputs above the count, which a board with more left behind:
-    /// their events still point to them. A board with neither relays nor inputs (none chosen yet) adds nothing.
+    /// Existing rows are left as they are, also relays, inputs and analog inputs above the count, which a board with
+    /// more left behind: their events still point to them. A board with neither relays nor inputs (none chosen yet) adds
+    /// nothing. A board with analog inputs is seeded through its capabilities
+    /// (<see cref="SeedBoardAsync(IServiceProvider, BoardCapabilities, CancellationToken)"/>), which adds one for each.
     /// </summary>
-    public static async Task SeedBoardAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
+    public static Task SeedBoardAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
+    {
+        return services.SeedFirstBoardAsync(relayCount, inputCount, analogCount: 0, cancellationToken);
+    }
+
+    private static async Task SeedFirstBoardAsync(this IServiceProvider services, int relayCount, int inputCount, int analogCount, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(services);
-        CheckCounts(relayCount, inputCount);
-        if (relayCount == 0 && inputCount == 0)
+        CheckCounts(relayCount, inputCount, analogCount);
+        if (relayCount == 0 && inputCount == 0 && analogCount == 0)
         {
             return;
         }
@@ -114,18 +141,23 @@ public static class PersistenceServiceCollectionExtensions
             boardId = board.Id;
         }
 
-        await services.SeedBoardAsync(boardId, relayCount, inputCount, cancellationToken);
+        await services.SeedBoardAsync(boardId, relayCount, inputCount, analogCount, cancellationToken);
     }
 
     /// <summary>
     /// As <see cref="SeedBoardAsync(IServiceProvider, int, int, CancellationToken)"/>, for the board on this row, which
     /// must exist: its runtime row, and a relay, its runtime row and an input for each channel from 1.
     /// </summary>
-    public static async Task SeedBoardAsync(this IServiceProvider services, int boardId, int relayCount, int inputCount, CancellationToken cancellationToken)
+    public static Task SeedBoardAsync(this IServiceProvider services, int boardId, int relayCount, int inputCount, CancellationToken cancellationToken)
+    {
+        return services.SeedBoardAsync(boardId, relayCount, inputCount, analogCount: 0, cancellationToken);
+    }
+
+    private static async Task SeedBoardAsync(this IServiceProvider services, int boardId, int relayCount, int inputCount, int analogCount, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(services);
-        CheckCounts(relayCount, inputCount);
-        if (relayCount == 0 && inputCount == 0)
+        CheckCounts(relayCount, inputCount, analogCount);
+        if (relayCount == 0 && inputCount == 0 && analogCount == 0)
         {
             return;
         }
@@ -168,6 +200,15 @@ public static class PersistenceServiceCollectionExtensions
             }
         }
 
+        var analogInputs = await db.AnalogInputs.Where(i => i.BoardId == board.Id).Select(i => i.Channel).ToListAsync(cancellationToken);
+        for (var channel = 1; channel <= analogCount; channel++)
+        {
+            if (!analogInputs.Contains(channel))
+            {
+                db.AnalogInputs.Add(new AnalogInput { BoardId = board.Id, Channel = channel, Name = AnalogInput.DefaultName(channel) });
+            }
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         // One runtime row per relay from the start, so two writers never both try to insert the first one.
@@ -182,8 +223,10 @@ public static class PersistenceServiceCollectionExtensions
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private static void CheckCounts(int relayCount, int inputCount)
+    private static void CheckCounts(int relayCount, int inputCount, int analogCount = 0)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(analogCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(analogCount, ChannelMask.MaxChannels);
         ArgumentOutOfRangeException.ThrowIfNegative(relayCount);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(relayCount, ChannelMask.MaxChannels);
         ArgumentOutOfRangeException.ThrowIfNegative(inputCount);
