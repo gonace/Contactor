@@ -110,9 +110,7 @@ public sealed class OwnRulesHandlerTests
                 time.Advance(TimeSpan.FromSeconds(1));
                 return false;
             });
-            var asked = simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.StatusRequest);
-            time.Advance(TimeSpan.FromSeconds(15));
-            await Wait.UntilAsync(() => simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.StatusRequest) > asked);
+            await OwnRulesServiceTests.KeepAliveAsync(simulator, time);
             Assert.Equal("No contact with the relay board. Nothing was turned off.", message);
         }
         finally

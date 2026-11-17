@@ -266,11 +266,10 @@ public sealed class OwnRulesServiceTests
         {
             await Wait.UntilAsync(() => Found(database) == 2);
 
-            for (var i = 0; i < 40; i++)
+            var start = time.GetUtcNow();
+            while (time.GetUtcNow() - start < TimeSpan.FromMinutes(10))
             {
-                var asked = StatusRequests(simulator);
-                time.Advance(TimeSpan.FromSeconds(15));
-                await Wait.UntilAsync(() => StatusRequests(simulator) > asked);
+                await KeepAliveAsync(simulator, time);
             }
 
             simulator.DropConnections();
@@ -287,9 +286,8 @@ public sealed class OwnRulesServiceTests
                 return false;
             });
 
-            var before = StatusRequests(simulator);
-            time.Advance(TimeSpan.FromSeconds(15));
-            await Wait.UntilAsync(() => StatusRequests(simulator) > before && client.State.TimerMask == 0x14);
+            await KeepAliveAsync(simulator, time);
+            await Wait.UntilAsync(() => client.State.TimerMask == 0x14);
         }
         finally
         {
@@ -338,6 +336,25 @@ public sealed class OwnRulesServiceTests
     {
         using var db = database.Factory.CreateDbContext();
         return db.EventLog.Count(e => e.Action == EventActions.BoardOwnRuleFound);
+    }
+
+    /// <summary>
+    /// Moves the app's clock a second at a time until the client's next keep-alive reaches the simulator: the client
+    /// arms its next wait only after the last one ended, so one big step could pass before it is armed.
+    /// </summary>
+    internal static async Task KeepAliveAsync(Vm201Simulator simulator, ManualTimeProvider time)
+    {
+        var asked = StatusRequests(simulator);
+        await Wait.UntilAsync(() =>
+        {
+            if (StatusRequests(simulator) > asked)
+            {
+                return true;
+            }
+
+            time.Advance(TimeSpan.FromSeconds(1));
+            return false;
+        });
     }
 
     private static int StatusRequests(Vm201Simulator simulator)
