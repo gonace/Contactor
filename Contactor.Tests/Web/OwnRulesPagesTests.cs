@@ -22,6 +22,9 @@ public sealed partial class OwnRulesPagesTests
     private static readonly OwnRule Timer3 = new(3, OwnRuleKind.Timer);
     private static readonly OwnRule Timer5 = new(5, OwnRuleKind.Timer);
 
+    // What follows the warning: the cards with one board, a board section's headings with several.
+    private static readonly string[] BoxEnds = ["<main", "<h3"];
+
     // 07:12 in the app's time zone (Europe/Stockholm).
     private static readonly DateTimeOffset NowUtc = new(2026, 11, 17, 6, 12, 0, TimeSpan.Zero);
 
@@ -388,7 +391,7 @@ public sealed partial class OwnRulesPagesTests
     {
         var start = html.IndexOf("class=\"offline own-rules\"", StringComparison.Ordinal);
         Assert.True(start >= 0, "No warning.");
-        var end = new[] { "<main", "<h3" }.Select(t => html.IndexOf(t, start, StringComparison.Ordinal)).Where(i => i >= 0).Min();
+        var end = BoxEnds.Select(t => html.IndexOf(t, start, StringComparison.Ordinal)).Where(i => i >= 0).Min();
         return html[start..end];
     }
 
