@@ -4,15 +4,23 @@ namespace Contactor.Boards.Velleman;
 
 /// <summary>
 /// The VM204 as an <see cref="IRelayBoard"/>: 4 relays, 4 digital inputs and an analog input, which it never reports
-/// by itself, so <see cref="Vm204Client"/> polls it. This only translates the client's state and commands.
+/// by itself, so <see cref="Vm204Client"/> polls it. This only translates the client's state and commands. The analog
+/// input comes with every status; a change in it alone comes as <see cref="AnalogChanged"/>.
 /// </summary>
 public sealed class Vm204Board : IRelayBoard
 {
+    /// <summary>
+    /// The analog input: 10 bit, 1023 at 6.6 V at the terminal. The firmware (V1.1, <c>Main/analog.c</c>) reads it as
+    /// <c>n / 1023 × 3.3 × 2</c>; the manual (December 2016, "D. Analog threshold", p. 19) says 6.6 V "=1024", one count
+    /// off. The firmware's is what the board's own page shows, so the app shows the same.
+    /// </summary>
+    public static readonly AnalogAbility Vm204Analog = new(Vm204Api.AnalogInputCount, Vm204Api.AnalogMaxCounts, Vm204Api.AnalogFullScaleVolts);
+
     public static readonly BoardCapabilities Vm204Capabilities = new(
         Vm204Api.RelayCount,
         InputCount: Vm204Api.InputCount,
         ReportsChanges: false,
-        AnalogInputCount: 1);
+        Analog: Vm204Analog);
 
     private readonly Vm204Client _client;
     private readonly ILogger<Vm204Board> _logger;
@@ -24,9 +32,12 @@ public sealed class Vm204Board : IRelayBoard
         _client = client;
         _logger = logger;
         _client.StateChanged += OnStateChanged;
+        _client.AnalogChanged += OnAnalogChanged;
     }
 
     public event EventHandler<BoardState>? StateChanged;
+
+    public event EventHandler<BoardState>? AnalogChanged;
 
     public BoardCapabilities Capabilities => Vm204Capabilities;
 
@@ -57,11 +68,15 @@ public sealed class Vm204Board : IRelayBoard
         return Task.CompletedTask;
     }
 
-    /// <summary>The VM204's state as a <see cref="BoardState"/>; the analog input isn't part of it.</summary>
+    /// <summary>
+    /// The VM204's state as a <see cref="BoardState"/>. Its analog input is unknown (null) before the first answer; an
+    /// answer without it, or with a value outside 0–1023, has no reading for it.
+    /// </summary>
     public static BoardState ToBoardState(Vm204State state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem);
+        var analog = state.Status is { } status ? new AnalogReadings([Vm204Analog.Check(status.Analog)]) : null;
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem, analog);
     }
 
     /// <summary>The board's relay mask: relays 1–4 only.</summary>
@@ -75,10 +90,20 @@ public sealed class Vm204Board : IRelayBoard
         return (byte)relays.Bits;
     }
 
-    // Each subscriber on its own, as for the VM201: one that fails must not keep the state from the others.
     private void OnStateChanged(object? sender, Vm204State state)
     {
-        if (StateChanged is not { } handlers)
+        Raise(StateChanged, state);
+    }
+
+    private void OnAnalogChanged(object? sender, Vm204State state)
+    {
+        Raise(AnalogChanged, state);
+    }
+
+    // Each subscriber on its own, as for the VM201: one that fails must not keep the state from the others.
+    private void Raise(EventHandler<BoardState>? handlers, Vm204State state)
+    {
+        if (handlers is null)
         {
             return;
         }

@@ -80,6 +80,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     public event EventHandler<BoardState>? StateChanged;
 
     /// <inheritdoc/>
+    public event EventHandler<BoardState>? AnalogChanged;
+
+    /// <inheritdoc/>
     public event EventHandler<BoardTraceEntry>? Traced;
 
     /// <summary>The board's row (<see cref="Board.Id"/>).</summary>
@@ -418,11 +421,13 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
             {
                 old = _current;
                 board.Board.StateChanged += OnStateChanged;
+                board.Board.AnalogChanged += OnAnalogChanged;
                 board.Traffic.Traced += OnTraced;
                 Volatile.Write(ref _current, next);
                 if (old is not null)
                 {
                     old.Board.Board.StateChanged -= OnStateChanged;
+                    old.Board.Board.AnalogChanged -= OnAnalogChanged;
                     old.Board.Traffic.Traced -= OnTraced;
                     old.Retired = true;
                 }
@@ -446,7 +451,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         replaced!.TrySetResult();
         lock (_stateLock)
         {
-            Raise(board.Board.State);
+            Raise(StateChanged, board.Board.State);
         }
 
         if (disposeOld)
@@ -482,6 +487,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
             else
             {
                 slot.Board.Board.StateChanged -= OnStateChanged;
+                slot.Board.Board.AnalogChanged -= OnAnalogChanged;
                 slot.Board.Traffic.Traced -= OnTraced;
                 slot.Retired = true;
                 dispose = !slot.Running;
@@ -573,7 +579,19 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         {
             if (ReferenceEquals(sender, Active?.Board))
             {
-                Raise(state);
+                Raise(StateChanged, state);
+            }
+        }
+    }
+
+    // As OnStateChanged, under the same lock, so a replaced model's reading can't come after the new model's state.
+    private void OnAnalogChanged(object? sender, BoardState state)
+    {
+        lock (_stateLock)
+        {
+            if (ReferenceEquals(sender, Active?.Board))
+            {
+                Raise(AnalogChanged, state);
             }
         }
     }
@@ -589,9 +607,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     }
 
     // Each subscriber on its own, as the boards do: one that fails must not keep the state from the others.
-    private void Raise(BoardState state)
+    private void Raise(EventHandler<BoardState>? handlers, BoardState state)
     {
-        if (StateChanged is not { } handlers)
+        if (handlers is null)
         {
             return;
         }

@@ -12,18 +12,19 @@ public sealed class DevantechBoardTests
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Theory]
-    [InlineData("devantech-eth002", "Devantech ETH002-B", 2, 0, 0, 18)]
-    [InlineData("devantech-eth008", "Devantech ETH008-B", 8, 0, 0, 19)]
-    [InlineData("devantech-eth1610", "Devantech ETH1610", 10, 0, 16, 52)]
-    [InlineData("devantech-eth484", "Devantech ETH484-B", 4, 8, 4, 20)]
-    [InlineData("devantech-eth8020", "Devantech ETH8020-B", 20, 8, 8, 21)]
-    public void Should_DescribeEachModel(string id, string name, int relays, int inputs, int analog, byte moduleId)
+    [InlineData("devantech-eth002", "Devantech ETH002-B", 2, 0, 0, 0, 18)]
+    [InlineData("devantech-eth008", "Devantech ETH008-B", 8, 0, 0, 0, 19)]
+    [InlineData("devantech-eth1610", "Devantech ETH1610", 10, 0, 16, 5.0, 52)]
+    [InlineData("devantech-eth484", "Devantech ETH484-B", 4, 8, 4, 3.3, 20)]
+    [InlineData("devantech-eth8020", "Devantech ETH8020-B", 20, 8, 8, 5.0, 21)]
+    public void Should_DescribeEachModel(string id, string name, int relays, int inputs, int analog, double fullScaleVolts, byte moduleId)
     {
         var model = Assert.Single(DevantechModels.All, m => m.Id == id);
 
         Assert.Equal(name, model.Name);
         var pulse = new PulseAbility(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(25_500), TimeSpan.FromMilliseconds(100));
-        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog, Pulse: pulse), model.Capabilities);
+        var analogAbility = analog == 0 ? null : new AnalogAbility(analog, 1023, (decimal)fullScaleVolts);
+        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Analog: analogAbility, Pulse: pulse), model.Capabilities);
         Assert.Equal(17494, model.DefaultPort);
         Assert.True(model.HasLogin);
         Assert.True(model.PasswordOnly);

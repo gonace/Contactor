@@ -46,8 +46,19 @@ public interface IPolledBoard<TReading>
     /// </summary>
     Task<TReading> ReadAsync(CancellationToken cancellationToken);
 
-    /// <summary>The connection or the reading changed (not called for a poll that changed nothing).</summary>
+    /// <summary>
+    /// The connection or the reading changed, as the poller's comparer sees it (not called for a poll that changed
+    /// nothing).
+    /// </summary>
     void OnStateChanged(PolledState<TReading> state);
+
+    /// <summary>
+    /// A poll's or command's reading differs from the one before, but not as the poller's comparer sees it, e.g. only a
+    /// noisy analog value moved: <see cref="OnStateChanged"/> isn't called for it. Nothing by default.
+    /// </summary>
+    void OnReadingChanged(PolledState<TReading> state)
+    {
+    }
 
     /// <summary>A connection step, see <see cref="BoardPollStep"/>.</summary>
     void OnStep(BoardPollStep kind, string? detail);
@@ -106,7 +117,10 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
 
     /// <param name="board">The board to poll.</param>
     /// <param name="timeProvider">The clock for the waits and <see cref="PolledState{TReading}.LastContactUtc"/>.</param>
-    /// <param name="comparer">What counts as a change; e.g. one that ignores a noisy analog value. Default: equality.</param>
+    /// <param name="comparer">
+    /// What counts as a change; e.g. one that ignores a noisy analog value, which then comes as
+    /// <see cref="IPolledBoard{TReading}.OnReadingChanged"/>. Default: equality.
+    /// </param>
     public BoardPoller(IPolledBoard<TReading> board, TimeProvider timeProvider, IEqualityComparer<TReading>? comparer = null)
     {
         ArgumentNullException.ThrowIfNull(board);
@@ -575,6 +589,12 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             if (!before.IsConnected || before.Reading is null || !_comparer.Equals(before.Reading, reading))
             {
                 _board.OnStateChanged(after);
+            }
+            else if (!EqualityComparer<TReading>.Default.Equals(before.Reading, reading))
+            {
+                // A change the comparer leaves out, e.g. an analog value alone: told apart, so what listens only to
+                // OnStateChanged (the safety services) isn't woken by it.
+                _board.OnReadingChanged(after);
             }
         }
     }

@@ -13,7 +13,12 @@ namespace Contactor.Boards;
 /// Why the board refused the last connection on purpose, e.g. another model or a wrong password; null while it answers,
 /// and when it doesn't answer at all or can't tell.
 /// </param>
-public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null)
+/// <param name="Analog">
+/// What the analog inputs last read, kept while disconnected as the relays are; null for a board without analog inputs
+/// or before it answered. A change in it alone comes as <see cref="IRelayBoard.AnalogChanged"/>, never as
+/// <see cref="IRelayBoard.StateChanged"/>.
+/// </param>
+public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null)
 {
     public static BoardState Initial { get; } = new(false, ChannelMask.None, ChannelMask.None, null);
 

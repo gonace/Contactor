@@ -7,13 +7,16 @@ namespace Contactor.Boards;
 /// Whether the board reports every change by itself, including ones made at the board. Without it the app has to
 /// ask, and changes made elsewhere show later.
 /// </param>
-/// <param name="AnalogInputCount">How many analog inputs it has. The app doesn't show them yet.</param>
+/// <param name="Analog">Its analog inputs and what their readings mean; null when it has none.</param>
 /// <param name="Pulse">
 /// Whether, and how long, the board can pulse a relay (<see cref="IRelayBoard.PulseAsync"/>): turn it on, and off again
 /// by itself after a time, without the app. Null: it can't.
 /// </param>
-public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, int AnalogInputCount = 0, PulseAbility? Pulse = null)
+public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, AnalogAbility? Analog = null, PulseAbility? Pulse = null)
 {
+    /// <summary>How many analog inputs it has, numbered 1 to this.</summary>
+    public int AnalogInputCount => Analog?.Count ?? 0;
+
     /// <summary>All of the board's relays.</summary>
     public ChannelMask AllRelays => ChannelMask.FirstN(RelayCount);
 
@@ -38,4 +41,43 @@ public sealed record PulseAbility(TimeSpan Shortest, TimeSpan Longest, TimeSpan 
     /// <summary>Whether the board can pulse for exactly <paramref name="length"/>.</summary>
     public bool CanDo(TimeSpan length) =>
         length >= Shortest && length <= Longest && length.Ticks % Step.Ticks == 0 && (Exact is null || Exact(length));
+}
+
+/// <summary>
+/// A board's analog inputs: <paramref name="Count"/> of them, each read by a converter that gives whole counts from 0 to
+/// <paramref name="MaxCounts"/>, where <paramref name="MaxCounts"/> means <paramref name="FullScaleVolts"/> at the
+/// terminal. A reading at <paramref name="MaxCounts"/> is the top of the range: the voltage may be higher.
+/// </summary>
+public sealed record AnalogAbility(int Count, int MaxCounts, decimal FullScaleVolts)
+{
+    /// <summary>How many analog inputs, numbered 1 to this.</summary>
+    public int Count { get; } = Count >= 1 ? Count : throw new ArgumentOutOfRangeException(nameof(Count), Count, "A board with analog inputs has at least one.");
+
+    /// <summary>The highest count the converter gives, e.g. 1023 for 10 bits.</summary>
+    public int MaxCounts { get; } = MaxCounts >= 1 ? MaxCounts : throw new ArgumentOutOfRangeException(nameof(MaxCounts), MaxCounts, "The highest count is at least 1.");
+
+    /// <summary>The voltage at the terminal that <see cref="MaxCounts"/> means.</summary>
+    public decimal FullScaleVolts { get; } = FullScaleVolts > 0m ? FullScaleVolts : throw new ArgumentOutOfRangeException(nameof(FullScaleVolts), FullScaleVolts, "The full scale is more than 0 V.");
+
+    /// <summary>The voltage one count stands for.</summary>
+    public decimal VoltsPerCount => FullScaleVolts / MaxCounts;
+
+    /// <summary>The voltage at the terminal for a reading, e.g. 6.6 V for 1023 on the VM204.</summary>
+    public decimal Volts(int counts)
+    {
+        // Multiplied first, so the full scale comes out exactly.
+        return counts * FullScaleVolts / MaxCounts;
+    }
+
+    /// <summary>The reading when it is one the converter can give (0 to <see cref="MaxCounts"/>), otherwise null.</summary>
+    public int? Check(int? counts)
+    {
+        return counts is { } value && value >= 0 && value <= MaxCounts ? value : null;
+    }
+
+    /// <summary>Whether a reading is the top of the range, where the voltage may be higher than the board can read.</summary>
+    public bool IsFullScale(int counts)
+    {
+        return counts == MaxCounts;
+    }
 }

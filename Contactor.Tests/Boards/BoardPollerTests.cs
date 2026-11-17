@@ -61,6 +61,74 @@ public sealed class BoardPollerTests
     }
 
     [Fact]
+    public async Task Should_TellAChangeTheComparerLeavesOut_AsAReadingChange_NeverAsAStateChange()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(10, 11, 11, 25);
+        var tens = EqualityComparer<int>.Create((a, b) => a / 10 == b / 10, v => v / 10);
+        var poller = new BoardPoller<int>(board, time, tens) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+        Assert.Empty(board.ReadingChanges);
+
+        // Only what the comparer leaves out changed: a reading change, never a state change.
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 2);
+        Assert.Single(board.Changes);
+        Assert.Equal([new PolledState<int>(true, 11, time.GetUtcNow())], board.ReadingChanges);
+
+        // Nothing changed: neither.
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 3);
+        Assert.Single(board.Changes);
+        Assert.Single(board.ReadingChanges);
+
+        // A change the comparer sees: a state change only.
+        time.Advance(Interval);
+        await WaitForPollAsync(board, time, reads: 4);
+        Assert.Equal(2, board.Changes.Count);
+        Assert.Single(board.ReadingChanges);
+
+        await stop.CancelAsync();
+        await run;
+        Assert.Single(board.ReadingChanges);
+    }
+
+    [Fact]
+    public async Task Should_DropAReadingChange_FromAnAnswerBeforeForget()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(10);
+        var tens = EqualityComparer<int>.Create((a, b) => a / 10 == b / 10, v => v / 10);
+        var poller = new BoardPoller<int>(board, time, tens) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var answer = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var command = poller.RunCommandAsync(
+            _ =>
+            {
+                started.SetResult();
+                return answer.Task;
+            },
+            Cancel);
+        await started.Task;
+        poller.Forget();
+
+        answer.SetResult(11);
+        await command;
+        Assert.Empty(board.ReadingChanges);
+        Assert.DoesNotContain(board.Changes, c => c.Reading == 11);
+        Assert.Equal(new PolledState<int>(false, 0, null), poller.State);
+
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
     public async Task Should_StayConnectedThroughAFailedPoll_AndLoseTheConnectionAfterThree()
     {
         var time = new ManualTimeProvider();
@@ -1011,6 +1079,7 @@ public sealed class BoardPollerTests
         private readonly Lock _lock = new();
         private readonly Queue<object> _answers;
         private readonly List<PolledState<int>> _changes = [];
+        private readonly List<PolledState<int>> _readingChanges = [];
         private readonly List<(BoardPollStep Kind, string? Detail)> _steps = [];
         private readonly List<DateTimeOffset> _readTimes = [];
         private object _last = 0;
@@ -1055,6 +1124,17 @@ public sealed class BoardPollerTests
                 lock (_lock)
                 {
                     return [.. _changes];
+                }
+            }
+        }
+
+        public List<PolledState<int>> ReadingChanges
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _readingChanges];
                 }
             }
         }
@@ -1137,6 +1217,14 @@ public sealed class BoardPollerTests
             lock (_lock)
             {
                 _changes.Add(state);
+            }
+        }
+
+        public void OnReadingChanged(PolledState<int> state)
+        {
+            lock (_lock)
+            {
+                _readingChanges.Add(state);
             }
         }
 

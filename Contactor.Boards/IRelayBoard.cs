@@ -21,6 +21,19 @@ public interface IRelayBoard
     event EventHandler<BoardState>? StateChanged;
 
     /// <summary>
+    /// Raised when only the analog readings changed (<see cref="BoardState.Analog"/>): not the relays, the inputs or the
+    /// connection, so the safety services, which listen to <see cref="StateChanged"/>, are never woken by a value that
+    /// moves a little on every reading. A change that comes with one of those comes as <see cref="StateChanged"/>
+    /// instead, whose state carries the readings too: whoever shows the readings listens to both. From any thread, each
+    /// subscriber on its own. A board without analog inputs never raises it.
+    /// </summary>
+    event EventHandler<BoardState>? AnalogChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Turns on the relays in <paramref name="relays"/>; the others are left as they are. Returns the relays the board
     /// took: all of them on a board that takes a mask at once, and on one that switches a relay per request, those
     /// it confirmed (not refused, and with an answer the app could read; one it couldn't may have switched, which the

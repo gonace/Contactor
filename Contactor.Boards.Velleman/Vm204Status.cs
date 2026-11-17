@@ -7,8 +7,8 @@ namespace Contactor.Boards.Velleman;
 public sealed record Vm204Status(byte Relays, byte Inputs, int? Analog)
 {
     /// <summary>
-    /// Compares the relays and inputs only: the analog value moves a little on every reading, and the app doesn't show
-    /// it, so it alone is no change worth telling every screen about.
+    /// Compares the relays and inputs only: the analog value moves a little on every reading, so it alone is no state
+    /// change, which would wake the safety services. It comes as <see cref="Vm204Client.AnalogChanged"/> instead.
     /// </summary>
     public static IEqualityComparer<Vm204Status> SwitchesComparer { get; } = new Switches();
 

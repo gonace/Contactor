@@ -83,7 +83,9 @@ public sealed class Vm204Simulator : ISimulatedBoard
 
     public bool HasLogin => _username.Length > 0 || _password.Length > 0;
 
-    /// <summary>Its relays and inputs; the clients are the addresses that asked something within the last 10 s.</summary>
+    /// <summary>
+    /// Its relays, inputs and analog input; the clients are the addresses that asked something within the last 10 s.
+    /// </summary>
     public SimulatedBoardState State
     {
         get
@@ -94,7 +96,10 @@ public sealed class Vm204Simulator : ISimulatedBoard
                 return new SimulatedBoardState(
                     new ChannelMask(_relays),
                     new ChannelMask(_inputs),
-                    [.. _clients.Where(c => c.Value >= since).Select(c => c.Key).Order(StringComparer.Ordinal)]);
+                    [.. _clients.Where(c => c.Value >= since).Select(c => c.Key).Order(StringComparer.Ordinal)])
+                {
+                    Analog = [_analog],
+                };
             }
         }
     }
@@ -164,15 +169,15 @@ public sealed class Vm204Simulator : ISimulatedBoard
         return Task.CompletedTask;
     }
 
-    /// <summary>Sets the analog input, 0–1023 as the board's converter reads it.</summary>
-    public void SetAnalog(int value)
+    /// <summary>Sets the analog input (input 1, the only one), 0–1023 as the board's converter reads it.</summary>
+    public Task SetAnalogAsync(int input, int counts)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(value);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 1023);
-        lock (_lock)
-        {
-            _analog = value;
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, Vm204Api.AnalogInputCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(counts);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(counts, Vm204Api.AnalogMaxCounts);
+        Change(() => _analog = counts);
+        return Task.CompletedTask;
     }
 
     /// <summary>Makes a new key, as the board's web page does: the app's key stops working.</summary>
@@ -447,9 +452,9 @@ public sealed class Vm204Simulator : ISimulatedBoard
         bool changed;
         lock (_lock)
         {
-            var before = (_relays, _inputs);
+            var before = (_relays, _inputs, _analog);
             change();
-            changed = before != (_relays, _inputs);
+            changed = before != (_relays, _inputs, _analog);
         }
 
         if (changed)

@@ -941,7 +941,7 @@ public sealed class SetupTests
     [InlineData(1, 0, 2, "1 relay · 2 analog inputs")]
     public void Should_DescribeWhatAModelHas(int relays, int inputs, int analog, string text)
     {
-        Assert.Equal(text, TestTexts.Setup.Capabilities(new BoardCapabilities(relays, inputs, ReportsChanges: true, analog)));
+        Assert.Equal(text, TestTexts.Setup.Capabilities(new BoardCapabilities(relays, inputs, ReportsChanges: true, analog == 0 ? null : new AnalogAbility(analog, 1023, 5m))));
     }
 
     [Theory]
