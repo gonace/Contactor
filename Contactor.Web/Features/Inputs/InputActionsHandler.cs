@@ -37,7 +37,7 @@ public sealed record InputActionRow(InputActionTarget Target, bool? WhenClosed, 
 /// <paramref name="RelayId"/> and <paramref name="GroupId"/>. <paramref name="WhenClosed"/> and
 /// <paramref name="WhenOpened"/> as in <see cref="InputActionRow"/>; at least one of them does something.
 /// </summary>
-public sealed record InputControl(int InputId, string InputName, int? RelayId, int? GroupId, bool? WhenClosed, bool? WhenOpened);
+public sealed record InputControl(string InputName, int? RelayId, int? GroupId, bool? WhenClosed, bool? WhenOpened);
 
 /// <summary>
 /// The relays and groups an input controls, on the Input screen. A relay in a group is only controlled through its
@@ -110,7 +110,6 @@ public sealed class InputActionsHandler
                 i.BoardId,
                 i.Channel,
                 InputName = i.Name,
-                a.InputId,
                 a.RelayId,
                 RelayBoardId = a.Relay == null ? (int?)null : a.Relay.BoardId,
                 a.GroupId,
@@ -124,7 +123,7 @@ public sealed class InputActionsHandler
             .Where(c => _registry.HasInput(c.BoardId, c.Channel))
             .OrderBy(c => c.BoardId)
             .ThenBy(c => c.Channel)
-            .Select(c => new InputControl(c.InputId, c.InputName, c.RelayId, c.GroupId, c.WhenClosed, c.WhenOpened))];
+            .Select(c => new InputControl(c.InputName, c.RelayId, c.GroupId, c.WhenClosed, c.WhenOpened))];
     }
 
     /// <summary>

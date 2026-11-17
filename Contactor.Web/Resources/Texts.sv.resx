@@ -1581,6 +1581,9 @@
   <data name="Relays.InputLabel" xml:space="preserve">
     <value>INGÅNG {0}</value>
   </data>
+  <data name="Relays.InputLine" xml:space="preserve">
+    <value>Ingång</value>
+  </data>
   <data name="Relays.Inputs" xml:space="preserve">
     <value>Ingångar</value>
   </data>

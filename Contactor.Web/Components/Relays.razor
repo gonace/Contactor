@@ -568,6 +568,8 @@
         {
             <span class="input-line">
                 <span class="input-badge" aria-hidden="true">I</span>
+                @* The space is in the expression: Blazor drops a space on its own before a tag. *@
+                <span class="visually-hidden">@($"{Texts["Relays.InputLine"]} ")</span>
                 <span><strong>@control.InputName</strong>: @InputsText.Does(control.WhenClosed, control.WhenOpened)</span>
             </span>
         }

@@ -1732,6 +1732,10 @@
     <value>INPUT {0}</value>
     <comment>Over an input's name: {0} is its number on the board.</comment>
   </data>
+  <data name="Relays.InputLine" xml:space="preserve">
+    <value>Input</value>
+    <comment>Read by a screen reader before an input's line on a relay's or group's card, in place of its "I" badge.</comment>
+  </data>
   <data name="Relays.Inputs" xml:space="preserve">
     <value>Inputs</value>
     <comment>The heading over the input cards.</comment>
