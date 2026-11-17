@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 using Contactor.Boards;
@@ -421,8 +422,8 @@ public sealed partial class RelaysBoardsPageTests
     }
 
     // Issue #423: a board's box in the side menu and its chip show the board's own state: a lamp for each of its relays,
-    // lit when on, in use, in a group or not, and "3 of 8 on" counts the same. The heading, each board's section and
-    // "All boards" still count what the page shows, a group as one.
+    // lit when on, in use, in a group or not, and "3 of 8 on" counts the same; "All boards" adds them up. The heading and
+    // each board's section still count what the page shows, a group as one.
     [Fact]
     public async Task Should_CountEveryRelayOnTheBoard_AsItsLampsShow()
     {
@@ -443,6 +444,7 @@ public sealed partial class RelaysBoardsPageTests
         boards.First.SetRelay(1, true);
         boards.First.SetRelay(5, true);
         boards.First.SetRelay(8, true);
+        boards.Barn.SetRelay(2, true);
         using var http = boards.App.CreateClient();
 
         var html = await PageAsync(http);
@@ -460,10 +462,17 @@ public sealed partial class RelaysBoardsPageTests
         });
         Assert.Contains(">3/8</span>", buttons.Single(m => m.Groups["kind"].Value == "chip-filter").Value, StringComparison.Ordinal);
 
-        // What the page shows: on the first board the group and relays 4 to 7, with the group and relay 5 on; Barn's 4.
-        Assert.Matches("Hi John · <strong[^>]*>2 of 9 on</strong>", html);
+        // "All boards" is the two boards' boxes added up: 3 of 8 and 1 of 4.
+        var counts = Regex.Matches(html, "<button[^>]*class=\"side-board[^\"]*\"[^>]*>(?:(?!</button>).)*?(\\d+) of (\\d+) on", RegexOptions.Singleline)
+            .Select(m => (On: int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), All: int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)))
+            .ToList();
+        Assert.Equal([(4, 12), (3, 8), (1, 4)], counts);
+        Assert.Contains("4 of 12 on · 2 boards", html, StringComparison.Ordinal);
+
+        // What the page shows: on the first board the group and relays 4 to 7, with the group and relay 5 on; Barn's 4,
+        // with relay 2 on.
+        Assert.Matches("Hi John · <strong[^>]*>3 of 9 on</strong>", html);
         Assert.Contains(" · 2 of 5 on", Section(html, 1), StringComparison.Ordinal);
-        Assert.Contains("2 of 9 on · 2 boards", html, StringComparison.Ordinal);
     }
 
     // Barn's relays 1 and 2 as a group.
