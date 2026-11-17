@@ -46,19 +46,40 @@ public sealed class WorkshopAppTests
         Assert.True(await database.ApplyTemplateAsync(dataFolder, Stockholm, Cancel));
 
         // The last event before the app starts, read from the file: the app's services would start the app, and its
-        // board could log its first events before the read.
+        // board could log its first events before the read. The scheduler's last minute goes back one, so its first
+        // tick after the connection, the one that reconciles at start, shows in the file when it is done; no schedule
+        // starts or stops in that minute.
         int lastBefore;
+        DateTime lastTickBefore;
         await using (var db = OpenBeforeStart(database.ConnectionString(dataFolder)))
         {
             lastBefore = await db.EventLog.MaxAsync(e => (int?)e.Id, Cancel) ?? 0;
+            var runtime = await db.BoardRuntimes.SingleAsync(Cancel);
+            lastTickBefore = runtime.LastTickUtc!.Value.AddMinutes(-1);
+            runtime.LastTickUtc = lastTickBefore;
+            await db.SaveChangesAsync(Cancel);
         }
+
+        // Relays a person left on at the board: the outdoor lights outside their schedule's window (relay 6) and a relay
+        // with no schedule (relay 7). Nothing at start may turn them off.
+        await simulator.SwitchRelayAsync(6, turnOn: true);
+        await simulator.SwitchRelayAsync(7, turnOn: true);
 
         var client = app.CreateClient();
         await UntilAsync(() => ConnectedAsync(client));
+        await UntilAsync(async () =>
+        {
+            await using var db = Open(app);
+            var tick = await db.BoardRuntimes.Select(r => r.LastTickUtc).SingleAsync(Cancel);
+            return tick > lastTickBefore;
+        });
 
-        var expected = on.Aggregate(0, (mask, channel) => mask | (1 << (channel - 1)));
-        await UntilAsync(() => Task.FromResult(simulator.Outputs == expected));
+        // The start is handled: what it switched on is on at the board, and relays 6 and 7 are still on.
+        var scheduled = on.Aggregate(0, (mask, channel) => mask | (1 << (channel - 1)));
+        var expected = scheduled | 0b0110_0000;
         await UntilAsync(async () => on.Length == 0 || await LoggedAsync(app, EventActions.On, lastBefore));
+        await UntilAsync(() => Task.FromResult((simulator.Outputs & scheduled) == scheduled));
+        Assert.Equal(expected, simulator.Outputs);
 
         var page = await client.GetStringAsync("/", Cancel);
         Assert.Contains("Fan heater", page, StringComparison.Ordinal);

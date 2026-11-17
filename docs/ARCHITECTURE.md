@@ -189,7 +189,8 @@ EventLog
   Action          text           "on" | "off" | "pulse" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
-                                 "board-timers-disabled" (no longer written; kept for events logged before issue #497) | "board-relay-modes-reset" | "board-relay-modes-not-reset" |
+                                 "board-timers-disabled" (no longer written; kept for events logged before issue #497) |
+                                 "board-relay-modes-reset" | "board-relay-modes-not-reset" |
                                  "board-own-rule-found" ("system", the relay, {"kind":"timer","new":true,"relay":3}:
                                  new when it came while the app watched the board, relay its channel) |
                                  "board-own-rules-turned-off" (a person, {"relays":[3,5],"kinds":["timer"]}) |
