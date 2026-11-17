@@ -125,11 +125,11 @@
     // What the list shows of each board's state, so a status that changes none of it doesn't redraw the page.
     private readonly ShownBoardStates _shown = new();
 
-    private RenderFragment? List => SideList ?? (Registry.All.Count > 0 ? GoList : null);
+    private RenderFragment? List => SideList ?? (Registry.Shown.Count > 0 ? GoList : null);
 
     private RenderFragment GoList => __builder =>
     {
-        <BoardPicker Side="true" Go="true" Screen="BoardFilterScreen.Relays" Boards="Registry.All" Filter="BoardFilter.All" Counts="_counts" />
+        <BoardPicker Side="true" Go="true" Screen="BoardFilterScreen.Relays" Boards="Registry.Shown" Filter="BoardFilter.All" Counts="_counts" />
     };
 
     // A copy: the timers change the list off the render thread.
@@ -177,7 +177,7 @@
     // The boards' list of a page without the filter: its counts, when there is a list to show.
     private async Task LoadCountsAsync()
     {
-        var boards = Registry.All;
+        var boards = Registry.Shown;
         var list = SideList is null && boards.Count > 0;
         // Only the boards there are now: a removed board's entry goes.
         _shown.Reset(list ? boards : []);
@@ -195,7 +195,7 @@
     // has no filter of its own.
     private void OnRelaysChanged(object? sender, EventArgs e)
     {
-        if (SideList is null && Registry.All.Count > 0)
+        if (SideList is null && Registry.Shown.Count > 0)
         {
             _ = RefreshListAsync(reload: true);
         }
@@ -211,7 +211,7 @@
     // the list shows redraws it: a status that changes nothing (a poll's answer) doesn't.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
-        if (SideList is not null || Registry.All.Count == 0)
+        if (SideList is not null || Registry.Shown.Count == 0)
         {
             return;
         }

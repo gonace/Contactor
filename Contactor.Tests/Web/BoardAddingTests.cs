@@ -187,6 +187,7 @@ public sealed class BoardAddingTests
         // The board added now is the only one, so the first: still without the settings' address, which was the removed
         // board's.
         var added = await registry.AddBoardAsync(Model("vm201"), null, Cancel);
+        Assert.True(await registry.FinishAddingAsync(added.BoardId, Cancel));
         Assert.Equal("Velleman VM201", added.Name);
         Assert.False(added.Endpoint.HasHost);
         Assert.Same(added, Assert.Single(registry.All));
@@ -337,6 +338,46 @@ public sealed class BoardAddingTests
         Assert.False(await db.EventLog.AnyAsync(e => e.Action == EventActions.BoardRemoved, Cancel));
     }
 
+    // A board left after "Next" (the page closed half way) isn't on Relays, in its side menu or in "New group", and is
+    // unfinished, so the next start removes it. "Go on without a connection", also without an address, finishes it: an
+    // open Relays page shows it then.
+    [Fact]
+    public async Task Should_HideTheBoardMade_UntilItIsFinished()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        using var relays = await PageRenderer.StartAsync<Relays>(boards.App.Services, John, "John");
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+
+        await ChooseAsync(page, "Velleman", "vm204");
+        await page.TypeAsync(PageRenderer.With("id", "board-name"), "Garage");
+        await page.ClickAsync(Button("Next"));
+
+        var garage = registry.All[^1];
+        Assert.Equal("Garage", garage.Name);
+        Assert.True(garage.IsUnfinished);
+        Assert.False(registry.IsShown(garage.BoardId));
+        Assert.DoesNotContain("Garage", await relays.TextAsync(), StringComparison.Ordinal);
+        var candidates = await boards.App.Services.GetRequiredService<GroupsHandler>().CandidatesAsync(Cancel);
+        Assert.DoesNotContain(candidates, c => c.BoardId == garage.BoardId);
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.True(await db.Boards.Where(b => b.Id == garage.BoardId).Select(b => b.IsUnfinished).SingleAsync(Cancel));
+        }
+
+        await page.ClickAsync(Button("Go on without a connection"));
+
+        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(garage.IsUnfinished);
+        Assert.True(registry.IsShown(garage.BoardId));
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.False(await db.Boards.Where(b => b.Id == garage.BoardId).Select(b => b.IsUnfinished).SingleAsync(Cancel));
+        }
+
+        await BoardTestRig.WaitUntilAsync(() => relays.TextAsync().GetAwaiter().GetResult().Contains("Garage", StringComparison.Ordinal));
+    }
+
     // An open Relays page shows a board added while it is open, with its relays: it is told again once the board has
     // its model.
     [Fact]
@@ -351,10 +392,13 @@ public sealed class BoardAddingTests
         var told = new List<int>();
         registry.BoardsChanged += (_, _) => told.Add(registry.All[^1].Capabilities.RelayCount);
 
-        await registry.AddBoardAsync(model, "Shed", setup => parts.Build(setup.BoardId, model), Cancel);
+        var shed = await registry.AddBoardAsync(model, "Shed", setup => parts.Build(setup.BoardId, model), Cancel);
 
         // The last word the screens get is the board with its model, so a page that reloads then sees its relays.
         Assert.Equal(4, told[^1]);
+
+        // Shown once "Add a board" finishes it.
+        await registry.FinishAddingAsync(shed.BoardId, Cancel);
 
         await BoardTestRig.WaitUntilAsync(() =>
         {
@@ -532,7 +576,8 @@ public sealed class BoardAddingTests
             Assert.Equal("/", response.RequestMessage!.RequestUri!.AbsolutePath);
         }
 
-        await app.Services.GetRequiredService<BoardRegistry>().AddBoardAsync(Model("vm201"), "Barn", Cancel);
+        var registry = app.Services.GetRequiredService<BoardRegistry>();
+        await registry.FinishAddingAsync((await registry.AddBoardAsync(Model("vm201"), "Barn", Cancel)).BoardId, Cancel);
 
         var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
         Assert.Contains(">Barn<", relays, StringComparison.Ordinal);
@@ -560,6 +605,7 @@ public sealed class BoardAddingTests
 
         var registry = app.Services.GetRequiredService<BoardRegistry>();
         var barn = await registry.AddBoardAsync(Model("vm201"), "Barn", Cancel);
+        await registry.FinishAddingAsync(barn.BoardId, Cancel);
         await BoardTestRig.WaitUntilAsync(() => page.HasAsync(sideAll).GetAwaiter().GetResult());
         Assert.Contains("All boards", await page.TextAsync(), StringComparison.Ordinal);
         Assert.Contains("Barn", await page.TextAsync(), StringComparison.Ordinal);

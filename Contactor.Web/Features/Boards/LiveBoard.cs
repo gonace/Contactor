@@ -98,6 +98,18 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     /// <summary>Where it is in the list (<see cref="Board.SortOrder"/>), as of when it was loaded.</summary>
     public int SortOrder { get; init; }
 
+    /// <summary>
+    /// Whether "Add a board" hasn't finished it yet (<see cref="Board.IsUnfinished"/>): it runs as any board, but isn't
+    /// shown on Relays (<see cref="BoardRegistry.Shown"/>).
+    /// </summary>
+    public bool IsUnfinished
+    {
+        get => Volatile.Read(ref _unfinished);
+        internal set => Volatile.Write(ref _unfinished, value);
+    }
+
+    private bool _unfinished;
+
     /// <summary>The board's model as it runs now, or null before one is chosen.</summary>
     public ActiveBoard? Active => Volatile.Read(ref _current)?.Board;
 

@@ -82,6 +82,35 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     /// <summary>Every board, in the list's order.</summary>
     public IReadOnlyList<LiveBoard> All => Volatile.Read(ref _boards);
 
+    /// <summary>
+    /// Every board a person sees on Relays and can pick relays from, in the list's order: all but those "Add a board"
+    /// hasn't finished (<see cref="LiveBoard.IsUnfinished"/>). The same list until the boards change, as <see cref="All"/> is.
+    /// </summary>
+    public IReadOnlyList<LiveBoard> Shown
+    {
+        get
+        {
+            var all = All;
+            var cached = Volatile.Read(ref _shown);
+            if (cached is null || !ReferenceEquals(cached.All, all))
+            {
+                cached = new ShownBoards(all, [.. all.Where(b => !b.IsUnfinished)]);
+                Volatile.Write(ref _shown, cached);
+            }
+
+            return cached.Shown;
+        }
+    }
+
+    // Shown, made again from All when All is replaced; a board finished is a new All too (FinishAddingAsync).
+    private ShownBoards? _shown;
+
+    /// <summary>Whether the board on this row runs and is one of <see cref="Shown"/>.</summary>
+    public bool IsShown(int boardId)
+    {
+        return Find(boardId) is { IsUnfinished: false };
+    }
+
     /// <summary>The board on this row, or null when the app runs none there.</summary>
     public LiveBoard? Find(int boardId)
     {
@@ -111,7 +140,11 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
     /// <summary>
     /// At start: a live board for every board's row there isn't one for yet, each with its saved model
-    /// (<see cref="Board.Type"/>), if any. Throws for a saved model the catalogue doesn't have.
+    /// (<see cref="Board.Type"/>), if any. Throws for a saved model the catalogue doesn't have. A board "Add a board"
+    /// didn't finish (<see cref="Board.IsUnfinished"/>: its page was closed half way) is removed first, with its rows, as
+    /// <c>BoardRemoval</c> deletes them. It never got a live board this run, so nothing is sent to it: a relay "Try" left
+    /// on stays on, as the app never turns anything off at start. If it can't be removed, it runs, still unfinished, and
+    /// the next start tries again.
     /// </summary>
     public async Task LoadAsync(CancellationToken cancellationToken)
     {
@@ -122,6 +155,22 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
                 rows = await db.Boards.AsNoTracking().OrderBy(b => b.SortOrder).ThenBy(b => b.Id).ToListAsync(cancellationToken);
+            }
+
+            foreach (var row in rows.Where(r => r.IsUnfinished && Find(r.Id) is null && !_removed.Contains(r.Id)).ToList())
+            {
+                try
+                {
+                    await BoardRemoval.DeleteAsync(_dbFactory, row.Id, removedBy: null, cancellationToken);
+                    rows.Remove(row);
+                    LogUnfinishedRemoved(row.Id, row.Name);
+                }
+#pragma warning disable CA1031 // The app starts all the same; the board runs, still unfinished, until the next start.
+                catch (Exception ex) when (ex is not OperationCanceledException)
+#pragma warning restore CA1031
+                {
+                    LogUnfinishedNotRemoved(ex, row.Id);
+                }
             }
 
             for (var i = 0; i < rows.Count; i++)
@@ -310,6 +359,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                     Username = "",
                     Password = "",
                     SortOrder = (await db.Boards.MaxAsync(b => (int?)b.SortOrder, cancellationToken) ?? 0) + 1,
+                    IsUnfinished = true,
                 };
                 db.Boards.Add(row);
                 await db.SaveChangesAsync(cancellationToken);
@@ -352,6 +402,47 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             RaiseBoardsChanged();
             LogBoardAdded(row.Id, model.Id);
             return live;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// "Add a board" is done with the board on this row ("Done", or "Go on without a connection"): it is kept at the next
+    /// start and shown on Relays from now on. Returns false when there is no such board any more.
+    /// </summary>
+    public async Task<bool> FinishAddingAsync(int boardId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            int saved;
+            await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+            {
+                saved = await db.Boards.Where(b => b.Id == boardId)
+                    .ExecuteUpdateAsync(b => b.SetProperty(x => x.IsUnfinished, false), cancellationToken);
+            }
+
+            if (saved == 0 || Find(boardId) is not { } live)
+            {
+                return false;
+            }
+
+            if (live.IsUnfinished)
+            {
+                // A new list, so Shown is made again and a screen that keeps what it made from the list sees a change.
+                lock (_lock)
+                {
+                    live.IsUnfinished = false;
+                    Volatile.Write(ref _boards, [.. _boards]);
+                }
+
+                RaiseBoardsChanged();
+            }
+
+            return true;
         }
         finally
         {
@@ -574,7 +665,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     // its connection starts: its first state reaches them all.
     private async Task<LiveBoard> AddAsync(Board row)
     {
-        var live = new LiveBoard(row.Id, row.Name, _dbFactory, _time, _loggerFactory) { SortOrder = row.SortOrder };
+        var live = new LiveBoard(row.Id, row.Name, _dbFactory, _time, _loggerFactory) { SortOrder = row.SortOrder, IsUnfinished = row.IsUnfinished };
         try
         {
             foreach (var watcher in _watchers)
@@ -712,6 +803,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         }
     }
 
+    private sealed record ShownBoards(IReadOnlyList<LiveBoard> All, IReadOnlyList<LiveBoard> Shown);
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "Relay board {BoardId} added")]
     private partial void LogAdded(int boardId);
 
@@ -726,6 +819,12 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Relay board {BoardId} couldn't be added, and its rows couldn't be deleted again")]
     private partial void LogNotDeleted(Exception exception, int boardId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Relay board {BoardId} ({Name}) removed at start: \"Add a board\" didn't finish it")]
+    private partial void LogUnfinishedRemoved(int boardId, string name);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Relay board {BoardId}, which \"Add a board\" didn't finish, couldn't be removed at start; it runs until the next start")]
+    private partial void LogUnfinishedNotRemoved(Exception exception, int boardId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A listener to the list of relay boards failed")]
     private partial void LogBoardsListenerFailed(Exception exception);
