@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Updates;
@@ -24,16 +23,12 @@ public interface IReleaseSource
 /// requests merged since the one before; pull requests labelled <c>internal</c> are left out of them
 /// (<c>.github/release.yml</c>).
 /// </summary>
-public sealed partial class GitHubReleases : IReleaseSource
+public sealed class GitHubReleases : IReleaseSource
 {
     public const string HttpClientName = "github-releases";
 
     /// <summary>A release list this big is not GitHub's.</summary>
     public const int MaxResponseBytes = 2 * 1024 * 1024;
-
-    // The most changes shown for one release, and the longest line.
-    private const int MaxChanges = 30;
-    private const int MaxChangeLength = 200;
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
 
@@ -108,46 +103,10 @@ public sealed partial class GitHubReleases : IReleaseSource
             var date = DateTime.TryParse(Text(item, "published_at"), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var published)
                 ? DateOnly.FromDateTime(published)
                 : (DateOnly?)null;
-            releases.Add((version, new Release(version.Text, date, Changes(Text(item, "body")))));
+            releases.Add((version, new Release(version.Text, date, ReleaseNotes.Changes(Text(item, "body")))));
         }
 
         return [.. releases.OrderByDescending(r => r.Version).Select(r => r.Release)];
-    }
-
-    /// <summary>
-    /// The changes in a release's notes: each list item, as GitHub writes them ("* Title by @someone in https://…"),
-    /// without who made it and the link. Headings, "Full Changelog" and anything else are left out.
-    /// </summary>
-    public static IReadOnlyList<string> Changes(string? notes)
-    {
-        if (string.IsNullOrWhiteSpace(notes))
-        {
-            return [];
-        }
-
-        var changes = new List<string>();
-        foreach (var raw in notes.Split('\n'))
-        {
-            var line = raw.Trim();
-            if (!(line.StartsWith("* ", StringComparison.Ordinal) || line.StartsWith("- ", StringComparison.Ordinal)))
-            {
-                continue;
-            }
-
-            var change = ByAndLink().Replace(line[2..], "").Trim();
-            if (change.Length == 0 || change.StartsWith('@'))
-            {
-                continue;
-            }
-
-            changes.Add(change.Length > MaxChangeLength ? $"{change[..(MaxChangeLength - 1)]}…" : change);
-            if (changes.Count == MaxChanges)
-            {
-                break;
-            }
-        }
-
-        return changes;
     }
 
     private static string? Text(JsonElement item, string name)
@@ -159,8 +118,4 @@ public sealed partial class GitHubReleases : IReleaseSource
     {
         return item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
     }
-
-    // " by @someone in https://github.com/…/pull/12", or a bare " in https://…" or "(#12)" at the end.
-    [GeneratedRegex(@"(\s+by\s+@[\w-]+(\[bot\])?)?(\s+in\s+https?://\S+)?\s*$", RegexOptions.CultureInvariant)]
-    private static partial Regex ByAndLink();
 }

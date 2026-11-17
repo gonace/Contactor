@@ -150,39 +150,6 @@ public sealed class GitHubReleasesTests
         Assert.Null(releases[0].Date);
     }
 
-    // The notes are made from the pull requests' titles, those labelled "internal" left out (.github/release.yml):
-    // what is left besides the list is GitHub's own.
-    [Fact]
-    public void Should_KeepOnlyTheListedChanges()
-    {
-        var changes = GitHubReleases.Changes(
-            "## What's Changed\n### Fixes\n* Fix the clock by @someone-else in https://github.com/gonace/Contactor/pull/9\n- A plain line\n\n## New Contributors\n* @someone-else made their first contribution in https://github.com/gonace/Contactor/pull/9\n\n**Full Changelog**: https://x");
-
-        Assert.Equal(["Fix the clock", "A plain line"], changes);
-    }
-
-    // The Release workflow writes an "Images" section at the end of the notes (Issue #314): a table and docker pull
-    // lines, never changes.
-    [Fact]
-    public void Should_LeaveOutTheImagesSection()
-    {
-        var changes = GitHubReleases.Changes(
-            "## What's Changed\n* Fix the clock by @someone in https://github.com/gonace/Contactor/pull/9\n\n<!-- images -->\n## Images\n\n| Image | Version | Digest |\n|---|---|---|\n| [ghcr.io/gonace/contactor](https://github.com/gonace/Contactor/pkgs/container/contactor) | `2026.11.15` | `sha256:aa` |\n\n```sh\ndocker pull ghcr.io/gonace/contactor@sha256:aa\n```");
-
-        Assert.Equal(["Fix the clock"], changes);
-    }
-
-    [Fact]
-    public void Should_ShortenAVeryLongChange_AndListAtMostThirty()
-    {
-        var notes = string.Join('\n', Enumerable.Range(1, 40).Select(i => $"* Change {i}")) + "\n* " + new string('a', 500);
-
-        var changes = GitHubReleases.Changes(notes);
-
-        Assert.Equal(30, changes.Count);
-        Assert.True(GitHubReleases.Changes("* " + new string('a', 500))[0].Length <= 200);
-    }
-
     [Theory]
     [InlineData("{}")]
     [InlineData("\"releases\"")]
