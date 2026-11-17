@@ -6,6 +6,7 @@ using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Localization;
 
 namespace Contactor.Web.Features.Groups;
@@ -232,7 +233,8 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 return refusal;
             },
-            cancellationToken);
+            cancellationToken,
+            on ? (groupId, relayId) : null);
         return refusal;
     }
 
@@ -298,8 +300,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     }
 
     // One step for every group, with an optional request applied to the groups first. A request's refusal (a string)
-    // means nothing is sent or saved for it.
-    private async Task RunAsync(GroupRequest? request, CancellationToken cancellationToken)
+    // means nothing is sent or saved for it. A request to turn one relay of a group on names it (member): when the board
+    // doesn't take that ON, nothing of the request is kept and BoardNotConnectedException is thrown after the save.
+    private async Task RunAsync(GroupRequest? request, CancellationToken cancellationToken, (int GroupId, int RelayId)? member = null)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -342,6 +345,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
             // The ONs of groups that are stopping: a run-on's relay (after a trip, the one above the gap). They go even
             // while the board is closed for its removal.
             var runOn = ChannelMask.None;
+
+            // The member's ON the request planned: its group's runtime as before the request, so a refused ON can be
+            // taken back.
+            MemberOnRequest? memberOn = null;
             List<(int GroupId, GroupEvent Event)> events = [];
             HashSet<int> shutOff = [];
             foreach (var group in groups)
@@ -398,10 +405,20 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
 
                 var commands = new GroupCommands();
+                var before = member?.GroupId == group.Id ? db.Entry(runtime).CurrentValues.Clone() : null;
                 if (request is not null && request(group, steps, state, runtime, now, commands) is not null && commands.IsEmpty)
                 {
                     // Refused: nothing for this group this time.
                     continue;
+                }
+
+                // Only the request's own ON, the one it logs: an ON a trip sends for its run-on is the trip's, and
+                // stays the trip's whatever the board does with it.
+                if (before is not null && member is { } asked
+                    && commands.Events.Any(e => e.Action == EventActions.On && e.RelayId == asked.RelayId)
+                    && group.Members.FirstOrDefault(m => m.RelayId == asked.RelayId) is { } asking)
+                {
+                    memberOn = new MemberOnRequest(group, runtime, before, Channel(asking));
                 }
 
                 if (commands.IsEmpty)
@@ -460,6 +477,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
             }
 
+            var refusedMember = false;
             if (!all.On.IsEmpty)
             {
                 _expected.Expect(all.On, on: true);
@@ -470,7 +488,9 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     var taken = runOn.ContainsAll(all.On)
                         ? await _board.TurnOnForRunOnAsync(all.On, cancellationToken)
                         : await _board.TurnOnAsync(all.On, cancellationToken);
-                    _expected.Forget(all.On.Except(taken).Except(_board.State.Relays), on: true);
+                    var refused = all.On.Except(taken).Except(_board.State.Relays);
+                    _expected.Forget(refused, on: true);
+                    refusedMember = TakeBackRefused(db, memberOn, refused, events);
                 }
                 catch (Exception ex)
                 {
@@ -481,6 +501,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     // The OFF went out: it is recorded, also when the caller cancelled before the ON.
                     if ((ex is BoardNotConnectedException || (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)) && !all.Off.IsEmpty)
                     {
+                        TakeBackRefused(db, memberOn, all.On.Except(_board.State.Relays), events);
                         await SaveAsync(db, events, now, CancellationToken.None);
                         RememberShutOffs(shutOff);
                     }
@@ -500,6 +521,12 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
             if (changed)
             {
                 _changes.Notify();
+            }
+
+            if (refusedMember)
+            {
+                // As for a relay of its own: the person is told the board didn't do it.
+                throw new BoardNotConnectedException("The board didn't take the command.");
             }
         }
         finally
@@ -601,6 +628,25 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
             }
         }
     }
+
+    // A member's ON the board didn't take is no change of the app's: its On event goes, and its group's runtime is as
+    // before the request, so a run doesn't become the person's and a stop it called off still goes. Only that group's:
+    // the others' events and runtimes stay as planned. Returns whether it took one back.
+    private static bool TakeBackRefused(ContactorDbContext db, MemberOnRequest? memberOn, ChannelMask refused, List<(int GroupId, GroupEvent Event)> events)
+    {
+        if (memberOn is not { } request || !refused.Contains(request.Channel))
+        {
+            return false;
+        }
+
+        db.Entry(request.Runtime).CurrentValues.SetValues(request.Before);
+        var refusedRelays = request.Group.Members.Where(m => refused.Contains(Channel(m))).Select(m => m.RelayId).ToHashSet();
+        events.RemoveAll(e => e.GroupId == request.Group.Id && e.Event.Action == EventActions.On
+            && e.Event.RelayId is { } relayId && refusedRelays.Contains(relayId));
+        return true;
+    }
+
+    private sealed record MemberOnRequest(RelayGroup Group, GroupRuntime Runtime, PropertyValues Before, int Channel);
 
     private delegate string? GroupRequest(
         RelayGroup group,
