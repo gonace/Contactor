@@ -7,7 +7,8 @@ namespace Contactor.Web.Features.Relays;
 
 /// <summary>
 /// "3 of 8 on" for each board, as the Relays screen counts: its active relays in no group, and each of its groups as
-/// one; on is what the board has answered. The board filter shows it on Relays, Events and Debug alike.
+/// one; on is what the board has answered. The Relays screen shows it in its heading and each board's section. The board
+/// filter counts every relay of each board instead, as its lamps show them.
 /// </summary>
 public sealed class BoardCounts
 {

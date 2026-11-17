@@ -155,7 +155,7 @@
         <BoardPicker Side="true" Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" />
     };
 
-    // "3 of 8 on" for the board filter, which shows while there is a board.
+    // BoardPicker.Counts, which it no longer reads (Issue #495), for the board filter, which shows while there is a board.
     private async Task LoadCountsAsync()
     {
         // Only the boards there are now: a removed board's entry goes.

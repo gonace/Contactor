@@ -119,7 +119,7 @@
     [Parameter]
     public RenderFragment? SideList { get; set; }
 
-    // "3 of 8 on" for the boards' list on a page without the filter; loaded when there is a board.
+    // BoardPicker.Counts, which it no longer reads (Issue #495), for the boards' list on a page without the filter; loaded when there is a board.
     private BoardCounts _counts = BoardCounts.None;
 
     // What the list shows of each board's state, so a status that changes none of it doesn't redraw the page.

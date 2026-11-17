@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 using Contactor.Boards;
@@ -418,6 +419,60 @@ public sealed partial class RelaysBoardsPageTests
         // A group counts as one, on its own board.
         Assert.Contains("Test Fake · 0 of 3 on", html, StringComparison.Ordinal);
         Assert.DoesNotContain("GROUP · BARN", await PickAsync(http, "1"), StringComparison.Ordinal);
+    }
+
+    // Issue #423: a board's box in the side menu and its chip show the board's own state: a lamp for each of its relays,
+    // lit when on, in use, in a group or not, and "3 of 8 on" counts the same; "All boards" adds them up. The heading and
+    // each board's section still count what the page shows, a group as one.
+    [Fact]
+    public async Task Should_CountEveryRelayOnTheBoard_AsItsLampsShow()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        string name;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
+            group.AddStep("Fan", await RelayIdAsync(boards, 1, 1));
+            group.AddStep("Heat", await RelayIdAsync(boards, 1, 2));
+            group.AddStep("Extra heat", await RelayIdAsync(boards, 1, 3));
+            await db.AddWithRuntimesAsync(group);
+            await db.Relays.Where(r => r.BoardId == 1 && r.Channel == 8).ExecuteUpdateAsync(r => r.SetProperty(x => x.IsActive, false), Cancel);
+            name = await db.Boards.Where(b => b.Id == 1).Select(b => b.Name).SingleAsync(Cancel);
+        }
+
+        // The group's Fan (as its interlock allows), a relay in no group and the inactive relay.
+        boards.First.SetRelay(1, true);
+        boards.First.SetRelay(5, true);
+        boards.First.SetRelay(8, true);
+        boards.Barn.SetRelay(2, true);
+        using var http = boards.App.CreateClient();
+
+        var html = await PageAsync(http);
+
+        var buttons = Regex.Matches(html, "<button[^>]*class=\"(?<kind>chip-filter|side-board) [^\"]*\"[^>]*>(?:(?!</button>).)*</button>", RegexOptions.Singleline)
+            .Where(m => m.Value.Contains(name, StringComparison.Ordinal) && !m.Value.Contains("Barn", StringComparison.Ordinal))
+            .ToList();
+        Assert.Equal(["chip-filter", "side-board"], buttons.Select(m => m.Groups["kind"].Value).Order());
+        Assert.All(buttons, button =>
+        {
+            Assert.Equal(
+                ["lamp on", "lamp", "lamp", "lamp", "lamp on", "lamp", "lamp", "lamp on"],
+                Regex.Matches(button.Value, "class=\"(lamp(?: on)?) ?\"").Select(m => m.Groups[1].Value));
+            Assert.Contains("3 of 8 on", button.Value, StringComparison.Ordinal);
+        });
+        Assert.Contains(">3/8</span>", buttons.Single(m => m.Groups["kind"].Value == "chip-filter").Value, StringComparison.Ordinal);
+
+        // "All boards" is the two boards' boxes added up: 3 of 8 and 1 of 4.
+        var counts = Regex.Matches(html, "<button[^>]*class=\"side-board[^\"]*\"[^>]*>(?:(?!</button>).)*?(\\d+) of (\\d+) on", RegexOptions.Singleline)
+            .Select(m => (On: int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), All: int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)))
+            .ToList();
+        Assert.Equal([(4, 12), (3, 8), (1, 4)], counts);
+        Assert.Contains("4 of 12 on · 2 boards", html, StringComparison.Ordinal);
+
+        // What the page shows: on the first board the group and relays 4 to 7, with the group and relay 5 on; Barn's 4,
+        // with relay 2 on.
+        Assert.Matches("Hi John · <strong[^>]*>3 of 9 on</strong>", html);
+        Assert.Contains(" · 2 of 5 on", Section(html, 1), StringComparison.Ordinal);
     }
 
     // Barn's relays 1 and 2 as a group.
