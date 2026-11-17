@@ -21,9 +21,9 @@ public sealed class TabBarTests
     [InlineData("/settings")]
     public async Task Should_PutSettingsAndDebug_UnderTheBoardsAndAboveTheVersion(string path)
     {
-        // Two boards: the side menu lists them (one board has no list).
-        await using var boards = await TwoBoards.StartAsync();
-        var app = boards.App;
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
         using var http = app.CreateClient();
         // The first page makes John's row, which keeps his setting.
         await http.GetStringAsync("/", Cancel);
@@ -37,9 +37,9 @@ public sealed class TabBarTests
     [Fact]
     public async Task Should_LeaveSettingsAloneAtTheBottom_WhileDebuggingIsOff()
     {
-        // Two boards: the side menu lists them (one board has no list).
-        await using var boards = await TwoBoards.StartAsync();
-        var app = boards.App;
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
         using var http = app.CreateClient();
 
         var nav = Nav(WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel)));

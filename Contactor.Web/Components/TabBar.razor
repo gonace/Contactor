@@ -114,8 +114,7 @@
 
     /// <summary>
     /// What a page shows in the desktop's side menu under the tabs: the board filter of Relays, Events and Debug. Any
-    /// other page gets the boards anyway, each a way to Relays showing that board; with one board or none there is no
-    /// list.
+    /// other page gets the boards anyway, each a way to Relays showing that board; with no board there is no list.
     /// </summary>
     [Parameter]
     public RenderFragment? SideList { get; set; }
@@ -126,10 +125,7 @@
     // What the list shows of each board's state, so a status that changes none of it doesn't redraw the page.
     private readonly ShownBoardStates _shown = new();
 
-    private RenderFragment? List => SideList ?? (HasGoList ? GoList : null);
-
-    // Two or more boards: the list that goes to Relays. One board alone is nothing to pick (BoardPicker).
-    private bool HasGoList => SideList is null && Registry.All.Count > 1;
+    private RenderFragment? List => SideList ?? (Registry.All.Count > 0 ? GoList : null);
 
     private RenderFragment GoList => __builder =>
     {
@@ -180,7 +176,7 @@
     private async Task LoadCountsAsync()
     {
         var boards = Registry.All;
-        var list = SideList is null && boards.Count > 1;
+        var list = SideList is null && boards.Count > 0;
         // Only the boards there are now: a removed board's entry goes.
         _shown.Reset(list ? boards : []);
 
@@ -197,7 +193,7 @@
     // has no filter of its own.
     private void OnRelaysChanged(object? sender, EventArgs e)
     {
-        if (HasGoList)
+        if (SideList is null && Registry.All.Count > 0)
         {
             _ = RefreshListAsync(reload: true);
         }
@@ -213,7 +209,7 @@
     // the list shows redraws it: a status that changes nothing (a poll's answer) doesn't.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
-        if (!HasGoList)
+        if (SideList is not null || Registry.All.Count == 0)
         {
             return;
         }

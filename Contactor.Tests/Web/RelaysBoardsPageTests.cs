@@ -14,7 +14,7 @@ namespace Contactor.Tests.Web;
 /// The relay screen with two boards, as the server first renders it: the first board (8 relays, 1 input) and Barn
 /// (4 relays, 2 inputs), each in memory. A section per board with its own "All off", "Turn off all boards", which asks
 /// first, and the board filter, kept in a cookie. With one board the screen is as it always was (RelaysPageTests), with
-/// no board filter.
+/// no chips and only the board in the side menu.
 /// </summary>
 public sealed partial class RelaysBoardsPageTests
 {
@@ -350,9 +350,10 @@ public sealed partial class RelaysBoardsPageTests
 
         var html = await PageAsync(http);
 
-        // No board filter: nothing to filter, and adding a board is in Settings. No "Showing" either.
+        // No chips: nothing to filter. The side menu has only the board, picked. Adding a board is in Settings.
         Assert.DoesNotContain("chips-row", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("side-boards", html, StringComparison.Ordinal);
+        Assert.Matches("class=\"side-board picked \" aria-pressed=\"true\"", html);
+        Assert.DoesNotContain("side-board all", html, StringComparison.Ordinal);
         Assert.DoesNotContain("board/new", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Showing", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Turn off all boards", html, StringComparison.Ordinal);

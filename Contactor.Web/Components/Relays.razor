@@ -106,7 +106,7 @@
     }
     else
     {
-        @* One board: nothing to filter, so no chips (BoardPicker). *@
+        @* One board: nothing to filter, so no chips; the side menu shows the board (BoardPicker). *@
         <div class="connection">
             @ConnectionLine(State, null)
             @if (_allOffFailedBoardId is not null)
@@ -253,7 +253,7 @@
         </div>
     }
 
-    <TabBar Current="TabBar.Tab.Relays" SideList="@(Several ? BoardList : null)" />
+    <TabBar Current="TabBar.Tab.Relays" SideList="@(Boards.Count > 0 ? BoardList : null)" />
 </div>
 
 @code {
@@ -307,7 +307,7 @@
     private IReadOnlyList<LiveBoard> Boards => Registry.All;
 
     // Two or more boards: a section per board, "All boards" in the filter, and "Turn off all boards". One board has one
-    // list of relays, and no board filter (BoardPicker).
+    // list of relays, no chips, and only the board in the side menu (BoardPicker).
     private bool Several => Boards.Count > 1;
 
     // With one board: that board. Before the app has a board, none (no relays, never answers). One read of the list:
