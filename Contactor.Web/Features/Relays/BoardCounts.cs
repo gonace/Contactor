@@ -30,11 +30,30 @@ public sealed class BoardCounts
     /// <summary>The board's relays and groups that are on, of those it has, with the board in this state.</summary>
     public (int On, int Active) Of(int boardId, BoardState state)
     {
+        var lamps = Lamps(boardId, state);
+        return (lamps.Count(on => on), lamps.Count);
+    }
+
+    /// <summary>
+    /// One lamp for each relay and group that <see cref="Of"/> counts, true when on, in the order of their channels (a
+    /// group in the place of its first relay), so the lamps and "3 of 8 on" always agree.
+    /// </summary>
+    public IReadOnlyList<bool> Lamps(int boardId, BoardState state)
+    {
         ArgumentNullException.ThrowIfNull(state);
-        var active = _relays.Count(r => r.BoardId == boardId) + _groups.Count(g => g.BoardId == boardId);
-        var on = _relays.Count(r => r.BoardId == boardId && state.IsOn(r.Channel))
-            + _groups.Count(g => g.BoardId == boardId && state.Relays.Overlaps(g.Mask));
-        return (on, active);
+        return
+        [
+            .. _relays.Where(r => r.BoardId == boardId).Select(r => (First: r.Channel, On: state.IsOn(r.Channel)))
+                .Concat(_groups.Where(g => g.BoardId == boardId).Select(g => (First: First(g.Mask), On: state.Relays.Overlaps(g.Mask))))
+                .OrderBy(l => l.First)
+                .Select(l => l.On),
+        ];
+    }
+
+    // A group's first channel; a group with no relays goes last.
+    private static int First(ChannelMask mask)
+    {
+        return mask.IsEmpty ? int.MaxValue : mask.Channels.Min();
     }
 
     /// <summary>What there is to count now, from the database, for a screen that doesn't list the relays itself.</summary>

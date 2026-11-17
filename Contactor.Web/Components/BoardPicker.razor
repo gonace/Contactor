@@ -173,14 +173,13 @@ else if (!Side && Several)
         return next.IsAll ? BoardFilter.AllValue : next.Format();
     }
 
-    // One small bar per relay: orange when on.
+    // One small bar per relay or group that "3 of 8 on" counts: orange when on.
     private RenderFragment Lamps(LiveBoard board) => __builder =>
     {
-        var state = board.State;
         <span class="lamps" aria-hidden="true">
-            @for (var channel = 1; channel <= board.Capabilities.RelayCount; channel++)
+            @foreach (var on in Counts.Lamps(board.BoardId, board.State))
             {
-                <span class="lamp @(state.IsOn(channel) ? "on" : null)"></span>
+                <span class="lamp @(on ? "on" : null)"></span>
             }
         </span>
     };

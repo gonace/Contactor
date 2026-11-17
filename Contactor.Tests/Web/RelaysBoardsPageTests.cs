@@ -418,6 +418,36 @@ public sealed partial class RelaysBoardsPageTests
         Assert.DoesNotContain("GROUP · BARN", await PickAsync(http, "1"), StringComparison.Ordinal);
     }
 
+    // Issue #423: a board's lamps, in the chips and in the side menu, are what its "1 of 2 on" counts: an inactive relay
+    // has none, and a group has one, in the place of its first relay.
+    [Fact]
+    public async Task Should_ShowALampForEachRelayOrGroupItCounts()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        await AddBarnGroupAsync(boards);
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var relay = await db.Relays.SingleAsync(r => r.BoardId == boards.BarnId && r.Channel == 4, Cancel);
+            relay.IsActive = false;
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        boards.Barn.SetRelay(3, true);
+        using var http = boards.App.CreateClient();
+
+        var html = await PageAsync(http);
+
+        var barn = Regex.Matches(html, "<button[^>]*class=\"(?:chip-filter|side-board) [^\"]*\"[^>]*>(?:(?!</button>).)*Barn(?:(?!</button>).)*</button>", RegexOptions.Singleline)
+            .Select(m => m.Value)
+            .ToList();
+        Assert.NotEmpty(barn);
+        Assert.All(barn, button =>
+        {
+            Assert.Equal(["lamp", "lamp on"], Regex.Matches(button, "class=\"(lamp(?: on)?) ?\"").Select(m => m.Groups[1].Value));
+        });
+        Assert.Contains("1 of 2 on", html, StringComparison.Ordinal);
+    }
+
     // Barn's relays 1 and 2 as a group.
     private static async Task<int> AddBarnGroupAsync(TwoBoards boards)
     {
