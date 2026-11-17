@@ -32,6 +32,25 @@ public sealed class UpdatePageTests
         Assert.Contains("Contactor restarts. That takes about a minute. The relays stay as they are, and schedules catch up afterwards.", html, StringComparison.Ordinal);
     }
 
+    // The changes are written as text: bold where the notes have it, and HTML only as characters.
+    [Fact]
+    public async Task Should_ShowWhatsNew_AsText_WithBold()
+    {
+        var release = new Release("2026.11.20", new DateOnly(2026, 11, 20), ReleaseNotes.Changes("* **Bold first** then <script>alert(1)</script> and **open"));
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
+            TestWebApp.WithReleases("2026.11.14", release));
+        await StartAsync(app, helper: true);
+        using var http = app.CreateClient();
+
+        var html = await http.GetStringAsync("/settings", Cancel);
+
+        Assert.Matches("<li[^>]*><strong[^>]*>Bold first</strong> then &lt;script&gt;alert\\(1\\)&lt;/script&gt; and open</li>", html);
+        Assert.DoesNotContain("<script>alert", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("**", html, StringComparison.Ordinal);
+    }
+
     // A template or a plain compose run: the platform updates Contactor.
     [Fact]
     public async Task Should_SayWhereUpdatesComeFrom_WithoutTheHelper()

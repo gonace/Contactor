@@ -588,7 +588,7 @@ public sealed partial class UpdateService : BackgroundService
             {
                 var valid = releases
                     .Where(r => r is not null && ReleaseVersion.TryParse(r.Version, out _))
-                    .Select(r => new Release(r.Version, r.Date, [.. (r.Changes ?? []).Where(c => !string.IsNullOrWhiteSpace(c)).Take(30)]))
+                    .Select(r => new Release(r.Version, r.Date, [.. (r.Changes ?? []).Where(c => !string.IsNullOrWhiteSpace(c)).Take(ReleaseNotes.MaxChanges)]))
                     .ToList();
                 lock (_lock)
                 {

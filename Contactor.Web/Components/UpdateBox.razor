@@ -139,7 +139,19 @@
                             <ul>
                                 @foreach (var change in release.Changes)
                                 {
-                                    <li>@change</li>
+                                    <li>
+                                        @foreach (var part in ReleaseNotes.Parts(change))
+                                        {
+                                            @if (part.Bold)
+                                            {
+                                                <strong>@part.Text</strong>
+                                            }
+                                            else
+                                            {
+                                                @part.Text
+                                            }
+                                        }
+                                    </li>
                                 }
                             </ul>
                         </article>
