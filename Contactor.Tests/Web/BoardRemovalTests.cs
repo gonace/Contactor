@@ -96,9 +96,10 @@ public sealed class BoardRemovalTests
         var removal = boards.App.Services.GetRequiredService<BoardRemoval>();
         await Assert.ThrowsAnyAsync<Exception>(() => removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
 
-        // Its events too; the board running again may log more of its own meanwhile (its first status).
+        // Its events too; the board running again may log more of its own meanwhile (its first status). Its own rules'
+        // rows follow what the board running again reads: the simulator has no timers, so they may go meanwhile.
         var after = await CountAsync(boards, boards.BarnId);
-        Assert.Equal(before with { Events = 0 }, after with { Events = 0 });
+        Assert.Equal(before with { Events = 0, OwnRules = 0 }, after with { Events = 0, OwnRules = 0 });
         Assert.True(after.Events >= before.Events);
         await using (var check = await boards.Factory.CreateDbContextAsync(Cancel))
         {
