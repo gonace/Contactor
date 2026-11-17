@@ -87,7 +87,7 @@
                 <section class="members">
                     <div class="section-text">
                         <h2>@Texts["Groups.Steps"]</h2>
-                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? Texts["Groups.Steps.HintOn", board.Name] : Texts["Groups.Steps.Hint"])</p>
+                        <p class="hint">@(Registry.Shown.Count > 1 && Registry.Find(_group.BoardId) is { } board ? Texts["Groups.Steps.HintOn", board.Name] : Texts["Groups.Steps.Hint"])</p>
                     </div>
                     <GroupStepsEditor Editor="_editor"
                                       CanChange="CanChangeMembers"
@@ -96,6 +96,7 @@
                                       StepClass="StepClass"
                                       OnMove="Move"
                                       OnRemove="Remove"
+                                      OnJoin="JoinStepAbove"
                                       OnAdd="AddRelay">
                         <StepNote Context="stepIndex">
                             <span class="note">@(State.HasAnswered ? StepNote(stepIndex) : StatusText.Waiting)</span>
@@ -418,6 +419,11 @@
     private void Remove(int relayId)
     {
         _editor.Remove(relayId);
+    }
+
+    private void JoinStepAbove(int relayId)
+    {
+        _editor.JoinStepAbove(relayId);
     }
 
     private void AddRelay((int Step, EditRelay Relay) add)

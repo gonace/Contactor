@@ -66,7 +66,7 @@
                 {
                     @* With two or more boards: a section per board, in the boards' order, under its name. A group's relays
                        are all on one board, so once one is picked the other boards' relays wait. *@
-                    @foreach (var board in Registry.All)
+                    @foreach (var board in Registry.Shown)
                     {
                         var relays = _candidates.Where(c => c.BoardId == board.BoardId).ToList();
                         if (relays.Count == 0)
@@ -105,13 +105,14 @@
             {
                 <p class="on-board label">@Texts["Groups.New.OnBoard", onBoard]</p>
             }
-            @* The same step cards as the group's page: a relay can join a step, be added or removed, and a whole step moves. *@
+            @* The same step cards as the group's page: a relay can join a step or the step above, be added or removed, and a whole step moves. *@
             <div class="steps-editor">
                 <GroupStepsEditor Editor="_wizard.Editor"
                                   CanAdd="Addable.Count > 0"
                                   Addable="Addable"
                                   OnMove="m => _wizard.Move(m.Step, m.By)"
                                   OnRemove="_wizard.Remove"
+                                  OnJoin="_wizard.JoinStepAbove"
                                   OnAdd="AddRelay" />
             </div>
             <p class="info">@Texts["Groups.New.Interlock"]</p>
@@ -211,7 +212,7 @@
     };
 
     // Two or more boards: "Which relays?" is grouped by board, and the group's board is named.
-    private bool Several => Registry.All.Count > 1;
+    private bool Several => Registry.Shown.Count > 1;
 
     // The picked relays' board, in capitals, for "GROUP · WORKSHOP 1 → 2"; null with one board.
     private string? BoardLabel => Several && _wizard.BoardId is { } id && Registry.Find(id) is { } board ? board.Name.ToUpperInvariant() : null;

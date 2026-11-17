@@ -157,7 +157,9 @@ public sealed class GroupsHandler
         var scheduled = (await db.Schedules.Select(s => s.RelayId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
         var inputs = await ControllingInputsAsync(db, cancellationToken);
         var relays = await RelaysOnBoardsAsync(db, cancellationToken);
-        return [.. relays.Values.OrderBy(r => r.BoardId).ThenBy(r => r.Channel).Select(r => new GroupCandidate(
+
+        // Not the relays of a board "Add a board" hasn't finished: it isn't on Relays, and is removed at the next start.
+        return [.. relays.Values.Where(r => _registry.IsShown(r.BoardId)).OrderBy(r => r.BoardId).ThenBy(r => r.Channel).Select(r => new GroupCandidate(
             r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id), r.BoardId))];
     }
 

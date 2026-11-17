@@ -118,6 +118,17 @@
     cursor: pointer;
 }
 
+/* "Join the step above" and "Remove" in one row under the relay's name; join in the text colour, not red. */
+.relay-actions {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 16px;
+}
+
+.join {
+    color: var(--ink);
+}
+
 /* A step's relays, each with its own ON/OFF, under the step's name. */
 .relays {
     margin: 0;

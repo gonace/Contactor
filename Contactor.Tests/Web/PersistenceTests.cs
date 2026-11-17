@@ -334,6 +334,28 @@ public sealed class PersistenceTests
         Assert.Equal(timestamp, entry.TimestampUtc);
     }
 
+    // A board from before "Add a board" kept track of unfinished boards was finished: it is never removed at start.
+    [Fact]
+    public async Task Should_CountABoardFromBefore_AsFinished_WhenUpgraded()
+    {
+        await using var database = TestDatabase.Create();
+        Directory.CreateDirectory(Path.GetDirectoryName(database.FilePath)!);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.GetService<IMigrator>().MigrateAsync("20261117045501_AddAnalogInputs", cancellationToken: Cancel);
+        }
+
+        await ExecuteAsync(database.ConnectionString, "INSERT INTO \"Board\" (\"Id\", \"Name\", \"Type\", \"Host\", \"Port\", \"SortOrder\") VALUES (1, 'Garage', 'vm201', '', 9760, 1);");
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.MigrateAsync(Cancel);
+        }
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False((await check.Boards.SingleAsync(Cancel)).IsUnfinished);
+    }
+
     [Fact]
     public async Task Should_RemoveRowsAboveEight_WhenMigratedBackToEightRelays()
     {

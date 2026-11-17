@@ -53,7 +53,7 @@ public sealed class BoardCounts
             .ToListAsync(cancellationToken);
         var groups = await db.RelayGroups.AsNoTracking().Select(g => new { g.Id, g.BoardId }).ToListAsync(cancellationToken);
         return new BoardCounts(
-            relays.Where(r => !inGroups.Contains(r.Id) && registry.HasRelay(r.BoardId, r.Channel)).Select(r => (r.BoardId, r.Channel)),
+            relays.Where(r => !inGroups.Contains(r.Id) && registry.HasRelay(r.BoardId, r.Channel) && registry.IsShown(r.BoardId)).Select(r => (r.BoardId, r.Channel)),
             groups.Select(g => (g.BoardId, ChannelMask.Of(members.Where(m => m.GroupId == g.Id).Select(m => m.Channel)))));
     }
 }

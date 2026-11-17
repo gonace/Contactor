@@ -74,8 +74,9 @@ public sealed class GroupNewTests
         Assert.Contains("Tools", html, StringComparison.Ordinal);
     }
 
-    // Four relays picked, each a step of its own; relay 2 then joins the step above, and relay 4 is taken out and added
-    // to the step above it. The group is saved with two steps of two relays, as the group's page saves them.
+    // Four relays picked, each a step of its own; relay 2 then joins the step above with "Join the step above", and
+    // relay 4 is taken out and added to the step above it. The first step has no "Join the step above". The group is
+    // saved with two steps of two relays, as the group's page saves them.
     [Fact]
     public async Task Should_MakeAGroupOfTwoTwoRelaySteps()
     {
@@ -84,8 +85,9 @@ public sealed class GroupNewTests
         using var page = await AtOrderAndRulesAsync(app, relays.Take(4));
         Assert.Equal(3, await CountAsync(page, "On start, wait"));
 
-        await JoinStepAboveAsync(page, relays[1], channel: 2, step: 0);
-        await JoinStepAboveAsync(page, relays[3], channel: 4, step: 1);
+        Assert.False(await page.HasAsync(PageRenderer.With("aria-label", "Move Relay 1 into the step above")));
+        await page.ClickAsync(PageRenderer.With("aria-label", "Move Relay 2 into the step above"));
+        await RemoveAndAddToStepAboveAsync(page, relays[3], channel: 4, step: 1);
         Assert.Equal(1, await CountAsync(page, "On start, wait"));
         await page.TypeAsync(PageRenderer.With("id", "step-0"), "Fans");
         await page.TypeAsync(PageRenderer.With("id", "step-1"), "Heaters");
@@ -122,6 +124,32 @@ public sealed class GroupNewTests
         Assert.Equal([$"Relay 2: {relays[1]}", $"Relay 1: {relays[0]}"], await SavedStepsAsync(app));
     }
 
+    // With two relays "Remove" is hidden, so "Join the step above" shows alone: the two steps become one, and nothing
+    // is saved until "Create group".
+    [Fact]
+    public async Task Should_JoinTwoRelaysInOneStep()
+    {
+        await using var app = await StartAppAsync();
+        var relays = await RelaysAsync(app);
+        using var page = await AtOrderAndRulesAsync(app, relays.Take(2));
+        Assert.False(await page.HasAsync(PageRenderer.With("aria-label", "Remove Relay 2 from the group")));
+
+        await page.ClickAsync(PageRenderer.With("aria-label", "Move Relay 2 into the step above"));
+
+        Assert.False(await page.HasAsync(PageRenderer.With("id", "step-1")));
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Join the step above")));
+        Assert.Equal(0, await CountAsync(page, "On start, wait"));
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            Assert.False(await db.RelayGroups.AnyAsync(Cancel));
+        }
+
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("GROUP · RELAY 1 + 2", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(Button("Create group"));
+        Assert.Equal([$"Relay 1: {relays[0]} {relays[1]}"], await SavedStepsAsync(app));
+    }
+
     // A step's name may be left empty, as on the group's page: "Next" doesn't wait for it, the plan says its first
     // relay's name, and the step is saved with that name.
     [Fact]
@@ -130,7 +158,7 @@ public sealed class GroupNewTests
         await using var app = await StartAppAsync();
         var relays = await RelaysAsync(app);
         using var page = await AtOrderAndRulesAsync(app, relays.Take(3));
-        await JoinStepAboveAsync(page, relays[2], channel: 3, step: 1);
+        await RemoveAndAddToStepAboveAsync(page, relays[2], channel: 3, step: 1);
 
         await page.TypeAsync(PageRenderer.With("id", "step-0"), "Fan");
         await page.TypeAsync(PageRenderer.With("id", "step-1"), " ");
@@ -190,8 +218,9 @@ public sealed class GroupNewTests
         return page;
     }
 
-    // A relay in a step of its own joins the step above: "Remove", then "+ Add a relay to this step" on that step.
-    private static async Task JoinStepAboveAsync(PageRenderer page, int relayId, int channel, int step)
+    // A relay in a step of its own moved into the step above by hand: "Remove", then "+ Add a relay to this step" on
+    // that step.
+    private static async Task RemoveAndAddToStepAboveAsync(PageRenderer page, int relayId, int channel, int step)
     {
         await page.ClickAsync(PageRenderer.With("aria-label", $"Remove Relay {channel} from the group"));
         await page.ClickAsync(Button("Add a relay to this step"), step);

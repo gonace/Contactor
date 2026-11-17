@@ -128,7 +128,9 @@ public sealed partial class RelaysBoardsPageTests
         Assert.DoesNotContain("id=\"board-1\"", await PickAsync(http, boards.BarnId.ToString(System.Globalization.CultureInfo.InvariantCulture)), StringComparison.Ordinal);
         var parts = new FakeBoardParts(new FakeRelayBoard(relayCount: 4, inputCount: 0));
         var model = parts.FakeModel;
-        var shed = await boards.App.Services.GetRequiredService<BoardRegistry>().AddBoardAsync(model, "Shed", setup => parts.Build(setup.BoardId, model), Cancel);
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        var shed = await registry.AddBoardAsync(model, "Shed", setup => parts.Build(setup.BoardId, model), Cancel);
+        await registry.FinishAddingAsync(shed.BoardId, Cancel);
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync(RelaysEndpoints.ShowAllPath, Cancel));
 

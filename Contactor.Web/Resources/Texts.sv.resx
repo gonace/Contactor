@@ -1035,6 +1035,12 @@
   <data name="Groups.Icon.Tools" xml:space="preserve">
     <value>Verktyg</value>
   </data>
+  <data name="Groups.JoinStepAbove" xml:space="preserve">
+    <value>Gå med i steget ovanför</value>
+  </data>
+  <data name="Groups.JoinStepAbove.Label" xml:space="preserve">
+    <value>Flytta {0} till steget ovanför</value>
+  </data>
   <data name="Groups.LimitHint" xml:space="preserve">
     <value>Gäller när någon slår på gruppen för hand. Den stannar i sin stoppordning, med sina efterkörningstider.</value>
   </data>

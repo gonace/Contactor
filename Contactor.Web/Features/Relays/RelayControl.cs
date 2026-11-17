@@ -256,6 +256,7 @@ public sealed class RelayControl
     public async Task<IReadOnlyList<int>> TurnOffAllBoardsAsync(string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        // Every board, also one "Add a board" hasn't finished (not shown on Relays): turning relays off is always safe.
         var boards = _registry.All;
         var results = await Task.WhenAll(boards.Select(async board =>
         {
