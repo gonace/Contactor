@@ -3,7 +3,7 @@ using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
 using Contactor.Web.Features.Boards;
-using Contactor.Web.Features.OwnRules;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -20,8 +20,9 @@ internal sealed class OwnRulesRig : IAsyncDisposable
 {
     public const string Erik = "erik@example.com";
 
-    private OwnRulesRig(TestDatabase database, FakeRelayBoard board, int boardId, FakeRelayBoard other, int otherId)
+    private OwnRulesRig(TestDatabase database, ManualTimeProvider time, FakeRelayBoard board, int boardId, FakeRelayBoard other, int otherId)
     {
+        Time = time;
         Database = database;
         Board = board;
         BoardId = boardId;
@@ -30,6 +31,9 @@ internal sealed class OwnRulesRig : IAsyncDisposable
     }
 
     public TestDatabase Database { get; }
+
+    /// <summary>The app's clock, which only the test moves.</summary>
+    public ManualTimeProvider Time { get; }
 
     public FakeRelayBoard Board { get; }
 
@@ -45,10 +49,14 @@ internal sealed class OwnRulesRig : IAsyncDisposable
 
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    public static async Task<OwnRulesRig> StartAsync()
+    /// <summary>Starts the rig; <paramref name="configure"/> may add to the app's services, e.g. a database interceptor.</summary>
+    public static async Task<OwnRulesRig> StartAsync(Action<IServiceCollection>? configure = null)
     {
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 17, 12, 0, 0, TimeSpan.Zero));
         var database = TestDatabase.Create((services, configuration) =>
         {
+            services.AddSingleton<TimeProvider>(time);
+            configure?.Invoke(services);
             services.AddLocalClock(configuration);
             services.AddBoards(configuration);
             services.AddRelays(configuration);
@@ -74,7 +82,7 @@ internal sealed class OwnRulesRig : IAsyncDisposable
             await database.Services.SeedBoardAsync(otherId, other.Capabilities, Cancel);
             await database.Services.GetRequiredService<BoardRegistry>().ReplaceAsync(new FakeBoardParts(other).Build(otherId), Cancel);
             await database.Services.GetRequiredService<OwnRulesService>().StartAsync(Cancel);
-            var rig = new OwnRulesRig(database, board, boardId, other, otherId);
+            var rig = new OwnRulesRig(database, time, board, boardId, other, otherId);
 
             // What the service read at its start is handled first: from here on each change of Other's comes after.
             await rig.HandledAsync();

@@ -10,7 +10,7 @@ using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Languages;
-using Contactor.Web.Features.OwnRules;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Features.Setup;

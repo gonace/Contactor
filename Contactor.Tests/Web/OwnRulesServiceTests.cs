@@ -4,7 +4,7 @@ using Contactor.Web;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
-using Contactor.Web.Features.OwnRules;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -64,7 +64,7 @@ public sealed class OwnRulesServiceTests
             rig.Database.Services.GetRequiredService<BoardRegistry>(),
             rig.Database.Factory,
             rig.Database.Services.GetRequiredService<LocalClock>(),
-            TimeProvider.System,
+            rig.Time,
             NullLogger<OwnRulesService>.Instance);
         await again.StartAsync(Cancel);
         try
@@ -189,6 +189,56 @@ public sealed class OwnRulesServiceTests
         Assert.Empty(await rig.RowsAsync());
         await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 0);
         Assert.Empty(rig.Handler.Warnings(rig.BoardId));
+    }
+
+    // A save that fails is tried again after RetryDelay on the app's clock, also a forgotten board's: its rows still go
+    // then, so the board at the new address is found afresh although it reported the same rule in between.
+    [Fact]
+    public async Task Should_TryAFailedSaveAgain_AndStillForgetTheRows()
+    {
+        var failing = new FailingQueries();
+        await using var rig = await OwnRulesRig.StartAsync(failing.AddTo);
+        rig.Board.SetOwnRules(Rules(Timer3));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 1);
+        failing.Fail(sql => sql.Contains("DELETE FROM \"BoardOwnRule\" AS", StringComparison.Ordinal), () => new InvalidOperationException("The disk is full."));
+
+        // A new address: the client forgets the board's state, and deleting its rows fails.
+        rig.Board.Forget();
+        await Wait.UntilAsync(() => failing.Failures == 1);
+        failing.Stop();
+        rig.Board.SetConnected(true);
+        rig.Board.SetOwnRules(Rules(Timer3));
+        await rig.HandledAsync();
+        Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRuleFound));
+
+        rig.Time.Advance(OwnRulesService.RetryDelay);
+        await Wait.UntilAsync(() => rig.EventsAsync(EventActions.BoardOwnRuleFound).GetAwaiter().GetResult().Count == 2);
+
+        Assert.Equal([false, false], (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Select(OwnRulesRig.IsNew));
+        Assert.Single(await rig.RowsAsync());
+    }
+
+    // A board taken out of the app: its rows leave the service's memory, and the screens are told.
+    [Fact]
+    public async Task Should_LetARemovedBoardsRowsGo()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(Rules(Timer3));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 1);
+        var told = 0;
+        rig.Service.Changed += (_, boardId) =>
+        {
+            if (boardId == rig.BoardId)
+            {
+                Interlocked.Increment(ref told);
+            }
+        };
+
+        Assert.True(await rig.Database.Services.GetRequiredService<BoardRegistry>().RemoveAsync(rig.BoardId, Cancel));
+
+        await Wait.UntilAsync(() => !rig.Service.TryGetRows(rig.BoardId, out _) && Volatile.Read(ref told) == 1);
+        Assert.Empty(rig.Handler.Warnings(rig.BoardId));
+        Assert.True(rig.Service.TryGetRows(rig.OtherId, out _));
     }
 
     // The principle: the app never changes a board's own rules without a person's press. The VM201's timers stay as

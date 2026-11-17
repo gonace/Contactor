@@ -187,14 +187,23 @@ public sealed class EventText
     // "The board's" or "Garage's", as the subject of a line.
     private string BoardsOwn(string? boardName)
     {
-        return boardName is null ? _texts["Events.OwnRules.Who.TheBoards"] : _texts["Events.OwnRules.Named", boardName];
+        return boardName is null ? _texts["Events.OwnRules.Who.TheBoards"] : Genitive(boardName);
+    }
+
+    // A board's name in the genitive: "Garage's", "Garages". Swedish adds no s to a name that ends in s, x or z
+    // ("Lars egna timer"), so such a name has a text of its own.
+    private string Genitive(string boardName)
+    {
+        return boardName.Length > 0 && char.ToLowerInvariant(boardName[^1]) is 's' or 'x' or 'z'
+            ? _texts["Events.OwnRules.NamedEndingInS", boardName]
+            : _texts["Events.OwnRules.Named", boardName];
     }
 
     // A person turned off or kept rules of the board's own: "turned off the board's own timers for relays 3 and 5",
     // "kept Garage's own timer for relay 3".
     private string OwnRulesLine(string key, EventLogEntry entry, string? boardName)
     {
-        var board = boardName is null ? _texts["Events.OwnRules.TheBoards"].Value : _texts["Events.OwnRules.Named", boardName].Value;
+        var board = boardName is null ? _texts["Events.OwnRules.TheBoards"].Value : Genitive(boardName);
         List<int> relays;
         List<OwnRuleKind?> kinds;
         if (entry.Action == EventActions.BoardOwnRuleKept)

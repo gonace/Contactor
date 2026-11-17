@@ -4,9 +4,8 @@ using Contactor.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
-using ReportedRules = Contactor.Boards.OwnRules;
 
-namespace Contactor.Web.Features.OwnRules;
+namespace Contactor.Web.Features.BoardRules;
 
 /// <summary>A board's own rule as the app remembers it (<see cref="BoardOwnRule"/>): the relay's channel, its kind, and whether a person kept it.</summary>
 public sealed record OwnRuleRow(int Channel, OwnRuleKind Kind, DateTime FoundUtc, DateTime? KeptUtc, string? KeptBy);
@@ -54,7 +53,7 @@ public sealed partial class OwnRulesService : BackgroundService
     private readonly SemaphoreSlim _work = new(1, 1);
 
     // Only under _work: the rules last read from each board since its state was last forgotten, null when none was read.
-    private readonly Dictionary<int, ReportedRules?> _seen = [];
+    private readonly Dictionary<int, OwnRules?> _seen = [];
 
     // Each board's rows, for the screens; replaced as a whole, under _lock.
     private readonly Dictionary<int, IReadOnlyList<OwnRuleRow>> _rows = [];
@@ -80,18 +79,35 @@ public sealed partial class OwnRulesService : BackgroundService
     }
 
     /// <summary>
-    /// A board's rows changed (<see cref="Rows"/>), with its id. Raised on the service's own loop; a screen moves to its
-    /// own thread to draw.
+    /// A board's rows changed (<see cref="Rows"/>), with its id. Raised on the service's own loop, or after a "Keep"
+    /// on the thread that kept it, never while the service's database work is held; a screen moves to its own thread
+    /// to draw.
     /// </summary>
     public event EventHandler<int>? Changed;
 
     /// <summary>The board's own rules the app remembers, by channel and kind; none for a board it hasn't read yet.</summary>
     public IReadOnlyList<OwnRuleRow> Rows(int boardId)
     {
+        return TryGetRows(boardId, out var rows) ? rows : [];
+    }
+
+    /// <summary>
+    /// The board's own rules the app remembers, once it has read the board's rows; false before (just started, or a
+    /// board it hasn't seen yet), when what a person kept isn't known.
+    /// </summary>
+    public bool TryGetRows(int boardId, out IReadOnlyList<OwnRuleRow> rows)
+    {
         lock (_lock)
         {
-            return _rows.GetValueOrDefault(boardId) ?? [];
+            if (_rows.TryGetValue(boardId, out var known))
+            {
+                rows = known;
+                return true;
+            }
         }
+
+        rows = [];
+        return false;
     }
 
     /// <summary>
@@ -181,10 +197,12 @@ public sealed partial class OwnRulesService : BackgroundService
 
     /// <summary>
     /// Marks the board's rule as kept by <paramref name="userEmail"/> and logs it: the app no longer warns about it.
-    /// Returns false when the app has no such rule (any more), and true, logging nothing again, when it was kept already.
+    /// Returns false when the app has no such rule (any more), also when its row goes meanwhile (a new address or
+    /// another model deletes it), and true, logging nothing again, when it was kept already.
     /// </summary>
     internal async Task<bool> KeepAsync(int boardId, int channel, OwnRuleKind kind, string userEmail, CancellationToken cancellationToken)
     {
+        var changed = false;
         await _work.WaitAsync(cancellationToken);
         try
         {
@@ -214,16 +232,29 @@ public sealed partial class OwnRulesService : BackgroundService
                     Action = EventActions.BoardOwnRuleKept,
                     Details = JsonSerializer.Serialize(new { kind = text, relay = channel }),
                 });
-                await db.SaveChangesAsync(cancellationToken);
+                try
+                {
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // Deleted between the read and the save, e.g. by a new address: nothing was saved or logged.
+                    return false;
+                }
+
                 rows = await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
             }
 
-            Publish(boardId, rows);
+            changed = Publish(boardId, rows);
             return true;
         }
         finally
         {
             _work.Release();
+            if (changed)
+            {
+                RaiseChanged(boardId);
+            }
         }
     }
 
@@ -357,7 +388,7 @@ public sealed partial class OwnRulesService : BackgroundService
                 LogForgotten(boardId);
             }
 
-            Publish(boardId, await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken));
+            PublishAndRaise(boardId, await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken));
             seen = null;
             _seen[boardId] = null;
         }
@@ -373,7 +404,7 @@ public sealed partial class OwnRulesService : BackgroundService
     }
 
     // The board read rules other than the last: a row for each new rule, logged, and none for a rule it no longer has.
-    private async Task ActAsync(int boardId, ReportedRules rules, ReportedRules? seen, CancellationToken cancellationToken)
+    private async Task ActAsync(int boardId, OwnRules rules, OwnRules? seen, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var rows = await db.BoardOwnRules.Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
@@ -413,12 +444,12 @@ public sealed partial class OwnRulesService : BackgroundService
         if (db.ChangeTracker.HasChanges())
         {
             await db.SaveChangesAsync(cancellationToken);
-            Publish(boardId, await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken));
+            PublishAndRaise(boardId, await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken));
         }
     }
 
-    // The board's rows for the screens, and Changed when they differ from what they were.
-    private void Publish(int boardId, List<BoardOwnRule> rows)
+    // The board's rows for the screens; true when they differ from what they were, so Changed is raised.
+    private bool Publish(int boardId, List<BoardOwnRule> rows)
     {
         IReadOnlyList<OwnRuleRow> view =
         [
@@ -435,7 +466,13 @@ public sealed partial class OwnRulesService : BackgroundService
             _rows[boardId] = view;
         }
 
-        if (changed)
+        return changed;
+    }
+
+    // On the loop: the board's rows for the screens, and Changed when they differ from what they were.
+    private void PublishAndRaise(int boardId, List<BoardOwnRule> rows)
+    {
+        if (Publish(boardId, rows))
         {
             RaiseChanged(boardId);
         }

@@ -6,7 +6,7 @@ using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Localization;
 
-namespace Contactor.Web.Features.OwnRules;
+namespace Contactor.Web.Features.BoardRules;
 
 /// <summary>
 /// What a person does about a board's own rules (issue #497): turn them off, or keep them so the app stops warning, and
@@ -39,16 +39,17 @@ public sealed partial class OwnRulesHandler
 
     /// <summary>
     /// The board's own rules the app warns about: those the board reports now that no person kept. None while the
-    /// board's rules aren't known (it can't read them, or hasn't answered), and for a board the app doesn't run.
+    /// board's rules aren't known (it can't read them, or hasn't answered), until the app has read which rules people
+    /// kept (just after the start), and for a board the app doesn't run.
     /// </summary>
     public IReadOnlyList<OwnRule> Warnings(int boardId)
     {
-        if (_registry.Find(boardId)?.State.OwnRules is not { } rules)
+        if (_registry.Find(boardId)?.State.OwnRules is not { } rules || !_rules.TryGetRows(boardId, out var rows))
         {
             return [];
         }
 
-        var kept = _rules.Rows(boardId).Where(r => r.KeptUtc is not null).Select(r => new OwnRule(r.Channel, r.Kind)).ToHashSet();
+        var kept = rows.Where(r => r.KeptUtc is not null).Select(r => new OwnRule(r.Channel, r.Kind)).ToHashSet();
         return [.. rules.Distinct().Where(r => !kept.Contains(r))];
     }
 

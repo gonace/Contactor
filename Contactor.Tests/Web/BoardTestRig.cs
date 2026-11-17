@@ -2,6 +2,7 @@ using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -119,6 +120,7 @@ internal sealed class BoardTestRig : IAsyncDisposable
                 services.AddEvents(configuration);
                 services.AddInputs(configuration);
                 services.AddSchedules(configuration);
+                services.AddOwnRules(configuration);
                 if (logs is not null)
                 {
                     services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Trace).AddProvider(logs));

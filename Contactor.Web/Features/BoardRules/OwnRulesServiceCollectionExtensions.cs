@@ -1,4 +1,4 @@
-namespace Contactor.Web.Features.OwnRules;
+namespace Contactor.Web.Features.BoardRules;
 
 public static class OwnRulesServiceCollectionExtensions
 {

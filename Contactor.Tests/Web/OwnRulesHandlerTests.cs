@@ -1,6 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Velleman;
-using Contactor.Web.Features.OwnRules;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -167,6 +167,60 @@ public sealed class OwnRulesHandlerTests
         var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
         Assert.Equal([0x04], sent.Data.ToArray());
         Assert.Equal((5, OwnRuleKind.Timer), (Assert.Single(rules.Rows(board.BoardId)).Channel, Assert.Single(rules.Rows(board.BoardId)).Kind));
+    }
+
+    // A new address deletes the row while a "Keep" is under way: the person is told, and nothing is saved or logged.
+    [Fact]
+    public async Task Should_SayTheRuleIsGone_WhenItsRowGoesWhileKept()
+    {
+        using var held = new HeldQueries();
+        await using var rig = await OwnRulesRig.StartAsync(held.AddTo);
+        rig.Board.SetOwnRules(new OwnRules([Timer3]));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 1);
+
+        // Held after it read the row, at the relay's id.
+        held.Hold(sql => sql.Contains("FROM \"Relay\" AS", StringComparison.Ordinal));
+        var keeping = rig.Handler.KeepAsync(rig.BoardId, 3, OwnRuleKind.Timer, Erik, Cancel);
+        await Wait.UntilAsync(() => held.Holds == 1);
+        var address = rig.Database.Services.GetRequiredService<Contactor.Web.Features.Boards.BoardAddressHandler>();
+        Assert.Null(await address.SaveAsync(rig.BoardId, "10.0.0.9", 9760, Erik, Cancel));
+        held.Release();
+
+        Assert.Equal("The board no longer has that rule.", await keeping);
+        Assert.Empty(await rig.RowsAsync());
+        Assert.Empty(await rig.EventsAsync(EventActions.BoardOwnRuleKept));
+    }
+
+    // Just after the start the service hasn't read which rules people kept: no warning until it has, so a kept rule
+    // never shows as one.
+    [Fact]
+    public async Task Should_WarnAboutNothing_UntilTheRowsAreRead()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 2);
+        Assert.Null(await rig.Handler.KeepAsync(rig.BoardId, 3, OwnRuleKind.Timer, Erik, Cancel));
+
+        using var fresh = new OwnRulesService(
+            rig.Database.Services.GetRequiredService<Contactor.Web.Features.Boards.BoardRegistry>(),
+            rig.Database.Factory,
+            rig.Database.Services.GetRequiredService<Contactor.Web.LocalClock>(),
+            rig.Time,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OwnRulesService>.Instance);
+        var handler = ActivatorUtilities.CreateInstance<OwnRulesHandler>(rig.Database.Services, fresh);
+
+        Assert.Empty(handler.Warnings(rig.BoardId));
+
+        await fresh.StartAsync(Cancel);
+        try
+        {
+            await Wait.UntilAsync(() => fresh.TryGetRows(rig.BoardId, out _));
+            Assert.Equal([Timer5], handler.Warnings(rig.BoardId));
+        }
+        finally
+        {
+            await fresh.StopAsync(Cancel);
+        }
     }
 
     [Fact]

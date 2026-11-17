@@ -962,6 +962,10 @@
     <value>{0}'s</value>
     <comment>A board's name in the genitive, e.g. "Garage's".</comment>
   </data>
+  <data name="Events.OwnRules.NamedEndingInS" xml:space="preserve">
+    <value>{0}'s</value>
+    <comment>A board's name that ends in s, x or z in the genitive, e.g. "Lars's"; a language may add nothing.</comment>
+  </data>
   <data name="Events.OwnRules.Relay" xml:space="preserve">
     <value>relay {0}</value>
   </data>

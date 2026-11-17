@@ -238,6 +238,23 @@ public sealed class EventTextTests
         Assert.Equal(text, view.Text);
     }
 
+    // Swedish adds no s to a name that already ends in s, x or z.
+    [Theory]
+    [InlineData("Garage", "sv", "Garages egna timer för relä 3 slogs på", "Erik behöll Garages egna timer för relä 3")]
+    [InlineData("Lars", "sv", "Lars egna timer för relä 3 slogs på", "Erik behöll Lars egna timer för relä 3")]
+    [InlineData("Fax", "sv", "Fax egna timer för relä 3 slogs på", "Erik behöll Fax egna timer för relä 3")]
+    [InlineData("Ritz", "sv", "Ritz egna timer för relä 3 slogs på", "Erik behöll Ritz egna timer för relä 3")]
+    [InlineData("Lars", "en", "Lars's own timer for relay 3 was turned on", "Erik kept Lars's own timer for relay 3")]
+    public void Should_PutABoardsNameInTheGenitive_AsTheLanguageDoes(string name, string language, string found, string kept)
+    {
+        using var culture = TestCulture.Language(language);
+
+        var foundView = TestTexts.Events.For(Entry(EventActors.System, EventActions.BoardOwnRuleFound, """{"kind":"timer","new":true,"relay":3}"""), Relay, null, boardName: name);
+        var keptView = TestTexts.Events.For(Entry("erik@example.com", EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}"""), Relay, "Erik", boardName: name);
+
+        Assert.Equal((found, kept), (foundView.Text, keptView.Text));
+    }
+
     // A person turned off or kept the board's own rules: the board is named in the line, so the Events screen doesn't
     // name it again before the target.
     [Theory]

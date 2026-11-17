@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
-using Contactor.Web.Features.OwnRules;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Contactor.Web.Resources;
@@ -26,7 +26,7 @@ public sealed class BoardAddressHandler
     private readonly RelayChanges _changes;
     private readonly IStringLocalizer<Texts> _texts;
     private readonly BoardLoginText _login;
-    private readonly OwnRulesService? _ownRules;
+    private readonly OwnRulesService _ownRules;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -35,7 +35,7 @@ public sealed class BoardAddressHandler
         RelayChanges changes,
         IStringLocalizer<Texts> texts,
         BoardLoginText login,
-        OwnRulesService? ownRules = null)
+        OwnRulesService ownRules)
     {
         _ownRules = ownRules;
         _texts = texts;
@@ -245,7 +245,7 @@ public sealed class BoardAddressHandler
         connection.SetEndpoint(endpoint);
         if (current != endpoint)
         {
-            _ownRules?.Forget(board.Id);
+            _ownRules.Forget(board.Id);
         }
 
         _changes.Notify();

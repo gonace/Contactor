@@ -7,8 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// Makes the app's database queries whose SQL matches throw, so a test can see what a page does when its database read
-/// fails. Nothing fails until <see cref="Fail"/>.
+/// Makes the app's database queries and commands whose SQL matches throw, so a test can see what a page or service
+/// does when its database read or write fails. Nothing fails until <see cref="Fail"/>.
 /// </summary>
 internal sealed class FailingQueries : DbCommandInterceptor
 {
@@ -48,6 +48,22 @@ internal sealed class FailingQueries : DbCommandInterceptor
         DbCommand command,
         CommandEventData eventData,
         InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfMatched(command);
+        return ValueTask.FromResult(result);
+    }
+
+    public override InterceptionResult<int> NonQueryExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<int> result)
+    {
+        ThrowIfMatched(command);
+        return result;
+    }
+
+    public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<int> result,
         CancellationToken cancellationToken = default)
     {
         ThrowIfMatched(command);

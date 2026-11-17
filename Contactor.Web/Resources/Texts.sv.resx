@@ -873,6 +873,9 @@
   <data name="Events.OwnRules.Named" xml:space="preserve">
     <value>{0}s</value>
   </data>
+  <data name="Events.OwnRules.NamedEndingInS" xml:space="preserve">
+    <value>{0}</value>
+  </data>
   <data name="Events.OwnRules.Relay" xml:space="preserve">
     <value>relä {0}</value>
   </data>
