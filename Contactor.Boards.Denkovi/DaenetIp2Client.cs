@@ -293,6 +293,10 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     private static string NoAnswerMessage =>
         $"The DAEnetIP2 v2 board didn't answer within {TimeoutSeconds} s, asked {Attempts.ToString(CultureInfo.InvariantCulture)} times: check the address and the community.";
 
+    // What an analog input's request without an answer says: the ports answered, so the address and community are right.
+    private static string AnalogNoAnswerMessage =>
+        $"The DAEnetIP2 v2 board didn't answer for an analog input within {TimeoutSeconds} s, asked {Attempts.ToString(CultureInfo.InvariantCulture)} times.";
+
     // The next request id, from 1 up to int.MaxValue, and then from 1 again.
     private int NextRequestId()
     {
@@ -582,8 +586,9 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
                     continue;
                 }
 
-                Trace(BoardTraceDirection.None, $"No answer: {NoAnswerMessage}", isError: true);
-                throw new TimeoutException(NoAnswerMessage);
+                var message = DaenetIp2Api.AnalogInputOf(request.Oid) is null ? NoAnswerMessage : AnalogNoAnswerMessage;
+                Trace(BoardTraceDirection.None, $"No answer: {message}", isError: true);
+                throw new TimeoutException(message);
             }
             catch (SocketException ex)
             {

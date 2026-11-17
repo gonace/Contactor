@@ -648,6 +648,8 @@ public sealed class DaenetIp2ClientTests
         Assert.Contains(run.Traces, t => t.Text == $"No analog readings: {Problem} The relays are read as usual; the analog inputs are asked for again in 1 min." && t.IsError);
         Assert.Contains(logger.Messages, m => m == $"The DAEnetIP2 v2 board's analog inputs couldn't be read; the relays are read as usual: {Problem}");
         Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Connection lost", StringComparison.Ordinal));
+        Assert.Contains(run.Traces, t => t.Text == "No answer: The DAEnetIP2 v2 board didn't answer for an analog input within 1 s, asked 2 times." && t.IsError);
+        Assert.DoesNotContain(run.Traces, t => t.Text == $"No answer: {NoAnswer}");
 
         // The relays still switch, and the polls ask for P5 alone for a minute: one time-out a minute, not one a poll.
         Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
