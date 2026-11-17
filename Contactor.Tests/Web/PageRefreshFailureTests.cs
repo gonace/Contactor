@@ -139,13 +139,16 @@ public sealed class PageRefreshFailureTests
         Assert.Empty(log.Of(typeof(Relays)));
     }
 
-    // The app, once its board runs. The board's run reads the board's saved address first, on a thread of its own, and
-    // a failed read there stops the whole app, as any board's failed run does. A test that fails every read before
-    // then, as on a busy machine, would stop the app instead of failing the page's refresh. The fake connection only
-    // runs after that read.
+    // The app, once what it does at start is done, so the test's refresh is the only one while reads fail:
+    // - the board runs: its run reads the board's saved address first, on a thread of its own, and a failed read there
+    //   stops the whole app, as any board's failed run does. The fake connection only runs after that read.
+    // - with a board in contact (the analog one), the event recorder has told the pages about its first status, as it
+    //   saves when contact began: a page open then would refresh too, and log a second warning. A board that has lost
+    //   contact gives the recorder nothing to save at start.
     private static async Task<TestWebApp> StartAppAsync(FailingQueries queries, WarningCollector log, bool analog)
     {
         var board = analog ? new FakeRelayBoard(relayCount: 4, inputCount: 1, analog: new AnalogAbility(4, 1023, 5m)) : FakeRelayBoard.LostContact();
+        var told = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
@@ -154,13 +157,19 @@ public sealed class PageRefreshFailureTests
                 TestWebApp.WithBoard(board)(services);
                 queries.AddTo(services);
                 services.AddSingleton<ILoggerProvider>(log);
+                services.AddSingleton(_ =>
+                {
+                    var changes = new RelayChanges();
+                    changes.Changed += (_, _) => told.TrySetResult();
+                    return changes;
+                });
             });
         try
         {
             var connection = Assert.IsType<FakeConnection>(app.Services.Live().Active?.Connection);
-            for (var round = 0; !connection.Running; round++)
+            for (var round = 0; !connection.Running || (analog && !told.Task.IsCompleted); round++)
             {
-                Assert.True(round < 10_000, "The board's connection never started.");
+                Assert.True(round < 10_000, $"The app never finished starting: the board runs: {connection.Running}, the pages were told: {told.Task.IsCompleted}.");
                 await Task.Delay(1, Cancel);
             }
 
