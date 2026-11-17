@@ -5,12 +5,9 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
-@using Contactor.Web.Persistence
-@using Microsoft.EntityFrameworkCore
 @inject BoardRegistry Registry
 @inject LocalClock Clock
 @inject RelayChanges Changes
-@inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
 @inject AppLanguage Language
 @inject ILogger<Debug> Log
@@ -25,7 +22,7 @@
             <p class="hint">@Texts["Debug.Hint.Several", BoardTrace.Capacity]</p>
             @* Which boards' traffic shows: this browser's, in its own cookie (RelaysEndpoints). *@
             <div class="boards-bar">
-                <BoardPicker Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" Showing="@ShowingText" />
+                <BoardPicker Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Plain="true" Showing="@ShowingText" />
             </div>
         }
         else
@@ -74,7 +71,6 @@
     private BoardTraceWatch? _watch;
     private IReadOnlyList<(LiveBoard Board, BoardTraceItem Item)> _items = [];
     private long _routineLeftOut;
-    private BoardCounts _counts = BoardCounts.None;
 
     // What the board filter shows of each board's state (BoardPicker).
     private readonly ShownBoardStates _shown = new();
@@ -95,14 +91,14 @@
     // "Showing Workshop and Paint shop" while filtered.
     private string? ShowingText => BoardsFilter.IsAll ? null : BoardsText.Showing([.. ShownBoards.Select(b => b.Name)]);
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         Read();
         _watch = new BoardTraceWatch(Registry, added: null, changed: OnChanged);
         Registry.StateChanged += OnBoardChanged;
         Changes.Changed += OnRelaysChanged;
         Registry.BoardsChanged += OnRelaysChanged;
-        await LoadCountsAsync();
+        ResetShown();
     }
 
     public void Dispose()
@@ -116,7 +112,7 @@
     // The desktop's side menu: every board, to pick which to show.
     private RenderFragment BoardList => __builder =>
     {
-        <BoardPicker Side="true" Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Counts="_counts" />
+        <BoardPicker Side="true" Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" />
     };
 
     // The newest steps of every shown board, merged by time, at most a trace's capacity in all, so the work and the page
@@ -161,18 +157,10 @@
         }
     }
 
-    // BoardPicker.Counts, which it no longer reads (Issue #495), for the board filter, which shows while there is a board.
-    private async Task LoadCountsAsync()
+    // The board filter: only the boards there are now, so a removed board's entry goes.
+    private void ResetShown()
     {
-        // Only the boards there are now: a removed board's entry goes.
         _shown.Reset(Boards);
-        if (Boards.Count == 0)
-        {
-            return;
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _counts = await BoardCounts.LoadAsync(db, Registry, CancellationToken.None);
     }
 
     private static string Arrow(BoardTraceItem item)
@@ -198,7 +186,7 @@
     // From a board's connection loop, a timer, or Clear.
     private void OnChanged()
     {
-        _ = RefreshAsync(counts: false);
+        _ = RefreshAsync(reset: false);
     }
 
     // A board's new state: only the board filter's dot, lamps and counts show it, so only a change to those redraws the
@@ -207,31 +195,27 @@
     {
         if (_shown.Changes(change))
         {
-            _ = RefreshAsync(counts: false);
+            _ = RefreshAsync(reset: false);
         }
     }
 
-    // A relay, a group or the boards changed: the board filter's counts.
+    // A relay, a group or the boards changed: the board filter again.
     private void OnRelaysChanged(object? sender, EventArgs e)
     {
-        _ = RefreshAsync(counts: true);
+        _ = RefreshAsync(reset: true);
     }
 
-    private async Task RefreshAsync(bool counts)
+    private async Task RefreshAsync(bool reset)
     {
         using var language = Language.Use();
-
-        // What the warning names: the step that failed.
-        var what = "the board traffic";
         try
         {
-            await InvokeAsync(async () =>
+            await InvokeAsync(() =>
             {
                 Read();
-                if (counts)
+                if (reset)
                 {
-                    what = "the board filter's counts";
-                    await LoadCountsAsync();
+                    ResetShown();
                 }
 
                 StateHasChanged();
@@ -244,7 +228,7 @@
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Not shown to the person: the page keeps what it shows, and the next refresh tries again.
-            Log.LogWarning(ex, "The page could not reload {What}", what);
+            Log.LogWarning(ex, "The page could not reload {What}", "the board traffic");
         }
     }
 }
