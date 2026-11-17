@@ -217,20 +217,10 @@ public sealed class RelaysPageTests
         signIn.SetResult(PageRenderer.SignedIn("john@example.com", "John"));
         await rendered.WaitAsync(Cancel);
 
-        Assert.Equal(0, Handlers<Relays>(registry, nameof(BoardRegistry.StateChanged)));
-        Assert.Equal(0, Handlers<Relays>(registry, nameof(BoardRegistry.AnalogChanged)));
-        Assert.Equal(0, Handlers<Relays>(registry, nameof(BoardRegistry.BoardsChanged)));
-        Assert.Equal(0, Handlers<Relays>(changes, nameof(RelayChanges.Changed)));
-    }
-
-    // How many of an event's handlers belong to a component of type T.
-    private static int Handlers<T>(object source, string name)
-    {
-        // A field-like event's backing field has the event's name. An event with its own add and remove has none: say so
-        // rather than count nothing.
-        var field = source.GetType().GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.True(field is not null, $"{source.GetType().Name}.{name} has no backing field: count its handlers another way.");
-        return (field.GetValue(source) as Delegate)?.GetInvocationList().Count(d => d.Target is T) ?? 0;
+        Assert.Equal(0, PageRenderer.Handlers<Relays>(registry, nameof(BoardRegistry.StateChanged)));
+        Assert.Equal(0, PageRenderer.Handlers<Relays>(registry, nameof(BoardRegistry.AnalogChanged)));
+        Assert.Equal(0, PageRenderer.Handlers<Relays>(registry, nameof(BoardRegistry.BoardsChanged)));
+        Assert.Equal(0, PageRenderer.Handlers<Relays>(changes, nameof(RelayChanges.Changed)));
     }
 
     private static int CountOccurrences(string text, string value)

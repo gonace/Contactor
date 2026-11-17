@@ -100,6 +100,10 @@
     private bool _hasMore;
     private bool _loading;
 
+    // Set when the page closes, on the page's own thread: a page closed while it loads doesn't subscribe, and an event
+    // already on its way doesn't load or draw a closed page.
+    private bool _disposed;
+
     /// <summary>The boards this browser picked to show (<see cref="BoardFilters.Events"/>), as the page was opened.</summary>
     [CascadingParameter]
     public BoardFilters? PickedBoards { get; set; }
@@ -122,6 +126,14 @@
     {
         await ReloadAsync(EventsHandler.PageSize);
         await LoadCountsAsync();
+
+        // Dispose ran during the load: subscribing now would leave the handlers for the life of the app. Dispose and this
+        // both run on the page's own thread, so nothing can come between the check and the subscription.
+        if (_disposed)
+        {
+            return;
+        }
+
         Changes.Changed += OnChanged;
         Registry.StateChanged += OnBoardChanged;
         Registry.BoardsChanged += OnChanged;
@@ -129,6 +141,7 @@
 
     public void Dispose()
     {
+        _disposed = true;
         Changes.Changed -= OnChanged;
         Registry.StateChanged -= OnBoardChanged;
         Registry.BoardsChanged -= OnChanged;
@@ -211,6 +224,12 @@
         {
             await InvokeAsync(async () =>
             {
+                // On the page's own thread, as Dispose is: a closed page loads and draws nothing.
+                if (_disposed)
+                {
+                    return;
+                }
+
                 if (reload)
                 {
                     await ReloadAsync(Math.Max(EventsHandler.PageSize, _rows.Count));

@@ -335,6 +335,11 @@
     private List<BoardRelaysStep.Row> _relays = [];
     private ElementReference _heading;
     private SignedInUser? _user;
+
+    // Set when the page closes, on the page's own thread: a page closed while it loads doesn't subscribe, and an event
+    // already on its way doesn't draw a closed page.
+    private bool _disposed;
+
     private int _step = StepAbout;
 
     // Part 1's choices and fields.
@@ -416,6 +421,14 @@
         _tailscaleName = SignIns.TailscaleHostName;
         _teamDomain = SignIns.Access.TeamDomain;
         _audience = SignIns.Access.Audience;
+
+        // Dispose ran during the load: subscribing now would leave the handlers for the life of the app. Dispose and this
+        // both run on the page's own thread, so nothing can come between the check and the subscription.
+        if (_disposed)
+        {
+            return;
+        }
+
         SignIns.TunnelChanged += OnTunnelChanged;
         SignIns.TailscaleChanged += OnTunnelChanged;
 
@@ -426,6 +439,12 @@
             _boardId = first.BoardId;
             _type = model.Id;
             await LoadBoardAsync(first);
+        }
+
+        // Dispose ran while the board loaded: as above.
+        if (_disposed)
+        {
+            return;
         }
 
         Registry.StateChanged += OnBoardChanged;
@@ -440,6 +459,7 @@
 
     public void Dispose()
     {
+        _disposed = true;
         Registry.StateChanged -= OnBoardChanged;
         SignIns.TunnelChanged -= OnTunnelChanged;
         SignIns.TailscaleChanged -= OnTunnelChanged;
@@ -456,7 +476,14 @@
         using var language = Language.Use();
         try
         {
-            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(() =>
+            {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (!_disposed)
+                {
+                    StateHasChanged();
+                }
+            });
         }
         catch (ObjectDisposedException)
         {

@@ -161,7 +161,9 @@
         }
 
         _email = (await CurrentUser.GetAsync())?.Email;
-        if (_email is null)
+        // Dispose ran during the load: subscribing now would leave the handlers for the life of the app. Dispose and this
+        // both run on the page's own thread, so nothing can come between the check and the subscription.
+        if (_email is null || _disposed)
         {
             return;
         }
@@ -299,6 +301,12 @@
             var on = await Debugging.IsOnAsync(_email!, CancellationToken.None);
             await InvokeAsync(() =>
             {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (_disposed)
+                {
+                    return;
+                }
+
                 _debugging = on;
                 if (!on)
                 {

@@ -192,14 +192,27 @@
     private string? _log;
     private string? _logId;
 
+    // Set when the page closes, on the page's own thread: a page closed while it loads doesn't subscribe, and an event
+    // already on its way doesn't draw a closed page.
+    private bool _disposed;
+
     protected override async Task OnInitializedAsync()
     {
         _user = await CurrentUser.GetAsync();
+
+        // Dispose ran during the load: subscribing now would leave the handler for the life of the app. Dispose and this
+        // both run on the page's own thread, so nothing can come between the check and the subscription.
+        if (_disposed)
+        {
+            return;
+        }
+
         Updates.Changed += OnChanged;
     }
 
     public void Dispose()
     {
+        _disposed = true;
         Updates.Changed -= OnChanged;
     }
 
@@ -270,7 +283,14 @@
         using var language = Language.Use();
         try
         {
-            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(() =>
+            {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (!_disposed)
+                {
+                    StateHasChanged();
+                }
+            });
         }
         catch (ObjectDisposedException)
         {

@@ -77,10 +77,20 @@ internal sealed class PageRenderer : Renderer
     /// Starts <typeparamref name="TPage"/> while the person's sign-in waits for <paramref name="signIn"/>, so the page's
     /// first load is held until the test completes it. The task ends when the page has rendered, or failed to.
     /// </summary>
-    public static (PageRenderer Page, Task Rendered) StartHeld<TPage>(IServiceProvider app, Task<AuthenticationState> signIn)
+    public static (PageRenderer Page, Task Rendered) StartHeld<TPage>(IServiceProvider app, Task<AuthenticationState> signIn, IDictionary<string, object?>? parameters = null)
         where TPage : IComponent
     {
-        return Start<TPage>(app, signIn, null);
+        return Start<TPage>(app, signIn, parameters);
+    }
+
+    /// <summary>How many of the event <paramref name="name"/>'s handlers on <paramref name="source"/> belong to a <typeparamref name="T"/>.</summary>
+    public static int Handlers<T>(object source, string name)
+    {
+        // A field-like event's backing field has the event's name. An event with its own add and remove has none: say so
+        // rather than count nothing.
+        var field = source.GetType().GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.True(field is not null, $"{source.GetType().Name}.{name} has no backing field: count its handlers another way.");
+        return (field.GetValue(source) as Delegate)?.GetInvocationList().Count(d => d.Target is T) ?? 0;
     }
 
     /// <summary>The sign-in of <paramref name="email"/>, shown as <paramref name="name"/>.</summary>
