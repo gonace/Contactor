@@ -106,10 +106,7 @@
     }
     else
     {
-        @* One board: the filter's chips with the board and "+ Board", nothing to filter (BoardPicker). *@
-        <div class="boards-bar">
-            <BoardPicker Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Counts="_counts" />
-        </div>
+        @* One board: nothing to filter, so no chips; the side menu shows the board (BoardPicker). *@
         <div class="connection">
             @ConnectionLine(State, null)
             @if (_allOffFailedBoardId is not null)
@@ -310,7 +307,7 @@
     private IReadOnlyList<LiveBoard> Boards => Registry.All;
 
     // Two or more boards: a section per board, "All boards" in the filter, and "Turn off all boards". One board has one
-    // list of relays, and the filter only shows the board and "Add a board" (BoardPicker).
+    // list of relays, no chips, and only the board in the side menu (BoardPicker).
     private bool Several => Boards.Count > 1;
 
     // With one board: that board. Before the app has a board, none (no relays, never answers). One read of the list:

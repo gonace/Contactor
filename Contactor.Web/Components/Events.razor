@@ -24,10 +24,10 @@
                 <button type="button" aria-pressed="@(_filter == filter ? "true" : "false")" @onclick="() => SetFilterAsync(filter)">@Texts[label]</button>
             }
         </div>
-        @if (Boards.Count > 0)
+        @if (Several)
         {
             @* Which boards' events show: this browser's, in its own cookie (RelaysEndpoints). Events about no board always show.
-               With one board, only the board and "+ Board" (BoardPicker). *@
+               With one board there is nothing to filter: no chips (BoardPicker). *@
             <div class="boards-bar">
                 <BoardPicker Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" Showing="@ShowingText" />
             </div>

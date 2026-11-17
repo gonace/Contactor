@@ -30,13 +30,6 @@
         else
         {
             <p class="hint"><Sentence Text="@Texts["Debug.Hint.One", BoardTrace.Capacity, "{1}"]"><Arg1><span class="mono">@Boards.FirstOrDefault()?.Endpoint</span></Arg1></Sentence></p>
-            @if (Boards.Count == 1)
-            {
-                @* One board: only the board and "+ Board" (BoardPicker). *@
-                <div class="boards-bar">
-                    <BoardPicker Screen="BoardFilterScreen.Debug" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" />
-                </div>
-            }
         }
         @if (_routineLeftOut > 0)
         {

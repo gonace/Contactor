@@ -6,10 +6,14 @@
 
 @* The board filter of Relays, Events and Debug: below 1024 px a row of chips under the heading, on a desktop a list
    in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the choice in the screen's own cookie
-   and comes back to the page (RelaysEndpoints); no JavaScript. Each list ends with "+ Add a board" ("+ Board" among
-   the chips), which opens BoardNew. With one board there is nothing to filter: no "All boards", and the board shows
-   as picked, as it is the one shown. *@
-@if (Side)
+   and comes back to the page (RelaysEndpoints); no JavaScript. Only the boards: a board is added from Settings. With
+   one board there is nothing to filter: no chips, as the page already names the board and its state, and the side
+   menu's list shows only the board, as picked, as it is the one shown. *@
+@if (Side ? Boards.Count == 0 : !Several)
+{
+    @* No chips with one board, and no list without a board. *@
+}
+else if (Side)
 {
     var all = CountOf(Boards);
     var form = Go ? GoFormId : FormId;
@@ -17,6 +21,11 @@
     {
         @* Its own form: no chips on this page. Each board goes to Relays filtered to it. *@
         <form id="@GoFormId" method="post" action="@BoardFilterScreen.Relays.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
+    }
+    else if (!Several)
+    {
+        @* The one board has no chips, which hold the form otherwise: the form its box posts. *@
+        <form id="@FormId" method="post" action="@Screen.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
     }
     <div class="list-label" id="boards-label">@Texts["Boards.Picker.Label"]</div>
     <div class="side-boards" role="group" aria-labelledby="boards-label">
@@ -45,20 +54,13 @@
                 @Lamps(board)
             </button>
         }
-        <a href="board/new" class="side-add">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            @Texts["Common.AddBoard"]
-        </a>
     </div>
 }
 else
 {
     <form id="@FormId" method="post" action="@Screen.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
     <div class="chips-row" role="group" aria-label="@Texts["Boards.Picker.Show"]">
-        @if (Several)
-        {
-            <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">@Texts[Plain ? "Boards.Picker.All" : "Boards.Picker.AllShort"]</button>
-        }
+        <button type="submit" form="@FormId" name="show" value="@BoardFilter.AllValue" class="chip-filter all @(Filter.IsAll ? "picked" : null)" aria-pressed="@(Filter.IsAll ? "true" : "false")">@Texts[Plain ? "Boards.Picker.All" : "Boards.Picker.AllShort"]</button>
         @foreach (var board in Boards)
         {
             var state = board.State;
@@ -87,10 +89,6 @@ else
                 }
             </button>
         }
-        <a href="board/new" class="chip-add" aria-label="@Texts["Common.AddBoard"]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-            @Texts["Boards.Picker.AddChip"]
-        </a>
     </div>
     @if (Showing is not null)
     {
@@ -147,7 +145,7 @@ else
     [Parameter]
     public string? Showing { get; set; }
 
-    // Two or more boards: "All boards" (or "All") first. With one board it would only say the same as the board.
+    // Two or more boards: something to filter, with "All boards" (or "All") first. One board alone has no chips.
     private bool Several => Boards.Count > 1;
 
     private bool AnyAnswered => Boards.Any(b => b.State.HasAnswered);

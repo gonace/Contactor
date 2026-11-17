@@ -193,33 +193,37 @@ public sealed class BoardAddingTests
         Assert.Contains("RELAY 8", WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel)), StringComparison.Ordinal);
     }
 
-    // "+ Add a board": in Settings under the one board's card, at the end of the list of several, at the end of the
-    // filter's chips, and in the side menu's list on Relays, Events and Debug, with one board too.
+    // "+ Add a board" is in Settings only: under the one board's card, and at the end of the list of several. Relays,
+    // Events and Debug have none, in the chips or in the side menu, with one board or two (with no board, Relays' empty
+    // state has it).
     [Fact]
-    public async Task Should_OfferAddABoard_WhereTheDesignPutsIt()
+    public async Task Should_OfferAddABoard_OnlyInSettings()
     {
         await using (var one = new TestWebApp(configureServices: TestWebApp.WithBoard(new FakeRelayBoard())))
         {
             using var http = one.CreateClient();
             var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
             Assert.Matches("(?s)class=\"board-stack\".*id=\"host\".*href=\"board/new\" class=\"add-board\"", settings);
-
-            // One board: the side menu has it too, and the relays' chips.
-            Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", settings);
-            var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-            Assert.Matches("(?s)class=\"chips-row\".*href=\"board/new\" class=\"chip-add\"", relays);
-            Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", relays);
+            Assert.Single(Regex.Matches(settings, "href=\"board/new\""));
+            foreach (var screen in new[] { "/", "/events", "/debug" })
+            {
+                var html = WebUtility.HtmlDecode(await http.GetStringAsync(screen, Cancel));
+                Assert.Contains("class=\"side-boards\"", html, StringComparison.Ordinal);
+                Assert.DoesNotContain("board/new", html, StringComparison.Ordinal);
+            }
         }
 
         await using var boards = await TwoBoards.StartAsync();
         using var client = boards.App.CreateClient();
         var list = WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel));
         Assert.Matches($"(?s)href=\"board/{boards.BarnId}\".*href=\"board/new\" class=\"add-board\"", list);
-        foreach (var screen in new[] { "/", "/events" })
+        Assert.Single(Regex.Matches(list, "href=\"board/new\""));
+        foreach (var screen in new[] { "/", "/events", "/debug" })
         {
             var html = WebUtility.HtmlDecode(await client.GetStringAsync(screen, Cancel));
-            Assert.Matches("(?s)class=\"chips-row\".*href=\"board/new\" class=\"chip-add\"", html);
-            Assert.Matches("(?s)class=\"side-boards\".*href=\"board/new\" class=\"side-add\"", html);
+            Assert.Contains("class=\"chips-row\"", html, StringComparison.Ordinal);
+            Assert.Contains("class=\"side-boards\"", html, StringComparison.Ordinal);
+            Assert.DoesNotContain("board/new", html, StringComparison.Ordinal);
         }
     }
 
@@ -480,7 +484,7 @@ public sealed class BoardAddingTests
 
     // With two boards the desktop's side menu lists them on every page: on a page without the filter (Settings, a
     // relay's page) each board posts the Relays screen's own form with that board alone, which goes to Relays showing
-    // it; "+ Add a board" ends the list. Relays keeps its filter. One board has the list too, without "All boards".
+    // it. Relays keeps its filter. One board has the list too, without "All boards".
     [Fact]
     public async Task Should_ListTheBoards_InTheSideMenu_OnEveryPage()
     {
@@ -491,7 +495,7 @@ public sealed class BoardAddingTests
         {
             var html = WebUtility.HtmlDecode(await http.GetStringAsync(path, Cancel));
             Assert.Matches("<form id=\"board-go\" method=\"post\" action=\"relays/boards\"", html);
-            Assert.Matches($"(?s)class=\"side-boards\".*form=\"board-go\" name=\"show\" value=\"{boards.BarnId}\".*href=\"board/new\" class=\"side-add\"", html);
+            Assert.Matches($"(?s)class=\"side-boards\".*form=\"board-go\" name=\"show\" value=\"{boards.BarnId}\"", html);
             Assert.DoesNotContain("aria-pressed", html[html.IndexOf("side-boards", StringComparison.Ordinal)..], StringComparison.Ordinal);
             Assert.DoesNotContain("class=\"chips-row\"", html, StringComparison.Ordinal);
         }
@@ -504,7 +508,8 @@ public sealed class BoardAddingTests
         using var client = one.CreateClient();
         var alone = WebUtility.HtmlDecode(await client.GetStringAsync("/settings", Cancel));
         // The one board is every board there is: it posts every board, so a board added later isn't hidden.
-        Assert.Matches("(?s)class=\"side-boards\".*form=\"board-go\" name=\"show\" value=\"all\".*href=\"board/new\" class=\"side-add\"", alone);
+        Assert.Matches("(?s)class=\"side-boards\".*form=\"board-go\" name=\"show\" value=\"all\"", alone);
+        Assert.DoesNotContain("board/new", alone[alone.IndexOf("side-boards", StringComparison.Ordinal)..], StringComparison.Ordinal);
         Assert.DoesNotContain("All boards", alone, StringComparison.Ordinal);
         Assert.DoesNotContain("aria-pressed", alone[alone.IndexOf("side-boards", StringComparison.Ordinal)..], StringComparison.Ordinal);
     }

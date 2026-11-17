@@ -298,10 +298,6 @@
     <value>unchanged</value>
     <comment>In an empty password field: the saved password stays.</comment>
   </data>
-  <data name="Boards.Picker.AddChip" xml:space="preserve">
-    <value>Board</value>
-    <comment>The chip that adds a board, after a "+".</comment>
-  </data>
   <data name="Boards.Picker.All" xml:space="preserve">
     <value>All boards</value>
   </data>
