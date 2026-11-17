@@ -1,6 +1,6 @@
 @* A group's steps as cards, the same on the group's page and in "New group": each step's name, its relays with
-   "Remove", "+ Add a relay to this step", up/down for the whole step, the waits between two steps and "+ Add a step"
-   under the last. The page owns the GroupEditor and says what each change does; what only one page shows (a step's
+   "Join the step above" (not on the first step) and "Remove", "+ Add a relay to this step", up/down for the whole
+   step, the waits between two steps and "+ Add a step" under the last. The page owns the GroupEditor and says what each change does; what only one page shows (a step's
    state, a relay's ON/OFF) comes in through StepNote and RelayEnd. *@
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Persistence
@@ -34,9 +34,18 @@
                         <div class="relay-text">
                             <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
                             <span class="relay-name">@relay.Name</span>
-                            @if (CanChange && Editor.RelayCount > RelayGroup.MinMembers)
+                            @if (CanChange && (stepIndex > 0 || Editor.RelayCount > RelayGroup.MinMembers))
                             {
-                                <button type="button" class="remove" aria-label="@Texts["Groups.RemoveRelay", relay.Name]" @onclick="() => RemoveAsync(relay.RelayId)">@Texts["Groups.Remove"]</button>
+                                <div class="relay-actions">
+                                    @if (stepIndex > 0)
+                                    {
+                                        <button type="button" class="remove join" aria-label="@Texts["Groups.JoinStepAbove.Label", relay.Name]" @onclick="() => JoinAsync(relay.RelayId)">@Texts["Groups.JoinStepAbove"]</button>
+                                    }
+                                    @if (Editor.RelayCount > RelayGroup.MinMembers)
+                                    {
+                                        <button type="button" class="remove" aria-label="@Texts["Groups.RemoveRelay", relay.Name]" @onclick="() => RemoveAsync(relay.RelayId)">@Texts["Groups.Remove"]</button>
+                                    }
+                                </div>
                             }
                         </div>
                         @RelayEnd?.Invoke(relay)
@@ -111,7 +120,7 @@
     [Parameter, EditorRequired]
     public GroupEditor Editor { get; set; } = default!;
 
-    /// <summary>Whether the relays and the steps' order can change: up/down and "Remove".</summary>
+    /// <summary>Whether the relays and the steps' order can change: up/down, "Join the step above" and "Remove".</summary>
     [Parameter]
     public bool CanChange { get; set; } = true;
 
@@ -142,6 +151,10 @@
     /// <summary>"Remove" for a relay, by its id.</summary>
     [Parameter]
     public EventCallback<int> OnRemove { get; set; }
+
+    /// <summary>"Join the step above" for a relay, by its id.</summary>
+    [Parameter]
+    public EventCallback<int> OnJoin { get; set; }
 
     /// <summary>"Add" for a relay: to the step at an index, or <see cref="GroupEditor.NewStep"/>.</summary>
     [Parameter]
@@ -178,6 +191,12 @@
     {
         _addingTo = null;
         return OnRemove.InvokeAsync(relayId);
+    }
+
+    private Task JoinAsync(int relayId)
+    {
+        _addingTo = null;
+        return OnJoin.InvokeAsync(relayId);
     }
 
     private void StartAdding(int target)

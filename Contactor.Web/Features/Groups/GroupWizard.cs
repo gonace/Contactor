@@ -5,7 +5,8 @@ namespace Contactor.Web.Features.Groups;
 /// <summary>
 /// What "New group" holds between its four steps. The relays are in steps, edited as the group's page edits them
 /// (<see cref="GroupEditor"/>): a relay picked in step 2 starts a step of its own, last; in step 3 a relay can join a
-/// step, be added or removed, and a whole step moves. Step 2's #1, #2 … are the relays' places in that start order.
+/// step or the step above, be added or removed, and a whole step moves. Step 2's #1, #2 … are the relays' places in
+/// that start order.
 /// </summary>
 public sealed class GroupWizard
 {
@@ -135,6 +136,12 @@ public sealed class GroupWizard
         }
 
         _editor.Remove(relayId);
+    }
+
+    /// <summary>Moves a relay into the step above, as the group's page does (<see cref="GroupEditor.JoinStepAbove"/>).</summary>
+    public void JoinStepAbove(int relayId)
+    {
+        _editor.JoinStepAbove(relayId);
     }
 
     /// <summary>Moves a whole step up (-1) or down (+1); nothing past the ends.</summary>
