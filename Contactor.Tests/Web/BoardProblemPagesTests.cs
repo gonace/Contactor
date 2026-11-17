@@ -52,9 +52,9 @@ public sealed class BoardProblemPagesTests
         Assert.Contains(longText, html, StringComparison.Ordinal);
         if (problem is not null)
         {
-            // The desktop's side menu, on every screen, has the short one.
+            // Only the long one: with one board the desktop's side menu has no list of boards, so no short one.
             Assert.DoesNotContain("No contact with the relay board at", html, StringComparison.Ordinal);
-            Assert.Matches($"<span class=\"no-contact\"[^>]*>{shortText}</span>", html);
+            Assert.DoesNotContain($">{shortText}<", html, StringComparison.Ordinal);
         }
 
         // Another model the app knows is added again: the model can't be changed here.

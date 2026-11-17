@@ -14,7 +14,7 @@ namespace Contactor.Tests.Web;
 /// <summary>
 /// Events, Debug and the tab bar's toasts with two boards (<see cref="TwoBoards"/>): each event and step names its
 /// board, each screen has the board filter, kept in a cookie of its own, and the toasts name their board. With one board
-/// they are as they always were, with the board filter showing only the board and "+ Board".
+/// they are as they always were, with no board filter.
 /// </summary>
 public sealed partial class EventsDebugBoardsPageTests
 {
@@ -371,30 +371,51 @@ public sealed partial class EventsDebugBoardsPageTests
         Assert.Contains("Relay 2", html, StringComparison.Ordinal);
     }
 
-    // One board: Relays, Events and Debug show the board in the filter, picked, and "+ Board" / "+ Add a board", but no
-    // "All boards"; a tap on the board (its chip or its box in the side menu) posts every board, so it shows everything
-    // still, as there is nothing to filter.
+    // One board: Relays, Events and Debug have no board filter at all, in the chips or in the side menu, as there is
+    // nothing to filter, and no way to add a board: that is in Settings. Everything shows.
     [Theory]
     [InlineData("relays")]
     [InlineData("events")]
     [InlineData("debug")]
-    public async Task Should_ShowTheOneBoard_AndAddABoard_WithoutAllBoards(string screenName)
+    public async Task Should_ShowNoBoardFilter_WithOneBoard(string screenName)
     {
         var screen = screenName == "relays" ? BoardFilterScreen.Relays : Screen(screenName);
         await using var app = await OneBoardAsync();
         using var http = app.CreateClient();
 
-        var page = await PageAsync(http, screen.PagePath);
-        var chip = Regex.Match(page, "name=\"show\" value=\"([^\"]*)\" class=\"chip-filter picked ");
-        var side = Regex.Match(page, "name=\"show\" value=\"([^\"]*)\" class=\"side-board picked ");
-        Assert.Equal(BoardFilter.AllValue, chip.Groups[1].Value);
-        Assert.Equal(BoardFilter.AllValue, side.Groups[1].Value);
+        var html = await PageAsync(http, screen.PagePath);
 
-        foreach (var html in new[] { page, await PickAsync(http, screen, chip.Groups[1].Value) })
+        AssertNoBoardFilter(html);
+        AssertEverythingShows(html, screenName);
+    }
+
+    // Two boards: the chips and the side menu have the boards (and "All boards"), and nothing else: no way to add a
+    // board.
+    [Theory]
+    [InlineData("relays")]
+    [InlineData("events")]
+    [InlineData("debug")]
+    public async Task Should_ShowOnlyTheBoards_InTheFilter_WithTwoBoards(string screenName)
+    {
+        var screen = screenName == "relays" ? BoardFilterScreen.Relays : Screen(screenName);
+        await using var boards = await TwoBoards.StartAsync();
+        using var http = boards.App.CreateClient();
+
+        var html = await PageAsync(http, screen.PagePath);
+
+        foreach (var (list, item) in new[] { ("chips-row", "chip-filter "), ("side-boards", "side-board ") })
         {
-            AssertOnlyTheBoard(html, screen);
-            AssertEverythingShows(html, screenName);
+            var start = html.IndexOf($"class=\"{list}\"", StringComparison.Ordinal);
+            Assert.True(start >= 0, $"The page has its {list}.");
+            var end = html.IndexOf("</div>", start, StringComparison.Ordinal);
+            var part = html[start..end];
+            Assert.Equal(3, Regex.Count(part, $"class=\"{item}"));
+            Assert.Contains("Barn", part, StringComparison.Ordinal);
+            Assert.DoesNotContain("<a ", part, StringComparison.Ordinal);
         }
+
+        Assert.DoesNotContain("board/new", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Add a board", html, StringComparison.Ordinal);
     }
 
     // Events and Debug show a board's state only in the board filter: a status that changes none of what it shows (a
@@ -404,8 +425,9 @@ public sealed partial class EventsDebugBoardsPageTests
     [InlineData("debug")]
     public async Task Should_RedrawForABoardsStatus_OnlyWhenTheFilterShowsAChange(string screenName)
     {
-        var fake = new FakeRelayBoard();
-        await using var app = new TestWebApp("Development", configureServices: TestWebApp.WithBoard(fake));
+        await using var boards = await TwoBoards.StartAsync();
+        var fake = boards.First;
+        var app = boards.App;
         using var page = screenName == "events"
             ? await PageRenderer.StartAsync<Contactor.Web.Components.Events>(app.Services, John, "John")
             : await PageRenderer.StartAsync<Contactor.Web.Components.Debug>(app.Services, John, "John");
@@ -441,7 +463,7 @@ public sealed partial class EventsDebugBoardsPageTests
         foreach (var (name, screen) in new[] { ("relays", BoardFilterScreen.Relays), ("events", BoardFilterScreen.Events), ("debug", BoardFilterScreen.Debug) })
         {
             var html = await PageAsync(http, screen.PagePath);
-            AssertOnlyTheBoard(html, screen);
+            AssertNoBoardFilter(html);
             AssertEverythingShows(html, name);
         }
     }
@@ -521,15 +543,14 @@ public sealed partial class EventsDebugBoardsPageTests
         return app;
     }
 
-    // The filter, in the chips and in the side menu: the one board, picked, then "+ Board" or "+ Add a board"; no
-    // "All boards" and no "Showing".
-    private static void AssertOnlyTheBoard(string html, BoardFilterScreen screen)
+    // No filter, in the chips or in the side menu, and no way to add a board: no form, no chip, no list, no "All boards"
+    // and no "Showing".
+    private static void AssertNoBoardFilter(string html)
     {
-        Assert.Contains($"form id=\"board-filter\" method=\"post\" action=\"{screen.FormPath.TrimStart('/')}\"", html, StringComparison.Ordinal);
-        Assert.Matches("(?s)class=\"chips-row\".*class=\"chip-filter picked \" aria-pressed=\"true\".*href=\"board/new\" class=\"chip-add\"", html);
-        Assert.Matches("(?s)class=\"side-boards\".*class=\"side-board picked \" aria-pressed=\"true\".*href=\"board/new\" class=\"side-add\"", html);
-        Assert.Single(Regex.Matches(html, "class=\"chip-filter "));
-        Assert.Single(Regex.Matches(html, "class=\"side-board "));
+        Assert.DoesNotContain("board-filter", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("chips-row", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("side-boards", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("board/new", html, StringComparison.Ordinal);
         Assert.DoesNotContain("All boards", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Showing", html, StringComparison.Ordinal);
         Assert.DoesNotContain("board-go", html, StringComparison.Ordinal);

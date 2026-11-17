@@ -276,9 +276,6 @@
   <data name="Boards.Password.Unchanged" xml:space="preserve">
     <value>oförändrat</value>
   </data>
-  <data name="Boards.Picker.AddChip" xml:space="preserve">
-    <value>Kort</value>
-  </data>
   <data name="Boards.Picker.All" xml:space="preserve">
     <value>Alla kort</value>
   </data>
