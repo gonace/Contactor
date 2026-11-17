@@ -50,15 +50,21 @@ public sealed record UpdateSnapshot(
 
 /// <summary>
 /// Updates from Settings ("Update now"), with the update helper on the host doing the work (see
-/// <see cref="UpdateFolder"/> and install/contactor-updater.sh). It reads GitHub's releases once a day, asks the helper
-/// for an update when someone presses "Update now" (never on its own), follows the helper's status, tells every open
-/// page when the app is about to restart (<see cref="Changed"/>, <see cref="IsRestarting"/>), and puts each update in
-/// the event log: who asked for which version, and how it ended.
+/// <see cref="UpdateFolder"/> and install/contactor-updater.sh). It reads GitHub's releases once a day and on "Check
+/// now" (at most once a minute), asks the helper for an update when someone presses "Update now" (never on its own),
+/// follows the helper's status, tells every open page when the app is about to restart (<see cref="Changed"/>,
+/// <see cref="IsRestarting"/>), and puts each update in the event log: who asked for which version, and how it ended.
 /// </summary>
 public sealed partial class UpdateService : BackgroundService
 {
     /// <summary>How often GitHub's releases are read.</summary>
     public static readonly TimeSpan CheckEvery = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// "Check now" reads GitHub at most this often, counted from the last read of any kind, so GitHub's limit for
+    /// requests without a login is never reached.
+    /// </summary>
+    public static readonly TimeSpan CheckNowEvery = TimeSpan.FromMinutes(1);
 
     /// <summary>After a failed read, the next try.</summary>
     public static readonly TimeSpan RetryEvery = TimeSpan.FromHours(1);
@@ -109,6 +115,8 @@ public sealed partial class UpdateService : BackgroundService
     private bool _helperInstalled;
     private bool _stale;
     private string? _recordedId;
+    private Task? _reading;
+    private DateTime? _triedUtc;
 
     public UpdateService(
         UpdateFolder folder,
@@ -141,6 +149,18 @@ public sealed partial class UpdateService : BackgroundService
         {
             var status = Snapshot().Status;
             return status is { IsRunning: true } && UpdateSteps.IsRestarting(status.Step) && !IsStale(status);
+        }
+    }
+
+    /// <summary>Whether GitHub's releases are being read right now ("Checking…").</summary>
+    public bool IsChecking
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _reading is not null;
+            }
         }
     }
 
@@ -289,15 +309,65 @@ public sealed partial class UpdateService : BackgroundService
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>Reads GitHub's releases now, keeping the last ones when that fails.</summary>
-    public async Task CheckAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Reads GitHub's releases now (the daily read), keeping the last ones when that fails. While a read is already
+    /// under way, waits for that one instead of reading again.
+    /// </summary>
+    public Task CheckAsync(CancellationToken cancellationToken)
+    {
+        return TryCheckAsync(limit: false, cancellationToken);
+    }
+
+    /// <summary>
+    /// "Check now": reads GitHub's releases now, unless they were read less than <see cref="CheckNowEvery"/> ago. While
+    /// a read is under way, waits for that one instead. Returns whether it read them itself.
+    /// </summary>
+    public async Task<bool> CheckNowAsync(CancellationToken cancellationToken)
+    {
+        return await TryCheckAsync(limit: true, cancellationToken);
+    }
+
+    // One read at a time: the first caller claims it under the lock, and a caller meanwhile waits for it, so two
+    // presses at once read GitHub once.
+    private async Task<bool> TryCheckAsync(bool limit, CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        ReleaseCheck check;
+        Task? earlier = null;
+        TaskCompletionSource? done = null;
+        lock (_lock)
+        {
+            if (_reading is not null)
+            {
+                earlier = _reading;
+            }
+            else if (limit && _triedUtc is { } tried && now - tried < CheckNowEvery)
+            {
+                return false;
+            }
+            else
+            {
+                done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _reading = done.Task;
+                _triedUtc = now;
+            }
+        }
+
+        if (done is null)
+        {
+            await earlier!.WaitAsync(cancellationToken);
+            return false;
+        }
+
+        // Every open box shows "Checking…".
+        Changed?.Invoke(this, EventArgs.Empty);
         try
         {
-            check = new ReleaseCheck(now, await _source.GetAsync(cancellationToken), false);
+            var check = new ReleaseCheck(now, await _source.GetAsync(cancellationToken), false);
             SaveCache(check);
+            lock (_lock)
+            {
+                _releases = check;
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidDataException or IOException
             || ex is OperationCanceledException && !cancellationToken.IsCancellationRequested)
@@ -305,16 +375,21 @@ public sealed partial class UpdateService : BackgroundService
             LogCheckFailed(ex.Message);
             lock (_lock)
             {
-                check = _releases with { Failed = true };
+                _releases = _releases with { Failed = true };
             }
         }
-
-        lock (_lock)
+        finally
         {
-            _releases = check;
+            lock (_lock)
+            {
+                _reading = null;
+            }
+
+            done.TrySetResult();
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     /// <summary>

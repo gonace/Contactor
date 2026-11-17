@@ -489,6 +489,23 @@ public sealed class UpdateBoxViewTests
         Assert.Equal((UpdateBoxKind.Available, "2026.11.20", false, true), (view.Kind, view.Offered, view.CanUpdate, view.NoHelper));
     }
 
+    // "Check now" shows next to it, also above a newer version and under how the last update ended.
+    [Fact]
+    public void Should_SayWhenItWasChecked_AlsoWithANewerVersion()
+    {
+        Assert.Equal("Checked today at 11:00.", View(Snapshot(releases: [Newest])).CheckedLine);
+        Assert.Equal("Checked today at 11:00.", View(Snapshot(releases: [Newest], status: Status(UpdateStates.Failed) with { Reason = UpdateReasons.Download })).CheckedLine);
+    }
+
+    // No "Check now" while an update runs or waits, nor in a development build.
+    [Fact]
+    public void Should_NotSayWhenItWasChecked_WhileAnUpdateRuns_OrInADevelopmentBuild()
+    {
+        Assert.Null(View(Snapshot(releases: [Newest], status: Status(UpdateStates.Running, UpdateSteps.Download))).CheckedLine);
+        Assert.Null(View(Snapshot(releases: [Newest]) with { Pending = new PendingUpdate(Now, "John", "2026.11.20", null) }).CheckedLine);
+        Assert.Null(View(Snapshot(releases: [Newest]) with { Build = new AppBuild(AppBuild.Development, null) }).CheckedLine);
+    }
+
     [Fact]
     public void Should_NotUpdateADevelopmentBuild()
     {
@@ -955,6 +972,62 @@ public sealed class UpdateServiceTests
         Assert.True(rig.Service.Snapshot().HelperInstalled);
     }
 
+    // "Check now": GitHub's limit for requests without a login is never reached, counted from the last read of any kind.
+    [Fact]
+    public async Task Should_CheckNow_AtMostOnceAMinute()
+    {
+        var source = new FlakySource([new Release("2026.11.20", null, ["New"])]);
+        // The daily read.
+        await using var rig = await Rig.StartAsync(source: source);
+
+        Assert.False(await rig.Service.CheckNowAsync(Cancel));
+        rig.Time.Advance(UpdateService.CheckNowEvery - TimeSpan.FromSeconds(1));
+        Assert.False(await rig.Service.CheckNowAsync(Cancel));
+        Assert.Equal(1, source.Calls);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(await rig.Service.CheckNowAsync(Cancel));
+        Assert.Equal(2, source.Calls);
+        Assert.Equal(rig.Time.GetUtcNow().UtcDateTime, rig.Service.Snapshot().Releases.CheckedUtc);
+
+        // A read that failed counts too.
+        source.Fails = true;
+        rig.Time.Advance(UpdateService.CheckNowEvery);
+        Assert.True(await rig.Service.CheckNowAsync(Cancel));
+        Assert.True(rig.Service.Snapshot().Releases.Failed);
+        rig.Time.Advance(TimeSpan.FromSeconds(30));
+        Assert.False(await rig.Service.CheckNowAsync(Cancel));
+        Assert.Equal(3, source.Calls);
+    }
+
+    // Two people, or two tabs, press "Check now" at once, while the daily read comes due: GitHub is read once.
+    [Fact]
+    public async Task Should_ReadOnce_WhenCheckNowIsPressedTwiceAtOnce()
+    {
+        var source = new HeldSource([]);
+        await using var rig = await Rig.StartAsync(source: source);
+        rig.Time.Advance(UpdateService.CheckNowEvery);
+        var changes = 0;
+        rig.Service.Changed += (_, _) => Interlocked.Increment(ref changes);
+        source.Hold();
+
+        var first = rig.Service.CheckNowAsync(Cancel);
+        var second = rig.Service.CheckNowAsync(Cancel);
+        var daily = rig.Service.CheckAsync(Cancel);
+
+        Assert.True(rig.Service.IsChecking);
+        Assert.Equal(1, changes);
+        Assert.False(first.IsCompleted || second.IsCompleted || daily.IsCompleted);
+        source.Release([new Release("2026.11.20", null, ["New"])]);
+        Assert.True(await first);
+        Assert.False(await second);
+        await daily;
+        Assert.Equal(2, source.Calls);
+        Assert.False(rig.Service.IsChecking);
+        Assert.Equal("2026.11.20", Assert.Single(rig.Service.Snapshot().Newer).Version);
+        Assert.Equal(2, changes);
+    }
+
     private sealed class ReleaseComparer : IEqualityComparer<Release>
     {
         public bool Equals(Release? x, Release? y) => x is not null && y is not null && x.Version == y.Version && x.Date == y.Date && x.Changes.SequenceEqual(y.Changes);
@@ -979,6 +1052,41 @@ public sealed class UpdateServiceTests
         {
             Calls++;
             return Fails ? throw new HttpRequestException("GitHub can't be reached.") : Task.FromResult(_releases);
+        }
+    }
+
+    // Releases that come only once the test releases them, after Hold.
+    internal sealed class HeldSource : IReleaseSource
+    {
+        private IReadOnlyList<Release> _releases;
+        private TaskCompletionSource<IReadOnlyList<Release>>? _held;
+        private int _calls;
+
+        public HeldSource(IReadOnlyList<Release> releases)
+        {
+            _releases = releases;
+        }
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public void Hold()
+        {
+            _held = new TaskCompletionSource<IReadOnlyList<Release>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        // The held read gets these, and every read after it.
+        public void Release(IReadOnlyList<Release> releases)
+        {
+            _releases = releases;
+            var held = _held;
+            _held = null;
+            held?.SetResult(releases);
+        }
+
+        public Task<IReadOnlyList<Release>> GetAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _calls);
+            return _held?.Task ?? Task.FromResult(_releases);
         }
     }
 

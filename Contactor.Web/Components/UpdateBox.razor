@@ -65,6 +65,15 @@
                 }
             </p>
 
+            @if (view.CheckedLine is { } checkedLine)
+            {
+                var checking = Updates.IsChecking;
+                <div class="checked">
+                    <p class="hint">@checkedLine</p>
+                    <button type="button" class="check-now" disabled="@checking" @onclick="CheckNowAsync">@(checking ? Texts["Updates.Checking"] : Texts["Updates.CheckNow"])</button>
+                </div>
+            }
+
             @if (view.Result is { } result)
             {
                 <div class="@(result.IsAlert ? "result alert" : "result")" role="status">
@@ -145,10 +154,6 @@
                     <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">@Texts["Updates.Now"]</button>
                     <p class="hint">@Texts["Updates.Now.Hint"]</p>
                 }
-            }
-            else if (view.Kind == UpdateBoxKind.Current && view.CheckedLine is { } checkedLine)
-            {
-                <p class="hint">@checkedLine</p>
             }
 
             @if (view.Offered is null && view.NoHelper && view.Kind == UpdateBoxKind.Current)
@@ -240,6 +245,13 @@
         {
             _busy = false;
         }
+    }
+
+    // At most one read a minute, and one at a time: UpdateService decides, so a press inside the minute does nothing.
+    private async Task CheckNowAsync()
+    {
+        _error = null;
+        await Updates.CheckNowAsync(CancellationToken.None);
     }
 
     private async Task ShowLogAsync(string id)
