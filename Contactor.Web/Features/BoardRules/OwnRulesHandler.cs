@@ -78,17 +78,6 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
-    /// Whether the app remembers every one of <paramref name="rules"/> (<see cref="OwnRulesService.Rows"/>), so a person
-    /// can keep them: it notes a rule just after the board reports it.
-    /// </summary>
-    public bool CanKeep(int boardId, IReadOnlyCollection<OwnRule> rules)
-    {
-        ArgumentNullException.ThrowIfNull(rules);
-        var rows = _rules.Rows(boardId);
-        return rules.Count > 0 && rules.All(rule => rows.Any(r => r.Channel == rule.Relay && r.Kind == rule.Kind));
-    }
-
-    /// <summary>
     /// "Turn them off" while the board is being added: turns them off as <see cref="TurnOffAsync"/> does (logged when the
     /// board took them, never queued), then waits up to <see cref="ConfirmWait"/> for the board's state to no longer have
     /// any of them, asking it for a fresh state once. Returns null once confirmed, otherwise the message to show.
@@ -152,21 +141,15 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
-    /// "Keep them" while the board is being added: keeps each of <paramref name="rules"/> as <see cref="KeepAsync"/>
-    /// does. Returns null when all are kept, otherwise the message to show.
+    /// "Keep them" while the board is being added: keeps each of <paramref name="rules"/>, as <see cref="KeepAsync"/>
+    /// does, at once: a rule the app hasn't noted yet is noted now (<see cref="OwnRulesService.KeepReportedAsync"/>).
+    /// Returns null when all are kept, otherwise the message to show; then none is kept.
     /// </summary>
     public async Task<string?> KeepAllAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(rules);
-        foreach (var rule in rules.Distinct())
-        {
-            if (await KeepAsync(boardId, rule.Relay, rule.Kind, userEmail, cancellationToken) is { } error)
-            {
-                return error;
-            }
-        }
-
-        return null;
+        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        return await _rules.KeepReportedAsync(boardId, rules, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
     }
 
     /// <summary>

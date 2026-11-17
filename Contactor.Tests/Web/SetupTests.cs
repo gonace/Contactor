@@ -995,12 +995,16 @@ public sealed class SetupTests
 
     // The guide's board steps with a board that answers with its own timers on for relays 3 and 5 ("This board has
     // timers of its own" after "Where is the board?", 5 steps in Part 2), and with one that has none (no such step, 4
-    // steps). "Keep them" keeps them as the person's choice and goes on to the relays, then "All set".
+    // steps). "Keep them" keeps them as the person's choice, "Turn them off" turns them off at the board, and timers
+    // turned off at the board meanwhile leave nothing to ask; each goes on to the relays, then "All set".
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Should_AskAboutTheBoardsOwnTimers_InTheGuide_AndCountItsSteps(bool timers)
+    [InlineData("keep")]
+    [InlineData("turn off")]
+    [InlineData("gone at the board")]
+    [InlineData("none")]
+    public async Task Should_AskAboutTheBoardsOwnTimers_InTheGuide_AndCountItsSteps(string what)
     {
+        var timers = what != "none";
         await using var app = SignedInNotSetUp();
         using (var http = app.CreateClient())
         {
@@ -1030,6 +1034,7 @@ public sealed class SetupTests
         Assert.Contains($"STEP 2 OF {steps}", await page.TextAsync(), StringComparison.Ordinal);
 
         await page.ClickAsync(Button("Next"));
+        await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
 
         if (timers)
         {
@@ -1037,8 +1042,22 @@ public sealed class SetupTests
             Assert.Contains("This board has timers of its own", text, StringComparison.Ordinal);
             Assert.Contains("Relay 3", text, StringComparison.Ordinal);
             Assert.Contains("STEP 3 OF 5", text, StringComparison.Ordinal);
-            await WaitUntilAsync(() => !page.HasAsync(a => Button("Keep them")(a) && a.GetValueOrDefault("disabled") is true).GetAwaiter().GetResult());
-            await page.ClickAsync(Button("Keep them"));
+            if (what == "keep")
+            {
+                await page.ClickAsync(Button("Keep them"));
+            }
+            else if (what == "turn off")
+            {
+                await page.ClickAsync(Button("Turn them off"));
+                Assert.Equal(OwnRules.Empty, board.State.OwnRules);
+                var logged = Assert.Single(await db.EventLog.Where(e => e.BoardId == first.BoardId && e.Action == EventActions.BoardOwnRulesTurnedOff).ToListAsync(Cancel));
+                Assert.Equal("john@example.com", logged.Actor);
+            }
+            else
+            {
+                board.SetOwnRules(OwnRules.Empty);
+                await WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Name your relays", StringComparison.Ordinal));
+            }
         }
 
         var relays = await page.TextAsync();
@@ -1049,12 +1068,16 @@ public sealed class SetupTests
         var done = await page.TextAsync();
         Assert.Contains("All set", done, StringComparison.Ordinal);
         Assert.Contains($"STEP {steps} OF {steps}", done, StringComparison.Ordinal);
-        await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
+        if (what != "keep")
+        {
+            await WaitUntilAsync(() => !db.BoardOwnRules.Any(r => r.BoardId == first.BoardId));
+        }
+
         var rows = await db.BoardOwnRules.Where(r => r.BoardId == first.BoardId).OrderBy(r => r.Channel).ToListAsync(Cancel);
-        int[] found = timers ? [3, 5] : [];
+        int[] found = what == "keep" ? [3, 5] : [];
         Assert.Equal(found, rows.Select(r => r.Channel));
         Assert.All(rows, r => Assert.Equal("john@example.com", r.KeptBy));
-        Assert.Equal(0, board.OwnRulesTurnOffs);
+        Assert.Equal(what == "turn off" ? 1 : 0, board.OwnRulesTurnOffs);
     }
 
     // A button by its words: only buttons have a type.

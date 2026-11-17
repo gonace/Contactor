@@ -163,7 +163,7 @@
             {
                 <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@OwnRulesWords.TurnOffAll(asked.Count)</button>
             }
-            <button type="button" class="secondary" disabled="@(Busy || !OwnRules.CanKeep(rulesBoard.BoardId, asked))" @onclick="KeepRulesAsync">@OwnRulesWords.KeepAll(asked.Count)</button>
+            <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@OwnRulesWords.KeepAll(asked.Count)</button>
         }
         else if (_step < StepDone)
         {
@@ -487,7 +487,7 @@
         OwnRulesRows.Changed += OnRulesChanged;
     }
 
-    // The chosen board's address, login and relays, for steps 3 to 5.
+    // The chosen board's address, login and relays, for its steps "Where is the board?" and "Name your relays".
     private async Task LoadBoardAsync(LiveBoard board)
     {
         _whereFields = await BoardWhereStep.LoadAsync(Address, board, CancellationToken.None);
@@ -607,8 +607,9 @@
     {
         if (!Busy && _step == fromStep && CanGoBack)
         {
-            // Back past a rules step that has nothing to ask any more.
-            _step = _step == StepRelays && !BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules) ? StepWhere : _step - 1;
+            // Back to the rules step only from the relays that came after it, while it still has something to ask: one
+            // skipped ("Go on without a connection", no rules then) stays skipped, so the count never jumps.
+            _step = _step == StepRelays && !(_throughRules && BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules)) ? StepWhere : _step - 1;
             _sheetOpen = false;
             _error = null;
             _moved = true;

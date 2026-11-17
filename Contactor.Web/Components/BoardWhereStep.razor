@@ -99,11 +99,6 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
         </span>
         <button type="button" class="small" disabled="@(Busy || _busy)" @onclick="() => CheckAsync(goOn: false)">@Texts["Boards.Where.CheckAgain"]</button>
     </div>
-    @* A board whose own rules (issue #497) the app can't see gets no step of its own for them: one line here. *@
-    @if (Board.Capabilities.OwnRulesOrCantTell.MayHaveUnseen)
-    {
-        <p class="hint own-rules">@Texts["OwnRules.Card.CantTell"]</p>
-    }
 }
 
 @code {

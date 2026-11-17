@@ -1621,16 +1621,16 @@
     <value>De kan slå på och stänga av reläer utan Contactor.</value>
   </data>
   <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
-    <value>Kortet tog inte emot det. Försök igen, eller behåll den.</value>
+    <value>Kortet visar den fortfarande som på. Försök igen, eller behåll den.</value>
   </data>
   <data name="OwnRules.Step.NotConfirmed_Other" xml:space="preserve">
-    <value>Kortet tog inte emot det. Försök igen, eller behåll dem.</value>
+    <value>Kortet visar dem fortfarande som på. Försök igen, eller behåll dem.</value>
   </data>
   <data name="OwnRules.Step.Recommend_One" xml:space="preserve">
-    <value>Vi rekommenderar att stänga av den.</value>
+    <value>Vi rekommenderar att du stänger av den.</value>
   </data>
   <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
-    <value>Vi rekommenderar att stänga av dem.</value>
+    <value>Vi rekommenderar att du stänger av dem.</value>
   </data>
   <data name="OwnRules.Step.Title.Rule_One" xml:space="preserve">
     <value>Kortet har en egen regel</value>

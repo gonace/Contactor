@@ -258,6 +258,96 @@ public sealed partial class OwnRulesService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// "Keep them" while the board is being added: marks each of <paramref name="rules"/> as kept by
+    /// <paramref name="userEmail"/>, and logs each once, also a rule the service hasn't noted yet: its row is made here,
+    /// logged as found as the service would, so a person never waits for the service's save (which, after a failure,
+    /// is tried again only 30 s later). Runs under the same lock as the service's own work, so the service never
+    /// inserts the same row at the same time, and once this row is there it finds it and logs nothing more. Only rules
+    /// the board reports now are kept; returns false, saving nothing, when it no longer reports one of them.
+    /// </summary>
+    internal async Task<bool> KeepReportedAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        var changed = false;
+        await _work.WaitAsync(cancellationToken);
+        try
+        {
+            if (_registry.Find(boardId)?.State.OwnRules is not { } reported || !rules.All(reported.Contains))
+            {
+                return false;
+            }
+
+            List<BoardOwnRule> rows;
+            await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+            {
+                var now = _clock.UtcNow;
+                var existing = await db.BoardOwnRules.Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
+                var relays = await db.Relays.Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Id, cancellationToken);
+                foreach (var rule in rules.Distinct())
+                {
+                    var kind = OwnRuleKinds.For(rule.Kind);
+                    int? relayId = relays.TryGetValue(rule.Relay, out var id) ? id : null;
+                    var row = existing.SingleOrDefault(r => r.Channel == rule.Relay && r.Kind == kind);
+                    if (row is null)
+                    {
+                        row = new BoardOwnRule { BoardId = boardId, Channel = rule.Relay, Kind = kind, FoundUtc = now };
+                        db.BoardOwnRules.Add(row);
+                        db.EventLog.Add(new EventLogEntry
+                        {
+                            TimestampUtc = now,
+                            BoardId = boardId,
+                            RelayId = relayId,
+                            Actor = EventActors.System,
+                            Action = EventActions.BoardOwnRuleFound,
+                            Details = JsonSerializer.Serialize(new { kind, @new = _seen.GetValueOrDefault(boardId) is { } seen && !seen.Contains(rule), relay = rule.Relay }),
+                        });
+                    }
+                    else if (row.KeptUtc is not null)
+                    {
+                        continue;
+                    }
+
+                    row.KeptUtc = now;
+                    row.KeptBy = userEmail;
+                    db.EventLog.Add(new EventLogEntry
+                    {
+                        TimestampUtc = now,
+                        BoardId = boardId,
+                        RelayId = relayId,
+                        Actor = userEmail,
+                        Action = EventActions.BoardOwnRuleKept,
+                        Details = JsonSerializer.Serialize(new { kind, relay = rule.Relay }),
+                    });
+                }
+
+                try
+                {
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+                catch (DbUpdateException)
+                {
+                    // A row deleted meanwhile (a new address, another model, which don't take this lock), or one made by
+                    // something else despite the lock: nothing was saved or logged, and the person is told so.
+                    return false;
+                }
+
+                rows = await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
+            }
+
+            changed = Publish(boardId, rows);
+            return true;
+        }
+        finally
+        {
+            _work.Release();
+            if (changed)
+            {
+                RaiseChanged(boardId);
+            }
+        }
+    }
+
     private void Unsubscribe()
     {
         if (Interlocked.Exchange(ref _subscribed, 0) == 1)

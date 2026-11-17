@@ -1796,12 +1796,12 @@
     <comment>Under the own rules step's heading.</comment>
   </data>
   <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
-    <value>The board didn't take it. Try again, or keep it.</value>
-    <comment>"Turn it off" while adding a board: the board's state didn't show it gone within 5 s.</comment>
+    <value>The board still shows it on. Try again, or keep it.</value>
+    <comment>"Turn it off" while adding a board: the board took it, but its state still showed it on 5 s later.</comment>
   </data>
   <data name="OwnRules.Step.NotConfirmed_Other" xml:space="preserve">
-    <value>The board didn't take it. Try again, or keep them.</value>
-    <comment>"Turn them off" while adding a board: the board's state didn't show them gone within 5 s.</comment>
+    <value>The board still shows them on. Try again, or keep them.</value>
+    <comment>"Turn them off" while adding a board: the board took them, but its state still showed them on 5 s later.</comment>
   </data>
   <data name="OwnRules.Step.Recommend_One" xml:space="preserve">
     <value>We recommend turning it off.</value>

@@ -244,4 +244,47 @@ public sealed class OwnRulesHandlerTests
         Assert.Equal("The board no longer has that rule.", await rig.Handler.KeepAsync(rig.BoardId, 4, OwnRuleKind.Timer, Erik, Cancel));
         Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRuleKept));
     }
+
+    // "Keep them" while a board is added never waits for the service: here its save of the rules fails (tried again 30
+    // s later), and keeping them makes their rows, logged as found once each, and kept. When the service tries again it
+    // finds them and logs nothing more. A rule the board no longer reports keeps nothing.
+    [Fact]
+    public async Task Should_KeepAll_AlsoRulesTheServiceHasntSavedYet_AndLogThemFoundOnce()
+    {
+        var failing = new FailingQueries();
+        await using var rig = await OwnRulesRig.StartAsync(failing.AddTo);
+        var inserts = 0;
+        failing.Fail(
+            sql => sql.Contains("INSERT INTO \"BoardOwnRule\"", StringComparison.Ordinal) && Interlocked.Increment(ref inserts) == 1,
+            () => new InvalidOperationException("The disk is full."));
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => failing.Failures == 1);
+        Assert.Empty(await rig.RowsAsync());
+
+        Assert.Equal("The board no longer has that rule.", await rig.Handler.KeepAllAsync(rig.BoardId, [Timer3, new OwnRule(4, OwnRuleKind.Timer)], Erik, Cancel));
+        Assert.Empty(await rig.RowsAsync());
+        Assert.Empty(await rig.EventsAsync(EventActions.BoardOwnRuleKept));
+
+        Assert.Null(await rig.Handler.KeepAllAsync(rig.BoardId, [Timer3, Timer5, Timer3], Erik, Cancel));
+
+        var rows = await rig.RowsAsync();
+        Assert.Equal([3, 5], rows.Select(r => r.Channel));
+        Assert.All(rows, r => Assert.Equal((true, Erik), (r.KeptUtc is not null, r.KeptBy)));
+        Assert.Equal(2, rig.Service.Rows(rig.BoardId).Count(r => r.KeptBy == Erik));
+        Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count);
+        var kept = await rig.EventsAsync(EventActions.BoardOwnRuleKept);
+        Assert.Equal((Erik, await rig.RelayIdAsync(3)), (kept[0].Actor, kept[0].RelayId));
+        Assert.Equal(2, kept.Count);
+        Assert.Empty(rig.Handler.Warnings(rig.BoardId));
+
+        // Kept already: nothing more is logged.
+        Assert.Null(await rig.Handler.KeepAllAsync(rig.BoardId, [Timer3], Erik, Cancel));
+        Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleKept)).Count);
+
+        rig.Time.Advance(OwnRulesService.RetryDelay);
+        await rig.HandledAsync();
+        await rig.HandledAsync();
+        Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count);
+        Assert.Equal(2, (await rig.RowsAsync()).Count(r => r.KeptBy == Erik));
+    }
 }

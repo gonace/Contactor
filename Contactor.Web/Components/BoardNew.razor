@@ -106,7 +106,7 @@
             {
                 <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@OwnRulesWords.TurnOffAll(asked.Count)</button>
             }
-            <button type="button" class="secondary" disabled="@(Busy || !OwnRules.CanKeep(_boardId.Value, asked))" @onclick="KeepRulesAsync">@OwnRulesWords.KeepAll(asked.Count)</button>
+            <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@OwnRulesWords.KeepAll(asked.Count)</button>
         }
         else if (step < StepRelays)
         {
@@ -248,8 +248,9 @@
     {
         if (!Busy && _step == fromStep && _step > StepBoard)
         {
-            // Back past a rules step that has nothing to ask any more.
-            _step = _step == StepRelays && !BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules) ? StepWhere : _step - 1;
+            // Back to the rules step only from the relays that came after it, while it still has something to ask: one
+            // skipped ("Go on without a connection", no rules then) stays skipped, so the count never jumps.
+            _step = _step == StepRelays && !(_throughRules && BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules)) ? StepWhere : _step - 1;
             _error = null;
             _moved = true;
         }
@@ -538,7 +539,7 @@
                     return;
                 }
 
-                // On the rules step the buttons follow what can be kept.
+                // On the rules step the buttons' words follow the rules.
                 if (_step == StepRules || RulesInCount != _rulesInCount)
                 {
                     StateHasChanged();

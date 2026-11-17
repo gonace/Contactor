@@ -39,7 +39,8 @@ public sealed class BoardOwnRulesStepTests
         using var swedish = TestCulture.Language("sv");
         Assert.Equal("Kortet har egna timers", TestTexts.OwnRules.StepTitle([Timer3, Timer5]));
         Assert.Equal("De kan slå på och stänga av reläer utan Contactor.", TestTexts.OwnRules.StepIntro(2));
-        Assert.Equal("Vi rekommenderar att stänga av dem.", TestTexts.OwnRules.Recommend(2));
+        Assert.Equal("Vi rekommenderar att du stänger av dem.", TestTexts.OwnRules.Recommend(2));
+        Assert.Equal("Vi rekommenderar att du stänger av den.", TestTexts.OwnRules.Recommend(1));
         Assert.Equal(("Stäng av dem", "Behåll dem"), (TestTexts.OwnRules.TurnOffAll(2), TestTexts.OwnRules.KeepAll(2)));
     }
 
@@ -117,7 +118,7 @@ public sealed class BoardOwnRulesStepTests
 
         Assert.Equal(1, board.OwnRulesTurnOffs);
         var text = await page.TextAsync();
-        Assert.Contains("The board didn't take it. Try again, or keep them.", text, StringComparison.Ordinal);
+        Assert.Contains("The board still shows them on. Try again, or keep them.", text, StringComparison.Ordinal);
         Assert.Contains("This board has timers of its own", text, StringComparison.Ordinal);
         Assert.Contains("STEP 3 OF 4", text, StringComparison.Ordinal);
         Assert.False(await DisabledAsync(page, Button("Turn them off")));
@@ -130,7 +131,7 @@ public sealed class BoardOwnRulesStepTests
         Assert.Empty(Errors(page));
     }
 
-    // "Keep them" once the app noted the rules: each is kept by the person, the board's timers stay on, and the rows are
+    // "Keep them", as soon as the step shows: each is kept by the person, the board's timers stay on, and the rows are
     // still kept once the board is added ("Done").
     [Fact]
     public async Task Should_KeepTheRules_AndGoOn()
@@ -140,7 +141,7 @@ public sealed class BoardOwnRulesStepTests
         using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
         var live = await ToWhereAsync(app, page, board, Timer3, Timer5);
         await page.ClickAsync(Button("Next"));
-        await Wait.UntilAsync(() => !DisabledAsync(page, Button("Keep them")).GetAwaiter().GetResult());
+        Assert.False(await DisabledAsync(page, Button("Keep them")));
 
         await page.ClickAsync(Button("Keep them"));
 
@@ -192,29 +193,31 @@ public sealed class BoardOwnRulesStepTests
         Assert.Empty(Errors(page));
     }
 
-    // A board that can't tell whether it has rules of its own gets no step, only a line under "Board online".
+    // A board that can't tell whether it has rules of its own gets no step, only a hint at the top of "Name your
+    // relays"; a board that reads its rules gets none there.
     [Fact]
-    public async Task Should_SayABoardThatCantTell_MayHaveTimers_UnderBoardOnline()
+    public async Task Should_SayABoardThatCantTell_MayHaveTimers_OnNameYourRelays()
     {
         const string Line = "This board may have timers of its own. Check its own web page.";
         await using (var app = App())
         {
             using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
             await ToWhereAsync(app, page, new FakeRelayBoard(ownRules: OwnRulesAbility.CantTell));
-            Assert.Matches($"(?s)Board online.*{Line}", await page.TextAsync());
+            Assert.DoesNotContain(Line, await page.TextAsync(), StringComparison.Ordinal);
 
             await page.ClickAsync(Button("Next"));
             var text = await page.TextAsync();
-            Assert.Contains("Name your relays", text, StringComparison.Ordinal);
+            Assert.Matches($"(?s)Name your relays.*{Line}.*RELAY 1", text);
             Assert.Contains("STEP 3 OF 3", text, StringComparison.Ordinal);
         }
 
         await using (var app = App())
         {
             using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
-            await ToWhereAsync(app, page, new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff), Timer3);
+            await ToWhereAsync(app, page, new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff));
+            await page.ClickAsync(Button("Next"));
             var text = await page.TextAsync();
-            Assert.Contains("Board online", text, StringComparison.Ordinal);
+            Assert.Contains("Name your relays", text, StringComparison.Ordinal);
             Assert.DoesNotContain(Line, text, StringComparison.Ordinal);
         }
 
@@ -222,6 +225,56 @@ public sealed class BoardOwnRulesStepTests
         {
             Assert.Equal("Kortet kan ha egna timers. Titta på kortets egen webbsida.", TestTexts.Localizer["OwnRules.Card.CantTell"].Value);
         }
+    }
+
+    // Rules turned off at the board while the step shows leave nothing to ask: the page goes on by itself.
+    [Fact]
+    public async Task Should_GoOn_WhenTheRulesGoAtTheBoard()
+    {
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App();
+        using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+        await ToWhereAsync(app, page, board, Timer3, Timer5);
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("This board has timers of its own", await page.TextAsync(), StringComparison.Ordinal);
+
+        board.SetOwnRules(OwnRules.Empty);
+
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Name your relays", StringComparison.Ordinal));
+        Assert.Contains("STEP 4 OF 4", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Equal(0, board.OwnRulesTurnOffs);
+        Assert.Empty(Errors(page));
+    }
+
+    // Gone on without a connection, the step was skipped (STEP 3 OF 3). The board reports rules later: the relays keep
+    // their number, "Back" goes to "Where is the board?" (now STEP 2 OF 4), and "Next" asks about them (STEP 3 OF 4).
+    [Fact]
+    public async Task Should_GoBackToWhere_AfterGoingOnWithoutAConnection_AndCountTheStepThatComesNow()
+    {
+        var board = new FakeRelayBoard(connected: false, ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App();
+        using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+        var live = await ToWhereAsync(app, page, board);
+        await page.ClickAsync(Button("Go on without a connection"));
+        Assert.Contains("STEP 3 OF 3", await page.TextAsync(), StringComparison.Ordinal);
+
+        board.SetConnected(true);
+        board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => app.Services.GetRequiredService<OwnRulesService>().Rows(live.BoardId).Count == 2);
+        var text = await page.TextAsync();
+        Assert.Contains("Name your relays", text, StringComparison.Ordinal);
+        Assert.Contains("STEP 3 OF 3", text, StringComparison.Ordinal);
+
+        await page.ClickAsync(Button("Back"));
+        text = await page.TextAsync();
+        Assert.Contains("Where is the board?", text, StringComparison.Ordinal);
+        Assert.Contains("STEP 2 OF 4", text, StringComparison.Ordinal);
+
+        await page.ClickAsync(Button("Next"));
+        text = await page.TextAsync();
+        Assert.Contains("This board has timers of its own", text, StringComparison.Ordinal);
+        Assert.Contains("STEP 3 OF 4", text, StringComparison.Ordinal);
+        Assert.Empty(Errors(page));
     }
 
     // The app with a first board in memory, signed in as John; the app's clock when given.
