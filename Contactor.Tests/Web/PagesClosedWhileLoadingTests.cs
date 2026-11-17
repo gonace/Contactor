@@ -127,6 +127,7 @@ public sealed class PagesClosedWhileLoadingTests
     }
 
     // A list update already on its way when the tab bar closes: it waits for the page's thread, and finds the page closed.
+    // Only the counts' first query after the close counts, so the app's other reads and a load from before can't.
     [Fact]
     public async Task Should_LoadNoCounts_WhenTheTabBarClosesWithAnUpdateOnItsWay()
     {
@@ -138,7 +139,12 @@ public sealed class PagesClosedWhileLoadingTests
         });
         var page = await PageRenderer.StartAsync<TabBar>(app.Services, John, "John");
         var changes = app.Services.GetRequiredService<RelayChanges>();
-        queries.Fail(_ => true, () => new InvalidOperationException("A closed tab bar read the database."));
+        // A list update from the app's start is done first.
+        await DrainAsync(page);
+        var closed = 0;
+        queries.Fail(
+            sql => Volatile.Read(ref closed) == 1 && sql.Contains("FROM \"RelayGroupMember\"", StringComparison.Ordinal),
+            () => new InvalidOperationException("A closed tab bar loaded its counts."));
         using var entered = new SemaphoreSlim(0);
         using var raised = new SemaphoreSlim(0);
 
@@ -148,11 +154,19 @@ public sealed class PagesClosedWhileLoadingTests
             entered.Release();
             raised.Wait(Cancel);
             page.Close();
+            Volatile.Write(ref closed, 1);
         }), Cancel);
         await entered.WaitAsync(Cancel);
         changes.Notify();
         raised.Release();
         await closing;
+        await DrainAsync(page);
+
+        Assert.Equal(0, queries.Failures);
+    }
+
+    private static async Task DrainAsync(PageRenderer page)
+    {
         await page.Dispatcher.InvokeAsync(async () =>
         {
             for (var i = 0; i < 10; i++)
@@ -160,8 +174,6 @@ public sealed class PagesClosedWhileLoadingTests
                 await Task.Yield();
             }
         });
-
-        Assert.Equal(0, queries.Failures);
     }
 
     [Fact]

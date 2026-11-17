@@ -202,6 +202,9 @@
     private bool _asking;
     private bool _busy;
     private bool _pressed;
+
+    // Ends "Checking…"'s wait when the page closes, so its timer goes with the page.
+    private readonly CancellationTokenSource _closing = new();
     private string? _error;
     private string? _log;
     private string? _logId;
@@ -228,6 +231,8 @@
     {
         _disposed = true;
         Updates.Changed -= OnChanged;
+        _closing.Cancel();
+        _closing.Dispose();
     }
 
     private void Ask()
@@ -292,7 +297,22 @@
         _pressed = true;
         try
         {
-            await Task.WhenAll(Updates.CheckNowAsync(CancellationToken.None), Task.Delay(CheckingShownFor, Time));
+            var shown = Task.Delay(CheckingShownFor, Time, _closing.Token);
+            try
+            {
+                await Updates.CheckNowAsync(CancellationToken.None);
+            }
+            finally
+            {
+                try
+                {
+                    await shown;
+                }
+                catch (OperationCanceledException)
+                {
+                    // The page closed.
+                }
+            }
         }
         finally
         {

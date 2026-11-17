@@ -167,6 +167,36 @@ public sealed class UpdatePageTests
         Assert.Contains("The relays stay as they are. Schedules and auto-offs catch up once it's back.", text, StringComparison.Ordinal);
     }
 
+    // A page closed while "Checking…" shows: its wait ends with the page, without the clock moving.
+    [Fact]
+    public async Task Should_EndCheckingsWait_WhenThePageCloses()
+    {
+        var time = new ManualTimeProvider();
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com", ["TimeZone"] = "Europe/Stockholm" },
+            services =>
+            {
+                TestWebApp.WithReleases("2026.11.14")(services);
+                services.AddSingleton<TimeProvider>(time);
+            });
+        await StartAsync(app, helper: true);
+        var page = await PageRenderer.StartAsync<UpdateBox>(app.Services, "john@example.com", "John");
+        var press = page.ClickAsync(PageRenderer.WithText("Check now"));
+        await Wait.UntilAsync(() => page.HasAsync(PageRenderer.WithText("Checking…")).GetAwaiter().GetResult());
+
+        await page.Dispatcher.InvokeAsync(page.Close);
+        await page.Dispatcher.InvokeAsync(async () =>
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                await Task.Yield();
+            }
+        });
+
+        Assert.True(press.IsCompleted);
+    }
+
     // "Check now" reads GitHub at once: "Checking…" meanwhile, at least for a moment, then what it found, with the line
     // and the button kept.
     [Fact]
