@@ -17,6 +17,63 @@ namespace Contactor.Web.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
+            modelBuilder.Entity("Contactor.Web.Persistence.AnalogInput", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BoardId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UnitText")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("Value1")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("Value2")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("Volts1")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("Volts2")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoardId", "Channel")
+                        .IsUnique();
+
+                    b.ToTable("AnalogInput", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AnalogInput_Channel", "\"Channel\" BETWEEN 1 AND 64");
+
+                            t.HasCheckConstraint("CK_AnalogInput_Scale", "(\"Volts1\" IS NULL AND \"Value1\" IS NULL AND \"Volts2\" IS NULL AND \"Value2\" IS NULL) OR (\"Volts1\" IS NOT NULL AND \"Value1\" IS NOT NULL AND \"Volts2\" IS NOT NULL AND \"Value2\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_AnalogInput_Unit", "\"Unit\" IN ('', 'C', '%', 'bar', 'V', 'other')");
+                        });
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.Board", b =>
                 {
                     b.Property<int>("Id")
@@ -559,6 +616,15 @@ namespace Contactor.Web.Persistence.Migrations
                     b.HasKey("Email");
 
                     b.ToTable("User", (string)null);
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.AnalogInput", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.Board", null)
+                        .WithMany()
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.BoardRuntime", b =>

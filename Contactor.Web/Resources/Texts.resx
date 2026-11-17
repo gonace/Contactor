@@ -12,6 +12,33 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Analog.Missing" xml:space="preserve">
+    <value>The analog input doesn't exist.</value>
+  </data>
+  <data name="Analog.Save.BothPoints" xml:space="preserve">
+    <value>Fill in both points of the scale, or none.</value>
+  </data>
+  <data name="Analog.Save.ChooseUnit" xml:space="preserve">
+    <value>Choose a unit.</value>
+  </data>
+  <data name="Analog.Save.EnterUnit" xml:space="preserve">
+    <value>Enter the unit.</value>
+  </data>
+  <data name="Analog.Save.NeedsScale" xml:space="preserve">
+    <value>This unit needs a scale: fill in both points.</value>
+  </data>
+  <data name="Analog.Save.SameVolts" xml:space="preserve">
+    <value>The two points need different voltages.</value>
+  </data>
+  <data name="Analog.Save.UnitTooLong" xml:space="preserve">
+    <value>The unit can be at most {0} characters.</value>
+  </data>
+  <data name="Analog.Save.ValueRange" xml:space="preserve">
+    <value>A value must be from {0} to {1}.</value>
+  </data>
+  <data name="Analog.Save.VoltsRange" xml:space="preserve">
+    <value>A voltage must be from 0 to {0} V.</value>
+  </data>
   <data name="Boards.Address" xml:space="preserve">
     <value>Address</value>
   </data>

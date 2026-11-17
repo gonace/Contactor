@@ -104,11 +104,13 @@ Board                   (a relay board the app runs; every screen shows every bo
                                  login) from the start on a board added in the app
   Password        text?          kept as typed (the board needs it); a secret: never logged or shown
   SortOrder       int
-                                 Its relays, inputs, groups, runtime and events point to it with cascade delete.
+                                 Its relays, inputs, analog inputs, groups, runtime and events point to it with
+                                 cascade delete.
                                  Removing a board (BoardRemoval) deletes, in one transaction and in this order:
                                  the input actions that touch its relays, groups or inputs (from any board), the
                                  schedules of its relays and groups, its groups' runtimes and members, its groups,
-                                 its relays' runtimes, its relays, its inputs, its events, its BoardRuntime and its
+                                 its relays' runtimes, its relays, its inputs, its analog inputs, its events, its
+                                 BoardRuntime and its
                                  row, then adds the "board-removed" event (no board); the Restrict keys (InputAction, RelayGroupMember, RelayRuntime and Schedule to
                                  Relay, InputAction to Input) need that order, so no cascade is relied on. When it
                                  was the first board, the board that becomes first gets "no address and no login"
@@ -286,6 +288,27 @@ InputAction             (a relay or a group an input switches, on the input's ow
   GroupId         int? FK        cascade delete with the group; UNIQUE with InputId
   WhenClosed      bool?          true = turn on, false = turn off, null = nothing
   WhenOpened      bool?
+
+AnalogInput             (one per analog input on the board, e.g. a temperature sensor; seeded at start like inputs
+                         from the board's capabilities, deleted only with its board. Not an Input: an input is a
+                         contact. Its reading is not stored: the board is the source of truth)
+  Id              int PK         the database's key, in links; given by the database, not its channel
+  BoardId         int FK         the board it is on; cascade delete
+  Channel         int            1 to the board's analog input count (at most 64); UNIQUE with BoardId. The board's
+                                 readings go by it, and the screens show it ("ANALOG 1")
+  Name            text           e.g. "Paint shop" (max 40); "Analog n" to begin with
+  IsActive        bool           false = hidden from the list by default
+  Unit            text           "" (none chosen: volts) | "C" (°C) | "%" | "bar" | "V" | "other"
+  UnitText        text           the unit's own text with "other", e.g. "kPa" (max 8); "" with any other unit
+  Volts1, Value1  decimal?       the scale's first point: the board reads Volts1 V at Value1, e.g. 0 V = −20 °C
+  Volts2, Value2  decimal?       the second point, e.g. 5 V = 80 °C. All four set or all null (a check constraint);
+                                 null is no scale, and the value shown is the voltage. AnalogInputsHandler saves them
+                                 rounded to 3 decimals: voltages 0–100 V and not the same, values within ±1,000,000;
+                                 a unit other than none or "V" needs the scale. Saving is not logged
+                                 The value shown (AnalogValueText) is on the line through the two points, with
+                                 decimals = clamp(floor(−log10(step)), 0, 3), where step = the board's volts per
+                                 count × |slope| (slope 1 without a scale): a 10-bit 0–5 V input shows volts with 2
+                                 decimals, and scaled to −20…80 °C with 1. Numbers are in the app's language.
 ```
 
 - **Events are kept for one year,** fixed, with no setting (Issue #48). Every night, right after the backup, `EventRetention` removes the events from before one year ago, by `TimestampUtc` in UTC; on 29 February that is 28 February a year earlier. The nightly copies still hold them for a while. Kept also when older: the newest event the app reads back as the last of its kind (an input's newest change, a relay's newest off or pulse, the newest end of an update), so an input's state, "Off since …" and an update's event stay as they were. It removes at most 500 events per statement, each its own short transaction, with a short pause between batches, so the app's own writes get the database in between. It logs how many it removed; a failure is logged and tried again the next night.

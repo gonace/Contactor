@@ -6,7 +6,7 @@ namespace Contactor.Web.Features.Inputs;
 
 public static class InputsServiceCollectionExtensions
 {
-    /// <summary>The board's digital inputs on the Relays and Input screens, and the relays and groups they control.</summary>
+    /// <summary>The board's digital inputs on the Relays and Input screens, the relays and groups they control, and its analog inputs.</summary>
     public static IServiceCollection AddInputs(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -16,6 +16,7 @@ public static class InputsServiceCollectionExtensions
         services.TryAddSingleton<RelayStatusText>();
         services.TryAddSingleton<InputsText>();
         services.AddSingleton<InputsHandler>();
+        services.AddSingleton<AnalogInputsHandler>();
         services.AddSingleton<InputActionsHandler>();
         services.AddSingleton<InputChangeFeed>();
         services.AddSingleton<InputActionService>();

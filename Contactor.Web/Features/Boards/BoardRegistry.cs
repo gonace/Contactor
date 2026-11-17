@@ -97,6 +97,12 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         return channel >= 1 && Find(boardId) is { } board && channel <= board.Capabilities.InputCount;
     }
 
+    /// <summary>Whether the analog input on this board and channel is one the board has, as <see cref="HasRelay"/>.</summary>
+    public bool HasAnalogInput(int boardId, int channel)
+    {
+        return channel >= 1 && Find(boardId) is { } board && channel <= board.Capabilities.AnalogInputCount;
+    }
+
     /// <summary>
     /// At start: a live board for every board's row there isn't one for yet, each with its saved model
     /// (<see cref="Board.Type"/>), if any. Throws for a saved model the catalogue doesn't have.
@@ -309,7 +315,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             LiveBoard? live = null;
             try
             {
-                await _app.SeedBoardAsync(row.Id, model.Capabilities.RelayCount, model.Capabilities.InputCount, cancellationToken);
+                await _app.SeedBoardAsync(row.Id, model.Capabilities, cancellationToken);
                 var built = build(BoardSetup.From(row, isFirst));
                 try
                 {

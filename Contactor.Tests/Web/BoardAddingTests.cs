@@ -65,6 +65,10 @@ public sealed class BoardAddingTests
         Assert.Equal(Enumerable.Range(1, 4), await db.Relays.Where(r => r.BoardId == third.BoardId).OrderBy(r => r.Channel).Select(r => r.Channel).ToListAsync(Cancel));
         Assert.Equal("Relay 1", await db.Relays.Where(r => r.BoardId == third.BoardId && r.Channel == 1).Select(r => r.Name).SingleAsync(Cancel));
         Assert.Equal(Model("vm204").Capabilities.InputCount, await db.Inputs.CountAsync(i => i.BoardId == third.BoardId, Cancel));
+        Assert.Equal(
+            Enumerable.Range(1, Model("vm204").Capabilities.AnalogInputCount),
+            await db.AnalogInputs.Where(i => i.BoardId == third.BoardId).OrderBy(i => i.Channel).Select(i => i.Channel).ToListAsync(Cancel));
+        Assert.False(await db.AnalogInputs.AnyAsync(i => i.BoardId == second.BoardId, Cancel));
         var relays = db.Relays.Where(r => r.BoardId == third.BoardId).Select(r => r.Id);
         Assert.Equal(4, await db.RelayRuntimes.CountAsync(r => relays.Contains(r.RelayId), Cancel));
         Assert.True(await db.BoardRuntimes.AnyAsync(r => r.BoardId == third.BoardId, Cancel));
