@@ -167,7 +167,32 @@ public sealed class UpdatePageTests
         Assert.Contains("The relays stay as they are. Schedules and auto-offs catch up once it's back.", text, StringComparison.Ordinal);
     }
 
-    // "Check now" reads GitHub at once: "Checking…" meanwhile, then what it found, with the line and the button kept.
+    // A page closed while "Checking…" shows: its wait ends with the page, without the clock moving.
+    [Fact]
+    public async Task Should_EndCheckingsWait_WhenThePageCloses()
+    {
+        var time = new ManualTimeProvider();
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com", ["TimeZone"] = "Europe/Stockholm" },
+            services =>
+            {
+                TestWebApp.WithReleases("2026.11.14")(services);
+                services.AddSingleton<TimeProvider>(time);
+            });
+        await StartAsync(app, helper: true);
+        var page = await PageRenderer.StartAsync<UpdateBox>(app.Services, "john@example.com", "John");
+        var press = page.ClickAsync(PageRenderer.WithText("Check now"));
+        await Wait.UntilAsync(() => page.HasAsync(PageRenderer.WithText("Checking…")).GetAwaiter().GetResult());
+
+        await page.Dispatcher.InvokeAsync(page.Close);
+
+        // The press ends on its own: the clock never moves here.
+        await Wait.UntilAsync(() => press.IsCompleted);
+    }
+
+    // "Check now" reads GitHub at once: "Checking…" meanwhile, at least for a moment, then what it found, with the line
+    // and the button kept.
     [Fact]
     public async Task Should_CheckNow_AndShowWhatItFound()
     {
@@ -189,8 +214,15 @@ public sealed class UpdatePageTests
         Assert.Contains("Checked today at 11:00.", text, StringComparison.Ordinal);
         var calls = source.Calls;
 
-        // Within a minute of the last read: nothing new.
-        await page.ClickAsync(PageRenderer.WithText("Check now"));
+        // Within a minute of the last read: "Checking…" for a moment, so the press shows it was taken, then the same as
+        // before, without reading GitHub.
+        var press = page.ClickAsync(PageRenderer.WithText("Check now"));
+        await Wait.UntilAsync(() => page.HasAsync(a => PageRenderer.WithText("Checking…")(a) && PageRenderer.With("disabled", "True")(a)).GetAwaiter().GetResult());
+        Assert.False(press.IsCompleted);
+        time.Advance(UpdateBox.CheckingShownFor);
+        await press;
+        Assert.True(await page.HasAsync(PageRenderer.WithText("Check now")));
+        Assert.Contains("Checked today at 11:00.", await page.TextAsync(), StringComparison.Ordinal);
         Assert.Equal(calls, source.Calls);
 
         time.Advance(UpdateService.CheckNowEvery);
@@ -199,6 +231,7 @@ public sealed class UpdatePageTests
         await Wait.UntilAsync(() => page.HasAsync(PageRenderer.WithText("Checking…")).GetAwaiter().GetResult());
         Assert.True(await page.HasAsync(a => PageRenderer.WithText("Checking…")(a) && PageRenderer.With("disabled", "True")(a)));
         source.Release([Newest]);
+        time.Advance(UpdateBox.CheckingShownFor);
         await click;
         await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("is available", StringComparison.Ordinal));
 

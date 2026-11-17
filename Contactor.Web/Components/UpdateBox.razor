@@ -7,6 +7,7 @@
 @inject LocalClock Clock
 @inject CurrentUser CurrentUser
 @inject AppLanguage Language
+@inject TimeProvider Time
 
 @* Settings → Updates: the running version, the newest release with what's new, "Update now" and how the update goes.
    The update helper on the host does the work (UpdateService). *@
@@ -67,7 +68,7 @@
 
             @if (view.CheckedLine is { } checkedLine)
             {
-                var checking = Updates.IsChecking;
+                var checking = _pressed || Updates.IsChecking;
                 <div class="checked">
                     <p class="hint">@checkedLine</p>
                     <button type="button" class="check-now" disabled="@checking" @onclick="CheckNowAsync">@(checking ? Texts["Updates.Checking"] : Texts["Updates.CheckNow"])</button>
@@ -200,6 +201,10 @@
     private SignedInUser? _user;
     private bool _asking;
     private bool _busy;
+    private bool _pressed;
+
+    // Ends "Checking…"'s wait when the page closes, so its timer goes with the page.
+    private readonly CancellationTokenSource _closing = new();
     private string? _error;
     private string? _log;
     private string? _logId;
@@ -226,6 +231,8 @@
     {
         _disposed = true;
         Updates.Changed -= OnChanged;
+        _closing.Cancel();
+        _closing.Dispose();
     }
 
     private void Ask()
@@ -272,11 +279,45 @@
         }
     }
 
-    // At most one read a minute, and one at a time: UpdateService decides, so a press inside the minute does nothing.
+    /// <summary>
+    /// How long "Checking…" shows at least after a press of "Check now": a press within the minute reads nothing, and
+    /// the person still sees it was taken, then the same result as before.
+    /// </summary>
+    public static readonly TimeSpan CheckingShownFor = TimeSpan.FromSeconds(1);
+
+    // At most one read a minute, and one at a time: UpdateService decides.
     private async Task CheckNowAsync()
     {
+        if (_pressed)
+        {
+            return;
+        }
+
         _error = null;
-        await Updates.CheckNowAsync(CancellationToken.None);
+        _pressed = true;
+        try
+        {
+            var shown = Task.Delay(CheckingShownFor, Time, _closing.Token);
+            try
+            {
+                await Updates.CheckNowAsync(CancellationToken.None);
+            }
+            finally
+            {
+                try
+                {
+                    await shown;
+                }
+                catch (OperationCanceledException)
+                {
+                    // The page closed.
+                }
+            }
+        }
+        finally
+        {
+            _pressed = false;
+        }
     }
 
     private async Task ShowLogAsync(string id)

@@ -995,6 +995,78 @@ public sealed class UpdateServiceTests
         Assert.Equal(2, changes);
     }
 
+    // A clock that went back, e.g. corrected after the Pi started without the time: "Check now" reads at once.
+    [Fact]
+    public async Task Should_CheckNow_WhenTheClockWentBack()
+    {
+        var source = new FlakySource([new Release("2026.11.20", null, ["New"])]);
+        await using var rig = await Rig.StartAsync(source: source);
+
+        rig.Time.Advance(-TimeSpan.FromMinutes(5));
+
+        Assert.True(await rig.Service.CheckNowAsync(Cancel));
+        Assert.Equal(2, source.Calls);
+    }
+
+    // A read that throws what the service doesn't expect: the boxes stop showing "Checking…" all the same.
+    [Fact]
+    public async Task Should_StopChecking_WhenTheReadThrows()
+    {
+        await using var rig = await Rig.StartAsync();
+        using var service = new UpdateService(rig.Folder, new BrokenSource(), rig.Database.Factory, new AppBuild("2026.11.14", null), rig.Time, NullLogger<UpdateService>.Instance, TestTexts.Localizer);
+        var changes = 0;
+        service.Changed += (_, _) => Interlocked.Increment(ref changes);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CheckNowAsync(Cancel));
+
+        Assert.False(service.IsChecking);
+        Assert.Equal(2, changes);
+    }
+
+    // Only at shutdown: the reader's own token ends the read, and the boxes stop showing "Checking…".
+    [Fact]
+    public async Task Should_StopChecking_WhenTheReadIsCancelled()
+    {
+        var source = new HeldSource([]);
+        await using var rig = await Rig.StartAsync(source: source);
+        rig.Time.Advance(UpdateService.CheckNowEvery);
+        var changes = 0;
+        rig.Service.Changed += (_, _) => Interlocked.Increment(ref changes);
+        source.Hold();
+        using var stopping = new CancellationTokenSource();
+
+        var read = rig.Service.CheckNowAsync(stopping.Token);
+        Assert.True(rig.Service.IsChecking);
+        await stopping.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+        Assert.False(rig.Service.IsChecking);
+        Assert.Equal(2, changes);
+    }
+
+    // A press whose wait is cancelled leaves the read that is under way to go on.
+    [Fact]
+    public async Task Should_GoOnReading_WhenAWaiterIsCancelled()
+    {
+        var source = new HeldSource([]);
+        await using var rig = await Rig.StartAsync(source: source);
+        rig.Time.Advance(UpdateService.CheckNowEvery);
+        source.Hold();
+        using var leaving = new CancellationTokenSource();
+
+        var first = rig.Service.CheckNowAsync(Cancel);
+        var second = rig.Service.CheckNowAsync(leaving.Token);
+        await leaving.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => second);
+        Assert.True(rig.Service.IsChecking);
+        Assert.False(first.IsCompleted);
+        source.Release([new Release("2026.11.20", null, ["New"])]);
+        Assert.True(await first);
+        Assert.False(rig.Service.IsChecking);
+        Assert.Equal("2026.11.20", Assert.Single(rig.Service.Snapshot().Newer).Version);
+    }
+
     private sealed class ReleaseComparer : IEqualityComparer<Release>
     {
         public bool Equals(Release? x, Release? y) => x is not null && y is not null && x.Version == y.Version && x.Date == y.Date && x.Changes.SequenceEqual(y.Changes);
@@ -1022,7 +1094,15 @@ public sealed class UpdateServiceTests
         }
     }
 
-    // Releases that come only once the test releases them, after Hold.
+    internal sealed class BrokenSource : IReleaseSource
+    {
+        public Task<IReadOnlyList<Release>> GetAsync(CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Something the service doesn't expect.");
+        }
+    }
+
+    // Releases that come only once the test releases them, after Hold; a held read ends when its token is cancelled.
     internal sealed class HeldSource : IReleaseSource
     {
         private IReadOnlyList<Release> _releases;
@@ -1053,7 +1133,7 @@ public sealed class UpdateServiceTests
         public Task<IReadOnlyList<Release>> GetAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _calls);
-            return _held?.Task ?? Task.FromResult(_releases);
+            return _held?.Task.WaitAsync(cancellationToken) ?? Task.FromResult(_releases);
         }
     }
 
