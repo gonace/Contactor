@@ -1,0 +1,418 @@
+.screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    padding: 12px 12px 4px;
+}
+
+.save-top {
+    display: none;
+}
+
+.back {
+    min-height: 44px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.form {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.content {
+    flex: 1;
+    padding: 8px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.missing {
+    margin: 8px 4px;
+    color: var(--muted);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+input[type="text"] {
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.check {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-height: 44px;
+    padding-top: 6px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.check strong {
+    color: var(--ink);
+}
+
+.check input {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.status {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+.status p {
+    margin: 0;
+}
+
+h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+.save {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 16px max(22px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.save button {
+    height: 54px;
+    border-radius: 12px;
+    border: none;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.seg {
+    flex: 1;
+    display: flex;
+    gap: 6px;
+}
+
+.seg button {
+    flex: 1;
+    min-height: 44px;
+    padding: 0 4px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.seg button[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.add {
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1.5px dashed var(--line-dashed);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.status.unknown {
+    background: var(--inactive-bg);
+    border-color: var(--inactive-border);
+    color: var(--muted);
+}
+
+.now {
+    position: relative;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+/* The value now: large, its unit muted; "–" muted when there is none. */
+.now.value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 6px;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+}
+
+.now.value .number,
+.now.value .unit {
+    overflow-wrap: anywhere;
+}
+
+.now.value .unit {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.now.value.none {
+    color: var(--muted);
+}
+
+/* What it measures: its unit, then its scale's two points. */
+.measures {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.block {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.units {
+    flex-wrap: wrap;
+}
+
+.units button {
+    flex: 1 0 56px;
+    font-size: 16px;
+}
+
+input.unit-text {
+    max-width: 240px;
+}
+
+.points {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+.point {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.point-field {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.equals {
+    padding-bottom: 14px;
+    color: var(--muted);
+    font-size: 18px;
+}
+
+/* A typed number with its unit after it, in one box. */
+.box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 48px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+}
+
+.box:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.box input {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    min-height: 44px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+}
+
+.box span {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.use {
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0 4px;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* A tablet: one wider column. A desktop: two columns, the value now beside the name, and Save to the right. */
+@media (min-width: 768px) {
+    .screen {
+        max-width: 720px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .screen {
+        /* Beside the side menu, lined up with Relays: 16 px here and the content's own 16 px. */
+        --beside-menu: 16px;
+        max-width: 1100px;
+    }
+
+    .content {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        align-items: start;
+        gap: 0 24px;
+    }
+
+    /* Spacing by margins: a row gap would count between the empty rows the events span. */
+    .content > * {
+        margin-bottom: 22px;
+    }
+
+    /* The value now beside the name; what it measures under them, across both columns. */
+    .content > section.measures {
+        grid-column: 1 / -1;
+    }
+
+    /* Save at the top right, on the row with the back link, pinned while the page scrolls; a warning or an error
+       shows right under it. */
+    .header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        padding: 12px 16px 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--bg);
+    }
+
+    .save-top {
+        display: block;
+        height: 48px;
+        min-width: 160px;
+        padding: 0 28px;
+        border-radius: 12px;
+        border: none;
+        background: var(--ink);
+        color: var(--on-ink);
+        font: inherit;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .save {
+        order: -1;
+        position: static;
+        padding: 0 16px;
+        border-top: none;
+        background: transparent;
+    }
+
+    .save:has(p) {
+        padding-bottom: 12px;
+    }
+
+    .save button {
+        display: none;
+    }
+}

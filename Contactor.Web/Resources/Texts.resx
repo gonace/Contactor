@@ -12,8 +12,43 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Analog.AboveRange" xml:space="preserve">
+    <value>Above the board's range</value>
+  </data>
+  <data name="Analog.BoardReads" xml:space="preserve">
+    <value>The board reads {0} V.</value>
+    <comment>{0} is the voltage, e.g. 2.08.</comment>
+  </data>
+  <data name="Analog.BoardReadsLabel" xml:space="preserve">
+    <value>BOARD READS</value>
+  </data>
+  <data name="Analog.Calibrate" xml:space="preserve">
+    <value>No label? Put a thermometer next to the sensor, press "Use the reading now" and type what it shows. Do it again when it's warmer or colder.</value>
+  </data>
+  <data name="Analog.InVolts" xml:space="preserve">
+    <value>Shown in volts, as the board reads it.</value>
+  </data>
+  <data name="Analog.ItIs" xml:space="preserve">
+    <value>IT IS</value>
+  </data>
+  <data name="Analog.Measures" xml:space="preserve">
+    <value>What it measures</value>
+  </data>
   <data name="Analog.Missing" xml:space="preserve">
     <value>The analog input doesn't exist.</value>
+  </data>
+  <data name="Analog.NameLabel" xml:space="preserve">
+    <value>ANALOG {0} · NAME</value>
+  </data>
+  <data name="Analog.NoContact" xml:space="preserve">
+    <value>No contact with the relay board: no value to show.</value>
+  </data>
+  <data name="Analog.NoReading" xml:space="preserve">
+    <value>No reading: check the sensor</value>
+  </data>
+  <data name="Analog.Point" xml:space="preserve">
+    <value>Point {0}</value>
+    <comment>For screen readers: the scale's first or second point.</comment>
   </data>
   <data name="Analog.Save.BothPoints" xml:space="preserve">
     <value>Fill in both points of the scale, or none.</value>
@@ -26,6 +61,9 @@
   </data>
   <data name="Analog.Save.NeedsScale" xml:space="preserve">
     <value>This unit needs a scale: fill in both points.</value>
+  </data>
+  <data name="Analog.Save.NotANumber" xml:space="preserve">
+    <value>Type the scale's points as numbers, e.g. 2.5.</value>
   </data>
   <data name="Analog.Save.SameValues" xml:space="preserve">
     <value>The two points need different values.</value>
@@ -41,6 +79,35 @@
   </data>
   <data name="Analog.Save.VoltsRange" xml:space="preserve">
     <value>A voltage must be from 0 to {0} V.</value>
+  </data>
+  <data name="Analog.Scale" xml:space="preserve">
+    <value>SCALE</value>
+  </data>
+  <data name="Analog.Scale.Hint" xml:space="preserve">
+    <value>Two readings from the sensor's label, e.g. 0–5 V for −20 to 80 °C.</value>
+  </data>
+  <data name="Analog.ShowAs" xml:space="preserve">
+    <value>+ Show it as °C, %, bar …</value>
+  </data>
+  <data name="Analog.Unit" xml:space="preserve">
+    <value>UNIT</value>
+  </data>
+  <data name="Analog.Unit.Other" xml:space="preserve">
+    <value>Other</value>
+  </data>
+  <data name="Analog.UnitText" xml:space="preserve">
+    <value>Unit</value>
+    <comment>For screen readers: the field for the person's own unit with "Other".</comment>
+  </data>
+  <data name="Analog.UnitText.Placeholder" xml:space="preserve">
+    <value>E.g. L or kPa</value>
+  </data>
+  <data name="Analog.UseReading" xml:space="preserve">
+    <value>Use the reading now ({0} V)</value>
+    <comment>{0} is the voltage the board reads now, e.g. 2.08.</comment>
+  </data>
+  <data name="Analog.UseReading.None" xml:space="preserve">
+    <value>Use the reading now</value>
   </data>
   <data name="Boards.Address" xml:space="preserve">
     <value>Address</value>
@@ -561,6 +628,9 @@
   </data>
   <data name="Common.Screen.AddBoard" xml:space="preserve">
     <value>Add a board</value>
+  </data>
+  <data name="Common.Screen.AnalogInput" xml:space="preserve">
+    <value>Analog input</value>
   </data>
   <data name="Common.Screen.Debug" xml:space="preserve">
     <value>Debug</value>
@@ -1547,6 +1617,9 @@
   <data name="Relays.AllOffOn" xml:space="preserve">
     <value>All off on {0}</value>
     <comment>Read out by screen readers: {0} is the board's name.</comment>
+  </data>
+  <data name="Relays.AnalogLabel" xml:space="preserve">
+    <value>ANALOG {0}</value>
   </data>
   <data name="Relays.By.AutoOff" xml:space="preserve">
     <value>auto-off</value>

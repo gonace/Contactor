@@ -22,6 +22,7 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject GroupsHandler Groups
 @inject InputsHandler Inputs
+@inject AnalogInputsHandler Analog
 @inject InputActionsHandler InputActions
 @inject GroupSequencer Sequencer
 @inject ILogger<Relays> Log
@@ -119,6 +120,8 @@
     }
 
     <main class="relays">
+        @* Every analog value is kept again as it is drawn: a reading that changes none of them redraws nothing. *@
+        @{ _shownAnalog.Clear(); }
         @* Groups first, then the relays, each in a grid of its own, so cards line up and Tab goes row by row. *@
         @if (ShownGroups.Any())
         {
@@ -142,6 +145,7 @@
                 var count = CountOf(board.BoardId);
                 var relays = VisibleRelaysOf(board.BoardId).ToList();
                 var inputs = VisibleInputsOf(board.BoardId).ToList();
+                var analog = VisibleAnalogOf(board.BoardId).ToList();
                 <section class="section board" aria-labelledby="@($"board-{board.BoardId}")" @key="board.BoardId">
                     <div class="board-head">
                         <h2 class="board-name" id="@($"board-{board.BoardId}")">@board.Name</h2>
@@ -165,13 +169,17 @@
                             }
                         </div>
                     }
-                    @if (inputs.Count > 0)
+                    @if (inputs.Count > 0 || analog.Count > 0)
                     {
                         <h3 class="section-title">@Texts["Relays.Inputs"]</h3>
                         <div class="cards input-cards">
                             @foreach (var input in inputs)
                             {
                                 @InputCard(input)
+                            }
+                            @foreach (var input in analog)
+                            {
+                                @AnalogCard(input)
                             }
                         </div>
                     }
@@ -197,8 +205,9 @@
                 </section>
             }
 
-            @* The board's inputs: what it reads, e.g. a door contact. No button: the app can't switch them. *@
-            @if (VisibleInputs.Any())
+            @* The board's inputs: what it reads, e.g. a door contact, then its analog inputs, e.g. a temperature. No button:
+               the app can't switch them. *@
+            @if (VisibleInputs.Any() || VisibleAnalog.Any())
             {
                 <section class="section" aria-labelledby="inputs-heading">
                     <h2 class="section-title" id="inputs-heading">@Texts["Relays.Inputs"]</h2>
@@ -206,6 +215,10 @@
                         @foreach (var input in VisibleInputs)
                         {
                             @InputCard(input)
+                        }
+                        @foreach (var input in VisibleAnalog)
+                        {
+                            @AnalogCard(input)
                         }
                     </div>
                 </section>
@@ -251,6 +264,10 @@
     private BoardCounts _counts = BoardCounts.None;
     private IReadOnlyList<GroupView> _groups = [];
     private IReadOnlyList<InputView> _inputs = [];
+    private IReadOnlyList<AnalogInputView> _analog = [];
+
+    // What each analog card shows: a new reading redraws the page only when it changes one (OnAnalogChanged).
+    private readonly ShownAnalogValues _shownAnalog = new(showsVolts: false);
 
     // The inputs that control each relay and each group, by its id.
     private ILookup<int, InputControl> _relayInputs = Array.Empty<InputControl>().ToLookup(c => 0);
@@ -378,18 +395,23 @@
 
     private IEnumerable<InputView> VisibleInputs => _inputs.Where(i => (i.IsActive || _showInactive) && Filter.Shows(i.BoardId));
 
+    private IEnumerable<AnalogInputView> VisibleAnalog => _analog.Where(i => (i.IsActive || _showInactive) && Filter.Shows(i.BoardId));
+
     private IEnumerable<Relay> VisibleRelaysOf(int boardId) => VisibleRelays.Where(r => r.BoardId == boardId);
 
     private IEnumerable<InputView> VisibleInputsOf(int boardId) => VisibleInputs.Where(i => i.BoardId == boardId);
 
+    private IEnumerable<AnalogInputView> VisibleAnalogOf(int boardId) => VisibleAnalog.Where(i => i.BoardId == boardId);
+
     private int InactiveRelays => _relays.Count(r => !r.IsActive && Filter.Shows(r.BoardId));
 
-    private int InactiveInputs => _inputs.Count(i => !i.IsActive && Filter.Shows(i.BoardId));
+    // Analog inputs count as inputs: for the person, an input is an input.
+    private int InactiveInputs => _inputs.Count(i => !i.IsActive && Filter.Shows(i.BoardId)) + _analog.Count(i => !i.IsActive && Filter.Shows(i.BoardId));
 
     private int InactiveCount => InactiveRelays + InactiveInputs;
 
     // "Relays" only sets the relays apart from the groups or the inputs (its section is only there over cards).
-    private bool ShowRelaysHeading => _groups.Count > 0 || VisibleInputs.Any();
+    private bool ShowRelaysHeading => _groups.Count > 0 || VisibleInputs.Any() || VisibleAnalog.Any();
 
     private string InactiveButtonText => InputsText.Inactive(InactiveRelays, InactiveInputs, _showInactive);
 
@@ -571,6 +593,34 @@
         </div>
     };
 
+    // An analog input: its value on the right, as large as its name, and a line only when there is no value to show.
+    // No outline around the value: it isn't a button.
+    private RenderFragment AnalogCard(AnalogInputView input) => __builder =>
+    {
+        var board = Registry.Find(input.BoardId);
+        var value = _shownAnalog.Show(input, board?.Capabilities.Analog, board?.State ?? BoardState.Initial);
+        var waiting = value.State == AnalogValueState.Waiting;
+        var problem = value.State is AnalogValueState.NoReading or AnalogValueState.AboveRange;
+        <div class="card input analog @(input.IsActive ? "" : "inactive") @(waiting ? "unknown" : "")" @key="@($"a{input.Id}")">
+            <a class="text" href="analog/@input.Id">
+                <span class="label">@Texts["Relays.AnalogLabel", input.Channel]</span>
+                <span class="name">@input.Name</span>
+                @if (waiting)
+                {
+                    <span class="status">@StatusText.Waiting</span>
+                }
+                else if (problem)
+                {
+                    <span class="status problem">@Texts[value.State == AnalogValueState.NoReading ? "Analog.NoReading" : "Analog.AboveRange"]</span>
+                }
+            </a>
+            <span class="value @(value.State == AnalogValueState.Value ? null : "none")"><span class="number">@value.Text</span>@if (value.Unit.Length > 0)
+                {
+                    <span class="unit">@value.Unit</span>
+                }</span>
+        </div>
+    };
+
     protected override async Task OnInitializedAsync()
     {
         // A group's start or stop counts down in seconds; nothing else re-renders the page that often. Made before the
@@ -586,6 +636,7 @@
         _user = await CurrentUser.GetAsync();
         await LoadAsync();
         Registry.StateChanged += OnBoardChanged;
+        Registry.AnalogChanged += OnAnalogChanged;
         Registry.BoardsChanged += OnBoardsChanged;
         Changes.Changed += OnRelaysChanged;
     }
@@ -593,6 +644,7 @@
     public void Dispose()
     {
         Registry.StateChanged -= OnBoardChanged;
+        Registry.AnalogChanged -= OnAnalogChanged;
         Registry.BoardsChanged -= OnBoardsChanged;
         Changes.Changed -= OnRelaysChanged;
         _tick?.Dispose();
@@ -603,6 +655,7 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         _groups = await Groups.ListAsync(CancellationToken.None);
         _inputs = await Inputs.ListAsync(CancellationToken.None);
+        _analog = await Analog.ListAsync(CancellationToken.None);
         var controls = await InputActions.ControlsAsync(CancellationToken.None);
         _relayInputs = controls.Where(c => c.RelayId is not null).ToLookup(c => c.RelayId!.Value);
         _groupInputs = controls.Where(c => c.GroupId is not null).ToLookup(c => c.GroupId!.Value);
@@ -843,6 +896,12 @@
         _ = RefreshAsync(reload: false);
     }
 
+    // Only a board's analog readings changed, on most polls: a redraw only when a card's value or line changes.
+    private void OnAnalogChanged(object? sender, BoardStateChange change)
+    {
+        _ = RedrawForReadingAsync(change.BoardId);
+    }
+
     // A board was added: its relays, inputs and section.
     private void OnBoardsChanged(object? sender, EventArgs e)
     {
@@ -852,6 +911,26 @@
     private void OnRelaysChanged(object? sender, EventArgs e)
     {
         _ = RefreshAsync(reload: true);
+    }
+
+    // On the page's own thread, as it draws, so a reading can't come between drawing a card and keeping what it shows.
+    private async Task RedrawForReadingAsync(int boardId)
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (Registry.Find(boardId) is { } board && _shownAnalog.Changes(boardId, board.Capabilities.Analog, board.State))
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the reading was on its way.
+        }
     }
 
     private async Task RefreshAsync(bool reload)

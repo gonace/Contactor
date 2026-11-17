@@ -12,8 +12,41 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Analog.AboveRange" xml:space="preserve">
+    <value>Över kortets mätområde</value>
+  </data>
+  <data name="Analog.BoardReads" xml:space="preserve">
+    <value>Kortet läser {0} V.</value>
+  </data>
+  <data name="Analog.BoardReadsLabel" xml:space="preserve">
+    <value>KORTET LÄSER</value>
+  </data>
+  <data name="Analog.Calibrate" xml:space="preserve">
+    <value>Ingen etikett? Lägg en termometer vid givaren, tryck på "Använd värdet nu" och skriv vad den visar. Gör det igen när det är varmare eller kallare.</value>
+  </data>
+  <data name="Analog.InVolts" xml:space="preserve">
+    <value>Visas i volt, som kortet läser den.</value>
+  </data>
+  <data name="Analog.ItIs" xml:space="preserve">
+    <value>DET ÄR</value>
+  </data>
+  <data name="Analog.Measures" xml:space="preserve">
+    <value>Vad den mäter</value>
+  </data>
   <data name="Analog.Missing" xml:space="preserve">
     <value>Den analoga ingången finns inte.</value>
+  </data>
+  <data name="Analog.NameLabel" xml:space="preserve">
+    <value>ANALOG {0} · NAMN</value>
+  </data>
+  <data name="Analog.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet: inget värde att visa.</value>
+  </data>
+  <data name="Analog.NoReading" xml:space="preserve">
+    <value>Inget värde: kontrollera givaren</value>
+  </data>
+  <data name="Analog.Point" xml:space="preserve">
+    <value>Punkt {0}</value>
   </data>
   <data name="Analog.Save.BothPoints" xml:space="preserve">
     <value>Fyll i skalans båda punkter, eller ingen av dem.</value>
@@ -26,6 +59,9 @@
   </data>
   <data name="Analog.Save.NeedsScale" xml:space="preserve">
     <value>Den här enheten behöver en skala: fyll i båda punkterna.</value>
+  </data>
+  <data name="Analog.Save.NotANumber" xml:space="preserve">
+    <value>Skriv skalans punkter som tal, t.ex. 2,5.</value>
   </data>
   <data name="Analog.Save.SameValues" xml:space="preserve">
     <value>De två punkterna behöver olika värden.</value>
@@ -41,6 +77,33 @@
   </data>
   <data name="Analog.Save.VoltsRange" xml:space="preserve">
     <value>En spänning måste vara från 0 till {0} V.</value>
+  </data>
+  <data name="Analog.Scale" xml:space="preserve">
+    <value>SKALA</value>
+  </data>
+  <data name="Analog.Scale.Hint" xml:space="preserve">
+    <value>Två värden från givarens etikett, t.ex. 0–5 V för −20 till 80 °C.</value>
+  </data>
+  <data name="Analog.ShowAs" xml:space="preserve">
+    <value>+ Visa den som °C, %, bar …</value>
+  </data>
+  <data name="Analog.Unit" xml:space="preserve">
+    <value>ENHET</value>
+  </data>
+  <data name="Analog.Unit.Other" xml:space="preserve">
+    <value>Annan</value>
+  </data>
+  <data name="Analog.UnitText" xml:space="preserve">
+    <value>Enhet</value>
+  </data>
+  <data name="Analog.UnitText.Placeholder" xml:space="preserve">
+    <value>T.ex. L eller kPa</value>
+  </data>
+  <data name="Analog.UseReading" xml:space="preserve">
+    <value>Använd värdet nu ({0} V)</value>
+  </data>
+  <data name="Analog.UseReading.None" xml:space="preserve">
+    <value>Använd värdet nu</value>
   </data>
   <data name="Boards.Address" xml:space="preserve">
     <value>Adress</value>
@@ -518,6 +581,9 @@
   </data>
   <data name="Common.Screen.AddBoard" xml:space="preserve">
     <value>Lägg till reläkort</value>
+  </data>
+  <data name="Common.Screen.AnalogInput" xml:space="preserve">
+    <value>Analog ingång</value>
   </data>
   <data name="Common.Screen.Debug" xml:space="preserve">
     <value>Debug</value>
@@ -1415,6 +1481,9 @@
   </data>
   <data name="Relays.AllOffOn" xml:space="preserve">
     <value>Allt av på {0}</value>
+  </data>
+  <data name="Relays.AnalogLabel" xml:space="preserve">
+    <value>ANALOG {0}</value>
   </data>
   <data name="Relays.By.AutoOff" xml:space="preserve">
     <value>automatiskt</value>

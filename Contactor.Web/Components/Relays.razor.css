@@ -339,6 +339,43 @@ h1 {
     color: var(--muted);
 }
 
+/* An analog input: its value on the right, as large as its name and bold, its unit muted. No outline: it isn't a button.
+   A long value wraps its unit under it rather than push the page sideways. */
+.value {
+    flex-shrink: 0;
+    max-width: 60%;
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: baseline;
+    column-gap: 4px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+
+.value .number,
+.value .unit {
+    overflow-wrap: anywhere;
+}
+
+.value .unit {
+    font-weight: 600;
+    color: var(--muted);
+}
+
+/* No value to show: a muted "–". */
+.value.none {
+    color: var(--muted);
+}
+
+/* No reading, or above the board's range: no value, and why, in red. */
+.status.problem {
+    color: var(--danger-ink);
+}
+
 /* An input that controls the relay or group: the Events screen's dashed "I" badge, small, then "Door: on when it opens". */
 .input-line {
     display: flex;

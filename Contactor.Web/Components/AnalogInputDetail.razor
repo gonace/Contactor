@@ -1,0 +1,367 @@
+@page "/analog/{Id:int}"
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Inputs
+@using Contactor.Web.Features.Languages
+@using Contactor.Web.Features.Relays
+@using Contactor.Web.Persistence
+@inject BoardRegistry Registry
+@inject AnalogInputsHandler Analog
+@inject RelayChanges Changes
+@inject NavigationManager Navigation
+@inject RelayStatusText StatusText
+@inject AppLanguage Language
+
+<PageTitle>@(Texts["Common.PageTitle", _input?.Name ?? Texts["Common.Screen.AnalogInput"].Value])</PageTitle>
+
+<div class="screen">
+    <header class="header">
+        <a href="" class="back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+            @Texts["Common.Screen.Relays"]
+        </a>
+        @if (_input is not null)
+        {
+            @* On a desktop Save sits here, pinned to the top; on a phone and a tablet it is at the bottom of the form. *@
+            <button type="submit" form="analog-form" class="save-top" disabled="@_busy">@Texts["Common.Save"]</button>
+        }
+    </header>
+
+    @if (_loaded && _input is null)
+    {
+        <main class="content">
+            <p class="missing">@Texts["Analog.Missing"]</p>
+        </main>
+    }
+    else if (_input is not null)
+    {
+        @* Kept again as it is drawn: a reading that changes no text here redraws nothing. *@
+        _shown.Clear();
+        var value = _shown.Show(_input, Ability, State);
+        <form id="analog-form" class="form" @onsubmit="SaveAsync">
+            <main class="content">
+                <div class="field">
+                    <label for="name" class="label">@Texts["Analog.NameLabel", _input.Channel]</label>
+                    <input id="name" type="text" maxlength="@AnalogInput.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
+                    <label for="active" class="check">
+                        <input id="active" type="checkbox" @bind="_isActive" />
+                        <span><Sentence Text="@Texts["Inputs.Active"]"><Arg0><strong>@Texts["Inputs.ActiveWord"]</strong></Arg0></Sentence></span>
+                    </label>
+                </div>
+
+                @* What the board reads now, in the saved unit and scale; under it the voltage, when a scale turns it into
+                   something else. *@
+                <section class="status @(value.State == AnalogValueState.Waiting ? "unknown" : null)">
+                    <p class="label">@Texts["Inputs.Now"]</p>
+                    @if (value.State == AnalogValueState.Waiting)
+                    {
+                        <p class="now">@StatusText.Waiting</p>
+                    }
+                    else
+                    {
+                        <p class="now value @(value.State == AnalogValueState.Value ? null : "none")"><span class="number">@value.Text</span>@if (value.Unit.Length > 0)
+                            {
+                                <span class="unit">@value.Unit</span>
+                            }</p>
+                    }
+                    @switch (value.State)
+                    {
+                        case AnalogValueState.NoContact:
+                            <p class="hint">@Texts["Analog.NoContact"]</p>
+                            break;
+                        case AnalogValueState.NoReading:
+                            <p class="error">@Texts["Analog.NoReading"]</p>
+                            break;
+                        case AnalogValueState.AboveRange:
+                            <p class="error">@Texts["Analog.AboveRange"]</p>
+                            break;
+                        case AnalogValueState.Value when _input.Scale.HasScale:
+                            <p class="hint">@Texts["Analog.BoardReads", value.VoltsText]</p>
+                            break;
+                    }
+                </section>
+
+                <section class="measures">
+                    <h2>@Texts["Analog.Measures"]</h2>
+                    @if (!_showScale)
+                    {
+                        @* Volts until someone sets a unit: nothing to fill in for a sensor read as volts. *@
+                        <p class="hint">@Texts["Analog.InVolts"]</p>
+                        <button type="button" class="add" @onclick="() => _showScale = true">@Texts["Analog.ShowAs"]</button>
+                    }
+                    else
+                    {
+                        <div class="block" role="group" aria-labelledby="unit-label">
+                            <span class="label" id="unit-label">@Texts["Analog.Unit"]</span>
+                            <div class="seg units">
+                                @foreach (var unit in Units)
+                                {
+                                    <button type="button" @key="unit" aria-pressed="@(_unit == unit ? "true" : "false")" @onclick="() => _unit = unit">@UnitName(unit)</button>
+                                }
+                            </div>
+                            @if (_unit == AnalogUnits.Other)
+                            {
+                                <input id="unit-text" type="text" class="unit-text" maxlength="@AnalogInput.UnitTextMaxLength" placeholder="@Texts["Analog.UnitText.Placeholder"]" aria-label="@Texts["Analog.UnitText"]" @bind="_unitText" @bind:event="oninput" autocomplete="off" />
+                            }
+                        </div>
+                        <div class="block">
+                            <span class="label">@Texts["Analog.Scale"]</span>
+                            <p class="hint">@Texts["Analog.Scale.Hint"]</p>
+                            <div class="points">
+                                @Point(0)
+                                @Point(1)
+                                <button type="button" class="use" disabled="@(value.State != AnalogValueState.Value)" @onclick="UseReading">@(value.State == AnalogValueState.Value ? Texts["Analog.UseReading", value.VoltsText] : Texts["Analog.UseReading.None"])</button>
+                            </div>
+                            <p class="hint">@Texts["Analog.Calibrate"]</p>
+                        </div>
+                    }
+                </section>
+            </main>
+
+            <div class="save">
+                @if (_saveError is not null)
+                {
+                    <p class="error" role="alert">@_saveError</p>
+                }
+                <button type="submit" disabled="@_busy">@Texts["Common.Save"]</button>
+            </div>
+        </form>
+    }
+</div>
+
+<TabBar Current="TabBar.Tab.Relays" SideMenuOnly="true" />
+
+@code {
+    // The units offered, in order; "none" isn't one: it is the volts shown until someone chooses.
+    private static readonly string[] Units = [AnalogUnits.Celsius, AnalogUnits.Percent, AnalogUnits.Bar, AnalogUnits.Volts, AnalogUnits.Other];
+
+    // What the NOW block and "Use the reading now" show: a reading redraws the page only when it changes one.
+    private readonly ShownAnalogValues _shown = new(showsVolts: true);
+
+    private AnalogInputView? _input;
+    private bool _loaded;
+    private bool _busy;
+    private string? _saveError;
+    private string _name = "";
+    private bool _isActive;
+    private bool _showScale;
+    private string _unit = AnalogUnits.None;
+    private string _unitText = "";
+
+    // The scale's two points as typed: the board's voltage and the value it means.
+    private readonly string[] _volts = ["", ""];
+    private readonly string[] _values = ["", ""];
+    private readonly ElementReference[] _valueFields = new ElementReference[2];
+    private int? _focusValue;
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private LiveBoard? Board => _input is { } input ? Registry.Find(input.BoardId) : null;
+
+    private BoardState State => Board?.State ?? BoardState.Initial;
+
+    private AnalogAbility? Ability => Board?.Capabilities.Analog;
+
+    // The unit after a typed value: none until one is chosen.
+    private string ValueUnit => _unit == AnalogUnits.None ? "" : AnalogValueText.Unit(new AnalogScale(_unit, _unitText, null, null, null, null));
+
+    // One point: "BOARD READS 0.00 V = IT IS −20 °C".
+    private RenderFragment Point(int point) => __builder =>
+    {
+        var number = point + 1;
+        <div class="point" role="group" aria-label="@Texts["Analog.Point", number]">
+            <div class="point-field">
+                <label class="label" for="@($"volts-{number}")">@Texts["Analog.BoardReadsLabel"]</label>
+                <div class="box">
+                    @* A voltage is never below 0: the phone's number keyboard is enough. *@
+                    <input id="@($"volts-{number}")" type="text" inputmode="decimal" maxlength="@AnalogNumbers.MaxLength" autocomplete="off" value="@_volts[point]" @oninput="e => _volts[point] = e.Value as string ?? string.Empty" />
+                    <span aria-hidden="true">V</span>
+                </div>
+            </div>
+            <span class="equals" aria-hidden="true">=</span>
+            <div class="point-field">
+                <label class="label" for="@($"value-{number}")">@Texts["Analog.ItIs"]</label>
+                <div class="box">
+                    @* No inputmode: a phone's number keyboard may have no minus, and a value can be below 0. *@
+                    <input id="@($"value-{number}")" type="text" maxlength="@AnalogNumbers.MaxLength" autocomplete="off" value="@_values[point]" @oninput="e => _values[point] = e.Value as string ?? string.Empty" @ref="_valueFields[point]" />
+                    <span aria-hidden="true">@ValueUnit</span>
+                </div>
+            </div>
+        </div>
+    };
+
+    private string UnitName(string unit)
+    {
+        return unit == AnalogUnits.Other ? Texts["Analog.Unit.Other"] : AnalogValueText.Unit(new AnalogScale(unit, "", null, null, null, null));
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _input = await Analog.GetAsync(Id, CancellationToken.None);
+        if (_input is { } input)
+        {
+            (_name, _isActive, _unit, _unitText) = (input.Name, input.IsActive, input.Scale.Unit, input.Scale.UnitText);
+            (_volts[0], _values[0], _volts[1], _values[1]) = (Text(input.Scale.Volts1), Text(input.Scale.Value1), Text(input.Scale.Volts2), Text(input.Scale.Value2));
+            _showScale = input.Scale.Unit != AnalogUnits.None || input.Scale.HasScale;
+        }
+
+        _loaded = true;
+    }
+
+    protected override void OnInitialized()
+    {
+        Registry.StateChanged += OnBoardChanged;
+        Registry.AnalogChanged += OnAnalogChanged;
+        Changes.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Registry.StateChanged -= OnBoardChanged;
+        Registry.AnalogChanged -= OnAnalogChanged;
+        Changes.Changed -= OnChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusValue is { } point)
+        {
+            _focusValue = null;
+            await _valueFields[point].FocusAsync();
+        }
+    }
+
+    // A saved point as the person would type it: up to the decimals a point keeps, in the app's language.
+    private static string Text(decimal? value)
+    {
+        return value is { } number ? number.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) : "";
+    }
+
+    // "Use the reading now": the voltage the board reads goes into a point, and its value is typed next. The first point
+    // without a voltage takes it; with both filled, the one nearer the reading, so the two points stay far apart.
+    private void UseReading()
+    {
+        if (_input is null)
+        {
+            return;
+        }
+
+        var value = AnalogValueText.Show(_input.Scale, Ability, State, _input.Channel);
+        if (value.State != AnalogValueState.Value || value.Volts is not { } volts)
+        {
+            return;
+        }
+
+        var point = AnalogNumbers.Nearer(_volts[0], _volts[1], volts);
+        _volts[point] = value.VoltsText;
+
+        // The value typed for the old voltage doesn't belong to this one.
+        _values[point] = "";
+        _focusValue = point;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_input is null || _busy)
+        {
+            return;
+        }
+
+        _saveError = null;
+        if (!AnalogNumbers.TryParse(_volts[0], out var volts1) || !AnalogNumbers.TryParse(_values[0], out var value1)
+            || !AnalogNumbers.TryParse(_volts[1], out var volts2) || !AnalogNumbers.TryParse(_values[1], out var value2))
+        {
+            _saveError = Texts["Analog.Save.NotANumber"];
+            return;
+        }
+
+        // A scale with no unit chosen would show its values as volts.
+        if (_unit == AnalogUnits.None && (volts1 ?? value1 ?? volts2 ?? value2) is not null)
+        {
+            _saveError = Texts["Analog.Save.ChooseUnit"];
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            _saveError = await Analog.SaveAsync(new AnalogInputSettings(Id, _name, _isActive, _unit, _unitText, volts1, value1, volts2, value2), CancellationToken.None);
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        if (_saveError is null)
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    // The board's connection or state: a redraw is enough.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == _input?.BoardId)
+        {
+            _ = RefreshAsync(reload: false);
+        }
+    }
+
+    // Only a reading: a redraw only when it changes a text shown.
+    private void OnAnalogChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == _input?.BoardId)
+        {
+            _ = RedrawForReadingAsync();
+        }
+    }
+
+    // A change saved elsewhere: the value shown takes the saved scale, but what is being typed stays.
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync(reload: true);
+    }
+
+    // On the page's own thread, as it draws, so a reading can't come between drawing a value and keeping it.
+    private async Task RedrawForReadingAsync()
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (_input is { } input && _shown.Changes(input.BoardId, Ability, State))
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the reading was on its way.
+        }
+    }
+
+    private async Task RefreshAsync(bool reload)
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (reload && _input is not null && await Analog.GetAsync(Id, CancellationToken.None) is { } fresh)
+                {
+                    _input = fresh;
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}
