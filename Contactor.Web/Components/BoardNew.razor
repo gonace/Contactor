@@ -296,9 +296,11 @@
             // Going on without a connection finishes adding it: the board is kept and shown on Relays from now on.
             if (await _where.GoOnWithoutConnectionAsync())
             {
-                if (_boardId is { } id)
+                // Removed meanwhile: the next step has no board to name.
+                if (_boardId is not { } id || !await Registry.FinishAddingAsync(id, CancellationToken.None))
                 {
-                    await Registry.FinishAddingAsync(id, CancellationToken.None);
+                    _error = Texts["Boards.New.Gone"];
+                    return;
                 }
 
                 Move(StepRelays);

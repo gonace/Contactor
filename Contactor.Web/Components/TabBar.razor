@@ -350,7 +350,9 @@
 
             Toast? toast = null;
             var timer = TimeProvider.CreateTimer(_ => Remove(toast!), null, ToastTime, Timeout.InfiniteTimeSpan);
-            toast = new Toast(item, Registry.All.Count > 1 ? board.Name : null, timer);
+            // Named when more than one board is shown, or for a board "Add a board" hasn't finished beside a shown one.
+            var shown = Registry.Shown.Count;
+            toast = new Toast(item, shown > 1 || (board.IsUnfinished && shown > 0) ? board.Name : null, timer);
             _toasts.Add(toast);
             while (_toasts.Count > MaxToasts)
             {

@@ -87,7 +87,7 @@
                 <section class="members">
                     <div class="section-text">
                         <h2>@Texts["Groups.Steps"]</h2>
-                        <p class="hint">@(Registry.All.Count > 1 && Registry.Find(_group.BoardId) is { } board ? Texts["Groups.Steps.HintOn", board.Name] : Texts["Groups.Steps.Hint"])</p>
+                        <p class="hint">@(Registry.Shown.Count > 1 && Registry.Find(_group.BoardId) is { } board ? Texts["Groups.Steps.HintOn", board.Name] : Texts["Groups.Steps.Hint"])</p>
                     </div>
                     <GroupStepsEditor Editor="_editor"
                                       CanChange="CanChangeMembers"

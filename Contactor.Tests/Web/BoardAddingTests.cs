@@ -12,7 +12,9 @@ using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Contactor.Tests.Web;
 
@@ -346,12 +348,15 @@ public sealed class BoardAddingTests
     {
         await using var boards = await TwoBoards.StartAsync();
         var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
-        using var relays = await PageRenderer.StartAsync<Relays>(boards.App.Services, John, "John");
         using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
 
         await ChooseAsync(page, "Velleman", "vm204");
         await page.TypeAsync(PageRenderer.With("id", "board-name"), "Garage");
         await page.ClickAsync(Button("Next"));
+
+        // Opened now, so it draws the boards as they are after "Next".
+        using var relays = await PageRenderer.StartAsync<Relays>(boards.App.Services, John, "John");
+        Assert.Contains("Barn", await relays.TextAsync(), StringComparison.Ordinal);
 
         var garage = registry.All[^1];
         Assert.Equal("Garage", garage.Name);
@@ -376,6 +381,66 @@ public sealed class BoardAddingTests
         }
 
         await BoardTestRig.WaitUntilAsync(() => relays.TextAsync().GetAwaiter().GetResult().Contains("Garage", StringComparison.Ordinal));
+    }
+
+    // "Done" after the board answered finishes it: the next start keeps it. (No "Go on without a connection" here, which
+    // finishes it too.)
+    [Fact]
+    public async Task Should_FinishTheBoard_OnDone_AfterItAnswered()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Velleman", "vm201");
+        await page.ClickAsync(Button("Next"));
+        var made = registry.All[^1];
+        await page.TypeAsync(PageRenderer.With("id", "host"), "127.0.0.1");
+        await page.TypeAsync(PageRenderer.With("id", "port"), simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(made.IsUnfinished);
+
+        await page.ClickAsync(Button("Done"));
+
+        var navigation = Assert.IsType<NavigationException>(Assert.Single(Errors(page)));
+        Assert.Equal("http://localhost" + RelaysEndpoints.ShowAllPath, navigation.Location);
+        Assert.False(made.IsUnfinished);
+        Assert.True(registry.IsShown(made.BoardId));
+        await using var next = new BoardRegistry(
+            boards.Factory, boards.App.Services, boards.App.Services.GetRequiredService<IConfiguration>(), TimeProvider.System, NullLoggerFactory.Instance);
+        await next.LoadAsync(Cancel);
+        Assert.NotNull(next.Find(made.BoardId));
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.Boards.Where(b => b.Id == made.BoardId).Select(b => b.IsUnfinished).SingleAsync(Cancel));
+    }
+
+    // A board left after "Next" and set up in Settings instead (its address saved on its page) is finished: the person
+    // keeps it, so the next start doesn't remove it.
+    [Fact]
+    public async Task Should_FinishTheBoard_WhenItsAddressIsSavedInSettings()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        using (var adding = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John"))
+        {
+            await ChooseAsync(adding, "Velleman", "vm204");
+            await adding.ClickAsync(Button("Next"));
+        }
+
+        var made = registry.All[^1];
+        Assert.True(made.IsUnfinished);
+        using var page = await PageRenderer.StartAsync<BoardPage>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = made.BoardId });
+        await page.TypeAsync(PageRenderer.With("id", "host"), "192.168.1.80");
+
+        await page.SubmitAsync(PageRenderer.With("class", "card"));
+
+        Assert.Empty(Errors(page));
+        Assert.Equal("192.168.1.80", made.Endpoint.Host);
+        Assert.False(made.IsUnfinished);
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.Boards.Where(b => b.Id == made.BoardId).Select(b => b.IsUnfinished).SingleAsync(Cancel));
     }
 
     // An open Relays page shows a board added while it is open, with its relays: it is told again once the board has

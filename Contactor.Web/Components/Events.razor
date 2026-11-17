@@ -109,7 +109,8 @@
     [CascadingParameter]
     public BoardFilters? PickedBoards { get; set; }
 
-    private IReadOnlyList<LiveBoard> Boards => Registry.All;
+    // Not a board "Add a board" hasn't finished, as on Relays.
+    private IReadOnlyList<LiveBoard> Boards => Registry.Shown;
 
     // Two or more boards: "All boards" in the board filter, and each row names its board.
     private bool Several => Boards.Count > 1;

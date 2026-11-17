@@ -858,7 +858,8 @@
         try
         {
             var unreachable = await Control.TurnOffAllBoardsAsync(_user.Email, CancellationToken.None);
-            _allBoardsMessage = BoardsText.Unreachable([.. unreachable.Select(BoardNameOf)]);
+            // Only the boards this page shows: one "Add a board" hasn't finished is turned off too, but not named.
+            _allBoardsMessage = BoardsText.Unreachable([.. unreachable.Where(Registry.IsShown).Select(BoardNameOf)]);
         }
         catch (Exception ex)
         {

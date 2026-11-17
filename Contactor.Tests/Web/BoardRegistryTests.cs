@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
@@ -6,6 +7,7 @@ using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -488,6 +490,44 @@ public sealed class BoardRegistryTests
         Assert.Equal(finished, await check.Relays.AnyAsync(r => r.BoardId == garage.BoardId, Cancel));
     }
 
+    // A delete that fails at start is logged, the board runs (still unfinished, not shown), and the next start removes it.
+    [Fact]
+    public async Task Should_LogAFailedRemoval_AtStart_AndTryAgainAtTheNextStart()
+    {
+        await using var database = await DatabaseAsync();
+        var workshop = await AddRowAsync(database, type: "vm201", sortOrder: 1, name: "Workshop");
+        var garage = await AddRowAsync(database, type: "vm204", sortOrder: 2, name: "Garage", unfinished: true);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER keep_board BEFORE DELETE ON \"Board\" BEGIN SELECT RAISE(ABORT, 'kept'); END;", Cancel);
+        }
+
+        var logs = new ListLoggerProvider();
+        using var loggers = LoggerFactory.Create(b => b.AddProvider(logs));
+        var configuration = database.Services.GetRequiredService<IConfiguration>();
+        await using (var first = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers))
+        {
+            await first.LoadAsync(Cancel);
+
+            Assert.Equal([workshop, garage], first.All.Select(b => b.BoardId));
+            Assert.Equal([workshop], first.Shown.Select(b => b.BoardId));
+            Assert.Contains(logs.Entries, e => e.Level == LogLevel.Error && e.Line.Contains($"Relay board {garage},", StringComparison.Ordinal));
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER keep_board;", Cancel);
+        }
+
+        await using var next = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers);
+        await next.LoadAsync(Cancel);
+
+        Assert.Equal([workshop], next.All.Select(b => b.BoardId));
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Line.Contains($"Relay board {garage} (Garage) removed at start", StringComparison.Ordinal));
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await check.Boards.AnyAsync(b => b.Id == garage, Cancel));
+    }
+
     [Fact]
     public async Task Should_NotFinishABoard_ThatIsGone()
     {
@@ -534,6 +574,49 @@ public sealed class BoardRegistryTests
         var board = await db.Boards.SingleAsync(b => b.Id == boardId, Cancel);
         (board.Host, board.Port) = (host, port);
         await db.SaveChangesAsync(Cancel);
+    }
+
+    private sealed class ListLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries = new();
+
+        public IReadOnlyList<(LogLevel Level, string Line)> Entries => [.. _entries];
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new ListLogger(_entries);
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class ListLogger : ILogger
+        {
+            private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries;
+
+            public ListLogger(ConcurrentQueue<(LogLevel Level, string Line)> entries)
+            {
+                _entries = entries;
+            }
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull
+            {
+                return null;
+            }
+
+            public bool IsEnabled(LogLevel logLevel)
+            {
+                return true;
+            }
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                ArgumentNullException.ThrowIfNull(formatter);
+                _entries.Enqueue((logLevel, formatter(state, exception)));
+            }
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
