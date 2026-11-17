@@ -10,7 +10,7 @@ namespace Contactor.Boards.Velleman;
 public sealed class Vm201Board : IRelayBoard
 {
     public static readonly BoardCapabilities Vm201Capabilities = new(
-        Vm201Channel.Count, InputCount: 1, ReportsChanges: true, Pulse: Vm201Pulse.Ability);
+        Vm201Channel.Count, InputCount: 1, ReportsChanges: true, Pulse: Vm201Pulse.Ability, OwnRules: OwnRulesAbility.ReadsAndTurnsOff);
 
     private readonly Vm201Client _client;
     private readonly ILogger<Vm201Board> _logger;

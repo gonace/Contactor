@@ -11,9 +11,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     private readonly Lock _lock = new();
     private BoardState _state;
 
-    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null, AnalogAbility? analog = null)
+    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null, AnalogAbility? analog = null, OwnRulesAbility? ownRules = null)
     {
-        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true, analog, pulse);
+        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true, analog, pulse, ownRules);
         _state = new BoardState(connected, ChannelMask.None, ChannelMask.None, connected ? DateTimeOffset.UnixEpoch : null);
     }
 
@@ -32,8 +32,10 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     public event EventHandler<BoardState>? AnalogChanged;
 
-    /// <summary>Whether anything listens to its state or readings, e.g. to tell a subscription that was let go.</summary>
-    public bool HasListeners => StateChanged is not null || AnalogChanged is not null;
+    public event EventHandler<BoardState>? OwnRulesChanged;
+
+    /// <summary>Whether anything listens to its state, readings or rules, e.g. to tell a subscription that was let go.</summary>
+    public bool HasListeners => StateChanged is not null || AnalogChanged is not null || OwnRulesChanged is not null;
 
     /// <summary>
     /// When set, every status the board reports while connected carries this clock's time as its contact time, as a
@@ -271,6 +273,60 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
 
         AnalogChanged?.Invoke(this, state);
+    }
+
+    /// <summary>Only the board's own rules change, and the board reports them as rules, not as a state.</summary>
+    public void SetOwnRules(OwnRules? rules)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = Stamp(_state with { OwnRules = rules });
+        }
+
+        OwnRulesChanged?.Invoke(this, state);
+    }
+
+    /// <summary>
+    /// Turns off the rules it has of those asked, and reports what is left, as a board that reads its rules does. Only on
+    /// a board made with an ability that turns them off.
+    /// </summary>
+    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        if (Capabilities.OwnRules is not { TurnsOff: true })
+        {
+            throw new NotSupportedException("This board can't turn its own rules off.");
+        }
+
+        if (rules.FirstOrDefault(r => r.Relay > Capabilities.RelayCount) is { } outside)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rules), outside, $"The board has relays 1–{Capabilities.RelayCount}.");
+        }
+
+        ThrowIfCancelled(cancellationToken);
+        EnsureConnected();
+        if (rules.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyList<OwnRule>>([]);
+        }
+
+        BoardState state;
+        IReadOnlyList<OwnRule> taken;
+        lock (_lock)
+        {
+            var had = _state.OwnRules ?? OwnRules.Empty;
+            taken = [.. rules.Where(had.Contains).Distinct()];
+            if (taken.Count == 0)
+            {
+                throw new BoardNotConnectedException("The board has none of those rules.");
+            }
+
+            state = _state = Stamp(_state with { OwnRules = new OwnRules(had.Where(r => !taken.Contains(r))) });
+        }
+
+        OwnRulesChanged?.Invoke(this, state);
+        return Task.FromResult(taken);
     }
 
     /// <summary>The board's state is forgotten, as a client does when its address changes: nothing is known.</summary>

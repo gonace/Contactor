@@ -18,7 +18,12 @@ namespace Contactor.Boards;
 /// or before it answered. A change in it alone comes as <see cref="IRelayBoard.AnalogChanged"/>, never as
 /// <see cref="IRelayBoard.StateChanged"/>.
 /// </param>
-public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null)
+/// <param name="OwnRules">
+/// The rules of its own the board last reported (<see cref="OwnRulesAbility.Reads"/>), kept while disconnected as the
+/// relays are; empty when it has none, and null for a board that can't read them or before it reported them. A change in
+/// it alone comes as <see cref="IRelayBoard.OwnRulesChanged"/>.
+/// </param>
+public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null, OwnRules? OwnRules = null)
 {
     public static BoardState Initial { get; } = new(false, ChannelMask.None, ChannelMask.None, null);
 

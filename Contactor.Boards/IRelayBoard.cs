@@ -34,6 +34,18 @@ public interface IRelayBoard
     }
 
     /// <summary>
+    /// Raised when only the board's own rules changed (<see cref="BoardState.OwnRules"/>): not the relays, the inputs or
+    /// the connection. A change that comes with one of those comes as <see cref="StateChanged"/> instead, whose state
+    /// carries the rules too: whoever shows the rules listens to both. From any thread, each subscriber on its own. A
+    /// board that doesn't read its rules (<see cref="OwnRulesAbility.Reads"/>) never raises it.
+    /// </summary>
+    event EventHandler<BoardState>? OwnRulesChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Turns on the relays in <paramref name="relays"/>; the others are left as they are. Returns the relays the board
     /// took: all of them on a board that takes a mask at once, and on one that switches a relay per request, those
     /// it confirmed (not refused, and with an answer the app could read; one it couldn't may have switched, which the
@@ -52,6 +64,20 @@ public interface IRelayBoard
     /// do (<see cref="PulseAbility.CanDo"/>), before anything is sent.
     /// </summary>
     Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Turns off the board's own <paramref name="rules"/>, and only those, as a person asked (never on the app's own
+    /// accord). Sent at once or not at all, as <see cref="TurnOnAsync"/>: without a connection it throws
+    /// <see cref="BoardNotConnectedException"/> and is never queued. Throws <see cref="ArgumentOutOfRangeException"/> for
+    /// a relay or a kind of rule the board doesn't have, before anything is sent. Returns the rules the board took, and
+    /// none for none asked; when it took none of them, it throws instead. The next state confirms it
+    /// (<see cref="BoardState.OwnRules"/>). Throws <see cref="NotSupportedException"/> on a board that can't turn its
+    /// rules off (<see cref="OwnRulesAbility.TurnsOff"/>), the default.
+    /// </summary>
+    Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This board can't turn its own rules off.");
+    }
 
     /// <summary>Asks the board for its state; the answer comes as <see cref="StateChanged"/>.</summary>
     Task RefreshAsync(CancellationToken cancellationToken = default);

@@ -17,7 +17,7 @@ public static class SmartDenModels
         "denkovi-smartden-ip-16r-mt",
         DenkoviBrand.Name,
         "smartDEN IP-16R-MT",
-        new BoardCapabilities(SmartDenApi.RelayCount, 0, ReportsChanges: false, Pulse: Pulse),
+        new BoardCapabilities(SmartDenApi.RelayCount, 0, ReportsChanges: false, Pulse: Pulse, OwnRules: OwnRulesAbility.CantTell),
         SmartDenApi.DefaultPort,
         LoginMaxLength: 0);
 

@@ -21,7 +21,7 @@ public sealed class DaenetIp2BoardTests
         var model = Assert.Single(DaenetIp2Models.All, m => m.Id == id);
 
         Assert.Equal(("Denkovi", name, $"Denkovi {name}"), (model.Brand, model.ModelName, model.Name));
-        Assert.Equal(new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: new AnalogAbility(8, 1023, 3.3m)), model.Capabilities);
+        Assert.Equal(new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: new AnalogAbility(8, 1023, 3.3m), OwnRules: OwnRulesAbility.CantTell), model.Capabilities);
         Assert.Equal(3.3m, model.Capabilities.Analog!.Volts(1023));
         Assert.Null(model.Capabilities.Pulse);
         Assert.Equal(161, model.DefaultPort);

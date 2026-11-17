@@ -20,7 +20,8 @@ public sealed class Vm204Board : IRelayBoard
         Vm204Api.RelayCount,
         InputCount: Vm204Api.InputCount,
         ReportsChanges: false,
-        Analog: Vm204Analog);
+        Analog: Vm204Analog,
+        OwnRules: OwnRulesAbility.None);
 
     private readonly Vm204Client _client;
     private readonly ILogger<Vm204Board> _logger;

@@ -12,8 +12,16 @@ namespace Contactor.Boards;
 /// Whether, and how long, the board can pulse a relay (<see cref="IRelayBoard.PulseAsync"/>): turn it on, and off again
 /// by itself after a time, without the app. Null: it can't.
 /// </param>
-public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, AnalogAbility? Analog = null, PulseAbility? Pulse = null)
+/// <param name="OwnRules">
+/// What the app can know and do about the board's own rules, which switch relays without it. Every model in the
+/// catalogue states it; null means "can't tell" (<see cref="OwnRulesOrCantTell"/>), so a board that says nothing is
+/// never taken to have none.
+/// </param>
+public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, AnalogAbility? Analog = null, PulseAbility? Pulse = null, OwnRulesAbility? OwnRules = null)
 {
+    /// <summary>What the app can know and do about the board's own rules: <see cref="OwnRulesAbility.CantTell"/> when it doesn't say.</summary>
+    public OwnRulesAbility OwnRulesOrCantTell => OwnRules ?? OwnRulesAbility.CantTell;
+
     /// <summary>How many analog inputs it has, numbered 1 to this.</summary>
     public int AnalogInputCount => Analog?.Count ?? 0;
 

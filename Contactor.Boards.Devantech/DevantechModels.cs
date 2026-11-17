@@ -141,7 +141,7 @@ public static class DevantechModels
             id,
             Brand,
             name,
-            new BoardCapabilities(relays, inputs, ReportsChanges: false, Analog: analog, Pulse: Pulse),
+            new BoardCapabilities(relays, inputs, ReportsChanges: false, Analog: analog, Pulse: Pulse, OwnRules: OwnRulesAbility.CantTell),
             DevantechApi.DefaultPort,
             LoginMaxLength: DevantechApi.PasswordMaxLength,
             LoginHint: new LoginHint(LoginHintKind.TcpPassword, DevantechApi.PasswordMaxLength),

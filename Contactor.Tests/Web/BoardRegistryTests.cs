@@ -75,6 +75,7 @@ public sealed class BoardRegistryTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOnAsync(ChannelMask.Of(1), Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOffAsync(ChannelMask.Of(1), Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.RefreshAsync(Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
         Assert.Throws<InvalidOperationException>(() => board.SetEndpoint(new BoardEndpoint("127.0.0.1", 9760)));
         Assert.Throws<InvalidOperationException>(() => board.SetLogin(BoardLogin.None));
         Assert.Equal("No relay board has been chosen yet.", Assert.Throws<InvalidOperationException>(() => board.CheckLogin(BoardLogin.None)).Message);
@@ -161,6 +162,46 @@ public sealed class BoardRegistryTests
 
         Assert.Equal(2, analogs.Count);
         Assert.Equal(new AnalogReadings([700]), analogs[1].Analog);
+        Assert.False(old.Fake.HasListeners);
+    }
+
+    // The board's own rules alone are no state either; they reach the registry with the board's id.
+    [Fact]
+    public async Task Should_PassOnOwnRulesChanges_OfTheCurrentModelOnly_AndNotAsStates()
+    {
+        await using var database = await DatabaseAsync();
+        var id = await AddRowAsync(database);
+        var registry = Registry(database);
+        var old = new FakeBoardParts(new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff));
+        var next = new FakeBoardParts(new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff));
+        var board = await registry.ReplaceAsync(old.Build(id, Vm201Model.Model), Cancel);
+        var states = new List<BoardState>();
+        var rules = new List<BoardState>();
+        var changes = new List<BoardStateChange>();
+        board.StateChanged += (_, state) => states.Add(state);
+        board.OwnRulesChanged += (_, _) => throw new InvalidOperationException("A broken subscriber.");
+        board.OwnRulesChanged += (_, state) => rules.Add(state);
+        registry.OwnRulesChanged += (_, change) => changes.Add(change);
+        var timer = new OwnRules([new OwnRule(3, OwnRuleKind.Timer)]);
+
+        old.Fake.SetOwnRules(timer);
+        Assert.Empty(states);
+        Assert.Equal(timer, Assert.Single(rules).OwnRules);
+        Assert.Equal(new BoardStateChange(id, rules[0]), Assert.Single(changes));
+        Assert.Equal(timer, board.State.OwnRules);
+
+        // Turning them off goes to the model, which reports what is left.
+        Assert.Equal([new OwnRule(3, OwnRuleKind.Timer)], await board.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer)], Cancel));
+        Assert.Equal(OwnRules.Empty, rules[^1].OwnRules);
+
+        await registry.ReplaceAsync(next.Build(id, Vm201Model.Model), Cancel);
+        old.Fake.SetOwnRules(timer);
+        next.Fake.SetOwnRules(OwnRules.Empty);
+
+        Assert.Equal(3, rules.Count);
+        Assert.Same(next.Fake, next.Board);
+        Assert.Equal(OwnRules.Empty, rules[2].OwnRules);
+        Assert.Equal(3, changes.Count);
         Assert.False(old.Fake.HasListeners);
     }
 

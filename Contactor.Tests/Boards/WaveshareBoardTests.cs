@@ -23,7 +23,7 @@ public sealed class WaveshareBoardTests
 
         Assert.Equal(name, model.Name);
         var pulse = new PulseAbility(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(3_276_700), TimeSpan.FromMilliseconds(100));
-        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: pulse), model.Capabilities);
+        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: pulse, OwnRules: inputs > 0 ? OwnRulesAbility.ReadsAndTurnsOff : OwnRulesAbility.None), model.Capabilities);
         Assert.Equal(4196, model.DefaultPort);
         Assert.False(model.HasLogin);
         Assert.Equal(inputs > 0, WaveshareModels.HasRelayModes(model));

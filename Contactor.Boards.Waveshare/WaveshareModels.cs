@@ -45,8 +45,10 @@ public static class WaveshareModels
         return All.Contains(model);
     }
 
+    // The (B) and (C), the models with inputs, have relay control modes, their own rules; the others have none.
     private static BoardModel Create(string id, string name, int relays, int inputs)
     {
-        return new BoardModel(id, Brand, name, new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: Pulse), WaveshareApi.DefaultPort, LoginMaxLength: 0);
+        var ownRules = inputs > 0 ? OwnRulesAbility.ReadsAndTurnsOff : OwnRulesAbility.None;
+        return new BoardModel(id, Brand, name, new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: Pulse, OwnRules: ownRules), WaveshareApi.DefaultPort, LoginMaxLength: 0);
     }
 }

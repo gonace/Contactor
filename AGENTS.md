@@ -106,6 +106,7 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
   - keep sending the other relays when one fails ("All off" and the interlock depend on it);
   - reopen the connection after a failure instead of staying closed;
   - outside `RunCommandAsync`, a refusal is a `BoardNotConnectedException`.
+- **State `OwnRules`** in the model's capabilities: whether the board has rules of its own that switch relays, and whether the app can read them and turn them off, from the manual. Never change the board's own rules without a person's press.
 - **"Connected" only after the board's first valid answer.** A wrong password says so in plain words, through `LoginProblem` and `LoginHint`.
 - **Bound every input:** a size limit on every answer, a length check on every packet. The simulator survives malformed packets and a dropped connection.
 - **Time through `TimeProvider`:** timeouts in the code, and a fake clock in the tests. Never a real-time wait.
