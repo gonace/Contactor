@@ -266,6 +266,46 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_SetTheVm204sAnalogInput_AndLogIt_OnlyWhenItChanges()
+    {
+        Assert.Null(_boards.Add("vm204", FreePort(), null, null));
+        var board = _boards.Boards.Single();
+        Assert.Equal([0], board.Board.State.Analog);
+
+        await board.SetAnalogAsync(1, 512);
+        await board.SetAnalogAsync(1, 512);
+
+        Assert.Equal([512], board.Board.State.Analog);
+        Assert.Equal("Analog input 1 set to 512 (3.30 V) here", Assert.Single(board.Traffic).Text);
+
+        // What the page never offers changes nothing.
+        await board.SetAnalogAsync(2, 100);
+        await board.SetAnalogAsync(0, 100);
+        await board.SetAnalogAsync(1, 1024);
+        await board.SetAnalogAsync(1, -1);
+        Assert.Equal([512], board.Board.State.Analog);
+        Assert.Single(board.Traffic);
+
+        await board.SetAnalogAsync(1, 1023);
+        Assert.Equal("Analog input 1 set to 1023 (6.60 V) here", board.Traffic[0].Text);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.Board.SetAnalogAsync(1, 1024));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.Board.SetAnalogAsync(2, 0));
+    }
+
+    [Fact]
+    public async Task Should_HaveNoAnalogInputs_OnABoardWithoutThem()
+    {
+        Assert.Null(_boards.Add("vm201", FreePort(), null, null));
+        var board = _boards.Boards.Single();
+
+        await board.SetAnalogAsync(1, 10);
+
+        Assert.Empty(board.Board.State.Analog);
+        Assert.Empty(board.Traffic);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.Board.SetAnalogAsync(1, 10));
+    }
+
+    [Fact]
     public async Task Should_KeepTheLatestHundredLines()
     {
         Assert.Null(_boards.Add("vm201", FreePort(), null, null));

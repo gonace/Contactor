@@ -39,6 +39,16 @@ public interface ISimulatedBoard : IAsyncDisposable
     /// <summary>Sets a digital input, and tells the app if anything changed.</summary>
     Task SetInputAsync(int input, bool closed);
 
+    /// <summary>
+    /// Sets what an analog input reads, in counts of the board's converter (0 to
+    /// <see cref="AnalogAbility.MaxCounts"/>), and tells the app if anything changed. Throws for an input the board
+    /// doesn't simulate (<see cref="SimulatedBoardState.Analog"/>) or a count out of range.
+    /// </summary>
+    Task SetAnalogAsync(int input, int counts)
+    {
+        throw new ArgumentOutOfRangeException(nameof(input), input, "This board has no analog inputs to set.");
+    }
+
     /// <summary>Closes every open connection, as if the network dropped. A UDP board has none: it forgets its clients.</summary>
     void DropConnections();
 }
@@ -47,7 +57,14 @@ public interface ISimulatedBoard : IAsyncDisposable
 /// <param name="Relays">The relays that are on.</param>
 /// <param name="Inputs">The inputs that are on (closed).</param>
 /// <param name="Clients">Where each open connection comes from, e.g. "127.0.0.1:52144".</param>
-public sealed record SimulatedBoardState(ChannelMask Relays, ChannelMask Inputs, IReadOnlyList<string> Clients);
+public sealed record SimulatedBoardState(ChannelMask Relays, ChannelMask Inputs, IReadOnlyList<string> Clients)
+{
+    /// <summary>
+    /// What each analog input reads, input 1 first, in counts of the board's converter; empty when the board has none,
+    /// or doesn't simulate them. Compared by reference, as <see cref="Clients"/>.
+    /// </summary>
+    public IReadOnlyList<int> Analog { get; init; } = [];
+}
 
 /// <summary>A simulated board with timer programs of its own, which the app may turn off.</summary>
 public interface ISimulatedBoardTimers

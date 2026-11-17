@@ -24,7 +24,7 @@ public sealed class Vm204ClientTests
         simulator.Start();
         await simulator.SwitchRelayAsync(2, true);
         await simulator.SetInputAsync(4, true);
-        simulator.SetAnalog(512);
+        await simulator.SetAnalogAsync(1, 512);
         await using var run = ClientRun.Start(simulator.Port);
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
@@ -135,8 +135,9 @@ public sealed class Vm204ClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         var reported = run.Changes.Count;
 
-        // Polls that change nothing, not even with the analog value moving, report nothing.
-        simulator.SetAnalog(700);
+        // Polls that change nothing, not even with the analog value moving, report nothing as a state change; the
+        // analog value alone comes once, as an analog change.
+        await simulator.SetAnalogAsync(1, 700);
         for (var poll = 0; poll < 3; poll++)
         {
             await run.PollAsync();
@@ -144,6 +145,7 @@ public sealed class Vm204ClientTests
 
         Assert.Equal(reported, run.Changes.Count);
         Assert.Equal(700, run.Client.State.Status?.Analog);
+        Assert.Equal(700, Assert.Single(run.AnalogChanges).Status?.Analog);
 
         await simulator.SwitchRelayAsync(4, true);
         await simulator.SetInputAsync(1, true);
@@ -518,6 +520,7 @@ public sealed class Vm204ClientTests
         private readonly Task _task;
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<Vm204State> _changes = [];
+        private readonly List<Vm204State> _analogChanges = [];
 
         private ClientRun(Vm204Client client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
@@ -537,6 +540,13 @@ public sealed class Vm204ClientTests
                 lock (_changes)
                 {
                     _changes.Add(state);
+                }
+            };
+            client.AnalogChanged += (_, state) =>
+            {
+                lock (_analogChanges)
+                {
+                    _analogChanges.Add(state);
                 }
             };
             _task = client.RunAsync(cts.Token);
@@ -566,6 +576,17 @@ public sealed class Vm204ClientTests
                 lock (_changes)
                 {
                     return [.. _changes];
+                }
+            }
+        }
+
+        public List<Vm204State> AnalogChanges
+        {
+            get
+            {
+                lock (_analogChanges)
+                {
+                    return [.. _analogChanges];
                 }
             }
         }

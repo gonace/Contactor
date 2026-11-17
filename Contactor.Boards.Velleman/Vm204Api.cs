@@ -36,6 +36,22 @@ public static class Vm204Api
 
     public const int InputCount = 4;
 
+    /// <summary>One analog input (manual, December 2016, p. 3), as <c>"analog": n</c> in the status.</summary>
+    public const int AnalogInputCount = 1;
+
+    /// <summary>
+    /// The highest analog value: the PIC32's 10-bit converter (<c>Main/analog.c</c>; the manual's "between 1 and 1024",
+    /// p. 19).
+    /// </summary>
+    public const int AnalogMaxCounts = 1023;
+
+    /// <summary>
+    /// The voltage at the terminal that <see cref="AnalogMaxCounts"/> means: "The maximum voltage that can be sensed is
+    /// 6.6 V" (manual, p. 19), and the firmware's <c>n / 1023 × 3.3 × 2</c> (<c>Main/analog.c</c>,
+    /// <c>resources/www/js/vm204.js</c> updateIO).
+    /// </summary>
+    public const decimal AnalogFullScaleVolts = 6.6m;
+
     /// <summary>
     /// The longest user name or password the API takes: <c>authUser</c> copies each value into a 32-byte buffer
     /// (<c>Main/api.c</c>), and the board keeps them in 32 bytes (<c>Main/settings.h</c> AuthSettings).

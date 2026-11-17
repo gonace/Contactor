@@ -75,6 +75,12 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     public event EventHandler<Vm204State>? StateChanged;
 
     /// <summary>
+    /// Raised when a poll or command finds only the analog value changed: the relays, the inputs and the connection
+    /// are as before, so <see cref="StateChanged"/> isn't raised. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<Vm204State>? AnalogChanged;
+
+    /// <summary>
     /// Every request and answer and every connection step, in plain words. The key, the user name and the password
     /// never show. On the poller's loop or a command's: handlers must be quick.
     /// </summary>
@@ -191,27 +197,13 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
 
     void IPolledBoard<Vm204Status>.OnStateChanged(PolledState<Vm204Status> state)
     {
-        if (StateChanged is not { } handlers)
-        {
-            return;
-        }
+        Raise(StateChanged, state);
+    }
 
-        var vm204State = new Vm204State(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
-
-        // Each subscriber on its own: one that fails must not keep the state from the others.
-        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<Vm204State>>())
-        {
-            try
-            {
-                handler(this, vm204State);
-            }
-#pragma warning disable CA1031 // A subscriber's bug must not take down the poller or the other subscribers.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                Vm204Log.SubscriberFailed(_logger, ex);
-            }
-        }
+    void IPolledBoard<Vm204Status>.OnReadingChanged(PolledState<Vm204Status> state)
+    {
+        // The comparer leaves out only the analog value: that is what changed.
+        Raise(AnalogChanged, state);
     }
 
     void IPolledBoard<Vm204Status>.OnStep(BoardPollStep kind, string? detail)
@@ -237,6 +229,30 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
                 break;
             default:
                 break;
+        }
+    }
+
+    // Each subscriber on its own: one that fails must not keep the state from the others.
+    private void Raise(EventHandler<Vm204State>? handlers, PolledState<Vm204Status> state)
+    {
+        if (handlers is null)
+        {
+            return;
+        }
+
+        var vm204State = new Vm204State(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<Vm204State>>())
+        {
+            try
+            {
+                handler(this, vm204State);
+            }
+#pragma warning disable CA1031 // A subscriber's bug must not take down the poller or the other subscribers.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                Vm204Log.SubscriberFailed(_logger, ex);
+            }
         }
     }
 

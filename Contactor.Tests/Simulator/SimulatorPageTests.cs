@@ -46,6 +46,39 @@ public sealed class SimulatorPageTests
     }
 
     [Fact]
+    public async Task Should_ShowASliderForTheVm204sAnalogInput_WithItsVolts()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        await using var app = new WebApplicationFactory<Contactor.Simulator.Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureLogging(logging => logging.ClearProviders());
+            builder.UseSetting("Simulator:Boards:0:Type", "vm204");
+            builder.UseSetting("Simulator:Boards:0:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
+
+        Assert.Contains("Analog 1", html, StringComparison.Ordinal);
+        Assert.Matches("<input type=\"range\" min=\"0\" max=\"1023\"[^>]*value=\"0\"", html);
+        Assert.Contains("0 · 0.00 V", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Analog 2", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_ShowNoAnalogInput_ForABoardWithoutOne()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        await using var app = CreateApp(port);
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
+
+        Assert.DoesNotContain("type=\"range\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Analog 1", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Should_ShowTheAddressTheAppReachesTheBoardsAt_FromTheSettings()
     {
         var port = SimulatedBoardsTests.FreePort();

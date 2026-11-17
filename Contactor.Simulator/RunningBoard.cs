@@ -103,6 +103,29 @@ public sealed class RunningBoard : IAsyncDisposable
         return Board.SetInputAsync(input, closed);
     }
 
+    /// <summary>
+    /// Sets what an analog input reads, in counts of the board's converter, as a sensor at its terminal would. Nothing
+    /// for a count it already reads, or for an input or count the board doesn't have: the page offers only those.
+    /// </summary>
+    public Task SetAnalogAsync(int input, int counts)
+    {
+        var analog = Board.State.Analog;
+        if (Board.Model.Capabilities.Analog is not { } ability
+            || input < 1
+            || input > analog.Count
+            || counts < 0
+            || counts > ability.MaxCounts
+            || analog[input - 1] == counts)
+        {
+            return Task.CompletedTask;
+        }
+
+        Add(TrafficKind.AtBoard, string.Create(
+            CultureInfo.InvariantCulture,
+            $"Analog input {input} set to {counts} ({ability.Volts(counts):0.00} V) here"));
+        return Board.SetAnalogAsync(input, counts);
+    }
+
     /// <summary>Turns the board's own timers on for every relay, or off. Nothing for a board without timers.</summary>
     public Task SetTimersAsync(bool on)
     {

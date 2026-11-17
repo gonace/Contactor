@@ -357,6 +357,28 @@ h2 {
     accent-color: var(--accent);
 }
 
+.analog {
+    display: grid;
+    grid-template-columns: auto minmax(120px, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    font-size: 14px;
+}
+
+.analog input[type="range"] {
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: none;
+    accent-color: var(--accent);
+}
+
+.analog .mono {
+    min-width: 8.5em;
+    text-align: right;
+}
+
 .traffic {
     flex: 1;
     min-height: 0;

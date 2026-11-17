@@ -30,8 +30,10 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     public event EventHandler<BoardState>? StateChanged;
 
-    /// <summary>Whether anything listens to its state, e.g. to tell a subscription that was let go.</summary>
-    public bool HasListeners => StateChanged is not null;
+    public event EventHandler<BoardState>? AnalogChanged;
+
+    /// <summary>Whether anything listens to its state or readings, e.g. to tell a subscription that was let go.</summary>
+    public bool HasListeners => StateChanged is not null || AnalogChanged is not null;
 
     /// <summary>
     /// When set, every status the board reports while connected carries this clock's time as its contact time, as a
@@ -257,6 +259,18 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
 
         StateChanged?.Invoke(this, state);
+    }
+
+    /// <summary>Only the analog readings change, and the board reports them as a reading, not as a state.</summary>
+    public void SetAnalog(AnalogReadings readings)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = Stamp(_state with { Analog = readings });
+        }
+
+        AnalogChanged?.Invoke(this, state);
     }
 
     /// <summary>The board's state is forgotten, as a client does when its address changes: nothing is known.</summary>

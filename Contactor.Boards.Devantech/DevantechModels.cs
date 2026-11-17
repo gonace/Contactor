@@ -30,15 +30,18 @@ public static class DevantechModels
     /// </summary>
     public static PulseAbility Pulse { get; } = new(DevantechApi.PulseUnit, DevantechApi.PulseUnit * DevantechApi.MaxPulseTime, DevantechApi.PulseUnit);
 
-    public static BoardModel Eth002 { get; } = Create("devantech-eth002", "ETH002-B", relays: 2, inputs: 0, analog: 0);
+    public static BoardModel Eth002 { get; } = Create("devantech-eth002", "ETH002-B", relays: 2, inputs: 0, analog: null);
 
-    public static BoardModel Eth008 { get; } = Create("devantech-eth008", "ETH008-B", relays: 8, inputs: 0, analog: 0);
+    public static BoardModel Eth008 { get; } = Create("devantech-eth008", "ETH008-B", relays: 8, inputs: 0, analog: null);
 
-    public static BoardModel Eth1610 { get; } = Create("devantech-eth1610", "ETH1610", relays: 10, inputs: 0, analog: 16);
+    // 10 bit, 0–5 V (ETH1610 Technical Documentation, 11 Feb 2026, "Analogue Inputs" p. 4).
+    public static BoardModel Eth1610 { get; } = Create("devantech-eth1610", "ETH1610", relays: 10, inputs: 0, analog: new AnalogAbility(16, 1023, 5m));
 
-    public static BoardModel Eth484 { get; } = Create("devantech-eth484", "ETH484-B", relays: 4, inputs: 8, analog: 4);
+    // 0x32: 10 bit, full scale at 3.3 V, as on the original ETH484 (ETH484-B Technical Documentation, 11 Feb 2026, p. 5, p. 18).
+    public static BoardModel Eth484 { get; } = Create("devantech-eth484", "ETH484-B", relays: 4, inputs: 8, analog: new AnalogAbility(4, 1023, 3.3m));
 
-    public static BoardModel Eth8020 { get; } = Create("devantech-eth8020", "ETH8020-B", relays: 20, inputs: 8, analog: 8);
+    // 10 bit, 0–5 V (ETH8020-B Technical Documentation, 11 Feb 2026, "Analogue Inputs" p. 4).
+    public static BoardModel Eth8020 { get; } = Create("devantech-eth8020", "ETH8020-B", relays: 20, inputs: 8, analog: new AnalogAbility(8, 1023, 5m));
 
     public static IReadOnlyList<BoardModel> All { get; } = [Eth002, Eth008, Eth1610, Eth484, Eth8020];
 
@@ -126,13 +129,13 @@ public static class DevantechModels
         return password.All(DevantechApi.IsPasswordCharacter) ? null : new LoginProblem(LoginProblemKind.PasswordCharacters);
     }
 
-    private static BoardModel Create(string id, string name, int relays, int inputs, int analog)
+    private static BoardModel Create(string id, string name, int relays, int inputs, AnalogAbility? analog)
     {
         return new BoardModel(
             id,
             Brand,
             name,
-            new BoardCapabilities(relays, inputs, ReportsChanges: false, AnalogInputCount: analog, Pulse: Pulse),
+            new BoardCapabilities(relays, inputs, ReportsChanges: false, Analog: analog, Pulse: Pulse),
             DevantechApi.DefaultPort,
             LoginMaxLength: DevantechApi.PasswordMaxLength,
             LoginHint: new LoginHint(LoginHintKind.TcpPassword, DevantechApi.PasswordMaxLength),

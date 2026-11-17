@@ -96,6 +96,35 @@ public sealed class BoardRegistryTests
         Assert.True(old.Connection.Disposed);
     }
 
+    // An analog value alone is no state: the board's state listeners (the safety services) never hear of it.
+    [Fact]
+    public async Task Should_PassOnAnalogChanges_OfTheCurrentModelOnly_AndNotAsStates()
+    {
+        await using var database = await DatabaseAsync();
+        var id = await AddRowAsync(database);
+        var registry = Registry(database);
+        var old = new FakeBoardParts();
+        var next = new FakeBoardParts();
+        var board = await registry.ReplaceAsync(old.Build(id, Vm204Model.Model), Cancel);
+        var states = new List<BoardState>();
+        var analogs = new List<BoardState>();
+        board.StateChanged += (_, state) => states.Add(state);
+        board.AnalogChanged += (_, _) => throw new InvalidOperationException("A broken subscriber.");
+        board.AnalogChanged += (_, state) => analogs.Add(state);
+
+        old.Fake.SetAnalog(new AnalogReadings([512]));
+        Assert.Empty(states);
+        Assert.Equal(new AnalogReadings([512]), Assert.Single(analogs).Analog);
+
+        await registry.ReplaceAsync(next.Build(id, Vm204Model.Model), Cancel);
+        old.Fake.SetAnalog(new AnalogReadings([600]));
+        next.Fake.SetAnalog(new AnalogReadings([700]));
+
+        Assert.Equal(2, analogs.Count);
+        Assert.Equal(new AnalogReadings([700]), analogs[1].Analog);
+        Assert.False(old.Fake.HasListeners);
+    }
+
     [Fact]
     public async Task Should_RunTheModel_AndTheNextOneAfterAReplacement()
     {

@@ -128,6 +128,21 @@
                                     Input @number closed
                                 </label>
                             }
+                            @if (capabilities.Analog is { } analog)
+                            {
+                                @for (var input = 1; input <= state.Analog.Count; input++)
+                                {
+                                    var number = input;
+                                    var counts = state.Analog[number - 1];
+                                    <label class="analog" @key="number">
+                                        <span>Analog @number</span>
+                                        <input type="range" min="0" max="@analog.MaxCounts" step="1" value="@counts"
+                                               aria-valuetext="@AnalogText(analog, counts)"
+                                               @onchange="e => SetAnalogAsync(current, number, e.Value)" />
+                                        <span class="mono">@AnalogText(analog, counts)</span>
+                                    </label>
+                                }
+                            }
                             @if (current.Board is ISimulatedBoardTimers timers)
                             {
                                 <label class="check">
@@ -309,6 +324,20 @@
 
         var channels = timers.Channels.ToList();
         return channels.Count == 1 ? $"relay {channels[0]}" : $"relays {string.Join(", ", channels)}";
+    }
+
+    // "512 · 3.30 V": the count the converter gives, and the voltage at the terminal it stands for.
+    private static string AnalogText(AnalogAbility analog, int counts)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{counts} · {analog.Volts(counts):0.00} V");
+    }
+
+    // The slider sends its value as text; anything else is ignored, and RunningBoard checks the range.
+    private static Task SetAnalogAsync(RunningBoard board, int input, object? value)
+    {
+        return int.TryParse(value as string, NumberStyles.None, CultureInfo.InvariantCulture, out var counts)
+            ? board.SetAnalogAsync(input, counts)
+            : Task.CompletedTask;
     }
 
     private static string Direction(TrafficKind kind)
