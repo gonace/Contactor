@@ -80,6 +80,36 @@ public sealed class Vm201BoardTests
         await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
     }
 
+    // Another board at a new address: the old board's timers are not the new one's, so nothing is known until it answers.
+    [Fact]
+    public async Task Should_ForgetTheRules_AtANewAddress()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x10);
+        await using var second = new Vm201Simulator();
+        second.Start();
+        second.RejectConnections = true;
+        var client = CreateClient(simulator.Port);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.State.OwnRules is not null);
+
+        client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+
+        Assert.Null(board.State.OwnRules);
+        await stop.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
+    // The packet for relays 3 and 5, byte for byte as Contactor.Boards.Velleman/README.md gives it.
+    [Fact]
+    public void Should_EncodeTheTimerTurnOff_AsTheReadmeGivesIt()
+    {
+        Assert.Equal(new byte[] { 0x02, 0x06, 0x44, 0x14, 0xA0, 0x03 }, Vm201PacketCodec.Encode(Vm201Command.TimerDisable, 0x14));
+    }
+
     [Fact]
     public async Task Should_TurnOffOnlyTheTimersAsked_AndReportTheNewRules()
     {
