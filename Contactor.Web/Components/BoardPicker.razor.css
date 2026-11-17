@@ -102,7 +102,7 @@
     cursor: pointer;
 }
 
-/* One small bar per relay or group that "3 of 8 on" counts: orange when on. */
+/* One small bar per relay: orange when on. */
 .lamps {
     display: flex;
     flex-wrap: wrap;

@@ -36,7 +36,7 @@
         @foreach (var board in Boards)
         {
             var state = board.State;
-            var count = Counts.Of(board.BoardId, state);
+            var count = RelaysOn(board);
             var picked = !Go && Picked(board.BoardId);
             <button type="submit" form="@form" name="show" value="@(Go ? GoValue(board.BoardId) : ToggleValue(board.BoardId))" class="side-board @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(Go ? null : picked ? "true" : "false")" @key="board.BoardId">
                 <span class="line"><span class="name">@board.Name</span><span class="dot @(state.IsConnected ? null : "off")" aria-hidden="true"></span></span>
@@ -61,7 +61,7 @@ else if (!Side && Several)
         @foreach (var board in Boards)
         {
             var state = board.State;
-            var count = Counts.Of(board.BoardId, state);
+            var count = RelaysOn(board);
             var picked = Picked(board.BoardId);
             <button type="submit" form="@FormId" name="show" value="@ToggleValue(board.BoardId)" class="chip-filter @(picked ? "picked" : null) @(state.IsConnected ? null : "lost")" aria-pressed="@(picked ? "true" : "false")" @key="board.BoardId">
                 <span class="cn">
@@ -123,7 +123,7 @@ else if (!Side && Several)
     [EditorRequired]
     public BoardFilter Filter { get; set; } = BoardFilter.All;
 
-    /// <summary>Each board's "3 of 8 on".</summary>
+    /// <summary>"16 of 74 on" under "All boards", as the Relays screen counts. A board's own box counts its relays.</summary>
     [Parameter]
     public BoardCounts Counts { get; set; } = BoardCounts.None;
 
@@ -153,6 +153,14 @@ else if (!Side && Several)
         return (counts.Sum(c => c.On), counts.Sum(c => c.Active));
     }
 
+    // A board's "3 of 8 on", next to its lamps: the board's relays that are on, of all the relays it has, in use, in a
+    // group or not, as the lamps show them.
+    private static (int On, int Active) RelaysOn(LiveBoard board)
+    {
+        var relays = board.Capabilities.RelayCount;
+        return (Enumerable.Range(1, relays).Count(board.State.IsOn), relays);
+    }
+
     // A picked board, light orange: one of the boards picked, or the only board, which is always the one shown.
     private bool Picked(int boardId)
     {
@@ -173,13 +181,14 @@ else if (!Side && Several)
         return next.IsAll ? BoardFilter.AllValue : next.Format();
     }
 
-    // One small bar per relay or group that "3 of 8 on" counts: orange when on.
+    // One small bar per relay: orange when on.
     private RenderFragment Lamps(LiveBoard board) => __builder =>
     {
+        var state = board.State;
         <span class="lamps" aria-hidden="true">
-            @foreach (var on in Counts.Lamps(board.BoardId, board.State))
+            @for (var channel = 1; channel <= board.Capabilities.RelayCount; channel++)
             {
-                <span class="lamp @(on ? "on" : null)"></span>
+                <span class="lamp @(state.IsOn(channel) ? "on" : null)"></span>
             }
         </span>
     };
