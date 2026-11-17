@@ -176,6 +176,9 @@ public sealed class SwedishTests
     public async Task Should_KeepTheTabBarInSwedish_WhenAChangeFromAnotherThreadRedrawsIt()
     {
         await using var app = await SwedishAppAsync();
+        // A second board: the tab bar lists the boards, so a change to the relays redraws it (one board has no list).
+        await app.Services.GetRequiredService<Contactor.Web.Features.Boards.BoardRegistry>()
+            .AddBoardAsync(Contactor.Web.Features.Boards.BoardCatalogue.Find("vm201")!.Model, "Barn", Cancel);
         PageRenderer page;
         using (TestCulture.Language("sv"))
         {
@@ -307,7 +310,8 @@ public sealed class SwedishTests
         Assert.Empty(page.Errors);
     }
 
-    // Why the board refuses the connection, in Swedish: on Relays, on Settings and in the side menu.
+    // Why the board refuses the connection, in Swedish: on Relays and on Settings. One board has no list of boards in the
+    // side menu, so no short reason there.
     [Fact]
     public async Task Should_SayWhyTheBoardRefuses_InSwedish()
     {
@@ -320,7 +324,7 @@ public sealed class SwedishTests
         var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
 
         Assert.Contains("Lösenordet är fel. Se Inställningar.", relays, StringComparison.Ordinal);
-        Assert.Matches("<span class=\"no-contact\"[^>]*>Fel lösenord</span>", relays);
+        Assert.DoesNotContain("Fel lösenord", relays, StringComparison.Ordinal);
         Assert.Contains("Lösenordet är fel.", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("The password is wrong.", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("Ingen kontakt med reläkortet på", settings, StringComparison.Ordinal);
