@@ -42,7 +42,10 @@ public sealed record UpdateResultView(string Title, string Text, bool IsAlert, b
 /// <param name="Running">The version running, e.g. "2026.11.14".</param>
 /// <param name="Offered">The newest release newer than it; null when there is none.</param>
 /// <param name="WhatsNew">Each newer release with changes listed, newest first.</param>
-/// <param name="CheckedLine">"Checked today at 06:12." or "Couldn't check for updates."; null when it doesn't show.</param>
+/// <param name="CheckedLine">
+/// "Checked today at 06:12." or "Couldn't check for updates.", with "Check now" next to it; null when neither shows (a
+/// development build, an update under way, or never checked).
+/// </param>
 /// <param name="CanUpdate">"Update now" (or "Try again") shows.</param>
 /// <param name="NoHelper">This machine has no update helper: the box says where updates come from instead.</param>
 /// <param name="From">While it runs: the version before.</param>
@@ -121,7 +124,7 @@ public sealed record UpdateBoxView(
             {
                 // A version newer still, after one that went through: offered as usual under the result.
                 var after = result.IsDone || !result.IsAlert;
-                return Empty(UpdateBoxKind.Result, running, offered, after ? whatsNew : [], after ? null : checkedLine, noHelper) with
+                return Empty(UpdateBoxKind.Result, running, offered, after ? whatsNew : [], checkedLine, noHelper) with
                 {
                     Result = result,
                     CanUpdate = canUpdate,
@@ -132,7 +135,7 @@ public sealed record UpdateBoxView(
 
         if (snapshot.NoAnswer)
         {
-            return Empty(UpdateBoxKind.Result, running, offered, [], null, noHelper) with
+            return Empty(UpdateBoxKind.Result, running, offered, [], checkedLine, noHelper) with
             {
                 Result = new UpdateResultView(
                     texts["Updates.NoAnswer"],
@@ -145,7 +148,7 @@ public sealed record UpdateBoxView(
 
         return offered is null
             ? Empty(UpdateBoxKind.Current, running, null, [], checkedLine, noHelper)
-            : Empty(UpdateBoxKind.Available, running, offered, whatsNew, null, noHelper) with { CanUpdate = canUpdate };
+            : Empty(UpdateBoxKind.Available, running, offered, whatsNew, checkedLine, noHelper) with { CanUpdate = canUpdate };
     }
 
     private static UpdateBoxView Empty(UpdateBoxKind kind, string running, string? offered, IReadOnlyList<Release> whatsNew, string? checkedLine, bool noHelper)

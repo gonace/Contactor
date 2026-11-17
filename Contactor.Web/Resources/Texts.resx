@@ -2561,9 +2561,15 @@
     <value>Couldn't check for updates. Last checked {0} at {1}.</value>
     <comment>{0} is a day: Updates.Today, Updates.Yesterday or a date.</comment>
   </data>
+  <data name="Updates.CheckNow" xml:space="preserve">
+    <value>Check now</value>
+  </data>
   <data name="Updates.Checked" xml:space="preserve">
     <value>Checked {0} at {1}.</value>
     <comment>{0} is a day: Updates.Today, Updates.Yesterday or a date.</comment>
+  </data>
+  <data name="Updates.Checking" xml:space="preserve">
+    <value>Checking…</value>
   </data>
   <data name="Updates.DayFormat" xml:space="preserve">
     <value>d MMMM</value>

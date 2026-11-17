@@ -104,7 +104,8 @@ h2 {
 
 .primary,
 .secondary,
-.download {
+.download,
+.check-now {
     min-height: 52px;
     display: flex;
     align-items: center;
@@ -240,7 +241,27 @@ button:disabled {
     font-weight: 700;
 }
 
-.log-head .download {
+/* "Checked today at 06:12." with "Check now" at its right, or under it where there isn't room. */
+.checked {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+}
+
+.checked .hint {
+    flex: 1 1 12em;
+    min-width: 0;
+}
+
+.check-now {
+    flex: none;
+    white-space: nowrap;
+}
+
+.log-head .download,
+.check-now {
     min-height: 44px;
     padding: 0 18px;
     font-size: 15px;

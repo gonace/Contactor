@@ -2334,8 +2334,14 @@
   <data name="Updates.CheckFailedSince" xml:space="preserve">
     <value>Kunde inte söka efter uppdateringar. Senast kontrollerat {0} kl. {1}.</value>
   </data>
+  <data name="Updates.CheckNow" xml:space="preserve">
+    <value>Sök nu</value>
+  </data>
   <data name="Updates.Checked" xml:space="preserve">
     <value>Kontrollerat {0} kl. {1}.</value>
+  </data>
+  <data name="Updates.Checking" xml:space="preserve">
+    <value>Söker…</value>
   </data>
   <data name="Updates.DayFormat" xml:space="preserve">
     <value>d MMMM</value>
