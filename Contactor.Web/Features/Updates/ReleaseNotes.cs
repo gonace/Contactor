@@ -39,8 +39,9 @@ public static partial class ReleaseNotes
         var changes = new List<string>();
         var length = 0;
         var inComment = false;
-        string? fence = null;
-        foreach (var raw in notes.Split('\n'))
+        var fence = "";
+        // CRLF as GitHub sends them, LF, or CR alone.
+        foreach (var raw in notes.Split(["\r\n", "\r", "\n"], StringSplitOptions.None))
         {
             var line = (raw.Length > MaxLineLength ? raw[..MaxLineLength] : raw).Trim();
 
@@ -57,11 +58,12 @@ public static partial class ReleaseNotes
                 line = line[(end + 3)..].Trim();
             }
 
-            if (fence is not null)
+            // A code block ends on a fence of its own character, at least as long as the one that opened it.
+            if (fence.Length > 0)
             {
                 if (line.StartsWith(fence, StringComparison.Ordinal))
                 {
-                    fence = null;
+                    fence = "";
                 }
 
                 continue;
@@ -75,7 +77,7 @@ public static partial class ReleaseNotes
 
             if (line.StartsWith("```", StringComparison.Ordinal) || line.StartsWith("~~~", StringComparison.Ordinal))
             {
-                fence = line[..3];
+                fence = new string(line[0], line.Length - line.TrimStart(line[0]).Length);
                 continue;
             }
 
@@ -114,7 +116,8 @@ public static partial class ReleaseNotes
     public static IReadOnlyList<(string Text, bool Bold)> Parts(string change)
     {
         ArgumentNullException.ThrowIfNull(change);
-        var pieces = change.Split(Bold);
+        // A line saved by an older version can still hold a link's markdown or a ***.
+        var pieces = Stars().Replace(Link().Replace(change, "$1"), Bold).Split(Bold);
         // An even number of pieces means an odd number of **: the last one has no partner, so what follows it is plain.
         var lastBold = pieces.Length % 2 == 0 ? pieces.Length - 2 : pieces.Length - 1;
         var parts = new List<(string Text, bool Bold)>();
@@ -148,7 +151,7 @@ public static partial class ReleaseNotes
             return null;
         }
 
-        change = Code().Replace(Link().Replace(change, "$1"), "$1");
+        change = Stars().Replace(Code().Replace(Link().Replace(change, "$1"), "$1"), Bold);
         change = Shortened(change);
         if (change is null)
         {
@@ -159,8 +162,9 @@ public static partial class ReleaseNotes
         return change.Any(char.IsLetterOrDigit) ? change : null;
     }
 
-    // At most MaxChangeLength: up to the last full sentence that fits, else up to the last word that fits and "…".
-    // Null when not even one word fits.
+    // At most MaxChangeLength: up to the last full sentence that fits, when it ends in the last third, else up to the
+    // last word that fits and "…", so an early sentence end doesn't leave out most of the change. Null when not even one
+    // word fits.
     private static string? Shortened(string change)
     {
         if (change.Length <= MaxChangeLength)
@@ -169,7 +173,7 @@ public static partial class ReleaseNotes
         }
 
         var sentence = change.LastIndexOf(". ", MaxChangeLength - 1, StringComparison.Ordinal);
-        if (sentence > 0)
+        if (sentence + 1 >= MaxChangeLength - MaxChangeLength / 3)
         {
             return change[..(sentence + 1)];
         }
@@ -238,9 +242,14 @@ public static partial class ReleaseNotes
     [GeneratedRegex(@"(\s+by\s+@[\w-]+(\[bot\])?)?(\s+in\s+https?://\S+)?\s*$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex ByAndLink();
 
-    // [text](url) and ![text](url): the text.
-    [GeneratedRegex(@"!?\[([^\[\]]*)\]\([^()\s]*\)", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    // [text](url) and ![text](url): the text. The url may hold balanced parentheses, one level deep, and be followed by
+    // a title: [text](url "title"), 'title' or (title).
+    [GeneratedRegex(@"!?\[([^\[\]]*)\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+(?:""[^""]*""|'[^']*'|\([^()]*\)))?\s*\)", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Link();
+
+    // Three or more *, e.g. ***bold and italic***: one ** for bold, never a * left over.
+    [GeneratedRegex(@"\*{3,}", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    private static partial Regex Stars();
 
     // Two or more spaces, e.g. where a comment or a ** was: one, as the page would show them anyway.
     [GeneratedRegex(@"\s{2,}", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]

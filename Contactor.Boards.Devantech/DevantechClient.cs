@@ -50,9 +50,12 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     private DevantechStatus? _lastTraced;
 
     // Only used under the poller's lock (a connect, a poll or a command). What the last poll read of the analog inputs,
-    // which a command's read takes over, and until when they are left alone after a failed answer.
+    // which a command's read takes over, and until when they are left alone after a failed answer. A poll's analog
+    // result waits in _pendingAnalog until the relays and inputs after it answered, in that poll or, when a command took
+    // its place, in the command's read.
     private AnalogReadings? _lastAnalog;
     private DateTimeOffset? _analogRetryAt;
+    private (AnalogReadings Readings, string? Problem)? _pendingAnalog;
     private int _wasConnected;
 
     // Set by Dispose: no connection is opened after it, also by a request still under way.
@@ -238,6 +241,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         // A new connection, maybe to another board: the analog inputs are read again at once.
         _lastAnalog = null;
         _analogRetryAt = null;
+        _pendingAnalog = null;
         return OpenAsync(cancellationToken);
     }
 
@@ -403,28 +407,47 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     private async Task<DevantechStatus> ReadStatusAsync(bool readAnalog, CancellationToken cancellationToken)
     {
         var last = Volatile.Read(ref _lastTraced);
-        string? analogProblem = null;
         if (readAnalog && _model.Capabilities.Analog is { } ability)
         {
-            (_lastAnalog, analogProblem) = await ReadAnalogAsync(ability, last?.Analog, cancellationToken).ConfigureAwait(false);
+            // Never a result left from an earlier poll, should this one fail before it has its own.
+            _pendingAnalog = null;
+            _pendingAnalog = await ReadAnalogAsync(ability, last?.Analog, cancellationToken).ConfigureAwait(false);
         }
 
-        var relayCount = _model.Capabilities.RelayCount;
-        var outputs = await ExchangeAsync(DevantechProtocol.GetOutputs(_layout), routine: true, cancellationToken).ConfigureAwait(false);
-        var relays = DevantechProtocol.Outputs(outputs, relayCount);
-        Trace(BoardTraceDirection.Received, DevantechTraceText.Relays(relays, relayCount), DevantechProtocol.Hex(outputs), isRoutine: last?.Relays == relays);
-
+        ulong relays;
         ulong inputs = 0;
-        var inputCount = _model.Capabilities.InputCount;
-        if (inputCount > 0)
+        try
         {
-            var answer = await ExchangeAsync(DevantechProtocol.GetInputs(_layout), routine: true, cancellationToken).ConfigureAwait(false);
-            inputs = DevantechProtocol.Inputs(answer, inputCount);
-            Trace(BoardTraceDirection.Received, DevantechTraceText.Inputs(inputs, inputCount), DevantechProtocol.Hex(answer), isRoutine: last?.Inputs == inputs);
+            var relayCount = _model.Capabilities.RelayCount;
+            var outputs = await ExchangeAsync(DevantechProtocol.GetOutputs(_layout), routine: true, cancellationToken).ConfigureAwait(false);
+            relays = DevantechProtocol.Outputs(outputs, relayCount);
+            Trace(BoardTraceDirection.Received, DevantechTraceText.Relays(relays, relayCount), DevantechProtocol.Hex(outputs), isRoutine: last?.Relays == relays);
+
+            var inputCount = _model.Capabilities.InputCount;
+            if (inputCount > 0)
+            {
+                var answer = await ExchangeAsync(DevantechProtocol.GetInputs(_layout), routine: true, cancellationToken).ConfigureAwait(false);
+                inputs = DevantechProtocol.Inputs(answer, inputCount);
+                Trace(BoardTraceDirection.Received, DevantechTraceText.Inputs(inputs, inputCount), DevantechProtocol.Hex(answer), isRoutine: last?.Inputs == inputs);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The relays or inputs failed: the board may have just died, and its analog result proves nothing. The
+            // readings from before stay. A command that took the poll's place (a cancellation) keeps it for its read.
+            _pendingAnalog = null;
+            throw;
         }
 
         // Only once the relays and inputs answered: a board that has just died fails them too, and that is no reason
         // to blame the analog inputs or leave them alone for a minute.
+        string? analogProblem = null;
+        if (_pendingAnalog is { } analog)
+        {
+            _pendingAnalog = null;
+            (_lastAnalog, analogProblem) = analog;
+        }
+
         if (analogProblem is not null)
         {
             _analogRetryAt = _timeProvider.GetUtcNow() + AnalogRetryInterval;
