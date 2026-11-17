@@ -10,8 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// "Join the step above" on the group's page, with a board whose relays are all off: what it shows, what it does to
-/// the steps, and that nothing is saved until "Save".
+/// "Join the step above" on the group's page: what it shows, what it does to the steps, that nothing is saved until
+/// "Save", and that it is hidden while the group is on or the board has no contact.
 /// </summary>
 public sealed class GroupJoinStepTests
 {
