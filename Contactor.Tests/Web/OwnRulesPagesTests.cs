@@ -230,7 +230,7 @@ public sealed partial class OwnRulesPagesTests
 
             // The page's handler came first and is on the page's thread now: one more call there follows it.
             await page.Dispatcher.InvokeAsync(() => { });
-            Assert.Equal(1, Service(app).Rows(BoardId).Count);
+            Assert.Single(Service(app).Rows(BoardId));
             Assert.Equal(renders, page.PageRenders);
         }
         finally
