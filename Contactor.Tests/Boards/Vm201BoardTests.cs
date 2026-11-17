@@ -15,7 +15,7 @@ public sealed class Vm201BoardTests
     [Fact]
     public void Should_HaveEightRelaysAndOneInput_AndAPulse()
     {
-        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true, Pulse: Vm201Pulse.Ability), Vm201Board.Vm201Capabilities);
+        Assert.Equal(new BoardCapabilities(8, 1, ReportsChanges: true, Pulse: Vm201Pulse.Ability, OwnRules: OwnRulesAbility.ReadsAndTurnsOff), Vm201Board.Vm201Capabilities);
         Assert.Equal(ChannelMask.FirstN(8), Vm201Board.Vm201Capabilities.AllRelays);
     }
 

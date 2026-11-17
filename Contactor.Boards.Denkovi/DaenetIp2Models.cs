@@ -165,7 +165,7 @@ public static class DaenetIp2Models
             id,
             DenkoviBrand.Name,
             name,
-            new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: Analog),
+            new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: Analog, OwnRules: OwnRulesAbility.CantTell),
             DaenetIp2Api.DefaultPort,
             LoginMaxLength: DaenetIp2Api.CommunityMaxLength,
             LoginHint: new LoginHint(

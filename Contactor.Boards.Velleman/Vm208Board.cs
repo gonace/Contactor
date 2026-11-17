@@ -12,7 +12,8 @@ public sealed class Vm208Board : IRelayBoard
     public static readonly BoardCapabilities Vm208Capabilities = new(
         Vm208Api.RelayCount,
         InputCount: Vm208Api.InputCount,
-        ReportsChanges: false);
+        ReportsChanges: false,
+        OwnRules: OwnRulesAbility.CantTell);
 
     private readonly Vm208Client _client;
     private readonly ILogger<Vm208Board> _logger;

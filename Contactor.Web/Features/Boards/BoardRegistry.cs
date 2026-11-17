@@ -74,6 +74,12 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     public event EventHandler<BoardStateChange>? AnalogChanged;
 
     /// <summary>
+    /// A board's new state when only its own rules changed (<see cref="LiveBoard.OwnRulesChanged"/>), raised on that
+    /// board's connection loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<BoardStateChange>? OwnRulesChanged;
+
+    /// <summary>
     /// Raised when a board is added to <see cref="All"/> or removed from it, while the boards are being changed:
     /// handlers must not change them in turn.
     /// </summary>
@@ -587,6 +593,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         {
             board.StateChanged -= OnStateChanged;
             board.AnalogChanged -= OnAnalogChanged;
+            board.OwnRulesChanged -= OnOwnRulesChanged;
             await board.DisposeAsync();
         }
 
@@ -604,6 +611,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
         live.StateChanged -= OnStateChanged;
         live.AnalogChanged -= OnAnalogChanged;
+        live.OwnRulesChanged -= OnOwnRulesChanged;
         await live.DisposeAsync();
         RaiseBoardsChanged();
     }
@@ -682,12 +690,14 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
         live.StateChanged += OnStateChanged;
         live.AnalogChanged += OnAnalogChanged;
+        live.OwnRulesChanged += OnOwnRulesChanged;
         lock (_lock)
         {
             if (_disposed)
             {
                 live.StateChanged -= OnStateChanged;
                 live.AnalogChanged -= OnAnalogChanged;
+                live.OwnRulesChanged -= OnOwnRulesChanged;
                 _ = live.DisposeAsync().AsTask();
                 throw new ObjectDisposedException(nameof(BoardRegistry));
             }
@@ -756,6 +766,11 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     private void OnAnalogChanged(object? sender, BoardState state)
     {
         Raise(AnalogChanged, sender, state);
+    }
+
+    private void OnOwnRulesChanged(object? sender, BoardState state)
+    {
+        Raise(OwnRulesChanged, sender, state);
     }
 
     private void Raise(EventHandler<BoardStateChange>? handlers, object? sender, BoardState state)

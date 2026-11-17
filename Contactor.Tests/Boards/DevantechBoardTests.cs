@@ -24,7 +24,7 @@ public sealed class DevantechBoardTests
         Assert.Equal(name, model.Name);
         var pulse = new PulseAbility(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(25_500), TimeSpan.FromMilliseconds(100));
         var analogAbility = analog == 0 ? null : new AnalogAbility(analog, 1023, (decimal)fullScaleVolts);
-        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Analog: analogAbility, Pulse: pulse), model.Capabilities);
+        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Analog: analogAbility, Pulse: pulse, OwnRules: OwnRulesAbility.CantTell), model.Capabilities);
         Assert.Equal(17494, model.DefaultPort);
         Assert.True(model.HasLogin);
         Assert.True(model.PasswordOnly);

@@ -16,7 +16,7 @@ public sealed class Vm204BoardTests
     [Fact]
     public void Should_HaveFourRelaysFourInputsAndAnAnalogInput_AndNotReportChanges()
     {
-        Assert.Equal(new BoardCapabilities(4, 4, ReportsChanges: false, Analog: new AnalogAbility(1, 1023, 6.6m)), Vm204Board.Vm204Capabilities);
+        Assert.Equal(new BoardCapabilities(4, 4, ReportsChanges: false, Analog: new AnalogAbility(1, 1023, 6.6m), OwnRules: OwnRulesAbility.None), Vm204Board.Vm204Capabilities);
         Assert.Equal(1, Vm204Board.Vm204Capabilities.AnalogInputCount);
         Assert.Equal(("vm204", "Velleman VM204", 80, 31), (Vm204Model.Model.Id, Vm204Model.Model.Name, Vm204Model.Model.DefaultPort, Vm204Model.Model.LoginMaxLength));
     }

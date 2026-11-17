@@ -40,7 +40,7 @@ public static class AdamModels
             id,
             AdvantechBrand.Name,
             name,
-            new BoardCapabilities(relays, inputs, ReportsChanges: false),
+            new BoardCapabilities(relays, inputs, ReportsChanges: false, OwnRules: OwnRulesAbility.CantTell),
             AdamApi.DefaultPort,
             LoginMaxLength: 0);
     }

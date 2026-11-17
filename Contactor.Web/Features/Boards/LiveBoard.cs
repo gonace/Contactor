@@ -83,6 +83,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     public event EventHandler<BoardState>? AnalogChanged;
 
     /// <inheritdoc/>
+    public event EventHandler<BoardState>? OwnRulesChanged;
+
+    /// <inheritdoc/>
     public event EventHandler<BoardTraceEntry>? Traced;
 
     /// <summary>The board's row (<see cref="Board.Id"/>).</summary>
@@ -260,6 +263,12 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         return Chosen().Board.RefreshAsync(cancellationToken);
     }
 
+    /// <summary>Throws <see cref="BoardNotConnectedException"/> before a model is chosen, as every command does.</summary>
+    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        return Chosen().Board.TurnOffOwnRulesAsync(rules, cancellationToken);
+    }
+
     /// <summary>
     /// Moves the board to <paramref name="endpoint"/>. At a new address the changes the app just asked the old one for
     /// are no longer expected (<see cref="Expected"/>): another board may be there, and its changes are its own.
@@ -434,12 +443,14 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
                 old = _current;
                 board.Board.StateChanged += OnStateChanged;
                 board.Board.AnalogChanged += OnAnalogChanged;
+                board.Board.OwnRulesChanged += OnOwnRulesChanged;
                 board.Traffic.Traced += OnTraced;
                 Volatile.Write(ref _current, next);
                 if (old is not null)
                 {
                     old.Board.Board.StateChanged -= OnStateChanged;
                     old.Board.Board.AnalogChanged -= OnAnalogChanged;
+                    old.Board.Board.OwnRulesChanged -= OnOwnRulesChanged;
                     old.Board.Traffic.Traced -= OnTraced;
                     old.Retired = true;
                 }
@@ -500,6 +511,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
             {
                 slot.Board.Board.StateChanged -= OnStateChanged;
                 slot.Board.Board.AnalogChanged -= OnAnalogChanged;
+                slot.Board.Board.OwnRulesChanged -= OnOwnRulesChanged;
                 slot.Board.Traffic.Traced -= OnTraced;
                 slot.Retired = true;
                 dispose = !slot.Running;
@@ -604,6 +616,18 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
             if (ReferenceEquals(sender, Active?.Board))
             {
                 Raise(AnalogChanged, state);
+            }
+        }
+    }
+
+    // As OnAnalogChanged, under the same lock.
+    private void OnOwnRulesChanged(object? sender, BoardState state)
+    {
+        lock (_stateLock)
+        {
+            if (ReferenceEquals(sender, Active?.Board))
+            {
+                Raise(OwnRulesChanged, state);
             }
         }
     }

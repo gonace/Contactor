@@ -194,6 +194,43 @@ public sealed class BoardCatalogueTests
             BoardCatalogue.Brands.SelectMany(m => m.Models));
     }
 
+    // Every model states what the app can know about its own rules, so a new model has to choose: none is taken from
+    // the default, which would quietly mean "can't tell".
+    [Fact]
+    public void Should_StateEachModelsOwnRulesAbility()
+    {
+        var none = OwnRulesAbility.None;
+        var cantTell = OwnRulesAbility.CantTell;
+        var reads = OwnRulesAbility.ReadsAndTurnsOff;
+        Dictionary<string, OwnRulesAbility> expected = new()
+        {
+            ["vm201"] = reads,
+            ["vm204"] = none,
+            ["vm208"] = cantTell,
+            ["waveshare-8"] = none,
+            ["waveshare-8b"] = cantTell,
+            ["waveshare-8c"] = cantTell,
+            ["waveshare-16"] = none,
+            ["waveshare-30"] = none,
+            ["denkovi-smartden-ip-16r-mt"] = cantTell,
+            ["denkovi-daenetip2-v2-16"] = cantTell,
+            ["denkovi-daenetip2-v2-8"] = cantTell,
+            ["denkovi-daenetip2-v2-2"] = cantTell,
+            ["devantech-eth002"] = cantTell,
+            ["devantech-eth008"] = cantTell,
+            ["devantech-eth1610"] = cantTell,
+            ["devantech-eth484"] = cantTell,
+            ["devantech-eth8020"] = cantTell,
+            ["advantech-adam-6060"] = cantTell,
+            ["advantech-adam-6066"] = cantTell,
+            ["advantech-adam-6260"] = cantTell,
+        };
+
+        Assert.Equal(
+            expected.OrderBy(e => e.Key, StringComparer.Ordinal),
+            BoardCatalogue.All.Select(r => KeyValuePair.Create(r.Model.Id, r.Model.Capabilities.OwnRules!)).OrderBy(e => e.Key, StringComparer.Ordinal));
+    }
+
     // The brand isn't repeated in the model's name, and the full name still reads as people know it.
     [Fact]
     public void Should_NameEachModel_WithoutItsBrand()
