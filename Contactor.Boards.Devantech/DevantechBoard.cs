@@ -61,7 +61,8 @@ public sealed class DevantechBoard : IRelayBoard
 
     /// <summary>
     /// The board's state as a <see cref="BoardState"/>. Its analog readings are null on a model without analog inputs
-    /// and before the first answer; the client reads only values the board can give, 0 to 1023.
+    /// and before the first answer; the client reads only values the board can give, 0 to 1023, and null for each input
+    /// when the analog answer failed.
     /// </summary>
     public static BoardState ToBoardState(DevantechState state)
     {

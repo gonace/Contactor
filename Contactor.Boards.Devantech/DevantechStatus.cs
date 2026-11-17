@@ -4,8 +4,9 @@ namespace Contactor.Boards.Devantech;
 /// <param name="Relays">Bit per relay, bit 0 = relay 1; 1 = on.</param>
 /// <param name="Inputs">Bit per input, bit 0 = input 1; 1 = active. Always 0 without inputs.</param>
 /// <param name="Analog">
-/// What each analog input read, 0 to 1023, input 1 first; null on a model without analog inputs. An answer with a value
-/// the board can't give fails the poll, so every input has a reading.
+/// What each analog input read, 0 to 1023, input 1 first; null on a model without analog inputs. Every input is null
+/// ("no reading") after an analog answer that failed, and for a minute after it
+/// (<see cref="DevantechClient.AnalogRetryInterval"/>).
 /// </param>
 public sealed record DevantechStatus(ulong Relays, ulong Inputs, AnalogReadings? Analog = null)
 {

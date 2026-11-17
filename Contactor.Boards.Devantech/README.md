@@ -129,18 +129,28 @@ Exchanges from the documents and the recorded session:
   0 to 3.3 V (ETH484 manual pp. 4 and 10). The app can't tell the two apart, so it uses the command they both have. On
   the ETH484-B, "for 10 bit results the 3.3V to 5V region will merely read full scale" (p. 5): the app shows 1023 as
   "Above the board's range".
-- An answer with one of the upper 6 bits set (a value above 1023) can't be read. Then the poll fails, as for any other
-  answer that can't be read, and the client closes the connection. An answer that is too short is no answer.
+- An analog answer that fails never fails the poll, and never stops the app from switching the relays. The analog
+  inputs are a measurement nobody has checked on a real board yet. When an analog answer fails:
+  - The relays and inputs of that poll are kept, and the board stays connected.
+  - Every analog input of that poll has "no reading", which the screens show as "–".
+  - The Debug screen and the log (at Information) say why, in plain words.
+  - The client sends no analog request to the board for 1 minute (`DevantechClient.AnalogRetryInterval`, on
+    `TimeProvider`), or until the poller opens a new connection. So a board that never answers 0x32 or 0x34 costs one
+    time-out per minute, not one per poll.
+- An analog answer fails when it has one of the upper 6 bits set (a value above 1023), when it is late (5 s), or when
+  it is too short. A value above 1023 comes in an answer of the right length, so the connection stays in step and stays
+  open. After a late or short answer, the client closes the connection, so the late bytes can't be taken for the next
+  answer. The next request opens a new connection, at most once a minute because of the pause above.
 - None of the three manuals says if full scale is 1023 or 1024 counts. The app takes 1023 as full scale: 1023 = 5 V
   (or 3.3 V), and 1 count is 5 V / 1023. The difference is 1 count, about 5 mV.
 - None of the manuals gives an example answer. The tests use the manuals' format with made-up values.
 
 The poll cost: each poll sends 0x24, 0x25 on a model with inputs, and then the analog requests. That is 1 more
 request on the ETH1610 (2 per poll), 4 more on the ETH484-B (6 per poll) and 8 more on the ETH8020-B (10 per poll).
-Each request is one round trip on the local network, so a poll takes some milliseconds longer. Each request has its
-5 s limit, and the first request without an answer ends the poll, so a poll that fails takes at most 5 s, as before.
-The read of the board after a command also reads the analog inputs. A command never waits for a poll: a poll under way
-gives way to it.
+Each request is one round trip on the local network, so a poll takes some milliseconds longer. An analog request
+without an answer adds at most 5 s to one poll a minute. The read of the board after a command reads the relays and
+inputs only, and keeps the last poll's analog values, so a command's confirmation never waits on the analog inputs. A
+command never waits for a poll: a poll under way gives way to it.
 
 ### Password
 
@@ -182,7 +192,8 @@ Then:
 - Each command and each connection attempt has 5 s on `TimeProvider`.
 - The client reads only the length of the answer. A short answer counts as no answer after 5 s.
 - An answer with a value it cannot have is unreadable, for example `05` to 0x20. Then the client closes the
-  connection, because the stream can be out of step. The next command opens and checks a new connection.
+  connection, because the stream can be out of step. The next command opens and checks a new connection. An analog
+  value above 1023 is different: see "Analog inputs".
 - When the connection was open from before and turns out broken (the board or the network can close a connection
   that is idle), the client sends the command once more on a new connection, which it checks and unlocks first. It
   does this only when no byte of the answer came, and never for the commands that check and unlock a new connection.
@@ -205,7 +216,8 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
   poll, and also a command with an answer that cannot be read, or a connection it cannot check or unlock: a new one, or
   the open one when `7A` before a command fails. When the board answered `01` to every relay, the board answered: the
   command is a refusal (`BoardRefusedException`), which does not count.
-- After the switches, the client reads the relays, the inputs and the analog inputs in the same command. The poller takes that as the
+- After the switches, the client reads the relays and the inputs in the same command. It doesn't read the analog
+  inputs: the state keeps what the last poll read of them. The poller takes that as the
   new state. When that read gets an answer it cannot read or no answer, the command returns the relays that the board
   took. The client keeps the last state it read and reads again at once.
 
@@ -279,9 +291,11 @@ When `Host` is empty, the setup guide asks for the address.
   that an open input reads about 0 (the ETH484-B has a pull-down, p. 5; the ETH1610 and ETH8020-B schematics show a
   100k resistor to 5 V through a jumper, whose purpose the manuals don't give).
 - Which voltage reads 1023: 5 V (3.3 V on the ETH484-B) or one count less. Check with a known voltage.
-- What 0x32 answers for an input the board doesn't have, such as `32 00` or `32 11`. The app never sends it.
+- What 0x32 answers for an input the board doesn't have, such as `32 00` or `32 11`, and what 0x34 does on an ETH484-B
+  or ETH8020-B. The app never sends them.
 - If an ETH484-B answers 0x32 with full scale (1023) from 3.3 V to 5 V, as p. 5 says.
-- If 0x32 and 0x34 answer while the board is locked. The manuals say only that relays need the password.
+- If 0x32 and 0x34 answer while the board is locked. The manuals say only that relays need the password. If they
+  don't, the app shows "no reading" while the board is locked.
 - How long a poll takes on the ETH8020-B with its 10 requests.
 - How many TCP clients the board accepts. The documents say five.
 - That the board never sends data that the app did not ask for.

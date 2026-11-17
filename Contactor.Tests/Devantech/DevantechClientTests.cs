@@ -126,39 +126,92 @@ public sealed class DevantechClientTests
     }
 
     [Theory]
-    [InlineData("devantech-eth484", "Unreadable answer: The board answered 04 00 to analog input 1.")]
-    [InlineData("devantech-eth1610", "Unreadable answer: The board answered a value above 1023 to the analog inputs.")]
-    public async Task Should_FailThePoll_OnAnAnalogValueWithItsUpperBitsSet(string id, string trace)
+    [InlineData("devantech-eth484", "Unreadable answer: The board answered 04 00 to analog input 1.", "32 01")]
+    [InlineData("devantech-eth1610", "Unreadable answer: The board answered a value above 1023 to the analog inputs.", "34")]
+    public async Task Should_GiveNoAnalogReading_ButKeepTheBoard_OnAValueWithItsUpperBitsSet(string id, string trace, string analogRequest)
     {
-        // 04 00 is 1024: the manuals say the upper 6 bits are 0, so the answer can't be trusted.
+        // 04 00 is 1024: the manuals say the upper 6 bits are 0, so the value can't be trusted; the relays can.
         var model = DevantechModels.All.Single(m => m.Id == id);
         await using var board = ScriptedBoard.Start(request => request switch
         {
             [0x10] => [DevantechModels.Layout(model).ModuleId, 1, 1],
             [0x7A] => [0xFF],
-            [0x24] => [0, 0],
-            [0x25] => [0, 0],
+            [0x24] => [0b0001, 0],
+            [0x25] => [0, 0b0100],
             [0x32, _] => [0x04, 0x00],
             [0x34] => [.. new byte[30], 0x04, 0x00],
             _ => [],
         });
         await using var run = ClientRun.Start(board.Port, model);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == trace && t.IsError));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.False(run.Client.State.IsConnected);
-        Assert.DoesNotContain(run.Changes, c => c.IsConnected);
+        Assert.Equal(0b0001UL, run.Client.State.Relays);
+        Assert.Equal(new AnalogReadings(new int?[model.Capabilities.AnalogInputCount]), run.Client.State.Status!.Analog);
+        Assert.Contains(run.Traces, t => t.Text == trace && t.IsError);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("No analog readings: ", StringComparison.Ordinal) && t.Text.EndsWith("asked for again in 1 min.", StringComparison.Ordinal));
+
+        // The whole answer was read: the same connection goes on, and leaves the analog inputs alone for a minute.
+        await run.PollAsync();
+        Assert.Equal(1, board.Connections);
+        Assert.Equal(1, board.Received.Count(r => r == analogRequest));
+        Assert.True(run.Client.State.IsConnected);
     }
 
     [Fact]
-    public async Task Should_CountAShortAnswerToTheAnalogInputs_AsNoAnswer()
+    public async Task Should_KeepTheBoard_WhenItNeverAnswersTheAnalogInputs_AndAskAgainOnlyAfterAMinute()
     {
-        // 30 of the 32 bytes: the client waits for the rest, and gives up.
+        // The relays and inputs answer, 0x32 never does: the board is connected, switches and reports its inputs, and
+        // costs one time-out per minute.
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [21, 1, 1],
+            [0x7A] => [0xFF],
+            [0x24] => [0, 0, 0],
+            [0x25] => [0, 0, 0, 0b1000_0000],
+            [0x20, _, _] => [0],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth8020);
+        await Wait.UntilAsync(() => board.Received.Contains("32 01") && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+
+        run.Time.Advance(DevantechClient.RequestTimeout);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(0b1000_0000UL, run.Client.State.Inputs);
+        Assert.Equal(new AnalogReadings(new int?[8]), run.Client.State.Status!.Analog);
+        Assert.Contains(run.Traces, t => t.Text == "No analog readings: The Devantech board did not answer within 5 s. The relays and inputs are read as usual; the analog inputs are asked for again in 1 min.");
+
+        // A command: what the board took, confirmed by a read with no analog request.
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+        Assert.Equal(["7A", "20 01 00", "24", "25"], board.Received.TakeLast(4));
+
+        // Polls within the minute leave the analog inputs alone (the late answer closed the connection: one new one).
+        for (var i = 0; i < 25; i++)
+        {
+            await run.PollAsync();
+        }
+
+        Assert.Equal(1, board.Received.Count(r => r.StartsWith("32", StringComparison.Ordinal)));
+        Assert.Equal(2, board.Connections);
+        Assert.True(run.Client.State.IsConnected);
+
+        // After the minute, it asks once more.
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval * 5);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "32 01") == 2);
+    }
+
+    [Fact]
+    public async Task Should_StayConnected_WhenTheAnswerToTheAnalogInputsIsShort()
+    {
+        // 30 of the 32 bytes: the client waits for the rest, gives up on the analog inputs only, and the next request
+        // goes on a new connection, so the late bytes can't be taken for its answer.
         await using var board = ScriptedBoard.Start(request => request switch
         {
             [0x10] => [52, 1, 1],
             [0x7A] => [0xFF],
-            [0x24] => [0, 0],
+            [0x24] => [0b0010, 0],
             [0x34] => new byte[30],
             _ => [],
         });
@@ -167,8 +220,34 @@ public sealed class DevantechClientTests
 
         run.Time.Advance(DevantechClient.RequestTimeout);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "No answer: The Devantech board did not answer within 5 s."));
-        Assert.False(run.Client.State.IsConnected);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Contains(run.Traces, t => t.Text == "No answer: The Devantech board did not answer within 5 s.");
+        Assert.Equal(0b0010UL, run.Client.State.Relays);
+        Assert.Equal(new AnalogReadings(new int?[16]), run.Client.State.Status!.Analog);
+
+        await run.PollAsync();
+        Assert.Equal(["10", "7A", "24", "34", "10", "7A", "24"], board.Received);
+        Assert.Equal(2, board.Connections);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_KeepTheLastPollsAnalogReadings_InACommandsRead()
+    {
+        await using var simulator = Started(DevantechModels.Eth484);
+        await simulator.SetAnalogAsync(2, 300);
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth484);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        await simulator.SetAnalogAsync(2, 900);
+        await run.Client.TurnOnAsync(0b0001, Cancel);
+
+        // The command's read asks for the relays and inputs only; the next poll reads the new value.
+        Assert.Equal(["7A", "20 01 00", "24", "25"], simulator.ReceivedRequests.TakeLast(4));
+        Assert.Equal(new DevantechStatus(0b0001, 0, new AnalogReadings([0, 300, 0, 0])), run.Client.State.Status);
+        await run.PollAsync();
+        Assert.Equal(new AnalogReadings([0, 900, 0, 0]), run.Client.State.Status!.Analog);
+        Assert.Single(run.AnalogChanges);
     }
 
     [Fact]
@@ -204,7 +283,7 @@ public sealed class DevantechClientTests
 
         // The manual's example (p. 17): output 2 for 5 s.
         Assert.Equal(0b10UL, await run.Client.PulseAsync(0b10, TimeSpan.FromSeconds(5), Cancel));
-        Assert.Equal(["10", "7A", "24", "34", "7A", "20 0A 00", "24", "34", "7A", "20 02 32", "24", "34"], simulator.ReceivedRequests);
+        Assert.Equal(["10", "7A", "24", "34", "7A", "20 0A 00", "24", "7A", "20 02 32", "24"], simulator.ReceivedRequests);
         Assert.Equal((1UL << 9) | 0b10, run.Client.State.Relays);
         boardTime.Advance(TimeSpan.FromSeconds(5));
         await run.PollAsync();
