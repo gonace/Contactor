@@ -1,8 +1,34 @@
 namespace Contactor.Boards.Denkovi;
 
-/// <summary>One answer to a poll: which relays are on.</summary>
+/// <summary>One answer to a poll: which relays are on, and what the analog inputs of P6 read.</summary>
 /// <param name="Relays">Bit per relay, bit 0 = relay 1; 1 = on (its pin is High).</param>
-public sealed record DaenetIp2Status(ulong Relays);
+/// <param name="Analog">
+/// What each analog input read, 0 to 1023, input 1 first; null before the first poll read them. Every input is null
+/// ("no reading") after an analog answer that failed, and for a minute after it
+/// (<see cref="DaenetIp2Client.AnalogRetryInterval"/>).
+/// </param>
+public sealed record DaenetIp2Status(ulong Relays, AnalogReadings? Analog = null)
+{
+    /// <summary>
+    /// Compares the relays only: an analog value moves a little on every reading, so it alone is no state change, which
+    /// would wake the safety services. It comes as <see cref="DaenetIp2Client.AnalogChanged"/> instead.
+    /// </summary>
+    public static IEqualityComparer<DaenetIp2Status> SwitchesComparer { get; } = new Switches();
+
+    private sealed class Switches : IEqualityComparer<DaenetIp2Status>
+    {
+        public bool Equals(DaenetIp2Status? x, DaenetIp2Status? y)
+        {
+            return ReferenceEquals(x, y) || (x is not null && y is not null && x.Relays == y.Relays);
+        }
+
+        public int GetHashCode(DaenetIp2Status obj)
+        {
+            ArgumentNullException.ThrowIfNull(obj);
+            return obj.Relays.GetHashCode();
+        }
+    }
+}
 
 /// <summary>
 /// The board's last known state. While disconnected the last values are kept with <see cref="IsConnected"/> false.

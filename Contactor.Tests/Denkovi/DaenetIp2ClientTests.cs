@@ -34,12 +34,14 @@ public sealed class DaenetIp2ClientTests
         // Answered, so connected: the client waits for the next poll.
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.Equal(new DaenetIp2Status((1UL << 15) | 0b10), run.Client.State.Status);
+        Assert.Equal(new DaenetIp2Status((1UL << 15) | 0b10, new AnalogReadings([0, 0, 0, 0, 0, 0, 0, 0])), run.Client.State.Status);
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
-        Assert.Equal([Get(1, DaenetIp2Port.P3), Get(2, DaenetIp2Port.P5)], simulator.ReceivedRequests);
+
+        // The analog inputs first, the ports last: the relays the poll reports are the freshest it read.
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P3), Get(10, DaenetIp2Port.P5)], simulator.ReceivedRequests);
         Assert.Contains(run.Changes, s => s.IsConnected && s.Relays == ((1UL << 15) | 0b10));
-        Assert.Contains(run.Traces, t => t.Text == "Ask for port P5" && t.Direction == BoardTraceDirection.Sent && t.IsRoutine && t.Bytes == Get(2, DaenetIp2Port.P5));
-        Assert.Contains(run.Traces, t => t.Text == "Port P3: pin 2 high" && t.Direction == BoardTraceDirection.Received && t.Bytes == Answer(1, DaenetIp2Port.P3, 0b10));
+        Assert.Contains(run.Traces, t => t.Text == "Ask for port P5" && t.Direction == BoardTraceDirection.Sent && t.IsRoutine && t.Bytes == Get(10, DaenetIp2Port.P5));
+        Assert.Contains(run.Traces, t => t.Text == "Port P3: pin 2 high" && t.Direction == BoardTraceDirection.Received && t.Bytes == Answer(9, DaenetIp2Port.P3, 0b10));
         Assert.Contains(run.Traces, t => t.Text == "Relays: 2 and 16 on" && t.Direction == BoardTraceDirection.Received && !t.IsRoutine);
     }
 
@@ -54,7 +56,7 @@ public sealed class DaenetIp2ClientTests
 
         Assert.Equal(0b01UL, run.Client.State.Relays);
         Assert.Equal(0b0100_0000, simulator.P5);
-        Assert.Equal([Get(1, DaenetIp2Port.P5)], simulator.ReceivedRequests);
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5)], simulator.ReceivedRequests);
     }
 
     [Fact]
@@ -72,17 +74,19 @@ public sealed class DaenetIp2ClientTests
 
         Assert.Equal(1UL, await run.Client.TurnOffAsync(1UL, Cancel));
         Assert.Equal(1UL << 15, run.Client.State.Relays);
+        // The poll reads the analog inputs too; a command's read doesn't.
         Assert.Equal(
             [
-                Get(1, DaenetIp2Port.P3),
-                Get(2, DaenetIp2Port.P5),
-                Set(3, DaenetIp2Port.P3, 1, high: true),
-                Set(4, DaenetIp2Port.P5, 8, high: true),
-                Get(5, DaenetIp2Port.P3),
-                Get(6, DaenetIp2Port.P5),
-                Set(7, DaenetIp2Port.P3, 1, high: false),
-                Get(8, DaenetIp2Port.P3),
-                Get(9, DaenetIp2Port.P5),
+                .. AnalogGets(1),
+                Get(9, DaenetIp2Port.P3),
+                Get(10, DaenetIp2Port.P5),
+                Set(11, DaenetIp2Port.P3, 1, high: true),
+                Set(12, DaenetIp2Port.P5, 8, high: true),
+                Get(13, DaenetIp2Port.P3),
+                Get(14, DaenetIp2Port.P5),
+                Set(15, DaenetIp2Port.P3, 1, high: false),
+                Get(16, DaenetIp2Port.P3),
+                Get(17, DaenetIp2Port.P5),
             ],
             simulator.ReceivedRequests);
         Assert.Contains(run.Traces, t => t.Text == "Turn on relay 16 (P5.8)" && t.Direction == BoardTraceDirection.Sent && !t.IsRoutine);
@@ -101,7 +105,7 @@ public sealed class DaenetIp2ClientTests
         Assert.Equal(0UL, await run.Client.TurnOffAsync(0, Cancel));
         Assert.Equal(0UL, await run.Client.TurnOnAsync(0, Cancel));
 
-        Assert.Equal([Get(1, DaenetIp2Port.P5)], simulator.ReceivedRequests);
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5)], simulator.ReceivedRequests);
     }
 
     [Fact]
@@ -138,7 +142,7 @@ public sealed class DaenetIp2ClientTests
         // A read at once, not in a minute, and the board still counts as there: it answered.
         Assert.Equal("The DAEnetIP2 v2 board didn't take the command: The board refused it: it failed (error 5).", error.Message);
         Assert.IsType<BoardRefusedException>(error.InnerException);
-        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count(r => r.StartsWith("A0", StringComparison.Ordinal)) == 2);
+        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count(IsPortGet) == 2);
         Assert.True(run.Client.State.IsConnected);
     }
 
@@ -156,7 +160,8 @@ public sealed class DaenetIp2ClientTests
         run.Time.Advance(DaenetIp2Client.RequestTimeout);
         await Wait.UntilAsync(() => run.Client.State.IsOn(4) && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.Equal([Get(1, DaenetIp2Port.P5), Get(2, DaenetIp2Port.P5), Get(2, DaenetIp2Port.P5)], simulator.ReceivedRequests);
+        // The lost request is the next poll's first, analog input 1's: asked again with the same id.
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), AnalogGets(10)[0], .. AnalogGets(10), Get(18, DaenetIp2Port.P5)], simulator.ReceivedRequests);
         Assert.Contains(run.Traces, t => t.Text == "No answer within 1 s: asking again" && t.IsError);
         Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal));
         Assert.True(run.Client.State.IsConnected);
@@ -173,15 +178,20 @@ public sealed class DaenetIp2ClientTests
         for (var poll = 1; poll <= BoardPoller<DaenetIp2Status>.DefaultFailuresBeforeLost; poll++)
         {
             Assert.True(run.Client.State.IsConnected);
-            var sent = 2 * (poll - 1);
-            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval) && simulator.UnansweredCount == sent);
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+            var sent = simulator.UnansweredCount;
             run.Time.Advance(run.PollInterval);
 
-            // Each poll is asked twice before it counts as unanswered.
-            await Wait.UntilAsync(() => simulator.UnansweredCount == sent + 1 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
-            run.Time.Advance(DaenetIp2Client.RequestTimeout);
-            await Wait.UntilAsync(() => simulator.UnansweredCount == sent + 2 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
-            run.Time.Advance(DaenetIp2Client.RequestTimeout);
+            // Each request is asked twice before it counts as unanswered. The first poll asks analog input 1 first,
+            // which gives "no reading" and a minute's rest; the later polls ask P5 alone.
+            var tries = poll == 1 ? 4 : 2;
+            for (var tried = 1; tried <= tries; tried++)
+            {
+                var count = sent + tried;
+                await Wait.UntilAsync(() => simulator.UnansweredCount == count && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+                run.Time.Advance(DaenetIp2Client.RequestTimeout);
+            }
+
             var failures = poll;
             await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == $"No answer: {NoAnswer}") == failures);
         }
@@ -207,11 +217,15 @@ public sealed class DaenetIp2ClientTests
         await simulator.SwitchRelayAsync(2, true);
         await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8);
 
-        // The board doesn't answer a wrong community: the trace says what to check.
-        await Wait.UntilAsync(() => simulator.UnansweredCount == 1 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
-        run.Time.Advance(DaenetIp2Client.RequestTimeout);
-        await Wait.UntilAsync(() => simulator.UnansweredCount == 2 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
-        run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        // The board doesn't answer a wrong community: the trace says what to check. Analog input 1 and then P5 are each
+        // asked twice.
+        for (var unanswered = 1; unanswered <= 4; unanswered++)
+        {
+            var count = unanswered;
+            await Wait.UntilAsync(() => simulator.UnansweredCount == count && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+            run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        }
+
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == $"No answer: {NoAnswer}" && t.IsError) && run.Time.WaitsOnly(run.PollInterval));
         Assert.False(run.Client.State.IsConnected);
         Assert.Null(run.Client.State.Status);
@@ -374,12 +388,13 @@ public sealed class DaenetIp2ClientTests
         await using var run = ClientRun.Start(9, DaenetIp2Models.Relays8, host: "255.255.255.255");
         static bool IsOpened(BoardTraceEntry t) => t.Text.StartsWith("Sending to 255.255.255.255:9 from UDP port ", StringComparison.Ordinal);
 
-        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 1 && run.Time.WaitsOnly(run.PollInterval));
-        Assert.Equal(1, run.Traces.Count(IsOpened));
+        // Analog input 1's request, then P5's: each is refused, and each opens the socket afresh.
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) == 2 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(2, run.Traces.Count(IsOpened));
 
         run.Time.Advance(run.PollInterval);
 
-        await Wait.UntilAsync(() => run.Traces.Count(IsOpened) == 2);
+        await Wait.UntilAsync(() => run.Traces.Count(IsOpened) >= 3);
     }
 
     [Fact]
@@ -399,8 +414,10 @@ public sealed class DaenetIp2ClientTests
             return answer;
         }
 
+        // The analog inputs are answered at once and not counted: only the ports' reads are.
         await using var board = ScriptedBoard.Start(request => request.PduType == DaenetIp2Api.SetRequest
             ? [Echo(request)]
+            : IsAnalog(request) ? [Reply(request, 0)]
             : Interlocked.Increment(ref reads) is 2 or 3 ? [] : Held<IReadOnlyList<Datagram>>([Reply(request, 1)]));
         await using var run = ClientRun.Start(board.Port, DaenetIp2Models.Relays8, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
@@ -486,7 +503,8 @@ public sealed class DaenetIp2ClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected
             && run.Traces.Any(t => t.Text == "Skipping more datagrams that aren't the answer" && t.IsError));
 
-        Assert.Equal(DaenetIp2Client.MaxSkippedTraced, run.Traces.Count(t => t.Text.StartsWith("Skipped a datagram from ", StringComparison.Ordinal)));
+        // At most that many for each request of the poll: the port's and the 8 analog inputs'.
+        Assert.Equal((1 + DaenetIp2Api.AnalogInputs) * DaenetIp2Client.MaxSkippedTraced, run.Traces.Count(t => t.Text.StartsWith("Skipped a datagram from ", StringComparison.Ordinal)));
         Assert.Equal(0b0101UL, run.Client.State.Relays);
     }
 
@@ -567,6 +585,219 @@ public sealed class DaenetIp2ClientTests
     }
 
     [Fact]
+    public async Task Should_ReadTheAnalogInputs_OnEveryPoll_AndRaiseOnlyAnalogChanged_WhenOnlyTheyChange()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        await simulator.SetAnalogAsync(1, 512);
+        await simulator.SetAnalogAsync(8, 1023);
+        await simulator.SwitchRelayAsync(2, true);
+        await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(new AnalogReadings([512, 0, 0, 0, 0, 0, 0, 1023]), run.Client.State.Status!.Analog);
+        Assert.Contains(run.Changes, s => s.IsConnected && s.Status!.Analog == new AnalogReadings([512, 0, 0, 0, 0, 0, 0, 1023]));
+        Assert.Contains(run.Traces, t => t.Text == "Ask for analog input 1 (P6.1)" && t.Direction == BoardTraceDirection.Sent && t.IsRoutine);
+        Assert.Contains(run.Traces, t => t.Text == "Analog input 1: 1.65 V (512)" && t.Direction == BoardTraceDirection.Received && t.Bytes is { Length: > 0 });
+        Assert.Contains(run.Traces, t => t.Text == "Analog input 8: 3.30 V (1023)");
+        Assert.Empty(run.AnalogChanges);
+        var changes = run.Changes.Count;
+
+        // Only an analog value changes: AnalogChanged, never StateChanged, which would wake the safety services.
+        await simulator.SetAnalogAsync(3, 100);
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 18 && run.Time.WaitsOnly(run.PollInterval));
+        var analogChange = Assert.Single(run.AnalogChanges);
+        Assert.Equal(100, analogChange.Status!.Analog!.Input(3));
+        Assert.True(analogChange.IsOn(2));
+        Assert.Equal(changes, run.Changes.Count);
+
+        // A poll that changes nothing raises neither.
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 27 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Single(run.AnalogChanges);
+        Assert.Equal(changes, run.Changes.Count);
+    }
+
+    [Fact]
+    public async Task Should_AskForNoAnalogInput_InACommandsRead_AndKeepTheLastPollsValues()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        await simulator.SetAnalogAsync(2, 300);
+        await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        await simulator.SetAnalogAsync(2, 400);
+        var before = simulator.ReceivedRequests.Count;
+
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+
+        // The set and the read of P5: no analog input, so a command never waits on one.
+        Assert.Equal([Set(before + 1, DaenetIp2Port.P5, 1, high: true), Get(before + 2, DaenetIp2Port.P5)], simulator.ReceivedRequests.Skip(before));
+        Assert.Equal(300, run.Client.State.Status!.Analog!.Input(2));
+        Assert.True(run.Client.State.IsOn(1));
+    }
+
+    [Fact]
+    public async Task Should_KeepTheRelays_WhenTheKitNeverAnswersItsAnalogInputs_AndAskAgainAfterAMinute()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        simulator.NoAnalogAnswer = true;
+        await simulator.SwitchRelayAsync(3, true);
+        await simulator.SetAnalogAsync(1, 77);
+        var logger = new ListLogger();
+        await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8, logger: logger);
+
+        // Analog input 1 gets no answer to both tries, and the rest isn't asked; P5 is answered.
+        await Wait.UntilAsync(() => simulator.UnansweredCount == 1 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+        run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        await Wait.UntilAsync(() => simulator.UnansweredCount == 2 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+        run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var failedAt = run.Time.GetUtcNow();
+
+        Assert.True(run.Client.State.IsOn(3));
+        Assert.Equal(new AnalogReadings(new int?[8]), run.Client.State.Status!.Analog);
+        Assert.Equal([AnalogGets(1)[0], AnalogGets(1)[0], Get(2, DaenetIp2Port.P5)], simulator.ReceivedRequests);
+        const string Problem = "The board didn't answer for analog input 1.";
+        Assert.Contains(run.Traces, t => t.Text == $"No analog readings: {Problem} The relays are read as usual; the analog inputs are asked for again in 1 min." && t.IsError);
+        Assert.Contains(logger.Messages, m => m == $"The DAEnetIP2 v2 board's analog inputs couldn't be read; the relays are read as usual: {Problem}");
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Connection lost", StringComparison.Ordinal));
+        Assert.Contains(run.Traces, t => t.Text == "No answer: The DAEnetIP2 v2 board didn't answer for an analog input within 1 s, asked 2 times." && t.IsError);
+        Assert.DoesNotContain(run.Traces, t => t.Text == $"No answer: {NoAnswer}");
+
+        // The relays still switch, and the polls ask for P5 alone for a minute: one time-out a minute, not one a poll.
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+        simulator.NoAnalogAnswer = false;
+        while (run.Time.GetUtcNow() + run.PollInterval < failedAt + DaenetIp2Client.AnalogRetryInterval)
+        {
+            var sent = simulator.ReceivedRequests.Count;
+            run.Time.Advance(run.PollInterval);
+            await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == sent + 1 && run.Time.WaitsOnly(run.PollInterval));
+            Assert.Equal(new AnalogReadings(new int?[8]), run.Client.State.Status!.Analog);
+        }
+
+        Assert.Equal(2, simulator.ReceivedRequests.Count(IsAnalogPdu));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Empty(run.AnalogChanges);
+
+        // A minute after: asked again, and read.
+        var last = simulator.ReceivedRequests.Count;
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == last + 9 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(77, run.Client.State.Status!.Analog!.Input(1));
+        Assert.Equal(77, Assert.Single(run.AnalogChanges).Status!.Analog!.Input(1));
+    }
+
+    public static TheoryData<string, string> AnalogFailures { get; } = new()
+    {
+        { "range", "The board's answer for analog input 5 can't be read: The answer's value 1024 isn't from 0 to 1023." },
+        { "negative", "The board's answer for analog input 5 can't be read: The answer's value -1000 isn't from 0 to 1023." },
+        { "type", "The board's answer for analog input 5 can't be read: The answer's value has type 05, not INTEGER." },
+        { "refused", "The board refused analog input 5: no such name (error 2)." },
+    };
+
+    [Theory]
+    [MemberData(nameof(AnalogFailures))]
+    public async Task Should_GiveNoAnalogReading_ButKeepTheRelays_ForAnAnalogAnswerItCantTake(string wrong, string problem)
+    {
+        // Inputs 1 to 4 answer, input 5 doesn't as it should: none of the 8 is taken, the relays are.
+        await using var board = ScriptedBoard.Start(request => DaenetIp2Api.AnalogInputOf(request.Oid) switch
+        {
+            null => [Reply(request, 0b0101)],
+            5 => wrong switch
+            {
+                "range" => [Reply(request, 1024)],
+                "negative" => [Reply(request, -1000)],
+                "type" => [new Datagram(DaenetIp2Snmp.Response(request.RequestId, Community, request.Oid, null))],
+                _ => [new Datagram(DaenetIp2Snmp.Response(request.RequestId, Community, request.Oid, null, DaenetIp2Api.NoSuchName, 1))],
+            },
+            { } input => [Reply(request, 100 * input)],
+        });
+        await using var run = ClientRun.Start(board.Port, DaenetIp2Models.Relays8);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(0b0101UL, run.Client.State.Relays);
+        Assert.Equal(new AnalogReadings(new int?[8]), run.Client.State.Status!.Analog);
+        Assert.Contains(run.Traces, t => t.Text == "Analog input 4: 1.29 V (400)");
+        Assert.Contains(run.Traces, t => t.Text == $"No analog readings: {problem} The relays are read as usual; the analog inputs are asked for again in 1 min." && t.IsError);
+        Assert.DoesNotContain(run.Traces, t => t.Text == "Ask for analog input 6 (P6.6)");
+
+        // Not a failed poll: the next poll reads P5 alone, and the board stays connected.
+        var asked = run.Traces.Count(t => t.Direction == BoardTraceDirection.Sent);
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Direction == BoardTraceDirection.Sent) == asked + 1 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.True(run.Client.State.IsConnected);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Connection lost", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_NeverTakeALateAnalogAnswer_ForTheRelays()
+    {
+        // Analog input 1's answers come only after the next request, P5's in the same poll: with their own request id,
+        // and the value 255 the relays would read as all on.
+        var late = new List<DaenetIp2Message>();
+        await using var board = ScriptedBoard.Start(request =>
+        {
+            if (DaenetIp2Api.AnalogInputOf(request.Oid) is not null)
+            {
+                lock (late)
+                {
+                    late.Add(request);
+                }
+
+                return [];
+            }
+
+            List<DaenetIp2Message> before;
+            lock (late)
+            {
+                before = [.. late];
+                late.Clear();
+            }
+
+            return
+            [
+                .. before.Select(old => new Datagram(DaenetIp2Snmp.Response(old.RequestId, Community, request.Oid, 255))),
+                .. before.Select(old => new Datagram(DaenetIp2Snmp.Response(old.RequestId, Community, old.Oid, 255))),
+                Reply(request, 0b0101),
+            ];
+        });
+        await using var run = ClientRun.Start(board.Port, DaenetIp2Models.Relays8);
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout) && run.Traces.Any(t => t.Text == "Ask for analog input 1 (P6.1)"));
+        run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == "Ask for analog input 1 (P6.1)") == 2 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+        run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == "Skipped a late answer nobody waited for") == 4 && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(0b0101UL, run.Client.State.Relays);
+        Assert.DoesNotContain(run.Changes, s => s.Relays == 0xFF);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_AskForTheAnalogInputsAtOnce_OnANewConnection()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        simulator.NoAnalogAnswer = true;
+        await simulator.SetAnalogAsync(4, 40);
+        await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8);
+        await Wait.UntilAsync(() => simulator.UnansweredCount == 1 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+        run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        await Wait.UntilAsync(() => simulator.UnansweredCount == 2 && run.Time.WaitsOnly(DaenetIp2Client.RequestTimeout));
+        run.Time.Advance(DaenetIp2Client.RequestTimeout);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.NoAnalogAnswer = false;
+
+        // Another community (the board's read-only one, which a get takes) starts a new connection: no minute's wait.
+        run.Client.SetCommunity(DaenetIp2Api.FactoryReadOnlyCommunity);
+
+        await Wait.UntilAsync(() => run.Client.State.Status?.Analog?.Input(4) == 40);
+    }
+
+    [Fact]
     public async Task Should_RefuseCommands_BeforeTheBoardAnswered()
     {
         using var client = CreateClient(1, DaenetIp2Models.Relays8, new ManualTimeProvider());
@@ -611,6 +842,30 @@ public sealed class DaenetIp2ClientTests
     private static string Get(int id, DaenetIp2Port port)
     {
         return DaenetIp2Snmp.Hex(DaenetIp2Snmp.GetPort(id, Community, port).Pdu);
+    }
+
+    // The client's GetRequests of the 8 analog inputs, input 1 first, with request ids from this one up, as their PDUs.
+    private static string[] AnalogGets(int firstId)
+    {
+        return [.. Enumerable.Range(1, DaenetIp2Api.AnalogInputs).Select(input => DaenetIp2Snmp.Hex(DaenetIp2Snmp.GetAnalog(firstId + input - 1, Community, input).Pdu))];
+    }
+
+    // Whether a PDU is a GetRequest of a port's whole byte (x.9.2.n.33.0), not of an analog input.
+    private static bool IsPortGet(string pdu)
+    {
+        return pdu.StartsWith("A0", StringComparison.Ordinal) && pdu.Contains(" 21 00 05 00", StringComparison.Ordinal);
+    }
+
+    // Whether a PDU is a GetRequest of an analog input of P6 (x.9.2.3.n.0).
+    private static bool IsAnalogPdu(string pdu)
+    {
+        return pdu.StartsWith("A0", StringComparison.Ordinal) && pdu.Contains(" 82 CC 09 09 02 03 ", StringComparison.Ordinal);
+    }
+
+    // Whether a request reads an analog input of P6.
+    private static bool IsAnalog(DaenetIp2Message request)
+    {
+        return DaenetIp2Api.AnalogInputOf(request.Oid) is not null;
     }
 
     // The client's SetRequest of a pin with this request id, as its PDU.
@@ -664,6 +919,7 @@ public sealed class DaenetIp2ClientTests
         private readonly Task _task;
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<DaenetIp2State> _changes = [];
+        private readonly List<DaenetIp2State> _analogChanges = [];
 
         private ClientRun(DaenetIp2Client client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
@@ -673,6 +929,7 @@ public sealed class DaenetIp2ClientTests
             _cts = cts;
             client.Traced += (_, entry) => Add(_traces, entry);
             client.StateChanged += (_, state) => Add(_changes, state);
+            client.AnalogChanged += (_, state) => Add(_analogChanges, state);
             _task = client.RunAsync(cts.Token);
         }
 
@@ -689,6 +946,8 @@ public sealed class DaenetIp2ClientTests
         public List<BoardTraceEntry> Traces => Copy(_traces);
 
         public List<DaenetIp2State> Changes => Copy(_changes);
+
+        public List<DaenetIp2State> AnalogChanges => Copy(_analogChanges);
 
         public static ClientRun Start(
             int port,

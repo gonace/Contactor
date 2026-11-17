@@ -17,6 +17,9 @@ internal static partial class DaenetIp2Log
     [LoggerMessage(Level = LogLevel.Information, Message = "Asking the DAEnetIP2 v2 board again in {DelaySeconds} s")]
     public static partial void Reconnecting(ILogger logger, string? delaySeconds);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "The DAEnetIP2 v2 board's analog inputs couldn't be read; the relays are read as usual: {Reason}")]
+    public static partial void AnalogNotRead(ILogger logger, string reason);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "DAEnetIP2 v2 address set to {Host}:{Port}")]
     public static partial void EndpointChanged(ILogger logger, string host, int port);
 

@@ -42,6 +42,55 @@ public sealed class DaenetIp2SimulatedBoardTests
     }
 
     [Fact]
+    public async Task Should_AnswerTheManualsGetOfAnalogInputOne_ByteForByte()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays2);
+        await simulator.SetAnalogAsync(1, 512);
+        using var app = Client();
+
+        Assert.Equal(DaenetIp2SnmpTests.P6Pin1Is512, await AskAsync(app, simulator, DaenetIp2SnmpTests.GetP6Pin1));
+    }
+
+    [Fact]
+    public async Task Should_AnswerEachAnalogInput_WithWhatItWasSetTo_WithEitherCommunity()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays16);
+        var changes = 0;
+        simulator.Changed += (_, _) => Interlocked.Increment(ref changes);
+        using var app = Client();
+
+        await simulator.SetAnalogAsync(8, 1023);
+        await simulator.SetAnalogAsync(8, 1023);
+        await simulator.SetAnalogAsync(3, 0);
+
+        Assert.Equal(1, Volatile.Read(ref changes));
+        Assert.Equal([0, 0, 0, 0, 0, 0, 0, 1023], simulator.State.Analog);
+        var get8 = DaenetIp2Snmp.GetAnalog(5, ReadWrite, 8);
+        Assert.Equal(Hex(DaenetIp2Snmp.Response(5, ReadWrite, get8.Oid, 1023)), await AskAsync(app, simulator, Hex(get8.Message)));
+        var get2 = DaenetIp2Snmp.GetAnalog(6, ReadOnly, 2);
+        Assert.Equal(Hex(DaenetIp2Snmp.Response(6, ReadOnly, get2.Oid, 0)), await AskAsync(app, simulator, Hex(get2.Message)));
+        Assert.Equal(0UL, simulator.Relays);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(0, 1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(9, 1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(1, -1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(1, 1024));
+    }
+
+    [Fact]
+    public async Task Should_LeaveTheAnalogInputsUnanswered_WhenAsked_AndStillAnswerThePorts()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        simulator.NoAnalogAnswer = true;
+        using var app = Client();
+
+        await SendAsync(app, simulator, DaenetIp2Snmp.GetAnalog(1, ReadOnly, 1).Message);
+
+        Assert.Equal(DaenetIp2SnmpTests.P5Is5.Replace("02 01 05", "02 01 00", StringComparison.Ordinal), await AskAsync(app, simulator, DaenetIp2SnmpTests.GetP5));
+        Assert.Equal(1, simulator.UnansweredCount);
+    }
+
+    [Fact]
     public async Task Should_PutRelaysOneToEightOnP3_AndNineToSixteenOnP5_OfTheSixteenRelayKit()
     {
         await using var simulator = Started(DaenetIp2Models.Relays16);
@@ -85,11 +134,15 @@ public sealed class DaenetIp2SimulatedBoardTests
 
     public static TheoryData<string, int> NotTheBoards { get; } = new()
     {
-        // cfgIP, the analog input P6.1, a pin 9 and a pin 0: no such name.
+        // cfgIP, an analog input 9, P6 as a byte (not in table 9.6), a pin 9 and a pin 0: no such name.
         { Hex(DaenetIp2Snmp.Get(1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 1, 1, 0], 255).Message), DaenetIp2Api.NoSuchName },
-        { Hex(DaenetIp2Snmp.Get(1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 3, 1, 0], 1023).Message), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Get(1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 3, 9, 0], 1023).Message), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Get(1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 3, 33, 0], 255).Message), DaenetIp2Api.NoSuchName },
         { Hex(DaenetIp2Snmp.Set(1, ReadWrite, [.. DaenetIp2Api.Enterprise, 9, 2, 2, 9, 0], 1, 1).Message), DaenetIp2Api.NoSuchName },
         { Hex(DaenetIp2Snmp.Set(1, ReadWrite, [.. DaenetIp2Api.Enterprise, 9, 2, 1, 0, 0], 1, 1).Message), DaenetIp2Api.NoSuchName },
+
+        // An analog input is read-only: SNMPv1 answers a set of it with no such name (RFC 1157, section 4.1.5).
+        { Hex(DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Api.AnalogOid(1), 5, 1023).Message), DaenetIp2Api.NoSuchName },
 
         // A pin to 2, a port to 256 or −1: a bad value.
         { Hex(DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Api.PinOid(new DaenetIp2Pin(DaenetIp2Port.P5, 1)), 2, 1).Message), DaenetIp2Api.BadValue },
@@ -172,11 +225,12 @@ public sealed class DaenetIp2SimulatedBoardTests
         await SendAsync(app, simulator, [0x30]);
         await SendAsync(app, simulator, [0x30, 0x82, 0xFF, 0xFF, 0x02]);
         await SendAsync(app, simulator, DaenetIp2SnmpTests.Bytes(DaenetIp2SnmpTests.GetP5)[..20]);
+        await SendAsync(app, simulator, DaenetIp2SnmpTests.Bytes(DaenetIp2SnmpTests.GetP6Pin1)[..^1]);
         await SendAsync(app, simulator, new byte[DaenetIp2Api.MaxMessageBytes + 1]);
         await SendAsync(app, simulator, new byte[8000]);
 
         Assert.Equal(Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.PortOid(DaenetIp2Port.P5), 0)), await AskAsync(app, simulator, DaenetIp2SnmpTests.GetP5));
-        Assert.Equal(6, simulator.UnansweredCount);
+        Assert.Equal(7, simulator.UnansweredCount);
         lock (traces)
         {
             Assert.Contains(traces, t => t.Text == "No answer: an unreadable datagram of 1 bytes: The message is cut short." && t.IsError && t.Bytes is null);

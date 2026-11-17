@@ -13,16 +13,19 @@ public static class DaenetIp2TraceText
     private static readonly int PortArcsLength = DaenetIp2Api.Enterprise.Count + 5;
 
     /// <summary>
-    /// What a request asks for: "Ask for port P5", "Turn on relay 3 (P5.3)", "Turn off relay 3 (P5.3)", "Set P3.2 high",
-    /// "Set port P5 to 255", or the OID for anything else.
+    /// What a request asks for: "Ask for port P5", "Ask for analog input 3 (P6.3)", "Turn on relay 3 (P5.3)", "Turn off
+    /// relay 3 (P5.3)", "Set P3.2 high", "Set port P5 to 255", or the OID for anything else.
     /// </summary>
     public static string Request(byte pduType, IReadOnlyList<int> oid, int? value, DaenetIp2Layout layout)
     {
         ArgumentNullException.ThrowIfNull(oid);
         ArgumentNullException.ThrowIfNull(layout);
         var target = Target(oid);
+        var analog = DaenetIp2Api.AnalogInputOf(oid);
         return pduType switch
         {
+            DaenetIp2Api.GetRequest when analog is { } input => $"Ask for analog input {Number(input)} (P6.{Number(input)})",
+            DaenetIp2Api.SetRequest when analog is { } input => $"Set analog input {Number(input)} (P6.{Number(input)}) to {Value(value)}",
             DaenetIp2Api.GetRequest => target switch
             {
                 { Pin: { } pin } => layout.RelayOf(pin) is { } relay ? $"Ask for relay {Number(relay)} ({pin})" : $"Ask for {pin}",
@@ -65,6 +68,13 @@ public static class DaenetIp2TraceText
             DaenetIp2Api.Low => $"{pin} is low",
             _ => $"{pin} is {Number(value)}",
         };
+    }
+
+    /// <summary>One analog input's value in volts, with the board's count: "Analog input 3: 1.65 V (512)".</summary>
+    public static string Analog(int input, int counts, AnalogAbility analog)
+    {
+        ArgumentNullException.ThrowIfNull(analog);
+        return string.Create(CultureInfo.InvariantCulture, $"Analog input {input}: {analog.Volts(counts):0.00} V ({counts})");
     }
 
     /// <summary>"Relays: all off", "Relays: 1 and 3 on" or "Relays: all on".</summary>

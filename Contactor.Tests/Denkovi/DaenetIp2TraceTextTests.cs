@@ -17,7 +17,11 @@ public sealed class DaenetIp2TraceTextTests
     [InlineData(DaenetIp2Api.SetRequest, "9.2.2.8.0", 7, "Set P5.8 to 7")]
     [InlineData(DaenetIp2Api.SetRequest, "9.2.2.33.0", 255, "Set port P5 to 255")]
     [InlineData(DaenetIp2Api.GetRequest, "9.1.1.0", null, "Ask for .1.3.6.1.4.1.42505.9.1.1.0")]
-    [InlineData(DaenetIp2Api.GetRequest, "9.2.3.1.0", null, "Ask for .1.3.6.1.4.1.42505.9.2.3.1.0")]
+    [InlineData(DaenetIp2Api.GetRequest, "9.2.3.1.0", null, "Ask for analog input 1 (P6.1)")]
+    [InlineData(DaenetIp2Api.GetRequest, "9.2.3.8.0", null, "Ask for analog input 8 (P6.8)")]
+    [InlineData(DaenetIp2Api.SetRequest, "9.2.3.2.0", 7, "Set analog input 2 (P6.2) to 7")]
+    [InlineData(DaenetIp2Api.GetRequest, "9.2.3.9.0", null, "Ask for .1.3.6.1.4.1.42505.9.2.3.9.0")]
+    [InlineData(DaenetIp2Api.GetRequest, "9.2.3.33.0", null, "Ask for .1.3.6.1.4.1.42505.9.2.3.33.0")]
     [InlineData(DaenetIp2Api.GetRequest, "9.2.2.9.0", null, "Ask for .1.3.6.1.4.1.42505.9.2.2.9.0")]
     [InlineData(DaenetIp2Api.GetRequest, "9.2.2.33.1", null, "Ask for .1.3.6.1.4.1.42505.9.2.2.33.1")]
     [InlineData(DaenetIp2Api.SetRequest, "9.1.1.0", 5, "Set .1.3.6.1.4.1.42505.9.1.1.0 to 5")]
@@ -82,6 +86,15 @@ public sealed class DaenetIp2TraceTextTests
     public void Should_NameTheErrorStatuses(int status, string text)
     {
         Assert.Equal(text, DaenetIp2TraceText.Refused(status));
+    }
+
+    [Theory]
+    [InlineData(1, 0, "Analog input 1: 0.00 V (0)")]
+    [InlineData(3, 512, "Analog input 3: 1.65 V (512)")]
+    [InlineData(8, 1023, "Analog input 8: 3.30 V (1023)")]
+    public void Should_SayAnAnalogInputsValue_InVolts(int input, int counts, string text)
+    {
+        Assert.Equal(text, DaenetIp2TraceText.Analog(input, counts, DaenetIp2Models.Analog));
     }
 
     [Fact]

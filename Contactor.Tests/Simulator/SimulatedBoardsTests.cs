@@ -325,6 +325,25 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.Empty(board.Traffic);
     }
 
+    [Theory]
+    [InlineData("denkovi-daenetip2-v2-16")]
+    [InlineData("denkovi-daenetip2-v2-8")]
+    [InlineData("denkovi-daenetip2-v2-2")]
+    public async Task Should_SetTheDaenetIp2AnalogInputs_AndLogIt_OnlyWhenItChanges(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        var board = _boards.Boards.Single();
+        Assert.Equal(new int[8], board.Board.State.Analog);
+
+        await board.SetAnalogAsync(8, 1023);
+        await board.SetAnalogAsync(8, 1023);
+        await board.SetAnalogAsync(9, 1);
+        await board.SetAnalogAsync(1, 1024);
+
+        Assert.Equal(1023, board.Board.State.Analog[7]);
+        Assert.Equal("Analog input 8 set to 1023 (3.30 V) here", Assert.Single(board.Traffic).Text);
+    }
+
     [Fact]
     public async Task Should_HaveNoAnalogInputs_OnABoardWithoutThem()
     {

@@ -10,9 +10,11 @@ namespace Contactor.Boards.Denkovi;
 /// <summary>
 /// A fake Denkovi DAEnetIP2 v2 kit on a local UDP port, speaking SNMPv1 as the board does (<see cref="DaenetIp2Api"/>):
 /// a GetRequest or SetRequest of one OID of ports P3 and P5 (manual, tables 9.4 and 9.5), each pin and each port's whole
-/// byte. A get takes the read-only or the read-write community, a set only the read-write one, as section 9 says; a
-/// wrong community gets no answer, as SNMPv1 (RFC 1157) drops a message that isn't authentic. Any other OID gets the
-/// error-status noSuchName, a value out of range badValue. Only GetRequest and SetRequest are answered (section 9:
+/// byte, and a GetRequest of each analog input of P6 (table 9.6), 0 to 1023 as set with <see cref="SetAnalogAsync"/>;
+/// a set of one is answered noSuchName, as RFC 1157 (section 4.1.5) says for a variable that can't be set. A get takes
+/// the read-only or the read-write community, a set only the read-write one, as section 9 says; a wrong community gets
+/// no answer, as SNMPv1 (RFC 1157) drops a message that isn't authentic. Any other OID gets the error-status
+/// noSuchName, a value out of range badValue. Only GetRequest and SetRequest are answered (section 9:
 /// snmpwalk isn't supported). A datagram it can't read is skipped, and the next one served. Its relays are the kit's
 /// pins: a pin that is High is a relay that is on. It never tells the app anything by itself, as the real board. Used
 /// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only. Its traces show
@@ -38,6 +40,11 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     private int _p3;
     private int _p5;
     private readonly Dictionary<DaenetIp2Port, int> _lastPortSent = [];
+
+    // What each analog input of P6 reads, input 1 first. The last values sent only mark the answers that change nothing
+    // as routine.
+    private readonly int[] _analog = new int[DaenetIp2Api.AnalogInputs];
+    private readonly int?[] _lastAnalogSent = new int?[DaenetIp2Api.AnalogInputs];
     private int _requestCount;
     private int _unansweredCount;
     private int _dropRequests;
@@ -97,14 +104,19 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     /// <summary>Always: every SNMP request carries a community.</summary>
     public bool HasLogin => true;
 
-    /// <summary>Its relays; it has no inputs, and the clients are where the app was heard from.</summary>
+    /// <summary>
+    /// Its relays and analog inputs; it has no digital inputs, and the clients are where the app was heard from.
+    /// </summary>
     public SimulatedBoardState State
     {
         get
         {
             lock (_lock)
             {
-                return new SimulatedBoardState(new ChannelMask(RelaysUnlocked), ChannelMask.None, [.. _clients.Order(StringComparer.Ordinal)]);
+                return new SimulatedBoardState(new ChannelMask(RelaysUnlocked), ChannelMask.None, [.. _clients.Order(StringComparer.Ordinal)])
+                {
+                    Analog = [.. _analog],
+                };
             }
         }
     }
@@ -166,6 +178,12 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     }
 
     /// <summary>
+    /// When true, a get of an analog input is read but never answered, as a board that doesn't answer P6; the relays
+    /// are still answered. For the tests of an analog failure that must not take the relays away.
+    /// </summary>
+    public bool NoAnalogAnswer { get; set; }
+
+    /// <summary>
     /// Relays (bit 0 = relay 1) whose set is answered with the error-status genErr and not carried out, for the tests
     /// of a refused command.
     /// </summary>
@@ -214,7 +232,29 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
         return Task.CompletedTask;
     }
 
-    /// <summary>Throws: the kits have no inputs.</summary>
+    /// <summary>Sets what an analog input of P6 reads, 0 to 1023 as the board's 10-bit converter reads it.</summary>
+    public Task SetAnalogAsync(int input, int counts)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, DaenetIp2Api.AnalogInputs);
+        ArgumentOutOfRangeException.ThrowIfNegative(counts);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(counts, DaenetIp2Api.AnalogMaxCounts);
+        bool changed;
+        lock (_lock)
+        {
+            changed = _analog[input - 1] != counts;
+            _analog[input - 1] = counts;
+        }
+
+        if (changed)
+        {
+            RaiseChanged();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Throws: the kits have no digital inputs.</summary>
     public Task SetInputAsync(int input, bool closed)
     {
         throw new ArgumentOutOfRangeException(nameof(input), input, $"The {Model.Name} has no inputs.");
@@ -349,6 +389,19 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
             return Unanswered("No answer: the request was lost");
         }
 
+        if (DaenetIp2Api.AnalogInputOf(request.Oid) is { } input)
+        {
+            if (request.PduType == DaenetIp2Api.GetRequest && NoAnalogAnswer)
+            {
+                return Unanswered("No answer: the board doesn't answer its analog inputs");
+            }
+
+            Remember(from);
+
+            // Read-only (table 9.6): SNMPv1 answers a set of it with noSuchName (RFC 1157, section 4.1.5).
+            return request.PduType == DaenetIp2Api.GetRequest ? GetAnalog(request, community, input) : Refuse(request, community, DaenetIp2Api.NoSuchName);
+        }
+
         Remember(from);
         var (port, pin) = DaenetIp2TraceText.Target(request.Oid);
         if (port is not { } p)
@@ -377,6 +430,21 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
 
         var text = pin is { } p ? DaenetIp2TraceText.Pin(p, value) : DaenetIp2TraceText.Port(port, value);
         return Answer(request, community, value, text, routine);
+    }
+
+    // An analog input's value, 0 to 1023.
+    private byte[] GetAnalog(DaenetIp2Message request, string community, int input)
+    {
+        int counts;
+        bool routine;
+        lock (_lock)
+        {
+            counts = _analog[input - 1];
+            routine = _lastAnalogSent[input - 1] == counts;
+            _lastAnalogSent[input - 1] = counts;
+        }
+
+        return Answer(request, community, counts, DaenetIp2TraceText.Analog(input, counts, DaenetIp2Models.Analog), routine);
     }
 
     // A pin to High(1) or Low(0), or the port's whole byte to 0..255; the answer echoes the value.

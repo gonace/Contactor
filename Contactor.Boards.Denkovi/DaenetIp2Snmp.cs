@@ -45,7 +45,7 @@ public sealed class DaenetIp2Request
     /// <summary>The value a SetRequest writes; null for a GetRequest.</summary>
     public int? Value { get; }
 
-    /// <summary>The largest value the answer may carry: 1 for a pin, 255 for a port's byte.</summary>
+    /// <summary>The largest value the answer may carry: 1 for a pin, 255 for a port's byte, 1023 for an analog input.</summary>
     public int MaxValue { get; }
 
     internal ReadOnlySpan<byte> Community => _community;
@@ -144,6 +144,15 @@ public static class DaenetIp2Snmp
     public static DaenetIp2Request GetPort(int requestId, string community, DaenetIp2Port port)
     {
         return Request(DaenetIp2Api.GetRequest, requestId, community, DaenetIp2Api.PortOid(port), null, DaenetIp2Api.MaxPortValue);
+    }
+
+    /// <summary>
+    /// snmpget of one analog input of P6, 1 to 8, <c>pctrlP6pin</c>n: the answer is 0 to 1023 (table 9.6). One OID per
+    /// request, as for every get (section 9).
+    /// </summary>
+    public static DaenetIp2Request GetAnalog(int requestId, string community, int input)
+    {
+        return Request(DaenetIp2Api.GetRequest, requestId, community, DaenetIp2Api.AnalogOid(input), null, DaenetIp2Api.AnalogMaxCounts);
     }
 
     /// <summary>snmpset of one pin, High(1) or Low(0); the board echoes the value.</summary>
