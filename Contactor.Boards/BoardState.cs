@@ -33,6 +33,12 @@ public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMas
     /// </summary>
     public bool HasAnswered => IsConnected || LastContactUtc is not null;
 
+    /// <summary>
+    /// The relays the board controls by itself and ignores the app's commands for (<see cref="Boards.OwnRules.Unavailable"/>);
+    /// none while its rules aren't known.
+    /// </summary>
+    public ChannelMask Unavailable => OwnRules?.Unavailable ?? ChannelMask.None;
+
     /// <summary>Whether a relay is on, 1 being the first.</summary>
     public bool IsOn(int relay)
     {

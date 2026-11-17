@@ -17,10 +17,4 @@ public sealed class WaveshareOptions
     /// <summary>How often the board is asked for its state; it never reports a change by itself.</summary>
     [Range(1, 60)]
     public int PollSeconds { get; set; } = 2;
-
-    /// <summary>
-    /// On the models with inputs: set every relay to normal mode on each connection, so no input switches a relay past
-    /// the app. Only written when a relay isn't in normal mode.
-    /// </summary>
-    public bool ResetRelayModes { get; set; } = true;
 }

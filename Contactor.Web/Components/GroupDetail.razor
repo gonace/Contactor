@@ -2,6 +2,7 @@
 @implements IDisposable
 @using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
+@using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
@@ -26,6 +27,8 @@
 @inject RelayStatusText StatusText
 @inject GroupStatusText GroupStatus
 @inject AppLanguage Language
+@inject OwnRulesHandler OwnRules
+@inject OwnRulesText OwnRulesText
 
 <PageTitle>@(Texts["Common.PageTitle", _group?.Name ?? Texts["Common.Screen.Group"].Value])</PageTitle>
 
@@ -52,6 +55,22 @@
     {
         <form id="group-form" class="form" @onsubmit="SaveAsync">
             <main class="content">
+                @if (Unavailable is { Count: > 0 } unavailable)
+                {
+                    @* The board controls a relay of the group by itself: the group won't start until it is reset. *@
+                    <div class="offline group-unavailable" role="status">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                        <div>
+                            <strong>@OwnRulesText.GroupUnavailable(unavailable.Select(m => m.RoleName))</strong>
+                            <span>@Texts["OwnRules.Unavailable.GroupText" + Plurals.Form(unavailable.Count)]</span>
+                            <button type="button" class="reset" disabled="@(_busy || !State.IsConnected)" @onclick="ResetAsync">@Texts["OwnRules.Reset"]</button>
+                            @if (_resetError is not null)
+                            {
+                                <span class="reset-error" role="alert">@_resetError</span>
+                            }
+                        </div>
+                    </div>
+                }
                 <div class="field">
                     <label for="name" class="label">@Texts["Groups.NameLabel"]</label>
                     <input id="name" type="text" maxlength="@RelayGroup.NameMaxLength" @bind="_name" @bind:event="oninput" autocomplete="off" />
@@ -74,7 +93,7 @@
                 {
                 <section class="status @(GroupOn ? "on" : "") @(_group.Runtime.Phase == GroupPhases.Stopping ? "stopping" : "")">
                     <p>@(Missing is { } missing ? GroupStatus.MissingRelay(missing) : GroupStatus.For(_group, State, Clock.UtcNow, Clock.ToLocal, NameOf, _outlook))</p>
-                    <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy || Missing is not null)" @onclick="ToggleGroupAsync">
+                    <button type="button" class="toggle" data-vibrate aria-pressed="@(GroupOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy || Missing is not null || (!GroupOn && Unavailable.Count > 0))" @onclick="ToggleGroupAsync">
                         @Texts[GroupOn ? "Groups.TurnOff" : "Groups.TurnOn"]
                     </button>
                     @if (_toggleError is not null)
@@ -278,6 +297,12 @@
 
     private BoardState State => Board?.State ?? BoardState.Initial;
 
+    // The group's relays the board controls by itself now: the group doesn't start while there are any.
+    private IReadOnlyList<GroupMemberView> Unavailable => _group is null ? [] : [.. _group.Members.Where(m => State.Unavailable.Contains(m.Channel))];
+
+    // "Reset" that went wrong.
+    private string? _resetError;
+
     private bool GroupOn => _group is not null && _group.IsOn(State);
 
     private int? Missing => _group?.MissingRelay(Capabilities.RelayCount);
@@ -324,6 +349,7 @@
     protected override void OnInitialized()
     {
         Registry.StateChanged += OnBoardChanged;
+        Registry.OwnRulesChanged += OnBoardChanged;
         Changes.Changed += OnRelaysChanged;
 
         // A start or stop counts down in seconds; nothing else re-renders the page that often.
@@ -339,6 +365,7 @@
     public void Dispose()
     {
         Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnBoardChanged;
         Changes.Changed -= OnRelaysChanged;
         _tick?.Dispose();
     }
@@ -497,11 +524,43 @@
         {
             _toggleError = Texts["Common.BoardNotResponding"];
         }
+        catch (GroupUnavailableException)
+        {
+            // The warning at the top says which relay, with "Reset".
+            _toggleError = null;
+        }
         catch (Exception ex)
         {
             // An exception that leaves the handler would end the page's live connection.
             Log.LogError(ex, "Starting or stopping group {GroupId} failed", Id);
             _toggleError = SomethingWentWrong;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // "Reset": sets the group's relays the board controls by itself back to normal, as the person pressed, and logs it.
+    // Nothing is queued without a connection.
+    private async Task ResetAsync()
+    {
+        if (_user is null || _busy || _group is null || Unavailable is not { Count: > 0 } unavailable)
+        {
+            return;
+        }
+
+        _busy = true;
+        _resetError = null;
+        try
+        {
+            _resetError = await OwnRules.TurnOffAsync(_group.BoardId, [.. unavailable.Select(m => new OwnRule(m.Channel, OwnRuleKind.InputLinkage))], _user.Email, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Resetting the relays of group {GroupId} failed", Id);
+            _resetError = SomethingWentWrong;
         }
         finally
         {

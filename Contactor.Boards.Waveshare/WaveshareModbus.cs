@@ -97,6 +97,12 @@ public static class WaveshareModbus
         return Simple(unit, WaveshareApi.WriteSingleCoil, address, on ? WaveshareApi.CoilOn : WaveshareApi.CoilOff);
     }
 
+    /// <summary>FC 06: write <paramref name="value"/> to the one holding register at <paramref name="address"/>.</summary>
+    public static WaveshareRequest WriteSingleRegister(byte unit, ushort address, ushort value)
+    {
+        return Simple(unit, WaveshareApi.WriteSingleRegister, address, value);
+    }
+
     /// <summary>
     /// FC 05 at the "flash on" address of <paramref name="relay"/> (1-based): the board turns it on, and off again by
     /// itself after <paramref name="length"/>, and echoes the request. Only a length <see cref="WaveshareModels.Pulse"/>

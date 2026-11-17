@@ -198,7 +198,8 @@ public sealed partial class OwnRulesService : BackgroundService
     /// <summary>
     /// Marks the board's rule as kept by <paramref name="userEmail"/> and logs it: the app no longer warns about it.
     /// Returns false when the app has no such rule (any more), also when its row goes meanwhile (a new address or
-    /// another model deletes it), and true, logging nothing again, when it was kept already.
+    /// another model deletes it), and for a rule no person may keep (<see cref="OwnRulesHandler.CanKeep"/>); true,
+    /// logging nothing again, when it was kept already.
     /// </summary>
     internal async Task<bool> KeepAsync(int boardId, int channel, OwnRuleKind kind, string userEmail, CancellationToken cancellationToken)
     {
@@ -211,7 +212,7 @@ public sealed partial class OwnRulesService : BackgroundService
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
                 var row = await db.BoardOwnRules.SingleOrDefaultAsync(r => r.BoardId == boardId && r.Channel == channel && r.Kind == text, cancellationToken);
-                if (row is null)
+                if (row is null || !OwnRulesHandler.CanKeep(kind))
                 {
                     return false;
                 }
@@ -264,7 +265,8 @@ public sealed partial class OwnRulesService : BackgroundService
     /// logged as found as the service would, so a person never waits for the service's save (which, after a failure,
     /// is tried again only 30 s later). Runs under the same lock as the service's own work, so the service never
     /// inserts the same row at the same time, and once this row is there it finds it and logs nothing more. Only rules
-    /// the board reports now are kept; returns false, saving nothing, when it no longer reports one of them.
+    /// the board reports now are kept; returns false, saving nothing, when it no longer reports one of them, or one is a
+    /// rule no person may keep (<see cref="OwnRulesHandler.CanKeep"/>).
     /// </summary>
     internal async Task<bool> KeepReportedAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {
@@ -273,7 +275,7 @@ public sealed partial class OwnRulesService : BackgroundService
         await _work.WaitAsync(cancellationToken);
         try
         {
-            if (_registry.Find(boardId)?.State.OwnRules is not { } reported || !rules.All(reported.Contains))
+            if (_registry.Find(boardId)?.State.OwnRules is not { } reported || !rules.All(reported.Contains) || !rules.All(r => OwnRulesHandler.CanKeep(r.Kind)))
             {
                 return false;
             }

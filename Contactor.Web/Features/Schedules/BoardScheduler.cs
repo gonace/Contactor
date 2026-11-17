@@ -223,6 +223,14 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                             continue;
                         }
 
+                        if (state.Unavailable.Contains(channel))
+                        {
+                            // The board controls it by itself and ignores the ON: nothing is sent or logged. It is tried
+                            // again at each tick of its window, so it comes on once a person resets it.
+                            _retryRelays.Add(relayId);
+                            continue;
+                        }
+
                         var sent = await SendAsync(channel, on: true, cancellationToken);
                         if (sent == Sent.Closed)
                         {
@@ -270,6 +278,12 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
                     else if (now - ended.OffUtc > OnTimeTolerance && !turnedOnBySchedule)
                     {
                         // Someone turned it on by hand; a missed OFF must not turn it off.
+                        continue;
+                    }
+
+                    if (state.Unavailable.Contains(channel))
+                    {
+                        // The board controls it by itself and ignores the OFF: nothing is sent or logged.
                         continue;
                     }
 
@@ -392,6 +406,13 @@ public sealed partial class BoardScheduler : IBoardPart, IAsyncDisposable
             {
                 // Refused while the board is being removed: this group alone is tried again at the next tick, should the
                 // board open again. Not a lost board: nothing is reconciled then.
+                _retryGroups[group.Id] = on;
+                continue;
+            }
+            catch (GroupUnavailableException)
+            {
+                // The board controls one of its relays by itself: nothing was sent, and nothing is logged. Tried again at
+                // each tick, so the group starts once a person resets that relay.
                 _retryGroups[group.Id] = on;
                 continue;
             }

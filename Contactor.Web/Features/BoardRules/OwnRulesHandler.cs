@@ -45,6 +45,16 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
+    /// Whether a person may keep a rule of this kind, so the app stops warning: never one with which the board controls
+    /// the relay by itself and ignores the app (<see cref="OwnRuleKind.InputLinkage"/>). The app can't switch that relay,
+    /// so it stays shown as unavailable until a person resets it.
+    /// </summary>
+    public static bool CanKeep(OwnRuleKind kind)
+    {
+        return kind != OwnRuleKind.InputLinkage;
+    }
+
+    /// <summary>
     /// The board's own rules the app warns about: those the board reports now that no person kept. None while the
     /// board's rules aren't known (it can't read them, or hasn't answered), until the app has read which rules people
     /// kept (just after the start), and for a board the app doesn't run.
@@ -141,15 +151,22 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
-    /// "Keep them" while the board is being added: keeps each of <paramref name="rules"/>, as <see cref="KeepAsync"/>
-    /// does, at once: a rule the app hasn't noted yet is noted now (<see cref="OwnRulesService.KeepReportedAsync"/>).
-    /// Returns null when all are kept, otherwise the message to show; then none is kept.
+    /// "Keep them" while the board is being added: keeps each of <paramref name="rules"/> a person may keep
+    /// (<see cref="CanKeep"/>), as <see cref="KeepAsync"/> does, at once: a rule the app hasn't noted yet is noted now
+    /// (<see cref="OwnRulesService.KeepReportedAsync"/>). The others are left as they are, nothing saved for them.
+    /// Returns null when all are kept (or none could be), otherwise the message to show; then none is kept.
     /// </summary>
     public async Task<string?> KeepAllAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(rules);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        return await _rules.KeepReportedAsync(boardId, rules, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
+        List<OwnRule> keepable = [.. rules.Where(r => CanKeep(r.Kind))];
+        if (keepable.Count == 0)
+        {
+            return null;
+        }
+
+        return await _rules.KeepReportedAsync(boardId, keepable, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
     }
 
     /// <summary>
@@ -214,11 +231,17 @@ public sealed partial class OwnRulesHandler
     /// <summary>
     /// Keeps the board's own rule for the relay on <paramref name="channel"/>, as <paramref name="userEmail"/> chose: the
     /// app no longer warns about it, until the board no longer has it. Logged once. Returns null when kept, otherwise
-    /// the message to show.
+    /// the message to show, also for a rule a person may not keep (<see cref="CanKeep"/>).
     /// </summary>
     public async Task<string?> KeepAsync(int boardId, int channel, OwnRuleKind kind, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        if (!CanKeep(kind))
+        {
+            // No "Keep" is offered for it; nothing is saved.
+            return _texts["OwnRules.Keep.Unavailable"].Value;
+        }
+
         return await _rules.KeepAsync(boardId, channel, kind, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
     }
 

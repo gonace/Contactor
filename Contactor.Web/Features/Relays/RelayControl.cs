@@ -14,7 +14,9 @@ namespace Contactor.Web.Features.Relays;
 /// logs the event with that board. If that board is not connected the command fails with
 /// <see cref="BoardNotConnectedException"/> and nothing is recorded or queued; another board is never touched. A relay in
 /// a group is only turned on and off through its group (<see cref="GroupSequencer"/>), which keeps the group's order and
-/// interlock.
+/// interlock. A relay its board controls by itself and ignores commands for (<see cref="BoardState.Unavailable"/>, e.g. a
+/// Waveshare relay in linkage mode) is refused with <see cref="RelayUnavailableException"/> before anything is sent or
+/// logged: a command would change nothing, and an event would say it had.
 /// </summary>
 public sealed class RelayControl
 {
@@ -47,6 +49,7 @@ public sealed class RelayControl
         var (board, mask) = await TargetAsync(relayId, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
+        EnsureAvailable(board, mask);
         await SendAsync(board, mask, on: true, cancellationToken);
 
         // The ON went out: from here it is recorded whatever happens to the caller.
@@ -83,6 +86,7 @@ public sealed class RelayControl
         }
 
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
+        EnsureAvailable(board, mask);
         var expected = board.Expected;
         expected.Expect(mask, on: true);
 
@@ -134,6 +138,7 @@ public sealed class RelayControl
         var (board, mask) = await TargetAsync(relayId, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
+        EnsureAvailable(board, mask);
         var sent = _clock.UtcNow;
         await SendAsync(board, mask, on: false, cancellationToken);
 
@@ -175,7 +180,8 @@ public sealed class RelayControl
         }
 
         var expected = board.Expected;
-        var single = board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(boardId, cancellationToken));
+        // Not a relay the board controls by itself: it ignores the OFF, and an "Off" would be logged that never happened.
+        var single = board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(boardId, cancellationToken)).Except(board.State.Unavailable);
 
         // A relay the app just turned on counts as on before its board shows it (a status still on its way, or the next
         // poll): otherwise its "Off" would be neither logged nor expected, and the board's OFF would show as a change
@@ -350,6 +356,15 @@ public sealed class RelayControl
         return (board, board.Capabilities.Relay(relay.Channel));
     }
 
+    // The board's latest state: a relay it controls by itself ignores the command, so none is sent.
+    private static void EnsureAvailable(LiveBoard board, ChannelMask mask)
+    {
+        if (board.State.Unavailable.Overlaps(mask))
+        {
+            throw new RelayUnavailableException();
+        }
+    }
+
     private async Task EnsureNotInGroupAsync(LiveBoard board, ChannelMask mask, CancellationToken cancellationToken)
     {
         if ((await _groups.MemberMaskAsync(board.BoardId, cancellationToken)).Overlaps(mask))
@@ -391,6 +406,28 @@ public sealed class RelayInGroupException : InvalidOperationException
     }
 
     public RelayInGroupException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>
+/// A relay its board controls by itself was to be switched: the board ignores commands for it (e.g. a Waveshare relay in
+/// linkage mode) until a person resets it. Nothing was sent.
+/// </summary>
+public sealed class RelayUnavailableException : InvalidOperationException
+{
+    public RelayUnavailableException()
+        : base("The board controls this relay itself and ignores commands for it; reset it to control it from the app.")
+    {
+    }
+
+    public RelayUnavailableException(string message)
+        : base(message)
+    {
+    }
+
+    public RelayUnavailableException(string message, Exception innerException)
         : base(message, innerException)
     {
     }

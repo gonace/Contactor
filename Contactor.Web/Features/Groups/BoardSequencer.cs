@@ -146,14 +146,23 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         await RunAsync(null, cancellationToken);
     }
 
-    /// <summary>Starts a group, or carries on from where it is. Throws <see cref="BoardNotConnectedException"/> without the board.</summary>
+    /// <summary>
+    /// Starts a group, or carries on from where it is. Throws <see cref="BoardNotConnectedException"/> without the board,
+    /// and <see cref="GroupUnavailableException"/>, sending nothing for it, while the board controls one of its relays by
+    /// itself (<see cref="BoardState.Unavailable"/>): it would ignore that relay's ON, and the group's order with it.
+    /// </summary>
     public async Task StartGroupAsync(int groupId, string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        var unavailable = false;
         await RunAsync(
             (group, steps, state, runtime, now, commands) =>
             {
-                if (group.Id == groupId)
+                if (group.Id == groupId && IsUnavailable(steps))
+                {
+                    unavailable = true;
+                }
+                else if (group.Id == groupId)
                 {
                     // A schedule's OffTime is the end of the run it starts; it gets no auto-off.
                     var maxOnMinutes = actor == EventActors.Schedule ? null : group.MaxOnMinutes;
@@ -163,6 +172,17 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 return null;
             },
             cancellationToken);
+        if (unavailable)
+        {
+            throw new GroupUnavailableException();
+        }
+    }
+
+    // Whether the board controls one of the group's relays by itself now.
+    private bool IsUnavailable(IReadOnlyList<GroupStepInfo> steps)
+    {
+        var unavailable = _board.State.Unavailable;
+        return GroupPlanner.Relays(steps).Any(r => unavailable.Contains(r.Relay.Channel));
     }
 
     /// <summary>Stops a group, with its run-on times. Throws <see cref="BoardNotConnectedException"/> without the board.</summary>
@@ -220,7 +240,13 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
 
                 refusal = null;
-                if (on)
+                if (on && GroupPlanner.Relays(steps).ElementAt(position - 1) is var (step, relay) && _board.State.Unavailable.Contains(relay.Channel))
+                {
+                    // The board ignores its ON: nothing is sent. Named as the group's warning names it: by its step when
+                    // it is the step's only relay, otherwise by its own name.
+                    refusal = _texts["Groups.Refusal.Unavailable", step.Relays.Count == 1 ? step.Name : relay.Name].Value;
+                }
+                else if (on)
                 {
                     refusal = GroupPlanner.MemberOn(steps, state, runtime, position, actor, group.MaxOnMinutes, now, commands, _offOnItsWay) is { } why
                         ? _texts["Groups.Refusal.NeedsOn", why.NeedsOn].Value
@@ -661,4 +687,26 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Relay group step on relay board {BoardId} failed")]
     private partial void LogStepFailed(Exception exception, int boardId);
+}
+
+/// <summary>
+/// A group was to start while its board controls one of its relays by itself and ignores commands for it (e.g. a
+/// Waveshare relay in linkage mode): nothing was sent. A person resets that relay to start the group.
+/// </summary>
+public sealed class GroupUnavailableException : InvalidOperationException
+{
+    public GroupUnavailableException()
+        : base("The board controls a relay of the group itself; reset it to start the group.")
+    {
+    }
+
+    public GroupUnavailableException(string message)
+        : base(message)
+    {
+    }
+
+    public GroupUnavailableException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }

@@ -492,3 +492,28 @@ button:disabled {
         display: none;
     }
 }
+
+/* A relay the board controls by itself: why there is no switch, and a filled "Reset". */
+.in-group.unavailable {
+    background: var(--inactive-bg);
+    border: 1.5px dashed var(--inactive-border);
+}
+
+.in-group .reset {
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 12px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.in-group .reset:disabled {
+    opacity: 0.5;
+    cursor: default;
+}

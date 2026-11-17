@@ -288,11 +288,15 @@ public sealed class GroupPlanText
         return string.Join(_texts["Groups.Plan.Separator"], members.Skip(1).Select((m, i) => _texts["Groups.Plan.Interlock", m.RoleName ?? "", members[i].RoleName ?? ""].Value));
     }
 
-    /// <summary>"Free", "Inactive · free", "Already in Painting", "Has its own schedules" or "Controlled by Door".</summary>
+    /// <summary>
+    /// "Free", "Inactive · free", "Already in Painting", "Has its own schedules", "Controlled by Door" or "Unavailable to
+    /// Contactor".
+    /// </summary>
     public string Note(GroupCandidate relay)
     {
         ArgumentNullException.ThrowIfNull(relay);
         return relay.GroupName is not null ? _texts["Groups.Note.InGroup", relay.GroupName]
+            : relay.Unavailable ? _texts["Groups.Note.Unavailable"]
             : relay.HasSchedules ? _texts["Groups.Note.HasSchedules"]
             : relay.InputName is not null ? _texts["Groups.Note.ControlledBy", relay.InputName]
             : relay.IsActive ? _texts["Groups.Note.Free"]

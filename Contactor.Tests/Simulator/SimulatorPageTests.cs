@@ -47,6 +47,26 @@ public sealed class SimulatorPageTests
     }
 
     [Fact]
+    public async Task Should_ShowAModeSelectPerRelay_ForTheWaveshareB()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        await using var app = new WebApplicationFactory<Contactor.Simulator.Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureLogging(logging => logging.ClearProviders());
+            builder.UseSetting("Simulator:Boards:0:Type", "waveshare-8b");
+            builder.UseSetting("Simulator:Boards:0:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
+
+        Assert.Contains("Relay modes (the board's own rules)", html, StringComparison.Ordinal);
+        Assert.Equal(8, System.Text.RegularExpressions.Regex.Count(html, "<label class=\"mode\"[^>]*>\\s*<span[^>]*>Relay \\d</span>\\s*<select"));
+        Assert.Matches("<span[^>]*>Relay 8</span>\\s*<select", html);
+        Assert.Contains(">linkage</option>", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Should_ShowASliderForTheVm204sAnalogInput_WithItsVolts()
     {
         var port = SimulatedBoardsTests.FreePort();

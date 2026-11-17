@@ -143,6 +143,27 @@
                                     </label>
                                 }
                             }
+                            @if (current.Board is ISimulatedBoardRelayModes relayModes && relayModes.Modes is { Count: > 0 } modes)
+                            {
+                                <fieldset class="timers">
+                                    <legend class="hint">Relay modes (the board's own rules)</legend>
+                                    <div class="mode-relays">
+                                        @for (var relay = 1; relay <= modes.Count; relay++)
+                                        {
+                                            var number = relay;
+                                            <label class="mode" @key="number">
+                                                <span>Relay @number</span>
+                                                <select @onchange="e => SetModeAsync(current, number, e.Value)">
+                                                    @for (var mode = 0; mode < relayModes.ModeNames.Count; mode++)
+                                                    {
+                                                        <option value="@mode.ToString(CultureInfo.InvariantCulture)" selected="@(modes[number - 1] == mode)">@relayModes.ModeNames[mode]</option>
+                                                    }
+                                                </select>
+                                            </label>
+                                        }
+                                    </div>
+                                </fieldset>
+                            }
                             @if (current.Board is ISimulatedBoardTimers timers)
                             {
                                 var active = timers.Timers;
@@ -323,6 +344,14 @@
     {
         var on = board.Board.State.Relays;
         return on.IsEmpty ? "all relays off" : $"on: relay {string.Join(", ", on.Channels)}";
+    }
+
+    // A mode from the page's select: only a number the board has; anything else is ignored.
+    private static Task SetModeAsync(RunningBoard board, int relay, object? value)
+    {
+        return int.TryParse(value as string, NumberStyles.None, CultureInfo.InvariantCulture, out var mode)
+            ? board.SetModeAsync(relay, mode)
+            : Task.CompletedTask;
     }
 
     private static string TimersText(ChannelMask timers, BoardCapabilities capabilities)

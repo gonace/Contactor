@@ -168,8 +168,8 @@ public sealed class SetupHandler
     /// Otherwise, as below: the app turns it on and off, both steps logged. Returns once it is
     /// on; it is turned off again even if the page is closed. Its auto-off is set a little later, so
     /// <see cref="AutoOffService"/> turns it off should the app stop or the board drop before that. Throws
-    /// <see cref="BoardNotConnectedException"/> without a board, and <see cref="RelayInGroupException"/> for a relay in
-    /// a group. An ON that fails may still have switched the relay on: if the board shows it on at the end of the try, it
+    /// <see cref="BoardNotConnectedException"/> without a board, <see cref="RelayInGroupException"/> for a relay in
+    /// a group, and <see cref="RelayUnavailableException"/> for one its board controls by itself. An ON that fails may still have switched the relay on: if the board shows it on at the end of the try, it
     /// is turned off too.
     /// </summary>
     public async Task TryAsync(int relayId, string userEmail, CancellationToken cancellationToken)
@@ -186,7 +186,7 @@ public sealed class SetupHandler
         {
             await _control.TurnOnAsync(relayId, userEmail, cancellationToken);
         }
-        catch (Exception ex) when (ex is not RelayInGroupException and not OperationCanceledException and not ArgumentException)
+        catch (Exception ex) when (ex is not RelayInGroupException and not RelayUnavailableException and not OperationCanceledException and not ArgumentException)
         {
             // Refused, unreadable, no answer, or a failure after ON went out: the board may have switched it on all the
             // same, and as a relay on outside the app it would get the relay's full auto-off, not the try's moment.

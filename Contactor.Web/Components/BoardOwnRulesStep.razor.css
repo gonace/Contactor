@@ -58,3 +58,12 @@ h1:focus {
     line-height: 1.45;
     color: var(--muted);
 }
+
+/* A relay the board controls by itself: it stays unavailable until reset. */
+.rules .note {
+    margin-left: auto;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--muted);
+    text-align: right;
+}

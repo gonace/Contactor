@@ -159,8 +159,8 @@ public sealed class EventText
     }
 
     // A rule of the board's own the app saw, with the board as the subject: "The board has its own timer for relay 3",
-    // "The board's own timer for relay 3 was turned on" (new: while the app watched), "Relay 3 follows input 3 on the
-    // board". With two or more boards, the board's name in place of "the board".
+    // "The board's own timer for relay 3 was turned on" (new: while the app watched), "Relay 3 became unavailable: the
+    // board controls it itself". With two or more boards, the board's name in place of "the board".
     private EventView OwnRuleFound(EventLogEntry entry, string? relayName, string? boardName)
     {
         var isNew = Bool(entry.Details, "new") == true;
@@ -200,7 +200,7 @@ public sealed class EventText
     }
 
     // A person turned off or kept rules of the board's own: "turned off the board's own timers for relays 3 and 5",
-    // "kept Garage's own timer for relay 3".
+    // "kept Garage's own timer for relay 3", "reset relay 3" (a relay the board controlled by itself).
     private string OwnRulesLine(string key, EventLogEntry entry, string? boardName)
     {
         var board = boardName is null ? _texts["Events.OwnRules.TheBoards"].Value : Genitive(boardName);
@@ -223,6 +223,19 @@ public sealed class EventText
 
         var several = relays.Count > 1;
         var distinct = kinds.Distinct().ToList();
+        var numbers = relays.Count == 0
+            ? _texts["Events.Unknown"].Value
+            : relays.Count == 1
+                ? relays[0].ToString(CultureInfo.CurrentCulture)
+                : string.Join(", ", relays.SkipLast(1).Select(r => r.ToString(CultureInfo.CurrentCulture))) + _texts["Events.List.And"] + relays[^1].ToString(CultureInfo.CurrentCulture);
+        var which = _texts[several ? "Events.OwnRules.Relays" : "Events.OwnRules.Relay", numbers].Value;
+
+        // Relays the board controlled by itself, set back to normal: "Erik reset relay 3".
+        if (entry.Action == EventActions.BoardOwnRulesTurnedOff && distinct is [OwnRuleKind.InputLinkage])
+        {
+            return Line("Events.OwnRules.Reset", which);
+        }
+
         var what = distinct switch
         {
             [OwnRuleKind.Timer] => several ? "Events.OwnRules.Kind.Timers" : "Events.OwnRules.Kind.Timer",
@@ -230,12 +243,6 @@ public sealed class EventText
                 => several ? "Events.OwnRules.Kind.InputRules" : "Events.OwnRules.Kind.InputRule",
             _ => several ? "Events.OwnRules.Kind.Rules" : "Events.OwnRules.Kind.Rule",
         };
-        var numbers = relays.Count == 0
-            ? _texts["Events.Unknown"].Value
-            : relays.Count == 1
-                ? relays[0].ToString(CultureInfo.CurrentCulture)
-                : string.Join(", ", relays.SkipLast(1).Select(r => r.ToString(CultureInfo.CurrentCulture))) + _texts["Events.List.And"] + relays[^1].ToString(CultureInfo.CurrentCulture);
-        var which = _texts[several ? "Events.OwnRules.Relays" : "Events.OwnRules.Relay", numbers].Value;
         return Line(key, board, _texts[what], which);
     }
 
@@ -411,6 +418,7 @@ public sealed class EventText
             EventActions.ConnectionLost => (Line("Events.Board.Lost"), null),
             EventActions.ConnectionRestored => (Line("Events.Board.Restored"), null),
             EventActions.BoardTimersDisabled => (Line("Events.Board.TimersOff"), null),
+            // No longer written; kept for events logged before Issue #497.
             EventActions.BoardRelayModesReset => (Line("Events.Board.ModesReset"), null),
             EventActions.BoardRelayModesNotReset => (Line("Events.Board.ModesNotReset"), null),
             EventActions.BoardOwnRulesTurnedOff => (OwnRulesLine("Events.OwnRules.TurnedOff", entry, boardName), null),

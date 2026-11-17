@@ -757,9 +757,11 @@
   </data>
   <data name="Events.Board.ModesNotReset" xml:space="preserve">
     <value>{0} couldn't have its relays set to normal mode, so its inputs may switch them</value>
+    <comment>No longer written; kept for events logged before Issue #497.</comment>
   </data>
   <data name="Events.Board.ModesReset" xml:space="preserve">
     <value>{0} had its relays set to normal mode, so its inputs don't switch them</value>
+    <comment>No longer written; kept for events logged before Issue #497.</comment>
   </data>
   <data name="Events.Board.Removed" xml:space="preserve">
     <value>{0} removed relay board {1} ({2})</value>
@@ -901,8 +903,7 @@
     <comment>{0} is the board ("the board", or its name with two or more boards), {1} the relay's and input's number.</comment>
   </data>
   <data name="Events.OwnRules.Found.Linkage" xml:space="preserve">
-    <value>Relay {1} follows input {1} on {0}</value>
-    <comment>{0} is the board ("the board", or its name), {1} the relay's and input's number.</comment>
+    <value>Relay {1} became unavailable: {0} controls it itself</value>
   </data>
   <data name="Events.OwnRules.Found.Rule" xml:space="preserve">
     <value>{0} has a rule of its own for relay {1}</value>
@@ -921,8 +922,7 @@
     <comment>Turned on while the app watched the board.</comment>
   </data>
   <data name="Events.OwnRules.FoundNew.Linkage" xml:space="preserve">
-    <value>Relay {1} now follows input {1} on {0}</value>
-    <comment>Turned on while the app watched the board.</comment>
+    <value>Relay {1} became unavailable: {0} controls it itself</value>
   </data>
   <data name="Events.OwnRules.FoundNew.Rule" xml:space="preserve">
     <value>{0} own rule for relay {1} was turned on</value>
@@ -972,6 +972,9 @@
   <data name="Events.OwnRules.Relays" xml:space="preserve">
     <value>relays {0}</value>
     <comment>{0} is a list, e.g. "3, 5 and 7".</comment>
+  </data>
+  <data name="Events.OwnRules.Reset" xml:space="preserve">
+    <value>{0} reset {1}</value>
   </data>
   <data name="Events.OwnRules.TheBoards" xml:space="preserve">
     <value>the board's</value>
@@ -1372,6 +1375,9 @@
   <data name="Groups.Note.InactiveFree" xml:space="preserve">
     <value>Inactive · free</value>
   </data>
+  <data name="Groups.Note.Unavailable" xml:space="preserve">
+    <value>Unavailable to Contactor</value>
+  </data>
   <data name="Groups.OneBoard" xml:space="preserve">
     <value>A group's relays are all on one board.</value>
   </data>
@@ -1402,6 +1408,9 @@
   </data>
   <data name="Groups.Refusal.NotInGroup" xml:space="preserve">
     <value>That relay isn't in the group.</value>
+  </data>
+  <data name="Groups.Refusal.Unavailable" xml:space="preserve">
+    <value>{0} is unavailable to Contactor: the board controls it itself.</value>
   </data>
   <data name="Groups.RelayOption" xml:space="preserve">
     <value>Relay {0} · {1}</value>
@@ -1480,6 +1489,9 @@
   </data>
   <data name="Groups.Save.Twice" xml:space="preserve">
     <value>A relay can only be in the group once.</value>
+  </data>
+  <data name="Groups.Save.Unavailable" xml:space="preserve">
+    <value>{0} can't join a group: the board controls it itself.</value>
   </data>
   <data name="Groups.Save.Wait" xml:space="preserve">
     <value>The wait on start is {0}–{1} seconds.</value>
@@ -1724,6 +1736,15 @@
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>They can turn relays on and off without Contactor.</value>
   </data>
+  <data name="OwnRules.Card.Title.Edge" xml:space="preserve">
+    <value>The board's input rules</value>
+  </data>
+  <data name="OwnRules.Card.Title.Input" xml:space="preserve">
+    <value>The board's input rules</value>
+  </data>
+  <data name="OwnRules.Card.Title.Linkage" xml:space="preserve">
+    <value>Relays the board controls itself</value>
+  </data>
   <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
     <value>The board's own rules</value>
     <comment>The card on the board's page, for rules other than timers.</comment>
@@ -1732,6 +1753,18 @@
     <value>The board's own timers</value>
     <comment>The card on the board's page.</comment>
   </data>
+  <data name="OwnRules.Card.Title.Toggle" xml:space="preserve">
+    <value>The board's input rules</value>
+  </data>
+  <data name="OwnRules.CardLine.Edge" xml:space="preserve">
+    <value>Each change of its input flips it</value>
+  </data>
+  <data name="OwnRules.CardLine.Input" xml:space="preserve">
+    <value>The board's input rule can switch it</value>
+  </data>
+  <data name="OwnRules.CardLine.Linkage" xml:space="preserve">
+    <value>The board controls it itself</value>
+  </data>
   <data name="OwnRules.CardLine.Rule" xml:space="preserve">
     <value>The board's own rule can switch it</value>
     <comment>On a relay's card on Relays.</comment>
@@ -1739,6 +1772,9 @@
   <data name="OwnRules.CardLine.Timer" xml:space="preserve">
     <value>The board's timer can switch it</value>
     <comment>On a relay's card on Relays.</comment>
+  </data>
+  <data name="OwnRules.CardLine.Toggle" xml:space="preserve">
+    <value>A pulse on its input can flip it</value>
   </data>
   <data name="OwnRules.Found.Date" xml:space="preserve">
     <value>Found {0} at {1}</value>
@@ -1752,6 +1788,15 @@
     <value>Found yesterday at {0}</value>
     <comment>{0} is a time, e.g. 07:12.</comment>
   </data>
+  <data name="OwnRules.GroupLine.Edge" xml:space="preserve">
+    <value>Each change of an input can flip {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Input" xml:space="preserve">
+    <value>The board's input rules can switch {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Linkage" xml:space="preserve">
+    <value>The board controls {0} itself</value>
+  </data>
   <data name="OwnRules.GroupLine.Rule" xml:space="preserve">
     <value>The board's own rule can switch {0}</value>
     <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
@@ -1760,12 +1805,18 @@
     <value>The board's timer can switch {0}</value>
     <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
   </data>
+  <data name="OwnRules.GroupLine.Toggle" xml:space="preserve">
+    <value>A pulse on an input can flip {0}</value>
+  </data>
   <data name="OwnRules.Keep" xml:space="preserve">
     <value>Keep</value>
     <comment>Stop warning about this rule of the board's own.</comment>
   </data>
   <data name="OwnRules.Keep.Gone" xml:space="preserve">
     <value>The board no longer has that rule.</value>
+  </data>
+  <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
+    <value>The board controls this relay itself, so it can't be kept. Reset it instead.</value>
   </data>
   <data name="OwnRules.KeepAll_One" xml:space="preserve">
     <value>Keep it</value>
@@ -1787,6 +1838,12 @@
     <value>relays {0}</value>
     <comment>{0} is a list of numbers, e.g. "3 and 5" (Relays.List.Last).</comment>
   </data>
+  <data name="OwnRules.Reset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="OwnRules.Reset.Label" xml:space="preserve">
+    <value>Reset relay {0}</value>
+  </data>
   <data name="OwnRules.Step.Intro_One" xml:space="preserve">
     <value>It can turn a relay on and off without Contactor.</value>
     <comment>Under the own rules step's heading, for one rule.</comment>
@@ -1794,6 +1851,9 @@
   <data name="OwnRules.Step.Intro_Other" xml:space="preserve">
     <value>They can turn relays on and off without Contactor.</value>
     <comment>Under the own rules step's heading.</comment>
+  </data>
+  <data name="OwnRules.Step.Later" xml:space="preserve">
+    <value>Not now</value>
   </data>
   <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
     <value>The board still shows it on. Try again, or keep it.</value>
@@ -1809,6 +1869,24 @@
   <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
     <value>We recommend turning them off.</value>
   </data>
+  <data name="OwnRules.Step.Title.Edge_One" xml:space="preserve">
+    <value>This board has an input that flips a relay at each change</value>
+  </data>
+  <data name="OwnRules.Step.Title.Edge_Other" xml:space="preserve">
+    <value>This board has inputs that flip relays at each change</value>
+  </data>
+  <data name="OwnRules.Step.Title.Input_One" xml:space="preserve">
+    <value>This board has an input rule of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Input_Other" xml:space="preserve">
+    <value>This board has input rules of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Linkage_One" xml:space="preserve">
+    <value>This board controls a relay itself</value>
+  </data>
+  <data name="OwnRules.Step.Title.Linkage_Other" xml:space="preserve">
+    <value>This board controls relays itself</value>
+  </data>
   <data name="OwnRules.Step.Title.Rule_One" xml:space="preserve">
     <value>This board has a rule of its own</value>
     <comment>The heading of the own rules step while adding a board.</comment>
@@ -1821,6 +1899,12 @@
   </data>
   <data name="OwnRules.Step.Title.Timer_Other" xml:space="preserve">
     <value>This board has timers of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Toggle_One" xml:space="preserve">
+    <value>This board has an input that flips a relay</value>
+  </data>
+  <data name="OwnRules.Step.Title.Toggle_Other" xml:space="preserve">
+    <value>This board has inputs that flip relays</value>
   </data>
   <data name="OwnRules.TheBoard" xml:space="preserve">
     <value>The board</value>
@@ -1842,6 +1926,48 @@
   <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
     <value>Turn them off</value>
   </data>
+  <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
+    <value>The board controls it itself. Reset it to start the group.</value>
+  </data>
+  <data name="OwnRules.Unavailable.GroupText_Other" xml:space="preserve">
+    <value>The board controls them itself. Reset them to start the group.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Group_One" xml:space="preserve">
+    <value>{0} is unavailable to Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Group_Other" xml:space="preserve">
+    <value>{0} are unavailable to Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Heading" xml:space="preserve">
+    <value>Unavailable to Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Refused" xml:space="preserve">
+    <value>The board controls this relay itself. Reset it to control it from here.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Relay" xml:space="preserve">
+    <value>The board controls this relay itself: it follows input {0}. Reset it to control it from here.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Step" xml:space="preserve">
+    <value>Unavailable to Contactor until it is reset</value>
+  </data>
+  <data name="OwnRules.Warning.Edge_One" xml:space="preserve">
+    <value>{0} has an input that flips a relay at each change</value>
+  </data>
+  <data name="OwnRules.Warning.Edge_Other" xml:space="preserve">
+    <value>{0} has inputs that flip relays at each change</value>
+  </data>
+  <data name="OwnRules.Warning.Input_One" xml:space="preserve">
+    <value>{0} has an input rule of its own</value>
+  </data>
+  <data name="OwnRules.Warning.Input_Other" xml:space="preserve">
+    <value>{0} has input rules of its own</value>
+  </data>
+  <data name="OwnRules.Warning.Linkage_One" xml:space="preserve">
+    <value>{0} controls a relay itself</value>
+  </data>
+  <data name="OwnRules.Warning.Linkage_Other" xml:space="preserve">
+    <value>{0} controls relays itself</value>
+  </data>
   <data name="OwnRules.Warning.Rule_One" xml:space="preserve">
     <value>{0} has a rule of its own</value>
     <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
@@ -1857,6 +1983,12 @@
   <data name="OwnRules.Warning.Timer_Other" xml:space="preserve">
     <value>{0} has timers of its own</value>
     <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Toggle_One" xml:space="preserve">
+    <value>{0} has an input that flips a relay</value>
+  </data>
+  <data name="OwnRules.Warning.Toggle_Other" xml:space="preserve">
+    <value>{0} has inputs that flip relays</value>
   </data>
   <data name="Relays.AllBoardsOff" xml:space="preserve">
     <value>Turn off all boards</value>
