@@ -18,6 +18,10 @@ public sealed class DevantechTraceTextTests
     [InlineData("20 14 FF", "Turn on relay 20 for 25.5 s")]
     [InlineData("20 02", "Command 20")]
     [InlineData("3A", "Command 3A")]
+    [InlineData("32 03", "Ask for analog input 3")]
+    [InlineData("32 10", "Ask for analog input 16")]
+    [InlineData("32", "Command 32")]
+    [InlineData("34", "Ask for the analog inputs")]
     [InlineData("", "An empty command")]
     public void Should_SayWhatACommandAsks(string command, string text)
     {
@@ -64,5 +68,17 @@ public sealed class DevantechTraceTextTests
         Assert.Equal("Relays: 1, 3 and 20 on", DevantechTraceText.Relays(0b101 | (1UL << 19), 20));
         Assert.Equal("Relays: all on", DevantechTraceText.Relays(0b11, 2));
         Assert.Equal("Inputs: all off", DevantechTraceText.Inputs(0, 8));
+    }
+
+    [Fact]
+    public void Should_SayWhatTheAnalogInputsRead_InVolts()
+    {
+        var eth8020 = DevantechModels.Eth8020.Capabilities.Analog!;
+        var eth484 = DevantechModels.Eth484.Capabilities.Analog!;
+
+        Assert.Equal("Analog input 3: 2.50 V (512)", DevantechTraceText.Analog(3, 512, eth8020));
+        Assert.Equal("Analog input 1: 5.00 V (1023)", DevantechTraceText.Analog(1, 1023, eth8020));
+        Assert.Equal("Analog input 4: 3.30 V (1023)", DevantechTraceText.Analog(4, 1023, eth484));
+        Assert.Equal("Analog inputs: 0.00 V, 2.50 V, 5.00 V", DevantechTraceText.AllAnalog([0, 512, 1023], DevantechModels.Eth1610.Capabilities.Analog!));
     }
 }

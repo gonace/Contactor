@@ -323,6 +323,96 @@ public sealed class DevantechSimulatedBoardTests
         Assert.False(simulator.HasLogin);
     }
 
+    [Fact]
+    public async Task Should_AnswerOneAnalogInput_InTwoBytes_HighByteFirst()
+    {
+        // 0x32 and the channel; 2 bytes, high byte first, the value in the lower 10 bits (ETH8020-B p. 17, ETH484-B
+        // p. 18, ETH1610 p. 18).
+        await using var eth8020 = Started(DevantechModels.Eth8020);
+        await eth8020.SetAnalogAsync(1, 512);
+        await eth8020.SetAnalogAsync(8, 1023);
+        using var board = await Board.ConnectAsync(eth8020);
+        Assert.Equal("02 00", await board.AskAsync("32 01", 2));
+        Assert.Equal("00 00", await board.AskAsync("32 02", 2));
+        Assert.Equal("03 FF", await board.AskAsync("32 08", 2));
+
+        await using var eth484 = Started(DevantechModels.Eth484);
+        await eth484.SetAnalogAsync(4, 258);
+        using var other = await Board.ConnectAsync(eth484);
+        Assert.Equal("01 02", await other.AskAsync("32 04", 2));
+
+        // The ETH1610 has 0x32 too.
+        await using var eth1610 = Started(DevantechModels.Eth1610);
+        await eth1610.SetAnalogAsync(16, 1);
+        using var third = await Board.ConnectAsync(eth1610);
+        Assert.Equal("00 01", await third.AskAsync("32 10", 2));
+    }
+
+    [Fact]
+    public async Task Should_AnswerAllSixteenAnalogInputs_InThirtyTwoBytes_OnTheEth1610()
+    {
+        // 0x34: "all 16 inputs … high and then low byte for each with input 1 transmitted first. A total of 32 bytes"
+        // (ETH1610 p. 18).
+        await using var simulator = Started(DevantechModels.Eth1610);
+        await simulator.SetAnalogAsync(1, 1023);
+        await simulator.SetAnalogAsync(2, 256);
+        await simulator.SetAnalogAsync(16, 5);
+        using var board = await Board.ConnectAsync(simulator);
+
+        var answer = await board.AskAsync("34", 32);
+
+        Assert.Equal("03 FF 01 00" + string.Concat(Enumerable.Repeat(" 00 00", 13)) + " 00 05", answer);
+        Assert.Equal([1023, 256, .. Enumerable.Repeat(0, 13), 5], simulator.State.Analog);
+    }
+
+    [Fact]
+    public async Task Should_AnswerNothing_ForAnAnalogInputOrCommandTheModelHasNot_AndCarryOn()
+    {
+        await using var eth484 = Started(DevantechModels.Eth484);
+        using var board = await Board.ConnectAsync(eth484);
+
+        // No input 5 or 0, a 0x32 cut short, and no 0x34 on the ETH484-B: no answer, and the next command as usual.
+        await board.SendAsync("32 05");
+        await Wait.UntilAsync(() => eth484.UnansweredCount == 1);
+        await board.SendAsync("32 00");
+        await Wait.UntilAsync(() => eth484.UnansweredCount == 2);
+        await board.SendAsync("32");
+        await Wait.UntilAsync(() => eth484.UnansweredCount == 3);
+        await board.SendAsync("34");
+        await Wait.UntilAsync(() => eth484.UnansweredCount == 4);
+        Assert.Equal("00 00", await board.AskAsync("32 01", 2));
+
+        // No analog inputs on the ETH008-B.
+        await using var eth008 = Started(DevantechModels.Eth008);
+        using var other = await Board.ConnectAsync(eth008);
+        await other.SendAsync("32 01");
+        await Wait.UntilAsync(() => eth008.UnansweredCount == 1);
+        Assert.Equal("00", await other.AskAsync("24", 1));
+    }
+
+    [Fact]
+    public async Task Should_SetTheAnalogInputs_AndTellOnlyOfAChange()
+    {
+        await using var simulator = new DevantechSimulator(DevantechModels.Eth8020);
+        var changes = 0;
+        simulator.Changed += (_, _) => Interlocked.Increment(ref changes);
+        Assert.Equal(new int[8], simulator.State.Analog);
+
+        await simulator.SetAnalogAsync(8, 1023);
+        await simulator.SetAnalogAsync(8, 1023);
+
+        Assert.Equal(1, Volatile.Read(ref changes));
+        Assert.Equal([0, 0, 0, 0, 0, 0, 0, 1023], simulator.State.Analog);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(0, 1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(9, 1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(1, 1024));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SetAnalogAsync(1, -1));
+
+        await using var eth008 = new DevantechSimulator(DevantechModels.Eth008);
+        Assert.Empty(eth008.State.Analog);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => eth008.SetAnalogAsync(1, 0));
+    }
+
     private static DevantechSimulator Started(BoardModel model, string? password = null, TimeProvider? time = null)
     {
         var simulator = new DevantechSimulator(model, password, NullLogger.Instance) { TimeProvider = time ?? TimeProvider.System };

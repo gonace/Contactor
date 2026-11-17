@@ -11,13 +11,17 @@ namespace Contactor.Boards.Devantech;
 /// on a model with inputs (<see cref="BoardCapabilities.InputCount"/>).
 /// </param>
 /// <param name="HasVolts">Whether the board answers 0x78, its supply voltage; the app doesn't ask, the simulator answers.</param>
-public sealed record DevantechLayout(string Family, byte ModuleId, int OutputBytes, int InputBytes, bool HasVolts);
+/// <param name="AllAnalog">
+/// Whether the board reads all its analog inputs with one 0x34; otherwise one 0x32 per input. Only on a model with
+/// analog inputs (<see cref="BoardCapabilities.Analog"/>).
+/// </param>
+public sealed record DevantechLayout(string Family, byte ModuleId, int OutputBytes, int InputBytes, bool HasVolts, bool AllAnalog = false);
 
 /// <summary>
 /// The Devantech ETH relay boards in the board catalogue. They speak the same binary commands on port 17494 and may have
-/// a TCP password, which is all their login: there is no user name. Only their relays and digital inputs are read; the
-/// analog inputs of the ETH1610, ETH484-B and ETH8020-B are issue #113. The ETH1610's digital inputs aren't read: its
-/// manual doesn't say which bit is which input. None is checked on a real board yet.
+/// a TCP password, which is all their login: there is no user name. The app reads their relays, their digital inputs and
+/// the analog inputs of the ETH1610, ETH484-B and ETH8020-B. The ETH1610's digital inputs aren't read: its manual
+/// doesn't say which bit is which input. None is checked on a real board yet.
 /// </summary>
 public static class DevantechModels
 {
@@ -48,11 +52,13 @@ public static class DevantechModels
     // The ETH484's 2 output bytes: relays 1–4 in the first, its I/O used as outputs in the second. The ETH8020's
     // 4 input bytes: the first three are always 0. The ETH1610's 2 output bytes: relays 1–8 and 9–10; it answers 0x25
     // with 2 bytes for its 16 inputs, in an order its manual doesn't give, so the app doesn't ask (inputs: 0 above).
+    // Only the ETH1610 has 0x34, all analog inputs at once (manual p. 18); the ETH484-B and ETH8020-B are read with a
+    // 0x32 per input.
     private static readonly Dictionary<string, DevantechLayout> Layouts = new(StringComparer.Ordinal)
     {
         [Eth002.Id] = new("ETH002", 18, OutputBytes: 1, InputBytes: 0, HasVolts: true),
         [Eth008.Id] = new("ETH008", 19, OutputBytes: 1, InputBytes: 0, HasVolts: true),
-        [Eth1610.Id] = new("ETH1610", 52, OutputBytes: 2, InputBytes: 2, HasVolts: false),
+        [Eth1610.Id] = new("ETH1610", 52, OutputBytes: 2, InputBytes: 2, HasVolts: false, AllAnalog: true),
         [Eth484.Id] = new("ETH484", 20, OutputBytes: 2, InputBytes: 2, HasVolts: true),
         [Eth8020.Id] = new("ETH8020", 21, OutputBytes: 3, InputBytes: 4, HasVolts: true),
     };

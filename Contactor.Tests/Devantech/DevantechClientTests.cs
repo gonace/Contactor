@@ -30,29 +30,145 @@ public sealed class DevantechClientTests
         // Connected, and the first answer reported: the client waits for the next poll.
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.Equal(new DevantechStatus(0b0010, 0b0100), run.Client.State.Status);
+        Assert.Equal(new DevantechStatus(0b0010, 0b0100, new AnalogReadings([0, 0, 0, 0])), run.Client.State.Status);
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
-        Assert.Equal(["10", "7A", "24", "25"], simulator.ReceivedRequests);
+        Assert.Equal(["10", "7A", "24", "25", "32 01", "32 02", "32 03", "32 04"], simulator.ReceivedRequests);
         Assert.Contains(run.Traces, t => t.Text == "Board: ETH484, hardware 2, firmware 28");
         Assert.Contains(run.Traces, t => t.Text == "No password");
         Assert.Contains(run.Changes, s => s.IsConnected && s.Relays == 0b0010 && s.Inputs == 0b0100);
     }
 
     [Theory]
-    [InlineData("devantech-eth002")]
-    [InlineData("devantech-eth008")]
-    [InlineData("devantech-eth1610")]
-    public async Task Should_AskOnlyForTheRelays_OnAModelWithoutInputs(string id)
+    [InlineData("devantech-eth002", new[] { "10", "7A", "24" })]
+    [InlineData("devantech-eth008", new[] { "10", "7A", "24" })]
+    [InlineData("devantech-eth1610", new[] { "10", "7A", "24", "34" })]
+    public async Task Should_AskOnlyForTheRelays_OnAModelWithoutInputs(string id, string[] requests)
     {
-        // The ETH1610 answers 0x25, but its manual doesn't say which bit is which input: the app reads none.
+        // The ETH1610 answers 0x25, but its manual doesn't say which bit is which input: the app reads none. It reads
+        // its analog inputs, all at once.
         var model = DevantechModels.All.Single(m => m.Id == id);
         await using var simulator = Started(model);
         await using var run = ClientRun.Start(simulator.Port, model);
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Equal(["10", "7A", "24"], simulator.ReceivedRequests);
+        Assert.Equal(requests, simulator.ReceivedRequests);
         Assert.Equal(0UL, run.Client.State.Inputs);
+    }
+
+    [Theory]
+    [InlineData("devantech-eth484", new[] { "32 01", "32 02", "32 03", "32 04" })]
+    [InlineData("devantech-eth8020", new[] { "32 01", "32 02", "32 03", "32 04", "32 05", "32 06", "32 07", "32 08" })]
+    [InlineData("devantech-eth1610", new[] { "34" })]
+    public async Task Should_ReadTheAnalogInputs_OnEveryPoll_AsEachModelAnswers(string id, string[] analogRequests)
+    {
+        var model = DevantechModels.All.Single(m => m.Id == id);
+        var count = model.Capabilities.AnalogInputCount;
+        await using var simulator = Started(model);
+        await simulator.SetAnalogAsync(1, 1023);
+        await simulator.SetAnalogAsync(count, 512);
+        await using var run = ClientRun.Start(simulator.Port, model);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        int?[] expected = [1023, .. Enumerable.Repeat<int?>(0, count - 2), 512];
+        Assert.Equal(new AnalogReadings(expected), run.Client.State.Status!.Analog);
+        Assert.Equal(analogRequests, simulator.ReceivedRequests.Where(r => r.StartsWith('3')));
+        Assert.Contains(run.Traces, t => t.Direction == BoardTraceDirection.Received && t.Text.StartsWith("Analog input", StringComparison.Ordinal) && !t.IsRoutine);
+
+        // Every poll reads them again; the same values are routine.
+        await run.PollAsync();
+        Assert.Equal(analogRequests.Length * 2, simulator.ReceivedRequests.Count(r => r.StartsWith('3')));
+        Assert.Contains(run.Traces, t => t.Direction == BoardTraceDirection.Received && t.Text.StartsWith("Analog input", StringComparison.Ordinal) && t.IsRoutine);
+    }
+
+    [Theory]
+    [InlineData("devantech-eth002")]
+    [InlineData("devantech-eth008")]
+    public async Task Should_HaveNoAnalogReadings_OnAModelWithoutAnalogInputs(string id)
+    {
+        var model = DevantechModels.All.Single(m => m.Id == id);
+        await using var simulator = Started(model);
+        await using var run = ClientRun.Start(simulator.Port, model);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Null(run.Client.State.Status!.Analog);
+        Assert.Null(DevantechBoard.ToBoardState(run.Client.State).Analog);
+    }
+
+    [Fact]
+    public async Task Should_RaiseAnalogChanged_NeverStateChanged_ForAnAnalogChangeAlone()
+    {
+        await using var simulator = Started(DevantechModels.Eth8020);
+        await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth8020);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var reported = run.Changes.Count;
+
+        // Nothing changed: neither.
+        await run.PollAsync();
+        Assert.Equal(reported, run.Changes.Count);
+        Assert.Empty(run.AnalogChanges);
+
+        // The analog value alone: an analog change, and nothing for the safety services.
+        await simulator.SetAnalogAsync(3, 700);
+        await run.PollAsync();
+        Assert.Equal(reported, run.Changes.Count);
+        var change = Assert.Single(run.AnalogChanges);
+        Assert.Equal(700, change.Status!.Analog!.Input(3));
+        Assert.True(change.IsConnected);
+
+        // With a relay: a state change, which carries the new value too, and no analog change of its own.
+        await simulator.SetAnalogAsync(3, 800);
+        await simulator.SwitchRelayAsync(1, true);
+        await run.PollAsync();
+        Assert.Equal(reported + 1, run.Changes.Count);
+        Assert.Equal(800, run.Changes[^1].Status!.Analog!.Input(3));
+        Assert.Single(run.AnalogChanges);
+    }
+
+    [Theory]
+    [InlineData("devantech-eth484", "Unreadable answer: The board answered 04 00 to analog input 1.")]
+    [InlineData("devantech-eth1610", "Unreadable answer: The board answered a value above 1023 to the analog inputs.")]
+    public async Task Should_FailThePoll_OnAnAnalogValueWithItsUpperBitsSet(string id, string trace)
+    {
+        // 04 00 is 1024: the manuals say the upper 6 bits are 0, so the answer can't be trusted.
+        var model = DevantechModels.All.Single(m => m.Id == id);
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [DevantechModels.Layout(model).ModuleId, 1, 1],
+            [0x7A] => [0xFF],
+            [0x24] => [0, 0],
+            [0x25] => [0, 0],
+            [0x32, _] => [0x04, 0x00],
+            [0x34] => [.. new byte[30], 0x04, 0x00],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, model);
+
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == trace && t.IsError));
+
+        Assert.False(run.Client.State.IsConnected);
+        Assert.DoesNotContain(run.Changes, c => c.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_CountAShortAnswerToTheAnalogInputs_AsNoAnswer()
+    {
+        // 30 of the 32 bytes: the client waits for the rest, and gives up.
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [52, 1, 1],
+            [0x7A] => [0xFF],
+            [0x24] => [0, 0],
+            [0x34] => new byte[30],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth1610);
+        await Wait.UntilAsync(() => board.Received.Contains("34") && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+
+        run.Time.Advance(DevantechClient.RequestTimeout);
+
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "No answer: The Devantech board did not answer within 5 s."));
+        Assert.False(run.Client.State.IsConnected);
     }
 
     [Fact]
@@ -88,7 +204,7 @@ public sealed class DevantechClientTests
 
         // The manual's example (p. 17): output 2 for 5 s.
         Assert.Equal(0b10UL, await run.Client.PulseAsync(0b10, TimeSpan.FromSeconds(5), Cancel));
-        Assert.Equal(["10", "7A", "24", "7A", "20 0A 00", "24", "7A", "20 02 32", "24"], simulator.ReceivedRequests);
+        Assert.Equal(["10", "7A", "24", "34", "7A", "20 0A 00", "24", "34", "7A", "20 02 32", "24", "34"], simulator.ReceivedRequests);
         Assert.Equal((1UL << 9) | 0b10, run.Client.State.Relays);
         boardTime.Advance(TimeSpan.FromSeconds(5));
         await run.PollAsync();
@@ -758,6 +874,7 @@ public sealed class DevantechClientTests
                 [0x10] => [52, 1, 1],
                 [0x7A] => [0xFF],
                 [0x24] when Interlocked.Increment(ref reads) == 2 => [0],
+                [0x34] => new byte[32],
                 _ => [0, 0],
             },
             closeAfter: request => request is [0x24] && Volatile.Read(ref reads) == 2);
@@ -767,7 +884,7 @@ public sealed class DevantechClientTests
         run.Time.Advance(run.PollInterval);
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.Equal(["10", "7A", "24", "24"], board.Received);
+        Assert.Equal(["10", "7A", "24", "34", "24"], board.Received);
         Assert.Equal(1, board.Connections);
         Assert.True(run.Client.State.IsConnected);
     }
@@ -949,6 +1066,7 @@ public sealed class DevantechClientTests
         private readonly Task _task;
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<DevantechState> _changes = [];
+        private readonly List<DevantechState> _analogChanges = [];
 
         private ClientRun(DevantechClient client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
@@ -958,6 +1076,7 @@ public sealed class DevantechClientTests
             _cts = cts;
             client.Traced += (_, entry) => Add(_traces, entry);
             client.StateChanged += (_, state) => Add(_changes, state);
+            client.AnalogChanged += (_, state) => Add(_analogChanges, state);
             _task = client.RunAsync(cts.Token);
         }
 
@@ -971,6 +1090,8 @@ public sealed class DevantechClientTests
         public List<BoardTraceEntry> Traces => Copy(_traces);
 
         public List<DevantechState> Changes => Copy(_changes);
+
+        public List<DevantechState> AnalogChanges => Copy(_analogChanges);
 
         public static ClientRun Start(int port, BoardModel model, int pollSeconds = 2, string password = "", ManualTimeProvider? time = null)
         {

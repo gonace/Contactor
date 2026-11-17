@@ -8,7 +8,8 @@ namespace Contactor.Boards.Devantech;
 
 /// <summary>
 /// Talks to a Devantech ETH relay board with its binary TCP commands (<see cref="DevantechApi"/>): polls its relays
-/// (0x24) and inputs (0x25) through <see cref="BoardPoller{TReading}"/> and switches relays one at a time (0x20, 0x21).
+/// (0x24), inputs (0x25) and analog inputs (0x32 per input, or 0x34 for all on the ETH1610) through
+/// <see cref="BoardPoller{TReading}"/> and switches relays one at a time (0x20, 0x21).
 /// One TCP connection and one command at a time (the poller sees to it), each command in one write, each waiting for
 /// its answer of a fixed length within <see cref="RequestTimeout"/>. Every new connection first checks that the board
 /// is the chosen model (0x10) and unlocks it with the password when it is locked (0x7A, 0x79); a command checks the lock
@@ -77,7 +78,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         _endpoint = new BoardEndpoint(settings.Host, settings.Port);
         _timeProvider = timeProvider;
         _logger = logger;
-        _poller = new BoardPoller<DevantechStatus>(this, timeProvider)
+        _poller = new BoardPoller<DevantechStatus>(this, timeProvider, DevantechStatus.SwitchesComparer)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
         };
@@ -88,6 +89,12 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     /// changed nothing. On the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<DevantechState>? StateChanged;
+
+    /// <summary>
+    /// Raised when a poll or command finds only the analog values changed: the relays, the inputs and the connection
+    /// are as before, so <see cref="StateChanged"/> isn't raised. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<DevantechState>? AnalogChanged;
 
     /// <summary>Every command and answer and every connection step, in plain words. Handlers must be quick.</summary>
     public event EventHandler<BoardTraceEntry>? Traced;
@@ -232,27 +239,13 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             _logger.Connected(endpoint.Host, endpoint.Port);
         }
 
-        if (StateChanged is not { } handlers)
-        {
-            return;
-        }
+        Raise(StateChanged, state);
+    }
 
-        var devantechState = new DevantechState(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
-
-        // Each subscriber on its own: one that fails must not keep the state from the others.
-        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<DevantechState>>())
-        {
-            try
-            {
-                handler(this, devantechState);
-            }
-#pragma warning disable CA1031 // A subscriber's bug must not take down the poller or the other subscribers.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                _logger.SubscriberFailed(ex);
-            }
-        }
+    void IPolledBoard<DevantechStatus>.OnReadingChanged(PolledState<DevantechStatus> state)
+    {
+        // The comparer leaves out only the analog values: that is what changed.
+        Raise(AnalogChanged, state);
     }
 
     void IPolledBoard<DevantechStatus>.OnStep(BoardPollStep kind, string? detail)
@@ -405,9 +398,42 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             Trace(BoardTraceDirection.Received, DevantechTraceText.Inputs(inputs, inputCount), DevantechProtocol.Hex(answer), isRoutine: last?.Inputs == inputs);
         }
 
-        var status = new DevantechStatus(relays, inputs);
+        AnalogReadings? analog = null;
+        if (_model.Capabilities.Analog is { } ability)
+        {
+            analog = await ReadAnalogAsync(ability, last?.Analog, cancellationToken).ConfigureAwait(false);
+        }
+
+        var status = new DevantechStatus(relays, inputs, analog);
         Volatile.Write(ref _lastTraced, status);
         return status;
+    }
+
+    // One 0x34 for all inputs on the ETH1610, one 0x32 per input on the others. An answer with a value the board can't
+    // give is unreadable: it fails the poll, as any other answer that can't be read, and closes the connection.
+    private async Task<AnalogReadings> ReadAnalogAsync(AnalogAbility ability, AnalogReadings? last, CancellationToken cancellationToken)
+    {
+        if (_layout.AllAnalog)
+        {
+            var answer = await ExchangeAsync(DevantechProtocol.GetAllAnalog(ability.Count), routine: true, cancellationToken).ConfigureAwait(false);
+            var values = DevantechProtocol.AnalogValues(answer, ability.Count)
+                ?? throw Unreadable("The board answered a value above 1023 to the analog inputs.", answer);
+            var readings = new AnalogReadings(values.Select(v => (int?)v));
+            Trace(BoardTraceDirection.Received, DevantechTraceText.AllAnalog(values, ability), DevantechProtocol.Hex(answer), isRoutine: last == readings);
+            return readings;
+        }
+
+        var counts = new int?[ability.Count];
+        for (var input = 1; input <= ability.Count; input++)
+        {
+            var answer = await ExchangeAsync(DevantechProtocol.GetAnalog(input), routine: true, cancellationToken).ConfigureAwait(false);
+            var value = DevantechProtocol.AnalogValue(answer)
+                ?? throw Unreadable(string.Create(CultureInfo.InvariantCulture, $"The board answered {DevantechProtocol.Hex(answer)} to analog input {input}."), answer);
+            Trace(BoardTraceDirection.Received, DevantechTraceText.Analog(input, value, ability), DevantechProtocol.Hex(answer), isRoutine: last?.Input(input) == value);
+            counts[input - 1] = value;
+        }
+
+        return new AnalogReadings(counts);
     }
 
     // Asks whether the board is locked, and sends the password when it is. Throws DevantechAccessDeniedException when
@@ -684,6 +710,30 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     private void ForgetLastStatus()
     {
         Volatile.Write(ref _lastTraced, null);
+    }
+
+    // Each subscriber on its own: one that fails must not keep the state from the others.
+    private void Raise(EventHandler<DevantechState>? handlers, PolledState<DevantechStatus> state)
+    {
+        if (handlers is null)
+        {
+            return;
+        }
+
+        var devantechState = new DevantechState(state.IsConnected, state.Reading, state.LastContactUtc, state.Problem);
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<DevantechState>>())
+        {
+            try
+            {
+                handler(this, devantechState);
+            }
+#pragma warning disable CA1031 // A subscriber's bug must not take down the poller or the other subscribers.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _logger.SubscriberFailed(ex);
+            }
+        }
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes = null, bool isError = false, bool isRoutine = false)

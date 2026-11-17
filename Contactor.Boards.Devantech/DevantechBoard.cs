@@ -3,8 +3,9 @@ using Microsoft.Extensions.Logging;
 namespace Contactor.Boards.Devantech;
 
 /// <summary>
-/// A Devantech ETH relay board as an <see cref="IRelayBoard"/>: its model's relays and inputs, which it never
-/// reports by itself, so <see cref="DevantechClient"/> polls it. This only translates the client's state and commands.
+/// A Devantech ETH relay board as an <see cref="IRelayBoard"/>: its model's relays, inputs and analog inputs, which it
+/// never reports by itself, so <see cref="DevantechClient"/> polls it. This only translates the client's state and
+/// commands. A change in the analog values alone comes as <see cref="AnalogChanged"/>.
 /// </summary>
 public sealed class DevantechBoard : IRelayBoard
 {
@@ -18,9 +19,12 @@ public sealed class DevantechBoard : IRelayBoard
         _client = client;
         _logger = logger;
         _client.StateChanged += OnStateChanged;
+        _client.AnalogChanged += OnAnalogChanged;
     }
 
     public event EventHandler<BoardState>? StateChanged;
+
+    public event EventHandler<BoardState>? AnalogChanged;
 
     public BoardCapabilities Capabilities => _client.Model.Capabilities;
 
@@ -55,11 +59,14 @@ public sealed class DevantechBoard : IRelayBoard
         return Task.CompletedTask;
     }
 
-    /// <summary>The board's state as a <see cref="BoardState"/>.</summary>
+    /// <summary>
+    /// The board's state as a <see cref="BoardState"/>. Its analog readings are null on a model without analog inputs
+    /// and before the first answer; the client reads only values the board can give, 0 to 1023.
+    /// </summary>
     public static BoardState ToBoardState(DevantechState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem, state.Status?.Analog);
     }
 
     // Only relays the model has; throws before anything is sent.
@@ -73,10 +80,20 @@ public sealed class DevantechBoard : IRelayBoard
         return relays.Bits;
     }
 
-    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
     private void OnStateChanged(object? sender, DevantechState state)
     {
-        if (StateChanged is not { } handlers)
+        Raise(StateChanged, state);
+    }
+
+    private void OnAnalogChanged(object? sender, DevantechState state)
+    {
+        Raise(AnalogChanged, state);
+    }
+
+    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
+    private void Raise(EventHandler<BoardState>? handlers, DevantechState state)
+    {
+        if (handlers is null)
         {
             return;
         }

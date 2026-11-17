@@ -26,6 +26,22 @@ public static class DevantechApi
     /// <summary>0x25: the digital inputs, high byte first; only models with inputs answer it.</summary>
     public const byte GetInputs = 0x25;
 
+    /// <summary>
+    /// 0x32: one analog input, then its number (1-based). The answer is 2 bytes, high byte first, the 10-bit value in
+    /// the lower 10 bits and the upper 6 bits 0. On the ETH484-B it is the 10-bit value scaled to 3.3 V, as on the
+    /// original ETH484.
+    /// </summary>
+    public const byte GetAnalog = 0x32;
+
+    /// <summary>
+    /// 0x34: all analog inputs at once, only on the ETH1610: 2 bytes per input as for <see cref="GetAnalog"/>, input 1
+    /// first, 32 bytes for its 16.
+    /// </summary>
+    public const byte GetAllAnalog = 0x34;
+
+    /// <summary>The highest value of <see cref="GetAnalog"/> and <see cref="GetAllAnalog"/>: 10 bits.</summary>
+    public const int AnalogMaxCounts = 1023;
+
     /// <summary>0x79: the TCP password, its ASCII bytes after the command, with no length and no end byte.</summary>
     public const byte Password = 0x79;
 
