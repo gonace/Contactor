@@ -195,7 +195,11 @@ public sealed class Vm201Client
         return SendAsync(Vm201PacketCodec.Encode(Vm201Command.StatusRequest), cancellationToken);
     }
 
-    public Task DisableBoardTimersAsync(byte mask, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Turns off the board's own timer programs for the channels in <paramref name="mask"/> (CMD_TMR_DIS); the others
+    /// are left as they are.
+    /// </summary>
+    public Task TurnOffTimersAsync(byte mask, CancellationToken cancellationToken = default)
     {
         return SendAsync(Vm201PacketCodec.Encode(Vm201Command.TimerDisable, mask), cancellationToken);
     }

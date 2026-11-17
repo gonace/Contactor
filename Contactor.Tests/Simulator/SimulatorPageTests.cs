@@ -36,7 +36,8 @@ public sealed class SimulatorPageTests
         Assert.Contains("from the settings", html, StringComparison.Ordinal);
         Assert.Contains($"Nothing yet. Set the app's board to 127.0.0.1, port {port}, user john.", html, StringComparison.Ordinal);
         Assert.Contains("RELAY 8", html, StringComparison.Ordinal);
-        Assert.Contains("Board's own timers on", html, StringComparison.Ordinal);
+        Assert.Contains("Board's own timers: none on", html, StringComparison.Ordinal);
+        Assert.Matches("<input type=\"checkbox\"[^>]*/?>\\s*Relay 8\\s*</label>", html);
         Assert.DoesNotContain("secret", html, StringComparison.Ordinal);
 
         // A new board's login in two fields, so either may hold ':'.

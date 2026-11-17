@@ -357,6 +357,24 @@ h2 {
     accent-color: var(--accent);
 }
 
+.timers {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+
+.timers legend {
+    padding: 0;
+    margin-bottom: 2px;
+}
+
+.timer-relays {
+    display: grid;
+    grid-template-columns: repeat(var(--columns, 4), auto);
+    column-gap: 12px;
+}
+
 .analog {
     display: grid;
     grid-template-columns: auto minmax(120px, 1fr) auto;

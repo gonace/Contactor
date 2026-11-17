@@ -24,10 +24,174 @@ public sealed class Vm201BoardTests
     {
         var state = Vm201Board.ToBoardState(new Vm201State(true, 0b1000_0101, 0b0000_0010, true, At));
 
-        Assert.Equal(new BoardState(true, ChannelMask.Of([1, 3, 8]), ChannelMask.Of(1), At), state);
+        Assert.Equal(new BoardState(true, ChannelMask.Of([1, 3, 8]), ChannelMask.Of(1), At, OwnRules: new OwnRules([new OwnRule(2, OwnRuleKind.Timer)])), state);
         Assert.True(state.IsOn(8));
         Assert.False(state.IsOn(2));
         Assert.Equal(ChannelMask.None, Vm201Board.ToBoardState(Vm201State.Initial).Inputs);
+    }
+
+    [Fact]
+    public void Should_ReportATimerRulePerTimerBit_InRelayOrder()
+    {
+        var state = Vm201Board.ToBoardState(new Vm201State(true, 0, 0b1001_0100, false, At));
+
+        Assert.Equal(
+            new OwnRules([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(5, OwnRuleKind.Timer), new OwnRule(8, OwnRuleKind.Timer)]),
+            state.OwnRules);
+        Assert.Equal(OwnRules.Empty, Vm201Board.ToBoardState(new Vm201State(true, 0xFF, 0, true, At)).OwnRules);
+        Assert.Equal(ChannelMask.FirstN(8), Vm201Board.ToBoardState(new Vm201State(true, 0, 0xFF, false, At)).OwnRules?.Relays);
+    }
+
+    [Fact]
+    public void Should_ReportNoRules_BeforeTheFirstAnswer()
+    {
+        Assert.Null(Vm201Board.ToBoardState(Vm201State.Initial).OwnRules);
+        Assert.Null(Vm201Board.ToBoardState(Vm201State.Initial with { TimerMask = 0x01 }).OwnRules);
+    }
+
+    [Fact]
+    public void Should_KeepTheRules_WhileDisconnected()
+    {
+        var state = Vm201Board.ToBoardState(new Vm201State(false, 0, 0b0000_0001, false, At));
+
+        Assert.False(state.IsConnected);
+        Assert.Equal(new OwnRules([new OwnRule(1, OwnRuleKind.Timer)]), state.OwnRules);
+    }
+
+    [Fact]
+    public async Task Should_KeepTheRules_WhenTheConnectionIsLost()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x10);
+        var client = CreateClient(simulator.Port);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.State.IsConnected);
+        Assert.Equal(new OwnRules([new OwnRule(5, OwnRuleKind.Timer)]), board.State.OwnRules);
+
+        simulator.RejectConnections = true;
+        simulator.DropConnections();
+        await WaitUntilAsync(() => !board.State.IsConnected);
+
+        Assert.Equal(new OwnRules([new OwnRule(5, OwnRuleKind.Timer)]), board.State.OwnRules);
+        await stop.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
+    // Another board at a new address: the old board's timers are not the new one's, so nothing is known until it answers.
+    [Fact]
+    public async Task Should_ForgetTheRules_AtANewAddress()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x10);
+        await using var second = new Vm201Simulator();
+        second.Start();
+        second.RejectConnections = true;
+        var client = CreateClient(simulator.Port);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.State.OwnRules is not null);
+
+        client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+
+        Assert.Null(board.State.OwnRules);
+        await stop.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
+    // The packet for relays 3 and 5, byte for byte as Contactor.Boards.Velleman/README.md gives it.
+    [Fact]
+    public void Should_EncodeTheTimerTurnOff_AsTheReadmeGivesIt()
+    {
+        Assert.Equal(new byte[] { 0x02, 0x06, 0x44, 0x14, 0xA0, 0x03 }, Vm201PacketCodec.Encode(Vm201Command.TimerDisable, 0x14));
+    }
+
+    [Fact]
+    public async Task Should_TurnOffOnlyTheTimersAsked_AndReportTheNewRules()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0b0011_0101);
+        await simulator.SetOutputsAsync(0b0000_0110);
+        var client = CreateClient(simulator.Port);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
+        BoardState? reported = null;
+        board.StateChanged += (_, state) => reported = state;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.State.IsConnected);
+        var asked = new[] { new OwnRule(5, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer) };
+
+        var taken = await board.TurnOffOwnRulesAsync(asked, Cancel);
+
+        Assert.Equal([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(5, OwnRuleKind.Timer)], taken);
+        // The command is on its way when the call returns; the simulator takes it a moment later.
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.TimerDisable));
+        var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
+        Assert.Equal(new byte[] { 0x14 }, sent.Data.ToArray());
+        await WaitUntilAsync(() => reported?.OwnRules?.Count == 2);
+        Assert.Equal(new OwnRules([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(6, OwnRuleKind.Timer)]), board.State.OwnRules);
+        Assert.Equal(ChannelMask.Of([2, 3]), board.State.Relays);
+        Assert.Equal(0b0010_0001, simulator.TimerMask);
+        await stop.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
+    [Theory]
+    [InlineData(9, OwnRuleKind.Timer)]
+    [InlineData(64, OwnRuleKind.Timer)]
+    [InlineData(1, OwnRuleKind.InputLinkage)]
+    [InlineData(2, OwnRuleKind.InputToggle)]
+    [InlineData(3, OwnRuleKind.InputEdge)]
+    public async Task Should_RefuseARuleTheBoardDoesntHave_BeforeSendingAnything(int relay, OwnRuleKind kind)
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0xFF);
+        var client = CreateClient(simulator.Port);
+        var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await WaitUntilAsync(() => board.State.IsConnected);
+
+        // With a rule the board has first, so nothing of the list may go.
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => board.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(relay, kind)], Cancel));
+
+        await board.RefreshAsync(Cancel);
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.StatusRequest));
+        Assert.DoesNotContain(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
+        Assert.Equal(0xFF, simulator.TimerMask);
+        await stop.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(10), Cancel);
+    }
+
+    [Fact]
+    public async Task Should_SendNothing_ForNoRules()
+    {
+        // No board at all: had it sent anything, it would have thrown BoardNotConnectedException.
+        var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
+
+        Assert.Empty(await board.TurnOffOwnRulesAsync([], Cancel));
+    }
+
+    [Fact]
+    public async Task Should_RefuseANullRule()
+    {
+        var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => board.TurnOffOwnRulesAsync(null!, Cancel));
+        await Assert.ThrowsAsync<ArgumentException>(() => board.TurnOffOwnRulesAsync([null!], Cancel));
+    }
+
+    [Fact]
+    public void Should_StateItReadsAndTurnsOffItsRules()
+    {
+        Assert.Equal(OwnRulesAbility.ReadsAndTurnsOff, Vm201Board.Vm201Capabilities.OwnRulesOrCantTell);
     }
 
     [Fact]
@@ -148,6 +312,7 @@ public sealed class Vm201BoardTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOnAsync(ChannelMask.Of(1), Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.RefreshAsync(Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromSeconds(2), Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer)], Cancel));
     }
 
     private static Vm201Client CreateClient(int port)

@@ -126,16 +126,21 @@ public sealed class RunningBoard : IAsyncDisposable
         return Board.SetAnalogAsync(input, counts);
     }
 
-    /// <summary>Turns the board's own timers on for every relay, or off. Nothing for a board without timers.</summary>
-    public Task SetTimersAsync(bool on)
+    /// <summary>
+    /// Turns one relay's own timer on or off, as the board's own web page would; the others stay as they are. Nothing for
+    /// a board without timers, or for a relay it doesn't have: the page offers only those.
+    /// </summary>
+    public Task SetTimerAsync(int relay, bool turnOn)
     {
-        if (Board is not ISimulatedBoardTimers timers)
+        if (Board is not ISimulatedBoardTimers timers || relay < 1 || relay > Board.Model.Capabilities.RelayCount)
         {
             return Task.CompletedTask;
         }
 
-        Add(TrafficKind.AtBoard, on ? "The board's own timers turned on here" : "The board's own timers turned off here");
-        return timers.SetTimersAsync(on ? Board.Model.Capabilities.AllRelays : ChannelMask.None);
+        Add(TrafficKind.AtBoard, string.Create(
+            CultureInfo.InvariantCulture,
+            $"The board's own timer for relay {relay} turned {(turnOn ? "on" : "off")} here"));
+        return timers.SetTimerAsync(relay, turnOn);
     }
 
     public void DropConnections()

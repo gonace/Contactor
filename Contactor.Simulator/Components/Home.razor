@@ -145,10 +145,20 @@
                             }
                             @if (current.Board is ISimulatedBoardTimers timers)
                             {
-                                <label class="check">
-                                    <input type="checkbox" checked="@(!timers.Timers.IsEmpty)" @onchange="e => current.SetTimersAsync(e.Value is true)" />
-                                    Board's own timers on@(timers.Timers.IsEmpty ? "" : $" ({TimersText(timers.Timers, capabilities)})")
-                                </label>
+                                var active = timers.Timers;
+                                <fieldset class="timers">
+                                    <legend class="hint">Board's own timers: @TimersText(active, capabilities)</legend>
+                                    <div class="timer-relays" style="--columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
+                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                        {
+                                            var number = relay;
+                                            <label class="check" @key="number">
+                                                <input type="checkbox" checked="@active.Contains(number)" @onchange="e => current.SetTimerAsync(number, e.Value is true)" />
+                                                Relay @number
+                                            </label>
+                                        }
+                                    </div>
+                                </fieldset>
                             }
                         </div>
                     </div>
@@ -317,6 +327,11 @@
 
     private static string TimersText(ChannelMask timers, BoardCapabilities capabilities)
     {
+        if (timers.IsEmpty)
+        {
+            return "none on";
+        }
+
         if (timers == capabilities.AllRelays)
         {
             return "all relays";
