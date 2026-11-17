@@ -338,6 +338,35 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     // or none when that read failed, and puts the relays the board took in <paramref name="taken"/>.
     private async Task<CommandReading<DevantechStatus>> SwitchEachAsync(ulong mask, Func<int, DevantechRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
     {
+        try
+        {
+            await SwitchAsync(mask, requestFor, taken, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The command failed before its read: the analog result a cancelled poll left for that read goes too, so
+            // the next command's read can't count it.
+            _pendingAnalog = null;
+            throw;
+        }
+
+        try
+        {
+            return new CommandReading<DevantechStatus>(await ReadStatusAsync(readAnalog: false, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (IsNotTaken(ex) || IsNoAnswer(ex))
+        {
+            // Never a state the board didn't read: a group would take a made-up "on" as confirmation. The command
+            // doesn't fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last state
+            // read and reads the board at once, which counts as a poll of its own if it fails too.
+            return default;
+        }
+    }
+
+    // Under the poller's lock: unlocks the board and switches each relay of the mask, and puts the relays the board took
+    // in <paramref name="taken"/>. Throws when not one was taken.
+    private async Task SwitchAsync(ulong mask, Func<int, DevantechRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
+    {
         // The board locks again after 30 s without a command, so a command checks first. A board it can't unlock
         // switches nothing: that throws before any relay is sent.
         await UnlockAsync(cancellationToken).ConfigureAwait(false);
@@ -386,18 +415,6 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         if (taken.Value == 0)
         {
             throw unreadable ? new DevantechRefusedException(refusal!) : new BoardRefusedException(refusal!);
-        }
-
-        try
-        {
-            return new CommandReading<DevantechStatus>(await ReadStatusAsync(readAnalog: false, cancellationToken).ConfigureAwait(false));
-        }
-        catch (Exception ex) when (IsNotTaken(ex) || IsNoAnswer(ex))
-        {
-            // Never a state the board didn't read: a group would take a made-up "on" as confirmation. The command
-            // doesn't fail (what was taken was sent), and it isn't an answered poll: the poller keeps the last state
-            // read and reads the board at once, which counts as a poll of its own if it fails too.
-            return default;
         }
     }
 

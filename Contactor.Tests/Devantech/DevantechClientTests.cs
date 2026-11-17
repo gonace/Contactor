@@ -401,6 +401,49 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
+    public async Task Should_DropTheCancelledPollsAnalogResult_WhenTheCommandThatTookItsPlaceFailsBeforeItsRead()
+    {
+        // The second poll's 0x34 gets no answer; command A takes the poll's place while it waits for 0x24, and is
+        // cancelled while its 0x20 waits. A's read never came, so command B's read is not the place to blame the analog
+        // inputs: B shows what the first poll read.
+        var analog = 0;
+        var reads = 0;
+        var switches = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [52, 1, 1],
+            [0x7A] => [0xFF],
+            [0x34] when Interlocked.Increment(ref analog) == 1 => [0, 0, 0x01, 0x2C, .. new byte[28]],
+            [0x34] => [],
+            [0x24] when Interlocked.Increment(ref reads) == 2 => [],
+            [0x24] => [0b0010, 0],
+            [0x20, _, _] when Interlocked.Increment(ref switches) == 1 => [],
+            [0x20, _, _] => [0],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth1610);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(300, run.Client.State.Status!.Analog!.Input(2));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "34") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+
+        using var cancelA = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var commandA = run.Client.TurnOnAsync(1, cancelA.Token);
+        // A holds the lock once its relay went out.
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "20 01 00") == 1);
+        await cancelA.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => commandA);
+
+        Assert.Equal(2UL, await run.Client.TurnOnAsync(2, Cancel));
+        Assert.Equal(0b0010UL, run.Client.State.Relays);
+        Assert.Equal(300, run.Client.State.Status!.Analog!.Input(2));
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No analog readings: ", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Should_SwitchAndReadAllTwentyRelays()
     {
         await using var simulator = Started(DevantechModels.Eth8020);
