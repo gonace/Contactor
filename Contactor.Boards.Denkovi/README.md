@@ -391,14 +391,17 @@ A command (ON or OFF) switches the relays in the mask one at a time, as on the s
   reads again at once. An echo is not proof that a relay switched: the board answers a set that its ICMP monitoring or
   an analog event then overrides (section 7).
 
-The analog inputs are read in polls only, after the ports, one `GetRequest` per input, input 1 first:
+The analog inputs are read in polls only, one `GetRequest` per input, input 1 first, and before the ports. The ports
+are the last requests of a poll, so the relays that the poll reports are as fresh as they can be, also when the
+analog inputs answer slowly. The interlock checks the relays of each poll.
 
 - A command's read after the switches reads the ports only. It keeps the analog values of the last poll, so a command
   never waits on an analog input.
 - An analog failure never takes away the relays. When an analog input gets no answer to both tries, an error-status,
   or an answer that can't be read (another type than `INTEGER`, a value outside 0 to 1023, another OID), the client
-  stops asking the rest of the inputs. The relays and "connected" stay as read: it isn't a failed poll. Every analog
-  input has "no reading" (null). The Debug screen and the log say why, e.g. "No analog readings: The board didn't
+  stops asking the rest of the inputs. None of the 8 values is kept, also not those read before the failure: every
+  analog input has "no reading" (null). The ports are still read, and the relays and "connected" are as read: it
+  isn't a failed poll. The Debug screen and the log say why, e.g. "No analog readings: The board didn't
   answer for analog input 1. The relays are read as usual; the analog inputs are asked for again in 1 min."
 - After a failure the client doesn't ask for the analog inputs for 1 minute (`DaenetIp2Client.AnalogRetryInterval`),
   on `TimeProvider`. A new connection (a new address or community, or the board found again after it was lost) asks
@@ -409,7 +412,9 @@ The analog inputs are read in polls only, after the ports, one `GetRequest` per 
   compares the relays only), so the safety services aren't woken by a value that moves a little on every reading.
 - **The poll's cost:** 8 more requests per poll, so 9 on the 8- and 2-relay kits and 10 on the 16-relay kit, every 2 s.
   Each answer is a datagram of about 50 bytes. A kit that never answers its analog inputs costs one poll 2 s (two tries
-  of 1 s) once a minute; the other polls ask for the ports only.
+  of 1 s) once a minute; the other polls ask for the ports only. A board that is gone answers neither: the first poll
+  after it went waits 2 s on analog input 1 before the ports, so the board counts as lost 2 s later than without the
+  analog inputs. Each new try to find it again also starts with analog input 1, and takes 2 s longer.
 
 `DaenetIp2Board`, `DaenetIp2Connection` and `DaenetIp2Traffic` are the adapters for the app. `Features/Denkovi` in
 `Contactor.Web` registers them (`DaenetIp2Boards`). `DaenetIp2TraceText` puts each message in plain words, e.g. "Turn on
@@ -443,9 +448,9 @@ rights that a developer doesn't have.
 - It answers a `GetRequest` and a `SetRequest` of each pin and each port's byte of P3 and P5, as above.
 - It answers a `GetRequest` of each analog input of P6 with the value set on its page (`SetAnalogAsync`, 0 to 1023),
   as an `INTEGER`. A `SetRequest` of one gets error-status 2 (no such name): the inputs are read-only (table 9.6), and
-  RFC 1157 (section 4.1.5) says so for a variable that can't be set. It doesn't answer x.9.2.3.33.0 (P6 as digital
-  inputs; error-status 2): the manual doesn't say at what voltage a pin reads 1. Its relays are
-  the kit's pins: a High pin is a relay that is on. A pin that no relay is on still switches.
+  RFC 1157 (section 4.1.5) says so for a variable that can't be set. It answers x.9.2.3.33.0 (P6 as digital inputs)
+  with error-status 2 too, as any OID it doesn't have, because the manual doesn't say at what voltage a pin reads 1.
+  Its relays are the kit's pins: a High pin is a relay that is on. A pin that no relay is on still switches.
 - A get takes the read-only or the read-write community, a set only the read-write one. The read-write community is
   the one given on its page, or `private` without one. The read-only community is `000000000000` unless a test sets
   another (`ReadOnlyCommunity`).

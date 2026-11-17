@@ -10,7 +10,7 @@ namespace Contactor.Boards.Denkovi;
 
 /// <summary>
 /// Talks to a Denkovi DAEnetIP2 v2 kit over SNMPv1 on UDP (<see cref="DaenetIp2Api"/>): polls the ports its relays are
-/// on (a GetRequest of each port's byte) and the 8 analog inputs of P6 (a GetRequest of each) through
+/// on (a GetRequest of each port's byte, last in a poll) and the 8 analog inputs of P6 (a GetRequest of each) through
 /// <see cref="BoardPoller{TReading}"/>, and switches relays one at a time (a SetRequest of the relay's pin). The analog
 /// inputs are read in polls only, and an analog answer that fails never fails the poll: it gives "no reading" for a
 /// while (<see cref="AnalogRetryInterval"/>). One request at a time (the poller sees to it), each with its own request
@@ -444,13 +444,20 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         }
     }
 
-    // A GetRequest of each port the relays are on, P3 before P5; a pin that is High is a relay that is on. Then, only in a
-    // poll (readAnalog), the analog inputs, so a command's confirmation never waits on them: a command's read keeps what
-    // the last poll read of them.
+    // Only in a poll (readAnalog), the analog inputs first, so a command's confirmation never waits on them: a command's
+    // read keeps what the last poll read of them. Then a GetRequest of each port the relays are on, P3 before P5, last of
+    // all, so the relays the poll reports are as fresh as they can be, however long the analog inputs took. A pin that is
+    // High is a relay that is on.
     private async Task<DaenetIp2Status> ReadStatusAsync(bool readAnalog, CancellationToken cancellationToken)
     {
         var last = Volatile.Read(ref _lastTraced);
         var community = Community;
+        var analog = _lastAnalog;
+        if (readAnalog && _model.Capabilities.Analog is { } ability)
+        {
+            analog = await ReadAnalogAsync(ability, last?.Analog, community, cancellationToken).ConfigureAwait(false);
+        }
+
         var p3 = 0;
         var p5 = 0;
         foreach (var port in _layout.Ports)
@@ -469,12 +476,8 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
 
         var relays = _layout.RelaysOf(p3, p5);
         Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Relays(relays, _model.Capabilities.RelayCount), isRoutine: last?.Relays == relays);
-        if (readAnalog && _model.Capabilities.Analog is { } ability)
-        {
-            _lastAnalog = await ReadAnalogAsync(ability, last?.Analog, community, cancellationToken).ConfigureAwait(false);
-        }
-
-        var status = new DaenetIp2Status(relays, _lastAnalog);
+        _lastAnalog = analog;
+        var status = new DaenetIp2Status(relays, analog);
         Volatile.Write(ref _lastTraced, status);
         return status;
     }
