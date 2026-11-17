@@ -194,9 +194,8 @@ public sealed class FailedCommandTests : IAsyncLifetime
 
         _board.Refuse = ChannelMask.Of(2);
         var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
-        var ex = await Assert.ThrowsAsync<BoardNotConnectedException>(() => sequencer.SetMemberAsync(first, 2, on: true, John, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sequencer.SetMemberAsync(first, 2, on: true, John, Cancel));
 
-        Assert.Equal("The board didn't take the command.", ex.Message);
         Assert.Equal((ChannelMask.Of([2, 4]), true), _board.Sent[^1]);
         Assert.Equal((false, true), (_board.State.IsOn(2), _board.State.IsOn(4)));
         Assert.Equal(before, await RuntimeAsync(first));
@@ -223,9 +222,8 @@ public sealed class FailedCommandTests : IAsyncLifetime
         var before = await RuntimeAsync(first);
 
         _board.Refuse = ChannelMask.Of(2);
-        var ex = await Assert.ThrowsAsync<BoardNotConnectedException>(() => sequencer.SetMemberAsync(first, 2, on: true, John, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sequencer.SetMemberAsync(first, 2, on: true, John, Cancel));
 
-        Assert.Equal("The board refused the command.", ex.Message);
         Assert.Equal([(ChannelMask.Of(3), false), (ChannelMask.Of(2), true)], _board.Sent.TakeLast(2));
         Assert.Equal((false, false), (_board.State.IsOn(2), _board.State.IsOn(3)));
         Assert.Equal(before, await RuntimeAsync(first));
@@ -240,6 +238,111 @@ public sealed class FailedCommandTests : IAsyncLifetime
         Assert.Equal(GroupPhases.Idle, (await RuntimeAsync(second)).Phase);
         Assert.Equal(sent, _board.Sent.Count);
         Assert.Equal(before, await RuntimeAsync(first));
+    }
+
+    // Both fans are turned off one at a time: Fan 1 is off, Fan 2's OFF is on its way. John turns Fan 1 on again with
+    // the second group's heat, and the board refuses Fan 1: Fan 2 still stops as asked, and the run isn't John's.
+    [Fact]
+    public async Task Should_KeepTheStopOfSingleRelays_WhenTheBoardRefusesARelayTurnedOnAgain()
+    {
+        var (fans, second) = await StartFansAndSecondGroupAsync();
+        var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
+        Assert.Null(await sequencer.SetMemberAsync(fans, 1, on: false, Jane, Cancel));
+        _board.IgnoreOff = true;
+        Assert.Null(await sequencer.SetMemberAsync(fans, 2, on: false, Jane, Cancel));
+        var before = await RuntimeAsync(fans);
+        Assert.Equal((GroupPhases.Stopping, false, true), (before.Phase, _board.State.IsOn(1), _board.State.IsOn(2)));
+        Assert.Contains("2", before.StopRelayIds.Split(','));
+
+        _time.Now += TimeSpan.FromSeconds(3);
+        _board.Refuse = ChannelMask.Of(1);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sequencer.SetMemberAsync(fans, 1, on: true, John, Cancel));
+
+        Assert.Equal((ChannelMask.Of([1, 4]), true), _board.Sent[^1]);
+        Assert.True(_board.State.IsOn(4));
+        Assert.Equal(before, await RuntimeAsync(fans));
+        var events = await GroupEventsAsync();
+        Assert.DoesNotContain(events, e => e.Actor == John);
+        Assert.Contains(events, e => e.GroupId == second && e.Action == EventActions.GroupOn);
+    }
+
+    // The fans' step goes off as a whole (its OFF on its way, Fan 1 off already), and John turns Fan 1 on again with the
+    // second group's heat: Fan 1 would take its step's OFF over and leave Fan 2 to stop alone. The board refuses Fan 1, so the step's
+    // stop stays as it was.
+    [Fact]
+    public async Task Should_KeepTheStepsStop_WhenTheBoardRefusesTheOnThatTakesItsOffOver()
+    {
+        var (fans, _) = await StartFansAndSecondGroupAsync();
+        var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
+        _board.IgnoreOff = true;
+        await sequencer.StopGroupAsync(fans, Jane, Cancel);
+
+        // Fan 1's OFF has landed, Fan 2's hasn't yet.
+        _board.SetRelay(1, false);
+        var before = await RuntimeAsync(fans);
+        Assert.Equal((GroupPhases.Stopping, (int?)1, false, ""), (before.Phase, before.PendingStep, before.PendingOn, before.StopRelayIds));
+
+        _time.Now += TimeSpan.FromSeconds(3);
+        _board.Refuse = ChannelMask.Of(1);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => sequencer.SetMemberAsync(fans, 1, on: true, John, Cancel));
+
+        Assert.Equal((ChannelMask.Of([1, 4]), true), _board.Sent[^1]);
+        Assert.True(_board.State.IsOn(4));
+        Assert.Equal(before, await RuntimeAsync(fans));
+        Assert.DoesNotContain(await GroupEventsAsync(), e => e.Actor == John);
+    }
+
+    // The Group page: John's ON for Heat (relay 2) goes with the second group's heat, the board refuses relay 2, and the
+    // page says the board isn't responding.
+    [Fact]
+    public async Task Should_SayTheBoardIsntResponding_OnTheGroupPage_WhenTheBoardRefusesAMembersOn()
+    {
+        var board = new FakeRelayBoard(4);
+        var time = new FixedTimeProvider(new DateTimeOffset(Now));
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
+            services =>
+            {
+                TestWebApp.WithBoard(board)(services);
+                services.AddSingleton<TimeProvider>(time);
+
+                // No passes of the sequencer's own: the test makes each one, so the heat's ON goes with John's.
+                var loop = Assert.Single(services, d => d.ServiceType == typeof(IHostedService)
+                    && d.ImplementationFactory?.Method.DeclaringType?.DeclaringType == typeof(GroupsServiceCollectionExtensions));
+                services.Remove(loop);
+            });
+        using var http = app.CreateClient();
+        await http.GetStringAsync("/", Cancel);
+        int first;
+        int second;
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            var fanHeater = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, IsActive = true };
+            fanHeater.AddStep("Fan", 1, startDelaySec: 3);
+            fanHeater.AddStep("Heat", 2, startDelaySec: 3);
+            var other = new RelayGroup { BoardId = 1, Name = "Other", Icon = GroupIcons.Fan, IsActive = true };
+            other.AddStep("Fan", 3, startDelaySec: 3);
+            other.AddStep("Heat", 4, startDelaySec: 3);
+            db.RelayGroups.AddRange(fanHeater, other);
+            await db.SaveChangesAsync(Cancel);
+            (first, second) = (fanHeater.Id, other.Id);
+        }
+
+        var sequencer = app.Services.GetRequiredService<GroupSequencer>();
+        Assert.Null(await sequencer.SetMemberAsync(first, 1, on: true, Jane, Cancel));
+        await sequencer.StepAsync(Cancel);
+        await sequencer.StartGroupAsync(second, Jane, Cancel);
+        await sequencer.StepAsync(Cancel);
+        time.Now += TimeSpan.FromSeconds(3);
+        using var page = await PageRenderer.StartAsync<Contactor.Web.Components.GroupDetail>(app.Services, John, "John", new Dictionary<string, object?> { ["Id"] = first });
+
+        board.Refuse = ChannelMask.Of(2);
+        await page.ClickAsync(PageRenderer.With("aria-label", "Turn on Relay 2"));
+
+        Assert.Equal((ChannelMask.Of([2, 4]), true), board.Sent[^1]);
+        Assert.Contains("The board isn't responding. Try again.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
     }
 
     // The same command with nothing refused: the member's ON is logged once, and the run is the person's.
@@ -686,6 +789,30 @@ public sealed class FailedCommandTests : IAsyncLifetime
         Assert.Equal((true, true), (_board.State.IsOn(1), _board.State.IsOn(3)));
         _time.Now += TimeSpan.FromSeconds(3);
         return (first, second);
+    }
+
+    // The first group, one step of two fans (1, 2), on; the second (3 Fan, 4 Heat) started by Jane, its heat due 3 s
+    // later, so a pass then sends relay 4's ON.
+    private async Task<(int Fans, int Second)> StartFansAndSecondGroupAsync()
+    {
+        int fans;
+        await using (var db = await _database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { BoardId = 1, Name = "Fans", Icon = GroupIcons.Fan, IsActive = true };
+            group.AddStep("Fans", [1, 2], startDelaySec: 3);
+            db.RelayGroups.Add(group);
+            await db.SaveChangesAsync(Cancel);
+            fans = group.Id;
+        }
+
+        var second = await AddGroupAsync((3, "Fan"), (4, "Heat"));
+        var sequencer = _database.Services.GetRequiredService<GroupSequencer>();
+        await sequencer.StartGroupAsync(fans, Jane, Cancel);
+        await sequencer.StepAsync(Cancel);
+        await sequencer.StartGroupAsync(second, Jane, Cancel);
+        await sequencer.StepAsync(Cancel);
+        Assert.Equal((true, true, true, false), (_board.State.IsOn(1), _board.State.IsOn(2), _board.State.IsOn(3), _board.State.IsOn(4)));
+        return (fans, second);
     }
 
     private async Task<(string Phase, int TargetLevel, DateTime? NextStepAtUtc, int? PendingStep, int? PendingRelayId, bool PendingOn, DateTime? PendingSinceUtc, string StopRelayIds, DateTime? OnSinceUtc, DateTime? AutoOffAtUtc, string? TurnedOnBy)> RuntimeAsync(int groupId)

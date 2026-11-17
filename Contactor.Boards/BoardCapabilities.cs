@@ -62,7 +62,11 @@ public sealed record AnalogAbility(int Count, int MaxCounts, decimal FullScaleVo
     /// <summary>The voltage one count stands for.</summary>
     public decimal VoltsPerCount => FullScaleVolts / MaxCounts;
 
-    /// <summary>The voltage at the terminal for a reading, e.g. 6.6 V for 1023 on the VM204.</summary>
+    /// <summary>
+    /// The voltage at the terminal for a reading, e.g. 6.6 V for 1023 on the VM204. Meant for a reading the converter can
+    /// give (<see cref="Check"/>); any other count is only scaled, without complaint, so a value the screens show must
+    /// pass <see cref="Check"/> first.
+    /// </summary>
     public decimal Volts(int counts)
     {
         // Multiplied first, so the full scale comes out exactly.
@@ -75,7 +79,10 @@ public sealed record AnalogAbility(int Count, int MaxCounts, decimal FullScaleVo
         return counts is { } value && value >= 0 && value <= MaxCounts ? value : null;
     }
 
-    /// <summary>Whether a reading is the top of the range, where the voltage may be higher than the board can read.</summary>
+    /// <summary>
+    /// Whether a reading is the top of the range, where the voltage may be higher than the board can read. Meant for a
+    /// reading <see cref="Check"/> passed: a count above <see cref="MaxCounts"/> gives false, without complaint.
+    /// </summary>
     public bool IsFullScale(int counts)
     {
         return counts == MaxCounts;

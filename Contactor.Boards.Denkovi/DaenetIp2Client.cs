@@ -217,7 +217,8 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
 
     public void Dispose()
     {
-        // The poller first, so no poll or command starts on the connection being closed; then nothing opens a new one.
+        // The poller first, so no new poll or command starts; then nothing opens a new socket. A request already under
+        // way goes on until Close disposes its socket under it, and then fails.
         _poller.Dispose();
         Interlocked.Exchange(ref _disposed, 1);
         Close();

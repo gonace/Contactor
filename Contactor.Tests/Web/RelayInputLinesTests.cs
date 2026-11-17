@@ -116,6 +116,64 @@ public sealed partial class RelayInputLinesTests
         Assert.DoesNotContain("class=\"input-line\"", html, StringComparison.Ordinal);
     }
 
+    // An input the board doesn't have (left from a model with more inputs) switches nothing, so it gets no line.
+    [Fact]
+    public async Task Should_ShowNoLine_ForAnInputTheBoardDoesntHave()
+    {
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John }, TestWebApp.WithLostBoard);
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            var gone = new Input { BoardId = 1, Channel = 9, Name = "Gone" };
+            db.Inputs.Add(gone);
+            await db.SaveChangesAsync(Cancel);
+            db.InputActions.Add(new InputAction { InputId = gone.Id, RelayId = 3, WhenOpened = true });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        using var http = app.CreateClient();
+        var html = await http.GetStringAsync("/", Cancel);
+
+        Assert.DoesNotContain("Gone:", CardText(html, "relay/3"), StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"input-line\"", html, StringComparison.Ordinal);
+    }
+
+    // An inactive input is only hidden from the list: it still switches the relay, so the relay's card still says so.
+    [Fact]
+    public async Task Should_ShowTheLine_OfAnInactiveInput()
+    {
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John }, TestWebApp.WithLostBoard);
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            var input = await db.Inputs.SingleAsync(i => i.Id == 1, Cancel);
+            (input.Name, input.IsActive) = ("Door", false);
+            db.InputActions.Add(new InputAction { InputId = 1, RelayId = 3, WhenOpened = true });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        using var http = app.CreateClient();
+        var html = await http.GetStringAsync("/", Cancel);
+
+        Assert.Contains("Door: on when it opens", CardText(html, "relay/3"), StringComparison.Ordinal);
+    }
+
+    // The "I" badge is hidden from a screen reader, so the line starts with the word it stands for.
+    [Fact]
+    public async Task Should_SayInput_ToAScreenReader_BeforeTheLine()
+    {
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John }, TestWebApp.WithLostBoard);
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).Name = "Door";
+            db.InputActions.Add(new InputAction { InputId = 1, RelayId = 3, WhenOpened = true });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        using var http = app.CreateClient();
+        var html = await http.GetStringAsync("/", Cancel);
+
+        Assert.Matches("class=\"visually-hidden\"[^>]*>Input </span>", Card(html, "relay/3"));
+    }
+
     // The Input screen saves: the line comes, and goes again when the action is removed.
     [Fact]
     public async Task Should_AddAndRemoveTheLine_WhenTheInputScreenSaves()

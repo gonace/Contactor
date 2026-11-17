@@ -62,7 +62,7 @@ public static class PersistenceServiceCollectionExtensions
     /// </summary>
     public static async Task InitializeDatabaseAsync(this IServiceProvider services, int relayCount, int inputCount, CancellationToken cancellationToken)
     {
-        CheckCounts(relayCount, inputCount);
+        CheckCounts(relayCount, inputCount, analogCount: 0);
         var factory = services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
         await using (var db = await factory.CreateDbContextAsync(cancellationToken))
         {
@@ -223,7 +223,7 @@ public static class PersistenceServiceCollectionExtensions
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private static void CheckCounts(int relayCount, int inputCount, int analogCount = 0)
+    private static void CheckCounts(int relayCount, int inputCount, int analogCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(analogCount);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(analogCount, ChannelMask.MaxChannels);

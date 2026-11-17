@@ -46,6 +46,10 @@
   <data name="Analog.NoReading" xml:space="preserve">
     <value>No reading: check the sensor</value>
   </data>
+  <data name="Analog.NoValue" xml:space="preserve">
+    <value>No value</value>
+    <comment>Read by a screen reader in place of the "–" shown on an analog input's card when it has no value.</comment>
+  </data>
   <data name="Analog.Point" xml:space="preserve">
     <value>Point {0}</value>
     <comment>For screen readers: the scale's first or second point.</comment>
@@ -1727,6 +1731,10 @@
   <data name="Relays.InputLabel" xml:space="preserve">
     <value>INPUT {0}</value>
     <comment>Over an input's name: {0} is its number on the board.</comment>
+  </data>
+  <data name="Relays.InputLine" xml:space="preserve">
+    <value>Input</value>
+    <comment>Read by a screen reader before an input's line on a relay's or group's card, in place of its "I" badge.</comment>
   </data>
   <data name="Relays.Inputs" xml:space="preserve">
     <value>Inputs</value>
