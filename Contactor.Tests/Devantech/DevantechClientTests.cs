@@ -32,7 +32,7 @@ public sealed class DevantechClientTests
 
         Assert.Equal(new DevantechStatus(0b0010, 0b0100, new AnalogReadings([0, 0, 0, 0])), run.Client.State.Status);
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
-        Assert.Equal(["10", "7A", "24", "25", "32 01", "32 02", "32 03", "32 04"], simulator.ReceivedRequests);
+        Assert.Equal(["10", "7A", "32 01", "32 02", "32 03", "32 04", "24", "25"], simulator.ReceivedRequests);
         Assert.Contains(run.Traces, t => t.Text == "Board: ETH484, hardware 2, firmware 28");
         Assert.Contains(run.Traces, t => t.Text == "No password");
         Assert.Contains(run.Changes, s => s.IsConnected && s.Relays == 0b0010 && s.Inputs == 0b0100);
@@ -41,7 +41,7 @@ public sealed class DevantechClientTests
     [Theory]
     [InlineData("devantech-eth002", new[] { "10", "7A", "24" })]
     [InlineData("devantech-eth008", new[] { "10", "7A", "24" })]
-    [InlineData("devantech-eth1610", new[] { "10", "7A", "24", "34" })]
+    [InlineData("devantech-eth1610", new[] { "10", "7A", "34", "24" })]
     public async Task Should_AskOnlyForTheRelays_OnAModelWithoutInputs(string id, string[] requests)
     {
         // The ETH1610 answers 0x25, but its manual doesn't say which bit is which input: the app reads none. It reads
@@ -205,8 +205,8 @@ public sealed class DevantechClientTests
     [Fact]
     public async Task Should_StayConnected_WhenTheAnswerToTheAnalogInputsIsShort()
     {
-        // 30 of the 32 bytes: the client waits for the rest, gives up on the analog inputs only, and the next request
-        // goes on a new connection, so the late bytes can't be taken for its answer.
+        // 30 of the 32 bytes: the client waits for the rest, gives up on the analog inputs only, and the relays of the
+        // same poll are read on a new connection, so the late bytes can't be taken for their answer.
         await using var board = ScriptedBoard.Start(request => request switch
         {
             [0x10] => [52, 1, 1],
@@ -226,9 +226,63 @@ public sealed class DevantechClientTests
         Assert.Equal(new AnalogReadings(new int?[16]), run.Client.State.Status!.Analog);
 
         await run.PollAsync();
-        Assert.Equal(["10", "7A", "24", "34", "10", "7A", "24"], board.Received);
+        Assert.Equal(["10", "7A", "34", "10", "7A", "24", "24"], board.Received);
         Assert.Equal(2, board.Connections);
         Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Theory]
+    [InlineData("devantech-eth484", new[] { "32 01", "32 02", "32 03", "32 04", "24", "25" })]
+    [InlineData("devantech-eth8020", new[] { "32 01", "32 02", "32 03", "32 04", "32 05", "32 06", "32 07", "32 08", "24", "25" })]
+    [InlineData("devantech-eth1610", new[] { "34", "24" })]
+    public async Task Should_ReadTheRelaysAndInputsLast_InEveryPoll(string id, string[] poll)
+    {
+        // The relays a poll reports, and the interlock checks, are as fresh as they can be, however long the analog
+        // inputs took.
+        var model = DevantechModels.All.Single(m => m.Id == id);
+        await using var simulator = Started(model);
+        await using var run = ClientRun.Start(simulator.Port, model);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(["10", "7A", .. poll], simulator.ReceivedRequests);
+
+        await run.PollAsync();
+        Assert.Equal(["10", "7A", .. poll, .. poll], simulator.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task Should_FailThePoll_NotTheAnalogInputs_WhenTheNewConnectionBeforeThemIsNotAnswered()
+    {
+        // The second poll's 0x24 gets no answer, which closes the connection. On the third poll's new connection the
+        // board doesn't answer the module check: the poll fails once, on that check, before any analog request. It isn't
+        // taken for a problem with the analog inputs, and the relays aren't asked for on yet another connection.
+        var checks = 0;
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] when Interlocked.Increment(ref checks) == 1 => [52, 1, 1],
+            [0x10] => [],
+            [0x7A] => [0xFF],
+            [0x24] when Interlocked.Increment(ref reads) == 2 => [],
+            [0x24] => [0b0001, 0],
+            [0x34] => new byte[32],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth1610);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "10") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == "No answer: The Devantech board did not answer within 5 s.") == 2 && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal(["10", "7A", "34", "24", "34", "24", "10"], board.Received);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No analog readings: ", StringComparison.Ordinal));
+        Assert.Equal(0b0001UL, run.Client.State.Relays);
     }
 
     [Fact]
@@ -283,7 +337,7 @@ public sealed class DevantechClientTests
 
         // The manual's example (p. 17): output 2 for 5 s.
         Assert.Equal(0b10UL, await run.Client.PulseAsync(0b10, TimeSpan.FromSeconds(5), Cancel));
-        Assert.Equal(["10", "7A", "24", "34", "7A", "20 0A 00", "24", "7A", "20 02 32", "24"], simulator.ReceivedRequests);
+        Assert.Equal(["10", "7A", "34", "24", "7A", "20 0A 00", "24", "7A", "20 02 32", "24"], simulator.ReceivedRequests);
         Assert.Equal((1UL << 9) | 0b10, run.Client.State.Relays);
         boardTime.Advance(TimeSpan.FromSeconds(5));
         await run.PollAsync();
@@ -963,7 +1017,7 @@ public sealed class DevantechClientTests
         run.Time.Advance(run.PollInterval);
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal)) && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.Equal(["10", "7A", "24", "34", "24"], board.Received);
+        Assert.Equal(["10", "7A", "34", "24", "34", "24"], board.Received);
         Assert.Equal(1, board.Connections);
         Assert.True(run.Client.State.IsConnected);
     }
