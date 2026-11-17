@@ -178,13 +178,38 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         return host;
     }
 
+    // The app's work still under way when it stops, e.g. a page's refresh whose database read started just before, can
+    // still make a file in the folder by its name (SQLite makes the database's -wal and -shm files as it opens it). So
+    // the folder is moved away first, in one step, and deleted where nothing looks for it: a late writer then finds no
+    // folder, and the delete can't race it. Should the delete fail all the same, the message says what was left.
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
         SqliteConnection.ClearAllPools();
-        if (Directory.Exists(_folder))
+        if (!Directory.Exists(_folder))
         {
-            Directory.Delete(_folder, recursive: true);
+            return;
+        }
+
+        var deleting = _folder + ".deleting";
+        try
+        {
+            Directory.Move(_folder, deleting);
+        }
+        catch (IOException)
+        {
+            // Not moved, e.g. Windows refuses to move a folder with a file still open: deleted in place, as before.
+            deleting = _folder;
+        }
+
+        try
+        {
+            Directory.Delete(deleting, recursive: true);
+        }
+        catch (IOException ex) when (Directory.Exists(deleting))
+        {
+            var left = Directory.GetFileSystemEntries(deleting, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(deleting, f));
+            throw new IOException($"The test's folder could not be deleted. Left in it: {string.Join(", ", left)}.", ex);
         }
     }
 

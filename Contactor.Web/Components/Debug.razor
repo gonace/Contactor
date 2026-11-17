@@ -221,7 +221,7 @@
     {
         using var language = Language.Use();
 
-        // What the warning names: the step that failed.
+        // What the warning names: the step under way when it failed.
         var what = "the board traffic";
         try
         {
@@ -232,6 +232,9 @@
                 {
                     what = "the board filter's counts";
                     await LoadCountsAsync();
+
+                    // The counts are loaded: what follows draws the board traffic read above.
+                    what = "the board traffic";
                 }
 
                 StateHasChanged();

@@ -34,14 +34,14 @@ public sealed class PageRefreshFailureTests
     {
         var queries = new FailingQueries();
         var log = new WarningCollector();
-        await using var app = CreateApp(queries, log, pageType == typeof(AnalogInputDetail));
+        await using var app = await StartAppAsync(queries, log, pageType == typeof(AnalogInputDetail));
         using var page = await StartAsync(app, pageType);
         var changes = app.Services.GetRequiredService<RelayChanges>();
         var before = await page.TextAsync();
 
         queries.Fail(_ => true, () => new SqliteException("disk I/O error", 10));
         await page.Dispatcher.InvokeAsync(changes.Notify);
-        await DrainAsync(page, () => log.Of(pageType).Count > 0);
+        await DrainAsync(page, queries, log, () => log.Of(pageType).Count > 0);
         queries.Stop();
 
         Assert.NotEqual(0, queries.Failures);
@@ -54,7 +54,7 @@ public sealed class PageRefreshFailureTests
         // The next refresh tries again, and works.
         var renders = page.PageRenders;
         await page.Dispatcher.InvokeAsync(changes.Notify);
-        await DrainAsync(page, () => page.PageRenders > renders);
+        await DrainAsync(page, queries, log, () => page.PageRenders > renders);
         Assert.Single(log.Of(pageType));
         Assert.Empty(page.Errors);
     }
@@ -64,7 +64,7 @@ public sealed class PageRefreshFailureTests
     {
         var queries = new FailingQueries();
         var log = new WarningCollector();
-        await using var app = CreateApp(queries, log, analog: false);
+        await using var app = await StartAppAsync(queries, log, analog: false);
         await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
         {
             db.Users.Add(new User { Email = John, DisplayName = "John" });
@@ -77,7 +77,7 @@ public sealed class PageRefreshFailureTests
         // Only the tab bar's read of the setting, not the save that announces it.
         queries.Fail(sql => sql.StartsWith("SELECT \"u\".\"ShowBoardTraffic\"", StringComparison.Ordinal), () => new SqliteException("disk I/O error", 10));
         await page.Dispatcher.InvokeAsync(() => setting.SetAsync(John, on: true, Cancel));
-        await DrainAsync(page, () => log.Of(typeof(TabBar)).Count > 0);
+        await DrainAsync(page, queries, log, () => log.Of(typeof(TabBar)).Count > 0);
         queries.Stop();
 
         Assert.NotEqual(0, queries.Failures);
@@ -97,13 +97,13 @@ public sealed class PageRefreshFailureTests
     {
         var queries = new FailingQueries();
         var log = new WarningCollector();
-        await using var app = CreateApp(queries, log, analog: false);
+        await using var app = await StartAppAsync(queries, log, analog: false);
         using var page = await StartAsync(app, pageType);
         var changes = app.Services.GetRequiredService<RelayChanges>();
 
         queries.Fail(_ => true, () => cancelled ? new OperationCanceledException() : new ObjectDisposedException("ContactorDbContext"));
         await page.Dispatcher.InvokeAsync(changes.Notify);
-        await DrainAsync(page, () => queries.Failures > 0);
+        await DrainAsync(page, queries, log, () => queries.Failures > 0);
         queries.Stop();
 
         Assert.NotEqual(0, queries.Failures);
@@ -116,7 +116,7 @@ public sealed class PageRefreshFailureTests
     {
         var queries = new FailingQueries();
         var log = new WarningCollector();
-        await using var app = CreateApp(queries, log, analog: false);
+        await using var app = await StartAppAsync(queries, log, analog: false);
         var page = await StartAsync(app, typeof(Relays));
         var changes = app.Services.GetRequiredService<RelayChanges>();
 
@@ -132,17 +132,21 @@ public sealed class PageRefreshFailureTests
         });
 
         // The refresh was queued before this round, and a closed page ends it there.
-        await DrainAsync(page, () => true);
+        await DrainAsync(page, queries, log, () => true);
         queries.Stop();
 
         Assert.Equal(0, queries.Failures);
         Assert.Empty(log.Of(typeof(Relays)));
     }
 
-    private static TestWebApp CreateApp(FailingQueries queries, WarningCollector log, bool analog)
+    // The app, once its board runs. The board's run reads the board's saved address first, on a thread of its own, and
+    // a failed read there stops the whole app, as any board's failed run does. A test that fails every read before
+    // then, as on a busy machine, would stop the app instead of failing the page's refresh. The fake connection only
+    // runs after that read.
+    private static async Task<TestWebApp> StartAppAsync(FailingQueries queries, WarningCollector log, bool analog)
     {
         var board = analog ? new FakeRelayBoard(relayCount: 4, inputCount: 1, analog: new AnalogAbility(4, 1023, 5m)) : FakeRelayBoard.LostContact();
-        return new TestWebApp(
+        var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
             services =>
@@ -151,6 +155,22 @@ public sealed class PageRefreshFailureTests
                 queries.AddTo(services);
                 services.AddSingleton<ILoggerProvider>(log);
             });
+        try
+        {
+            var connection = Assert.IsType<FakeConnection>(app.Services.Live().Active?.Connection);
+            for (var round = 0; !connection.Running; round++)
+            {
+                Assert.True(round < 10_000, "The board's connection never started.");
+                await Task.Delay(1, Cancel);
+            }
+
+            return app;
+        }
+        catch
+        {
+            await app.DisposeAsync();
+            throw;
+        }
     }
 
     private static async Task<PageRenderer> StartAsync(TestWebApp app, Type pageType)
@@ -187,12 +207,22 @@ public sealed class PageRefreshFailureTests
 
     // Waits until the refresh reached the step done counts (a warning, a draw, a failed read), however its reads
     // complete. The count is read on the page's own thread, between its steps, so what the counted step queued there
-    // (e.g. the catch after a failed read) is queued before the next round, which runs it.
-    private static async Task DrainAsync(PageRenderer page, Func<bool> done)
+    // (e.g. the catch after a failed read) is queued before the next round, which runs it. A refresh that never gets
+    // there fails with what the app did: how many reads failed, the warnings with an exception, what went wrong in the
+    // page, and what it shows.
+    private static async Task DrainAsync(PageRenderer page, FailingQueries queries, WarningCollector log, Func<bool> done)
     {
+        const int Rounds = 10_000;
         for (var round = 0; !await page.Dispatcher.InvokeAsync(done); round++)
         {
-            Assert.True(round < 10_000, "The refresh never reached the step the test waits for.");
+            if (round >= Rounds)
+            {
+                var warnings = string.Join("; ", log.All.Where(w => w.Exception is not null).Select(w => $"{w.Category}: {w.What} ({w.Exception!.GetType().Name}: {w.Exception.Message})"));
+                var errors = string.Join("; ", page.Errors.Select(e => $"{e.GetType().Name}: {e.Message}"));
+                Assert.Fail($"The refresh never reached the step the test waits for, after {round} rounds. Failed reads: {queries.Failures}. "
+                    + $"Warnings: [{warnings}]. Errors in the page: [{errors}]. Page draws: {page.PageRenders}. The page: {await page.TextAsync()}");
+            }
+
             await Task.Delay(1, Cancel);
         }
 
@@ -206,6 +236,17 @@ public sealed class PageRefreshFailureTests
     {
         private readonly Lock _lock = new();
         private readonly List<Warning> _warnings = [];
+
+        public IReadOnlyList<Warning> All
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _warnings];
+                }
+            }
+        }
 
         public IReadOnlyList<Warning> Of(Type category)
         {

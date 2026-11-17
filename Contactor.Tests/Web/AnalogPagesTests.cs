@@ -117,17 +117,14 @@ public sealed partial class AnalogPagesTests
         var board = Board();
         await using var app = await AppAsync(board);
         using var page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
-        board.SetAnalog(Readings());
-        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("22.0", StringComparison.Ordinal));
-        var renders = page.PageRenders;
+        Assert.True(await RedrawsAsync(page, () => board.SetAnalog(Readings())));
+        Assert.Contains("22.0", await page.TextAsync(), StringComparison.Ordinal);
 
-        // 511 counts is 2.4976 V: still "2.50". The reading comes on the page's thread; one more call there follows it.
-        board.SetAnalog(Readings(fourth: 511));
-        await page.Dispatcher.InvokeAsync(() => { });
-        Assert.Equal(renders, page.PageRenders);
+        // 511 counts is 2.4976 V: still "2.50".
+        Assert.False(await RedrawsAsync(page, () => board.SetAnalog(Readings(fourth: 511))));
 
-        board.SetAnalog(Readings(first: 440, fourth: 511));
-        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("23.0", StringComparison.Ordinal));
+        Assert.True(await RedrawsAsync(page, () => board.SetAnalog(Readings(first: 440, fourth: 511))));
+        Assert.Contains("23.0", await page.TextAsync(), StringComparison.Ordinal);
         Assert.Empty(page.Errors);
     }
 
@@ -320,9 +317,9 @@ public sealed partial class AnalogPagesTests
         Assert.Empty(page.Errors);
     }
 
-    // Whether a new reading from the board, sent by change, redraws the page. The change is made on the page's own
-    // thread, so the page handles the reading at once, and nothing else the app does meanwhile can draw the page before
-    // the count is read: e.g. an event the app logs at start, which redraws the page too.
+    // Whether a new reading from the board redraws the page. The test's change sends the reading on the page's own
+    // thread, so the page handles it at once, and nothing else the app does meanwhile can draw the page before the count
+    // is read: e.g. an event the app logs at start, which redraws the page too.
     private static Task<bool> RedrawsAsync(PageRenderer page, Action change)
     {
         return page.Dispatcher.InvokeAsync(() =>
