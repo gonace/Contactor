@@ -64,12 +64,48 @@ public sealed class ReleaseNotesTests
     }
 
     [Fact]
+    public void Should_KeepTheTextOfLinks_WithParenthesesOrATitle()
+    {
+        var changes = ReleaseNotes.Changes(
+            "* See [the page](https://en.wikipedia.org/wiki/Relay_(electric)) now\n* Read [the guide](https://example.com/guide \"The guide\") and [this](https://example.com 'This') and [that](https://example.com (That))");
+
+        Assert.Equal(["See the page now", "Read the guide and this and that"], changes);
+    }
+
+    [Fact]
     public void Should_LeaveOutComments_CodeBlocks_AndHeadings()
     {
         var changes = ReleaseNotes.Changes(
             "# Title\n<!-- a comment\n* hidden in the comment\n-->\n* First <!-- inline --> change\n```\n* hidden in the code\n```\n~~~\n- hidden too\n~~~\n### * Not a change\n* Last change");
 
         Assert.Equal(["First change", "Last change"], changes);
+    }
+
+    // A code block ends only on a fence of its own character, at least as long as the one that opened it.
+    [Theory]
+    [InlineData("* Shown\n````\n```\n* Hidden\n````\n* Last")]
+    [InlineData("* Shown\n~~~~\n~~~\n* Hidden\n~~~~~~\n* Last")]
+    public void Should_EndACodeBlock_OnlyOnAFenceAsLongAsItsOwn(string notes)
+    {
+        Assert.Equal(["Shown", "Last"], ReleaseNotes.Changes(notes));
+    }
+
+    [Fact]
+    public void Should_ReadEachLine_WhateverItsLineEnd()
+    {
+        Assert.Equal(["One", "Two", "Three", "Four"], ReleaseNotes.Changes("* One\r* Two\r\n* Three\n* Four"));
+    }
+
+    [Theory]
+    [InlineData("* ***Both***", "**Both**")]
+    [InlineData("* a *** b", "a b")]
+    [InlineData("* Start ***bold** end", "Start **bold** end")]
+    public void Should_LeaveNoStrayAsterisk_AfterThreeOrMore(string notes, string expected)
+    {
+        var change = Assert.Single(ReleaseNotes.Changes(notes));
+
+        Assert.Equal(expected, change);
+        Assert.All(ReleaseNotes.Parts(change), p => Assert.DoesNotContain("*", p.Text, StringComparison.Ordinal));
     }
 
     [Theory]
@@ -125,6 +161,14 @@ public sealed class ReleaseNotesTests
         Assert.Empty(ReleaseNotes.Parts("**"));
     }
 
+    // A line saved by an older version can still hold a link's markdown or a ***.
+    [Fact]
+    public void Should_LeaveOutALinksMarkdown_AndAStrayAsterisk_WhenDrawn()
+    {
+        Assert.Equal([("See the guide ", false), ("now", true)], ReleaseNotes.Parts("See [the guide](https://example.com/guide) **now**"));
+        Assert.Equal([("Both", true)], ReleaseNotes.Parts("***Both***"));
+    }
+
     [Fact]
     public void Should_EndALongChange_OnASentence()
     {
@@ -136,6 +180,20 @@ public sealed class ReleaseNotesTests
         Assert.True(change.Length <= ReleaseNotes.MaxChangeLength);
         Assert.EndsWith("ok.", change, StringComparison.Ordinal);
         Assert.Equal(string.Concat(Enumerable.Repeat(sentence, change.Length / sentence.Length + 1)).TrimEnd(), change);
+    }
+
+    // A sentence end early in the change would leave out most of it.
+    [Fact]
+    public void Should_EndALongChange_OnAWord_WhenItsOnlySentenceEndsEarly()
+    {
+        var notes = "* Fix. " + string.Join(' ', Enumerable.Repeat("word", 200));
+
+        var change = Assert.Single(ReleaseNotes.Changes(notes));
+
+        Assert.True(change.Length <= ReleaseNotes.MaxChangeLength);
+        Assert.True(change.Length > ReleaseNotes.MaxChangeLength * 2 / 3);
+        Assert.StartsWith("Fix. word", change, StringComparison.Ordinal);
+        Assert.EndsWith("word…", change, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -187,7 +245,9 @@ public sealed class ReleaseNotesTests
         var manyLines = string.Join('\n', Enumerable.Repeat("* A change. " + new string(' ', 100) + "by @x in https://x", 10_000));
         var spaces = "* a" + new string(' ', 1_000_000) + "b";
 
-        Assert.All(ReleaseNotes.Changes(oneLine), c => Assert.True(c.Length <= ReleaseNotes.MaxChangeLength));
+        var one = ReleaseNotes.Changes(oneLine);
+        Assert.NotEmpty(one);
+        Assert.All(one, c => Assert.True(c.Length <= ReleaseNotes.MaxChangeLength));
         var many = ReleaseNotes.Changes(manyLines);
         Assert.Equal(ReleaseNotes.MaxChanges, many.Count);
         Assert.All(many, c => Assert.Equal("A change.", c));
