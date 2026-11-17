@@ -47,8 +47,12 @@ public sealed class AnalogInput
 
     public decimal? Value2 { get; set; }
 
-    /// <summary>Whether it has a scale: all four points are set.</summary>
-    public bool HasScale => Volts1 is not null && Value1 is not null && Volts2 is not null && Value2 is not null;
+    /// <summary>
+    /// Whether it has a scale: all four points are set, at two voltages and with two values. Two points that share
+    /// either are no scale, as <c>AnalogScale.HasScale</c> says.
+    /// </summary>
+    public bool HasScale =>
+        Volts1 is { } volts1 && Value1 is { } value1 && Volts2 is { } volts2 && Value2 is { } value2 && volts1 != volts2 && value1 != value2;
 
     /// <summary>
     /// The name an analog input is seeded with, until someone gives it one: "Analog 1", after its channel. Saved as a

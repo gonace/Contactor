@@ -110,8 +110,8 @@ Board                   (a relay board the app runs; every screen shows every bo
                                  the input actions that touch its relays, groups or inputs (from any board), the
                                  schedules of its relays and groups, its groups' runtimes and members, its groups,
                                  its relays' runtimes, its relays, its inputs, its analog inputs, its events, its
-                                 BoardRuntime and its
-                                 row, then adds the "board-removed" event (no board); the Restrict keys (InputAction, RelayGroupMember, RelayRuntime and Schedule to
+                                 BoardRuntime and its row, then adds the "board-removed" event (no board); the
+                                 Restrict keys (InputAction, RelayGroupMember, RelayRuntime and Schedule to
                                  Relay, InputAction to Input) need that order, so no cascade is relied on. When it
                                  was the first board, the board that becomes first gets "no address and no login"
                                  saved (Host "", its model's default port, or the VM201's without a model, Username
@@ -290,8 +290,10 @@ InputAction             (a relay or a group an input switches, on the input's ow
   WhenOpened      bool?
 
 AnalogInput             (one per analog input on the board, e.g. a temperature sensor; seeded at start like inputs
-                         from the board's capabilities, deleted only with its board. Not an Input: an input is a
-                         contact. Its reading is not stored: the board is the source of truth)
+                         from the board's capabilities, deleted only with its board. Every board is seeded from
+                         its saved model when it is loaded at start, so a board from before gets its rows. Not
+                         an Input: an input is a contact. Its reading is not stored: the board is the source of
+                         truth)
   Id              int PK         the database's key, in links; given by the database, not its channel
   BoardId         int FK         the board it is on; cascade delete
   Channel         int            1 to the board's analog input count (at most 64); UNIQUE with BoardId. The board's

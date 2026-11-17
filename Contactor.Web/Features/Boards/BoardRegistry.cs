@@ -126,7 +126,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                     continue;
                 }
 
-                await LoadRowAsync(row, isFirst: i == 0);
+                await LoadRowAsync(row, isFirst: i == 0, cancellationToken);
             }
         }
         finally
@@ -160,7 +160,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
             if (row is not null)
             {
-                await LoadRowAsync(row, isFirst);
+                await LoadRowAsync(row, isFirst, cancellationToken);
             }
         }
         finally
@@ -533,8 +533,9 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     }
 
     // Only under the gate: the row's live board, with its saved model, if any. Throws for a saved model the catalogue
-    // doesn't have.
-    private async Task LoadRowAsync(Board row, bool isFirst)
+    // doesn't have. The model's rows first, as when a board is chosen or added: a board saved before a version that
+    // seeds more (e.g. its analog inputs) gets the rows it lacks; seeding only adds missing rows.
+    private async Task LoadRowAsync(Board row, bool isFirst, CancellationToken cancellationToken)
     {
         BoardRegistration? registration = null;
         if (row.Type.Length > 0)
@@ -542,6 +543,11 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             registration = BoardCatalogue.Find(row.Type)
                 ?? throw new InvalidOperationException(
                     $"Relay board \"{row.Name}\" is a \"{row.Type}\", which isn't a board this version of the app knows. Use one of: {BoardCatalogue.Ids}.");
+        }
+
+        if (registration is not null)
+        {
+            await _app.SeedBoardAsync(row.Id, registration.Model.Capabilities, cancellationToken);
         }
 
         var live = await AddAsync(row);

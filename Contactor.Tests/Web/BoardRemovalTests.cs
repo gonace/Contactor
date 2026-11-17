@@ -89,6 +89,8 @@ public sealed class BoardRemovalTests
             await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER keep_board BEFORE DELETE ON \"Board\" BEGIN SELECT RAISE(ABORT, 'kept'); END;", Cancel);
         }
 
+        // And the rows of that model, as a VM201's would have: loaded again, a board gets the rows its model lacks.
+        await boards.App.Services.SeedBoardAsync(boards.BarnId, BoardCatalogue.Find("vm201")!.Model.Capabilities, Cancel);
         var before = await CountAsync(boards, boards.BarnId);
         var removal = boards.App.Services.GetRequiredService<BoardRemoval>();
         await Assert.ThrowsAnyAsync<Exception>(() => removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));

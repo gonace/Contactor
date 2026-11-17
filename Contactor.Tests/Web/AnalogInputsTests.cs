@@ -95,6 +95,14 @@ public sealed class AnalogInputsTests
             Assert.Equal((AnalogUnits.Other, "kPa", 0.5m, -20.125m, 4.5m, 999999.999m), (input.Unit, input.UnitText, input.Volts1, input.Value1, input.Volts2, input.Value2));
             Assert.True(input.HasScale);
         }
+
+        // Two points with one value, or at one voltage, are no scale here either, as AnalogScale says.
+        foreach (var (volts2, value2) in new[] { (4.5m, -20.125m), (0.5m, 80m) })
+        {
+            var points = new AnalogInput { Volts1 = 0.5m, Value1 = -20.125m, Volts2 = volts2, Value2 = value2 };
+            Assert.False(points.HasScale);
+            Assert.Equal(points.HasScale, AnalogScale.Of(points).HasScale);
+        }
     }
 
     // What the handler checks, the database refuses too: half a scale, a unit it doesn't know, a channel twice.
