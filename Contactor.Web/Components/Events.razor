@@ -12,6 +12,7 @@
 @inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
 @inject AppLanguage Language
+@inject ILogger<Events> Log
 
 <PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Events"]])</PageTitle>
 
@@ -242,6 +243,11 @@
         catch (ObjectDisposedException)
         {
             // The page closed while the update was on its way.
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Not shown to the person: the page keeps what it shows, and the next refresh tries again.
+            Log.LogWarning(ex, "The page could not reload {What}", "the events");
         }
     }
 }
