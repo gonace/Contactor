@@ -304,7 +304,8 @@
     [CascadingParameter]
     public BoardFilters? PickedBoards { get; set; }
 
-    private IReadOnlyList<LiveBoard> Boards => Registry.All;
+    // Every board but one "Add a board" hasn't finished: that one shows once it is done.
+    private IReadOnlyList<LiveBoard> Boards => Registry.Shown;
 
     // Two or more boards: a section per board, "All boards" in the filter, and "Turn off all boards". One board has one
     // list of relays, no chips, and only the board in the side menu (BoardPicker).
@@ -673,15 +674,15 @@
     private async Task LoadAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _groups = await Groups.ListAsync(CancellationToken.None);
-        _inputs = await Inputs.ListAsync(CancellationToken.None);
-        _analog = await Analog.ListAsync(CancellationToken.None);
+        _groups = [.. (await Groups.ListAsync(CancellationToken.None)).Where(g => Registry.IsShown(g.BoardId))];
+        _inputs = [.. (await Inputs.ListAsync(CancellationToken.None)).Where(i => Registry.IsShown(i.BoardId))];
+        _analog = [.. (await Analog.ListAsync(CancellationToken.None)).Where(i => Registry.IsShown(i.BoardId))];
         var controls = await InputActions.ControlsAsync(CancellationToken.None);
         _relayInputs = controls.Where(c => c.RelayId is not null).ToLookup(c => c.RelayId!.Value);
         _groupInputs = controls.Where(c => c.GroupId is not null).ToLookup(c => c.GroupId!.Value);
         var members = _groups.SelectMany(g => g.Members).Select(m => m.RelayId).ToHashSet();
         _relays = (await db.Relays.AsNoTracking().OrderBy(r => r.SortOrder).ThenBy(r => r.Channel).ToListAsync())
-            .Where(r => Registry.HasRelay(r.BoardId, r.Channel) && !members.Contains(r.Id))
+            .Where(r => Registry.HasRelay(r.BoardId, r.Channel) && Registry.IsShown(r.BoardId) && !members.Contains(r.Id))
             .ToList();
         _counts = new BoardCounts(_relays.Where(r => r.IsActive).Select(r => (r.BoardId, r.Channel)), _groups.Select(g => (g.BoardId, g.Mask)));
         _runtimes = await db.RelayRuntimes.AsNoTracking().ToDictionaryAsync(r => r.RelayId);
@@ -857,7 +858,8 @@
         try
         {
             var unreachable = await Control.TurnOffAllBoardsAsync(_user.Email, CancellationToken.None);
-            _allBoardsMessage = BoardsText.Unreachable([.. unreachable.Select(BoardNameOf)]);
+            // Only the boards this page shows: one "Add a board" hasn't finished is turned off too, but not named.
+            _allBoardsMessage = BoardsText.Unreachable([.. unreachable.Where(Registry.IsShown).Select(BoardNameOf)]);
         }
         catch (Exception ex)
         {

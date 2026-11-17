@@ -84,6 +84,9 @@ namespace Contactor.Web.Persistence.Migrations
                         .HasMaxLength(253)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsUnfinished")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(40)

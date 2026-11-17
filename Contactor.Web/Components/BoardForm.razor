@@ -295,6 +295,12 @@
             error ??= Model is { HasLogin: true }
                 ? await Handler.SaveLoginAsync(BoardId, _username, _newPassword, _noLogin && Model is not { LoginRequired: true }, _user.Email, CancellationToken.None)
                 : null;
+            // A board "Add a board" didn't finish, set up here: the person keeps it, so the next start doesn't remove it.
+            if (error is null && Live is { IsUnfinished: true })
+            {
+                await Registry.FinishAddingAsync(BoardId, CancellationToken.None);
+            }
+
             (_message, _saved) = error is null ? (Texts["Boards.Saved"].Value, true) : (error, false);
             if (error is null)
             {

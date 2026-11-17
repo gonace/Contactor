@@ -39,6 +39,12 @@ public sealed class Board
 
     public int SortOrder { get; set; }
 
+    /// <summary>
+    /// True while "Add a board" hasn't finished it: from "Next" on its first step until "Done" or "Go on without a
+    /// connection". Such a board isn't shown on Relays, and is removed at the next start (<c>BoardRegistry.LoadAsync</c>).
+    /// </summary>
+    public bool IsUnfinished { get; set; }
+
     /// <summary>The name a board gets from its model, until someone gives it one: "Velleman VM201".</summary>
     public static string DefaultName(string modelName)
     {

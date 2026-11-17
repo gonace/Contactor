@@ -1,10 +1,14 @@
+using System.Collections.Concurrent;
 using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Tests.Web;
@@ -401,6 +405,138 @@ public sealed class BoardRegistryTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => registry.ReplaceModelAsync(id + 1, Vm201Model.Model, Cancel));
     }
 
+    // A board "Add a board" didn't finish is removed at the next start, with its rows and events, and gets no live board,
+    // so nothing is sent to it. A finished board stays, also one without an address (finished without a connection).
+    [Fact]
+    public async Task Should_RemoveAnUnfinishedBoard_AtStart_WithItsRows_AndKeepTheFinishedOnes()
+    {
+        await using var database = await DatabaseAsync();
+        var workshop = await AddRowAsync(database, type: "vm201", sortOrder: 1, name: "Workshop");
+        var shed = await AddRowAsync(database, type: "vm204", sortOrder: 2, name: "Shed");
+        await SaveAddressAsync(database, shed, "", 80);
+        var garage = await AddRowAsync(database, type: "vm204", sortOrder: 3, name: "Garage", unfinished: true);
+        foreach (var id in new[] { workshop, shed, garage })
+        {
+            await database.Services.SeedBoardAsync(id, Vm204Model.Model.Capabilities, Cancel);
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, BoardId = garage, Actor = "john@example.com", Action = EventActions.BoardAddressChanged });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        var registry = Registry(database);
+        await registry.LoadAsync(Cancel);
+
+        Assert.Equal([workshop, shed], registry.All.Select(b => b.BoardId));
+        Assert.Equal([workshop, shed], registry.Shown.Select(b => b.BoardId));
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal([workshop, shed], await check.Boards.OrderBy(b => b.Id).Select(b => b.Id).ToListAsync(Cancel));
+        Assert.False(await check.Relays.AnyAsync(r => r.BoardId == garage, Cancel));
+        Assert.False(await check.Inputs.AnyAsync(i => i.BoardId == garage, Cancel));
+        Assert.False(await check.AnalogInputs.AnyAsync(i => i.BoardId == garage, Cancel));
+        Assert.False(await check.BoardRuntimes.AnyAsync(r => r.BoardId == garage, Cancel));
+        Assert.False(await check.EventLog.AnyAsync(e => e.BoardId == garage, Cancel));
+        Assert.Equal(await check.Relays.CountAsync(Cancel), await check.RelayRuntimes.CountAsync(Cancel));
+        Assert.True(await check.Relays.AnyAsync(r => r.BoardId == shed, Cancel));
+    }
+
+    // "Add a board" makes the board unfinished: it runs, but isn't shown, and the next start removes it. Once finished it
+    // is shown, and the next start keeps it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Should_AddABoardUnfinished_AndKeepIt_OnlyOnceFinished(bool finished)
+    {
+        await using var database = await DatabaseAsync();
+        var workshop = await AddRowAsync(database, type: "vm201", sortOrder: 1, name: "Workshop");
+        var registry = Registry(database);
+        await registry.LoadAsync(Cancel);
+        var told = 0;
+        registry.BoardsChanged += (_, _) => told++;
+
+        var garage = await registry.AddBoardAsync(Vm204Model.Model, "Garage", Cancel);
+
+        Assert.True(garage.IsUnfinished);
+        Assert.Same(garage, registry.Find(garage.BoardId));
+        Assert.Equal([workshop], registry.Shown.Select(b => b.BoardId));
+        Assert.False(registry.IsShown(garage.BoardId));
+        Assert.True(registry.IsShown(workshop));
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.True(await db.Boards.Where(b => b.Id == garage.BoardId).Select(b => b.IsUnfinished).SingleAsync(Cancel));
+        }
+
+        if (finished)
+        {
+            told = 0;
+            Assert.True(await registry.FinishAddingAsync(garage.BoardId, Cancel));
+            Assert.False(garage.IsUnfinished);
+            Assert.Equal([workshop, garage.BoardId], registry.Shown.Select(b => b.BoardId));
+            Assert.True(registry.IsShown(garage.BoardId));
+            Assert.Equal(1, told);
+        }
+
+        // The next start.
+        await using var next = new BoardRegistry(
+            database.Factory, database.Services, database.Services.GetRequiredService<IConfiguration>(), TimeProvider.System, NullLoggerFactory.Instance);
+        await next.LoadAsync(Cancel);
+
+        Assert.Equal(finished ? [workshop, garage.BoardId] : [workshop], next.All.Select(b => b.BoardId));
+        Assert.All(next.All, b => Assert.False(b.IsUnfinished));
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(finished, await check.Boards.AnyAsync(b => b.Id == garage.BoardId, Cancel));
+        Assert.Equal(finished, await check.Relays.AnyAsync(r => r.BoardId == garage.BoardId, Cancel));
+    }
+
+    // A delete that fails at start is logged, the board runs (still unfinished, not shown), and the next start removes it.
+    [Fact]
+    public async Task Should_LogAFailedRemoval_AtStart_AndTryAgainAtTheNextStart()
+    {
+        await using var database = await DatabaseAsync();
+        var workshop = await AddRowAsync(database, type: "vm201", sortOrder: 1, name: "Workshop");
+        var garage = await AddRowAsync(database, type: "vm204", sortOrder: 2, name: "Garage", unfinished: true);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER keep_board BEFORE DELETE ON \"Board\" BEGIN SELECT RAISE(ABORT, 'kept'); END;", Cancel);
+        }
+
+        var logs = new ListLoggerProvider();
+        using var loggers = LoggerFactory.Create(b => b.AddProvider(logs));
+        var configuration = database.Services.GetRequiredService<IConfiguration>();
+        await using (var first = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers))
+        {
+            await first.LoadAsync(Cancel);
+
+            Assert.Equal([workshop, garage], first.All.Select(b => b.BoardId));
+            Assert.Equal([workshop], first.Shown.Select(b => b.BoardId));
+            Assert.Contains(logs.Entries, e => e.Level == LogLevel.Error && e.Line.Contains($"Relay board {garage},", StringComparison.Ordinal));
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER keep_board;", Cancel);
+        }
+
+        await using var next = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers);
+        await next.LoadAsync(Cancel);
+
+        Assert.Equal([workshop], next.All.Select(b => b.BoardId));
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Line.Contains($"Relay board {garage} (Garage) removed at start", StringComparison.Ordinal));
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await check.Boards.AnyAsync(b => b.Id == garage, Cancel));
+    }
+
+    [Fact]
+    public async Task Should_NotFinishABoard_ThatIsGone()
+    {
+        await using var database = await DatabaseAsync();
+        var registry = Registry(database);
+
+        Assert.False(await registry.FinishAddingAsync(42, Cancel));
+    }
+
     private static BoardRegistry Registry(TestDatabase database)
     {
         return database.Services.GetRequiredService<BoardRegistry>();
@@ -423,10 +559,10 @@ public sealed class BoardRegistryTests
         return database;
     }
 
-    private static async Task<int> AddRowAsync(TestDatabase database, string type = "vm201", int sortOrder = 1, string name = "Board")
+    private static async Task<int> AddRowAsync(TestDatabase database, string type = "vm201", int sortOrder = 1, string name = "Board", bool unfinished = false)
     {
         await using var db = await database.Factory.CreateDbContextAsync(Cancel);
-        var board = new Board { Name = name, Type = type, SortOrder = sortOrder };
+        var board = new Board { Name = name, Type = type, SortOrder = sortOrder, IsUnfinished = unfinished };
         db.Boards.Add(board);
         await db.SaveChangesAsync(Cancel);
         return board.Id;
@@ -438,6 +574,49 @@ public sealed class BoardRegistryTests
         var board = await db.Boards.SingleAsync(b => b.Id == boardId, Cancel);
         (board.Host, board.Port) = (host, port);
         await db.SaveChangesAsync(Cancel);
+    }
+
+    private sealed class ListLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries = new();
+
+        public IReadOnlyList<(LogLevel Level, string Line)> Entries => [.. _entries];
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new ListLogger(_entries);
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class ListLogger : ILogger
+        {
+            private readonly ConcurrentQueue<(LogLevel Level, string Line)> _entries;
+
+            public ListLogger(ConcurrentQueue<(LogLevel Level, string Line)> entries)
+            {
+                _entries = entries;
+            }
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull
+            {
+                return null;
+            }
+
+            public bool IsEnabled(LogLevel logLevel)
+            {
+                return true;
+            }
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                ArgumentNullException.ThrowIfNull(formatter);
+                _entries.Enqueue((logLevel, formatter(state, exception)));
+            }
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

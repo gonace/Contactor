@@ -137,7 +137,8 @@
     private BoardWhereStep.Fields _whereFields = new();
     private List<BoardRelaysStep.Row> _relays = [];
 
-    // The board these steps made, from "Next" on the first step; null before. Cancel removes it again.
+    // The board these steps made, from "Next" on the first step; null before. Cancel removes it again. It stays
+    // unfinished (hidden on Relays, removed at the next start) until "Done" or "Go on without a connection".
     private int? _boardId;
 
     private LiveBoard? Chosen => _boardId is { } id ? Registry.Find(id) : null;
@@ -292,8 +293,16 @@
         _error = null;
         try
         {
+            // Going on without a connection finishes adding it: the board is kept and shown on Relays from now on.
             if (await _where.GoOnWithoutConnectionAsync())
             {
+                // Removed meanwhile: the next step has no board to name.
+                if (_boardId is not { } id || !await Registry.FinishAddingAsync(id, CancellationToken.None))
+                {
+                    _error = Texts["Boards.New.Gone"];
+                    return;
+                }
+
                 Move(StepRelays);
             }
         }
@@ -321,6 +330,10 @@
         try
         {
             _error = await BoardRelaysStep.SaveAsync(Setup, _relays, _user.Email, CancellationToken.None);
+            if (_error is null && _boardId is { } id && !await Registry.FinishAddingAsync(id, CancellationToken.None))
+            {
+                _error = Texts["Boards.New.Gone"];
+            }
         }
         catch (Exception ex)
         {
