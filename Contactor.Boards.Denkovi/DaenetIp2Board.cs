@@ -3,9 +3,10 @@ using Microsoft.Extensions.Logging;
 namespace Contactor.Boards.Denkovi;
 
 /// <summary>
-/// A Denkovi DAEnetIP2 v2 kit as an <see cref="IRelayBoard"/>: its kit's relays, which it never reports by itself, so
-/// <see cref="DaenetIp2Client"/> polls it. It has no pulse: the manual documents none per relay over SNMP. This only
-/// translates the client's state and commands.
+/// A Denkovi DAEnetIP2 v2 kit as an <see cref="IRelayBoard"/>: its kit's relays and the analog inputs of P6, which it
+/// never reports by itself, so <see cref="DaenetIp2Client"/> polls it. It has no pulse: the manual documents none per
+/// relay over SNMP. This only translates the client's state and commands. A change in the analog values alone comes as
+/// <see cref="AnalogChanged"/>.
 /// </summary>
 public sealed class DaenetIp2Board : IRelayBoard
 {
@@ -19,9 +20,12 @@ public sealed class DaenetIp2Board : IRelayBoard
         _client = client;
         _logger = logger;
         _client.StateChanged += OnStateChanged;
+        _client.AnalogChanged += OnAnalogChanged;
     }
 
     public event EventHandler<BoardState>? StateChanged;
+
+    public event EventHandler<BoardState>? AnalogChanged;
 
     public BoardCapabilities Capabilities => _client.Model.Capabilities;
 
@@ -50,11 +54,14 @@ public sealed class DaenetIp2Board : IRelayBoard
         return Task.CompletedTask;
     }
 
-    /// <summary>The board's state as a <see cref="BoardState"/>.</summary>
+    /// <summary>
+    /// The board's state as a <see cref="BoardState"/>. Its analog readings are null before the first poll; the client
+    /// reads only values the board can give, 0 to 1023, and null for each input when an analog answer failed.
+    /// </summary>
     public static BoardState ToBoardState(DaenetIp2State state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), ChannelMask.None, state.LastContactUtc);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), ChannelMask.None, state.LastContactUtc, Analog: state.Status?.Analog);
     }
 
     // Only relays the kit has; throws before anything is sent.
@@ -68,10 +75,20 @@ public sealed class DaenetIp2Board : IRelayBoard
         return relays.Bits;
     }
 
-    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
     private void OnStateChanged(object? sender, DaenetIp2State state)
     {
-        if (StateChanged is not { } handlers)
+        Raise(StateChanged, state);
+    }
+
+    private void OnAnalogChanged(object? sender, DaenetIp2State state)
+    {
+        Raise(AnalogChanged, state);
+    }
+
+    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
+    private void Raise(EventHandler<BoardState>? handlers, DaenetIp2State state)
+    {
+        if (handlers is null)
         {
             return;
         }

@@ -32,6 +32,15 @@ public sealed class DaenetIp2SnmpTests
     internal const string P5NoSuchName =
         "30 31 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A2 1E 02 01 01 02 01 02 02 01 01 30 13 30 11 06 0D 2B 06 01 04 01 82 CC 09 09 02 02 21 00 05 00";
 
+    // snmpget -v1 -c 000000000000 192.168.1.100 .1.3.6.1.4.1.42505.9.2.3.1.0 ("Get P6.1 - This will read analog input 1
+    // level"), request id 1.
+    internal const string GetP6Pin1 =
+        "30 31 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A0 1E 02 01 01 02 01 00 02 01 00 30 13 30 11 06 0D 2B 06 01 04 01 82 CC 09 09 02 03 01 00 05 00";
+
+    // The answer to GetP6Pin1: 512, an INTEGER of two bytes.
+    internal const string P6Pin1Is512 =
+        "30 33 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A2 20 02 01 01 02 01 00 02 01 00 30 15 30 13 06 0D 2B 06 01 04 01 82 CC 09 09 02 03 01 00 02 02 02 00";
+
     private const string ReadOnly = DaenetIp2Api.FactoryReadOnlyCommunity;
     private const string ReadWrite = DaenetIp2Api.FactoryReadWriteCommunity;
 
@@ -61,6 +70,104 @@ public sealed class DaenetIp2SnmpTests
         Assert.Equal(
             "30 2D 02 01 00 04 07 70 72 69 76 61 74 65 A3 1F 02 01 03 02 01 00 02 01 00 30 14 30 12 06 0D 2B 06 01 04 01 82 CC 09 09 02 01 08 00 02 01 00",
             DaenetIp2Snmp.Hex(DaenetIp2Snmp.SetPin(3, ReadWrite, new DaenetIp2Pin(DaenetIp2Port.P3, 8), high: false).Message));
+    }
+
+    [Fact]
+    public void Should_WriteTheManualsGetOfAnalogInputOne_ByteForByte()
+    {
+        var request = DaenetIp2Snmp.GetAnalog(1, ReadOnly, 1);
+
+        Assert.Equal(GetP6Pin1, DaenetIp2Snmp.Hex(request.Message));
+        Assert.Equal(".1.3.6.1.4.1.42505.9.2.3.1.0", DaenetIp2Snmp.OidText(request.Oid));
+        Assert.Equal(".1.3.6.1.4.1.42505.9.2.3.8.0", DaenetIp2Snmp.OidText(DaenetIp2Snmp.GetAnalog(2, ReadOnly, 8).Oid));
+        Assert.Equal(1023, request.MaxValue);
+        Assert.Null(request.Value);
+        Assert.Equal(DaenetIp2Api.GetRequest, request.PduType);
+        Assert.Throws<ArgumentOutOfRangeException>(() => DaenetIp2Snmp.GetAnalog(1, ReadOnly, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DaenetIp2Snmp.GetAnalog(1, ReadOnly, 9));
+    }
+
+    [Fact]
+    public void Should_KnowTheAnalogInputs_OnlyByTheOidsOfTable9Point6()
+    {
+        Assert.Equal(1, DaenetIp2Api.AnalogInputOf(DaenetIp2Api.AnalogOid(1)));
+        Assert.Equal(8, DaenetIp2Api.AnalogInputOf(DaenetIp2Api.AnalogOid(8)));
+        Assert.Null(DaenetIp2Api.AnalogInputOf([.. DaenetIp2Api.Enterprise, 9, 2, 3, 9, 0]));
+        Assert.Null(DaenetIp2Api.AnalogInputOf([.. DaenetIp2Api.Enterprise, 9, 2, 3, 0, 0]));
+        Assert.Null(DaenetIp2Api.AnalogInputOf([.. DaenetIp2Api.Enterprise, 9, 2, 3, 33, 0]));
+        Assert.Null(DaenetIp2Api.AnalogInputOf([.. DaenetIp2Api.Enterprise, 9, 2, 3, 1, 1]));
+        Assert.Null(DaenetIp2Api.AnalogInputOf([.. DaenetIp2Api.Enterprise, 9, 2, 2, 1, 0]));
+        Assert.Null(DaenetIp2Api.AnalogInputOf([.. DaenetIp2Api.Enterprise, 9, 2, 3, 1]));
+        Assert.Null(DaenetIp2Api.AnalogInputOf([1, 3, 6, 1, 4, 1, 42504, 9, 2, 3, 1, 0]));
+    }
+
+    [Theory]
+    [InlineData(0, "02 01 00")]
+    [InlineData(127, "02 01 7F")]
+    [InlineData(128, "02 02 00 80")]
+    [InlineData(512, "02 02 02 00")]
+    [InlineData(1023, "02 02 03 FF")]
+    public void Should_ReadTheAnswerToAnAnalogGet(int value, string tlv)
+    {
+        var request = DaenetIp2Snmp.GetAnalog(1, ReadOnly, 1);
+        var answer = DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.AnalogOid(1), value);
+
+        Assert.EndsWith(" 09 09 02 03 01 00 " + tlv, DaenetIp2Snmp.Hex(answer), StringComparison.Ordinal);
+        Assert.Equal(value, DaenetIp2Snmp.Value(DaenetIp2Snmp.Decode(answer), request));
+    }
+
+    [Fact]
+    public void Should_ReadAnAnalogAnswer_ByteForByte_AlsoWithMoreBytesThanBerNeeds()
+    {
+        var request = DaenetIp2Snmp.GetAnalog(1, ReadOnly, 1);
+
+        Assert.Equal(P6Pin1Is512, DaenetIp2Snmp.Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.AnalogOid(1), 512)));
+        Assert.Equal(512, DaenetIp2Snmp.Value(DaenetIp2Snmp.Decode(Bytes(P6Pin1Is512)), request));
+
+        // 1023 as an INTEGER of 4 bytes, 02 04 00 00 03 FF: two bytes longer, so every length around it too.
+        const string fourBytes =
+            "30 35 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A2 22 02 01 01 02 01 00 02 01 00 30 17 30 15 06 0D 2B 06 01 04 01 82 CC 09 09 02 03 01 00 02 04 00 00 03 FF";
+        Assert.Equal(1023, DaenetIp2Snmp.Value(DaenetIp2Snmp.Decode(Bytes(fourBytes)), request));
+    }
+
+    public static TheoryData<string, string> WrongAnalogAnswers { get; } = new()
+    {
+        // Out of 0..1023: 1024, −1 in two bytes, and the largest INTEGER.
+        { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.AnalogOid(1), 1024)), "The answer's value 1024 isn't from 0 to 1023." },
+        { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.AnalogOid(1), -200)), "The answer's value -200 isn't from 0 to 1023." },
+        { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.AnalogOid(1), int.MaxValue)), "The answer's value 2147483647 isn't from 0 to 1023." },
+
+        // Not an INTEGER: a NULL, and an OCTET STRING "512".
+        { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.AnalogOid(1), null)), "The answer's value has type 05, not INTEGER." },
+        {
+            "30 34 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A2 21 02 01 01 02 01 00 02 01 00 30 16 30 14 06 0D 2B 06 01 04 01 82 CC 09 09 02 03 01 00 04 03 35 31 32",
+            "The answer's value has type 04, not INTEGER."
+        },
+
+        // Another input's value.
+        { Hex(DaenetIp2Snmp.Response(1, ReadOnly, DaenetIp2Api.AnalogOid(2), 5)), "The answer is for .1.3.6.1.4.1.42505.9.2.3.2.0, not .1.3.6.1.4.1.42505.9.2.3.1.0." },
+    };
+
+    [Theory]
+    [MemberData(nameof(WrongAnalogAnswers))]
+    public void Should_RefuseAnAnalogAnswer_OutOfRangeOrOfAnotherType(string answer, string error)
+    {
+        var request = DaenetIp2Snmp.GetAnalog(1, ReadOnly, 1);
+
+        var thrown = Assert.Throws<DaenetIp2ProtocolException>(() => DaenetIp2Snmp.Value(DaenetIp2Snmp.Decode(Bytes(answer)), request));
+
+        Assert.Equal(error, thrown.Message);
+    }
+
+    [Fact]
+    public void Should_ThrowRefused_ForAnAnalogGetsErrorStatus()
+    {
+        var request = DaenetIp2Snmp.GetAnalog(1, ReadOnly, 1);
+        var answer = DaenetIp2Snmp.Response(1, ReadOnly, request.Oid, null, DaenetIp2Api.NoSuchName, 1);
+
+        var refused = Assert.Throws<DaenetIp2RefusedException>(() => DaenetIp2Snmp.Value(DaenetIp2Snmp.Decode(answer), request));
+
+        Assert.Equal(DaenetIp2Api.NoSuchName, refused.ErrorStatus);
     }
 
     [Theory]

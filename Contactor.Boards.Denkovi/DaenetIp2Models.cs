@@ -64,12 +64,21 @@ public sealed class DaenetIp2Layout
 
 /// <summary>
 /// The Denkovi DAEnetIP2 v2 kits in the board catalogue: the controller with a Denkovi relay board on its outputs
-/// (manual, appendix 3). SNMPv1 on UDP port 161, a poll, no inputs and no pulse. The login is the board's read-write
-/// community, a password alone that the board always has: section 6.6.1 says it is used in read and write operations. From Denkovi's manual only,
-/// not yet checked on a real board.
+/// (manual, appendix 3). SNMPv1 on UDP port 161, a poll, no digital inputs and no pulse. Every kit has the controller's
+/// 8 analog inputs on P6, whatever relay board is on P3 and P5. The login is the board's read-write community, a
+/// password alone that the board always has: section 6.6.1 says it is used in read and write operations. From Denkovi's
+/// manual only, not yet checked on a real board.
 /// </summary>
 public static class DaenetIp2Models
 {
+    /// <summary>
+    /// The 8 analog inputs of P6: 10 bit, 0 to 1023, with Vref = 3.3 V (table 2.1: "8 (10bit ADC, Vref=3.3V)"; table
+    /// 9.6: INTEGER(0..1023); appendix 11: "ADC works in range of 0-3.3V"). Whether 3.3 V reads 1023 or 1024 counts the
+    /// manual doesn't say: the app takes 1023 = 3.3 V. Written before the models, which take it: static properties start
+    /// in the order they are written.
+    /// </summary>
+    public static AnalogAbility Analog { get; } = new(DaenetIp2Api.AnalogInputs, DaenetIp2Api.AnalogMaxCounts, 3.3m);
+
     /// <summary>The 16-relay board on P3 and P5 (section 12, 3.1): relays 1 to 8 on P3.1 to P3.8, 9 to 16 on P5.1 to P5.8.</summary>
     public static BoardModel Relays16 { get; } = Create("denkovi-daenetip2-v2-16", "DAEnetIP2 v2 16-relay kit", 16);
 
@@ -156,7 +165,7 @@ public static class DaenetIp2Models
             id,
             DenkoviBrand.Name,
             name,
-            new BoardCapabilities(relays, 0, ReportsChanges: false),
+            new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: Analog),
             DaenetIp2Api.DefaultPort,
             LoginMaxLength: DaenetIp2Api.CommunityMaxLength,
             LoginHint: new LoginHint(

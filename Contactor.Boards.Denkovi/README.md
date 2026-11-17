@@ -20,9 +20,13 @@ The sections under "smartDEN IP-16R-MT" are about the smartDEN IP-16R-MT.
   - section 8.13: the Modbus TCP settings (port 502, idle timeout 5 min, one TCP connection at a time);
   - section 10.2: the Modbus TCP protocol, tables 10.6 to 10.29.
 - The product page: https://denkovi.com/smartden-modbus-tcp-ip-ethernet-16-relay-board
-- Denkovi's "DAEnetIP2 v2 User Manual", 21 April 2020:
-  - table 4.1: the default settings (SNMP on UDP port 161, the read-only community `000000000000`, the read-write
-    community `private`, P3 and P5 as outputs);
+- Denkovi's "DAEnetIP2 v2 User Manual", 21 April 2020
+  (https://denkovi.com/Documents/DAEnetIP2v2/Current-Version/UserManual.pdf):
+  - features (p. 3) and table 2.1 (p. 4): 8 analog inputs, 10 bit, 0 to 3.3 V, "Vref=3.3V", no pull-up or pull-down
+    resistors;
+  - table 4.1 (p. 7): the default settings (SNMP on UDP port 161, the read-only community `000000000000`, the
+    read-write community `private`, P3 and P5 as outputs, the ADC's digital filter on, no analog events);
+  - table 5.1 (p. 10): port JP5 (P6), pins 1 to 8 "Ain", pin 9 "+3.3V(Vref)", pin 10 GND;
   - section 6.3: "Save Outputs";
   - section 6.5: SNMP access only from one network ("Network IP" and "Network Mask") and from two MAC addresses;
   - section 6.6.1: the SNMP agent's port and the two communities, at most 12 characters each. The read-write community
@@ -34,10 +38,17 @@ The sections under "smartDEN IP-16R-MT" are about the smartDEN IP-16R-MT.
   - section 9: SNMPv1, `snmpget` and `snmpset` of one OID at a time, no `snmpwalk`. The read-only community is for
     reading, the read-write community for changing;
   - tables 9.4 and 9.5: the OIDs of P3 and P5;
+  - table 9.1 (p. 29): the analog inputs' filter, `cfgAnalogInputsFilter`, 0 to 30 s;
+  - table 9.6 (p. 32): the OIDs of the analog inputs of P6, `INTEGER(0..1023)`, read-only;
   - section 12 (appendix 3), steps 3.1 to 3.3: which ports each relay board is on;
-  - section 14.2.3: the example `snmpget` and `snmpset` commands;
+  - section 14.2.3 (pp. 46 and 47): the example `snmpget` and `snmpset` commands, among them "Get P6.1" and "Get the
+    whole P6";
   - section 15 (appendix 9) and figure 15.1: an output is 3.3 V at "1" and 0.25 V at "0", and "1" switches a relay on
-    through a transistor.
+    through a transistor;
+  - section 16 (appendix 10, p. 51) and section 17 (appendix 11, p. 52): a resistor in front of each analog input, and
+    "ADC works in range of 0-3.3V".
+- Denkovi's MIB, https://denkovi.com/Firmware/DAEnetIP2v2/Current-Version/DAEnetIP2v2.mib (LAST-UPDATED
+  202210050000Z): `pctrlP6pin1` to `pctrlP6pin8`, `Integer32(0..1023)`.
 - SNMPv1 itself: RFC 1157 (the messages and the 484-byte limit) and its BER encoding.
 
 ## smartDEN IP-16R-MT
@@ -213,7 +224,8 @@ A pin that is High (1) is a relay that is on. The manual's figure 15.1 shows a r
 Section 6.9 also says "1" switches the load on. The manual doesn't say it for the Denkovi relay boards themselves: see
 below.
 
-The kits have no inputs and no pulse in the app. The board can't pulse one relay by itself over SNMP: its only pulse is
+Every kit has the controller's 8 analog inputs on P6, whatever relay board is on P3 and P5: see
+[Analog inputs (P6)](#analog-inputs-p6). The kits have no digital inputs and no pulse in the app. The board can't pulse one relay by itself over SNMP: its only pulse is
 the restart pulse of its ICMP monitoring (`cfgResetPulse`), which the app doesn't use.
 
 ### Protocol
@@ -225,6 +237,8 @@ SNMPv1 over UDP, port 161 (table 4.1). Each request has one OID (section 9).
   error-status, the error-index and one variable: its OID and its value (`NULL` in a `GetRequest`).
 - Every OID starts with Denkovi's prefix `.1.3.6.1.4.1.42505` ("x" in the manual's tables).
 - The board never sends data by itself (the app doesn't use its traps). The app polls it every 2 s.
+- Each get has one OID (section 9 and section 14.2.3), so the app sends one request per port and one per analog
+  input.
 
 | What | Request | OID | Value | Answer | Manual |
 |---|---|---|---|---|---|
@@ -232,6 +246,7 @@ SNMPv1 over UDP, port 161 (table 4.1). Each request has one OID (section 9).
 | Read port P5 | `GetRequest` | x.9.2.2.33.0 (`pctrlP5byte`) | `NULL` | `INTEGER` 0 to 255, bit 0 = P5.1 | table 9.5 |
 | Switch one pin of P3 | `SetRequest` | x.9.2.1.n.0 (`pctrlP3pin`n) | `INTEGER` 1 (High) or 0 (Low) | the value, echoed | table 9.4 |
 | Switch one pin of P5 | `SetRequest` | x.9.2.2.n.0 (`pctrlP5pin`n) | `INTEGER` 1 (High) or 0 (Low) | the value, echoed | table 9.5 |
+| Read analog input n of P6, n = 1 to 8 | `GetRequest` | x.9.2.3.n.0 (`pctrlP6pin`n) | `NULL` | `INTEGER` 0 to 1023 | table 9.6, p. 32 |
 
 The app reads the ports that the kit's relays are on, P3 before P5. It switches one relay with one `SetRequest` of its
 pin, so it never writes a whole port: a change at the board in between is never written over. The board also takes a
@@ -249,6 +264,8 @@ checks them byte for byte:
 | `30 31 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A0 1E 02 01 01 02 01 00 02 01 00 30 13 30 11 06 0D 2B 06 01 04 01 82 CC 09 09 02 02 21 00 05 00` | `snmpget -v1 -c 000000000000 … .1.3.6.1.4.1.42505.9.2.2.33.0` ("Get the whole P5"), request id 1 |
 | `30 32 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A2 1F 02 01 01 02 01 00 02 01 00 30 14 30 12 06 0D 2B 06 01 04 01 82 CC 09 09 02 02 21 00 02 01 05` | Its answer: P5 = 5, pins 1 and 3 High |
 | `30 2D 02 01 00 04 07 70 72 69 76 61 74 65 A3 1F 02 01 02 02 01 00 02 01 00 30 14 30 12 06 0D 2B 06 01 04 01 82 CC 09 09 02 02 01 00 02 01 01` | `snmpset -v1 -c private … .1.3.6.1.4.1.42505.9.2.2.1.0 i 1` (P5.1 High), request id 2 |
+| `30 31 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A0 1E 02 01 01 02 01 00 02 01 00 30 13 30 11 06 0D 2B 06 01 04 01 82 CC 09 09 02 03 01 00 05 00` | `snmpget -v1 -c 000000000000 … .1.3.6.1.4.1.42505.9.2.3.1.0` ("Get P6.1"), request id 1 |
+| `30 33 02 01 00 04 0C 30 30 30 30 30 30 30 30 30 30 30 30 A2 20 02 01 01 02 01 00 02 01 00 30 15 30 13 06 0D 2B 06 01 04 01 82 CC 09 09 02 03 01 00 02 02 02 00` | Its answer: analog input 1 = 512 |
 
 `DaenetIp2Snmp` is our own small codec, without a NuGet package. It writes and reads only these messages:
 
@@ -257,16 +274,49 @@ checks them byte for byte:
 - Lengths in the short form, and in the long form with 1 or 2 bytes. Every length is checked against what is left, so a
   datagram can't make the codec read past it.
 - An `INTEGER` of 1 to 4 bytes, in two's complement. A value of one byte is read unsigned, 0 to 255: an agent may send
-  a port of 255 as one raw byte (`02 01 FF`) as well as BER's `02 02 00 FF`. Anything outside 0 to 255 after that is
-  refused. An OID of at most 32 arcs, each of at most 5 bytes and with no leading zero byte.
+  a port of 255 as one raw byte (`02 01 FF`) as well as BER's `02 02 00 FF`. Anything outside the request's range after
+  that is refused: 0 to 1 for a pin, 0 to 255 for a port, 0 to 1023 for an analog input. An OID of at most 32 arcs, each of at most 5 bytes and with no leading zero byte.
 - Exactly one variable, and no bytes after the message.
 
 An answer is the answer to a request only when it has all of these (`DaenetIp2Snmp.Value`):
 
 - SNMPv1, a `GetResponse`, the request's id and the request's community;
 - error-index 0 or 1, and error-status 0, or else the board refused it;
-- the request's OID, and an `INTEGER` from 0 to 1 for a pin, or from 0 to 255 for a port;
+- the request's OID, and an `INTEGER` from 0 to 1 for a pin, from 0 to 255 for a port, or from 0 to 1023 for an analog
+  input;
 - for a set, the value that was set.
+
+#### Analog inputs (P6)
+
+Port P6 (JP5) has 8 analog inputs. Each is read with its own `GetRequest` of x.9.2.3.n.0, n = 1 to 8 (table 9.6, p. 32;
+"Get P6.1 - This will read analog input 1 level. The rsult is from 0 up to 1023.", section 14.2.3, p. 46). All three
+kits have them: `DaenetIp2Models.Analog`, `AnalogAbility(8, 1023, 3.3)`.
+
+- 10 bit, 0 to 1023, with Vref = 3.3 V: "8 (10bit ADC, Vref=3.3V)" (table 2.1, p. 4) and "8 analog inputs with 10 bit
+  resolution (0-3.3VDC)" (p. 3). Pin 9 of P6 is "+3.3V(Vref)" (table 5.1, p. 10).
+- **1023 or 1024.** The manual doesn't say whether 3.3 V reads 1023 or would read 1024 counts. The app takes
+  1023 = 3.3 V, so a value is `counts / 1023 × 3.3 V`; the difference is less than one count. A reading of 1023 is at
+  the top of the converter's range: 3.3 V or more.
+- **P6 has no other use that changes these OIDs.** Its pins are only "Ain" in table 5.1 (p. 10), "P6 is an 8-channel
+  10-bit analog input port" (section 6.11, p. 24), and the direction settings exist for P3 and P5 only (`cfgP3Dir`,
+  `cfgP5Dir`, section 6.7, p. 19). The manual also lists P6 as 8 digital inputs (table 2.1, footnote 1: "These digital
+  inputs are the analog inputs, but the input voltage is software converted to 1 or 0"; section 6.7: "The analog
+  inputs may be used also for digital inputs (software conversion)"). That is a second reading of the same voltage,
+  through another OID, x.9.2.3.33.0 ("Get the whole P6", p. 47), which isn't in table 9.6. At what voltage a pin reads
+  1 the manual doesn't say. The app doesn't read it, and the analog OIDs keep their meaning.
+- **The board's analog events can switch relays.** "Analog Events" (section 6.9, p. 21; table 9.3, p. 30) set a P5 pin
+  by an analog input's level, and they win over a set from the app (section 7, p. 25). On a kit, a P5 pin is a relay.
+  They are off on a new board (table 4.1, p. 7: "Analog Events – Low, High, Acc: None"); keep them off (see
+  [Settings on the board that switch relays without the app](#settings-on-the-board-that-switch-relays-without-the-app-1)).
+- **The board's filter smooths the value.** "Analog Inputs Filter, sec", 0 to 30 s, 0 = off (section 6.3, p. 14;
+  `cfgAnalogInputsFilter`, x.9.1.32.0, table 9.1, p. 29); "Digital filter for ADC: Enabled" on a new board (table 4.1,
+  p. 7). How much it delays a change the manual doesn't say. The app doesn't read or change it.
+- No pull-up or pull-down resistors (p. 3): an input with nothing connected floats, and its value means nothing.
+- Never more than 3.3 V on an input. "ADC works in range of 0-3.3V", and more "can … damage the ADC channel" (appendix
+  11, p. 52). Denkovi "strongly recommend[s]" a resistor, 22 kΩ for example, in front of each input (appendix 10,
+  p. 51).
+- The board also shows the values over HTTP (`ioreg.js`, section 8.2, p. 26). The app doesn't use it.
+- The manual gives commands, not bytes, for P6 too. The frames above are written by hand from "Get P6.1" in BER.
 
 #### Login: the read-write community
 
@@ -341,9 +391,30 @@ A command (ON or OFF) switches the relays in the mask one at a time, as on the s
   reads again at once. An echo is not proof that a relay switched: the board answers a set that its ICMP monitoring or
   an analog event then overrides (section 7).
 
+The analog inputs are read in polls only, after the ports, one `GetRequest` per input, input 1 first:
+
+- A command's read after the switches reads the ports only. It keeps the analog values of the last poll, so a command
+  never waits on an analog input.
+- An analog failure never takes away the relays. When an analog input gets no answer to both tries, an error-status,
+  or an answer that can't be read (another type than `INTEGER`, a value outside 0 to 1023, another OID), the client
+  stops asking the rest of the inputs. The relays and "connected" stay as read: it isn't a failed poll. Every analog
+  input has "no reading" (null). The Debug screen and the log say why, e.g. "No analog readings: The board didn't
+  answer for analog input 1. The relays are read as usual; the analog inputs are asked for again in 1 min."
+- After a failure the client doesn't ask for the analog inputs for 1 minute (`DaenetIp2Client.AnalogRetryInterval`),
+  on `TimeProvider`. A new connection (a new address or community, or the board found again after it was lost) asks
+  at once.
+- A late analog answer is never taken for the answer to a later request: each request has its own request id, and the
+  client skips any other (see above). It also checks the OID.
+- A change in the analog values alone raises `AnalogChanged`, never `StateChanged` (`DaenetIp2Status.SwitchesComparer`
+  compares the relays only), so the safety services aren't woken by a value that moves a little on every reading.
+- **The poll's cost:** 8 more requests per poll, so 9 on the 8- and 2-relay kits and 10 on the 16-relay kit, every 2 s.
+  Each answer is a datagram of about 50 bytes. A kit that never answers its analog inputs costs one poll 2 s (two tries
+  of 1 s) once a minute; the other polls ask for the ports only.
+
 `DaenetIp2Board`, `DaenetIp2Connection` and `DaenetIp2Traffic` are the adapters for the app. `Features/Denkovi` in
 `Contactor.Web` registers them (`DaenetIp2Boards`). `DaenetIp2TraceText` puts each message in plain words, e.g. "Turn on
-relay 3 (P3.3)". The polls and the answers that change nothing are routine.
+relay 3 (P3.3)", "Ask for analog input 3 (P6.3)" and "Analog input 3: 1.65 V (512)". The polls and the answers that
+change nothing are routine.
 
 ### Settings
 
@@ -369,7 +440,11 @@ from the internet (the manual's appendix 4 shows how; don't). If the board's SNM
 `DaenetIp2Simulator` simulates a kit on a local UDP port. `Contactor.Simulator` offers port 8161, because port 161 needs
 rights that a developer doesn't have.
 
-- It answers a `GetRequest` and a `SetRequest` of each pin and each port's byte of P3 and P5, as above. Its relays are
+- It answers a `GetRequest` and a `SetRequest` of each pin and each port's byte of P3 and P5, as above.
+- It answers a `GetRequest` of each analog input of P6 with the value set on its page (`SetAnalogAsync`, 0 to 1023),
+  as an `INTEGER`. A `SetRequest` of one gets error-status 2 (no such name): the inputs are read-only (table 9.6), and
+  RFC 1157 (section 4.1.5) says so for a variable that can't be set. It doesn't answer x.9.2.3.33.0 (P6 as digital
+  inputs; error-status 2): the manual doesn't say at what voltage a pin reads 1. Its relays are
   the kit's pins: a High pin is a relay that is on. A pin that no relay is on still switches.
 - A get takes the read-only or the read-write community, a set only the read-write one. The read-write community is
   the one given on its page, or `private` without one. The read-only community is `000000000000` unless a test sets
@@ -379,7 +454,8 @@ rights that a developer doesn't have.
 - It answers another OID with error-status 2 (no such name), and a value out of range or not an `INTEGER` with 3 (a
   value it doesn't take). The real board's codes are to check.
 - UDP has no connection. Its page lists where the app asked from; "Drop connection" forgets them.
-- For the tests: `NoAnswer` stops all answers, `DropRequests` drops the next few requests, `SilentRelays` never answers
+- For the tests: `NoAnalogAnswer` leaves the analog inputs without an answer and still answers the ports, `NoAnswer`
+  stops all answers, `DropRequests` drops the next few requests, `SilentRelays` never answers
   the sets of some relays, and `FailRelays` refuses the sets of some relays with error-status 5 (it failed).
 - Like the board, it takes a community of 4 to 12 characters only.
 - Its trace shows the PDU of each message, never the community.
@@ -394,7 +470,7 @@ the app. The app sees each switch only as a change from outside:
 - The ICMP monitoring (section 6.10): it pulses the P5 pins in `cfgP5DupRST` to restart another device. It wins over a
   set from the app (section 7).
 - The analog events (section 6.9): they set a P5 pin by an analog input's level. They also win over a set from the app
-  (section 7).
+  (section 7). The app reads the analog inputs but never sets these.
 - The direction of each pin (section 6.7, `cfgP3Dir` and `cfgP5Dir`): a pin set as an input switches no relay.
 
 The app doesn't read or change these settings. Set them on the board's web page: P3 and P5 as outputs, the ICMP
@@ -453,9 +529,19 @@ The other points:
 - That the board answers from UDP port 161 (or the port set), the one the app sent to: an answer from another port is
   skipped.
 - The firmware version (`cfgVersion`, x.9.1.8.0) of the kits that Denkovi sells now.
-- That the board answers within 1 s, every time, to a poll every 2 s for days, also with two gets per poll on the
-  16-relay kit.
+- That the board answers within 1 s, every time, to a poll every 2 s for days: with the analog inputs that is 9 gets
+  per poll, or 10 on the 16-relay kit.
 - That the answer carries the request's community, and that it is a `GetResponse` with the request's OID. The manual's
   example output (section 14.2.1) shows "enterprises.19865", not 42505.
 - Which error-status the board sends for an OID it doesn't have and for a value out of range.
 - That a set is echoed with the value set, and that the read right after it shows the new state.
+
+The analog inputs (P6):
+
+- Which voltage reads 1023: 3.3 V, or a little more (the app takes 1023 = 3.3 V). Measure an input at about 1.65 V
+  with a meter and compare it with the app.
+- That the answer is an `INTEGER` in BER (`02 02 02 00` for 512), and how a value of 128 to 255 is sent.
+- That a get of x.9.2.3.n.0 with the read-write community is answered, and that the firmware has these OIDs.
+- What an input with nothing connected reads: there are no pull-up or pull-down resistors.
+- How long the board's filter (on by default) takes to follow a change.
+- That the board's analog events are off ("None"), so no analog level switches a relay.

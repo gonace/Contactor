@@ -21,7 +21,8 @@ public sealed class DaenetIp2BoardTests
         var model = Assert.Single(DaenetIp2Models.All, m => m.Id == id);
 
         Assert.Equal(("Denkovi", name, $"Denkovi {name}"), (model.Brand, model.ModelName, model.Name));
-        Assert.Equal(new BoardCapabilities(relays, 0, ReportsChanges: false), model.Capabilities);
+        Assert.Equal(new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: new AnalogAbility(8, 1023, 3.3m)), model.Capabilities);
+        Assert.Equal(3.3m, model.Capabilities.Analog!.Volts(1023));
         Assert.Null(model.Capabilities.Pulse);
         Assert.Equal(161, model.DefaultPort);
         Assert.Equal(12, model.LoginMaxLength);
@@ -81,6 +82,11 @@ public sealed class DaenetIp2BoardTests
 
         Assert.Equal(new BoardState(true, ChannelMask.Of([1, 16]), ChannelMask.None, at), state);
         Assert.Equal(BoardState.Initial, DaenetIp2Board.ToBoardState(DaenetIp2State.Initial));
+
+        // The analog readings go with it, "no reading" as null.
+        var analog = new AnalogReadings([0, 512, null, 1023, 1, 2, 3, 4]);
+        var withAnalog = DaenetIp2Board.ToBoardState(new DaenetIp2State(true, new DaenetIp2Status(1UL, analog), at));
+        Assert.Equal(analog, withAnalog.Analog);
     }
 
     [Fact]
@@ -114,6 +120,52 @@ public sealed class DaenetIp2BoardTests
         Assert.IsNotType<BoardRefusedException>(error);
         Assert.True(board.State.IsConnected);
 
+        await stop.CancelAsync();
+        await run.WaitAsync(Cancel);
+    }
+
+    [Fact]
+    public async Task Should_PassOnTheAnalogReadings_AndAnAnalogOnlyChange_AsAnalogChanged()
+    {
+        await using var simulator = new DaenetIp2Simulator(DaenetIp2Models.Relays2);
+        simulator.Start();
+        await simulator.SetAnalogAsync(2, 100);
+        var time = new ManualTimeProvider();
+        using var client = CreateClient(DaenetIp2Models.Relays2, simulator.Port, DaenetIp2Api.FactoryReadWriteCommunity, time);
+        var board = new DaenetIp2Board(client, NullLogger<DaenetIp2Board>.Instance);
+        var states = 0;
+        var analog = new List<BoardState>();
+        board.StateChanged += (_, _) => Interlocked.Increment(ref states);
+        board.AnalogChanged += (_, state) =>
+        {
+            lock (analog)
+            {
+                analog.Add(state);
+            }
+        };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => board.State.IsConnected && time.WaitsOnly(TimeSpan.FromSeconds(2)));
+        Assert.Equal(new AnalogReadings([0, 100, 0, 0, 0, 0, 0, 0]), board.State.Analog);
+        var before = Volatile.Read(ref states);
+
+        await simulator.SetAnalogAsync(2, 200);
+        time.Advance(TimeSpan.FromSeconds(2));
+        await Wait.UntilAsync(() =>
+        {
+            lock (analog)
+            {
+                return analog.Count == 1;
+            }
+        });
+
+        lock (analog)
+        {
+            Assert.Equal(200, analog[0].Analog!.Input(2));
+            Assert.True(analog[0].IsConnected);
+        }
+
+        Assert.Equal(before, Volatile.Read(ref states));
         await stop.CancelAsync();
         await run.WaitAsync(Cancel);
     }
@@ -156,12 +208,12 @@ public sealed class DaenetIp2BoardTests
         return [.. relays.Select(r => layout.PinOf(r).ToString())];
     }
 
-    private static DaenetIp2Client CreateClient(BoardModel model, int port = 161, string community = "")
+    private static DaenetIp2Client CreateClient(BoardModel model, int port = 161, string community = "", TimeProvider? time = null)
     {
         return new DaenetIp2Client(
             Options.Create(new DaenetIp2Options { Host = "127.0.0.1", Port = port, Community = community }),
             model,
-            new ManualTimeProvider(),
+            time ?? new ManualTimeProvider(),
             NullLogger<DaenetIp2Client>.Instance);
     }
 }

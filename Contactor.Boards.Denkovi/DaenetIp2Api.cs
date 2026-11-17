@@ -2,9 +2,9 @@ namespace Contactor.Boards.Denkovi;
 
 /// <summary>
 /// The Denkovi DAEnetIP2 v2 as it speaks to the app: SNMPv1 (RFC 1157) over UDP, one OID per request, GetRequest to read
-/// and SetRequest to switch. Source: Denkovi's "DAEnetIP2 v2 User Manual" of 21 April 2020, section 9 (tables 9.4 and
-/// 9.5), section 6.6.1 (the agent's port and communities) and table 4.1 (the defaults). Its HTTP API (section 8) writes
-/// a whole port at once, so the app doesn't use it. See README.md for what is still to check on a real board.
+/// and SetRequest to switch. Source: Denkovi's "DAEnetIP2 v2 User Manual" of 21 April 2020, section 9 (tables 9.4,
+/// 9.5 and 9.6), section 6.6.1 (the agent's port and communities) and table 4.1 (the defaults). Its HTTP API (section
+/// 8) writes a whole port at once, so the app doesn't use it. See README.md for what is still to check on a real board.
 /// </summary>
 public static class DaenetIp2Api
 {
@@ -94,6 +94,45 @@ public static class DaenetIp2Api
 
     /// <summary>The largest value of a port's whole byte: INTEGER(0..255).</summary>
     public const int MaxPortValue = 255;
+
+    /// <summary>The analog inputs on port P6 (JP5): 8 (table 2.1, table 5.1).</summary>
+    public const int AnalogInputs = 8;
+
+    /// <summary>
+    /// The highest value of an analog input: <c>pctrlP6pin</c>n is INTEGER(0..1023), from the 10-bit converter with
+    /// Vref = 3.3 V (table 9.6, table 2.1).
+    /// </summary>
+    public const int AnalogMaxCounts = 1023;
+
+    /// <summary>The arc of port P6 in x.9.2.3.n.0 (table 9.6).</summary>
+    public const int AnalogPortArc = 3;
+
+    /// <summary>
+    /// One analog input, 1 to 8: x.9.2.3.n.0 is <c>pctrlP6pin</c>n, "ADC Channel n", INTEGER(0..1023), read-only
+    /// (table 9.6; section 14.2.3: "Get P6.1 - This will read analog input 1 level").
+    /// </summary>
+    public static int[] AnalogOid(int input)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, AnalogInputs);
+        return [.. Enterprise, 9, 2, AnalogPortArc, input, 0];
+    }
+
+    /// <summary>The analog input an OID of table 9.6 reads, 1 to 8; null for any other OID.</summary>
+    public static int? AnalogInputOf(IReadOnlyList<int> oid)
+    {
+        ArgumentNullException.ThrowIfNull(oid);
+        var prefix = Enterprise.Count;
+        return oid.Count == prefix + 5
+            && oid.Take(prefix).SequenceEqual(Enterprise)
+            && oid[prefix] == 9
+            && oid[prefix + 1] == 2
+            && oid[prefix + 2] == AnalogPortArc
+            && oid[prefix + 3] is >= 1 and <= AnalogInputs
+            && oid[prefix + 4] == 0
+            ? oid[prefix + 3]
+            : null;
+    }
 
     /// <summary>
     /// One output pin: x.9.2.1.n.0 is <c>pctrlP3pin</c>n (table 9.4), x.9.2.2.n.0 is <c>pctrlP5pin</c>n (table 9.5),

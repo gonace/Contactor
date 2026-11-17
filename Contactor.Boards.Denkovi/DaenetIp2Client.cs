@@ -10,9 +10,11 @@ namespace Contactor.Boards.Denkovi;
 
 /// <summary>
 /// Talks to a Denkovi DAEnetIP2 v2 kit over SNMPv1 on UDP (<see cref="DaenetIp2Api"/>): polls the ports its relays are
-/// on (a GetRequest of each port's byte) through <see cref="BoardPoller{TReading}"/>, and switches relays one at a time
-/// (a SetRequest of the relay's pin). One request at a time (the poller sees to it), each with its own request id,
-/// waiting <see cref="RequestTimeout"/> for its answer and asking once more when none comes (<see cref="Attempts"/>).
+/// on (a GetRequest of each port's byte) and the 8 analog inputs of P6 (a GetRequest of each) through
+/// <see cref="BoardPoller{TReading}"/>, and switches relays one at a time (a SetRequest of the relay's pin). The analog
+/// inputs are read in polls only, and an analog answer that fails never fails the poll: it gives "no reading" for a
+/// while (<see cref="AnalogRetryInterval"/>). One request at a time (the poller sees to it), each with its own request
+/// id, waiting <see cref="RequestTimeout"/> for its answer and asking once more when none comes (<see cref="Attempts"/>).
 /// A datagram from another address, with another request id, or one the codec can't read is skipped. The board answers
 /// a wrong community with silence, so a board that never answers may have another community: the trace says so.
 /// Commands are never queued: without an answer to a poll they fail at once with <see cref="BoardNotConnectedException"/>,
@@ -34,6 +36,13 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     /// </summary>
     public const int MaxUnansweredInARow = 2;
 
+    /// <summary>
+    /// How long the client leaves the analog inputs alone after their answer failed: a board that never answers them
+    /// costs one time-out per this, not one per poll. A new connection from the poller (a new address or community, or
+    /// the board found again) tries at once.
+    /// </summary>
+    public static readonly TimeSpan AnalogRetryInterval = TimeSpan.FromMinutes(1);
+
     /// <summary>How many skipped datagrams one try traces; a flood of them would bury the rest of the trace.</summary>
     public const int MaxSkippedTraced = 8;
 
@@ -50,6 +59,11 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     private Socket? _socket;
     private IPEndPoint? _remote;
     private DaenetIp2Status? _lastTraced;
+
+    // Only used under the poller's lock (a connect, a poll or a command). What the last poll read of the analog inputs,
+    // which a command's read takes over, and until when they are left alone after a failed answer.
+    private AnalogReadings? _lastAnalog;
+    private DateTimeOffset? _analogRetryAt;
     private int _wasConnected;
     private int _disposed;
     private int _requestId;
@@ -83,7 +97,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         _community = community;
         _timeProvider = timeProvider;
         _logger = logger;
-        _poller = new BoardPoller<DaenetIp2Status>(this, timeProvider)
+        _poller = new BoardPoller<DaenetIp2Status>(this, timeProvider, DaenetIp2Status.SwitchesComparer)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
         };
@@ -94,6 +108,12 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     /// the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<DaenetIp2State>? StateChanged;
+
+    /// <summary>
+    /// Raised when a poll finds only the analog values changed: the relays and the connection are as before, so
+    /// <see cref="StateChanged"/> isn't raised. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<DaenetIp2State>? AnalogChanged;
 
     /// <summary>Every request and answer and every step, in plain words, without the community. Handlers must be quick.</summary>
     public event EventHandler<BoardTraceEntry>? Traced;
@@ -205,12 +225,15 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
 
     Task IPolledBoard<DaenetIp2Status>.ConnectAsync(CancellationToken cancellationToken)
     {
+        // A new connection, maybe to another board or with another community: the analog inputs are read again at once.
+        _lastAnalog = null;
+        _analogRetryAt = null;
         return OpenAsync(cancellationToken);
     }
 
     Task<DaenetIp2Status> IPolledBoard<DaenetIp2Status>.ReadAsync(CancellationToken cancellationToken)
     {
-        return ReadStatusAsync(cancellationToken);
+        return ReadStatusAsync(readAnalog: true, cancellationToken);
     }
 
     void IPolledBoard<DaenetIp2Status>.OnStateChanged(PolledState<DaenetIp2Status> state)
@@ -223,6 +246,12 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         }
 
         Raise(StateChanged, new DaenetIp2State(state.IsConnected, state.Reading, state.LastContactUtc));
+    }
+
+    void IPolledBoard<DaenetIp2Status>.OnReadingChanged(PolledState<DaenetIp2Status> state)
+    {
+        // The comparer leaves out only the analog values: that is what changed.
+        Raise(AnalogChanged, new DaenetIp2State(state.IsConnected, state.Reading, state.LastContactUtc));
     }
 
     void IPolledBoard<DaenetIp2Status>.OnStep(BoardPollStep kind, string? detail)
@@ -399,7 +428,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
 
         try
         {
-            return new CommandReading<DaenetIp2Status>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            return new CommandReading<DaenetIp2Status>(await ReadStatusAsync(readAnalog: false, cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is DaenetIp2RefusedException or DaenetIp2ProtocolException || IsNoAnswer(ex))
         {
@@ -411,8 +440,10 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         }
     }
 
-    // A GetRequest of each port the relays are on, P3 before P5; a pin that is High is a relay that is on.
-    private async Task<DaenetIp2Status> ReadStatusAsync(CancellationToken cancellationToken)
+    // A GetRequest of each port the relays are on, P3 before P5; a pin that is High is a relay that is on. Then, only in a
+    // poll (readAnalog), the analog inputs, so a command's confirmation never waits on them: a command's read keeps what
+    // the last poll read of them.
+    private async Task<DaenetIp2Status> ReadStatusAsync(bool readAnalog, CancellationToken cancellationToken)
     {
         var last = Volatile.Read(ref _lastTraced);
         var community = Community;
@@ -432,10 +463,70 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             }
         }
 
-        var status = new DaenetIp2Status(_layout.RelaysOf(p3, p5));
-        Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Relays(status.Relays, _model.Capabilities.RelayCount), isRoutine: last?.Relays == status.Relays);
+        var relays = _layout.RelaysOf(p3, p5);
+        Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Relays(relays, _model.Capabilities.RelayCount), isRoutine: last?.Relays == relays);
+        if (readAnalog && _model.Capabilities.Analog is { } ability)
+        {
+            _lastAnalog = await ReadAnalogAsync(ability, last?.Analog, community, cancellationToken).ConfigureAwait(false);
+        }
+
+        var status = new DaenetIp2Status(relays, _lastAnalog);
         Volatile.Write(ref _lastTraced, status);
         return status;
+    }
+
+    // The analog inputs, one GetRequest each (the board takes one OID per request, section 9), or "no reading" for each
+    // when an answer is missing, refused or can't be read (another type, a value outside 0 to 1023), or while they are
+    // left alone after such an answer (AnalogRetryInterval). That never fails the poll: an unproven measurement must not
+    // take away the relays. A late answer can't be taken for a later one: each request has its own id, and
+    // ReceiveAsync skips any other. A cancellation (a command takes the poll's place) still ends the poll, as for any
+    // request.
+    private async Task<AnalogReadings> ReadAnalogAsync(AnalogAbility ability, AnalogReadings? last, string community, CancellationToken cancellationToken)
+    {
+        var none = new AnalogReadings(new int?[ability.Count]);
+        if (_analogRetryAt is { } retryAt && _timeProvider.GetUtcNow() < retryAt)
+        {
+            return none;
+        }
+
+        _analogRetryAt = null;
+        var counts = new int?[ability.Count];
+        string? problem = null;
+        for (var input = 1; input <= ability.Count && problem is null; input++)
+        {
+            var request = DaenetIp2Snmp.GetAnalog(NextRequestId(), community, input);
+            try
+            {
+                var (value, pdu) = await ExchangeAsync(request, routine: true, cancellationToken).ConfigureAwait(false);
+                Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Analog(input, value, ability), pdu, isRoutine: last?.Input(input) == value);
+                counts[input - 1] = value;
+            }
+            catch (DaenetIp2RefusedException ex)
+            {
+                problem = string.Create(CultureInfo.InvariantCulture, $"The board refused analog input {input}: {DaenetIp2TraceText.ErrorName(ex.ErrorStatus)}.");
+            }
+            catch (DaenetIp2ProtocolException ex)
+            {
+                problem = string.Create(CultureInfo.InvariantCulture, $"The board's answer for analog input {input} can't be read: {ex.Message}");
+            }
+            catch (Exception ex) when (IsNoAnswer(ex))
+            {
+                problem = string.Create(CultureInfo.InvariantCulture, $"The board didn't answer for analog input {input}.");
+            }
+        }
+
+        if (problem is null)
+        {
+            return new AnalogReadings(counts);
+        }
+
+        _analogRetryAt = _timeProvider.GetUtcNow() + AnalogRetryInterval;
+        DaenetIp2Log.AnalogNotRead(_logger, problem);
+        Trace(
+            BoardTraceDirection.None,
+            string.Create(CultureInfo.InvariantCulture, $"No analog readings: {problem} The relays are read as usual; the analog inputs are asked for again in {AnalogRetryInterval.TotalMinutes} min."),
+            isError: true);
+        return none;
     }
 
     /// <summary>
