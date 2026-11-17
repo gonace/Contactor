@@ -105,28 +105,29 @@
     cursor: pointer;
 }
 
-.remove {
+/* "Join the step above" and "Remove": buttons that look like links, in the text colour; "Remove" in red. */
+.link-button {
     align-self: flex-start;
     min-height: 44px;
     padding: 0 4px;
     border: none;
     background: transparent;
-    color: var(--danger-ink);
+    color: var(--ink);
     font: inherit;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
 }
 
-/* "Join the step above" and "Remove" in one row under the relay's name; join in the text colour, not red. */
+.link-button.remove {
+    color: var(--danger-ink);
+}
+
+/* "Join the step above" and "Remove" in one row under the relay's name. */
 .relay-actions {
     display: flex;
     flex-wrap: wrap;
     column-gap: 16px;
-}
-
-.join {
-    color: var(--ink);
 }
 
 /* A step's relays, each with its own ON/OFF, under the step's name. */
