@@ -84,10 +84,10 @@ public sealed class PersistenceTests
         Assert.Equal(5000L, await command.ExecuteScalarAsync(Cancel));
     }
 
-    // Issue #213: a transaction takes the write lock at BEGIN (BEGIN IMMEDIATE), so one that reads and then writes
-    // makes another writer wait. Opened deferred, its write would fail with SQLITE_BUSY after the read.
+    // Issue #213: a transaction takes the write lock at BEGIN (BEGIN IMMEDIATE), so another writer is refused while it
+    // reads, and gets through once it commits. Opened deferred, its own write would fail with SQLITE_BUSY after the read.
     [Fact]
-    public async Task Should_LetASecondWriterWait_WhileATransactionReadsThenWrites()
+    public async Task Should_HoldTheWriteLock_FromBeginTransaction()
     {
         await using var database = TestDatabase.Create();
         await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);

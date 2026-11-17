@@ -226,7 +226,10 @@ public sealed class RelaysPageTests
     // How many of an event's handlers belong to a component of type T.
     private static int Handlers<T>(object source, string name)
     {
-        var field = source.GetType().GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        // A field-like event's backing field has the event's name. An event with its own add and remove has none: say so
+        // rather than count nothing.
+        var field = source.GetType().GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.True(field is not null, $"{source.GetType().Name}.{name} has no backing field: count its handlers another way.");
         return (field.GetValue(source) as Delegate)?.GetInvocationList().Count(d => d.Target is T) ?? 0;
     }
 
