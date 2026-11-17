@@ -196,7 +196,7 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         {
             Directory.Move(_folder, deleting);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Not moved, e.g. Windows refuses to move a folder with a file still open: deleted in place, as before.
             deleting = _folder;
