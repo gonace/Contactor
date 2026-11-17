@@ -25,7 +25,7 @@ public sealed class Vm204Board : IRelayBoard
     private readonly Vm204Client _client;
     private readonly ILogger<Vm204Board> _logger;
 
-    // The analog readings the latest event of either kind carried. Both come on the poller's loop, one at a time.
+    // The analog readings the latest event of either kind carried. Both come under the poller's lock, one at a time.
     private AnalogReadings? _lastAnalog;
 
     public Vm204Board(Vm204Client client, ILogger<Vm204Board> logger)
