@@ -320,6 +320,11 @@
         {
             // The page closed meanwhile.
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Not shown to the person: the tab bar keeps what it shows, and the next change tries again.
+            Log.LogWarning(ex, "The page could not reload {What}", "the person's Debugging setting");
+        }
     }
 
     // From a board's connection loop.
