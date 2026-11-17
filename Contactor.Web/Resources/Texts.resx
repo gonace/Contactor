@@ -896,6 +896,95 @@
     <value>{0} {1}</value>
     <comment>An event this version has no words for: {1} is its name in the log.</comment>
   </data>
+  <data name="Events.OwnRules.Found.Edge" xml:space="preserve">
+    <value>Input {1} switches relay {1} at each change on {0}</value>
+    <comment>{0} is the board ("the board", or its name with two or more boards), {1} the relay's and input's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Linkage" xml:space="preserve">
+    <value>Relay {1} follows input {1} on {0}</value>
+    <comment>{0} is the board ("the board", or its name), {1} the relay's and input's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Rule" xml:space="preserve">
+    <value>{0} has a rule of its own for relay {1}</value>
+    <comment>{0} is "The board" or its name, {1} the relay's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Timer" xml:space="preserve">
+    <value>{0} has its own timer for relay {1}</value>
+    <comment>{0} is "The board" or its name, {1} the relay's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Toggle" xml:space="preserve">
+    <value>Input {1} switches relay {1} with each pulse on {0}</value>
+    <comment>{0} is the board ("the board", or its name), {1} the relay's and input's number.</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Edge" xml:space="preserve">
+    <value>Input {1} now switches relay {1} at each change on {0}</value>
+    <comment>Turned on while the app watched the board.</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Linkage" xml:space="preserve">
+    <value>Relay {1} now follows input {1} on {0}</value>
+    <comment>Turned on while the app watched the board.</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Rule" xml:space="preserve">
+    <value>{0} own rule for relay {1} was turned on</value>
+    <comment>{0} is "The board's" or the board's name in the genitive (Events.OwnRules.Named).</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Timer" xml:space="preserve">
+    <value>{0} own timer for relay {1} was turned on</value>
+    <comment>{0} is "The board's" or the board's name in the genitive (Events.OwnRules.Named).</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Toggle" xml:space="preserve">
+    <value>Input {1} now switches relay {1} with each pulse on {0}</value>
+    <comment>Turned on while the app watched the board.</comment>
+  </data>
+  <data name="Events.OwnRules.Kept" xml:space="preserve">
+    <value>{0} kept {1} {2} for {3}</value>
+    <comment>{0} is the person, {1} "the board's" or the board's name in the genitive, {2} e.g. "own timer", {3} e.g. "relay 3".</comment>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRule" xml:space="preserve">
+    <value>own input rule</value>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRules" xml:space="preserve">
+    <value>own input rules</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rule" xml:space="preserve">
+    <value>own rule</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rules" xml:space="preserve">
+    <value>own rules</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timer" xml:space="preserve">
+    <value>own timer</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timers" xml:space="preserve">
+    <value>own timers</value>
+  </data>
+  <data name="Events.OwnRules.Named" xml:space="preserve">
+    <value>{0}'s</value>
+    <comment>A board's name in the genitive, e.g. "Garage's".</comment>
+  </data>
+  <data name="Events.OwnRules.Relay" xml:space="preserve">
+    <value>relay {0}</value>
+  </data>
+  <data name="Events.OwnRules.Relays" xml:space="preserve">
+    <value>relays {0}</value>
+    <comment>{0} is a list, e.g. "3, 5 and 7".</comment>
+  </data>
+  <data name="Events.OwnRules.TheBoards" xml:space="preserve">
+    <value>the board's</value>
+    <comment>The board in the genitive, inside a line, with one board.</comment>
+  </data>
+  <data name="Events.OwnRules.TurnedOff" xml:space="preserve">
+    <value>{0} turned off {1} {2} for {3}</value>
+    <comment>{0} is the person, {1} "the board's" or the board's name in the genitive, {2} e.g. "own timers", {3} e.g. "relays 3 and 5".</comment>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
+    <value>the board</value>
+    <comment>The board inside a line, with one board.</comment>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoards" xml:space="preserve">
+    <value>The board's</value>
+    <comment>The board in the genitive at the start of a line, with one board.</comment>
+  </data>
   <data name="Events.Pulse" xml:space="preserve">
     <value>{0} tried for {1}</value>
     <comment>{1} is a length, e.g. "2 s".</comment>
@@ -1615,6 +1704,15 @@
   <data name="Inputs.WhyUnknownLabel" xml:space="preserve">
     <value>Why is the time unknown?</value>
     <comment>Read out by screen readers.</comment>
+  </data>
+  <data name="OwnRules.Keep.Gone" xml:space="preserve">
+    <value>The board no longer has that rule.</value>
+  </data>
+  <data name="OwnRules.TurnOff.NoContact" xml:space="preserve">
+    <value>No contact with the relay board. Nothing was turned off.</value>
+  </data>
+  <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
+    <value>The relay board didn't turn them off. Try again.</value>
   </data>
   <data name="Relays.AllBoardsOff" xml:space="preserve">
     <value>Turn off all boards</value>

@@ -128,7 +128,7 @@ public sealed class EventsHandler
                 e.GroupId is { } eventGroupId ? groupNames.GetValueOrDefault(eventGroupId) : null,
                 e.Action == EventActions.InputChanged ? personNames.GetValueOrDefault(EventActors.ForInput(e.InputId ?? 1)) : null,
                 boardName);
-            return new EventRow(e.Id, _clock.ToLocal(e.TimestampUtc), view, EventText.IsAboutBoard(e) ? null : boardName);
+            return new EventRow(e.Id, _clock.ToLocal(e.TimestampUtc), view, EventText.NamesBoard(e) ? null : boardName);
         })];
     }
 

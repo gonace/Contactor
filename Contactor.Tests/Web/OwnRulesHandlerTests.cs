@@ -1,0 +1,195 @@
+using Contactor.Boards;
+using Contactor.Boards.Velleman;
+using Contactor.Web.Features.OwnRules;
+using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Contactor.Tests.Web;
+
+/// <summary>
+/// A person turning off or keeping a board's own rules (<see cref="OwnRulesHandler"/>): sent at once to that board only
+/// and logged, or nothing at all without a connection, never queued.
+/// </summary>
+public sealed class OwnRulesHandlerTests
+{
+    private const string Erik = OwnRulesRig.Erik;
+
+    private static readonly OwnRule Timer3 = new(3, OwnRuleKind.Timer);
+    private static readonly OwnRule Timer5 = new(5, OwnRuleKind.Timer);
+
+    private static CancellationToken Cancel => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Should_TurnOffOnlyThatBoardsRules_AndLogThePersonsEvent()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        rig.Other.SetOwnRules(new OwnRules([Timer3]));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 2 && rig.Service.Rows(rig.OtherId).Count == 1);
+
+        Assert.Null(await rig.Handler.TurnOffAsync(rig.BoardId, [Timer5, Timer3], Erik, Cancel));
+
+        Assert.Equal(OwnRules.Empty, rig.Board.State.OwnRules);
+        Assert.Equal(new OwnRules([Timer3]), rig.Other.State.OwnRules);
+        var entry = Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRulesTurnedOff));
+        Assert.Equal((Erik, (int?)null, """{"relays":[3,5],"kinds":["timer"]}"""), (entry.Actor, entry.RelayId, entry.Details));
+        Assert.Empty(await rig.EventsAsync(EventActions.BoardOwnRulesTurnedOff, rig.OtherId));
+
+        // The board's next state has none: their rows go, without another event.
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 0);
+        Assert.Empty(await rig.RowsAsync());
+        Assert.Single(await rig.RowsAsync(rig.OtherId));
+        Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count);
+    }
+
+    [Fact]
+    public async Task Should_SendNothingAndLogNothing_WhenNoneAreAsked()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(new OwnRules([Timer3]));
+
+        Assert.Null(await rig.Handler.TurnOffAsync(rig.BoardId, [], Erik, Cancel));
+
+        Assert.Equal(new OwnRules([Timer3]), rig.Board.State.OwnRules);
+        Assert.Empty(await rig.EventsAsync(EventActions.BoardOwnRulesTurnedOff));
+    }
+
+    [Fact]
+    public async Task Should_SayWhy_WhenTheBoardDoesntTakeThem()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(new OwnRules([Timer3]));
+
+        // The fake board takes none it doesn't have, as a real board's client throws when it took none.
+        Assert.Equal("The relay board didn't turn them off. Try again.", await rig.Handler.TurnOffAsync(rig.BoardId, [Timer5], Erik, Cancel));
+        Assert.Equal("The relay board didn't turn them off. Try again.", await rig.Handler.TurnOffAsync(rig.BoardId, [new OwnRule(9, OwnRuleKind.Timer)], Erik, Cancel));
+
+        rig.Board.SetConnected(false);
+        Assert.Equal("No contact with the relay board. Nothing was turned off.", await rig.Handler.TurnOffAsync(rig.BoardId, [Timer3], Erik, Cancel));
+
+        Assert.Equal(new OwnRules([Timer3]), rig.Board.State.OwnRules);
+        Assert.Empty(await rig.EventsAsync(EventActions.BoardOwnRulesTurnedOff));
+    }
+
+    // Offline: the press says so, nothing is sent or logged, and nothing is sent later either: after the reconnect the
+    // board's timers are still on.
+    [Fact]
+    public async Task Should_SendNothing_Offline_AndNothingAfterTheReconnect()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x14);
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 17, 12, 0, 0, TimeSpan.Zero));
+        await using var database = OwnRulesServiceTests.Vm201Database(simulator, time);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var board = await database.Services.UseBoardAsync("vm201");
+        var client = database.Services.BoardService<Vm201Client>();
+        var handler = database.Services.GetRequiredService<OwnRulesHandler>();
+        var services = OwnRulesServiceTests.Started(database);
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
+        try
+        {
+            await Wait.UntilAsync(() => OwnRulesServiceTests.Found(database) == 2);
+            simulator.DropConnections();
+            await Wait.UntilAsync(() => !client.State.IsConnected);
+
+            var message = await handler.TurnOffAsync(board.BoardId, [Timer3, Timer5], Erik, Cancel);
+
+            await Wait.UntilAsync(() =>
+            {
+                if (simulator.ConnectionCount >= 2 && client.State.IsConnected)
+                {
+                    return true;
+                }
+
+                time.Advance(TimeSpan.FromSeconds(1));
+                return false;
+            });
+            var asked = simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.StatusRequest);
+            time.Advance(TimeSpan.FromSeconds(15));
+            await Wait.UntilAsync(() => simulator.ReceivedCommands.Count(p => p.Command == Vm201Command.StatusRequest) > asked);
+            Assert.Equal("No contact with the relay board. Nothing was turned off.", message);
+        }
+        finally
+        {
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
+        }
+
+        Assert.Equal(0x14, simulator.TimerMask);
+        Assert.DoesNotContain(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
+        await using var db = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.False(await db.EventLog.AnyAsync(e => e.Action == EventActions.BoardOwnRulesTurnedOff, Cancel));
+    }
+
+    // Online, the VM201 gets one CMD_TMR_DIS with only the bits asked for, and the rule left stays remembered.
+    [Fact]
+    public async Task Should_TurnOffTheVm201sTimersAsked_AndForgetTheirRows()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x14);
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 17, 12, 0, 0, TimeSpan.Zero));
+        await using var database = OwnRulesServiceTests.Vm201Database(simulator, time);
+        await database.Services.InitializeDatabaseAsync(Cancel);
+        var board = await database.Services.UseBoardAsync("vm201");
+        var handler = database.Services.GetRequiredService<OwnRulesHandler>();
+        var rules = database.Services.GetRequiredService<OwnRulesService>();
+        var services = OwnRulesServiceTests.Started(database);
+        foreach (var service in services)
+        {
+            await service.StartAsync(Cancel);
+        }
+
+        try
+        {
+            await Wait.UntilAsync(() => rules.Rows(board.BoardId).Count == 2);
+
+            Assert.Null(await handler.TurnOffAsync(board.BoardId, [Timer3], Erik, Cancel));
+
+            await Wait.UntilAsync(() => simulator.TimerMask == 0x10 && rules.Rows(board.BoardId).Count == 1);
+        }
+        finally
+        {
+            foreach (var service in services)
+            {
+                await service.StopAsync(Cancel);
+            }
+        }
+
+        var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
+        Assert.Equal([0x04], sent.Data.ToArray());
+        Assert.Equal((5, OwnRuleKind.Timer), (Assert.Single(rules.Rows(board.BoardId)).Channel, Assert.Single(rules.Rows(board.BoardId)).Kind));
+    }
+
+    [Fact]
+    public async Task Should_KeepARule_AndLogItOnce()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 2);
+
+        Assert.Null(await rig.Handler.KeepAsync(rig.BoardId, 3, OwnRuleKind.Timer, Erik, Cancel));
+        Assert.Null(await rig.Handler.KeepAsync(rig.BoardId, 3, OwnRuleKind.Timer, Erik, Cancel));
+
+        var rows = await rig.RowsAsync();
+        Assert.Equal(Erik, rows[0].KeptBy);
+        Assert.NotNull(rows[0].KeptUtc);
+        Assert.Null(rows[1].KeptUtc);
+        Assert.Equal(Erik, rig.Service.Rows(rig.BoardId)[0].KeptBy);
+        var entry = Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRuleKept));
+        Assert.Equal((Erik, await rig.RelayIdAsync(3), """{"kind":"timer","relay":3}"""), (entry.Actor, entry.RelayId, entry.Details));
+        Assert.Equal([Timer5], rig.Handler.Warnings(rig.BoardId));
+
+        // A rule the app doesn't have.
+        Assert.Equal("The board no longer has that rule.", await rig.Handler.KeepAsync(rig.BoardId, 4, OwnRuleKind.Timer, Erik, Cancel));
+        Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRuleKept));
+    }
+}

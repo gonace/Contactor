@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.OwnRules;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Contactor.Web.Resources;
@@ -25,6 +26,7 @@ public sealed class BoardAddressHandler
     private readonly RelayChanges _changes;
     private readonly IStringLocalizer<Texts> _texts;
     private readonly BoardLoginText _login;
+    private readonly OwnRulesService? _ownRules;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -32,8 +34,10 @@ public sealed class BoardAddressHandler
         LocalClock clock,
         RelayChanges changes,
         IStringLocalizer<Texts> texts,
-        BoardLoginText login)
+        BoardLoginText login,
+        OwnRulesService? ownRules = null)
     {
+        _ownRules = ownRules;
         _texts = texts;
         _login = login;
         _dbFactory = dbFactory;
@@ -194,8 +198,9 @@ public sealed class BoardAddressHandler
     }
 
     /// <summary>
-    /// Saves a new address, logs who changed it from what, and moves the client there at once.
-    /// Returns null when saved (or unchanged), otherwise the message to show.
+    /// Saves a new address, logs who changed it from what, and moves the client there at once. Another board may be
+    /// there: the board's own rules the app remembered (<see cref="BoardOwnRule"/>) go with the old address, and its
+    /// rules are read afresh. Returns null when saved (or unchanged), otherwise the message to show.
     /// </summary>
     public async Task<string?> SaveAsync(int boardId, string? host, int port, string userEmail, CancellationToken cancellationToken)
     {
@@ -233,10 +238,16 @@ public sealed class BoardAddressHandler
                     ? JsonSerializer.Serialize(new { from = current.ToString(), to = endpoint.ToString() })
                     : JsonSerializer.Serialize(new { to = endpoint.ToString() }),
             });
+            db.BoardOwnRules.RemoveRange(await db.BoardOwnRules.Where(r => r.BoardId == board.Id).ToListAsync(cancellationToken));
         }
 
         await db.SaveChangesAsync(cancellationToken);
         connection.SetEndpoint(endpoint);
+        if (current != endpoint)
+        {
+            _ownRules?.Forget(board.Id);
+        }
+
         _changes.Notify();
         return null;
     }

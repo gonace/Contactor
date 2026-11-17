@@ -10,6 +10,7 @@ using Contactor.Web.Features.Health;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Languages;
+using Contactor.Web.Features.OwnRules;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Features.Setup;
@@ -63,6 +64,7 @@ public sealed partial class Program
         builder.Services.AddEvents(builder.Configuration);
         builder.Services.AddInputs(builder.Configuration);
         builder.Services.AddSchedules(builder.Configuration);
+        builder.Services.AddOwnRules(builder.Configuration);
         builder.Services.AddBackup(builder.Configuration);
         builder.Services.AddUpdates(builder.Configuration);
         builder.Services.AddSetup(builder.Configuration);

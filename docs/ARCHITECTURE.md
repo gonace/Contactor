@@ -108,13 +108,13 @@ Board                   (a relay board the app runs; every screen shows every bo
   IsUnfinished    bool           true while "Add a board" hasn't finished it (from "Next" on its first step until "Done"
                                  or "Go on without a connection", or its address or login saved in Settings): not
                                  shown on Relays, removed at the next start
-                                 Its relays, inputs, analog inputs, groups, runtime and events point to it with
-                                 cascade delete.
+                                 Its relays, inputs, analog inputs, groups, runtime, own rules and events point to it
+                                 with cascade delete.
                                  Removing a board (BoardRemoval) deletes, in one transaction and in this order:
                                  the input actions that touch its relays, groups or inputs (from any board), the
                                  schedules of its relays and groups, its groups' runtimes and members, its groups,
-                                 its relays' runtimes, its relays, its inputs, its analog inputs, its events, its
-                                 BoardRuntime and its row, then adds the "board-removed" event (no board); the
+                                 its relays' runtimes, its relays, its inputs, its analog inputs, its own rules
+                                 (BoardOwnRule), its events, its BoardRuntime and its row, then adds the "board-removed" event (no board); the
                                  Restrict keys (InputAction, RelayGroupMember, RelayRuntime and Schedule to
                                  Relay, InputAction to Input) need that order, so no cascade is relied on. When it
                                  was the first board, the board that becomes first gets "no address and no login"
@@ -136,6 +136,18 @@ BoardRuntime            (internal, one row per board)
                                  stay. At start the inputs are compared with their last logged state; one that
                                  changed meanwhile, or changed during a lost contact, is logged with
                                  {"noticed":true} and its time is unknown.
+
+BoardOwnRule            (a rule of the board's own the app told people about, and what they decided; see "The board's
+                         own rules". Never a copy of relay state)
+  Id              int PK
+  BoardId         int FK         cascade delete; deleted explicitly with its board (BoardRemoval), and at a new address
+                                 or another model for the board
+  Channel         int            the relay it switches, by its channel (1–64)
+  Kind            text           "timer" | "input-linkage" | "input-toggle" | "input-edge" (OwnRuleKind)
+                                 UNIQUE with BoardId and Channel
+  FoundUtc        datetime       when the app first saw it
+  KeptUtc         datetime?      when a person chose "Keep": the app no longer warns about it
+  KeptBy          text?          e-mail
 
 Relay
   Id              int PK         the database's key, in links (relay/12) and events; given by the database, not its
@@ -178,6 +190,10 @@ EventLog
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
                                  "board-timers-disabled" | "board-relay-modes-reset" | "board-relay-modes-not-reset" |
+                                 "board-own-rule-found" ("system", the relay, {"kind":"timer","new":true,"relay":3}:
+                                 new when it came while the app watched the board, relay its channel) |
+                                 "board-own-rules-turned-off" (a person, {"relays":[3,5],"kinds":["timer"]}) |
+                                 "board-own-rule-kept" (a person, the relay, {"kind":"timer","relay":3}) |
                                  "board-address-changed" | "board-login-changed" | "board-renamed" |
                                  "board-removed" (a person, no board, {"name","model"} as they were; no model for a
                                  board without one) |
@@ -378,6 +394,17 @@ A group runs its relays in steps, in a start order, e.g. a fan heater: the fan f
 
 ### The board's own timers
 - The board's built-in timer programs compete with the app's schedules. On the first successful connection, and at the first answer after a new address (it may be another VM201): send `CMD_TMR_DIS 0xFF` and log it with Actor `system`. Configurable through `Vm201:DisableBoardTimers=true`.
+
+### The board's own rules
+- Rules on the board itself that switch its relays without the app (`BoardState.OwnRules`, see Boards), such as the VM201's timer programs. **The app never changes a board's own rules without a person's press**: it shows what it finds, warns, and turns them off only when a person asks.
+- `OwnRulesService` (`Features/OwnRules`) listens to every board through `BoardRegistry` (`StateChanged` and `OwnRulesChanged`), beside the safety services and never as one of their watchers, so they never wait for it. It keeps each board's latest state and does the database work on its own loop, and acts only when a board's rules differ from the last it saw. It never sends a command to a board.
+  - A rule with no row gets a `BoardOwnRule` and is logged as `board-own-rule-found` by `system`, with the relay: `new` is true when this run had already read the board's rules without it (it was turned on while the app watched), false at first sight (at start, a new board, a new address). After a restart a rule that has its row logs nothing.
+  - A row whose rule an actual reading no longer has is deleted, its "Keep" with it, without logging: if the rule comes back, the app warns again.
+  - No reading (null rules: the board can't read them, hasn't answered yet, or its state was forgotten) changes no row.
+  - A board's rows go with the board (`BoardRemoval`), with a new address (`BoardAddressHandler`) and with another model (`BoardRegistry.ReplaceModelAsync`): another board may be there. A board forgotten after its rules were read has its rows deleted by the service too.
+  - It keeps each board's rows in memory for the screens, and raises `Changed` with the board's id when they change. A row's database save that fails is logged and tried again 30 s later.
+- `OwnRulesHandler`: `Warnings(boardId)` is the rules the board reports now that no person kept. `TurnOffAsync` sends the board's `TurnOffOwnRulesAsync` at once and logs `board-own-rules-turned-off` by the person for the rules the board took; without a connection, or when the board doesn't take them, it says so in plain words and nothing is logged or queued. Their rows go when the board's next state no longer has them. `KeepAsync` sets `KeptUtc` and `KeptBy` and logs `board-own-rule-kept` by the person, once.
+- Events name the board as the subject: "The board has its own timer for relay 3", "The board's own timer for relay 3 was turned on", "Relay 3 follows input 3 on the board", "Erik turned off the board's own timers for relays 3 and 5", "Erik kept the board's own timer for relay 3"; with two or more boards, its name ("Garage's own timer …").
 
 ### External changes
 - If `CMD_STATUS` shows a change the app didn't ask for (through the board's web GUI, the physical button or timers): log it with Actor `external`.
