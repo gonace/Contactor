@@ -145,6 +145,8 @@ Exchanges from the documents and the recorded session:
 - Before the first analog request of a poll, the client opens a connection if there is none, and checks and unlocks it.
   A board that doesn't take the connection or answer the check fails the poll there, as it would for the relays. It
   isn't taken for a problem with the analog inputs.
+- The Debug screen, the log and the 1-minute pause come only when the relays and inputs of the same poll answered. When
+  they fail too (a board that has just died), the whole poll fails, and the next poll asks for the analog inputs again.
 - None of the three manuals says if full scale is 1023 or 1024 counts. The app takes 1023 as full scale: 1023 = 5 V
   (or 3.3 V), and 1 count is 5 V / 1023. The difference is 1 count, about 5 mV.
 - None of the manuals gives an example answer. The tests use the manuals' format with made-up values.

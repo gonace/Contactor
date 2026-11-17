@@ -48,6 +48,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     private int _requestCount;
     private int _unansweredCount;
     private int _dropRequests;
+    private bool _noAnalogAnswer;
 
     /// <summary>A kit with the factory communities.</summary>
     public DaenetIp2Simulator(BoardModel model)
@@ -181,7 +182,12 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard
     /// When true, a get of an analog input is read but never answered, as a board that doesn't answer P6; the relays
     /// are still answered. For the tests of an analog failure that must not take the relays away.
     /// </summary>
-    public bool NoAnalogAnswer { get; set; }
+    public bool NoAnalogAnswer
+    {
+        // Read on the receive thread, set by a test.
+        get => Volatile.Read(ref _noAnalogAnswer);
+        set => Volatile.Write(ref _noAnalogAnswer, value);
+    }
 
     /// <summary>
     /// Relays (bit 0 = relay 1) whose set is answered with the error-status genErr and not carried out, for the tests

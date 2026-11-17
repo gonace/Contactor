@@ -91,9 +91,9 @@ Frames from the wiki, unit 1:
 - An answer with a wrong unit, function, length, echo or CRC is unreadable. Then the client closes the connection,
   because the stream can be out of step. The next request opens a new connection.
 - A timeout also closes the connection. The next request opens a new one, so one lost answer doesn't lose the board.
-- When the connection was open from before and turns out broken (the board or the network can close a connection
-  that is idle), the client sends the request once more on a new connection. It does this only when no byte of the
-  answer came. Each request the client sends has the same result when done twice: reading the relays, the inputs or
+- When the connection was open from before (not one just opened while connecting) and turns out broken (the board
+  or the network can close a connection that is idle), the client sends the request once more on a new connection. It
+  does this only when no byte of the answer came. Each request the client sends has the same result when done twice: reading the relays, the inputs or
   the modes, switching one relay, starting its pulse again, and setting the modes to normal.
 - Bytes that wait before a request were not asked for. The client drops them and shows them on the Debug screen.
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the VM204 and the VM208.

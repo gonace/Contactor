@@ -183,6 +183,12 @@ internal sealed class PageRenderer : Renderer
         return attributes => attributes.TryGetValue(name, out var found) && found?.ToString() == value;
     }
 
+    /// <summary>Gives the page new parameters, as a link to the same page with another route id does.</summary>
+    public Task SetParametersAsync(IDictionary<string, object?> parameters)
+    {
+        return Dispatcher.InvokeAsync(() => RenderRootComponentAsync(_rootId, ParameterView.FromDictionary(parameters)));
+    }
+
     /// <summary>Closes the page, as when the person leaves it: the page is disposed.</summary>
     public void Close()
     {

@@ -11,8 +11,9 @@ namespace Contactor.Boards.Devantech;
 /// (0x24), inputs (0x25) and analog inputs (0x32 per input, or 0x34 for all on the ETH1610) through
 /// <see cref="BoardPoller{TReading}"/> and switches relays one at a time (0x20, 0x21). The analog inputs are read in
 /// polls only, before the relays and inputs, and an analog answer that fails never fails the poll: it gives
-/// "no reading" for a while (<see cref="AnalogRetryInterval"/>). One TCP connection and one command at a time (the poller sees to it), each command in one write, each waiting for
-/// its answer of a fixed length within <see cref="RequestTimeout"/>. Every new connection first checks that the board
+/// "no reading" for a while (<see cref="AnalogRetryInterval"/>). One TCP connection and one command at a time (the
+/// poller sees to it), each command in one write, each waiting for its answer of a fixed length within
+/// <see cref="RequestTimeout"/>. Every new connection first checks that the board
 /// is the chosen model (0x10) and unlocks it with the password when it is locked (0x7A, 0x79); a command checks the lock
 /// again, since it comes back after 30 s without a command. A request without an answer or with a value its answer
 /// can't have closes the connection, and the next request opens a new one. A request on a connection from before that
@@ -402,9 +403,10 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     private async Task<DevantechStatus> ReadStatusAsync(bool readAnalog, CancellationToken cancellationToken)
     {
         var last = Volatile.Read(ref _lastTraced);
+        string? analogProblem = null;
         if (readAnalog && _model.Capabilities.Analog is { } ability)
         {
-            _lastAnalog = await ReadAnalogAsync(ability, last?.Analog, cancellationToken).ConfigureAwait(false);
+            (_lastAnalog, analogProblem) = await ReadAnalogAsync(ability, last?.Analog, cancellationToken).ConfigureAwait(false);
         }
 
         var relayCount = _model.Capabilities.RelayCount;
@@ -421,6 +423,18 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             Trace(BoardTraceDirection.Received, DevantechTraceText.Inputs(inputs, inputCount), DevantechProtocol.Hex(answer), isRoutine: last?.Inputs == inputs);
         }
 
+        // Only once the relays and inputs answered: a board that has just died fails them too, and that is no reason
+        // to blame the analog inputs or leave them alone for a minute.
+        if (analogProblem is not null)
+        {
+            _analogRetryAt = _timeProvider.GetUtcNow() + AnalogRetryInterval;
+            _logger.AnalogNotRead(analogProblem);
+            Trace(
+                BoardTraceDirection.None,
+                string.Create(CultureInfo.InvariantCulture, $"No analog readings: {analogProblem} The relays and inputs are read as usual; the analog inputs are asked for again in {AnalogRetryInterval.TotalMinutes} min."),
+                isError: true);
+        }
+
         var status = new DevantechStatus(relays, inputs, _lastAnalog);
         Volatile.Write(ref _lastTraced, status);
         return status;
@@ -432,13 +446,14 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     // for the next answer: the relays and inputs after it go on a new one, in the same poll. A board that can't be
     // reached, checked or unlocked is opened for before the first analog request, so it fails the poll as it would for
     // the relays, and isn't taken for a problem with the analog inputs. A cancellation (a command takes the poll's
-    // place) fails the poll too, as for any request.
-    private async Task<AnalogReadings> ReadAnalogAsync(AnalogAbility ability, AnalogReadings? last, CancellationToken cancellationToken)
+    // place) fails the poll too, as for any request. Returns why the answer failed as well, for ReadStatusAsync to start
+    // the wait once the relays and inputs answered; null when it didn't fail.
+    private async Task<(AnalogReadings Readings, string? Problem)> ReadAnalogAsync(AnalogAbility ability, AnalogReadings? last, CancellationToken cancellationToken)
     {
         var none = new AnalogReadings(new int?[ability.Count]);
         if (_analogRetryAt is { } retryAt && _timeProvider.GetUtcNow() < retryAt)
         {
-            return none;
+            return (none, null);
         }
 
         await EnsureOpenAsync(cancellationToken).ConfigureAwait(false);
@@ -454,18 +469,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             (readings, problem) = (null, ex.Message);
         }
 
-        if (readings is not null)
-        {
-            return readings;
-        }
-
-        _analogRetryAt = _timeProvider.GetUtcNow() + AnalogRetryInterval;
-        _logger.AnalogNotRead(problem);
-        Trace(
-            BoardTraceDirection.None,
-            string.Create(CultureInfo.InvariantCulture, $"No analog readings: {problem} The relays and inputs are read as usual; the analog inputs are asked for again in {AnalogRetryInterval.TotalMinutes} min."),
-            isError: true);
-        return none;
+        return readings is not null ? (readings, null) : (none, problem ?? "");
     }
 
     // One 0x34 for all inputs on the ETH1610, one 0x32 per input on the others. Returns the readings, or why the answer
@@ -574,7 +578,8 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     /// </summary>
     private async Task<byte[]> ExchangeAsync(DevantechRequest request, bool routine, CancellationToken cancellationToken)
     {
-        // Not one just opened to check and unlock it: that one goes nowhere else.
+        // Not one just opened to check and unlock it: that one goes nowhere else. One opened before this call, also just
+        // before it (ReadAnalogAsync opens one first), counts as from before: its first command may go once more.
         var reused = _stream is not null && !_checking;
         await EnsureOpenAsync(cancellationToken).ConfigureAwait(false);
 

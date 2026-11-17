@@ -203,6 +203,31 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
+    public async Task Should_NotLeaveTheAnalogInputsAlone_WhenTheRelaysOfTheSamePollFailToo()
+    {
+        // A board that has just died: 0x32 gets no answer, and neither does 0x24 after it. The poll fails as a whole,
+        // the analog inputs aren't blamed, and the next poll asks for them again.
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [21, 1, 1],
+            [0x7A] => [0xFF],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth8020);
+        await Wait.UntilAsync(() => board.Received.Contains("32 01") && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+        await Wait.UntilAsync(() => board.Received.Contains("24") && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "32 01") == 2);
+
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No analog readings: ", StringComparison.Ordinal));
+        Assert.False(run.Client.State.IsConnected);
+    }
+
+    [Fact]
     public async Task Should_StayConnected_WhenTheAnswerToTheAnalogInputsIsShort()
     {
         // 30 of the 32 bytes: the client waits for the rest, gives up on the analog inputs only, and the relays of the
