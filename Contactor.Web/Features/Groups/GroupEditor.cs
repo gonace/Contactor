@@ -145,6 +145,24 @@ public sealed class GroupEditor
         }
     }
 
+    /// <summary>
+    /// Moves a relay into the step above, last: "Remove" and then "Add" to that step. A step left without relays goes
+    /// with it, and with it its wait and run-on; the step above keeps its name and times. A relay in the first step, or
+    /// not in the group, does nothing.
+    /// </summary>
+    public void JoinStepAbove(int relayId)
+    {
+        var stepIndex = _steps.FindIndex(s => s.Relays.Any(r => r.RelayId == relayId));
+        if (stepIndex < 1)
+        {
+            return;
+        }
+
+        var relay = _steps[stepIndex].Relays.First(r => r.RelayId == relayId);
+        Remove(relayId);
+        AddToStep(stepIndex - 1, relay);
+    }
+
     /// <summary>Moves a whole step up (-1) or down (+1); nothing past the ends.</summary>
     public void Move(int stepIndex, int by)
     {

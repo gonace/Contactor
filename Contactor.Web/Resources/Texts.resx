@@ -1135,6 +1135,14 @@
   <data name="Groups.Icon.Tools" xml:space="preserve">
     <value>Tools</value>
   </data>
+  <data name="Groups.JoinStepAbove" xml:space="preserve">
+    <value>Join the step above</value>
+    <comment>On a relay whose step isn't the first: moves it into the step above. Nothing is saved until "Save".</comment>
+  </data>
+  <data name="Groups.JoinStepAbove.Label" xml:space="preserve">
+    <value>Move {0} into the step above</value>
+    <comment>For a screen reader: {0} is the relay's name.</comment>
+  </data>
   <data name="Groups.LimitHint" xml:space="preserve">
     <value>Applies when someone turns the group on by hand. It stops in its stop order, with its run-on times.</value>
   </data>

@@ -105,13 +105,14 @@
             {
                 <p class="on-board label">@Texts["Groups.New.OnBoard", onBoard]</p>
             }
-            @* The same step cards as the group's page: a relay can join a step, be added or removed, and a whole step moves. *@
+            @* The same step cards as the group's page: a relay can join a step or the step above, be added or removed, and a whole step moves. *@
             <div class="steps-editor">
                 <GroupStepsEditor Editor="_wizard.Editor"
                                   CanAdd="Addable.Count > 0"
                                   Addable="Addable"
                                   OnMove="m => _wizard.Move(m.Step, m.By)"
                                   OnRemove="_wizard.Remove"
+                                  OnJoin="_wizard.JoinStepAbove"
                                   OnAdd="AddRelay" />
             </div>
             <p class="info">@Texts["Groups.New.Interlock"]</p>
