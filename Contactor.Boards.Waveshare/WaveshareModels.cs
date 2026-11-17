@@ -45,10 +45,11 @@ public static class WaveshareModels
         return All.Contains(model);
     }
 
-    // The (B) and (C), the models with inputs, have relay control modes, their own rules; the others have none.
+    // The (B) and (C), the models with inputs, have relay control modes, their own rules; the others have none. Until
+    // the client reads and turns off those modes (issue #497), the (B) and (C) say they can't tell.
     private static BoardModel Create(string id, string name, int relays, int inputs)
     {
-        var ownRules = inputs > 0 ? OwnRulesAbility.ReadsAndTurnsOff : OwnRulesAbility.None;
+        var ownRules = inputs > 0 ? OwnRulesAbility.CantTell : OwnRulesAbility.None;
         return new BoardModel(id, Brand, name, new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: Pulse, OwnRules: ownRules), WaveshareApi.DefaultPort, LoginMaxLength: 0);
     }
 }
