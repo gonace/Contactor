@@ -310,17 +310,27 @@ public sealed partial class AnalogPagesTests
         board.SetAnalog(Readings());
         using var page = await PageRenderer.StartAsync<AnalogInputDetail>(app.Services, John, "John", Id(1));
         Assert.Contains("The board reads 2.10 V.", await page.TextAsync(), StringComparison.Ordinal);
-        var renders = page.PageRenders;
 
         // Only another input's reading changes: nothing shown here.
-        board.SetAnalog(Readings(fourth: 300));
-        await page.Dispatcher.InvokeAsync(() => { });
-        Assert.Equal(renders, page.PageRenders);
+        Assert.False(await RedrawsAsync(page, () => board.SetAnalog(Readings(fourth: 300))));
 
-        board.SetAnalog(Readings(first: 431, fourth: 300));
-        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("The board reads 2.11 V.", StringComparison.Ordinal));
+        Assert.True(await RedrawsAsync(page, () => board.SetAnalog(Readings(first: 431, fourth: 300))));
+        Assert.Contains("The board reads 2.11 V.", await page.TextAsync(), StringComparison.Ordinal);
         Assert.Contains("22.1", await page.TextAsync(), StringComparison.Ordinal);
         Assert.Empty(page.Errors);
+    }
+
+    // Whether a new reading from the board, sent by change, redraws the page. The change is made on the page's own
+    // thread, so the page handles the reading at once, and nothing else the app does meanwhile can draw the page before
+    // the count is read: e.g. an event the app logs at start, which redraws the page too.
+    private static Task<bool> RedrawsAsync(PageRenderer page, Action change)
+    {
+        return page.Dispatcher.InvokeAsync(() =>
+        {
+            var renders = page.PageRenders;
+            change();
+            return page.PageRenders != renders;
+        });
     }
 
     [Theory]
