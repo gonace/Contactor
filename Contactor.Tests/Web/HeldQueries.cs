@@ -8,9 +8,10 @@ namespace Contactor.Tests.Web;
 
 /// <summary>
 /// Holds the app's database queries whose SQL matches until the test releases them, so a test can close a page while
-/// its load waits for the database. Nothing is held until <see cref="Hold"/>.
+/// its load waits for the database. Nothing is held until <see cref="Hold"/>. Disposing it releases them, so a test that
+/// fails before <see cref="Release"/> leaves no query waiting: the app gives them no token that ends.
 /// </summary>
-internal sealed class HeldQueries : DbCommandInterceptor
+internal sealed class HeldQueries : DbCommandInterceptor, IDisposable
 {
     private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Func<string, bool>? _match;
@@ -36,6 +37,11 @@ internal sealed class HeldQueries : DbCommandInterceptor
     {
         Volatile.Write(ref _match, null);
         _released.TrySetResult();
+    }
+
+    public void Dispose()
+    {
+        Release();
     }
 
     public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(

@@ -46,7 +46,7 @@ public sealed class PagesClosedWhileLoadingTests
     [Fact]
     public async Task Should_LeaveNoHandlers_WhenEventsClosesWhileItLoads()
     {
-        var queries = new HeldQueries();
+        using var queries = new HeldQueries();
         await using var app = new TestWebApp(configureServices: queries.AddTo);
         var registry = app.Services.GetRequiredService<BoardRegistry>();
         var changes = app.Services.GetRequiredService<RelayChanges>();
@@ -95,7 +95,7 @@ public sealed class PagesClosedWhileLoadingTests
     [Fact]
     public async Task Should_LeaveNoHandlers_WhenTheSetupGuideClosesWhileItsBoardLoads()
     {
-        var queries = new HeldQueries();
+        using var queries = new HeldQueries();
         await using var app = SetupApp(boardType: "vm201", queries.AddTo);
         await SignInOnceAsync(app);
         var registry = app.Services.GetRequiredService<BoardRegistry>();
@@ -124,6 +124,44 @@ public sealed class PagesClosedWhileLoadingTests
         Assert.Equal(0, PageRenderer.Handlers<TabBar>(app.Services.GetRequiredService<BoardTrafficSetting>(), nameof(BoardTrafficSetting.Changed)));
         // The toasts' watch on every board's trace starts by listening for boards added.
         Assert.Equal(0, PageRenderer.Handlers<BoardTraceWatch>(registry, nameof(BoardRegistry.BoardsChanged)));
+    }
+
+    // A list update already on its way when the tab bar closes: it waits for the page's thread, and finds the page closed.
+    [Fact]
+    public async Task Should_LoadNoCounts_WhenTheTabBarClosesWithAnUpdateOnItsWay()
+    {
+        var queries = new FailingQueries();
+        await using var app = new TestWebApp(configureServices: services =>
+        {
+            TestWebApp.WithLostBoard(services);
+            queries.AddTo(services);
+        });
+        var page = await PageRenderer.StartAsync<TabBar>(app.Services, John, "John");
+        var changes = app.Services.GetRequiredService<RelayChanges>();
+        queries.Fail(_ => true, () => new InvalidOperationException("A closed tab bar read the database."));
+        using var entered = new SemaphoreSlim(0);
+        using var raised = new SemaphoreSlim(0);
+
+        // The page's thread is busy while the change comes, and closes the page next.
+        var closing = Task.Run(() => page.Dispatcher.InvokeAsync(() =>
+        {
+            entered.Release();
+            raised.Wait(Cancel);
+            page.Close();
+        }), Cancel);
+        await entered.WaitAsync(Cancel);
+        changes.Notify();
+        raised.Release();
+        await closing;
+        await page.Dispatcher.InvokeAsync(async () =>
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                await Task.Yield();
+            }
+        });
+
+        Assert.Equal(0, queries.Failures);
     }
 
     [Fact]

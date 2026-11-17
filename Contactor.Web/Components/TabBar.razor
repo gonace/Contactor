@@ -229,6 +229,12 @@
         {
             await InvokeAsync(async () =>
             {
+                // On the page's own thread, as Dispose is: a closed tab bar loads no counts.
+                if (_disposed)
+                {
+                    return;
+                }
+
                 if (reload)
                 {
                     await LoadCountsAsync();

@@ -322,9 +322,9 @@ public sealed partial class UpdateService : BackgroundService
     /// "Check now": reads GitHub's releases now, unless they were read less than <see cref="CheckNowEvery"/> ago. While
     /// a read is under way, waits for that one instead. Returns whether it read them itself.
     /// </summary>
-    public async Task<bool> CheckNowAsync(CancellationToken cancellationToken)
+    public Task<bool> CheckNowAsync(CancellationToken cancellationToken)
     {
-        return await TryCheckAsync(limit: true, cancellationToken);
+        return TryCheckAsync(limit: true, cancellationToken);
     }
 
     // One read at a time: the first caller claims it under the lock, and a caller meanwhile waits for it, so two
@@ -340,7 +340,9 @@ public sealed partial class UpdateService : BackgroundService
             {
                 earlier = _reading;
             }
-            else if (limit && _triedUtc is { } tried && now - tried < CheckNowEvery)
+            // A clock that went back (e.g. corrected after a start without the time) gives a negative gap: that may check,
+            // or "Check now" would do nothing until the clock passes the last read again.
+            else if (limit && _triedUtc is { } tried && now >= tried && now - tried < CheckNowEvery)
             {
                 return false;
             }
@@ -386,9 +388,11 @@ public sealed partial class UpdateService : BackgroundService
             }
 
             done.TrySetResult();
+
+            // Also when the read ends because its own token was cancelled: no open box keeps showing "Checking…".
+            Changed?.Invoke(this, EventArgs.Empty);
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
