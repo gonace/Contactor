@@ -255,7 +255,9 @@ public sealed class BoardAddingTests
         await page.TypeAsync(PageRenderer.With("id", "host"), "192.168.1.80");
         await page.ClickAsync(Button("Go on without a connection"));
         Assert.Equal("192.168.1.80", garage.Endpoint.Host);
-        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        text = await page.TextAsync();
+        Assert.Contains("Name your relays", text, StringComparison.Ordinal);
+        Assert.Contains("STEP 3 OF 3", text, StringComparison.Ordinal);
 
         await page.TypeAsync(PageRenderer.With("id", $"relay-{await RelayIdAsync(boards, garage.BoardId, 1)}"), "Door motor");
         await page.ClickAsync(Button("Done"));
@@ -414,6 +416,48 @@ public sealed class BoardAddingTests
         Assert.NotNull(next.Find(made.BoardId));
         await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
         Assert.False(await db.Boards.Where(b => b.Id == made.BoardId).Select(b => b.IsUnfinished).SingleAsync(Cancel));
+    }
+
+    // A VM201 that answers with its own timers on for relays 3 and 5: "This board has timers of its own" comes after
+    // "Where is the board?", and "Turn them off" turns off just those timers at the board (one CMD_TMR_DIS for relays 3
+    // and 5), then "Name your relays". Vm201:DisableBoardTimers still turns them off at the first connection until part
+    // 6 of issue #497, so it is off here.
+    [Fact]
+    public async Task Should_AskAboutAVm201sOwnTimers_AndTurnThemOffAtTheBoard()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x14);
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John, ["Vm201:DisableBoardTimers"] = "false" },
+            TestWebApp.WithBoard(new FakeRelayBoard()));
+        var registry = app.Services.GetRequiredService<BoardRegistry>();
+        using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+        await ChooseAsync(page, "Velleman", "vm201");
+        await page.ClickAsync(Button("Next"));
+        var made = registry.All[^1];
+        await page.TypeAsync(PageRenderer.With("id", "host"), "127.0.0.1");
+        await page.TypeAsync(PageRenderer.With("id", "port"), simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        await page.ClickAsync(Button("Next"));
+
+        var text = await page.TextAsync();
+        Assert.Contains("This board has timers of its own", text, StringComparison.Ordinal);
+        Assert.Contains("Relay 3", text, StringComparison.Ordinal);
+        Assert.Contains("Relay 5", text, StringComparison.Ordinal);
+        Assert.Contains("STEP 3 OF 4", text, StringComparison.Ordinal);
+        Assert.Equal(0x14, simulator.TimerMask);
+
+        await page.ClickAsync(Button("Turn them off"));
+
+        text = await page.TextAsync();
+        Assert.Contains("Name your relays", text, StringComparison.Ordinal);
+        Assert.Contains("STEP 4 OF 4", text, StringComparison.Ordinal);
+        Assert.Equal(0, simulator.TimerMask);
+        var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
+        Assert.Equal(new byte[] { 0x14 }, sent.Data.ToArray());
+        Assert.True(made.IsUnfinished);
+        Assert.Empty(Errors(page));
     }
 
     // A board left after "Next" and set up in Settings instead (its address saved on its page) is finished: the person

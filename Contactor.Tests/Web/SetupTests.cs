@@ -993,6 +993,76 @@ public sealed class SetupTests
         Assert.DoesNotContain("class=\"back\"", html, StringComparison.Ordinal);
     }
 
+    // The guide's board steps with a board that answers with its own timers on for relays 3 and 5 ("This board has
+    // timers of its own" after "Where is the board?", 5 steps in Part 2), and with one that has none (no such step, 4
+    // steps). "Keep them" keeps them as the person's choice and goes on to the relays, then "All set".
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_AskAboutTheBoardsOwnTimers_InTheGuide_AndCountItsSteps(bool timers)
+    {
+        await using var app = SignedInNotSetUp();
+        using (var http = app.CreateClient())
+        {
+            // Signed in once, as anyone who opens the guide is.
+            await http.GetAsync("/setup", Cancel);
+        }
+
+        using var page = await PageRenderer.StartAsync<Contactor.Web.Components.SetupGuide>(app.Services, "john@example.com", "John");
+        Assert.Contains("About you", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("STEP 1 OF 4", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(PageRenderer.With("aria-labelledby", "brand-label brand-value"));
+        await page.ClickAsync(PageRenderer.With("value", "Velleman"));
+        await page.ClickAsync(PageRenderer.With("value", "vm201"));
+        await page.ClickAsync(Button("Next"));
+
+        // The board chosen, run as a board in memory that answers.
+        var registry = app.Services.GetRequiredService<BoardRegistry>();
+        var first = Assert.Single(registry.All);
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await BoardOwnRulesStepTests.AtTheBoardsAddressAsync(app, first.BoardId);
+        await registry.ReplaceAsync(new FakeBoardParts(board).Build(first.BoardId, Vm201Model.Model), Cancel);
+        board.SetOwnRules(timers ? new OwnRules([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(5, OwnRuleKind.Timer)]) : OwnRules.Empty);
+        await page.TypeAsync(PageRenderer.With("id", "host"), "192.168.1.50");
+        await page.TypeAsync(PageRenderer.With("id", "port"), "");
+        var steps = timers ? 5 : 4;
+        Assert.Contains($"STEP 2 OF {steps}", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.ClickAsync(Button("Next"));
+
+        if (timers)
+        {
+            var text = await page.TextAsync();
+            Assert.Contains("This board has timers of its own", text, StringComparison.Ordinal);
+            Assert.Contains("Relay 3", text, StringComparison.Ordinal);
+            Assert.Contains("STEP 3 OF 5", text, StringComparison.Ordinal);
+            await WaitUntilAsync(() => !page.HasAsync(a => Button("Keep them")(a) && a.GetValueOrDefault("disabled") is true).GetAwaiter().GetResult());
+            await page.ClickAsync(Button("Keep them"));
+        }
+
+        var relays = await page.TextAsync();
+        Assert.Contains("Name your relays", relays, StringComparison.Ordinal);
+        Assert.Contains($"STEP {steps - 1} OF {steps}", relays, StringComparison.Ordinal);
+        await page.ClickAsync(Button("Next"));
+
+        var done = await page.TextAsync();
+        Assert.Contains("All set", done, StringComparison.Ordinal);
+        Assert.Contains($"STEP {steps} OF {steps}", done, StringComparison.Ordinal);
+        await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
+        var rows = await db.BoardOwnRules.Where(r => r.BoardId == first.BoardId).OrderBy(r => r.Channel).ToListAsync(Cancel);
+        int[] found = timers ? [3, 5] : [];
+        Assert.Equal(found, rows.Select(r => r.Channel));
+        Assert.All(rows, r => Assert.Equal("john@example.com", r.KeptBy));
+        Assert.Equal(0, board.OwnRulesTurnOffs);
+    }
+
+    // A button by its words: only buttons have a type.
+    private static Func<IReadOnlyDictionary<string, object?>, bool> Button(string text)
+    {
+        return attributes => attributes.ContainsKey("type") && PageRenderer.WithText(text)(attributes);
+    }
+
     // Part 1 done (Cloudflare and Cloudflare Access, which the test app answers for as John), the guide not yet.
     private static TestWebApp SignedInNotSetUp()
     {

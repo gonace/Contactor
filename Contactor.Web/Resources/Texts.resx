@@ -1767,6 +1767,14 @@
   <data name="OwnRules.Keep.Gone" xml:space="preserve">
     <value>The board no longer has that rule.</value>
   </data>
+  <data name="OwnRules.KeepAll_One" xml:space="preserve">
+    <value>Keep it</value>
+    <comment>The second button of the own rules step while adding a board, for one rule.</comment>
+  </data>
+  <data name="OwnRules.KeepAll_Other" xml:space="preserve">
+    <value>Keep them</value>
+    <comment>The second button of the own rules step while adding a board.</comment>
+  </data>
   <data name="OwnRules.Kept" xml:space="preserve">
     <value>Kept on purpose</value>
     <comment>A rule a person chose to keep.</comment>
@@ -1778,6 +1786,41 @@
   <data name="OwnRules.Relays" xml:space="preserve">
     <value>relays {0}</value>
     <comment>{0} is a list of numbers, e.g. "3 and 5" (Relays.List.Last).</comment>
+  </data>
+  <data name="OwnRules.Step.Intro_One" xml:space="preserve">
+    <value>It can turn a relay on and off without Contactor.</value>
+    <comment>Under the own rules step's heading, for one rule.</comment>
+  </data>
+  <data name="OwnRules.Step.Intro_Other" xml:space="preserve">
+    <value>They can turn relays on and off without Contactor.</value>
+    <comment>Under the own rules step's heading.</comment>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
+    <value>The board didn't take it. Try again, or keep it.</value>
+    <comment>"Turn it off" while adding a board: the board's state didn't show it gone within 5 s.</comment>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_Other" xml:space="preserve">
+    <value>The board didn't take it. Try again, or keep them.</value>
+    <comment>"Turn them off" while adding a board: the board's state didn't show them gone within 5 s.</comment>
+  </data>
+  <data name="OwnRules.Step.Recommend_One" xml:space="preserve">
+    <value>We recommend turning it off.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
+    <value>We recommend turning them off.</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_One" xml:space="preserve">
+    <value>This board has a rule of its own</value>
+    <comment>The heading of the own rules step while adding a board.</comment>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_Other" xml:space="preserve">
+    <value>This board has rules of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_One" xml:space="preserve">
+    <value>This board has a timer of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_Other" xml:space="preserve">
+    <value>This board has timers of its own</value>
   </data>
   <data name="OwnRules.TheBoard" xml:space="preserve">
     <value>The board</value>

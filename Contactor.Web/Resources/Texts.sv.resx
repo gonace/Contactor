@@ -1599,6 +1599,12 @@
   <data name="OwnRules.Keep.Gone" xml:space="preserve">
     <value>Kortet har inte längre den regeln.</value>
   </data>
+  <data name="OwnRules.KeepAll_One" xml:space="preserve">
+    <value>Behåll den</value>
+  </data>
+  <data name="OwnRules.KeepAll_Other" xml:space="preserve">
+    <value>Behåll dem</value>
+  </data>
   <data name="OwnRules.Kept" xml:space="preserve">
     <value>Behålls med flit</value>
   </data>
@@ -1607,6 +1613,36 @@
   </data>
   <data name="OwnRules.Relays" xml:space="preserve">
     <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.Step.Intro_One" xml:space="preserve">
+    <value>Den kan slå på och stänga av ett relä utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Step.Intro_Other" xml:space="preserve">
+    <value>De kan slå på och stänga av reläer utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
+    <value>Kortet tog inte emot det. Försök igen, eller behåll den.</value>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_Other" xml:space="preserve">
+    <value>Kortet tog inte emot det. Försök igen, eller behåll dem.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_One" xml:space="preserve">
+    <value>Vi rekommenderar att stänga av den.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
+    <value>Vi rekommenderar att stänga av dem.</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_One" xml:space="preserve">
+    <value>Kortet har en egen regel</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_Other" xml:space="preserve">
+    <value>Kortet har egna regler</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_One" xml:space="preserve">
+    <value>Kortet har en egen timer</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_Other" xml:space="preserve">
+    <value>Kortet har egna timers</value>
   </data>
   <data name="OwnRules.TheBoard" xml:space="preserve">
     <value>Kortet</value>
