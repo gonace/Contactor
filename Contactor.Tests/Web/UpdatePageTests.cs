@@ -186,15 +186,9 @@ public sealed class UpdatePageTests
         await Wait.UntilAsync(() => page.HasAsync(PageRenderer.WithText("Checking…")).GetAwaiter().GetResult());
 
         await page.Dispatcher.InvokeAsync(page.Close);
-        await page.Dispatcher.InvokeAsync(async () =>
-        {
-            for (var i = 0; i < 10; i++)
-            {
-                await Task.Yield();
-            }
-        });
 
-        Assert.True(press.IsCompleted);
+        // The press ends on its own: the clock never moves here.
+        await Wait.UntilAsync(() => press.IsCompleted);
     }
 
     // "Check now" reads GitHub at once: "Checking…" meanwhile, at least for a moment, then what it found, with the line
