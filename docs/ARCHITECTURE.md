@@ -69,7 +69,7 @@ The app talks to a relay board only through `IRelayBoard`, `IBoardConnection` an
 - **Each board is described in its manufacturer's `Contactor.Boards.<Manufacturer>/README.md`:** its protocol or routes, its client and simulator, and what to check on a real board. Read it before you change that board. Only the VM201 has run on a real board; every other model, the DAEnetIP2 v2 kits included, is built from its manual and not yet tested on a real board (the README's board table says so).
 - **Adding a model:** one project per manufacturer (`Contactor.Boards.<Manufacturer>`, e.g. `Contactor.Boards.Velleman` for the VM201, VM204 and VM208) with its `IRelayBoard`, `IBoardConnection` and `IBoardTraffic`, a `<Model>Boards.Create` in `Features/<Model>` that builds it with what only it has, one line in the catalogue, and a `README.md` that describes the board. Nothing else in the app changes.
 - `ISimulatedBoard`: a fake board of a model for development and tests, on a local port (TCP, or UDP for the DAEnetIP2 v2's SNMP): its relays, inputs and connected clients, a relay switched, an input set or an analog input set (`SetAnalogAsync`, in counts; `SimulatedBoardState.Analog`, empty for a board that doesn't simulate any) "at the board", dropped connections, a change event, and the traffic as `BoardTraceEntry` from the board's side (`Sent` is still from the app to the board). A model with timer programs of its own also implements `ISimulatedBoardTimers`: all of them at once, or one relay's at a time. A simulator with a pulse carries it out on its own `TimeProvider` (`SimulatedPulses`): the relay goes back with no further command from the app, a later pulse of the relay starts it again, and switching the relay ends it. Each manufacturer's project brings its own simulators (`Vm201Simulator`, `Vm204Simulator`, `Vm208Simulator`, `WaveshareSimulator`, `DevantechSimulator`, `SmartDenSimulator`, `DaenetIp2Simulator`, `AdamSimulator`).
-- What only one board has stays in its own project and its `Features/<Board>` folder, and runs only while that model is the board's (`ActiveBoard.Extras`, started before its connection and stopped with it, and logging its events with the board's id): today the VM201's own timers (`Vm201TimersService`) and the Waveshare (B) and (C) relay modes (`Features/Waveshare/WaveshareRelayModesService`).
+- What only one board has stays in its own project and its `Features/<Board>` folder, and runs only while that model is the board's (`ActiveBoard.Extras`, started before its connection and stopped with it, and logging its events with the board's id): today the Waveshare (B) and (C) relay modes (`Features/Waveshare/WaveshareRelayModesService`).
 - The database holds one relay per relay on the board (`IRelayBoard.Capabilities.RelayCount`, at most 64) and one input per digital input (`InputCount`), seeded at start and when a board is chosen, each found by its channel. Rows whose channel is above the count, left from a board that had more, are kept but not shown, offered or switched.
 - **A relay's id is not its channel.** `Id` is only the database's key (links, events, runs, schedules, groups); `Channel` is where it is on the board. Every command, every look at `BoardState` and `ExpectedChanges`, and every number on a screen goes by the channel: from the row where it is already loaded (a group's members come with their relays), or through `BoardChannels` (`Features/Boards`), which reads relay id ↔ channel and input id ↔ channel for one board from the database where it is needed, so it never goes stale. A channel only means something with its board: every look at a board's state or expected changes is that board's.
 
@@ -189,7 +189,7 @@ EventLog
   Action          text           "on" | "off" | "pulse" | "rename" | "activate" | "deactivate" |
                                  "schedule-add" | "schedule-edit" | "schedule-delete" |
                                  "connection-lost" | "connection-restored" | "input-changed" |
-                                 "board-timers-disabled" | "board-relay-modes-reset" | "board-relay-modes-not-reset" |
+                                 "board-timers-disabled" (no longer written; kept for events logged before issue #497) | "board-relay-modes-reset" | "board-relay-modes-not-reset" |
                                  "board-own-rule-found" ("system", the relay, {"kind":"timer","new":true,"relay":3}:
                                  new when it came while the app watched the board, relay its channel) |
                                  "board-own-rules-turned-off" (a person, {"relays":[3,5],"kinds":["timer"]}) |
@@ -392,11 +392,8 @@ A group runs its relays in steps, in a start order, e.g. a fan heater: the fan f
 - Each board's inputs' actions run on that board's own queue and loop, in the order its inputs changed: a board whose command doesn't finish holds up only its own inputs' actions, never another board's.
 - Events name the input as who did it: "Door turned off the group Fan heater" (a dashed badge with "I").
 
-### The board's own timers
-- The board's built-in timer programs compete with the app's schedules. On the first successful connection, and at the first answer after a new address (it may be another VM201): send `CMD_TMR_DIS 0xFF` and log it with Actor `system`. Configurable through `Vm201:DisableBoardTimers=true`.
-
 ### The board's own rules
-- Rules on the board itself that switch its relays without the app (`BoardState.OwnRules`, see Boards), such as the VM201's timer programs. **The app never changes a board's own rules without a person's press**: it shows what it finds, warns, and turns them off only when a person asks.
+- Rules on the board itself that switch its relays without the app (`BoardState.OwnRules`, see Boards), such as the VM201's timer programs. **The app never changes a board's own rules without a person's press**: it shows what it finds, warns, and turns them off only when a person asks. Nothing is sent to them at a start, a connection or a reconnect: the VM201's timers stay as they are until a person presses "Turn them off" (until issue #497 the app turned them all off at the first connection, through `Vm201:DisableBoardTimers`; that setting is gone, and one left in an installation's settings is ignored).
 - `OwnRulesService` (`Features/BoardRules`) listens to every board through `BoardRegistry` (`StateChanged` and `OwnRulesChanged`), beside the safety services and never as one of their watchers, so they never wait for it. It keeps each board's latest state and does the database work on its own loop, and acts only when a board's rules differ from the last it saw. It never sends a command to a board.
   - A rule with no row gets a `BoardOwnRule` and is logged as `board-own-rule-found` by `system`, with the relay: `new` is true when this run had already read the board's rules without it (it was turned on while the app watched), false at first sight (at start, a new board, a new address). After a restart a rule that has its row logs nothing.
   - A row whose rule an actual reading no longer has is deleted, its "Keep" with it, without logging: if the rule comes back, the app warns again.
@@ -629,7 +626,6 @@ Use real `<button>` and `<label>` elements, and `aria-pressed` on the ON/OFF but
     "Port": 9760,
     "Username": "",
     "Password": "",
-    "DisableBoardTimers": true,
     "KeepAliveSeconds": 15,
     "LogPackets": false
   },

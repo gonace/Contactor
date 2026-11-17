@@ -17,6 +17,7 @@ public static class EventActions
     public const string ConnectionLost = "connection-lost";
     public const string ConnectionRestored = "connection-restored";
     public const string InputChanged = "input-changed";
+    /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardTimersDisabled = "board-timers-disabled";
     public const string BoardRelayModesReset = "board-relay-modes-reset";
     public const string BoardRelayModesNotReset = "board-relay-modes-not-reset";

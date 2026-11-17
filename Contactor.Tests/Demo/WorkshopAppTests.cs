@@ -56,8 +56,6 @@ public sealed class WorkshopAppTests
         var client = app.CreateClient();
         await UntilAsync(() => ConnectedAsync(client));
 
-        // The board's first answer is handled, and its own timers turned off, as on any start.
-        await UntilAsync(() => LoggedAsync(app, EventActions.BoardTimersDisabled, lastBefore));
         var expected = on.Aggregate(0, (mask, channel) => mask | (1 << (channel - 1)));
         await UntilAsync(() => Task.FromResult(simulator.Outputs == expected));
         await UntilAsync(async () => on.Length == 0 || await LoggedAsync(app, EventActions.On, lastBefore));
@@ -80,6 +78,9 @@ public sealed class WorkshopAppTests
         }
 
         Assert.Equal(expected, simulator.Outputs);
+
+        // The board's own timers are left as they are: they change only on a person's press.
+        Assert.DoesNotContain(simulator.ReceivedCommands, p => p.Command is Vm201Command.TimerDisable or Vm201Command.TimerEnable or Vm201Command.TimerToggle);
     }
 
     // The whole app starts here, with the rest of the tests running beside it: a longer deadline than Wait's, and no

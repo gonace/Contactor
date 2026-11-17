@@ -193,8 +193,7 @@ public sealed class SetupTests
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
                 services.AddEvents(configuration);
-            },
-            new Dictionary<string, string?> { ["Vm201:DisableBoardTimers"] = "false" });
+            });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");
         var connection = database.Services.Live();
@@ -230,8 +229,7 @@ public sealed class SetupTests
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
                 services.AddEvents(configuration);
-            },
-            new Dictionary<string, string?> { ["Vm201:DisableBoardTimers"] = "false" });
+            });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();

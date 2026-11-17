@@ -243,8 +243,6 @@ public sealed class OwnRulesServiceTests
 
     // The principle: the app never changes a board's own rules without a person's press. The VM201's timers stay as
     // they are while the app runs for 10 minutes on its clock, keep-alives and all, and across a reconnect.
-    // Vm201TimersService still turns the timers off at the first connection until part 6 of issue #497 (with
-    // Vm201:DisableBoardTimers), so it is turned off here: what is tested is everything else.
     [Fact]
     public async Task Should_NeverChangeTheBoardsTimers_WithoutAPress()
     {
@@ -319,9 +317,6 @@ public sealed class OwnRulesServiceTests
             {
                 ["Vm201:Host"] = "127.0.0.1",
                 ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-
-                // Until part 6 of issue #497 the VM201's timers are turned off at its first connection unless this says not to.
-                ["Vm201:DisableBoardTimers"] = "false",
             });
     }
 
