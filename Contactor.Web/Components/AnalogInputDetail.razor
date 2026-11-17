@@ -200,6 +200,9 @@
     protected override async Task OnParametersSetAsync()
     {
         _input = await Analog.GetAsync(Id, CancellationToken.None);
+
+        // A message from saving another input's page doesn't belong to this one.
+        _saveError = null;
         if (_input is { } input)
         {
             (_name, _isActive, _unit, _unitText) = (input.Name, input.IsActive, input.Scale.Unit, input.Scale.UnitText);

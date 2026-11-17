@@ -682,15 +682,16 @@ public sealed class Vm204ClientTests
 
     /// <summary>
     /// A VM204 the test drives: it logs anyone in, switches relays, and answers the status, or never answers it while
-    /// <see cref="HangStatus"/> is set.
+    /// <see cref="HangStatus"/> is set. Also used by <see cref="Boards.Vm204BoardTests"/>.
     /// </summary>
-    private sealed class ScriptedBoard : IAsyncDisposable
+    internal sealed class ScriptedBoard : IAsyncDisposable
     {
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _stop = new();
         private readonly Task _loop;
         private readonly List<string> _targets = [];
         private int _relays;
+        private int _analog;
         private int _hanging;
         private int _held;
 
@@ -703,6 +704,25 @@ public sealed class Vm204ClientTests
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
         public bool HangStatus { get; set; }
+
+        /// <summary>The raw analog value the status gives, also one the converter can't give.</summary>
+        public int Analog
+        {
+            get
+            {
+                lock (_targets)
+                {
+                    return _analog;
+                }
+            }
+            set
+            {
+                lock (_targets)
+                {
+                    _analog = value;
+                }
+            }
+        }
 
         /// <summary>Never answers anything but a login: the board is gone.</summary>
         public bool HangAll { get; set; }
@@ -805,7 +825,7 @@ public sealed class Vm204ClientTests
                             Interlocked.Or(ref _relays, Vm204TraceText.RelayMask(target.Split('?')[1]));
                         }
 
-                        body = BrokenAnswers ? "not json" : Vm204Json.WriteStatus(new Vm204Status((byte)Volatile.Read(ref _relays), 0, 0));
+                        body = BrokenAnswers ? "not json" : Vm204Json.WriteStatus(new Vm204Status((byte)Volatile.Read(ref _relays), 0, Analog));
                     }
 
                     var content = Encoding.ASCII.GetBytes(body);

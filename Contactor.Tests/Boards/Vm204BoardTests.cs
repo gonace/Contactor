@@ -111,6 +111,40 @@ public sealed class Vm204BoardTests
         Assert.Equal(new AnalogReadings([800]), board.State.Analog);
     }
 
+    // 1500 and 1600 are both outside what the converter gives: no reading either way, so no analog change.
+    [Fact]
+    public async Task Should_PassOnNoAnalogChange_BetweenTwoValuesTheConverterCantGive()
+    {
+        await using var scripted = Velleman.Vm204ClientTests.ScriptedBoard.Start();
+        scripted.Analog = 1500;
+        var options = Options.Create(new Vm204Options { Host = "127.0.0.1", Port = scripted.Port, PollSeconds = 2 });
+        using var client = new Vm204Client(options, new ManualTimeProvider(), NullLogger<Vm204Client>.Instance);
+        var board = new Vm204Board(client, NullLogger<Vm204Board>.Instance);
+        var analogs = new List<BoardState>();
+        board.AnalogChanged += (_, state) =>
+        {
+            lock (analogs)
+            {
+                analogs.Add(state);
+            }
+        };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => client.State.Status?.Analog == 1500);
+        Assert.Equal(new AnalogReadings([null]), board.State.Analog);
+
+        scripted.Analog = 1600;
+        await board.RefreshAsync(Cancel);
+        await Wait.UntilAsync(() => client.State.Status?.Analog == 1600);
+        scripted.Analog = 700;
+        await board.RefreshAsync(Cancel);
+        await Wait.UntilAsync(() => Count(analogs) == 1);
+
+        await stop.CancelAsync();
+        await run;
+        Assert.Equal(new AnalogReadings([700]), Assert.Single(analogs).Analog);
+    }
+
     private static int Count(List<BoardState> list)
     {
         lock (list)

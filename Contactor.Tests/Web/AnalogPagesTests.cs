@@ -38,11 +38,15 @@ public sealed partial class AnalogPagesTests
 
         Assert.True(html.IndexOf("href=\"input/1\"", StringComparison.Ordinal) < html.IndexOf("href=\"analog/1\"", StringComparison.Ordinal));
         Assert.Equal("ANALOG 1 Workshop 22.0 °C", CardText(html, "analog/1"));
-        Assert.Equal("ANALOG 2 Analog 2 No reading: check the sensor –", CardText(html, "analog/2"));
-        Assert.Equal("ANALOG 3 Analog 3 Above the board's range –", CardText(html, "analog/3"));
+        Assert.Equal("ANALOG 2 Analog 2 No reading: check the sensor – No value", CardText(html, "analog/2"));
+        Assert.Equal("ANALOG 3 Analog 3 Above the board's range – No value", CardText(html, "analog/3"));
         Assert.Equal("ANALOG 4 Analog 4 2.50 V", CardText(html, "analog/4"));
         Assert.Contains("class=\"status problem\"", Card(html, "analog/2"), StringComparison.Ordinal);
         Assert.Contains("class=\"value none\"", Card(html, "analog/3"), StringComparison.Ordinal);
+
+        // A screen reader hears "No value", not the dash.
+        Assert.Matches("class=\"number\" aria-hidden=\"true\"[^>]*>(–|&#x2013;)</span><span class=\"visually-hidden\"[^>]*>No value</span>", Card(html, "analog/3"));
+        Assert.DoesNotContain("No value", Card(html, "analog/1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -57,12 +61,12 @@ public sealed partial class AnalogPagesTests
         board.SetConnected(false);
         var lost = await http.GetStringAsync("/", Cancel);
 
-        Assert.Equal("ANALOG 1 Workshop Waiting for the board –", CardText(waiting, "analog/1"));
+        Assert.Equal("ANALOG 1 Workshop Waiting for the board – No value", CardText(waiting, "analog/1"));
         Assert.Contains("unknown", Card(waiting, "analog/1")[..Card(waiting, "analog/1").IndexOf('>', StringComparison.Ordinal)], StringComparison.Ordinal);
 
         // The reading from before may be stale: no value, and the board's own line says why.
-        Assert.Equal("ANALOG 1 Workshop –", CardText(lost, "analog/1"));
-        Assert.Equal("ANALOG 2 Analog 2 –", CardText(lost, "analog/2"));
+        Assert.Equal("ANALOG 1 Workshop – No value", CardText(lost, "analog/1"));
+        Assert.Equal("ANALOG 2 Analog 2 – No value", CardText(lost, "analog/2"));
     }
 
     [Fact]
@@ -277,6 +281,24 @@ public sealed partial class AnalogPagesTests
 
         Assert.True(await page.HasAsync(a => PageRenderer.WithText("Use the reading now")(a) && a.ContainsKey("disabled")));
         Assert.Contains("Waiting for the board", await page.TextAsync(), StringComparison.Ordinal);
+    }
+
+    // The page stays when the link goes to another analog input: a message from saving the first isn't the second's.
+    [Fact]
+    public async Task Should_ClearTheSaveMessage_ForAnotherAnalogInput()
+    {
+        var board = Board();
+        await using var app = await AppAsync(board);
+        using var page = await PageRenderer.StartAsync<AnalogInputDetail>(app.Services, John, "John", Id(1));
+        await page.TypeAsync(PageRenderer.With("id", "volts-1"), "abc");
+        await page.SubmitAsync(PageRenderer.With("id", "analog-form"));
+        Assert.Contains("Type the scale's points as numbers", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.SetParametersAsync(Id(4));
+
+        Assert.True(await page.HasAsync(a => PageRenderer.With("id", "name")(a) && PageRenderer.With("value", "Analog 4")(a)));
+        Assert.DoesNotContain("Type the scale's points as numbers", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
     }
 
     // The analog page shows the voltage too: a reading that changes only the voltage shown redraws it, noise doesn't.

@@ -620,7 +620,15 @@
                     <span class="status problem">@Texts[value.State == AnalogValueState.NoReading ? "Analog.NoReading" : "Analog.AboveRange"]</span>
                 }
             </a>
-            <span class="value @(value.State == AnalogValueState.Value ? null : "none")"><span class="number">@value.Text</span>@if (value.Unit.Length > 0)
+            @* Without a value, a screen reader hears "No value" rather than the dash. *@
+            <span class="value @(value.State == AnalogValueState.Value ? null : "none")">@if (value.State == AnalogValueState.Value)
+                {
+                    <span class="number">@value.Text</span>
+                }
+                else
+                {
+                    <span class="number" aria-hidden="true">@value.Text</span><span class="visually-hidden">@Texts["Analog.NoValue"]</span>
+                }@if (value.Unit.Length > 0)
                 {
                     <span class="unit">@value.Unit</span>
                 }</span>

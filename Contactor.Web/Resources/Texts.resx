@@ -46,6 +46,10 @@
   <data name="Analog.NoReading" xml:space="preserve">
     <value>No reading: check the sensor</value>
   </data>
+  <data name="Analog.NoValue" xml:space="preserve">
+    <value>No value</value>
+    <comment>Read by a screen reader in place of the "–" shown on an analog input's card when it has no value.</comment>
+  </data>
   <data name="Analog.Point" xml:space="preserve">
     <value>Point {0}</value>
     <comment>For screen readers: the scale's first or second point.</comment>

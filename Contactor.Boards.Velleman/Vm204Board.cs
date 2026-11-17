@@ -25,6 +25,9 @@ public sealed class Vm204Board : IRelayBoard
     private readonly Vm204Client _client;
     private readonly ILogger<Vm204Board> _logger;
 
+    // The analog readings the latest event of either kind carried. Both come on the poller's loop, one at a time.
+    private AnalogReadings? _lastAnalog;
+
     public Vm204Board(Vm204Client client, ILogger<Vm204Board> logger)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -92,23 +95,33 @@ public sealed class Vm204Board : IRelayBoard
 
     private void OnStateChanged(object? sender, Vm204State state)
     {
-        Raise(StateChanged, state);
+        var boardState = ToBoardState(state);
+        _lastAnalog = boardState.Analog;
+        Raise(StateChanged, boardState);
     }
 
+    // A raw value that changed between two the converter can't give (1500 to 1600), or a field that went away after
+    // one, reads the same: no reading. Nothing to tell then.
     private void OnAnalogChanged(object? sender, Vm204State state)
     {
-        Raise(AnalogChanged, state);
+        var boardState = ToBoardState(state);
+        if (Equals(boardState.Analog, _lastAnalog))
+        {
+            return;
+        }
+
+        _lastAnalog = boardState.Analog;
+        Raise(AnalogChanged, boardState);
     }
 
     // Each subscriber on its own, as for the VM201: one that fails must not keep the state from the others.
-    private void Raise(EventHandler<BoardState>? handlers, Vm204State state)
+    private void Raise(EventHandler<BoardState>? handlers, BoardState boardState)
     {
         if (handlers is null)
         {
             return;
         }
 
-        var boardState = ToBoardState(state);
         foreach (var handler in handlers.GetInvocationList().Cast<EventHandler<BoardState>>())
         {
             try
