@@ -507,6 +507,28 @@
         </span>
     };
 
+    // A line on the card of a group whose relays the board's own rules can switch, naming them by their role in the
+    // group: "(clock) The board's timer can switch Heat". The relays have no card of their own.
+    private RenderFragment OwnRuleGroupLine(GroupView group) => __builder =>
+    {
+        if (_shownRules.GetValueOrDefault(group.BoardId) is not { Count: > 0 } rules)
+        {
+            return;
+        }
+
+        var members = group.Members.Where(m => rules.Any(r => r.Relay == m.Channel)).ToList();
+        if (members.Count == 0)
+        {
+            return;
+        }
+
+        var channels = members.Select(m => m.Channel).ToHashSet();
+        <span class="input-line own-rule-line">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            <span>@OwnRulesText.GroupLine(rules.Where(r => channels.Contains(r.Relay)).Select(r => r.Kind), members.Select(m => m.RoleName))</span>
+        </span>
+    };
+
     // The desktop's side menu: every board, to pick which to show.
     private RenderFragment BoardList => __builder =>
     {
@@ -533,6 +555,7 @@
                     <span class="name">@group.Name</span>
                     <span class="status @(group.Runtime.Phase != GroupPhases.Idle && state.HasAnswered ? "busy" : null)">@(!state.HasAnswered ? StatusText.Waiting : missing is { } m ? GroupStatus.MissingRelay(m) : GroupStatus.For(group, state, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
                     @InputLines(_groupInputs[group.Id])
+                    @OwnRuleGroupLine(group)
                     @if (_failedGroupId == group.Id)
                     {
                         <span class="error" role="alert">@_groupError</span>

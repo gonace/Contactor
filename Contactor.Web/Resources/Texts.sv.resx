@@ -1578,11 +1578,20 @@
   <data name="OwnRules.CardLine.Timer" xml:space="preserve">
     <value>Kortets timer kan slå om det</value>
   </data>
-  <data name="OwnRules.Found" xml:space="preserve">
-    <value>Hittades {0}</value>
+  <data name="OwnRules.Found.Date" xml:space="preserve">
+    <value>Hittades {0} {1}</value>
   </data>
   <data name="OwnRules.Found.Today" xml:space="preserve">
     <value>Hittades i dag {0}</value>
+  </data>
+  <data name="OwnRules.Found.Yesterday" xml:space="preserve">
+    <value>Hittades i går {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Rule" xml:space="preserve">
+    <value>Kortets egen regel kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Timer" xml:space="preserve">
+    <value>Kortets timer kan slå om {0}</value>
   </data>
   <data name="OwnRules.Keep" xml:space="preserve">
     <value>Behåll</value>

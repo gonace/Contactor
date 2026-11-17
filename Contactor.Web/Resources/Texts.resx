@@ -1740,13 +1740,25 @@
     <value>The board's timer can switch it</value>
     <comment>On a relay's card on Relays.</comment>
   </data>
-  <data name="OwnRules.Found" xml:space="preserve">
-    <value>Found {0}</value>
-    <comment>{0} is e.g. "yesterday 07:12" (Relays.When.Yesterday).</comment>
+  <data name="OwnRules.Found.Date" xml:space="preserve">
+    <value>Found {0} at {1}</value>
+    <comment>{0} is a date in Relays.When.DateFormat, {1} a time, e.g. 07:12.</comment>
   </data>
   <data name="OwnRules.Found.Today" xml:space="preserve">
     <value>Found today at {0}</value>
     <comment>{0} is a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.Found.Yesterday" xml:space="preserve">
+    <value>Found yesterday at {0}</value>
+    <comment>{0} is a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.GroupLine.Rule" xml:space="preserve">
+    <value>The board's own rule can switch {0}</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
+  </data>
+  <data name="OwnRules.GroupLine.Timer" xml:space="preserve">
+    <value>The board's timer can switch {0}</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
   </data>
   <data name="OwnRules.Keep" xml:space="preserve">
     <value>Keep</value>
@@ -1773,7 +1785,7 @@
   </data>
   <data name="OwnRules.TurnOff" xml:space="preserve">
     <value>Turn off</value>
-    <comment>Turns off one rule of the board's own; the relay isn't switched.</comment>
+    <comment>Turns off one rule of the board's own.</comment>
   </data>
   <data name="OwnRules.TurnOff.NoContact" xml:space="preserve">
     <value>No contact with the relay board. Nothing was turned off.</value>

@@ -28,7 +28,7 @@ internal static class TestTexts
 
     public static BoardsText Boards { get; } = new(Localizer);
 
-    public static OwnRulesText OwnRules { get; } = new(Localizer, Boards, RelayStatus);
+    public static OwnRulesText OwnRules { get; } = new(Localizer, Boards);
 
     public static ScheduleText Schedules { get; } = new(Localizer);
 

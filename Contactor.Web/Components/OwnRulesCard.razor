@@ -72,6 +72,9 @@
     private bool _busy;
     private int? _loadedFor;
 
+    // Counts the loads, on the page's own thread: only the latest one shows its rows.
+    private int _loads;
+
     // What was drawn: a board's change redraws the card only when its contact changes.
     private bool? _shownConnected;
 
@@ -120,9 +123,11 @@
         Rows.Changed -= OnRowsChanged;
     }
 
-    // The rows, in relay order, and the names of their relays.
+    // The rows, in relay order, and the names of their relays. Only the latest load shows: an older one that finishes
+    // after it (two changes close together) would show rows that are gone.
     private async Task LoadAsync()
     {
+        var load = ++_loads;
         var boardId = BoardId;
         var rows = Rows.Rows(boardId);
         if (rows.Count == 0)
@@ -132,7 +137,13 @@
         }
 
         await using var db = await DbFactory.CreateDbContextAsync();
-        _names = await db.Relays.AsNoTracking().Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Name);
+        var names = await db.Relays.AsNoTracking().Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Name);
+        if (load != _loads)
+        {
+            return;
+        }
+
+        _names = names;
         _rows = [.. rows.OrderBy(r => r.Channel).ThenBy(r => r.Kind)];
     }
 

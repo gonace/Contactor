@@ -15,13 +15,11 @@ public sealed class OwnRulesText
 {
     private readonly IStringLocalizer<Texts> _texts;
     private readonly BoardsText _boards;
-    private readonly RelayStatusText _status;
 
-    public OwnRulesText(IStringLocalizer<Texts> texts, BoardsText boards, RelayStatusText status)
+    public OwnRulesText(IStringLocalizer<Texts> texts, BoardsText boards)
     {
         _texts = texts;
         _boards = boards;
-        _status = status;
     }
 
     /// <summary>
@@ -53,18 +51,35 @@ public sealed class OwnRulesText
         return _texts[$"OwnRules.CardLine.{Kind(kinds)}"];
     }
 
+    /// <summary>
+    /// The line on a group's card, naming its relays by their role in the group: "The board's timer can switch Heat",
+    /// "… Fan and Heat". Each name once, in the order given.
+    /// </summary>
+    public string GroupLine(IEnumerable<OwnRuleKind> kinds, IEnumerable<string> roles)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        return _texts[$"OwnRules.GroupLine.{Kind(kinds)}", _boards.And([.. roles.Distinct()])];
+    }
+
     /// <summary>The board's card's heading: "The board's own timers".</summary>
     public string CardTitle(IEnumerable<OwnRuleKind> kinds)
     {
         return _texts[$"OwnRules.Card.Title.{Kind(kinds)}"];
     }
 
-    /// <summary>"Found today at 07:12", "Found yesterday 07:12", "Found 3 Nov 07:12".</summary>
+    /// <summary>
+    /// "Found today at 07:12", "Found yesterday at 07:12", "Found 3 Nov at 07:12": the time always 24 hours with ":",
+    /// the date with the language's month names, as the relays' status lines write them.
+    /// </summary>
     public string Found(DateTime local, DateTime nowLocal)
     {
-        return local.Date == nowLocal.Date
-            ? _texts["OwnRules.Found.Today", local.ToString("HH:mm", CultureInfo.InvariantCulture)]
-            : _texts["OwnRules.Found", _status.When(local, nowLocal)];
+        var time = local.ToString("HH:mm", CultureInfo.InvariantCulture);
+        return (local.Date - nowLocal.Date).Days switch
+        {
+            0 => _texts["OwnRules.Found.Today", time],
+            -1 => _texts["OwnRules.Found.Yesterday", time],
+            _ => _texts["OwnRules.Found.Date", local.ToString(_texts["Relays.When.DateFormat"], CultureInfo.CurrentCulture), time],
+        };
     }
 
     /// <summary>"relay 3", "relays 3 and 5", "relays 1, 3 and 5": each relay once, in order.</summary>
