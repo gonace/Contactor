@@ -231,6 +231,8 @@ public sealed class Vm201ClientTests
         Assert.Equal(0x86, run.Client.State.Outputs);
         Assert.Equal(0x11, simulator.TimerMask);
         Assert.Equal(0x86, simulator.Outputs);
+        // The command is on its way when the call returns; the simulator takes it a moment later.
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.TimerDisable));
         var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
         Assert.Equal(new byte[] { 0x04 }, sent.Data.ToArray());
     }

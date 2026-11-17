@@ -129,6 +129,8 @@ public sealed class Vm201BoardTests
         var taken = await board.TurnOffOwnRulesAsync(asked, Cancel);
 
         Assert.Equal([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(5, OwnRuleKind.Timer)], taken);
+        // The command is on its way when the call returns; the simulator takes it a moment later.
+        await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.TimerDisable));
         var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
         Assert.Equal(new byte[] { 0x14 }, sent.Data.ToArray());
         await WaitUntilAsync(() => reported?.OwnRules?.Count == 2);
