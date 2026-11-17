@@ -1554,14 +1554,80 @@
   <data name="Inputs.WhyUnknownLabel" xml:space="preserve">
     <value>Varför är tiden okänd?</value>
   </data>
+  <data name="OwnRules.CanSwitch_One" xml:space="preserve">
+    <value>Den kan slå om {0} utan Contactor.</value>
+  </data>
+  <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
+    <value>De kan slå om {0} utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.CantTell" xml:space="preserve">
+    <value>Kortet kan ha egna timers. Titta på kortets egen webbsida.</value>
+  </data>
+  <data name="OwnRules.Card.Hint" xml:space="preserve">
+    <value>De kan slå på och stänga av reläer utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
+    <value>Kortets egna regler</value>
+  </data>
+  <data name="OwnRules.Card.Title.Timer" xml:space="preserve">
+    <value>Kortets egna timers</value>
+  </data>
+  <data name="OwnRules.CardLine.Rule" xml:space="preserve">
+    <value>Kortets egen regel kan slå om det</value>
+  </data>
+  <data name="OwnRules.CardLine.Timer" xml:space="preserve">
+    <value>Kortets timer kan slå om det</value>
+  </data>
+  <data name="OwnRules.Found" xml:space="preserve">
+    <value>Hittades {0}</value>
+  </data>
+  <data name="OwnRules.Found.Today" xml:space="preserve">
+    <value>Hittades i dag {0}</value>
+  </data>
+  <data name="OwnRules.Keep" xml:space="preserve">
+    <value>Behåll</value>
+  </data>
   <data name="OwnRules.Keep.Gone" xml:space="preserve">
     <value>Kortet har inte längre den regeln.</value>
+  </data>
+  <data name="OwnRules.Kept" xml:space="preserve">
+    <value>Behålls med flit</value>
+  </data>
+  <data name="OwnRules.Relay" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.Relays" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.TheBoard" xml:space="preserve">
+    <value>Kortet</value>
+  </data>
+  <data name="OwnRules.TurnOff" xml:space="preserve">
+    <value>Stäng av</value>
   </data>
   <data name="OwnRules.TurnOff.NoContact" xml:space="preserve">
     <value>Ingen kontakt med reläkortet. Inget stängdes av.</value>
   </data>
   <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
     <value>Reläkortet stängde inte av dem. Försök igen.</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
+    <value>Stäng av den</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
+    <value>Stäng av dem</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_One" xml:space="preserve">
+    <value>{0} har en egen regel</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_Other" xml:space="preserve">
+    <value>{0} har egna regler</value>
+  </data>
+  <data name="OwnRules.Warning.Timer_One" xml:space="preserve">
+    <value>{0} har en egen timer</value>
+  </data>
+  <data name="OwnRules.Warning.Timer_Other" xml:space="preserve">
+    <value>{0} har egna timers</value>
   </data>
   <data name="Relays.AllBoardsOff" xml:space="preserve">
     <value>Stäng av alla kort</value>

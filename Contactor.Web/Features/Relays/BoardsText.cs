@@ -56,9 +56,10 @@ public sealed class BoardsText
         return _texts["Relays.Showing.Names", And(names)];
     }
 
-    // "Garage", "Garage and Barn", "Garage, Barn and Office".
-    private string And(IReadOnlyList<string> names)
+    /// <summary>A list in words: "Garage", "Garage and Barn", "Garage, Barn and Office".</summary>
+    public string And(IReadOnlyList<string> names)
     {
+        ArgumentNullException.ThrowIfNull(names);
         return names.Count <= 1
             ? string.Concat(names)
             : _texts["Relays.List.Last", string.Join(_texts["Relays.List.Separator"], names.Take(names.Count - 1)), names[^1]];

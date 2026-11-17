@@ -1,0 +1,429 @@
+using System.Net;
+using System.Text.RegularExpressions;
+using Contactor.Boards;
+using Contactor.Tests.Boards;
+using Contactor.Web.Components;
+using Contactor.Web.Features.BoardRules;
+using Contactor.Web.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Contactor.Tests.Web;
+
+/// <summary>
+/// A board's own rules on the screens (issue #497): the red warning on Relays with "Turn them off" and a line on each
+/// relay they can switch, and the card on the board's page and on Settings with one board.
+/// </summary>
+public sealed partial class OwnRulesPagesTests
+{
+    private const string John = "john@example.com";
+    private const int BoardId = 1;
+
+    private static readonly OwnRule Timer3 = new(3, OwnRuleKind.Timer);
+    private static readonly OwnRule Timer5 = new(5, OwnRuleKind.Timer);
+
+    // 07:12 in the app's time zone (Europe/Stockholm).
+    private static readonly DateTimeOffset NowUtc = new(2026, 11, 17, 6, 12, 0, TimeSpan.Zero);
+
+    private static CancellationToken Cancel => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public void Should_ListTheRelays_InWords()
+    {
+        Assert.Equal("relay 3", TestTexts.OwnRules.Relays([3]));
+        Assert.Equal("relays 3 and 5", TestTexts.OwnRules.Relays([5, 3, 5]));
+        Assert.Equal("relays 1, 3 and 5", TestTexts.OwnRules.Relays([3, 1, 5]));
+        Assert.Equal("The board has a timer of its own", TestTexts.OwnRules.Heading([Timer3], null));
+        Assert.Equal("Garage has timers of its own", TestTexts.OwnRules.Heading([Timer3, Timer5], "Garage"));
+        Assert.Equal("The board has rules of its own", TestTexts.OwnRules.Heading([Timer3, new OwnRule(5, OwnRuleKind.InputEdge)], null));
+        Assert.Equal("It can switch relay 3 without Contactor.", TestTexts.OwnRules.CanSwitch([Timer3]));
+        Assert.Equal(("Turn it off", "Turn them off"), (TestTexts.OwnRules.TurnOffAll(1), TestTexts.OwnRules.TurnOffAll(2)));
+        Assert.Equal("Found today at 07:12", TestTexts.OwnRules.Found(new DateTime(2026, 11, 17, 7, 12, 0), new DateTime(2026, 11, 17, 23, 59, 0)));
+        Assert.Equal("Found yesterday 07:12", TestTexts.OwnRules.Found(new DateTime(2026, 11, 16, 7, 12, 0), new DateTime(2026, 11, 17, 0, 1, 0)));
+    }
+
+    [Fact]
+    public void Should_ListTheRelays_InSwedish()
+    {
+        using var swedish = TestCulture.Language("sv");
+
+        Assert.Equal("relä 1, 3 och 5", TestTexts.OwnRules.Relays([3, 1, 5]));
+        Assert.Equal("Kortet har egna timers", TestTexts.OwnRules.Heading([Timer3, Timer5], null));
+        Assert.Equal("Garage har egna timers", TestTexts.OwnRules.Heading([Timer3, Timer5], "Garage"));
+        Assert.Equal("De kan slå om relä 3 och 5 utan Contactor.", TestTexts.OwnRules.CanSwitch([Timer3, Timer5]));
+        Assert.Equal("Stäng av dem", TestTexts.OwnRules.TurnOffAll(2));
+        Assert.Equal("Kortets timer kan slå om det", TestTexts.OwnRules.CardLine([OwnRuleKind.Timer]));
+        Assert.Equal("Kortets egna timers", TestTexts.OwnRules.CardTitle([OwnRuleKind.Timer]));
+        Assert.Equal("Hittades i dag 07:12", TestTexts.OwnRules.Found(new DateTime(2026, 11, 17, 7, 12, 0), new DateTime(2026, 11, 17, 9, 0, 0)));
+    }
+
+    [Fact]
+    public async Task Should_WarnOnRelays_AndOnEachRelayTheTimersCanSwitch()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3, Timer5);
+
+        var html = await PageAsync(app, "/");
+
+        var box = Box(html);
+        Assert.Contains("The board has timers of its own", box, StringComparison.Ordinal);
+        Assert.Contains("They can switch relays 3 and 5 without Contactor.", box, StringComparison.Ordinal);
+        Assert.Contains(">Turn them off</button>", box, StringComparison.Ordinal);
+
+        // Under the connection line, before the cards.
+        Assert.True(html.IndexOf("class=\"online\"", StringComparison.Ordinal) < html.IndexOf("own-rules", StringComparison.Ordinal));
+        Assert.True(html.IndexOf("own-rules", StringComparison.Ordinal) < html.IndexOf("href=\"relay/1\"", StringComparison.Ordinal));
+        Assert.Contains("The board's timer can switch it", CardText(html, "relay/3"), StringComparison.Ordinal);
+        Assert.Contains("The board's timer can switch it", CardText(html, "relay/5"), StringComparison.Ordinal);
+        Assert.DoesNotContain("The board's timer", CardText(html, "relay/4"), StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Count(html, "own-rule-line"));
+    }
+
+    [Fact]
+    public async Task Should_ShowNothingOnRelays_WhenEveryRuleIsKept_OrWithoutContact()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3, Timer5);
+        var handler = app.Services.GetRequiredService<OwnRulesHandler>();
+
+        // One kept: the other is still warned about, in the singular.
+        Assert.Null(await handler.KeepAsync(BoardId, 5, OwnRuleKind.Timer, John, Cancel));
+        var one = await PageAsync(app, "/");
+        Assert.Contains("It can switch relay 3 without Contactor.", one, StringComparison.Ordinal);
+        Assert.Equal(1, Regex.Count(one, "own-rule-line"));
+
+        Assert.Null(await handler.KeepAsync(BoardId, 3, OwnRuleKind.Timer, John, Cancel));
+        var kept = await PageAsync(app, "/");
+        Assert.DoesNotContain("own-rule", kept, StringComparison.Ordinal);
+
+        // Without contact, nothing: the rules the board last reported may be stale.
+        board.SetOwnRules(new OwnRules([Timer3, Timer5, new OwnRule(7, OwnRuleKind.Timer)]));
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 3);
+        Assert.Contains("own-rules", await PageAsync(app, "/"), StringComparison.Ordinal);
+        board.SetConnected(false);
+        var offline = await PageAsync(app, "/");
+        Assert.DoesNotContain("own-rule", offline, StringComparison.Ordinal);
+        Assert.Contains("No contact with the relay board", offline, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_ShowNoButton_ForABoardThatCantTurnItsRulesOff()
+    {
+        var board = Board(new OwnRulesAbility(Reads: true, TurnsOff: false, MayHaveUnseen: false));
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3);
+
+        var html = await PageAsync(app, "/");
+
+        Assert.Contains("The board has a timer of its own", Box(html), StringComparison.Ordinal);
+        Assert.DoesNotContain("<button", Box(html), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_ShowNothingOnRelays_ForABoardThatCantTell()
+    {
+        await using var app = App(Board(OwnRulesAbility.CantTell));
+
+        Assert.DoesNotContain("own-rule", await PageAsync(app, "/"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_TurnTheRulesOff_AndLogIt_WhenThePersonPresses()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3, Timer5);
+        using var page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        Assert.Contains("The board has timers of its own", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.ClickAsync(PageRenderer.WithText("Turn them off"));
+
+        Assert.Equal(OwnRules.Empty, board.State.OwnRules);
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            var entry = await db.EventLog.SingleAsync(e => e.Action == EventActions.BoardOwnRulesTurnedOff, Cancel);
+            Assert.Equal((John, BoardId), (entry.Actor, entry.BoardId));
+        }
+
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains("timers of its own", StringComparison.Ordinal));
+        Assert.DoesNotContain("The board's timer can switch it", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+    }
+
+    [Fact]
+    public async Task Should_SayWhy_InTheWarning_WhenTheBoardDoesntTurnThemOff()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3);
+        using var page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        board.RefuseOwnRules = true;
+
+        await page.ClickAsync(PageRenderer.WithText("Turn it off"));
+
+        Assert.True(await page.HasAsync(a => PageRenderer.With("class", "rules-error")(a) && PageRenderer.WithText("The relay board didn't turn them off. Try again.")(a)));
+        Assert.Equal(new OwnRules([Timer3]), board.State.OwnRules);
+        Assert.True(await page.HasAsync(PageRenderer.WithText("Turn it off")));
+        Assert.False(await page.HasAsync(a => PageRenderer.WithText("Turn it off")(a) && a.ContainsKey("disabled")));
+        Assert.Empty(page.Errors);
+    }
+
+    [Fact]
+    public async Task Should_WarnInEachBoardsSection_WithSeveralBoards()
+    {
+        var barn = new FakeRelayBoard(relayCount: 4, inputCount: 2, ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var boards = await TwoBoards.StartAsync(barn);
+        barn.SetOwnRules(new OwnRules([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)]));
+        await Wait.UntilAsync(() => Service(boards.App).Rows(boards.BarnId).Count == 2);
+        int barnLight;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            barnLight = await db.Relays.Where(r => r.BoardId == boards.BarnId && r.Channel == 1).Select(r => r.Id).SingleAsync(Cancel);
+        }
+
+        var html = await PageAsync(boards.App, "/");
+
+        var section = html[html.IndexOf($"id=\"board-{boards.BarnId}\"", StringComparison.Ordinal)..];
+        Assert.Contains("Barn has timers of its own", Box(section), StringComparison.Ordinal);
+        Assert.Contains("They can switch relays 1 and 3 without Contactor.", Box(section), StringComparison.Ordinal);
+        Assert.Equal(1, Regex.Count(html, "class=\"offline own-rules\""));
+        Assert.Contains("The board's timer can switch it", CardText(html, $"relay/{barnLight}"), StringComparison.Ordinal);
+        Assert.DoesNotContain("The board's timer", CardText(html, "relay/1"), StringComparison.Ordinal);
+    }
+
+    // A board's own rules reported again as they were, or changed only by a rule a person kept: nothing the page shows.
+    [Fact]
+    public async Task Should_RedrawRelays_OnlyWhenTheWarningsChange()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3, Timer5);
+        Assert.Null(await app.Services.GetRequiredService<OwnRulesHandler>().KeepAsync(BoardId, 5, OwnRuleKind.Timer, John, Cancel));
+        using var page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        Assert.Contains("It can switch relay 3 without Contactor.", await page.TextAsync(), StringComparison.Ordinal);
+
+        Assert.False(await RedrawsAsync(page, () => board.SetOwnRules(new OwnRules([Timer3, Timer5]))));
+        Assert.False(await RedrawsAsync(page, () => board.SetOwnRules(new OwnRules([Timer5, Timer3]))));
+
+        var seven = new OwnRule(7, OwnRuleKind.Timer);
+        board.SetOwnRules(new OwnRules([Timer3, Timer5, seven]));
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("relays 3 and 7", StringComparison.Ordinal));
+        Assert.Empty(page.Errors);
+    }
+
+    [Fact]
+    public async Task Should_ShowTheRulesCard_OnTheBoardsPage_AndOnSettings()
+    {
+        var board = Board();
+        await using var app = App(board, new ManualTimeProvider(NowUtc));
+        await RulesAsync(app, board, Timer3, Timer5);
+        Assert.Null(await app.Services.GetRequiredService<OwnRulesHandler>().KeepAsync(BoardId, 5, OwnRuleKind.Timer, John, Cancel));
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            await db.Relays.Where(r => r.BoardId == BoardId && r.Channel == 3).ExecuteUpdateAsync(r => r.SetProperty(x => x.Name, "Fan heater"), Cancel);
+        }
+
+        foreach (var path in new[] { $"/board/{BoardId}", "/settings" })
+        {
+            var card = RulesCard(await PageAsync(app, path));
+
+            Assert.Contains("<h2", card, StringComparison.Ordinal);
+            Assert.Contains("The board's own timers", card, StringComparison.Ordinal);
+            Assert.Contains("They can turn relays on and off without Contactor.", card, StringComparison.Ordinal);
+            var rows = Regex.Split(card, "<li[^>]*>").Skip(1).Select(r => WebUtility.HtmlDecode(Tags().Replace(r, " "))).Select(r => Regex.Replace(r, "\\s+", " ").Trim()).ToList();
+            Assert.Equal(["RELAY 3 Fan heater Found today at 07:12 Turn off Keep", "RELAY 5 Relay 5 Kept on purpose Turn off"], rows);
+            Assert.DoesNotContain("disabled", card, StringComparison.Ordinal);
+            Assert.DoesNotContain("may have timers", card, StringComparison.Ordinal);
+        }
+
+        // Without contact the buttons wait for the board.
+        board.SetConnected(false);
+        Assert.Equal(3, Regex.Count(RulesCard(await PageAsync(app, $"/board/{BoardId}")), "disabled"));
+    }
+
+    [Fact]
+    public async Task Should_ShowOneLine_ForABoardThatCantTell_AndNoCard_ForOneWithNone()
+    {
+        await using (var app = App(Board(OwnRulesAbility.CantTell)))
+        {
+            foreach (var path in new[] { $"/board/{BoardId}", "/settings" })
+            {
+                var card = RulesCard(await PageAsync(app, path));
+                Assert.Contains("The board's own timers", card, StringComparison.Ordinal);
+                Assert.Contains("This board may have timers of its own. Check its own web page.", card, StringComparison.Ordinal);
+                Assert.DoesNotContain("<button", card, StringComparison.Ordinal);
+            }
+        }
+
+        await using (var app = App(Board(OwnRulesAbility.None)))
+        {
+            Assert.DoesNotContain("own-rules-card", await PageAsync(app, $"/board/{BoardId}"), StringComparison.Ordinal);
+            Assert.DoesNotContain("own-rules-card", await PageAsync(app, "/settings"), StringComparison.Ordinal);
+        }
+
+        // A board that reads its rules and has none: no card.
+        var empty = Board();
+        await using (var app = App(empty))
+        {
+            empty.SetOwnRules(OwnRules.Empty);
+            await Wait.UntilAsync(() => Service(app).TryGetRows(BoardId, out _));
+            Assert.DoesNotContain("own-rules-card", await PageAsync(app, $"/board/{BoardId}"), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Should_ShowOnlyKeep_ForABoardThatCantTurnItsRulesOff()
+    {
+        var board = Board(new OwnRulesAbility(Reads: true, TurnsOff: false, MayHaveUnseen: false));
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3);
+
+        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+
+        Assert.Contains(">Keep</button>", card, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Turn off</button>", card, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_KeepAndTurnOff_FromTheBoardsPage()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3, Timer5);
+        using var page = await PageRenderer.StartAsync<BoardPage>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = BoardId });
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("The board's own timers", StringComparison.Ordinal));
+
+        // The second row's "Keep": relay 5.
+        await page.ClickAsync(PageRenderer.WithText("Keep"), 1);
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Kept on purpose", StringComparison.Ordinal));
+        Assert.Equal(EventActions.BoardOwnRuleKept, (await EventsAsync(app)).Single().Action);
+
+        // The first row's "Turn off": relay 3 only.
+        await page.ClickAsync(PageRenderer.WithText("Turn off"));
+        Assert.Equal(new OwnRules([Timer5]), board.State.OwnRules);
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 1);
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains("RELAY 3", StringComparison.Ordinal));
+        Assert.Equal([EventActions.BoardOwnRuleKept, EventActions.BoardOwnRulesTurnedOff], (await EventsAsync(app)).Select(e => e.Action));
+        Assert.Empty(page.Errors);
+    }
+
+    // Each page and the card unsubscribe when they close, or they would stay for the life of the app.
+    [Fact]
+    public async Task Should_LetGoOfTheEvents_WhenThePageCloses()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3);
+        var registry = app.Services.GetRequiredService<Contactor.Web.Features.Boards.BoardRegistry>();
+        var relays = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        var boardPage = await PageRenderer.StartAsync<BoardPage>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = BoardId });
+        await Wait.UntilAsync(() => boardPage.TextAsync().GetAwaiter().GetResult().Contains("The board's own timers", StringComparison.Ordinal));
+        Assert.Equal(1, PageRenderer.Handlers<Relays>(registry, nameof(registry.OwnRulesChanged)));
+        Assert.Equal(1, PageRenderer.Handlers<OwnRulesCard>(Service(app), nameof(OwnRulesService.Changed)));
+
+        relays.Close();
+        boardPage.Close();
+
+        Assert.Equal(0, PageRenderer.Handlers<Relays>(registry, nameof(registry.OwnRulesChanged)));
+        Assert.Equal(0, PageRenderer.Handlers<Relays>(Service(app), nameof(OwnRulesService.Changed)));
+        Assert.Equal(0, PageRenderer.Handlers<OwnRulesCard>(Service(app), nameof(OwnRulesService.Changed)));
+        Assert.Equal(0, PageRenderer.Handlers<OwnRulesCard>(registry, nameof(registry.StateChanged)));
+    }
+
+    private static FakeRelayBoard Board(OwnRulesAbility? ability = null)
+    {
+        return new FakeRelayBoard(ownRules: ability ?? OwnRulesAbility.ReadsAndTurnsOff);
+    }
+
+    private static TestWebApp App(FakeRelayBoard board, TimeProvider? time = null)
+    {
+        return new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
+            services =>
+            {
+                TestWebApp.WithBoard(board)(services);
+                if (time is not null)
+                {
+                    services.AddSingleton(time);
+                }
+            });
+    }
+
+    private static OwnRulesService Service(TestWebApp app)
+    {
+        return app.Services.GetRequiredService<OwnRulesService>();
+    }
+
+    private static IDbContextFactory<ContactorDbContext> Factory(TestWebApp app)
+    {
+        return app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
+    }
+
+    // The board reports the rules, and the app has read them.
+    private static async Task RulesAsync(TestWebApp app, FakeRelayBoard board, params OwnRule[] rules)
+    {
+        board.SetOwnRules(new OwnRules(rules));
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == rules.Length);
+    }
+
+    private static async Task<List<EventLogEntry>> EventsAsync(TestWebApp app)
+    {
+        await using var db = await Factory(app).CreateDbContextAsync(Cancel);
+        return await db.EventLog.AsNoTracking()
+            .Where(e => e.Action == EventActions.BoardOwnRuleKept || e.Action == EventActions.BoardOwnRulesTurnedOff)
+            .OrderBy(e => e.Id).ToListAsync(Cancel);
+    }
+
+    private static async Task<string> PageAsync(TestWebApp app, string path)
+    {
+        using var http = app.CreateClient();
+        return WebUtility.HtmlDecode(await http.GetStringAsync(path, Cancel));
+    }
+
+    // The warning box, up to the cards that follow it.
+    private static string Box(string html)
+    {
+        var start = html.IndexOf("class=\"offline own-rules\"", StringComparison.Ordinal);
+        Assert.True(start >= 0, "No warning.");
+        var end = new[] { "<main", "<h3" }.Select(t => html.IndexOf(t, start, StringComparison.Ordinal)).Where(i => i >= 0).Min();
+        return html[start..end];
+    }
+
+    // The board's own rules card on the board's page or Settings.
+    private static string RulesCard(string html)
+    {
+        var start = html.IndexOf("own-rules-card", StringComparison.Ordinal);
+        Assert.True(start >= 0, "No card.");
+        return html[start..html.IndexOf("</section>", start, StringComparison.Ordinal)];
+    }
+
+    private static string Card(string html, string href)
+    {
+        var start = html.IndexOf($"href=\"{href}\"", StringComparison.Ordinal);
+        Assert.True(start >= 0, $"No card for {href}.");
+        var end = html.IndexOf("class=\"card", start, StringComparison.Ordinal);
+        return html[start..(end < 0 ? html.Length : end)];
+    }
+
+    private static string CardText(string html, string href)
+    {
+        return Tags().Replace(Card(html, href), "");
+    }
+
+    // Whether a change the board reports, made on the page's own thread, redraws the page at once.
+    private static Task<bool> RedrawsAsync(PageRenderer page, Action change)
+    {
+        return page.Dispatcher.InvokeAsync(() =>
+        {
+            var renders = page.PageRenders;
+            change();
+            return page.PageRenders != renders;
+        });
+    }
+
+    [GeneratedRegex("<[^>]+>")]
+    private static partial Regex Tags();
+}

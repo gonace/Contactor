@@ -275,6 +275,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
         AnalogChanged?.Invoke(this, state);
     }
 
+    /// <summary>When set, the board refuses to turn its own rules off, and they stay as they are.</summary>
+    public bool RefuseOwnRules { get; set; }
+
     /// <summary>Only the board's own rules change, and the board reports them as rules, not as a state.</summary>
     public void SetOwnRules(OwnRules? rules)
     {
@@ -309,6 +312,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
         if (rules.Count == 0)
         {
             return Task.FromResult<IReadOnlyList<OwnRule>>([]);
+        }
+
+        if (RefuseOwnRules)
+        {
+            throw new BoardRefusedException("The board refused to turn its own rules off.");
         }
 
         BoardState state;

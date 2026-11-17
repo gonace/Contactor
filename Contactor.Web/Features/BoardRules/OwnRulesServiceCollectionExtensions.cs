@@ -14,6 +14,7 @@ public static class OwnRulesServiceCollectionExtensions
         services.AddSingleton<OwnRulesService>();
         services.AddHostedService(sp => sp.GetRequiredService<OwnRulesService>());
         services.AddSingleton<OwnRulesHandler>();
+        services.AddSingleton<OwnRulesText>();
         return services;
     }
 }

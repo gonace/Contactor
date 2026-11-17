@@ -65,6 +65,30 @@ public sealed class SwedishTests
         Assert.Matches("<strong[^>]*>Tryckvakt</strong>: på när den sluts, av när den öppnas", html);
     }
 
+    // The board's own timers: the warning on Relays, the line on a card, and the card on the board's page.
+    [Fact]
+    public async Task Should_WarnAboutTheBoardsOwnTimers_InSwedish()
+    {
+        var board = new Contactor.Tests.Boards.FakeRelayBoard(ownRules: Contactor.Boards.OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = await SwedishAppAsync(new ManualTimeProvider(NowUtc), board);
+        board.SetOwnRules(new Contactor.Boards.OwnRules([new(3, Contactor.Boards.OwnRuleKind.Timer), new(5, Contactor.Boards.OwnRuleKind.Timer)]));
+        await Wait.UntilAsync(() => app.Services.GetRequiredService<Contactor.Web.Features.BoardRules.OwnRulesService>().Rows(1).Count == 2);
+        using var http = app.CreateClient();
+
+        var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+        var page = WebUtility.HtmlDecode(await http.GetStringAsync("/board/1", Cancel));
+
+        Assert.Contains("Kortet har egna timers", relays, StringComparison.Ordinal);
+        Assert.Contains("De kan slå om relä 3 och 5 utan Contactor.", relays, StringComparison.Ordinal);
+        Assert.Contains(">Stäng av dem</button>", relays, StringComparison.Ordinal);
+        Assert.Contains("Kortets timer kan slå om det", relays, StringComparison.Ordinal);
+        Assert.Contains("Kortets egna timers", page, StringComparison.Ordinal);
+        Assert.Contains("De kan slå på och stänga av reläer utan Contactor.", page, StringComparison.Ordinal);
+        Assert.Contains(">Behåll</button>", page, StringComparison.Ordinal);
+        Assert.Contains(">Stäng av</button>", page, StringComparison.Ordinal);
+        Assert.Contains("Hittades i dag 15:30", page, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Should_ShowARelaysPage_AndItsEvents_InSwedish()
     {
