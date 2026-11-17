@@ -141,7 +141,7 @@ public sealed class DevantechProtocolTests
         Assert.Equal("13 02 1C", DevantechProtocol.Hex(await DevantechProtocol.ReadAnswerAsync(stream, 3, Cancel)));
         Assert.Equal(3, stream.Position);
         await Assert.ThrowsAsync<IOException>(() => DevantechProtocol.ReadAnswerAsync(stream, 2, Cancel));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => DevantechProtocol.ReadAnswerAsync(stream, 5, Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => DevantechProtocol.ReadAnswerAsync(stream, 33, Cancel));
     }
 
     [Fact]
@@ -176,5 +176,70 @@ public sealed class DevantechProtocolTests
     public void Should_CheckThePassword(string password, string? message)
     {
         Assert.Equal(message, DevantechModels.CheckPassword(password)?.ToString());
+    }
+
+    [Fact]
+    public void Should_BuildTheAnalogCommands_AsTheManualsGiveThem()
+    {
+        // 0x32 and the channel, 2 bytes back (ETH1610 p. 18, ETH484-B p. 18, ETH8020-B p. 17); 0x34 alone, 32 bytes
+        // back for the ETH1610's 16 inputs (ETH1610 p. 18).
+        Assert.Equal(("32 01", 2), (DevantechProtocol.Hex(DevantechProtocol.GetAnalog(1).Bytes), DevantechProtocol.GetAnalog(1).AnswerLength));
+        Assert.Equal("32 10", DevantechProtocol.Hex(DevantechProtocol.GetAnalog(16).Bytes));
+        Assert.Equal(("34", 32), (DevantechProtocol.Hex(DevantechProtocol.GetAllAnalog(16).Bytes), DevantechProtocol.GetAllAnalog(16).AnswerLength));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.GetAnalog(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.GetAnalog(256));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.GetAllAnalog(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.GetAllAnalog(17));
+    }
+
+    [Theory]
+    [InlineData("00 00", 0)]
+    [InlineData("00 FF", 255)]
+    [InlineData("01 02", 258)]
+    [InlineData("02 00", 512)]
+    [InlineData("03 FF", 1023)]
+    public void Should_ReadAnAnalogValue_HighByteFirst(string answer, int value)
+    {
+        Assert.Equal(value, DevantechProtocol.AnalogValue(Bytes(answer)));
+        Assert.Equal(answer, DevantechProtocol.Hex(DevantechProtocol.AnalogBytes(value)));
+    }
+
+    [Theory]
+    [InlineData("04 00")]
+    [InlineData("80 01")]
+    [InlineData("FC 00")]
+    [InlineData("FF FF")]
+    [InlineData("")]
+    [InlineData("03")]
+    [InlineData("00 00 00")]
+    public void Should_NotReadAnAnalogValue_WithItsUpperBitsSet_OrOfAnotherLength(string answer)
+    {
+        // The manuals: "the upper 6 bits being 0".
+        Assert.Null(DevantechProtocol.AnalogValue(Bytes(answer)));
+    }
+
+    [Fact]
+    public void Should_ReadAllSixteenAnalogValues_InputOneFirst()
+    {
+        int[] values = [0, 1, 255, 256, 512, 1023, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1000];
+        var answer = values.SelectMany(DevantechProtocol.AnalogBytes).ToArray();
+        Assert.Equal(32, answer.Length);
+        Assert.Equal("00 00 00 01 00 FF 01 00", DevantechProtocol.Hex(answer.AsSpan(0, 8)));
+
+        Assert.Equal(values, DevantechProtocol.AnalogValues(answer, 16));
+
+        // Too short, too long, or one value with an upper bit set: none of it is read.
+        Assert.Null(DevantechProtocol.AnalogValues(answer.AsSpan(0, 30), 16));
+        Assert.Null(DevantechProtocol.AnalogValues([.. answer, 0, 0], 16));
+        answer[30] = 0x04;
+        Assert.Null(DevantechProtocol.AnalogValues(answer, 16));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.AnalogBytes(1024));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DevantechProtocol.AnalogBytes(-1));
+    }
+
+    [Fact]
+    public void Should_ReadAllAnalogInputsAtOnce_OnlyOnTheEth1610()
+    {
+        Assert.Equal(["devantech-eth1610"], DevantechModels.All.Where(m => DevantechModels.Layout(m).AllAnalog).Select(m => m.Id));
     }
 }

@@ -292,6 +292,39 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.Board.SetAnalogAsync(2, 0));
     }
 
+    [Theory]
+    [InlineData("devantech-eth1610", 16, "Analog input 16 set to 1023 (5.00 V) here")]
+    [InlineData("devantech-eth484", 4, "Analog input 4 set to 1023 (3.30 V) here")]
+    [InlineData("devantech-eth8020", 8, "Analog input 8 set to 1023 (5.00 V) here")]
+    public async Task Should_SetTheDevantechAnalogInputs_AndLogIt_OnlyWhenItChanges(string type, int count, string text)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        var board = _boards.Boards.Single();
+        Assert.Equal(new int[count], board.Board.State.Analog);
+
+        await board.SetAnalogAsync(count, 1023);
+        await board.SetAnalogAsync(count, 1023);
+        await board.SetAnalogAsync(count + 1, 1);
+        await board.SetAnalogAsync(1, 1024);
+
+        Assert.Equal(1023, board.Board.State.Analog[count - 1]);
+        Assert.Equal(text, Assert.Single(board.Traffic).Text);
+    }
+
+    [Theory]
+    [InlineData("devantech-eth002")]
+    [InlineData("devantech-eth008")]
+    public async Task Should_HaveNoAnalogInputs_OnADevantechModelWithoutThem(string type)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        var board = _boards.Boards.Single();
+
+        await board.SetAnalogAsync(1, 10);
+
+        Assert.Empty(board.Board.State.Analog);
+        Assert.Empty(board.Traffic);
+    }
+
     [Fact]
     public async Task Should_HaveNoAnalogInputs_OnABoardWithoutThem()
     {

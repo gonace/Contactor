@@ -17,8 +17,11 @@ public sealed record DevantechRequest(byte[] Bytes, int AnswerLength)
 /// </summary>
 public static class DevantechProtocol
 {
-    /// <summary>The longest answer the app reads: the ETH8020's 4 input bytes.</summary>
-    public const int MaxAnswerBytes = 4;
+    /// <summary>The longest answer the app reads: the ETH1610's 0x34, 2 bytes for each of its 16 analog inputs.</summary>
+    public const int MaxAnswerBytes = 32;
+
+    /// <summary>The bytes of one analog value in an answer to 0x32 or 0x34.</summary>
+    public const int AnalogValueBytes = 2;
 
     /// <summary>0x10: id, hardware and firmware.</summary>
     public static DevantechRequest GetModuleInfo()
@@ -39,6 +42,22 @@ public static class DevantechProtocol
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentOutOfRangeException.ThrowIfLessThan(layout.InputBytes, 1);
         return new([DevantechApi.GetInputs], layout.InputBytes);
+    }
+
+    /// <summary>0x32 and the input's number: one analog input, a 2-byte answer.</summary>
+    public static DevantechRequest GetAnalog(int input)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, 255);
+        return new([DevantechApi.GetAnalog, (byte)input], AnalogValueBytes);
+    }
+
+    /// <summary>0x34: all <paramref name="count"/> analog inputs at once, 2 bytes each; only the ETH1610 has it.</summary>
+    public static DevantechRequest GetAllAnalog(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(count, MaxAnswerBytes / AnalogValueBytes);
+        return new([DevantechApi.GetAllAnalog], count * AnalogValueBytes);
     }
 
     /// <summary>0x20 or 0x21: one relay on or off for good (pulse 0), 1 byte answer.</summary>
@@ -131,6 +150,55 @@ public static class DevantechProtocol
         }
 
         return bits & ChannelMask.FirstN(inputCount).Bits;
+    }
+
+    /// <summary>
+    /// The value in a 2-byte answer to 0x32, high byte first: 0 to <see cref="DevantechApi.AnalogMaxCounts"/>. Null for
+    /// an answer of another length, or with any of the upper 6 bits set, which the manuals say are 0.
+    /// </summary>
+    public static int? AnalogValue(ReadOnlySpan<byte> answer)
+    {
+        if (answer.Length != AnalogValueBytes)
+        {
+            return null;
+        }
+
+        var value = (answer[0] << 8) | answer[1];
+        return value <= DevantechApi.AnalogMaxCounts ? value : null;
+    }
+
+    /// <summary>
+    /// The values in an answer to 0x34, 2 bytes each, high byte first, input 1 first. Null for an answer that isn't
+    /// exactly <paramref name="count"/> values, or with a value <see cref="AnalogValue"/> can't read.
+    /// </summary>
+    public static int[]? AnalogValues(ReadOnlySpan<byte> answer, int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        if (answer.Length != count * AnalogValueBytes)
+        {
+            return null;
+        }
+
+        var values = new int[count];
+        for (var i = 0; i < count; i++)
+        {
+            if (AnalogValue(answer.Slice(i * AnalogValueBytes, AnalogValueBytes)) is not { } value)
+            {
+                return null;
+            }
+
+            values[i] = value;
+        }
+
+        return values;
+    }
+
+    /// <summary>The 2 bytes of an analog value, high byte first, as 0x32 and 0x34 answer it.</summary>
+    public static byte[] AnalogBytes(int counts)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(counts);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(counts, DevantechApi.AnalogMaxCounts);
+        return [(byte)(counts >> 8), (byte)counts];
     }
 
     /// <summary>The bytes of a 0x24 answer for these relays, low byte first.</summary>

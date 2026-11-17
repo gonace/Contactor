@@ -10,14 +10,14 @@ namespace Contactor.Boards.Devantech;
 /// <summary>
 /// A fake Devantech ETH relay board of any of the five models, on a local TCP port, answering the binary commands as
 /// the board does (<see cref="DevantechApi"/>): its module id (0x10), relays (0x20, 0x21, 0x23, 0x24), inputs (0x25, on
-/// the models that answer it), supply volts (0x78, on the models that have it), serial number (0x77) and the TCP
-/// password (0x79, 0x7A, 0x7B). With a password each connection starts locked, and locks again after 30 s on
-/// <see cref="TimeProvider"/> without a command; a relay command while locked is refused (01). A command it doesn't
-/// know, or one the model doesn't have, gets no answer at all, as on the board. It reads each TCP packet as the
-/// commands in it, and a password as the rest of its packet. A pulse time switches the relay back by itself after the
-/// time on <see cref="TimeProvider"/>; a later command for the relay ends its pulse, or starts it again. It never tells
-/// the app anything by itself. Several clients may connect at once. Used by the tests and, in development, by
-/// Contactor.Simulator. It listens on the loopback interface only.
+/// the models that answer it), analog inputs (0x32 on the models that have them, 0x34 on the ETH1610), supply volts
+/// (0x78, on the models that have it), serial number (0x77) and the TCP password (0x79, 0x7A, 0x7B). With a password
+/// each connection starts locked, and locks again after 30 s on <see cref="TimeProvider"/> without a command; a relay
+/// command while locked is refused (01). A command it doesn't know, or one the model doesn't have, gets no answer at
+/// all, as on the board. It reads each TCP packet as the commands in it, and a password as the rest of its packet. A
+/// pulse time switches the relay back by itself after the time on <see cref="TimeProvider"/>; a later command for the
+/// relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may connect at
+/// once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
 public sealed class DevantechSimulator : ISimulatedBoard
 {
@@ -35,6 +35,12 @@ public sealed class DevantechSimulator : ISimulatedBoard
     private readonly ConcurrentDictionary<TcpClient, string> _connections = new();
     private readonly ConcurrentQueue<string> _receivedRequests = new();
     private readonly Lock _lock = new();
+
+    // What each analog input reads, input 1 first; empty without analog inputs. The last values sent only mark the
+    // answers that change nothing as routine.
+    private readonly int[] _analog;
+    private readonly int?[] _lastAnalogSent;
+
     private SimulatedPulses? _pulses;
     private TcpListener? _listener;
     private Task? _acceptLoop;
@@ -72,6 +78,8 @@ public sealed class DevantechSimulator : ISimulatedBoard
         _password = string.IsNullOrEmpty(password) ? null : password;
         _logger = logger;
         ModuleId = _layout.ModuleId;
+        _analog = new int[model.Capabilities.AnalogInputCount];
+        _lastAnalogSent = new int?[_analog.Length];
     }
 
     public event EventHandler? Changed;
@@ -116,7 +124,10 @@ public sealed class DevantechSimulator : ISimulatedBoard
                 return new SimulatedBoardState(
                     new ChannelMask(_relays),
                     new ChannelMask(_inputs),
-                    [.. _connections.Values.Order(StringComparer.Ordinal)]);
+                    [.. _connections.Values.Order(StringComparer.Ordinal)])
+                {
+                    Analog = [.. _analog],
+                };
             }
         }
     }
@@ -190,6 +201,28 @@ public sealed class DevantechSimulator : ISimulatedBoard
         ArgumentOutOfRangeException.ThrowIfGreaterThan(input, Model.Capabilities.InputCount);
         var bit = 1UL << (input - 1);
         Change(() => _inputs = closed ? _inputs | bit : _inputs & ~bit);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Sets what an analog input reads, 0 to 1023 as the board's 10-bit converter reads it.</summary>
+    public Task SetAnalogAsync(int input, int counts)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, _analog.Length);
+        ArgumentOutOfRangeException.ThrowIfNegative(counts);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(counts, DevantechApi.AnalogMaxCounts);
+        bool changed;
+        lock (_lock)
+        {
+            changed = _analog[input - 1] != counts;
+            _analog[input - 1] = counts;
+        }
+
+        if (changed)
+        {
+            RaiseChanged();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -305,7 +338,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
             packet = packet[length.Value..];
             var bytes = DevantechTraceText.RequestBytes(command);
             Remember(bytes);
-            Trace(BoardTraceDirection.Sent, DevantechTraceText.Request(command), bytes, isRoutine: command[0] is DevantechApi.GetOutputs or DevantechApi.GetInputs);
+            Trace(BoardTraceDirection.Sent, DevantechTraceText.Request(command), bytes, isRoutine: command[0] is DevantechApi.GetOutputs or DevantechApi.GetInputs or DevantechApi.GetAnalog or DevantechApi.GetAllAnalog);
             if (NoAnswer)
             {
                 Silent("No answer: the board hangs");
@@ -330,6 +363,8 @@ public sealed class DevantechSimulator : ISimulatedBoard
             DevantechApi.GetModuleInfo or DevantechApi.GetOutputs or GetSerialNumber or DevantechApi.GetUnlockTime or LogOut => 1,
             DevantechApi.GetInputs when _layout.InputBytes > 0 => 1,
             GetVolts when _layout.HasVolts => 1,
+            DevantechApi.GetAnalog when _analog.Length > 0 => 2,
+            DevantechApi.GetAllAnalog when _layout.AllAnalog => 1,
             DevantechApi.DigitalActive or DevantechApi.DigitalInactive => 3,
             SetOutputs => 1 + _layout.OutputBytes,
 
@@ -361,6 +396,10 @@ public sealed class DevantechSimulator : ISimulatedBoard
                 return ReadBits(output: true);
             case DevantechApi.GetInputs:
                 return ReadBits(output: false);
+            case DevantechApi.GetAnalog:
+                return ReadAnalog(command[1]);
+            case DevantechApi.GetAllAnalog:
+                return ReadAllAnalog();
             case DevantechApi.DigitalActive or DevantechApi.DigitalInactive:
                 return Switch(command, locked);
             case SetOutputs:
@@ -406,6 +445,46 @@ public sealed class DevantechSimulator : ISimulatedBoard
         return output
             ? Answer(DevantechProtocol.OutputBytes(bits, _layout.OutputBytes), DevantechTraceText.Relays(bits, capabilities.RelayCount), routine)
             : Answer(DevantechProtocol.InputBytes(bits, _layout.InputBytes), DevantechTraceText.Inputs(bits, capabilities.InputCount), routine);
+    }
+
+    // 0x32: one input, 2 bytes, high byte first. The manuals don't say what the board does for an input it doesn't
+    // have; the simulator gives no answer, as for a command it doesn't know.
+    private byte[]? ReadAnalog(byte input)
+    {
+        if (input < 1 || input > _analog.Length)
+        {
+            return Silent("No answer: an analog input this board doesn't have");
+        }
+
+        int counts;
+        bool routine;
+        lock (_lock)
+        {
+            counts = _analog[input - 1];
+            routine = _lastAnalogSent[input - 1] == counts;
+            _lastAnalogSent[input - 1] = counts;
+        }
+
+        return Answer(DevantechProtocol.AnalogBytes(counts), DevantechTraceText.Analog(input, counts, Model.Capabilities.Analog!), routine);
+    }
+
+    // 0x34: every input, input 1 first, 2 bytes each, high byte first.
+    private byte[] ReadAllAnalog()
+    {
+        int[] counts;
+        bool routine;
+        lock (_lock)
+        {
+            counts = [.. _analog];
+            routine = true;
+            for (var i = 0; i < counts.Length; i++)
+            {
+                routine &= _lastAnalogSent[i] == counts[i];
+                _lastAnalogSent[i] = counts[i];
+            }
+        }
+
+        return Answer([.. counts.SelectMany(DevantechProtocol.AnalogBytes)], DevantechTraceText.AllAnalog(counts, Model.Capabilities.Analog!), routine);
     }
 
     // 0x20 or 0x21: a relay out of range, one in FailRelays, or any while locked is refused (01). With a pulse time the

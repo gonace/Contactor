@@ -24,22 +24,30 @@ is not known.
 - *ETH1610 Technical Documentation*, Devantech, 02/11/26 (11 February 2026), `robot-electronics.co.uk/files/eth1610.pdf`:
   "Overview" (p. 1), "Analogue Inputs" (p. 4), "Access from the Internet" (p. 7), "TCP access and commands" (pp. 17–18)
   and "TCP/IP Password" (p. 18). For the ETH1610, every command and answer below is from these pages.
+- *ETH484-B Technical Documentation*, Devantech, 02/11/26 (11 February 2026), `robot-electronics.co.uk/files/eth484b.pdf`:
+  "Overview" (p. 1), "Analogue Inputs" (p. 5) and "TCP access and commands" (p. 18). The analog inputs of the ETH484-B
+  come from these pages.
+- *ETH484 Technical Documentation* (the original ETH484, module id 20 as the ETH484-B), Devantech, 05/23/24 (23 May
+  2024), `robot-electronics.co.uk/files/eth484.pdf`: "Analogue Inputs" (p. 4) and the command table (p. 10).
+- *ETH8020-B Technical Documentation*, Devantech, 02/11/26 (11 February 2026), `robot-electronics.co.uk/files/eth8020b.pdf`:
+  "Overview" (p. 1), "Connections" (p. 2), "Analogue Inputs" (p. 4) and "TCP access and commands" (p. 17). The analog
+  inputs of the ETH8020-B come from these pages.
 
 ## Models
 
-| Catalogue id | Name | Relays | Inputs | Module id | Bytes of 0x24 | Bytes of 0x25 | Pulse | Login |
-|---|---|---|---|---|---|---|---|---|
-| `devantech-eth002` | Devantech ETH002-B | 2 | 0 | 18 | 1 | none | 0.1 s to 25.5 s | optional TCP password |
-| `devantech-eth008` | Devantech ETH008-B | 8 | 0 | 19 | 1 | none | 0.1 s to 25.5 s | optional TCP password |
-| `devantech-eth1610` | Devantech ETH1610 | 10 | 0 (see below) | 52 | 2 | 2, not read | 0.1 s to 25.5 s | optional TCP password |
-| `devantech-eth484` | Devantech ETH484-B | 4 | 8 | 20 | 2 | 2 | 0.1 s to 25.5 s | optional TCP password |
-| `devantech-eth8020` | Devantech ETH8020-B | 20 | 8 | 21 | 3 | 4 | 0.1 s to 25.5 s | optional TCP password |
+| Catalogue id | Name | Relays | Inputs | Analog inputs | Module id | Bytes of 0x24 | Bytes of 0x25 | Pulse | Login |
+|---|---|---|---|---|---|---|---|---|---|
+| `devantech-eth002` | Devantech ETH002-B | 2 | 0 | 0 | 18 | 1 | none | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth008` | Devantech ETH008-B | 8 | 0 | 0 | 19 | 1 | none | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth1610` | Devantech ETH1610 | 10 | 0 (see below) | 16, 0–5 V | 52 | 2 | 2, not read | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth484` | Devantech ETH484-B | 4 | 8 | 4, 0–3.3 V | 20 | 2 | 2 | 0.1 s to 25.5 s | optional TCP password |
+| `devantech-eth8020` | Devantech ETH8020-B | 20 | 8 | 8, 0–5 V | 21 | 3 | 4 | 0.1 s to 25.5 s | optional TCP password |
 
 All five use port 17494. Their only login is an optional TCP password. `DevantechModels` has the five models and
 their layouts. The original ETH002, ETH008, ETH484 and ETH8020 have the same module ids, so the app also takes them.
 
-The ETH1610, ETH484-B and ETH8020-B also have analog inputs: the ETH1610 has 16 (manual pp. 1 and 4). The app does not
-read them yet: that is Issue #113.
+The ETH1610, ETH484-B and ETH8020-B also have analog inputs. The app reads them on every poll (see "Analog inputs"
+below).
 
 The app reads no inputs of the ETH1610. Its manual says 0x25 answers 2 bytes for 16 digital inputs, a set bit meaning an
 active input (p. 17), but not which bit is which input, and no other Devantech document or code says it either: the
@@ -65,6 +73,8 @@ length. There is no framing and no checksum.
 | Read the inputs | `25` | 2 or 4 bytes, high byte first, bit 0 of the last byte = input 1 |
 | Send the password | `79` and the password's ASCII bytes | `01` accepted, `02` refused |
 | Is the board locked? | `7A` | `00` locked, `01` to `1E` seconds left, `FF` no password |
+| Read one analog input | `32 cc` | 2 bytes, high byte first: 0 to 1023 |
+| Read all analog inputs (ETH1610 only) | `34` | 32 bytes: 2 for each of the 16 inputs, input 1 first |
 
 `nn` is the relay number. `tt` is a pulse time in units of 100 ms. For ON and OFF the app sends `tt` = `00`, so the
 relay stays as set. A relay number that the board does not have gets `01`.
@@ -99,6 +109,48 @@ Exchanges from the documents and the recorded session:
 | `20 02 32` | `00` | ETH1610: relay 2 on for 5 s, the command of its manual's example (p. 17). The `00` isn't printed there: it comes from "Board will return 0 for success" |
 
 `DevantechProtocolTests` and `DevantechSimulatedBoardTests` check these exchanges byte for byte.
+
+### Analog inputs
+
+| Model | Inputs | Command the app sends | Value | Full scale | Source |
+|---|---|---|---|---|---|
+| ETH1610 | 16 | one `34` | 10 bit, 0 to 1023 | 1023 = 5 V | manual p. 4 ("0v-5V at 10-bit"), p. 18 (0x32, 0x34) |
+| ETH484-B | 4 | `32 01` to `32 04` | 10 bit, 0 to 1023 | 1023 = 3.3 V | manual p. 1, p. 5, p. 18 (0x32) |
+| ETH8020-B | 8 | `32 01` to `32 08` | 10 bit, 0 to 1023 | 1023 = 5 V | manual p. 4 ("0v-5V at 10-bit"), p. 17 (0x32) |
+
+- `32 cc`: `cc` is the input, from 1. The board answers 2 bytes, high byte first. "The 10-bit conversion will be in
+  the lower 10 bits of the 16 bit integer with the upper 6 bits being 0" (ETH1610 p. 4, ETH8020-B p. 17; the ETH484-B
+  says "the remaining upper bits being 0", p. 18). For example, `02 00` is 512.
+- `34` (ETH1610 p. 18): "The ETH1610 will respond with all 16 inputs of ADC results, transmitted high and then low byte
+  for each with input 1 transmitted first. A total of 32 bytes are sent." The ETH484-B and ETH8020-B have no such
+  command, so the app sends a `32` for each input.
+- The ETH484-B also has `33 cc`: 12 bit, full scale at 5 V (p. 18). The app uses `32`, which the ETH484-B answers "scaled
+  to 3.3v for ETH484 compatibility" (p. 18). The original ETH484 has the same module id, 20, and has only `32`: 10 bit,
+  0 to 3.3 V (ETH484 manual pp. 4 and 10). The app can't tell the two apart, so it uses the command they both have. On
+  the ETH484-B, "for 10 bit results the 3.3V to 5V region will merely read full scale" (p. 5): the app shows 1023 as
+  "Above the board's range".
+- An analog answer that fails never fails the poll, and never stops the app from switching the relays. The analog
+  inputs are a measurement nobody has checked on a real board yet. When an analog answer fails:
+  - The relays and inputs of that poll are kept, and the board stays connected.
+  - Every analog input of that poll has "no reading", which the screens show as "–".
+  - The Debug screen and the log (at Information) say why, in plain words.
+  - The client sends no analog request to the board for 1 minute (`DevantechClient.AnalogRetryInterval`, on
+    `TimeProvider`), or until the poller opens a new connection. So a board that never answers 0x32 or 0x34 costs one
+    time-out per minute, not one per poll.
+- An analog answer fails when it has one of the upper 6 bits set (a value above 1023), when it is late (5 s), or when
+  it is too short. A value above 1023 comes in an answer of the right length, so the connection stays in step and stays
+  open. After a late or short answer, the client closes the connection, so the late bytes can't be taken for the next
+  answer. The next request opens a new connection, at most once a minute because of the pause above.
+- None of the three manuals says if full scale is 1023 or 1024 counts. The app takes 1023 as full scale: 1023 = 5 V
+  (or 3.3 V), and 1 count is 5 V / 1023. The difference is 1 count, about 5 mV.
+- None of the manuals gives an example answer. The tests use the manuals' format with made-up values.
+
+The poll cost: each poll sends 0x24, 0x25 on a model with inputs, and then the analog requests. That is 1 more
+request on the ETH1610 (2 per poll), 4 more on the ETH484-B (6 per poll) and 8 more on the ETH8020-B (10 per poll).
+Each request is one round trip on the local network, so a poll takes some milliseconds longer. An analog request
+without an answer adds at most 5 s to one poll a minute. The read of the board after a command reads the relays and
+inputs only, and keeps the last poll's analog values, so a command's confirmation never waits on the analog inputs. A
+command never waits for a poll: a poll under way gives way to it.
 
 ### Password
 
@@ -140,11 +192,12 @@ Then:
 - Each command and each connection attempt has 5 s on `TimeProvider`.
 - The client reads only the length of the answer. A short answer counts as no answer after 5 s.
 - An answer with a value it cannot have is unreadable, for example `05` to 0x20. Then the client closes the
-  connection, because the stream can be out of step. The next command opens and checks a new connection.
+  connection, because the stream can be out of step. The next command opens and checks a new connection. An analog
+  value above 1023 is different: see "Analog inputs".
 - When the connection was open from before and turns out broken (the board or the network can close a connection
   that is idle), the client sends the command once more on a new connection, which it checks and unlocks first. It
   does this only when no byte of the answer came, and never for the commands that check and unlock a new connection.
-  Each command the client sends has the same result when done twice: 0x10, 0x7A, 0x24 and 0x25 read, 0x20 and 0x21
+  Each command the client sends has the same result when done twice: 0x10, 0x7A, 0x24, 0x25, 0x32 and 0x34 read, 0x20 and 0x21
   switch one relay or start its pulse again, and 0x79 unlocks.
 - Bytes that wait before a command were not asked for. The client drops them and shows them on the Debug screen.
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the VM204, the VM208 and the
@@ -163,12 +216,18 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
   poll, and also a command with an answer that cannot be read, or a connection it cannot check or unlock: a new one, or
   the open one when `7A` before a command fails. When the board answered `01` to every relay, the board answered: the
   command is a refusal (`BoardRefusedException`), which does not count.
-- After the switches, the client reads the relays and the inputs in the same command. The poller takes that as the
+- After the switches, the client reads the relays and the inputs in the same command. It doesn't read the analog
+  inputs: the state keeps what the last poll read of them. The poller takes that as the
   new state. When that read gets an answer it cannot read or no answer, the command returns the relays that the board
   took. The client keeps the last state it read and reads again at once.
 
 `DevantechClient.PulseAsync` and `DevantechBoard.PulseAsync` throw `ArgumentOutOfRangeException` for a length outside
 0.1 s to 25.5 s, or not in steps of 0.1 s, before anything is sent.
+
+A change in the analog values alone is no state change: `DevantechStatus.SwitchesComparer` compares the relays and the
+inputs only. Such a change comes as `DevantechClient.AnalogChanged` and `DevantechBoard.AnalogChanged`, never as
+`StateChanged`, so the safety services are not woken by a value that moves a little on every poll. A change with a
+relay or an input comes as `StateChanged`, with the new analog values in it.
 
 `DevantechBoard`, `DevantechConnection` and `DevantechTraffic` are the adapters for the app. `Features/Devantech` in
 `Contactor.Web` registers them. `DevantechTraceText` puts each command in plain words. The polls and the answers that
@@ -195,6 +254,9 @@ When `Host` is empty, the setup guide asks for the address.
 
 - It answers 0x10, 0x20, 0x21, 0x23, 0x24, 0x77, 0x79, 0x7A and 0x7B, 0x25 on the models that answer it (the ETH1610
   with 2 bytes of 0: it has no inputs to set), and 0x78 on all but the ETH1610.
+- It answers 0x32 on the ETH1610, ETH484-B and ETH8020-B, and 0x34 on the ETH1610, in the manuals' format. It gives no
+  answer to 0x32 for an input the model doesn't have (the manuals don't say what the board does), and none to 0x33,
+  which the app doesn't use.
 - It gives no answer to a command that it does not know.
 - It reads each TCP packet as the commands in it, and a password as the rest of its packet.
 - With a password, each connection starts locked and locks again after 30 s without a command. A relay command while
@@ -202,7 +264,8 @@ When `Host` is empty, the setup guide asks for the address.
 - A pulse time switches the relay back after the time, on the simulator's `TimeProvider`: 0x20 turns it off again, and
   0x21 on again. The next poll shows it. A later 0x20, 0x21 or 0x23 for the relay ends its pulse; a later pulse starts
   it again.
-- Relays and inputs can be set "at the board", and connections can be dropped or refused.
+- Relays, inputs and analog inputs (0 to 1023, `SetAnalogAsync`) can be set "at the board", and connections can be
+  dropped or refused.
 - For the tests, `NoAnswer` stops all answers, `FailRelays` refuses some relays, and `ModuleId` makes it answer as
   another model.
 
@@ -224,6 +287,16 @@ When `Host` is empty, the setup guide asks for the address.
 - The ETH1610's 0x25: which bit is which input, what an input is on the terminals (its manual shows 16 analog inputs
   and no digital ones), and that a set bit means an active input. Then the app can read them.
 - If the ETH1610 answers 0x78, which its manual does not list.
+- The analog inputs: that 0x32 and 0x34 answer high byte first, that 0x34 answers 32 bytes with input 1 first, and
+  that an open input reads about 0 (the ETH484-B has a pull-down, p. 5; the ETH1610 and ETH8020-B schematics show a
+  100k resistor to 5 V through a jumper, whose purpose the manuals don't give).
+- Which voltage reads 1023: 5 V (3.3 V on the ETH484-B) or one count less. Check with a known voltage.
+- What 0x32 answers for an input the board doesn't have, such as `32 00` or `32 11`, and what 0x34 does on an ETH484-B
+  or ETH8020-B. The app never sends them.
+- If an ETH484-B answers 0x32 with full scale (1023) from 3.3 V to 5 V, as p. 5 says.
+- If 0x32 and 0x34 answer while the board is locked. The manuals say only that relays need the password. If they
+  don't, the app shows "no reading" while the board is locked.
+- How long a poll takes on the ETH8020-B with its 10 requests.
 - How many TCP clients the board accepts. The documents say five.
 - That the board never sends data that the app did not ask for.
 - How the board handles a poll every 2 s for days, and if it closes a connection that is idle, and after how long.

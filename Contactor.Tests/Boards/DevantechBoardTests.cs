@@ -41,6 +41,48 @@ public sealed class DevantechBoardTests
 
         Assert.Equal(new BoardState(true, ChannelMask.Of(20), ChannelMask.Of([1, 8]), at), state);
         Assert.Equal(BoardState.Initial, DevantechBoard.ToBoardState(DevantechState.Initial));
+
+        var analog = new AnalogReadings([0, 512, 1023, 7]);
+        var withAnalog = DevantechBoard.ToBoardState(new DevantechState(false, new DevantechStatus(0b0001, 0, analog), at));
+        Assert.Equal(new BoardState(false, ChannelMask.Of(1), ChannelMask.None, at, Analog: analog), withAnalog);
+    }
+
+    [Fact]
+    public async Task Should_PassOnAnAnalogChangeAlone_AsAnAnalogChange_NeverAsAStateChange()
+    {
+        await using var simulator = new DevantechSimulator(DevantechModels.Eth484);
+        simulator.Start();
+        await simulator.SetAnalogAsync(2, 100);
+        using var client = Client(new DevantechOptions { Host = "127.0.0.1", Port = simulator.Port }, DevantechModels.Eth484);
+        var board = new DevantechBoard(client, NullLogger<DevantechBoard>.Instance);
+        var states = new List<BoardState>();
+        var analogs = new List<BoardState>();
+        board.StateChanged += (_, state) => Add(states, state);
+        board.AnalogChanged += (_, _) => throw new InvalidOperationException("A broken subscriber.");
+        board.AnalogChanged += (_, state) => Add(analogs, state);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => Count(states) == 1);
+        Assert.Equal(new AnalogReadings([0, 100, 0, 0]), board.State.Analog);
+
+        // The analog value alone: an analog change, and nothing for the safety services.
+        await simulator.SetAnalogAsync(2, 1023);
+        await board.RefreshAsync(Cancel);
+        await Wait.UntilAsync(() => Count(analogs) == 1);
+        Assert.Equal(1, Count(states));
+        Assert.Equal(new AnalogReadings([0, 1023, 0, 0]), analogs[0].Analog);
+        Assert.Equal(new AnalogReadings([0, 1023, 0, 0]), board.State.Analog);
+
+        // With a relay: a state change, which carries the new value too, and no analog change of its own.
+        await simulator.SetAnalogAsync(4, 3);
+        await simulator.SwitchRelayAsync(1, true);
+        await board.RefreshAsync(Cancel);
+        await Wait.UntilAsync(() => Count(states) == 2);
+        Assert.Equal(new AnalogReadings([0, 1023, 0, 3]), states[1].Analog);
+
+        await stop.CancelAsync();
+        await run;
+        Assert.Equal(1, Count(analogs));
     }
 
     [Fact]
@@ -117,6 +159,22 @@ public sealed class DevantechBoardTests
         Assert.Equal(new BoardLogin("", "pear"), connection.Login);
         connection.SetLogin(BoardLogin.None);
         Assert.True(connection.Login.IsNone);
+    }
+
+    private static void Add(List<BoardState> list, BoardState state)
+    {
+        lock (list)
+        {
+            list.Add(state);
+        }
+    }
+
+    private static int Count(List<BoardState> list)
+    {
+        lock (list)
+        {
+            return list.Count;
+        }
     }
 
     private static DevantechClient Client(DevantechOptions options, BoardModel model)

@@ -25,6 +25,8 @@ public static class DevantechTraceText
             DevantechApi.GetModuleInfo => "Ask which board it is",
             DevantechApi.GetOutputs => "Ask for the relays",
             DevantechApi.GetInputs => "Ask for the inputs",
+            DevantechApi.GetAnalog when command.Length >= 2 => $"Ask for analog input {Number(command[1])}",
+            DevantechApi.GetAllAnalog => "Ask for the analog inputs",
             DevantechApi.GetUnlockTime => "Ask whether the board is locked",
             DevantechApi.Password => "Send the password",
             DevantechApi.DigitalActive when command.Length >= 3 => Switch("Turn on", command[1], command[2]),
@@ -61,6 +63,21 @@ public static class DevantechTraceText
     public static string Inputs(ulong inputs, int count)
     {
         return $"Inputs: {OnList(inputs, count)}";
+    }
+
+    /// <summary>One analog input's value in volts, with the board's count: "Analog input 3: 2.50 V (512)".</summary>
+    public static string Analog(int input, int counts, AnalogAbility analog)
+    {
+        ArgumentNullException.ThrowIfNull(analog);
+        return string.Create(CultureInfo.InvariantCulture, $"Analog input {input}: {analog.Volts(counts):0.00} V ({counts})");
+    }
+
+    /// <summary>All analog inputs' values in volts, input 1 first: "Analog inputs: 2.50 V, 0.00 V, 5.00 V".</summary>
+    public static string AllAnalog(IReadOnlyList<int> counts, AnalogAbility analog)
+    {
+        ArgumentNullException.ThrowIfNull(counts);
+        ArgumentNullException.ThrowIfNull(analog);
+        return $"Analog inputs: {string.Join(", ", counts.Select(c => string.Create(CultureInfo.InvariantCulture, $"{analog.Volts(c):0.00} V")))}";
     }
 
     /// <summary>"Locked", "No password", "Unlocked for 30 s".</summary>

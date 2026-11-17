@@ -14,6 +14,9 @@ internal static partial class DevantechLog
     [LoggerMessage(Level = LogLevel.Information, Message = "Reconnecting to the Devantech board in {DelaySeconds} s")]
     public static partial void Reconnecting(this ILogger logger, string? delaySeconds);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "The Devantech board's analog inputs couldn't be read; the relays and inputs are read as usual: {Reason}")]
+    public static partial void AnalogNotRead(this ILogger logger, string? reason);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "A Devantech subscriber failed")]
     public static partial void SubscriberFailed(this ILogger logger, Exception exception);
 
