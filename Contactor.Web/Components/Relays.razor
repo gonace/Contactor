@@ -275,6 +275,10 @@
     private int? _failedGroupId;
     private string? _groupError;
     private ITimer? _tick;
+
+    // Set when the page closes, on the page's own thread: a page closed while it loads doesn't subscribe, and an event
+    // already on its way doesn't load or draw a closed page.
+    private bool _disposed;
     private Dictionary<int, RelayRuntime> _runtimes = [];
     private Dictionary<string, string> _names = [];
     private Dictionary<int, EventLogEntry> _lastOff = [];
@@ -635,6 +639,14 @@
 
         _user = await CurrentUser.GetAsync();
         await LoadAsync();
+
+        // Dispose ran during the load: subscribing now would leave the handlers for the life of the app. Dispose and this
+        // both run on the page's own thread, so nothing can come between the check and the subscription.
+        if (_disposed)
+        {
+            return;
+        }
+
         Registry.StateChanged += OnBoardChanged;
         Registry.AnalogChanged += OnAnalogChanged;
         Registry.BoardsChanged += OnBoardsChanged;
@@ -643,6 +655,7 @@
 
     public void Dispose()
     {
+        _disposed = true;
         Registry.StateChanged -= OnBoardChanged;
         Registry.AnalogChanged -= OnAnalogChanged;
         Registry.BoardsChanged -= OnBoardsChanged;
@@ -921,6 +934,12 @@
         {
             await InvokeAsync(() =>
             {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (_disposed)
+                {
+                    return;
+                }
+
                 if (Registry.Find(boardId) is { } board && _shownAnalog.Changes(boardId, board.Capabilities.Analog, board.State))
                 {
                     StateHasChanged();
@@ -940,6 +959,12 @@
         {
             await InvokeAsync(async () =>
             {
+                // On the page's own thread, as Dispose is: a closed page loads and draws nothing.
+                if (_disposed)
+                {
+                    return;
+                }
+
                 if (reload)
                 {
                     await LoadAsync();

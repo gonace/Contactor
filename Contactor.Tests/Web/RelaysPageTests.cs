@@ -1,12 +1,16 @@
 using System.Net;
+using Contactor.Web.Components;
+using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// The relay screen as the server first renders it, with no board connected.
+/// The relay screen as the server first renders it, with no board connected, and a live one closed while it loads.
 /// </summary>
 public sealed class RelaysPageTests
 {
@@ -193,6 +197,37 @@ public sealed class RelaysPageTests
         using var response = await http.GetAsync("/fonts/ibm-plex-sans-latin-400-normal.woff2", Cancel);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    // A page closed while its first load is under way: when the load ends, it must not subscribe, or its handlers stay
+    // for the life of the app, holding the closed page and running on every board update.
+    [Fact]
+    public async Task Should_LeaveNoHandlers_WhenThePageClosesWhileItLoads()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
+            TestWebApp.WithLostBoard);
+        var registry = app.Services.GetRequiredService<BoardRegistry>();
+        var changes = app.Services.GetRequiredService<RelayChanges>();
+        var signIn = new TaskCompletionSource<AuthenticationState>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var (page, rendered) = PageRenderer.StartHeld<Relays>(app.Services, signIn.Task);
+        page.Close();
+        signIn.SetResult(PageRenderer.SignedIn("john@example.com", "John"));
+        await rendered.WaitAsync(Cancel);
+
+        Assert.Equal(0, Handlers<Relays>(registry, nameof(BoardRegistry.StateChanged)));
+        Assert.Equal(0, Handlers<Relays>(registry, nameof(BoardRegistry.AnalogChanged)));
+        Assert.Equal(0, Handlers<Relays>(registry, nameof(BoardRegistry.BoardsChanged)));
+        Assert.Equal(0, Handlers<Relays>(changes, nameof(RelayChanges.Changed)));
+    }
+
+    // How many of an event's handlers belong to a component of type T.
+    private static int Handlers<T>(object source, string name)
+    {
+        var field = source.GetType().GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        return (field.GetValue(source) as Delegate)?.GetInvocationList().Count(d => d.Target is T) ?? 0;
     }
 
     private static int CountOccurrences(string text, string value)

@@ -68,10 +68,33 @@ internal sealed class PageRenderer : Renderer
     public static async Task<PageRenderer> StartAsync<TPage>(IServiceProvider app, string email, string name, IDictionary<string, object?>? parameters = null)
         where TPage : IComponent
     {
+        var (renderer, rendered) = Start<TPage>(app, Task.FromResult(SignedIn(email, name)), parameters);
+        await rendered;
+        return renderer;
+    }
+
+    /// <summary>
+    /// Starts <typeparamref name="TPage"/> while the person's sign-in waits for <paramref name="signIn"/>, so the page's
+    /// first load is held until the test completes it. The task ends when the page has rendered, or failed to.
+    /// </summary>
+    public static (PageRenderer Page, Task Rendered) StartHeld<TPage>(IServiceProvider app, Task<AuthenticationState> signIn)
+        where TPage : IComponent
+    {
+        return Start<TPage>(app, signIn, null);
+    }
+
+    /// <summary>The sign-in of <paramref name="email"/>, shown as <paramref name="name"/>.</summary>
+    public static AuthenticationState SignedIn(string email, string name)
+    {
+        return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Email, email), new Claim(ClaimTypes.Name, name)], "Test")));
+    }
+
+    private static (PageRenderer Page, Task Rendered) Start<TPage>(IServiceProvider app, Task<AuthenticationState> signIn, IDictionary<string, object?>? parameters)
+        where TPage : IComponent
+    {
         var scope = app.CreateAsyncScope();
-        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Email, email), new Claim(ClaimTypes.Name, name)], "Test"));
         ((IHostEnvironmentAuthenticationStateProvider)scope.ServiceProvider.GetRequiredService<AuthenticationStateProvider>())
-            .SetAuthenticationState(Task.FromResult(new AuthenticationState(principal)));
+            .SetAuthenticationState(signIn);
         // As a circuit starts it: where the app is and the page that was opened. Without a browser, a page that goes
         // elsewhere throws NavigationException, which the test sees in Errors.
         if (scope.ServiceProvider.GetRequiredService<NavigationManager>() is IHostEnvironmentNavigationManager navigation)
@@ -80,13 +103,13 @@ internal sealed class PageRenderer : Renderer
         }
 
         var renderer = new PageRenderer(scope);
-        await renderer.Dispatcher.InvokeAsync(async () =>
+        var rendered = renderer.Dispatcher.InvokeAsync(async () =>
         {
             var page = renderer.InstantiateComponent(typeof(TPage));
             renderer._rootId = renderer.AssignRootComponentId(page);
             await renderer.RenderRootComponentAsync(renderer._rootId, ParameterView.FromDictionary(parameters ?? new Dictionary<string, object?>()));
         });
-        return renderer;
+        return (renderer, rendered);
     }
 
     /// <summary>Whether the page now has an element whose attributes match.</summary>
