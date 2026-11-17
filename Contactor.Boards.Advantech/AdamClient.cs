@@ -156,7 +156,8 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable, IAsyncDi
 
     public void Dispose()
     {
-        // The poller first, so no poll or command starts on the connection being closed; then nothing opens a new one.
+        // The poller first, so no new poll or command starts; then nothing opens a new connection. A request already
+        // under way goes on until Close breaks its connection under it, and then fails as unanswered.
         _poller.Dispose();
         Interlocked.Exchange(ref _disposed, 1);
         Close();
@@ -364,7 +365,7 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable, IAsyncDi
         {
             Close();
             Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
-            if (reused && again && ex is not TimeoutException)
+            if (reused && again)
             {
                 return await ExchangeAsync(request, routine, cancellationToken, again: false).ConfigureAwait(false);
             }
@@ -486,7 +487,8 @@ public sealed class AdamClient : IPolledBoard<AdamStatus>, IDisposable, IAsyncDi
     }
 
     // Nothing comes unasked from the module; bytes waiting now are left from an answer that came too late or were sent
-    // by something else. They are dropped, or with too many of them the connection is opened afresh at the next request.
+    // by something else. They are dropped. With too many of them the connection is closed: a request on a connection
+    // from before goes once more on a new one at once, and one on a new connection fails.
     private void SkipUnasked()
     {
         int available;
