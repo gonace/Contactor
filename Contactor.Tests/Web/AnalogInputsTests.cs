@@ -183,6 +183,8 @@ public sealed class AnalogInputsTests
     [InlineData("Heat", AnalogUnits.Celsius, "", "2.5", "-20", "2.5004", "80", "The two points need different voltages.")]
     [InlineData("Heat", AnalogUnits.Celsius, "", "0", "-1000000.001", "5", "80", "A value must be from -1,000,000 to 1,000,000.")]
     [InlineData("Heat", AnalogUnits.Bar, "", "0", "0", "5", "1000001", "A value must be from -1,000,000 to 1,000,000.")]
+    [InlineData("Heat", AnalogUnits.Celsius, "", "0", "20", "5", "20", "The two points need different values.")]
+    [InlineData("Heat", AnalogUnits.Volts, "", "0", "1.5", "5", "1.5004", "The two points need different values.")]
     public async Task Should_RefuseSettings_ThatDontWork(string name, string unit, string unitText, string? volts1, string? value1, string? volts2, string? value2, string problem)
     {
         await using var database = await DatabaseAsync();

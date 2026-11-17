@@ -42,7 +42,7 @@ public sealed class AnalogInput
 
     public decimal? Value1 { get; set; }
 
-    /// <summary>The scale's second point, at another voltage than the first.</summary>
+    /// <summary>The scale's second point, at another voltage and with another value than the first.</summary>
     public decimal? Volts2 { get; set; }
 
     public decimal? Value2 { get; set; }

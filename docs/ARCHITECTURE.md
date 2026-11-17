@@ -303,7 +303,8 @@ AnalogInput             (one per analog input on the board, e.g. a temperature s
   Volts1, Value1  decimal?       the scale's first point: the board reads Volts1 V at Value1, e.g. 0 V = −20 °C
   Volts2, Value2  decimal?       the second point, e.g. 5 V = 80 °C. All four set or all null (a check constraint);
                                  null is no scale, and the value shown is the voltage. AnalogInputsHandler saves them
-                                 rounded to 3 decimals: voltages 0–100 V and not the same, values within ±1,000,000;
+                                 rounded to 3 decimals: voltages 0–100 V and not the same, values within ±1,000,000
+                                 and not the same;
                                  a unit other than none or "V" needs the scale. Saving is not logged
                                  The value shown (AnalogValueText) is on the line through the two points, with
                                  decimals = clamp(floor(−log10(step)), 0, 3), where step = the board's volts per

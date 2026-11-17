@@ -14,8 +14,12 @@ public sealed record AnalogScale(string Unit, string UnitText, decimal? Volts1, 
     /// <summary>No unit chosen and no scale: the value is the voltage.</summary>
     public static AnalogScale None { get; } = new(AnalogUnits.None, "", null, null, null, null);
 
-    /// <summary>Whether it has a scale: both points, at two voltages.</summary>
-    public bool HasScale => Volts1 is { } volts1 && Value1 is not null && Volts2 is { } volts2 && Value2 is not null && volts1 != volts2;
+    /// <summary>
+    /// Whether it has a scale: both points, at two voltages and with two values. Two points that share either are no
+    /// scale (the handler never saves them), so a scale's slope is never 0 and never a division by 0.
+    /// </summary>
+    public bool HasScale =>
+        Volts1 is { } volts1 && Value1 is { } value1 && Volts2 is { } volts2 && Value2 is { } value2 && volts1 != volts2 && value1 != value2;
 
     /// <summary>An analog input's unit and scale, as saved.</summary>
     public static AnalogScale Of(AnalogInput input)
@@ -77,7 +81,8 @@ public static class AnalogValueText
         var step = (double)voltsPerCount * Math.Abs(Slope(scale));
         if (!(step > 0))
         {
-            // No step at all (a scale with one value at both points): the formula's limit, the most decimals.
+            // Only for a board's volts per count of 0 or less, which AnalogAbility never gives: a scale's slope is
+            // never 0 (AnalogScale.HasScale).
             return MaxDecimals;
         }
 

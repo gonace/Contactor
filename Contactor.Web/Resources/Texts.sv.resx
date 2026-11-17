@@ -27,6 +27,9 @@
   <data name="Analog.Save.NeedsScale" xml:space="preserve">
     <value>Den här enheten behöver en skala: fyll i båda punkterna.</value>
   </data>
+  <data name="Analog.Save.SameValues" xml:space="preserve">
+    <value>De två punkterna behöver olika värden.</value>
+  </data>
   <data name="Analog.Save.SameVolts" xml:space="preserve">
     <value>De två punkterna behöver olika spänningar.</value>
   </data>

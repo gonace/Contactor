@@ -30,7 +30,7 @@ public sealed class AnalogValueTextTests
     [InlineData(1023, 3.3, 0, 0.01, 3)] // a step of 0.00003: at most 3
     [InlineData(1023, 5, 80, -20, 1)] // a falling scale: the step's size counts
     [InlineData(10, 1, 0, 1, 1)] // a step of exactly 0.1 V: 1, not 0
-    [InlineData(1023, 5, 7, 7, 3)] // one value at both points: no step at all
+    [InlineData(1023, 5, 7, 7, 2)] // one value at both points is no scale: volts, never a step of 0
     public void Should_GiveTheDecimals_TheBoardCanMeasure(int maxCounts, double fullScale, double value1, double value2, int decimals)
     {
         var ability = new AnalogAbility(1, maxCounts, (decimal)fullScale);
@@ -54,8 +54,10 @@ public sealed class AnalogValueTextTests
     {
         Assert.Equal(2.08m, AnalogValueText.Scaled(2.08m, AnalogScale.None));
 
-        // Two points at one voltage are no scale: never a division by zero.
+        // Two points at one voltage, or with one value, are no scale: never a division by zero, never a slope of 0.
         Assert.Equal(2.08m, AnalogValueText.Scaled(2.08m, new AnalogScale(AnalogUnits.Volts, "", 1m, 0m, 1m, 10m)));
+        Assert.Equal(2.08m, AnalogValueText.Scaled(2.08m, new AnalogScale(AnalogUnits.Volts, "", 0m, 7m, 5m, 7m)));
+        Assert.False(new AnalogScale(AnalogUnits.Celsius, "", 0m, 7m, 5m, 7m).HasScale);
     }
 
     [Theory]

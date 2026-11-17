@@ -156,9 +156,13 @@ public sealed class AnalogInputsHandler
             return _texts["Analog.Save.SameVolts"];
         }
 
-        return Math.Abs(points[1]!.Value) > MaxValue || Math.Abs(points[3]!.Value) > MaxValue
-            ? _texts["Analog.Save.ValueRange", (-MaxValue).ToString("N0", CultureInfo.CurrentCulture), MaxValue.ToString("N0", CultureInfo.CurrentCulture)].Value
-            : null;
+        if (Math.Abs(points[1]!.Value) > MaxValue || Math.Abs(points[3]!.Value) > MaxValue)
+        {
+            return _texts["Analog.Save.ValueRange", (-MaxValue).ToString("N0", CultureInfo.CurrentCulture), MaxValue.ToString("N0", CultureInfo.CurrentCulture)];
+        }
+
+        // One value at both points shows the same value at every voltage: always a mistake.
+        return points[1] == points[3] ? _texts["Analog.Save.SameValues"].Value : null;
     }
 
     private static decimal? Round(decimal? value)

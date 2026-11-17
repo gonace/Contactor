@@ -27,6 +27,9 @@
   <data name="Analog.Save.NeedsScale" xml:space="preserve">
     <value>This unit needs a scale: fill in both points.</value>
   </data>
+  <data name="Analog.Save.SameValues" xml:space="preserve">
+    <value>The two points need different values.</value>
+  </data>
   <data name="Analog.Save.SameVolts" xml:space="preserve">
     <value>The two points need different voltages.</value>
   </data>
