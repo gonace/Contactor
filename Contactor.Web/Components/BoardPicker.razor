@@ -8,12 +8,9 @@
    in the side menu (TabBar's SideList). A tap posts the page's form, which keeps the choice in the screen's own cookie
    and comes back to the page (RelaysEndpoints); no JavaScript. Only the boards: a board is added from Settings. With
    one board there is nothing to filter: no chips, as the page already names the board and its state, and the side
-   menu's list shows only the board, as picked, as it is the one shown. *@
-@if (Side ? Boards.Count == 0 : !Several)
-{
-    @* No chips with one board, and no list without a board. *@
-}
-else if (Side)
+   menu's list shows only the board, as picked, as it is the one shown. No chips with one board, and no list without a
+   board. *@
+@if (Side && Boards.Count > 0)
 {
     var all = CountOf(Boards);
     var form = Go ? GoFormId : FormId;
@@ -56,7 +53,7 @@ else if (Side)
         }
     </div>
 }
-else
+else if (!Side && Several)
 {
     <form id="@FormId" method="post" action="@Screen.FormPath.TrimStart('/')"><AntiforgeryToken /></form>
     <div class="chips-row" role="group" aria-label="@Texts["Boards.Picker.Show"]">

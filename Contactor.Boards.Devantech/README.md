@@ -137,6 +137,9 @@ Exchanges from the documents and the recorded session:
   - The client sends no analog request to the board for 1 minute (`DevantechClient.AnalogRetryInterval`, on
     `TimeProvider`), or until the poller opens a new connection. So a board that never answers 0x32 or 0x34 costs one
     time-out per minute, not one per poll.
+  - All of this happens only once the relays and inputs after it answered: in the same poll, or in the read of a
+    command that took the poll's place. When the relays or inputs fail too, the board may have just died: the
+    readings from before stay, and the next poll asks for the analog inputs again.
 - An analog answer fails when it has one of the upper 6 bits set (a value above 1023), when it is late (5 s), or when
   it is too short. A value above 1023 comes in an answer of the right length, so the connection stays in step and stays
   open. After a late or short answer, the client closes the connection, so the late bytes can't be taken for the next

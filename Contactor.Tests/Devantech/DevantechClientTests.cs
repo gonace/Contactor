@@ -330,6 +330,77 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
+    public async Task Should_LeaveTheAnalogInputsAlone_WhenACommandTakesThePlaceOfAPollWhoseAnalogReadFailed()
+    {
+        // The second poll's 0x34 gets no answer; a command takes the poll's place while it waits for 0x24. The command's
+        // read answers, so the analog inputs are left alone for a minute: the next poll doesn't wait out 0x34 again.
+        var analog = 0;
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [52, 1, 1],
+            [0x7A] => [0xFF],
+            [0x34] when Interlocked.Increment(ref analog) == 1 => new byte[32],
+            [0x34] => [],
+            [0x24] when Interlocked.Increment(ref reads) == 2 => [],
+            [0x24] => [0b0001, 0],
+            [0x20, _, _] => [0],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth1610);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "34") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+        Assert.Equal(new AnalogReadings(new int?[16]), run.Client.State.Status!.Analog);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("No analog readings: ", StringComparison.Ordinal));
+
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 4 || board.Received.Count(r => r == "34") == 3);
+        Assert.Equal(2, board.Received.Count(r => r == "34"));
+    }
+
+    [Fact]
+    public async Task Should_KeepTheReadingsFromBefore_InACommandsRead_WhenThePollsRelaysFailedAfterItsAnalogRead()
+    {
+        // The second poll's 0x34 and then its 0x24 get no answer: the poll fails, and its analog result proves nothing.
+        // A command's read after it shows what the first poll read, not "no reading".
+        var analog = 0;
+        var reads = 0;
+        await using var board = ScriptedBoard.Start(request => request switch
+        {
+            [0x10] => [52, 1, 1],
+            [0x7A] => [0xFF],
+            [0x34] when Interlocked.Increment(ref analog) == 1 => [0, 0, 0x01, 0x2C, .. new byte[28]],
+            [0x34] => [],
+            [0x24] when Interlocked.Increment(ref reads) == 2 => [],
+            [0x24] => [0b0001, 0],
+            [0x20, _, _] => [0],
+            _ => [],
+        });
+        await using var run = ClientRun.Start(board.Port, DevantechModels.Eth1610);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(300, run.Client.State.Status!.Analog!.Input(2));
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "34") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+        await Wait.UntilAsync(() => board.Received.Count(r => r == "24") == 2 && run.Time.WaitsOnly(DevantechClient.RequestTimeout));
+        run.Time.Advance(DevantechClient.RequestTimeout);
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        Assert.True(run.Client.State.IsConnected);
+
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+        Assert.Equal(300, run.Client.State.Status!.Analog!.Input(2));
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No analog readings: ", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Should_SwitchAndReadAllTwentyRelays()
     {
         await using var simulator = Started(DevantechModels.Eth8020);

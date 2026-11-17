@@ -413,8 +413,7 @@ public sealed partial class EventsDebugBoardsPageTests
         {
             var start = html.IndexOf($"class=\"{list}\"", StringComparison.Ordinal);
             Assert.True(start >= 0, $"The page has its {list}.");
-            var end = html.IndexOf("</div>", start, StringComparison.Ordinal);
-            var part = html[start..end];
+            var part = DivFrom(html, start);
             Assert.Equal(3, Regex.Count(part, $"class=\"{item}"));
             Assert.Contains("Barn", part, StringComparison.Ordinal);
             Assert.DoesNotContain("<a ", part, StringComparison.Ordinal);
@@ -422,6 +421,32 @@ public sealed partial class EventsDebugBoardsPageTests
 
         Assert.Single(Regex.Matches(html, "<form id=\"board-filter\""));
         Assert.DoesNotContain("board/new", html, StringComparison.Ordinal);
+    }
+
+    // The <div> whose class starts at start, up to its own </div>: a <div> inside it doesn't end it.
+    private static string DivFrom(string html, int start)
+    {
+        var depth = 1;
+        var at = html.IndexOf('>', start) + 1;
+        while (true)
+        {
+            var close = html.IndexOf("</div>", at, StringComparison.Ordinal);
+            Assert.True(close >= 0, "The <div> is closed.");
+            var open = html.IndexOf("<div", at, close - at, StringComparison.Ordinal);
+            if (open >= 0)
+            {
+                depth++;
+                at = open + "<div".Length;
+                continue;
+            }
+
+            if (--depth == 0)
+            {
+                return html[start..close];
+            }
+
+            at = close + "</div>".Length;
+        }
     }
 
     // Events and Debug show a board's state only in the board filter: a status that changes none of what it shows (a
