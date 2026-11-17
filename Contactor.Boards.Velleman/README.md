@@ -55,7 +55,7 @@ Verified example: turn on relay 1 = `02 06 4F 01 A8 03` (0x02+0x06+0x4F+0x01 = 0
 | CMD_PULSE | `'P'` | 8 | client → board | Channel mask, time 1–99, unit `'s'`/`'m'`/`'h'` |
 | CMD_UPDATE | `'V'` | 6 | client → board | Set all: 1 = on, 0 = off |
 | CMD_TMR_ENA | `'E'` | 6 | client → board | Enable the board's timer programs (mask) |
-| CMD_TMR_DIS | `'D'` | 6 | client → board | Disable the board's timer programs (mask) |
+| CMD_TMR_DIS | `'D'` | 6 | client → board | Disable the board's timer programs (mask): 1 = turn its timer off, 0 = leave it |
 | CMD_TMR_TOGGLE | `'G'` | 6 | client → board | Toggle the board's timer programs (mask) |
 
 **Channel mask:** bit 0 = channel 1 … bit 7 = channel 8.
@@ -87,13 +87,13 @@ relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
 - `Vm201Client`:
   - Holds one persistent connection. On failure: reconnect with exponential backoff (1 s → max 30 s).
   - Exposes `Vm201State` (Outputs byte, TimerMask, Input, `IsConnected`, `LastContactUtc`) and an event or `IObservable` when the status changes.
-  - Commands (`TurnOnAsync(mask)`, `TurnOffAsync(mask)`, `PulseAsync(mask, length)`, `RequestStatusAsync()`, `DisableBoardTimersAsync(mask)`) are serialized through a `Channel<T>`, so only one writer is used at a time, in the order they were sent. A command cancelled before the writer takes it is not sent, and its caller gets `OperationCanceledException`. A cancel after that comes too late: the command goes out, and its caller gets the write's own result.
+  - Commands (`TurnOnAsync(mask)`, `TurnOffAsync(mask)`, `PulseAsync(mask, length)`, `RequestStatusAsync()`, `TurnOffTimersAsync(mask)`) are serialized through a `Channel<T>`, so only one writer is used at a time, in the order they were sent. A command cancelled before the writer takes it is not sent, and its caller gets `OperationCanceledException`. A cancel after that comes too late: the command goes out, and its caller gets the write's own result.
   - `PulseAsync` sends the whole mask in one CMD_PULSE. A length goes out exactly or not at all (`Vm201Pulse`): whole seconds up to 99 s, else whole minutes up to 99 min, else whole hours up to 99 h. Any other length, such as 100 s or 90.5 s, throws `ArgumentOutOfRangeException` before anything is sent.
   - Timeouts: connect 5 s, login 5 s.
   - When the board refuses the login, `Vm201State.Problem` says why (a `ConnectionProblem`): `LoginNeeded` when the board asked for a login (CMD_AUTH) and the app has none, else `LoginRefused`. It never holds the login. The client clears it at the next login, in `SetLogin` and `SetEndpoint`, and when a later connection gets no answer (the board is gone, so it no longer says why); a refusal from a connection that the app ended meanwhile is dropped.
   - `SetEndpoint` and `SetLogin` change the address and login while it runs: the current connection, attempt or wait ends at once. The web app applies the address and login saved on its `Board` row before the first connection. `Vm201Login` is a class, not a record, so its password can't leak through a generated `ToString`.
   - The `Traced` event reports every packet in and out and every connection step (connecting, lost and why, the wait before the next attempt, skipped bytes) as a `Vm201TraceEntry`. User name and password packets come cut to their first three bytes. The web app keeps the latest 100 in memory (`BoardTrace`) for the Debug screen; the keep-alive and the channel names are routine, so it only counts them.
-- `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes, a pulse of 1 s to 99 h in steps of 1 s); it translates `Vm201State` and refuses relays above 8. Its `PulseAsync` refuses a length the board can't send exactly with `ArgumentOutOfRangeException`. Its pulse ability (`Vm201Pulse.Ability`) checks each length with `TryEncode` (`PulseAbility.Exact`), so `CanDo` also refuses such a length: `CanDo(100 s)` is false.
+- `Vm201Board`: the VM201 as an `IRelayBoard` (8 relays, 1 input, reports changes, a pulse of 1 s to 99 h in steps of 1 s); it translates `Vm201State` and refuses relays above 8. Its own rules (`BoardState.OwnRules`) are its timer programs: a `Timer` rule per bit of the status's byte 2, in relay order; null before its first status (also at a new address), and kept while disconnected. The client raises its state for every status, the keep-alive's too, so a change of the timers alone comes with `StateChanged`, and the board never raises `OwnRulesChanged`. `TurnOffOwnRulesAsync` takes only `Timer` rules for relays 1–8 (anything else is `ArgumentOutOfRangeException`, before anything is sent), takes a rule given twice once, and sends one `CMD_TMR_DIS` with only their relays' bits: relays 3 and 5 are `02 06 44 14 A0 03`, never `0xFF`. It goes like any other command, at once or `BoardNotConnectedException`, never queued, and returns the rules sent; for none it sends nothing. Its `PulseAsync` refuses a length the board can't send exactly with `ArgumentOutOfRangeException`. Its pulse ability (`Vm201Pulse.Ability`) checks each length with `TryEncode` (`PulseAbility.Exact`), so `CanDo` also refuses such a length: `CanDo(100 s)` is false.
 - `Vm201Connection` and `Vm201Traffic`: the client as an `IBoardConnection` and an `IBoardTraffic` (`Vm201TraceText` puts each packet in plain words). `Vm201Model` is its catalogue entry.
 
 ### Settings
@@ -106,7 +106,7 @@ relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
 
 ### Settings on the board that switch relays without the app
 
-- **The board's own timer programs** switch relays without the app, so they compete with the app's schedules. `CMD_STATUS` shows which are active (byte 2), and `CMD_TMR_ENA`, `CMD_TMR_DIS` and `CMD_TMR_TOGGLE` turn them on and off by channel mask.
+- **The board's own timer programs** switch relays without the app, so they compete with the app's schedules. `CMD_STATUS` shows which are active (byte 2), and `CMD_TMR_ENA`, `CMD_TMR_DIS` and `CMD_TMR_TOGGLE` turn them on and off by channel mask: only the channels whose bit is 1, the others are left as they are. The app reports them as the board's own rules (`Vm201Board`).
 - **What the app does:** with `Vm201:DisableBoardTimers` (on by default), `Vm201TimersService` sends `CMD_TMR_DIS 0xFF` at the board's first answer, and logs it as `board-timers-disabled` with Actor `system`. It does that again when the app starts again, and at the first answer after a new address (it may be another VM201). If the connection is lost before the command goes out, it tries again on the next connection. It doesn't send it on a reconnect to the same address, so a timer program turned on again at the board stays on until the app starts again or the board gets a new address. Choosing the VM201 again as the board's model also disables the timers again, at the board's first answer.
 - **What the app sees:** the board pushes `CMD_STATUS` at every change, also one made by a timer program. The app logs a change it didn't ask for with Actor `external`, and a group's interlock checks every status.
 - **What to set:** keep `Vm201:DisableBoardTimers` on, and make the schedules in the app, not on the board. With it off, the app leaves the board's timer programs as they are.
@@ -201,6 +201,9 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
   again), and what a time of 0 or above 99 does (the simulator ignores the packet).
 - How many TCP clients the board allows at once. Assume **one**: the app holds exactly one connection.
 - Whether the board closes idle connections. That is why `CMD_STATUS_REQ` is sent every 15 seconds as a keep-alive.
+- CMD_TMR_DIS with a mask, e.g. `0x14`: that it turns off only those relays' timer programs and leaves the others, that
+  the next `CMD_STATUS` shows the new timers (byte 2), whether turning a timer off also switches its relay (the
+  simulator leaves the relays as they are), and whether a timer turned off stays off after a power cut.
 
 ### VM204
 

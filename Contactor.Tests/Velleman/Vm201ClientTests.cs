@@ -208,10 +208,31 @@ public sealed class Vm201ClientTests
         await using var run = ClientRun.Start(simulator);
         await WaitUntilAsync(() => run.Client.State.IsConnected);
 
-        await run.Client.DisableBoardTimersAsync(Vm201Channel.All, TestContext.Current.CancellationToken);
+        await run.Client.TurnOffTimersAsync(Vm201Channel.All, TestContext.Current.CancellationToken);
 
         await WaitUntilAsync(() => run.Client.State.TimerMask == 0);
         Assert.Equal(0, simulator.TimerMask);
+    }
+
+    [Fact]
+    public async Task Should_TurnOffOnlyTheMaskedTimers_AndLeaveTheOutputs()
+    {
+        await using var simulator = new Vm201Simulator();
+        simulator.Start();
+        await simulator.SetTimerMaskAsync(0x15);
+        await simulator.SetOutputsAsync(0x86);
+        await using var run = ClientRun.Start(simulator);
+        await WaitUntilAsync(() => run.Client.State is { IsConnected: true, TimerMask: 0x15 });
+
+        await run.Client.TurnOffTimersAsync(0x04, TestContext.Current.CancellationToken);
+
+        // The status that follows carries the new mask, and only bit 3 went.
+        await WaitUntilAsync(() => run.Client.State.TimerMask == 0x11);
+        Assert.Equal(0x86, run.Client.State.Outputs);
+        Assert.Equal(0x11, simulator.TimerMask);
+        Assert.Equal(0x86, simulator.Outputs);
+        var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
+        Assert.Equal(new byte[] { 0x04 }, sent.Data.ToArray());
     }
 
     [Fact]
@@ -309,7 +330,7 @@ public sealed class Vm201ClientTests
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.TurnOnAsync(0x01, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.TurnOffAsync(0x01, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.RequestStatusAsync(TestContext.Current.CancellationToken));
-        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.DisableBoardTimersAsync(0xFF, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => client.TurnOffTimersAsync(0xFF, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -523,7 +544,7 @@ public sealed class Vm201ClientTests
         using var cts = new CancellationTokenSource();
         var first = run.Client.TurnOnAsync(0x01, ct);
         var cancelled = run.Client.TurnOnAsync(0x02, cts.Token);
-        var third = run.Client.DisableBoardTimersAsync(0x04, ct);
+        var third = run.Client.TurnOffTimersAsync(0x04, ct);
         var fourth = run.Client.TurnOffAsync(0x01, ct);
         await cts.CancelAsync();
         gate.Release();
@@ -558,7 +579,7 @@ public sealed class Vm201ClientTests
             var hold = run.Client.TurnOffAsync(WriterGate.HoldMask, ct);
             await gate.Held.WaitAsync(WaitTimeout, ct);
             using var cts = new CancellationTokenSource();
-            var command = run.Client.DisableBoardTimersAsync((byte)i, cts.Token);
+            var command = run.Client.TurnOffTimersAsync((byte)i, cts.Token);
 
             // The writer takes the command as soon as it is released, while the caller cancels it.
             var release = Task.Run(gate.Release, ct);

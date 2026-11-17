@@ -112,7 +112,7 @@ public sealed partial class Vm201TimersService : BackgroundService
         {
             // A status that came just as the service stopped sends nothing: the client queues a packet without checking.
             cancellationToken.ThrowIfCancellationRequested();
-            await _client.DisableBoardTimersAsync(Vm201Channel.All, cancellationToken);
+            await _client.TurnOffTimersAsync(Vm201Channel.All, cancellationToken);
             await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
             db.EventLog.Add(new EventLogEntry
             {

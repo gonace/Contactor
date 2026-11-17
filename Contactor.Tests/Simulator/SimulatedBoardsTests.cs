@@ -240,8 +240,9 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
 
         await board.SwitchRelayAsync(3, turnOn: true);
         await board.SetInputAsync(1, closed: true);
-        await board.SetTimersAsync(on: true);
-        await WaitUntilAsync(() => board.Traffic.Any(t => t.Text == "Status: relay 3 on · the board's timers on for all · input on"));
+        await board.SetTimerAsync(2, turnOn: true);
+        await board.SetTimerAsync(7, turnOn: true);
+        await WaitUntilAsync(() => board.Traffic.Any(t => t.Text == "Status: relay 3 on · the board's timers on for relay 2 and 7 · input on"));
 
         // The request and the unchanged status it gets back. The channel names at login are routine too, so only a
         // count above theirs shows both were handled, before the traffic is cleared.
@@ -252,17 +253,41 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         var traffic = board.Traffic;
         Assert.Contains(traffic, t => t is { Kind: TrafficKind.AtBoard, Text: "Relay 3 switched on here" });
         Assert.Contains(traffic, t => t is { Kind: TrafficKind.AtBoard, Text: "Input 1 closed here" });
-        Assert.Contains(traffic, t => t is { Kind: TrafficKind.AtBoard, Text: "The board's own timers turned on here" });
+        Assert.Contains(traffic, t => t is { Kind: TrafficKind.AtBoard, Text: "The board's own timer for relay 7 turned on here" });
         Assert.Contains(traffic, t => t.Kind == TrafficKind.Connection && t.Text.StartsWith("The app connected from 127.0.0.1:", StringComparison.Ordinal));
         Assert.Contains(traffic, t => t is { Kind: TrafficKind.BoardToApp, Text: "Logged in" });
         Assert.DoesNotContain(traffic, t => t.Text == "Ask for status");
         Assert.True(traffic.Zip(traffic.Skip(1)).All(p => p.First.Id > p.Second.Id), "Newest first.");
         Assert.Equal(ChannelMask.Of(3), board.Board.State.Relays);
-        Assert.Equal(board.Board.Model.Capabilities.AllRelays, ((ISimulatedBoardTimers)board.Board).Timers);
+        Assert.Equal(ChannelMask.Of([2, 7]), ((ISimulatedBoardTimers)board.Board).Timers);
 
         board.ClearTraffic();
         Assert.Empty(board.Traffic);
         Assert.Equal(0, board.HiddenRoutine);
+    }
+
+    [Fact]
+    public async Task Should_SetTheVm201sTimersOneRelayAtATime()
+    {
+        Assert.Null(_boards.Add("vm201", FreePort(), null, null));
+        var board = _boards.Boards.Single();
+        var timers = (ISimulatedBoardTimers)board.Board;
+
+        await board.SetTimerAsync(3, turnOn: true);
+        await board.SetTimerAsync(5, turnOn: true);
+        await board.SetTimerAsync(8, turnOn: true);
+        await board.SetTimerAsync(5, turnOn: false);
+
+        Assert.Equal(ChannelMask.Of([3, 8]), timers.Timers);
+        Assert.Equal("The board's own timer for relay 5 turned off here", board.Traffic[0].Text);
+
+        // What the page never offers changes nothing.
+        var logged = board.Traffic.Count;
+        await board.SetTimerAsync(0, turnOn: true);
+        await board.SetTimerAsync(9, turnOn: true);
+        Assert.Equal(ChannelMask.Of([3, 8]), timers.Timers);
+        Assert.Equal(logged, board.Traffic.Count);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => timers.SetTimerAsync(9, turnOn: true));
     }
 
     [Fact]
@@ -381,7 +406,7 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
 
         await board.SwitchRelayAsync(1, turnOn: true);
         await board.SetInputAsync(1, closed: true);
-        await board.SetTimersAsync(on: false);
+        await board.SetTimerAsync(1, turnOn: false);
     }
 
     [Fact]

@@ -183,6 +183,13 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         return SetTimerMaskAsync((byte)timers.Bits);
     }
 
+    public Task SetTimerAsync(int relay, bool turnOn)
+    {
+        // Read and written under the gate, so a command from the app in between isn't overwritten.
+        var mask = (byte)Model.Capabilities.Relay(relay).Bits;
+        return ChangeAsync(() => _timerMask = turnOn ? (byte)(_timerMask | mask) : (byte)(_timerMask & ~mask));
+    }
+
     /// <summary>Closes every open connection, as if the network dropped.</summary>
     public void DropConnections()
     {

@@ -4,8 +4,8 @@ namespace Contactor.Boards.Velleman;
 
 /// <summary>
 /// The VM201 as an <see cref="IRelayBoard"/>: 8 relays and one input, which it reports by itself on every change, and
-/// a pulse of 1 s to 99 h. The connection itself is <see cref="Vm201Client"/>'s; this only translates its state and
-/// commands.
+/// a pulse of 1 s to 99 h, and its own timer programs, which its status reports and the app can turn off. The
+/// connection itself is <see cref="Vm201Client"/>'s; this only translates its state and commands.
 /// </summary>
 public sealed class Vm201Board : IRelayBoard
 {
@@ -53,12 +53,57 @@ public sealed class Vm201Board : IRelayBoard
         return relays;
     }
 
+    /// <summary>
+    /// Turns off the board's own timer programs for the relays of <paramref name="rules"/>, all in one CMD_TMR_DIS with
+    /// only their bits, as <see cref="TurnOnAsync"/>: the board takes the mask at once, or the command fails. Only
+    /// <see cref="OwnRuleKind.Timer"/> rules for relays 1–8: any other gets <see cref="ArgumentOutOfRangeException"/>
+    /// before anything is sent. A rule given twice is sent once. Returns the rules sent, in relay order; none, and nothing
+    /// sent, for none asked.
+    /// </summary>
+    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        var relays = ChannelMask.None;
+        foreach (var rule in rules)
+        {
+            if (rule is null)
+            {
+                throw new ArgumentException("A rule can't be null.", nameof(rules));
+            }
+
+            if (rule.Kind != OwnRuleKind.Timer)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "The VM201 has timer programs only.");
+            }
+
+            if (rule.Relay > Vm201Channel.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Relay, "The VM201 has relays 1–8 only.");
+            }
+
+            relays |= ChannelMask.Of(rule.Relay);
+        }
+
+        var mask = ToMask(relays);
+        if (mask == 0)
+        {
+            return [];
+        }
+
+        await _client.TurnOffTimersAsync(mask, cancellationToken).ConfigureAwait(false);
+        return ToOwnRules(mask);
+    }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         return _client.RequestStatusAsync(cancellationToken);
     }
 
-    /// <summary>The VM201's own status as a <see cref="BoardState"/>; its one input is input 1.</summary>
+    /// <summary>
+    /// The VM201's own status as a <see cref="BoardState"/>; its one input is input 1. Its own rules are its timer
+    /// programs (status byte 2), a <see cref="OwnRuleKind.Timer"/> per relay, in relay order: null before its first
+    /// status (also at a new address), and kept while disconnected, as the relays are.
+    /// </summary>
     public static BoardState ToBoardState(Vm201State state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -67,7 +112,16 @@ public sealed class Vm201Board : IRelayBoard
             new ChannelMask(state.Outputs),
             state.Input ? ChannelMask.Of(1) : ChannelMask.None,
             state.LastContactUtc,
-            state.Problem);
+            state.Problem,
+            OwnRules: state.LastContactUtc is null ? null : ToOwnRules(state.TimerMask));
+    }
+
+    /// <summary>A timer rule for each relay whose bit is set in the board's timer mask, in relay order.</summary>
+    public static OwnRules ToOwnRules(byte timerMask)
+    {
+        return timerMask == 0
+            ? OwnRules.Empty
+            : new OwnRules(new ChannelMask(timerMask).Channels.Select(relay => new OwnRule(relay, OwnRuleKind.Timer)));
     }
 
     /// <summary>The board's channel mask: relays 1–8 only.</summary>

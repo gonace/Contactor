@@ -69,12 +69,28 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Should_SetOneRelaysTimer_AndLeaveTheOthers()
+    {
+        var client = await ConnectAsync();
+        await _board.SetTimersAsync(ChannelMask.Of([1, 5]));
+
+        await _board.SetTimerAsync(3, turnOn: true);
+        await _board.SetTimerAsync(1, turnOn: false);
+        await _board.SetTimerAsync(8, turnOn: false);
+
+        await WaitUntilAsync(() => client.State.TimerMask == 0x14);
+        Assert.Equal(ChannelMask.Of([3, 5]), _board.Timers);
+    }
+
+    [Fact]
     public async Task Should_RefuseRelaysAndInputsItDoesNotHave()
     {
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _board.SwitchRelayAsync(9, turnOn: true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _board.SwitchRelayAsync(0, turnOn: true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _board.SetInputAsync(2, closed: true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _board.SetTimersAsync(ChannelMask.Of(9)));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _board.SetTimerAsync(9, turnOn: true));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _board.SetTimerAsync(0, turnOn: true));
     }
 
     [Fact]

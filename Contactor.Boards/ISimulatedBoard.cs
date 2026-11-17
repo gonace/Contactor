@@ -74,4 +74,10 @@ public interface ISimulatedBoardTimers
 
     /// <summary>Turns timer programs on or off as the board's own web page would, and tells the app if anything changed.</summary>
     Task SetTimersAsync(ChannelMask timers);
+
+    /// <summary>
+    /// Turns one relay's timer program on or off as the board's own web page would, leaving the others as they are, and
+    /// tells the app if anything changed. Throws <see cref="ArgumentOutOfRangeException"/> for a relay the board doesn't have.
+    /// </summary>
+    Task SetTimerAsync(int relay, bool turnOn);
 }
