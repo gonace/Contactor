@@ -188,6 +188,45 @@ public sealed class SwedishTests
         }
     }
 
+    // An analog value in Swedish numbers, on the Relays card and on its own page, and after a reading from the board's
+    // own thread, in English, redraws the card.
+    [Fact]
+    public async Task Should_ShowAnAnalogValue_InSwedishNumbers()
+    {
+        var board = new Contactor.Tests.Boards.FakeRelayBoard(relayCount: 4, inputCount: 1, analog: new Contactor.Boards.AnalogAbility(1, 1023, 5m));
+        await using var app = await SwedishAppAsync(board: board);
+        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
+        {
+            var input = await db.AnalogInputs.SingleAsync(Cancel);
+            (input.Name, input.Unit, input.Volts1, input.Value1, input.Volts2, input.Value2) = ("Verkstad", AnalogUnits.Celsius, 0m, -20m, 5m, 80m);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        board.SetAnalog(new Contactor.Boards.AnalogReadings([430]));
+        using var http = app.CreateClient();
+        var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
+        var analog = WebUtility.HtmlDecode(await http.GetStringAsync("/analog/1", Cancel));
+
+        Assert.Matches("<span class=\"number\"[^>]*>22,0</span>", relays);
+        Assert.Contains("ANALOG 1 · NAMN", analog, StringComparison.Ordinal);
+        Assert.Contains("Kortet läser 2,10 V.", analog, StringComparison.Ordinal);
+        Assert.Contains("Använd värdet nu (2,10 V)", analog, StringComparison.Ordinal);
+        Assert.Contains("value=\"\u221220\"", analog, StringComparison.Ordinal);
+
+        PageRenderer page;
+        using (TestCulture.Language("sv"))
+        {
+            page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        }
+
+        using (page)
+        {
+            board.SetAnalog(new Contactor.Boards.AnalogReadings([440]));
+            await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("23,0", StringComparison.Ordinal));
+            Assert.Empty(page.Errors);
+        }
+    }
+
     [Fact]
     public async Task Should_PutTheLanguageBack_AfterUsingIt()
     {

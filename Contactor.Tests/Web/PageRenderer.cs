@@ -28,6 +28,7 @@ internal sealed class PageRenderer : Renderer
     // Each element reference the page captured, by its id, and the element's own id attribute; on the dispatcher.
     private readonly Dictionary<string, string?> _referenceIds = [];
     private int _renders;
+    private int _pageRenders;
     private int _rootId;
 
     private PageRenderer(AsyncServiceScope scope)
@@ -53,6 +54,12 @@ internal sealed class PageRenderer : Renderer
 
     /// <summary>How many times anything on the page was drawn.</summary>
     public int Renders => Volatile.Read(ref _renders);
+
+    /// <summary>
+    /// How many times the page itself was drawn, not counting its child components on their own (e.g. the tab bar
+    /// loading its counts): for a test that a change didn't redraw the page.
+    /// </summary>
+    public int PageRenders => Volatile.Read(ref _pageRenders);
 
     /// <summary>What went wrong inside the page, which would have ended its live connection.</summary>
     public IReadOnlyList<Exception> Errors => _errors;
@@ -170,6 +177,14 @@ internal sealed class PageRenderer : Renderer
     protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
     {
         Interlocked.Increment(ref _renders);
+        for (var i = 0; i < renderBatch.UpdatedComponents.Count; i++)
+        {
+            if (renderBatch.UpdatedComponents.Array[i].ComponentId == _rootId)
+            {
+                Interlocked.Increment(ref _pageRenders);
+                break;
+            }
+        }
 
         // A new element's reference comes once, after its attributes: the browser would know it by that from now on.
         string? elementId = null;

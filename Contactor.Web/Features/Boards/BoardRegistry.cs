@@ -68,6 +68,12 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     public event EventHandler<BoardStateChange>? StateChanged;
 
     /// <summary>
+    /// A board's new state when only its analog readings changed (<see cref="LiveBoard.AnalogChanged"/>), raised on that
+    /// board's connection loop: handlers must be quick. The safety services don't watch it; the screens do.
+    /// </summary>
+    public event EventHandler<BoardStateChange>? AnalogChanged;
+
+    /// <summary>
     /// Raised when a board is added to <see cref="All"/> or removed from it, while the boards are being changed:
     /// handlers must not change them in turn.
     /// </summary>
@@ -489,6 +495,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         foreach (var board in boards)
         {
             board.StateChanged -= OnStateChanged;
+            board.AnalogChanged -= OnAnalogChanged;
             await board.DisposeAsync();
         }
 
@@ -505,6 +512,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         }
 
         live.StateChanged -= OnStateChanged;
+        live.AnalogChanged -= OnAnalogChanged;
         await live.DisposeAsync();
         RaiseBoardsChanged();
     }
@@ -582,11 +590,13 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         }
 
         live.StateChanged += OnStateChanged;
+        live.AnalogChanged += OnAnalogChanged;
         lock (_lock)
         {
             if (_disposed)
             {
                 live.StateChanged -= OnStateChanged;
+                live.AnalogChanged -= OnAnalogChanged;
                 _ = live.DisposeAsync().AsTask();
                 throw new ObjectDisposedException(nameof(BoardRegistry));
             }
@@ -649,7 +659,17 @@ public sealed partial class BoardRegistry : IAsyncDisposable
 
     private void OnStateChanged(object? sender, BoardState state)
     {
-        if (sender is not LiveBoard board || StateChanged is not { } handlers)
+        Raise(StateChanged, sender, state);
+    }
+
+    private void OnAnalogChanged(object? sender, BoardState state)
+    {
+        Raise(AnalogChanged, sender, state);
+    }
+
+    private void Raise(EventHandler<BoardStateChange>? handlers, object? sender, BoardState state)
+    {
+        if (sender is not LiveBoard board || handlers is null)
         {
             return;
         }
