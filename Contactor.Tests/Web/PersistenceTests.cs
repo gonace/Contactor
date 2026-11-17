@@ -84,6 +84,41 @@ public sealed class PersistenceTests
         Assert.Equal(5000L, await command.ExecuteScalarAsync(Cancel));
     }
 
+    // Issue #213: a transaction takes the write lock at BEGIN (BEGIN IMMEDIATE), so one that reads and then writes
+    // makes another writer wait. Opened deferred, its write would fail with SQLITE_BUSY after the read.
+    [Fact]
+    public async Task Should_LetASecondWriterWait_WhileATransactionReadsThenWrites()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using var a = await database.Factory.CreateDbContextAsync(Cancel);
+        await using var transaction = await a.Database.BeginTransactionAsync(Cancel);
+        var relay = await a.Relays.SingleAsync(r => r.Channel == 1, Cancel);
+
+        // The second writer doesn't wait in SQLite (busy_timeout=0) and gives up after 1 s in Microsoft.Data.Sqlite.
+        await using var b = new SqliteConnection($"{database.ConnectionString};Default Timeout=1");
+        await b.OpenAsync(Cancel);
+        await using (var pragma = b.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA busy_timeout=0;";
+            await pragma.ExecuteNonQueryAsync(Cancel);
+        }
+
+        await using var update = b.CreateCommand();
+        update.CommandText = "UPDATE \"Relay\" SET \"Name\" = 'Compressor' WHERE \"Channel\" = 2;";
+        var busy = await Assert.ThrowsAsync<SqliteException>(() => update.ExecuteNonQueryAsync(Cancel));
+        Assert.Equal(5, busy.SqliteErrorCode);
+
+        relay.Name = "Fan heater";
+        await a.SaveChangesAsync(Cancel);
+        await transaction.CommitAsync(Cancel);
+
+        Assert.Equal(1, await update.ExecuteNonQueryAsync(Cancel));
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        var names = await check.Relays.Where(r => r.Channel <= 2).OrderBy(r => r.Channel).Select(r => r.Name).ToListAsync(Cancel);
+        Assert.Equal(["Fan heater", "Compressor"], names);
+    }
+
     // A relay's and an input's id is only the database's key, apart from its channel.
     [Theory]
     [InlineData(65)]

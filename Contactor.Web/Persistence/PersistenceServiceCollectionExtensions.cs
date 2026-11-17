@@ -233,6 +233,7 @@ public static class PersistenceServiceCollectionExtensions
         ArgumentOutOfRangeException.ThrowIfGreaterThan(inputCount, ChannelMask.MaxChannels);
     }
 
+    // Every transaction starts as a writer (BEGIN IMMEDIATE): never open one deferred or with ReadUncommitted.
     internal static void Configure(DbContextOptionsBuilder options, string connectionString)
     {
         options.UseSqlite(connectionString).AddInterceptors(BusyTimeoutInterceptor.Instance, RelayRunVersionInterceptor.Instance);
