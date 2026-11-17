@@ -140,17 +140,24 @@ Exchanges from the documents and the recorded session:
 - An analog answer fails when it has one of the upper 6 bits set (a value above 1023), when it is late (5 s), or when
   it is too short. A value above 1023 comes in an answer of the right length, so the connection stays in step and stays
   open. After a late or short answer, the client closes the connection, so the late bytes can't be taken for the next
-  answer. The next request opens a new connection, at most once a minute because of the pause above.
+  answer. The relays and inputs of the same poll go on a new connection, at most once a minute because of the pause
+  above.
+- Before the first analog request of a poll, the client opens a connection if there is none, and checks and unlocks it.
+  A board that doesn't take the connection or answer the check fails the poll there, as it would for the relays. It
+  isn't taken for a problem with the analog inputs.
 - None of the three manuals says if full scale is 1023 or 1024 counts. The app takes 1023 as full scale: 1023 = 5 V
   (or 3.3 V), and 1 count is 5 V / 1023. The difference is 1 count, about 5 mV.
 - None of the manuals gives an example answer. The tests use the manuals' format with made-up values.
 
-The poll cost: each poll sends 0x24, 0x25 on a model with inputs, and then the analog requests. That is 1 more
-request on the ETH1610 (2 per poll), 4 more on the ETH484-B (6 per poll) and 8 more on the ETH8020-B (10 per poll).
-Each request is one round trip on the local network, so a poll takes some milliseconds longer. An analog request
-without an answer adds at most 5 s to one poll a minute. The read of the board after a command reads the relays and
-inputs only, and keeps the last poll's analog values, so a command's confirmation never waits on the analog inputs. A
-command never waits for a poll: a poll under way gives way to it.
+The poll order: each poll sends the analog requests first, and then 0x24, and 0x25 on a model with inputs. So the
+relays a poll reports, which the interlock checks, are as fresh as they can be, however long the analog inputs took.
+
+The poll cost: the analog requests are 1 more request on the ETH1610 (2 per poll), 4 more on the ETH484-B (6 per poll)
+and 8 more on the ETH8020-B (10 per poll). Each request is one round trip on the local network, so a poll takes some
+milliseconds longer. An analog request without an answer adds at most 5 s to one poll a minute, and a new connection
+for the relays and inputs after it. The read of the board after a command reads the relays and inputs only, and keeps
+the last poll's analog values, so a command's confirmation never waits on the analog inputs. A command never waits for
+a poll: a poll under way gives way to it.
 
 ### Password
 

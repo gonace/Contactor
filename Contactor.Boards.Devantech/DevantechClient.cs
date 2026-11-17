@@ -10,8 +10,8 @@ namespace Contactor.Boards.Devantech;
 /// Talks to a Devantech ETH relay board with its binary TCP commands (<see cref="DevantechApi"/>): polls its relays
 /// (0x24), inputs (0x25) and analog inputs (0x32 per input, or 0x34 for all on the ETH1610) through
 /// <see cref="BoardPoller{TReading}"/> and switches relays one at a time (0x20, 0x21). The analog inputs are read in
-/// polls only, and an analog answer that fails never fails the poll: it gives "no reading" for a while
-/// (<see cref="AnalogRetryInterval"/>). One TCP connection and one command at a time (the poller sees to it), each command in one write, each waiting for
+/// polls only, before the relays and inputs, and an analog answer that fails never fails the poll: it gives
+/// "no reading" for a while (<see cref="AnalogRetryInterval"/>). One TCP connection and one command at a time (the poller sees to it), each command in one write, each waiting for
 /// its answer of a fixed length within <see cref="RequestTimeout"/>. Every new connection first checks that the board
 /// is the chosen model (0x10) and unlocks it with the password when it is locked (0x7A, 0x79); a command checks the lock
 /// again, since it comes back after 30 s without a command. A request without an answer or with a value its answer
@@ -396,11 +396,17 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         }
     }
 
-    // The relays and inputs; the analog inputs only in a poll (readAnalog), so a command's confirmation never waits on
-    // them: a command's read keeps what the last poll read of them.
+    // Only in a poll (readAnalog), the analog inputs first, so a command's confirmation never waits on them: a command's
+    // read keeps what the last poll read of them. Then the relays and inputs, last of all, so the relays the poll reports
+    // are as fresh as they can be, however long the analog inputs took.
     private async Task<DevantechStatus> ReadStatusAsync(bool readAnalog, CancellationToken cancellationToken)
     {
         var last = Volatile.Read(ref _lastTraced);
+        if (readAnalog && _model.Capabilities.Analog is { } ability)
+        {
+            _lastAnalog = await ReadAnalogAsync(ability, last?.Analog, cancellationToken).ConfigureAwait(false);
+        }
+
         var relayCount = _model.Capabilities.RelayCount;
         var outputs = await ExchangeAsync(DevantechProtocol.GetOutputs(_layout), routine: true, cancellationToken).ConfigureAwait(false);
         var relays = DevantechProtocol.Outputs(outputs, relayCount);
@@ -415,11 +421,6 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             Trace(BoardTraceDirection.Received, DevantechTraceText.Inputs(inputs, inputCount), DevantechProtocol.Hex(answer), isRoutine: last?.Inputs == inputs);
         }
 
-        if (readAnalog && _model.Capabilities.Analog is { } ability)
-        {
-            _lastAnalog = await ReadAnalogAsync(ability, last?.Analog, cancellationToken).ConfigureAwait(false);
-        }
-
         var status = new DevantechStatus(relays, inputs, _lastAnalog);
         Volatile.Write(ref _lastTraced, status);
         return status;
@@ -428,8 +429,10 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     // The analog inputs, or "no reading" for each when their answer is late, short or can't be read, or while they are
     // left alone after such an answer (AnalogRetryInterval). That never fails the poll: an unproven measurement must not
     // take away the relays. A late or short answer closed the connection (ExchangeAsync), so its bytes can't be taken
-    // for the next answer; the next request opens a new one. A cancellation (a command takes the poll's place) and a new
-    // connection that can't be checked or unlocked still fail the poll, as for any request.
+    // for the next answer: the relays and inputs after it go on a new one, in the same poll. A board that can't be
+    // reached, checked or unlocked is opened for before the first analog request, so it fails the poll as it would for
+    // the relays, and isn't taken for a problem with the analog inputs. A cancellation (a command takes the poll's
+    // place) fails the poll too, as for any request.
     private async Task<AnalogReadings> ReadAnalogAsync(AnalogAbility ability, AnalogReadings? last, CancellationToken cancellationToken)
     {
         var none = new AnalogReadings(new int?[ability.Count]);
@@ -438,6 +441,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             return none;
         }
 
+        await EnsureOpenAsync(cancellationToken).ConfigureAwait(false);
         _analogRetryAt = null;
         AnalogReadings? readings;
         string? problem;
@@ -572,21 +576,7 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
     {
         // Not one just opened to check and unlock it: that one goes nowhere else.
         var reused = _stream is not null && !_checking;
-        if (_stream is null)
-        {
-            try
-            {
-                await ConnectTcpAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (IsNoAnswer(ex))
-            {
-                Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
-                throw;
-            }
-
-            // Its own commands trace what goes wrong.
-            await CheckAndUnlockAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await EnsureOpenAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -643,6 +633,28 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
 
             throw;
         }
+    }
+
+    // Opens a new connection, checked and unlocked, unless one is open. Traces a connection the board doesn't take;
+    // the check's and the unlock's own commands trace what goes wrong with them. Throws as OpenAsync.
+    private async Task EnsureOpenAsync(CancellationToken cancellationToken)
+    {
+        if (_stream is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            await ConnectTcpAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsNoAnswer(ex))
+        {
+            Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+            throw;
+        }
+
+        await CheckAndUnlockAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // Opens a new connection to the board, closing any before; then checks the model and unlocks the board. Throws
