@@ -245,6 +245,58 @@ public sealed class UpdatePageTests
         Assert.Empty(page.Errors);
     }
 
+    // Issue #490: the result of an update that went through shows for a day, and a newer release still can be installed.
+    [Fact]
+    public async Task Should_OfferUpdateNow_UnderTheResult_AfterAnUpdateThatWentThrough()
+    {
+        await using var app = App();
+        var service = await StartAsync(app, helper: true);
+        WriteStatus(service, "state=done", from: "2026.11.13", to: "2026.11.14");
+        using var page = await PageRenderer.StartAsync<UpdateBox>(app.Services, "john@example.com", "John");
+
+        var text = await page.TextAsync();
+        Assert.Contains("Updated to 2026.11.14", text, StringComparison.Ordinal);
+        Assert.Contains("Version 2026.11.20 is available", text, StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(PageRenderer.WithText("Update now")));
+        Assert.Contains("Contactor restarts. That takes about a minute. The relays stay as they are, and schedules catch up afterwards.", text, StringComparison.Ordinal);
+        Assert.True(text.IndexOf("Updated to 2026.11.14", StringComparison.Ordinal) < text.IndexOf("Update now", StringComparison.Ordinal));
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Try again")));
+
+        await page.ClickAsync(PageRenderer.WithText("Update now"));
+
+        Assert.Contains("Update to 2026.11.20?", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+    }
+
+    // After an update that didn't go through, "Try again" is the one button.
+    [Fact]
+    public async Task Should_OfferOnlyTryAgain_AfterAFailedUpdate()
+    {
+        await using var app = App();
+        var service = await StartAsync(app, helper: true);
+        WriteStatus(service, "state=failed\nreason=download");
+        using var page = await PageRenderer.StartAsync<UpdateBox>(app.Services, "john@example.com", "John");
+
+        Assert.True(await page.HasAsync(PageRenderer.WithText("Try again")));
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Update now")));
+    }
+
+    [Fact]
+    public async Task Should_NotOfferUpdateNow_AfterAnUpdate_WithNothingNewer()
+    {
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
+            TestWebApp.WithReleases("2026.11.20", Newest, Between));
+        var service = await StartAsync(app, helper: true);
+        WriteStatus(service, "state=done");
+        using var page = await PageRenderer.StartAsync<UpdateBox>(app.Services, "john@example.com", "John");
+
+        Assert.Contains("Updated to 2026.11.20", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Update now")));
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Try again")));
+    }
+
     [Fact]
     public async Task Should_NotOfferCheckNow_WhileAnUpdateRuns()
     {
@@ -295,11 +347,11 @@ public sealed class UpdatePageTests
         return service;
     }
 
-    // The helper's status for update 20261112-095800, from 2026.11.14 to 2026.11.20, as just written.
-    private static void WriteStatus(UpdateService service, string lines)
+    // The helper's status for update 20261112-095800, from 2026.11.14 to 2026.11.20 unless named, as just written.
+    private static void WriteStatus(UpdateService service, string lines, string from = "2026.11.14", string to = "2026.11.20")
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
-        File.WriteAllText(service.Folder.StatusPath, $"helper=1\nid=20261112-095800\nfrom=2026.11.14\nto=2026.11.20\nstarted={now}\nchanged={now}\n{lines}\n");
+        File.WriteAllText(service.Folder.StatusPath, $"helper=1\nid=20261112-095800\nfrom={from}\nto={to}\nstarted={now}\nchanged={now}\n{lines}\n");
         File.SetLastWriteTimeUtc(service.Folder.StatusPath, DateTime.UtcNow.AddMinutes(1));
         if (service.Poll())
         {

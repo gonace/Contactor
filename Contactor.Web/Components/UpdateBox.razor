@@ -162,8 +162,10 @@
                 {
                     <p class="hint">@Texts["Updates.NoHelper"]</p>
                 }
-                else if (view.Result is null)
+                else if (view.Result is null or { IsDone: true })
                 {
+                    @* After an update that went through, a newer one is offered under its result (Issue #490); a result
+                       that didn't go through has its own "Try again". *@
                     <button type="button" class="primary" disabled="@(_busy || _user is null)" @onclick="Ask">@Texts["Updates.Now"]</button>
                     <p class="hint">@Texts["Updates.Now.Hint"]</p>
                 }
