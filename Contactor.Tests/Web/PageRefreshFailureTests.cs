@@ -228,8 +228,20 @@ public sealed class PageRefreshFailureTests
             {
                 var warnings = string.Join("; ", log.All.Where(w => w.Exception is not null).Select(w => $"{w.Category}: {w.What} ({w.Exception!.GetType().Name}: {w.Exception.Message})"));
                 var errors = string.Join("; ", page.Errors.Select(e => $"{e.GetType().Name}: {e.Message}"));
+                string text;
+                try
+                {
+                    text = await page.TextAsync();
+                }
+#pragma warning disable CA1031 // Only for the message: a page that can't give its text mustn't hide why the test failed.
+                catch (Exception ex)
+#pragma warning restore CA1031
+                {
+                    text = $"(not read: {ex.GetType().Name}: {ex.Message})";
+                }
+
                 Assert.Fail($"The refresh never reached the step the test waits for, after {round} rounds. Failed reads: {queries.Failures}. "
-                    + $"Warnings: [{warnings}]. Errors in the page: [{errors}]. Page draws: {page.PageRenders}. The page: {await page.TextAsync()}");
+                    + $"Warnings: [{warnings}]. Errors in the page: [{errors}]. Page draws: {page.PageRenders}. The page: {text}");
             }
 
             await Task.Delay(1, Cancel);

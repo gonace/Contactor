@@ -180,8 +180,10 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
 
     // The app's work still under way when it stops, e.g. a page's refresh whose database read started just before, can
     // still make a file in the folder by its name (SQLite makes the database's -wal and -shm files as it opens it). So
-    // the folder is moved away first, in one step, and deleted where nothing looks for it: a late writer then finds no
-    // folder, and the delete can't race it. Should the delete fail all the same, the message says what was left.
+    // the folder is moved away first, in one step, and deleted where nothing looks for it: a file made by the folder's
+    // name then can't race the delete. A late writer that makes the folder again (a backup or the database's set-up
+    // call Directory.CreateDirectory) would leave it behind: the test fails then, with what is in it. So does a delete
+    // that fails all the same.
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
@@ -210,6 +212,12 @@ internal sealed class TestWebApp : WebApplicationFactory<Program>
         {
             var left = Directory.GetFileSystemEntries(deleting, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(deleting, f));
             throw new IOException($"The test's folder could not be deleted. Left in it: {string.Join(", ", left)}.", ex);
+        }
+
+        if (Directory.Exists(_folder))
+        {
+            var left = Directory.GetFileSystemEntries(_folder, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(_folder, f));
+            throw new IOException($"Something made the test's folder again after the app stopped. In it: {string.Join(", ", left)}.");
         }
     }
 
