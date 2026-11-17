@@ -58,10 +58,11 @@ public static partial class ReleaseNotes
                 line = line[(end + 3)..].Trim();
             }
 
-            // A code block ends on a fence of its own character, at least as long as the one that opened it.
+            // A code block ends on a fence of its own character, at least as long as the one that opened it, with nothing
+            // after it: "```js" inside a ``` block is a line of the block.
             if (fence.Length > 0)
             {
-                if (line.StartsWith(fence, StringComparison.Ordinal))
+                if (line.StartsWith(fence, StringComparison.Ordinal) && line.AsSpan().TrimStart(fence[0]).IsEmpty)
                 {
                     fence = "";
                 }
@@ -151,7 +152,7 @@ public static partial class ReleaseNotes
             return null;
         }
 
-        change = Stars().Replace(Code().Replace(Link().Replace(change, "$1"), "$1"), Bold);
+        change = Stars().Replace(Code().Replace(WithoutLinks(change), "$1"), Bold);
         change = Shortened(change);
         if (change is null)
         {
@@ -160,6 +161,22 @@ public static partial class ReleaseNotes
 
         change = Spaces().Replace(Balanced(change), " ").Trim();
         return change.Any(char.IsLetterOrDigit) ? change : null;
+    }
+
+    // Each link as its text, also a link in a link's text ([[a](u)](v) is "a"), so Parts, which unwraps links again for
+    // lines saved by an older version, finds none left. Each pass makes the line shorter, so it ends.
+    private static string WithoutLinks(string change)
+    {
+        while (true)
+        {
+            var text = Link().Replace(change, "$1");
+            if (text.Length == change.Length)
+            {
+                return text;
+            }
+
+            change = text;
+        }
     }
 
     // At most MaxChangeLength: up to the last full sentence that fits, when it ends in the last third, else up to the

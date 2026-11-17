@@ -220,6 +220,9 @@
     private async Task RefreshAsync(bool counts)
     {
         using var language = Language.Use();
+
+        // What the warning names: the step that failed.
+        var what = "the board traffic";
         try
         {
             await InvokeAsync(async () =>
@@ -227,6 +230,7 @@
                 Read();
                 if (counts)
                 {
+                    what = "the board filter's counts";
                     await LoadCountsAsync();
                 }
 
@@ -240,7 +244,7 @@
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Not shown to the person: the page keeps what it shows, and the next refresh tries again.
-            Log.LogWarning(ex, "The page could not reload {What}", "the board filter's counts");
+            Log.LogWarning(ex, "The page could not reload {What}", what);
         }
     }
 }

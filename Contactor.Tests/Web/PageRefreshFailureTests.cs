@@ -41,7 +41,7 @@ public sealed class PageRefreshFailureTests
 
         queries.Fail(_ => true, () => new SqliteException("disk I/O error", 10));
         await page.Dispatcher.InvokeAsync(changes.Notify);
-        await DrainAsync(page);
+        await DrainAsync(page, () => log.Of(pageType).Count > 0);
         queries.Stop();
 
         Assert.NotEqual(0, queries.Failures);
@@ -54,8 +54,7 @@ public sealed class PageRefreshFailureTests
         // The next refresh tries again, and works.
         var renders = page.PageRenders;
         await page.Dispatcher.InvokeAsync(changes.Notify);
-        await DrainAsync(page);
-        Assert.True(page.PageRenders > renders);
+        await DrainAsync(page, () => page.PageRenders > renders);
         Assert.Single(log.Of(pageType));
         Assert.Empty(page.Errors);
     }
@@ -78,7 +77,7 @@ public sealed class PageRefreshFailureTests
         // Only the tab bar's read of the setting, not the save that announces it.
         queries.Fail(sql => sql.StartsWith("SELECT \"u\".\"ShowBoardTraffic\"", StringComparison.Ordinal), () => new SqliteException("disk I/O error", 10));
         await page.Dispatcher.InvokeAsync(() => setting.SetAsync(John, on: true, Cancel));
-        await DrainAsync(page);
+        await DrainAsync(page, () => log.Of(typeof(TabBar)).Count > 0);
         queries.Stop();
 
         Assert.NotEqual(0, queries.Failures);
@@ -104,7 +103,7 @@ public sealed class PageRefreshFailureTests
 
         queries.Fail(_ => true, () => cancelled ? new OperationCanceledException() : new ObjectDisposedException("ContactorDbContext"));
         await page.Dispatcher.InvokeAsync(changes.Notify);
-        await DrainAsync(page);
+        await DrainAsync(page, () => queries.Failures > 0);
         queries.Stop();
 
         Assert.NotEqual(0, queries.Failures);
@@ -131,9 +130,12 @@ public sealed class PageRefreshFailureTests
             other.Join();
             page.Close();
         });
-        await DrainAsync(page);
+
+        // The refresh was queued before this round, and a closed page ends it there.
+        await DrainAsync(page, () => true);
         queries.Stop();
 
+        Assert.Equal(0, queries.Failures);
         Assert.Empty(log.Of(typeof(Relays)));
     }
 
@@ -183,17 +185,18 @@ public sealed class PageRefreshFailureTests
         return group.Id;
     }
 
-    // Lets everything the page queued on its own thread run. A change raised on that thread starts the refresh there,
-    // and SQLite's reads end before they return, so each later step is queued there too, after the last.
-    private static async Task DrainAsync(PageRenderer page)
+    // Waits until the refresh reached the step done counts (a warning, a draw, a failed read), however its reads
+    // complete. The count is read on the page's own thread, between its steps, so what the counted step queued there
+    // (e.g. the catch after a failed read) is queued before the next round, which runs it.
+    private static async Task DrainAsync(PageRenderer page, Func<bool> done)
     {
-        await page.Dispatcher.InvokeAsync(async () =>
+        for (var round = 0; !await page.Dispatcher.InvokeAsync(done); round++)
         {
-            for (var i = 0; i < 10; i++)
-            {
-                await Task.Yield();
-            }
-        });
+            Assert.True(round < 10_000, "The refresh never reached the step the test waits for.");
+            await Task.Delay(1, Cancel);
+        }
+
+        await page.Dispatcher.InvokeAsync(() => { });
     }
 
     private sealed record Warning(string Category, Exception? Exception, string? What);

@@ -63,6 +63,16 @@ public sealed class ReleaseNotesTests
         Assert.Equal(["See the guide and a picture", "Run docker compose up once"], changes);
     }
 
+    // A link in a link's text: the list and the page show the same text.
+    [Fact]
+    public void Should_KeepOnlyTheText_OfALinkInALink()
+    {
+        var change = Assert.Single(ReleaseNotes.Changes("* See [[the guide](https://example.com/a)](https://example.com/b) now"));
+
+        Assert.Equal("See the guide now", change);
+        Assert.Equal([(change, false)], ReleaseNotes.Parts(change));
+    }
+
     [Fact]
     public void Should_KeepTheTextOfLinks_WithParenthesesOrATitle()
     {
@@ -81,10 +91,13 @@ public sealed class ReleaseNotesTests
         Assert.Equal(["First change", "Last change"], changes);
     }
 
-    // A code block ends only on a fence of its own character, at least as long as the one that opened it.
+    // A code block ends only on a fence of its own character, at least as long as the one that opened it, with nothing
+    // after it.
     [Theory]
     [InlineData("* Shown\n````\n```\n* Hidden\n````\n* Last")]
     [InlineData("* Shown\n~~~~\n~~~\n* Hidden\n~~~~~~\n* Last")]
+    [InlineData("* Shown\n```\n```js\n* Hidden\n```\n* Last")]
+    [InlineData("* Shown\n~~~\n~~~ text\n* Hidden\n~~~\n* Last")]
     public void Should_EndACodeBlock_OnlyOnAFenceAsLongAsItsOwn(string notes)
     {
         Assert.Equal(["Shown", "Last"], ReleaseNotes.Changes(notes));
