@@ -14,7 +14,11 @@ public sealed record ShellyFrame(JsonElement? Result, ShellyRpcError? Error);
 /// <summary>What <c>Shelly.GetStatus</c> says about the device's switches.</summary>
 /// <param name="Count">How many <c>switch:N</c> components it has, numbered 0 to this minus one.</param>
 /// <param name="Outputs">Bit per switch, bit 0 = <c>switch:0</c>; 1 = its <c>output</c> is true.</param>
-public sealed record ShellySwitches(int Count, uint Outputs);
+/// <param name="ConfigRevision">
+/// <c>sys.cfg_rev</c>, which grows with every change of the device's configuration ("Sys"); null when the status has
+/// none, or one that isn't a whole number.
+/// </param>
+public sealed record ShellySwitches(int Count, uint Outputs, long? ConfigRevision = null);
 
 /// <summary>A request frame as the simulator reads it.</summary>
 /// <param name="Id">The request's <c>id</c> as JSON text, to send back as it came: a number or a string.</param>
@@ -75,6 +79,52 @@ public static class ShellyJson
             writer.WriteNumber("id", relay - 1);
             writer.WriteBoolean("on", on);
         });
+    }
+
+    /// <summary><c>Switch.GetConfig</c> for one relay: <c>{"id":relay-1}</c> ("Switch", "Switch.GetConfig").</summary>
+    public static byte[] WriteSwitchGetConfig(int id, int relay)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, ShellyApi.MaxRelayCount);
+        return WriteRequest(id, ShellyApi.SwitchGetConfig, writer => writer.WriteNumber("id", relay - 1));
+    }
+
+    /// <summary>
+    /// <c>Switch.SetConfig</c> for one relay's state after a power cut, and nothing else of its configuration:
+    /// <c>{"id":relay-1,"config":{"initial_state":"off"}}</c> ("Switch", "Switch.SetConfig").
+    /// </summary>
+    public static byte[] WriteSwitchSetPowerOn(int id, int relay, PowerOnState state)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, ShellyApi.MaxRelayCount);
+        var initialState = ShellyApi.ToInitialState(state);
+        return WriteRequest(id, ShellyApi.SwitchSetConfig, writer =>
+        {
+            writer.WriteNumber("id", relay - 1);
+            writer.WriteStartObject("config");
+            writer.WriteString(ShellyApi.InitialState, initialState);
+            writer.WriteEndObject();
+        });
+    }
+
+    /// <summary>
+    /// Reads a switch's state after a power cut from <c>Switch.GetConfig</c>'s result ("Switch", "Configuration"): its
+    /// <c>initial_state</c>, or null when it has none or one the docs don't list. Its <c>id</c>, when there, must be
+    /// <paramref name="relay"/> minus 1: an answer about another switch is refused.
+    /// </summary>
+    public static PowerOnState? ReadPowerOn(JsonElement result, int relay)
+    {
+        if (result.ValueKind != JsonValueKind.Object)
+        {
+            throw new ShellyProtocolException("The Shelly's switch settings aren't a JSON object.");
+        }
+
+        if (result.TryGetProperty("id", out var id) && (id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out var number) || number != relay - 1))
+        {
+            throw new ShellyProtocolException("The Shelly's switch settings are for another switch.");
+        }
+
+        return ShellyApi.ToPowerOnState(String(result, ShellyApi.InitialState));
     }
 
     /// <summary>
@@ -208,7 +258,7 @@ public static class ShellyJson
             throw new ShellyProtocolException("The Shelly's switches aren't numbered from 0 without a gap.");
         }
 
-        return new ShellySwitches(count, outputs);
+        return new ShellySwitches(count, outputs, ConfigRevision(result));
     }
 
     /// <summary>
@@ -272,6 +322,18 @@ public static class ShellyJson
             writer.WriteString("message", error.Message);
             writer.WriteEndObject();
         });
+    }
+
+    // sys.cfg_rev, or null without a whole number there: then the app reads the settings at connect only.
+    private static long? ConfigRevision(JsonElement result)
+    {
+        return result.TryGetProperty("sys", out var sys)
+            && sys.ValueKind == JsonValueKind.Object
+            && sys.TryGetProperty(ShellyApi.ConfigRevision, out var revision)
+            && revision.ValueKind == JsonValueKind.Number
+            && revision.TryGetInt64(out var number)
+                ? number
+                : null;
     }
 
     // A device id is also the digest realm, which goes in quotes in the Authorization header.

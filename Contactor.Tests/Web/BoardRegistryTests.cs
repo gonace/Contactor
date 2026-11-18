@@ -205,6 +205,42 @@ public sealed class BoardRegistryTests
         Assert.False(old.Fake.HasListeners);
     }
 
+    // The states after a power cut alone are no state either; they reach the registry with the board's id, and setting
+    // one goes to the current model.
+    [Fact]
+    public async Task Should_PassOnPowerOnChanges_OfTheCurrentModelOnly_AndNotAsStates()
+    {
+        await using var database = await DatabaseAsync();
+        var id = await AddRowAsync(database);
+        var registry = Registry(database);
+        var ability = new PowerOnAbility([PowerOnState.Off, PowerOnState.On], perRelay: true);
+        var old = new FakeBoardParts(new FakeRelayBoard(powerOn: ability));
+        var next = new FakeBoardParts(new FakeRelayBoard(powerOn: ability));
+        var board = await registry.ReplaceAsync(old.Build(id, Vm201Model.Model), Cancel);
+        var states = new List<BoardState>();
+        var powerOns = new List<BoardState>();
+        var changes = new List<BoardStateChange>();
+        board.StateChanged += (_, state) => states.Add(state);
+        board.PowerOnChanged += (_, _) => throw new InvalidOperationException("A broken subscriber.");
+        board.PowerOnChanged += (_, state) => powerOns.Add(state);
+        registry.PowerOnChanged += (_, change) => changes.Add(change);
+
+        await board.SetPowerOnAsync(3, PowerOnState.On, Cancel);
+        Assert.Empty(states);
+        Assert.Equal(PowerOnState.On, Assert.Single(powerOns).PowerOn!.For(3));
+        Assert.Equal(new BoardStateChange(id, powerOns[0]), Assert.Single(changes));
+        Assert.Equal(PowerOnState.On, board.State.PowerOn!.For(3));
+
+        await registry.ReplaceAsync(next.Build(id, Vm201Model.Model), Cancel);
+        old.Fake.SetPowerOn(new PowerOnStates(new PowerOnState?[8]));
+        next.Fake.SetPowerOn(new PowerOnStates(Enumerable.Repeat<PowerOnState?>(PowerOnState.Off, 8)));
+
+        Assert.Equal(2, powerOns.Count);
+        Assert.Equal(PowerOnState.Off, powerOns[1].PowerOn!.For(1));
+        Assert.Equal(2, changes.Count);
+        Assert.False(old.Fake.HasListeners);
+    }
+
     [Fact]
     public async Task Should_RunTheModel_AndTheNextOneAfterAReplacement()
     {

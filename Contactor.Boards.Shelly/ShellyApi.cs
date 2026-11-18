@@ -31,6 +31,58 @@ public static class ShellyApi
     /// <summary>"sets the output of the Switch component to on or off": <c>{"id":n,"on":bool}</c> ("Switch").</summary>
     public const string SwitchSet = "Switch.Set";
 
+    /// <summary>"to obtain the component's configuration": <c>{"id":n}</c> ("Switch", "Switch.GetConfig").</summary>
+    public const string SwitchGetConfig = "Switch.GetConfig";
+
+    /// <summary>"to update the component's configuration": <c>{"id":n,"config":{…}}</c> ("Switch", "Switch.SetConfig").</summary>
+    public const string SwitchSetConfig = "Switch.SetConfig";
+
+    /// <summary>
+    /// The member of a switch's configuration that says what it does at power on: "Output state to set on power_on.
+    /// Range of values: off, on, restore_last, match_input" ("Switch", "Configuration").
+    /// </summary>
+    public const string InitialState = "initial_state";
+
+    /// <summary>
+    /// The member of <c>sys</c> in <see cref="GetStatus"/>'s result that "will be incremented for every configuration
+    /// change of a device component" ("Sys", "Configuration" and "Status").
+    /// </summary>
+    public const string ConfigRevision = "cfg_rev";
+
+    /// <summary>
+    /// What a switch's <see cref="InitialState"/> does after a power cut, all four the docs list (per relay).
+    /// </summary>
+    public static PowerOnAbility PowerOn { get; } = new([PowerOnState.Off, PowerOnState.AsBefore, PowerOnState.On, PowerOnState.FollowsInput], perRelay: true);
+
+    /// <summary>
+    /// An <see cref="InitialState"/> value as a state: <c>off</c>, <c>restore_last</c>, <c>on</c> and <c>match_input</c>;
+    /// null for any other value, which the docs don't list.
+    /// </summary>
+    public static PowerOnState? ToPowerOnState(string? initialState)
+    {
+        return initialState switch
+        {
+            "off" => PowerOnState.Off,
+            "restore_last" => PowerOnState.AsBefore,
+            "on" => PowerOnState.On,
+            "match_input" => PowerOnState.FollowsInput,
+            _ => null,
+        };
+    }
+
+    /// <summary>A state as its <see cref="InitialState"/> value; throws for a value that isn't a state.</summary>
+    public static string ToInitialState(PowerOnState state)
+    {
+        return state switch
+        {
+            PowerOnState.Off => "off",
+            PowerOnState.AsBefore => "restore_last",
+            PowerOnState.On => "on",
+            PowerOnState.FollowsInput => "match_input",
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Not a state after a power cut."),
+        };
+    }
+
     /// <summary>The key of a switch's status in <see cref="GetStatus"/>'s result: <c>switch:0</c> is relay 1.</summary>
     public const string SwitchKeyPrefix = "switch:";
 

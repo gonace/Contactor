@@ -4,7 +4,9 @@ namespace Contactor.Boards.Shelly;
 
 /// <summary>
 /// A Shelly Gen2+ device as an <see cref="IRelayBoard"/>: its entry's 1 to 4 relays, which it never reports by itself
-/// over HTTP, so <see cref="ShellyClient"/> polls it. This only translates the client's state and commands.
+/// over HTTP, so <see cref="ShellyClient"/> polls it, and each relay's state after a power cut (its switch's
+/// <c>initial_state</c>), which the app sets only when a person saves it. This only translates the client's state and
+/// commands.
 /// </summary>
 public sealed class ShellyBoard : IRelayBoard
 {
@@ -18,9 +20,13 @@ public sealed class ShellyBoard : IRelayBoard
         _client = client;
         _logger = logger;
         _client.StateChanged += OnStateChanged;
+        _client.PowerOnChanged += OnPowerOnChanged;
     }
 
     public event EventHandler<BoardState>? StateChanged;
+
+    /// <inheritdoc/>
+    public event EventHandler<BoardState>? PowerOnChanged;
 
     public BoardCapabilities Capabilities => _client.Model.Capabilities;
 
@@ -43,17 +49,26 @@ public sealed class ShellyBoard : IRelayBoard
         throw new NotSupportedException("This board can't pulse a relay.");
     }
 
+    /// <summary>One <c>Switch.SetConfig</c> for this relay's switch only, read back at once (<see cref="ShellyClient.SetPowerOnAsync"/>).</summary>
+    public Task SetPowerOnAsync(int relay, PowerOnState state, CancellationToken cancellationToken = default)
+    {
+        return _client.SetPowerOnAsync(relay, state, cancellationToken);
+    }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         _client.Refresh();
         return Task.CompletedTask;
     }
 
-    /// <summary>The device's state as a <see cref="BoardState"/>: relays only, no inputs or analog readings.</summary>
+    /// <summary>
+    /// The device's state as a <see cref="BoardState"/>: its relays and their states after a power cut, no inputs or
+    /// analog readings.
+    /// </summary>
     public static BoardState ToBoardState(ShellyState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), ChannelMask.None, state.LastContactUtc, state.Problem);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), ChannelMask.None, state.LastContactUtc, state.Problem, PowerOn: state.PowerOn);
     }
 
     // Only relays the entry has; throws before anything is sent.
@@ -67,10 +82,21 @@ public sealed class ShellyBoard : IRelayBoard
         return (byte)relays.Bits;
     }
 
-    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
     private void OnStateChanged(object? sender, ShellyState state)
     {
-        if (StateChanged is not { } handlers)
+        Raise(StateChanged, state);
+    }
+
+    // Only the power-on states changed: not a change the safety services, which listen to StateChanged, must see.
+    private void OnPowerOnChanged(object? sender, ShellyState state)
+    {
+        Raise(PowerOnChanged, state);
+    }
+
+    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
+    private void Raise(EventHandler<BoardState>? handlers, ShellyState state)
+    {
+        if (handlers is null)
         {
             return;
         }

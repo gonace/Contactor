@@ -46,6 +46,18 @@ public interface IRelayBoard
     }
 
     /// <summary>
+    /// Raised when only the relays' states after a power cut changed (<see cref="BoardState.PowerOn"/>): not the relays,
+    /// the inputs or the connection. A change that comes with one of those comes as <see cref="StateChanged"/> instead,
+    /// whose state carries them too: whoever shows them listens to both. From any thread, each subscriber on its own. A
+    /// board without the ability (<see cref="BoardCapabilities.PowerOn"/>) never raises it.
+    /// </summary>
+    event EventHandler<BoardState>? PowerOnChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Turns on the relays in <paramref name="relays"/>; the others are left as they are. Returns the relays the board
     /// took: all of them on a board that takes a mask at once, and on one that switches a relay per request, those
     /// it confirmed (not refused, and with an answer the app could read; one it couldn't may have switched, which the
@@ -78,6 +90,22 @@ public interface IRelayBoard
     Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException("This board can't turn its own rules off.");
+    }
+
+    /// <summary>
+    /// Sets what <paramref name="relay"/> does when the board gets power back (<see cref="PowerOnState"/>), as a person
+    /// saved it (never on the app's own accord). On a board whose state is for the whole board
+    /// (<see cref="PowerOnAbility.PerRelay"/> false), it sets it for every relay. Sent at once or not at all, as
+    /// <see cref="TurnOnAsync"/>: without a connection it throws <see cref="BoardNotConnectedException"/> and is never
+    /// queued; when the board doesn't take it, it throws <see cref="BoardNotConnectedException"/> too. Throws
+    /// <see cref="ArgumentOutOfRangeException"/> for a relay or a state the board doesn't have
+    /// (<see cref="PowerOnAbility.Has"/>), before anything is sent. The board reads it back, and the next state confirms
+    /// it (<see cref="BoardState.PowerOn"/>). Throws <see cref="NotSupportedException"/> on a board without the ability
+    /// (<see cref="BoardCapabilities.PowerOn"/> null), the default.
+    /// </summary>
+    Task SetPowerOnAsync(int relay, PowerOnState state, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This board can't set its relays' state after a power cut.");
     }
 
     /// <summary>Asks the board for its state; the answer comes as <see cref="StateChanged"/>.</summary>

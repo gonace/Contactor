@@ -1,8 +1,35 @@
 namespace Contactor.Boards.Shelly;
 
-/// <summary>One answer to <c>Shelly.GetStatus</c>: which relays are on.</summary>
+/// <summary>
+/// One answer to <c>Shelly.GetStatus</c>: which relays are on, with each switch's state after a power cut as last read.
+/// </summary>
 /// <param name="Relays">Bit per relay, bit 0 = relay 1 (<c>switch:0</c>); 1 = its <c>output</c> is true.</param>
-public sealed record ShellyStatus(byte Relays);
+/// <param name="PowerOn">
+/// Each switch's <c>initial_state</c> as last read with <c>Switch.GetConfig</c> (at connect, and when <c>cfg_rev</c>
+/// changed); null before it was read.
+/// </param>
+public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null)
+{
+    /// <summary>
+    /// Compares the relays only, for the poller: a change in <see cref="PowerOn"/> alone isn't a state change, and comes
+    /// as <see cref="ShellyClient.PowerOnChanged"/>.
+    /// </summary>
+    public static IEqualityComparer<ShellyStatus> RelaysComparer { get; } = new RelaysOnly();
+
+    private sealed class RelaysOnly : IEqualityComparer<ShellyStatus>
+    {
+        public bool Equals(ShellyStatus? x, ShellyStatus? y)
+        {
+            return x is null ? y is null : y is not null && x.Relays == y.Relays;
+        }
+
+        public int GetHashCode(ShellyStatus obj)
+        {
+            ArgumentNullException.ThrowIfNull(obj);
+            return obj.Relays;
+        }
+    }
+}
 
 /// <summary>
 /// The device's last known state. While disconnected the last values are kept with <see cref="IsConnected"/> false.
@@ -19,6 +46,9 @@ public sealed record ShellyState(bool IsConnected, ShellyStatus? Status, DateTim
     public static ShellyState Initial { get; } = new(false, null, null);
 
     public byte Relays => Status?.Relays ?? 0;
+
+    /// <summary>Each switch's state after a power cut as last read, kept while disconnected; null before it was read.</summary>
+    public PowerOnStates? PowerOn => Status?.PowerOn;
 
     public bool IsOn(int relay)
     {

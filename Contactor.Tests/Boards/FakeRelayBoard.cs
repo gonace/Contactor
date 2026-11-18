@@ -11,9 +11,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     private readonly Lock _lock = new();
     private BoardState _state;
 
-    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null, AnalogAbility? analog = null, OwnRulesAbility? ownRules = null)
+    public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null, AnalogAbility? analog = null, OwnRulesAbility? ownRules = null, PowerOnAbility? powerOn = null)
     {
-        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true, analog, pulse, ownRules);
+        Capabilities = new BoardCapabilities(relayCount, inputCount, ReportsChanges: true, analog, pulse, ownRules, powerOn);
         _state = new BoardState(connected, ChannelMask.None, ChannelMask.None, connected ? DateTimeOffset.UnixEpoch : null);
     }
 
@@ -34,8 +34,13 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     public event EventHandler<BoardState>? OwnRulesChanged;
 
-    /// <summary>Whether anything listens to its state, readings or rules, e.g. to tell a subscription that was let go.</summary>
-    public bool HasListeners => StateChanged is not null || AnalogChanged is not null || OwnRulesChanged is not null;
+    public event EventHandler<BoardState>? PowerOnChanged;
+
+    /// <summary>
+    /// Whether anything listens to its state, readings, rules or states after a power cut, e.g. to tell a subscription
+    /// that was let go.
+    /// </summary>
+    public bool HasListeners => StateChanged is not null || AnalogChanged is not null || OwnRulesChanged is not null || PowerOnChanged is not null;
 
     /// <summary>
     /// When set, every status the board reports while connected carries this clock's time as its contact time, as a
@@ -352,6 +357,57 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
         OwnRulesChanged?.Invoke(this, state);
         return Task.FromResult(taken);
+    }
+
+    /// <summary>Only the relays' states after a power cut change, and the board reports them alone, not as a state.</summary>
+    public void SetPowerOn(PowerOnStates? states)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = Stamp(_state with { PowerOn = states });
+        }
+
+        PowerOnChanged?.Invoke(this, state);
+    }
+
+    /// <summary>
+    /// Sets one relay's state after a power cut and reports it, as a board that reads it back does. Only on a board made
+    /// with the ability.
+    /// </summary>
+    public Task SetPowerOnAsync(int relay, PowerOnState state, CancellationToken cancellationToken = default)
+    {
+        if (Capabilities.PowerOn is not { } ability)
+        {
+            throw new NotSupportedException("This board can't set its relays' state after a power cut.");
+        }
+
+        Capabilities.Relay(relay);
+        if (!ability.Has(state))
+        {
+            throw new ArgumentOutOfRangeException(nameof(state), state, "The board hasn't that state.");
+        }
+
+        ThrowIfCancelled(cancellationToken);
+        EnsureConnected();
+        PowerOnStates states;
+        lock (_lock)
+        {
+            PowerOnState?[] now = _state.PowerOn is { } known ? [.. known] : new PowerOnState?[Capabilities.RelayCount];
+            if (ability.PerRelay)
+            {
+                now[relay - 1] = state;
+            }
+            else
+            {
+                Array.Fill(now, state);
+            }
+
+            states = new PowerOnStates(now);
+        }
+
+        SetPowerOn(states);
+        return Task.CompletedTask;
     }
 
     /// <summary>The board's state is forgotten, as a client does when its address changes: nothing is known.</summary>
