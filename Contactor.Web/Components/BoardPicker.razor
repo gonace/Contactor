@@ -123,7 +123,7 @@ else if (!Side && Several)
     [EditorRequired]
     public BoardFilter Filter { get; set; } = BoardFilter.All;
 
-    /// <summary>Not read: every count here comes from the boards' own state. Issue #495 removes it and its loading.</summary>
+    /// <summary>Not read: every count here comes from the boards' own state. Issue #503 removes it.</summary>
     [Parameter]
     public BoardCounts Counts { get; set; } = BoardCounts.None;
 

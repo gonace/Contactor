@@ -4,10 +4,7 @@
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
-@using Contactor.Web.Persistence
-@using Microsoft.EntityFrameworkCore
 @inject CurrentUser CurrentUser
-@inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardTrafficSetting Debugging
 @inject BoardRegistry Registry
 @inject TimeProvider TimeProvider
@@ -119,9 +116,6 @@
     [Parameter]
     public RenderFragment? SideList { get; set; }
 
-    // BoardPicker.Counts, which it no longer reads (Issue #495), for the boards' list on a page without the filter; loaded when there is a board.
-    private BoardCounts _counts = BoardCounts.None;
-
     // What the list shows of each board's state, so a status that changes none of it doesn't redraw the page.
     private readonly ShownBoardStates _shown = new();
 
@@ -129,7 +123,7 @@
 
     private RenderFragment GoList => __builder =>
     {
-        <BoardPicker Side="true" Go="true" Screen="BoardFilterScreen.Relays" Boards="Registry.Shown" Filter="BoardFilter.All" Counts="_counts" />
+        <BoardPicker Side="true" Go="true" Screen="BoardFilterScreen.Relays" Boards="Registry.Shown" Filter="BoardFilter.All" />
     };
 
     // A copy: the timers change the list off the render thread.
@@ -149,16 +143,7 @@
         Registry.BoardsChanged += OnBoardsChanged;
         Registry.StateChanged += OnBoardChanged;
         Changes.Changed += OnRelaysChanged;
-        try
-        {
-            await LoadCountsAsync();
-        }
-#pragma warning disable CA1031 // The page opens all the same; the list shows no counts until the next change.
-        catch (Exception ex)
-#pragma warning restore CA1031
-        {
-            LogCountsFailed(ex);
-        }
+        ResetShown();
 
         _email = (await CurrentUser.GetAsync())?.Email;
         // Dispose ran during the load: subscribing now would leave the handlers for the life of the app. Dispose and this
@@ -174,37 +159,28 @@
         _debugging = await Debugging.IsOnAsync(_email, CancellationToken.None);
     }
 
-    // The boards' list of a page without the filter: its counts, when there is a list to show.
-    private async Task LoadCountsAsync()
+    // The boards' list of a page without the filter, when there is a list to show: only the boards there are now, so a
+    // removed board's entry goes.
+    private void ResetShown()
     {
         var boards = Registry.Shown;
-        var list = SideList is null && boards.Count > 0;
-        // Only the boards there are now: a removed board's entry goes.
-        _shown.Reset(list ? boards : []);
-
-        if (!list)
-        {
-            return;
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _counts = await BoardCounts.LoadAsync(db, Registry, CancellationToken.None);
+        _shown.Reset(SideList is null && boards.Count > 0 ? boards : []);
     }
 
-    // A board renamed, a relay's "In use", a group made or deleted: the list's names and counts again, when the page
-    // has no filter of its own.
+    // A board renamed, a relay's "In use", a group made or deleted: the list again, when the page has no filter of its
+    // own.
     private void OnRelaysChanged(object? sender, EventArgs e)
     {
         if (SideList is null && Registry.Shown.Count > 0)
         {
-            _ = RefreshListAsync(reload: true);
+            _ = RefreshListAsync(reset: true);
         }
     }
 
-    // A board added or removed: the list, and its counts, again.
+    // A board added or removed: the list again.
     private void OnBoardsChanged(object? sender, EventArgs e)
     {
-        _ = RefreshListAsync(reload: true);
+        _ = RefreshListAsync(reset: true);
     }
 
     // A board's new state: its dot, lamps and counts in the list, when the page has no filter of its own. Only a change
@@ -218,26 +194,26 @@
 
         if (_shown.Changes(change))
         {
-            _ = RefreshListAsync(reload: false);
+            _ = RefreshListAsync(reset: false);
         }
     }
 
-    private async Task RefreshListAsync(bool reload)
+    private async Task RefreshListAsync(bool reset)
     {
         using var language = Language.Use();
         try
         {
-            await InvokeAsync(async () =>
+            await InvokeAsync(() =>
             {
-                // On the page's own thread, as Dispose is: a closed tab bar loads no counts.
+                // On the page's own thread, as Dispose is: a closed tab bar draws nothing.
                 if (_disposed)
                 {
                     return;
                 }
 
-                if (reload)
+                if (reset)
                 {
-                    await LoadCountsAsync();
+                    ResetShown();
                 }
 
                 StateHasChanged();
@@ -246,12 +222,6 @@
         catch (ObjectDisposedException)
         {
             // The page closed meanwhile.
-        }
-#pragma warning disable CA1031 // The list keeps its last counts; an exception here would end the page's live connection.
-        catch (Exception ex)
-#pragma warning restore CA1031
-        {
-            LogCountsFailed(ex);
         }
     }
 
@@ -273,11 +243,6 @@
 
             _toasts.Clear();
         }
-    }
-
-    private void LogCountsFailed(Exception ex)
-    {
-        Log.LogError(ex, "Counting the boards' relays for the side menu failed");
     }
 
     private static string Arrow(BoardTraceItem item)

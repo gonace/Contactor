@@ -1,7 +1,8 @@
 @* A group's steps as cards, the same on the group's page and in "New group": each step's name, its relays with
    "Join the step above" (not on the first step) and "Remove", "+ Add a relay to this step", up/down for the whole
-   step, the waits between two steps and "+ Add a step" under the last. The page owns the GroupEditor and says what each change does; what only one page shows (a step's
-   state, a relay's ON/OFF) comes in through StepNote and RelayEnd. *@
+   step, the waits between two steps and "+ Add a step" under the last. The page owns the GroupEditor and says what
+   each change does; what only one page shows (a step's state, a relay's ON/OFF) comes in through StepNote and
+   RelayEnd. *@
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Persistence
 
@@ -39,11 +40,11 @@
                                 <div class="relay-actions">
                                     @if (stepIndex > 0)
                                     {
-                                        <button type="button" class="remove join" aria-label="@Texts["Groups.JoinStepAbove.Label", relay.Name]" @onclick="() => JoinAsync(relay.RelayId)">@Texts["Groups.JoinStepAbove"]</button>
+                                        <button type="button" class="link-button" aria-label="@Texts["Groups.JoinStepAbove.Label", relay.Name]" @onclick="() => JoinAsync(relay.RelayId)">@Texts["Groups.JoinStepAbove"]</button>
                                     }
                                     @if (Editor.RelayCount > RelayGroup.MinMembers)
                                     {
-                                        <button type="button" class="remove" aria-label="@Texts["Groups.RemoveRelay", relay.Name]" @onclick="() => RemoveAsync(relay.RelayId)">@Texts["Groups.Remove"]</button>
+                                        <button type="button" class="link-button remove" aria-label="@Texts["Groups.RemoveRelay", relay.Name]" @onclick="() => RemoveAsync(relay.RelayId)">@Texts["Groups.Remove"]</button>
                                     }
                                 </div>
                             }
