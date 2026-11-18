@@ -184,7 +184,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
     // A stop whose next OFF is for a relay the board controls by itself and shows on can't happen: the board ignores it.
     // The stop ends there, as given up, without sending it again: what is still on stays on (above it, e.g. the fan
     // keeps running), and the interlock still acts on every status.
-    private void GiveUpStopTheBoardIgnores(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime)
+    private static void GiveUpStopTheBoardIgnores(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime)
     {
         if (runtime.Phase != GroupPhases.Stopping || runtime.PendingOn || runtime.PendingStep is not { } step || step < 1 || step > steps.Count)
         {
