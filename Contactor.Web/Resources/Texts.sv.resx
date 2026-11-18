@@ -938,6 +938,21 @@
   <data name="Events.OwnRules.Who.TheBoards" xml:space="preserve">
     <value>Kortets</value>
   </data>
+  <data name="Events.PowerOn.AsBefore" xml:space="preserve">
+    <value>{0} ställde in att reläet blir som innan efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.Changed" xml:space="preserve">
+    <value>{0} ändrade vad reläet gör efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.FollowsInput" xml:space="preserve">
+    <value>{0} ställde in att reläet följer sin brytare efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.Off" xml:space="preserve">
+    <value>{0} ställde in att reläet förblir av efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.On" xml:space="preserve">
+    <value>{0} ställde in att reläet slås på efter ett strömavbrott</value>
+  </data>
   <data name="Events.Pulse" xml:space="preserve">
     <value>{0} provkörde i {1}</value>
   </data>
@@ -2029,6 +2044,54 @@
   </data>
   <data name="Relays.Online.Several" xml:space="preserve">
     <value>Anslutet · uppdaterat {0}</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.AsBefore" xml:space="preserve">
+    <value>Kortet ställer själv tillbaka det som det var när strömmen gick, på eller av.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.FollowsInput" xml:space="preserve">
+    <value>Kortet slår på det själv när dess brytare är på, utan Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.Off" xml:space="preserve">
+    <value>Kortet håller det avstängt tills Contactor är igång.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.On" xml:space="preserve">
+    <value>Kortet slår på det själv, utan Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Heading" xml:space="preserve">
+    <value>Efter ett strömavbrott</value>
+  </data>
+  <data name="Relays.PowerOn.Hint" xml:space="preserve">
+    <value>Vad kortet gör med reläet av sig självt när strömmen kommer tillbaka, innan Contactor är igång.</value>
+  </data>
+  <data name="Relays.PowerOn.InGroup" xml:space="preserve">
+    <value>Reläet ingår i en grupp: ställ in vad det gör efter ett strömavbrott på gruppens sida.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med kortet, så det ändrades inte vad det gör efter ett strömavbrott. Försök igen när det svarar.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContactNow" xml:space="preserve">
+    <value>Ingen kontakt med kortet, så det går inte att ändra nu.</value>
+  </data>
+  <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
+    <value>Kortet tog inte emot ändringen. Försök igen.</value>
+  </data>
+  <data name="Relays.PowerOn.State.AsBefore" xml:space="preserve">
+    <value>Som innan</value>
+  </data>
+  <data name="Relays.PowerOn.State.FollowsInput" xml:space="preserve">
+    <value>Följer sin brytare</value>
+  </data>
+  <data name="Relays.PowerOn.State.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Relays.PowerOn.State.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Relays.PowerOn.Unknown" xml:space="preserve">
+    <value>Kan inte se ännu vad kortet gör med reläet efter ett strömavbrott.</value>
+  </data>
+  <data name="Relays.PowerOn.WholeBoard" xml:space="preserve">
+    <value>Det gäller alla relän på kortet.</value>
   </data>
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} Se Inställningar.</value>

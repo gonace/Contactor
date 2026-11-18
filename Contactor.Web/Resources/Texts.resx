@@ -1062,6 +1062,21 @@
   <data name="Events.Schedule.AddedOne" xml:space="preserve">
     <value>{0} added a schedule</value>
   </data>
+  <data name="Events.PowerOn.AsBefore" xml:space="preserve">
+    <value>{0} set the relay to go back as it was after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.Changed" xml:space="preserve">
+    <value>{0} changed what the relay does after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.FollowsInput" xml:space="preserve">
+    <value>{0} set the relay to follow its switch after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.Off" xml:space="preserve">
+    <value>{0} set the relay to stay off after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.On" xml:space="preserve">
+    <value>{0} set the relay to turn on after a power cut</value>
+  </data>
   <data name="Events.Schedule.Changed" xml:space="preserve">
     <value>{0} changed schedule to {1}</value>
   </data>
@@ -2258,6 +2273,54 @@
   </data>
   <data name="Relays.Save.EnterName" xml:space="preserve">
     <value>Enter a name.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.AsBefore" xml:space="preserve">
+    <value>The board puts it back by itself as it was when the power went, on or off.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.FollowsInput" xml:space="preserve">
+    <value>The board turns it on by itself while its switch is on, without Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.Off" xml:space="preserve">
+    <value>The board keeps it off until Contactor runs.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.On" xml:space="preserve">
+    <value>The board turns it on by itself, without Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Heading" xml:space="preserve">
+    <value>After a power cut</value>
+  </data>
+  <data name="Relays.PowerOn.Hint" xml:space="preserve">
+    <value>What the board does with this relay by itself when the power comes back, before Contactor runs.</value>
+  </data>
+  <data name="Relays.PowerOn.InGroup" xml:space="preserve">
+    <value>This relay is in a group: set what it does after a power cut on the group's page.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContact" xml:space="preserve">
+    <value>No contact with the board, so what it does after a power cut wasn't changed. Try again when it answers.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContactNow" xml:space="preserve">
+    <value>No contact with the board, so this can't be changed now.</value>
+  </data>
+  <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
+    <value>The board didn't take the change. Try again.</value>
+  </data>
+  <data name="Relays.PowerOn.State.AsBefore" xml:space="preserve">
+    <value>As before</value>
+  </data>
+  <data name="Relays.PowerOn.State.FollowsInput" xml:space="preserve">
+    <value>Follows its switch</value>
+  </data>
+  <data name="Relays.PowerOn.State.Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Relays.PowerOn.State.On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Relays.PowerOn.Unknown" xml:space="preserve">
+    <value>Can't see yet what the board does with this relay after a power cut.</value>
+  </data>
+  <data name="Relays.PowerOn.WholeBoard" xml:space="preserve">
+    <value>This applies to every relay on the board.</value>
   </data>
   <data name="Relays.Save.NameTooLong" xml:space="preserve">
     <value>The name can be at most {0} characters.</value>

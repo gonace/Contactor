@@ -10,6 +10,7 @@ public static class RelaysServiceCollectionExtensions
         services.AddSingleton<RelayChanges>();
         services.AddSingleton<RelayControl>();
         services.AddSingleton<RelaySettingsHandler>();
+        services.AddSingleton<RelayPowerOnHandler>();
         // The texts these use; registered with the languages too, and once is enough.
         services.AddLocalization();
         services.AddSingleton<RelayStatusText>();
