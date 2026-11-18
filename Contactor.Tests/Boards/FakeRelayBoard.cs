@@ -373,8 +373,17 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     private readonly List<(int Relay, PowerOnState State)> _powerOnWrites = [];
 
-    /// <summary>When set, the board answers but doesn't take a state after a power cut, as a real board says so.</summary>
+    /// <summary>
+    /// When set, the board doesn't take a state after a power cut, and the write throws
+    /// <see cref="BoardNotConnectedException"/>, as a board that didn't take it or didn't answer does.
+    /// </summary>
     public bool RefusePowerOn { get; set; }
+
+    /// <summary>
+    /// When set, the board takes a state after a power cut and reports it, but the write throws
+    /// <see cref="BoardNotConnectedException"/> all the same, as a board whose answer was lost does.
+    /// </summary>
+    public bool LoseAnswerToPowerOn { get; set; }
 
     /// <summary>Each state after a power cut the board took, in order.</summary>
     public IReadOnlyList<(int Relay, PowerOnState State)> PowerOnWrites
@@ -430,6 +439,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
         }
 
         SetPowerOn(states);
+        if (LoseAnswerToPowerOn)
+        {
+            throw new BoardNotConnectedException("The board's answer was lost.");
+        }
+
         return Task.CompletedTask;
     }
 

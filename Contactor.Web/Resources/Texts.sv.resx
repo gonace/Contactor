@@ -948,7 +948,7 @@
     <value>{0} ställde in att reläet följer sin brytare efter ett strömavbrott</value>
   </data>
   <data name="Events.PowerOn.Off" xml:space="preserve">
-    <value>{0} ställde in att reläet förblir av efter ett strömavbrott</value>
+    <value>{0} ställde in att reläet förblir avstängt efter ett strömavbrott</value>
   </data>
   <data name="Events.PowerOn.On" xml:space="preserve">
     <value>{0} ställde in att reläet slås på efter ett strömavbrott</value>
@@ -2067,13 +2067,16 @@
     <value>Reläet ingår i en grupp: ställ in vad det gör efter ett strömavbrott på gruppens sida.</value>
   </data>
   <data name="Relays.PowerOn.NoContact" xml:space="preserve">
-    <value>Ingen kontakt med kortet, så det ändrades inte vad det gör efter ett strömavbrott. Försök igen när det svarar.</value>
+    <value>Ingen kontakt med kortet, så det som reläet gör efter ett strömavbrott ändrades inte. Försök igen när kortet svarar.</value>
   </data>
   <data name="Relays.PowerOn.NoContactNow" xml:space="preserve">
     <value>Ingen kontakt med kortet, så det går inte att ändra nu.</value>
   </data>
   <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
     <value>Kortet tog inte emot ändringen. Försök igen.</value>
+  </data>
+  <data name="Relays.PowerOn.SeeAbove" xml:space="preserve">
+    <value>Resten sparades. Se "Efter ett strömavbrott".</value>
   </data>
   <data name="Relays.PowerOn.State.AsBefore" xml:space="preserve">
     <value>Som innan</value>
@@ -2087,11 +2090,14 @@
   <data name="Relays.PowerOn.State.On" xml:space="preserve">
     <value>På</value>
   </data>
+  <data name="Relays.PowerOn.Unconfirmed" xml:space="preserve">
+    <value>Contactor kunde inte bekräfta ändringen. Kontrollera den här när kortet svarar.</value>
+  </data>
   <data name="Relays.PowerOn.Unknown" xml:space="preserve">
-    <value>Kan inte se ännu vad kortet gör med reläet efter ett strömavbrott.</value>
+    <value>Kan inte se än vad kortet gör med reläet efter ett strömavbrott.</value>
   </data>
   <data name="Relays.PowerOn.WholeBoard" xml:space="preserve">
-    <value>Det gäller alla relän på kortet.</value>
+    <value>Det gäller alla reläer på kortet.</value>
   </data>
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} Se Inställningar.</value>

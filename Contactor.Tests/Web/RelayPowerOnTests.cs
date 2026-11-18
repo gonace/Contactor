@@ -193,7 +193,11 @@ public sealed class RelayPowerOnTests
         await page.SubmitAsync(PageRenderer.With("id", "relay-form"));
 
         Assert.Empty(page.Errors);
-        Assert.Contains("No contact with the board, so what it does after a power cut wasn't changed. Try again when it answers.", await page.TextAsync(), StringComparison.Ordinal);
+        var text = await page.TextAsync();
+        Assert.Contains("No contact with the board, so what the relay does after a power cut wasn't changed. Try again when it answers.", text, StringComparison.Ordinal);
+
+        // Next to Save too, which may be far from the field.
+        Assert.Contains("The rest was saved. See \"After a power cut\".", text, StringComparison.Ordinal);
         Assert.Empty(board.PowerOnWrites);
         Assert.Empty(await PowerOnEventsAsync(app));
         await using var db = await Factory(app).CreateDbContextAsync(Cancel);
@@ -201,7 +205,7 @@ public sealed class RelayPowerOnTests
     }
 
     [Fact]
-    public async Task Should_SayTheBoardDidntTakeIt_AndLogNothing()
+    public async Task Should_SayItCouldntConfirm_WhenTheBoardDidntTakeIt_AndLogNothing()
     {
         var board = Board();
         board.RefusePowerOn = true;
@@ -212,7 +216,9 @@ public sealed class RelayPowerOnTests
         await page.SubmitAsync(PageRenderer.With("id", "relay-form"));
 
         Assert.Empty(page.Errors);
-        Assert.Contains("The board didn't take the change. Try again.", await page.TextAsync(), StringComparison.Ordinal);
+        var text = await page.TextAsync();
+        Assert.Contains("Contactor couldn't confirm the change. Check it here once the board answers.", text, StringComparison.Ordinal);
+        Assert.Contains("The rest was saved. See \"After a power cut\".", text, StringComparison.Ordinal);
         Assert.Empty(await PowerOnEventsAsync(app));
 
         // Save again once the board takes it: the choice was kept.
@@ -222,6 +228,83 @@ public sealed class RelayPowerOnTests
         Assert.IsType<NavigationException>(Assert.Single(page.Errors));
         Assert.Equal([(3, PowerOnState.Off)], board.PowerOnWrites);
         Assert.Single(await PowerOnEventsAsync(app));
+    }
+
+    // The board took it, but its answer was lost: its state shows it, so it is logged and the page goes on as saved.
+    [Fact]
+    public async Task Should_LogTheChange_WhenTheBoardShowsIt_ThoughItsAnswerWasLost()
+    {
+        var board = Board();
+        board.LoseAnswerToPowerOn = true;
+        await using var app = App(board);
+        using (var page = await OpenAsync(app))
+        {
+            await page.ClickAsync(PageRenderer.With("value", "Off"));
+            await page.SubmitAsync(PageRenderer.With("id", "relay-form"));
+
+            Assert.IsType<NavigationException>(Assert.Single(page.Errors));
+        }
+
+        var logged = Assert.Single(await PowerOnEventsAsync(app));
+        Assert.Equal((John, 3, """{"from":"on","to":"off"}"""), (logged.Actor, logged.RelayId, logged.Details));
+    }
+
+    // A write the board didn't answer, which its state shows later: logged with the person then, once. Not after
+    // ConfirmFor, nor for another state, nor once a new write took its place.
+    [Fact]
+    public async Task Should_LogAnUnconfirmedChange_WhenTheBoardsStateShowsItLater()
+    {
+        var board = Board();
+        board.RefusePowerOn = true;
+        var time = new FixedTimeProvider(new DateTimeOffset(2026, 11, 18, 12, 0, 0, TimeSpan.Zero));
+        await using var app = App(board, time);
+        var handler = app.Services.GetRequiredService<RelayPowerOnHandler>();
+
+        Assert.Equal("Contactor couldn't confirm the change. Check it here once the board answers.", await handler.SetAsync(3, PowerOnState.Off, John, Cancel));
+        Assert.Equal("Contactor couldn't confirm the change. Check it here once the board answers.", await handler.SetAsync(5, PowerOnState.On, John, Cancel));
+        board.SetPowerOn(States(relay3: PowerOnState.AsBefore, relay5: PowerOnState.Off));
+        Assert.Empty(await PowerOnEventsAsync(app));
+
+        board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.Off));
+        board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.Off));
+        await Wait.UntilAsync(() => PowerOnEventsAsync(app).GetAwaiter().GetResult().Count > 0);
+        time.Now += RelayPowerOnHandler.ConfirmFor;
+        board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.On));
+
+        // A later write that lands, so the one before has had its turn.
+        board.RefusePowerOn = false;
+        Assert.Null(await handler.SetAsync(4, PowerOnState.On, John, Cancel));
+        var events = await PowerOnEventsAsync(app);
+        Assert.Equal([(3, """{"from":"on","to":"off"}"""), (4, """{"from":"off","to":"on"}""")], events.OrderBy(e => e.Id).Select(e => (e.RelayId!.Value, e.Details)));
+    }
+
+    // The board took it, and only the event couldn't be saved: the page goes on as saved, the board has the state.
+    [Fact]
+    public async Task Should_GoOnAsSaved_WhenTheEventCouldntBeSaved()
+    {
+        var board = Board();
+        var failing = new FailingQueries();
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
+            services =>
+            {
+                TestWebApp.WithBoard(board)(services);
+                failing.AddTo(services);
+            });
+        using var page = await OpenAsync(app);
+        await page.ClickAsync(PageRenderer.With("value", "Off"));
+        var inserts = 0;
+        failing.Fail(
+            sql => sql.Contains("INSERT INTO \"EventLog\"", StringComparison.Ordinal) && Interlocked.Increment(ref inserts) == 1,
+            () => new InvalidOperationException("The disk is full."));
+
+        await page.SubmitAsync(PageRenderer.With("id", "relay-form"));
+
+        Assert.Equal(1, failing.Failures);
+        Assert.IsType<NavigationException>(Assert.Single(page.Errors));
+        Assert.Equal(PowerOnState.Off, board.State.PowerOn?.For(3));
+        Assert.Empty(await PowerOnEventsAsync(app));
     }
 
     // A choice made on one relay's page isn't carried to another relay's when the page opens that one.
@@ -278,7 +361,7 @@ public sealed class RelayPowerOnTests
     }
 
     [Theory]
-    [InlineData("""{"to":"off"}""", "Erik ställde in att reläet förblir av efter ett strömavbrott")]
+    [InlineData("""{"to":"off"}""", "Erik ställde in att reläet förblir avstängt efter ett strömavbrott")]
     [InlineData("""{"to":"as-before"}""", "Erik ställde in att reläet blir som innan efter ett strömavbrott")]
     [InlineData("""{"to":"on"}""", "Erik ställde in att reläet slås på efter ett strömavbrott")]
     [InlineData("""{"to":"follows-input"}""", "Erik ställde in att reläet följer sin brytare efter ett strömavbrott")]
@@ -335,9 +418,19 @@ public sealed class RelayPowerOnTests
         return new PowerOnStates(states);
     }
 
-    private static TestWebApp App(FakeRelayBoard board)
+    private static TestWebApp App(FakeRelayBoard board, TimeProvider? time = null)
     {
-        return new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John }, TestWebApp.WithBoard(board));
+        return new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
+            services =>
+            {
+                TestWebApp.WithBoard(board)(services);
+                if (time is not null)
+                {
+                    services.AddSingleton(time);
+                }
+            });
     }
 
     private static Task<PageRenderer> OpenAsync(TestWebApp app)

@@ -2281,13 +2281,16 @@
     <value>This relay is in a group: set what it does after a power cut on the group's page.</value>
   </data>
   <data name="Relays.PowerOn.NoContact" xml:space="preserve">
-    <value>No contact with the board, so what it does after a power cut wasn't changed. Try again when it answers.</value>
+    <value>No contact with the board, so what the relay does after a power cut wasn't changed. Try again when it answers.</value>
   </data>
   <data name="Relays.PowerOn.NoContactNow" xml:space="preserve">
     <value>No contact with the board, so this can't be changed now.</value>
   </data>
   <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
     <value>The board didn't take the change. Try again.</value>
+  </data>
+  <data name="Relays.PowerOn.SeeAbove" xml:space="preserve">
+    <value>The rest was saved. See "After a power cut".</value>
   </data>
   <data name="Relays.PowerOn.State.AsBefore" xml:space="preserve">
     <value>As before</value>
@@ -2300,6 +2303,9 @@
   </data>
   <data name="Relays.PowerOn.State.On" xml:space="preserve">
     <value>On</value>
+  </data>
+  <data name="Relays.PowerOn.Unconfirmed" xml:space="preserve">
+    <value>Contactor couldn't confirm the change. Check it here once the board answers.</value>
   </data>
   <data name="Relays.PowerOn.Unknown" xml:space="preserve">
     <value>Can't see yet what the board does with this relay after a power cut.</value>

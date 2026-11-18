@@ -232,6 +232,11 @@
                 {
                     <p class="error" role="alert">@_saveError</p>
                 }
+                else if (_powerOnError is not null)
+                {
+                    @* The power-cut field may be off screen from Save: the message itself is under its buttons. *@
+                    <p class="error">@Texts["Relays.PowerOn.SeeAbove"]</p>
+                }
                 <button type="submit" disabled="@_busy">@Texts["Common.Save"]</button>
             </div>
         </form>
