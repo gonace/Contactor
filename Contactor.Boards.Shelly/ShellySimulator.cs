@@ -486,6 +486,13 @@ public sealed class ShellySimulator : ISimulatedBoard
             {
                 Interlocked.Increment(ref _deniedCount);
                 _failures.Enqueue(now);
+
+                // More than 40 all wait the same: a client that keeps guessing can't grow the queue without end.
+                while (_failures.Count > 100)
+                {
+                    _failures.Dequeue();
+                }
+
                 return Challenge(stale: false, current, "Wrong password", isError: true);
             }
 
