@@ -161,9 +161,11 @@
             var asked = OwnRules.ToAsk(rulesBoard.BoardId);
             @if (rulesBoard.Capabilities.OwnRulesOrCantTell.TurnsOff)
             {
-                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@OwnRulesWords.TurnOffAll(asked.Count)</button>
+                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@(asked.Count > 0 && asked.All(r => r.Kind == OwnRuleKind.InputLinkage) ? Texts["OwnRules.Reset"] : OwnRulesWords.TurnOffAll(asked.Count))</button>
             }
-            <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@OwnRulesWords.KeepAll(asked.Count)</button>
+            @* A relay the board controls by itself is never kept: with only such relays, the step is left as it is. *@
+            var keepable = asked.Count(r => OwnRulesHandler.CanKeep(r.Kind));
+            <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@(keepable > 0 ? OwnRulesWords.KeepAll(keepable) : Texts["OwnRules.Step.Later"])</button>
         }
         else if (_step < StepDone)
         {

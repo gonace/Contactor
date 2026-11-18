@@ -21,6 +21,16 @@ namespace Contactor.Web.Features.Boards;
 public sealed record BoardRemovalPreview(int BoardId, string Name, int Relays, int Groups, int Schedules, int InputActions, bool HasContact);
 
 /// <summary>
+/// A relay of a group that removing its board can't turn off: the interlock keeps it on while a relay below it, which the
+/// board controls by itself, is on (<see cref="GroupPlanner.HeldOn"/>).
+/// </summary>
+/// <param name="Channel">The relay kept on, by its channel.</param>
+/// <param name="Name">Its name.</param>
+/// <param name="ByChannel">The relay the board controls by itself that keeps it on.</param>
+/// <param name="ByName">That relay's name.</param>
+public sealed record KeptOnRelay(int Channel, string Name, int ByChannel, string ByName);
+
+/// <summary>
 /// Takes a board out of the app, on its page in Settings, one removal at a time. From the person's confirm the board is
 /// closed to every new ON (<see cref="LiveBoard.CloseAsync"/>): no tap, schedule, input action or group step can turn a relay
 /// on. A board that answers then has its relays turned off: "All off" for that board
@@ -102,6 +112,21 @@ public sealed partial class BoardRemoval : IDisposable
             await of.Schedules.CountAsync(cancellationToken),
             await of.InputActions.CountAsync(cancellationToken),
             _registry.Find(boardId)?.State.IsConnected == true);
+    }
+
+    /// <summary>
+    /// The relays of the board's groups that its removal can't turn off now (<see cref="KeptOnRelay"/>), in channel
+    /// order; none for a board the app doesn't run.
+    /// </summary>
+    public async Task<IReadOnlyList<KeptOnRelay>> KeptOnAsync(int boardId, CancellationToken cancellationToken)
+    {
+        if (_registry.Find(boardId) is not { } live)
+        {
+            return [];
+        }
+
+        var (_, kept) = await StoppingAsync(live, cancellationToken);
+        return kept;
     }
 
     /// <summary>
@@ -216,6 +241,7 @@ public sealed partial class BoardRemoval : IDisposable
     // "All off" for the board, its groups stopping in their order with their run-on times, until the board shows every
     // relay off and no group is stopping. The board is closed meanwhile, so nothing but a stop's run-on turns one on
     // again; a relay that is on again all the same gets "All off" once more, which logs no "Off": only the first does.
+    // A relay the board controls by itself (BoardState.Unavailable) is left as it is: no OFF reaches it.
     // A group still running on when the wait ends, or whose run-on ends after it, stops the removal. Returns why not,
     // and whether that was a lost contact.
     private async Task<(string? Error, bool Lost)> TurnOffAsync(LiveBoard live, string name, string userEmail, CancellationToken cancellationToken)
@@ -226,13 +252,18 @@ public sealed partial class BoardRemoval : IDisposable
             var all = live.Capabilities.AllRelays;
             await _control.TurnAllOffAsync(boardId, userEmail, cancellationToken);
             var deadline = _clock.UtcNow + OffWait;
+            var kept = ChannelMask.None;
             while (true)
             {
                 // Under the board's group lock: no group step is half done (a trip's OFF sent, its run-on's ON not yet).
-                var (state, stopping) = await _groups.ExclusiveAsync(
+                var (state, (stopping, keptOn)) = await _groups.ExclusiveAsync(
                     boardId,
                     async () => (live.State, await StoppingAsync(live, cancellationToken)),
                     cancellationToken);
+
+                // What it can't turn off: a relay the board controls by itself, and what the interlock keeps on above one
+                // that is on (the fan while the heater is). Both stay as they are, as the confirmation said.
+                kept = state.Unavailable | ChannelMask.Of(keptOn.Select(k => k.Channel));
                 var now = _clock.UtcNow;
                 if (!state.IsConnected)
                 {
@@ -245,7 +276,7 @@ public sealed partial class BoardRemoval : IDisposable
                     return (_texts["Boards.Remove.RunsOn", runOn.Name, _clock.ToLocal(runOn.Off).ToString("HH:mm", CultureInfo.InvariantCulture), name], false);
                 }
 
-                if (stopping.Count == 0 && (state.Relays & all).IsEmpty)
+                if (stopping.Count == 0 && (state.Relays & all).Except(kept).IsEmpty)
                 {
                     return (null, false);
                 }
@@ -256,7 +287,7 @@ public sealed partial class BoardRemoval : IDisposable
                 }
 
                 await Task.Delay(OffCheck, _time, cancellationToken);
-                if (!(live.State.Relays & all).IsEmpty)
+                if (!(live.State.Relays & all).Except(live.State.Unavailable | kept).IsEmpty)
                 {
                     // Once more for what is still on, without logging it again: a group that is already stopping
                     // carries on as it was.
@@ -272,7 +303,9 @@ public sealed partial class BoardRemoval : IDisposable
 
     // The board's groups that are stopping, each with when its last relay goes off: the run-on under way (or about to
     // start, a step the board hasn't confirmed yet) and every run-on above it, each counted from the one below.
-    private async Task<List<Stopping>> StoppingAsync(LiveBoard live, CancellationToken cancellationToken)
+    // A group whose stop waits for a relay the board controls by itself (GroupPlanner.HeldOn) isn't counted: it can't
+    // finish while that relay is on, and its relays that stay on are returned as kept on.
+    private async Task<(List<Stopping> Stopping, List<KeptOnRelay> KeptOn)> StoppingAsync(LiveBoard live, CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var groups = await db.RelayGroups.AsNoTracking()
@@ -286,14 +319,17 @@ public sealed partial class BoardRemoval : IDisposable
         var now = _clock.UtcNow;
         var state = live.State;
         List<Stopping> stopping = [];
+        List<KeptOnRelay> keptOn = [];
         foreach (var group in groups)
         {
-            if (!runtimes.TryGetValue(group.Id, out var runtime))
+            var steps = GroupSteps.Of(group);
+            var held = GroupPlanner.HeldOn(steps, state);
+            var by = held.IsEmpty ? default : held.By[0].Relay;
+            keptOn.AddRange(held.Kept.Select(k => new KeptOnRelay(k.Relay.Channel, k.Relay.Name, by!.Channel, by.Name)));
+            if (!runtimes.TryGetValue(group.Id, out var runtime) || !held.IsEmpty)
             {
                 continue;
             }
-
-            var steps = GroupSteps.Of(group);
 
             // The lowest step that is, or is about to be, on (a step partly on, below the steps all on, counts): it runs
             // on next, then each one above it.
@@ -312,7 +348,7 @@ public sealed partial class BoardRemoval : IDisposable
             stopping.Add(new Stopping(group.Name, off));
         }
 
-        return stopping;
+        return (stopping, [.. keptOn.OrderBy(k => k.Channel)]);
     }
 
     private static DateTime Max(DateTime a, DateTime b)

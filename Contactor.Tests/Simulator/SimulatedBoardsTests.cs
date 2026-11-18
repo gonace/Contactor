@@ -290,6 +290,41 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => timers.SetTimerAsync(9, turnOn: true));
     }
 
+    // The Waveshare (B)'s relay modes, one relay at a time, as its own tool would set them; a relay in linkage mode then
+    // follows its input.
+    [Fact]
+    public async Task Should_SetTheWavesharesRelayModesOneRelayAtATime()
+    {
+        Assert.Null(_boards.Add("waveshare-8b", FreePort(), null, null));
+        var board = _boards.Boards.Single();
+        var modes = (ISimulatedBoardRelayModes)board.Board;
+        Assert.Equal(["normal", "linkage", "toggle", "edge"], modes.ModeNames);
+
+        await board.SetModeAsync(3, 1);
+        await board.SetModeAsync(5, 2);
+
+        Assert.Equal([0, 0, 1, 0, 2, 0, 0, 0], modes.Modes);
+        Assert.Equal("Relay 5 set to toggle mode here", board.Traffic[0].Text);
+
+        // What the page never offers changes nothing.
+        var logged = board.Traffic.Count;
+        await board.SetModeAsync(0, 1);
+        await board.SetModeAsync(9, 1);
+        await board.SetModeAsync(2, 4);
+        await board.SetModeAsync(2, -1);
+        Assert.Equal([0, 0, 1, 0, 2, 0, 0, 0], modes.Modes);
+        Assert.Equal(logged, board.Traffic.Count);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => modes.SetModeAsync(2, 4));
+
+        // Linkage: the input switches the relay.
+        await board.SetInputAsync(3, closed: true);
+        Assert.True(board.Board.State.Relays.Contains(3));
+
+        // A model without inputs has no modes to set.
+        Assert.Null(_boards.Add("waveshare-8", FreePort(), null, null));
+        Assert.Empty(((ISimulatedBoardRelayModes)_boards.Boards.Single(b => b.Board.Model.Id == "waveshare-8").Board).Modes);
+    }
+
     [Fact]
     public async Task Should_SetTheVm204sAnalogInput_AndLogIt_OnlyWhenItChanges()
     {

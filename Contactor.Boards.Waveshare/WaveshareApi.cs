@@ -27,13 +27,13 @@ public static class WaveshareApi
     /// <summary>FC 05: switch one relay, <see cref="CoilOn"/> or <see cref="CoilOff"/>.</summary>
     public const byte WriteSingleCoil = 0x05;
 
-    /// <summary>FC 06: write one holding register. The simulator takes it; the app writes the modes with FC 10.</summary>
+    /// <summary>FC 06: write one holding register, here one relay's control mode back to normal on a person's press.</summary>
     public const byte WriteSingleRegister = 0x06;
 
     /// <summary>FC 0F: write several relays. The simulator doesn't take it; the app switches one relay at a time.</summary>
     public const byte WriteMultipleCoils = 0x0F;
 
-    /// <summary>FC 10: write several holding registers, here all relay control modes at once.</summary>
+    /// <summary>FC 10: write several holding registers. The simulator takes it, as the board does; the app never sends it.</summary>
     public const byte WriteMultipleRegisters = 0x10;
 
     /// <summary>Set in the function code of an answer that refuses the request; an exception code follows.</summary>

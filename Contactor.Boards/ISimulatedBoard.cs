@@ -81,3 +81,23 @@ public interface ISimulatedBoardTimers
     /// </summary>
     Task SetTimerAsync(int relay, bool turnOn);
 }
+
+/// <summary>
+/// A simulated board whose relays each have a control mode of the board's own, e.g. the Waveshare (B)'s linkage, which
+/// the app may set back to normal.
+/// </summary>
+public interface ISimulatedBoardRelayModes
+{
+    /// <summary>Each mode's name, by its number: index 0 is the normal mode.</summary>
+    IReadOnlyList<string> ModeNames { get; }
+
+    /// <summary>The mode of each relay that has one, relay 1 first.</summary>
+    IReadOnlyList<int> Modes { get; }
+
+    /// <summary>
+    /// Sets one relay's mode as the board's own tool or web page would, leaving the others as they are, and tells the
+    /// app if anything changed. Throws <see cref="ArgumentOutOfRangeException"/> for a relay without a mode or a mode it
+    /// doesn't have.
+    /// </summary>
+    Task SetModeAsync(int relay, int mode);
+}

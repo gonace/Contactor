@@ -19,7 +19,11 @@ public static class EventActions
     public const string InputChanged = "input-changed";
     /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardTimersDisabled = "board-timers-disabled";
+
+    /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardRelayModesReset = "board-relay-modes-reset";
+
+    /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardRelayModesNotReset = "board-relay-modes-not-reset";
 
     /// <summary>

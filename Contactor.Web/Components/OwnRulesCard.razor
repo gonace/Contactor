@@ -17,7 +17,7 @@
 @inject AppLanguage Language
 
 @* The board's own rules (issue #497), on the board's page and on Settings with one board: each rule the app found,
-   with "Turn off" and "Keep", or a line for a board that may have rules the app can't see. None for a board that has
+   with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself), or a line for a board that may have rules the app can't see. None for a board that has
    none. *@
 @if (Board is { } board && (_rows.Count > 0 || Ability(board).MayHaveUnseen))
 {
@@ -43,9 +43,11 @@
                         <span class="buttons">
                             @if (ability.TurnsOff)
                             {
-                                <button type="button" class="@(kept ? "secondary" : "primary")" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => TurnOffAsync(row)">@Texts["OwnRules.TurnOff"]</button>
+                                @* A relay the board controls by itself is reset; the app can't switch it until then. *@
+                                <button type="button" class="@(kept ? "secondary" : "primary")" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => TurnOffAsync(row)">@Texts[row.Kind == OwnRuleKind.InputLinkage ? "OwnRules.Reset" : "OwnRules.TurnOff"]</button>
                             }
-                            @if (!kept)
+                            @* Never "Keep" for a relay the board controls by itself: it stays unavailable until reset. *@
+                            @if (!kept && OwnRulesHandler.CanKeep(row.Kind))
                             {
                                 <button type="button" class="secondary" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => KeepAsync(row)">@Texts["OwnRules.Keep"]</button>
                             }

@@ -9,7 +9,8 @@ namespace Contactor.Web.Features.BoardRules;
 
 /// <summary>
 /// The words about a board's own rules on Relays, the board's page and Settings (issue #497). Each text is keyed by
-/// the rules' kind ("Timer"), with "Rule" for any other kind or a mix, so a board with other kinds only adds keys.
+/// the rules' kind: "Timer", "Linkage", "Toggle" or "Edge" when all are of that kind, "Input" for a mix of input kinds,
+/// and "Rule" for any other mix, so a board with other kinds only adds keys.
 /// </summary>
 public sealed class OwnRulesText
 {
@@ -107,6 +108,26 @@ public sealed class OwnRulesText
         };
     }
 
+    /// <summary>
+    /// What an unavailable relay's card says (<see cref="BoardState.Unavailable"/>): "The board controls this relay
+    /// itself: it follows input 3. Reset it to control it from here." Relay n follows input n.
+    /// </summary>
+    public string Unavailable(int channel)
+    {
+        return _texts["OwnRules.Unavailable.Relay", channel.ToString(CultureInfo.CurrentCulture)];
+    }
+
+    /// <summary>
+    /// The heading of a group's warning while its board controls some of its relays by itself: "Heat is unavailable to
+    /// Contactor", "Fan and Heat are unavailable to Contactor". Each name once, in the order given.
+    /// </summary>
+    public string GroupUnavailable(IEnumerable<string> roles)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        List<string> names = [.. roles.Distinct()];
+        return _texts["OwnRules.Unavailable.Group" + Plurals.Form(names.Count), _boards.And(names)];
+    }
+
     /// <summary>"relay 3", "relays 3 and 5", "relays 1, 3 and 5": each relay once, in order.</summary>
     public string Relays(IEnumerable<int> relays)
     {
@@ -114,9 +135,19 @@ public sealed class OwnRulesText
         return _texts[numbers.Count == 1 ? "OwnRules.Relay" : "OwnRules.Relays", _boards.And(numbers)];
     }
 
-    // The key's kind: "Timer" when every rule is a timer (or none is known), otherwise "Rule".
+    // The key's kind: "Timer", "Linkage", "Toggle" or "Edge" when every rule is of that kind ("Timer" when none is
+    // known), "Input" for a mix of input kinds, otherwise "Rule".
     private static string Kind(IEnumerable<OwnRuleKind> kinds)
     {
-        return kinds.All(k => k == OwnRuleKind.Timer) ? "Timer" : "Rule";
+        List<OwnRuleKind> distinct = [.. kinds.Distinct()];
+        return distinct switch
+        {
+            [] or [OwnRuleKind.Timer] => "Timer",
+            [OwnRuleKind.InputLinkage] => "Linkage",
+            [OwnRuleKind.InputToggle] => "Toggle",
+            [OwnRuleKind.InputEdge] => "Edge",
+            _ when distinct.All(k => k is OwnRuleKind.InputLinkage or OwnRuleKind.InputToggle or OwnRuleKind.InputEdge) => "Input",
+            _ => "Rule",
+        };
     }
 }

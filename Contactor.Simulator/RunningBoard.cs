@@ -143,6 +143,23 @@ public sealed class RunningBoard : IAsyncDisposable
         return timers.SetTimerAsync(relay, turnOn);
     }
 
+    /// <summary>
+    /// Sets one relay's control mode, as the board's own tool or web page would; the others stay as they are. Nothing
+    /// for a board without modes, or for a relay or mode it doesn't have: the page offers only those.
+    /// </summary>
+    public Task SetModeAsync(int relay, int mode)
+    {
+        if (Board is not ISimulatedBoardRelayModes modes || relay < 1 || relay > modes.Modes.Count || mode < 0 || mode >= modes.ModeNames.Count)
+        {
+            return Task.CompletedTask;
+        }
+
+        Add(TrafficKind.AtBoard, string.Create(
+            CultureInfo.InvariantCulture,
+            $"Relay {relay} set to {modes.ModeNames[mode]} mode here"));
+        return modes.SetModeAsync(relay, mode);
+    }
+
     public void DropConnections()
     {
         Add(TrafficKind.AtBoard, "Connections dropped here");

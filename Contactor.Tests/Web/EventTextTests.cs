@@ -206,8 +206,8 @@ public sealed class EventTextTests
     [InlineData("""{"kind":"timer","new":true,"relay":3}""", null, "The board's", "The board's own timer for relay 3 was turned on")]
     [InlineData("""{"kind":"timer","new":false,"relay":3}""", "Garage", "Garage", "Garage has its own timer for relay 3")]
     [InlineData("""{"kind":"timer","new":true,"relay":3}""", "Garage", "Garage's", "Garage's own timer for relay 3 was turned on")]
-    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "the board", "Relay 3 follows input 3 on the board")]
-    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Garage", "Relay 3 now follows input 3 on Garage")]
+    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "the board", "Relay 3 became unavailable: the board controls it itself")]
+    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Garage", "Relay 3 became unavailable: Garage controls it itself")]
     [InlineData("""{"kind":"input-toggle","new":false,"relay":2}""", null, "the board", "Input 2 switches relay 2 with each pulse on the board")]
     [InlineData("""{"kind":"input-toggle","new":true,"relay":2}""", null, "the board", "Input 2 now switches relay 2 with each pulse on the board")]
     [InlineData("""{"kind":"input-edge","new":false,"relay":4}""", null, "the board", "Input 4 switches relay 4 at each change on the board")]
@@ -227,8 +227,8 @@ public sealed class EventTextTests
     [InlineData("""{"kind":"timer","new":true,"relay":3}""", null, "Kortets egna timer för relä 3 slogs på")]
     [InlineData("""{"kind":"timer","new":false,"relay":3}""", "Garage", "Garage har en egen timer för relä 3")]
     [InlineData("""{"kind":"timer","new":true,"relay":3}""", "Garage", "Garages egna timer för relä 3 slogs på")]
-    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "Relä 3 följer ingång 3 på kortet")]
-    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Relä 3 följer nu ingång 3 på Garage")]
+    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "Relä 3 blev otillgängligt: kortet styr det självt")]
+    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Relä 3 blev otillgängligt: Garage styr det självt")]
     public void Should_DescribeABoardsOwnRuleFound_InSwedish(string details, string? boardName, string text)
     {
         using var swedish = TestCulture.Language("sv");

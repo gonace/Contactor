@@ -15,17 +15,22 @@ namespace Contactor.Boards.Waveshare;
 /// connection from before that turns out broken (the board may close one it found idle) goes once more on a new one.
 /// Commands are never queued: without a connection they fail at once with <see cref="BoardNotConnectedException"/>, a
 /// poll under way gives way to them, and the board's state right after them is reported at once. Modbus has no login.
+/// On the (B) and (C) it also reads the relays' control modes (FC 03), at each connection and then every
+/// <see cref="ModesInterval"/>, and never writes them on its own: only <see cref="TurnOffModesAsync"/>, on a person's
+/// press, sets one relay at a time back to normal (FC 06).
 /// </summary>
 public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long a request may take before it counts as unanswered; also the limit to connect.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>How often the relays' control modes are read again on the (B) and (C), after the read at connecting.</summary>
+    public static readonly TimeSpan ModesInterval = TimeSpan.FromSeconds(60);
+
     // Bytes waiting before a request were sent unasked; more than this and the connection is opened afresh.
     private const int MaxSkippedBytes = 4096;
 
     private readonly BoardModel _model;
-    private readonly WaveshareOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<WaveshareClient> _logger;
     private readonly BoardPoller<WaveshareStatus> _poller;
@@ -41,9 +46,10 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     // Set by Dispose: no connection is opened after it, also by a request still under way.
     private int _disposed;
 
-    // True while a new connection's relay modes are put back to normal: its requests don't go once more on yet another
-    // connection.
-    private bool _checking;
+    // The relays' control modes as last read, and when; the time is null before the first read on the connection open
+    // now. Only under the poller's lock (a connect, a poll or a command).
+    private IReadOnlyList<ushort>? _modes;
+    private DateTimeOffset? _modesReadUtc;
 
     public WaveshareClient(IOptions<WaveshareOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<WaveshareClient> logger)
     {
@@ -63,11 +69,10 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
 
         _model = model;
-        _options = settings;
         _endpoint = new BoardEndpoint(settings.Host, settings.Port);
         _timeProvider = timeProvider;
         _logger = logger;
-        _poller = new BoardPoller<WaveshareStatus>(this, timeProvider)
+        _poller = new BoardPoller<WaveshareStatus>(this, timeProvider, WaveshareStatus.SwitchesComparer)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
         };
@@ -83,18 +88,10 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     public event EventHandler<BoardTraceEntry>? Traced;
 
     /// <summary>
-    /// Raised when connecting set every relay to normal mode (<see cref="WaveshareOptions.ResetRelayModes"/>): because
-    /// one wasn't, or because the modes couldn't be read. On the poller's loop, before the first poll: handlers must be
-    /// quick.
+    /// Raised when only the relays' control modes changed (<see cref="WaveshareState.Modes"/>), not the relays, the
+    /// inputs or the connection, which come as <see cref="StateChanged"/>. On the poller's loop: handlers must be quick.
     /// </summary>
-    public event EventHandler<WaveshareRelayModesReset>? RelayModesReset;
-
-    /// <summary>
-    /// Raised when connecting had to set the relays to normal mode and the board refused it, or its answer couldn't be
-    /// read: its inputs may switch relays past the app. At most once per connection, on the poller's loop: handlers must
-    /// be quick.
-    /// </summary>
-    public event EventHandler<WaveshareRelayModesNotReset>? RelayModesNotReset;
+    public event EventHandler<WaveshareState>? OwnRulesChanged;
 
     /// <summary>The model it talks to: how many relays and inputs to read.</summary>
     public BoardModel Model => _model;
@@ -162,6 +159,32 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         return CommandAsync(mask, relay => WaveshareModbus.FlashOn(WaveshareApi.UnitId, relay, length), cancellationToken);
     }
 
+    /// <summary>
+    /// Sets the control mode of the relays in <paramref name="mask"/> (bit 0 = relay 1) back to normal, as a person
+    /// asked: one FC 06 per relay, writing 0 to its own register, never the others'. Every relay in the mask is sent
+    /// for, also when the board refuses one, and the modes are read back in the same command, so the state after it
+    /// shows what the board did. Returns the relays the board took; throws as <see cref="TurnOnAsync"/> does when it
+    /// took none. Throws <see cref="NotSupportedException"/> on a model without modes, before anything is sent.
+    /// </summary>
+    public Task<ulong> TurnOffModesAsync(ulong mask, CancellationToken cancellationToken = default)
+    {
+        if (!WaveshareModels.HasRelayModes(_model))
+        {
+            throw new NotSupportedException($"The {_model.Name} has no relay control modes.");
+        }
+
+        if ((mask >> WaveshareApi.RelayModeCount) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(mask), mask, $"The {_model.Name} has relay modes for relays 1–{WaveshareApi.RelayModeCount} only.");
+        }
+
+        return CommandAsync(
+            mask,
+            relay => WaveshareModbus.WriteSingleRegister(WaveshareApi.UnitId, (ushort)(WaveshareApi.RelayModeRegister + relay - 1), WaveshareApi.ModeNormal),
+            cancellationToken,
+            readModes: true);
+    }
+
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
     public void Refresh()
     {
@@ -193,21 +216,12 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         Close();
     }
 
+    // Only opens the connection: the first poll reads the modes, as on any new connection. Nothing is written.
     async Task IPolledBoard<WaveshareStatus>.ConnectAsync(CancellationToken cancellationToken)
     {
+        _modes = null;
+        _modesReadUtc = null;
         await OpenAsync(cancellationToken).ConfigureAwait(false);
-        if (_options.ResetRelayModes && WaveshareModels.HasRelayModes(_model))
-        {
-            _checking = true;
-            try
-            {
-                await ResetRelayModesAsync(cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                _checking = false;
-            }
-        }
     }
 
     Task<WaveshareStatus> IPolledBoard<WaveshareStatus>.ReadAsync(CancellationToken cancellationToken)
@@ -247,6 +261,12 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
     }
 
+    // The comparer leaves out only the modes: that is what changed.
+    void IPolledBoard<WaveshareStatus>.OnReadingChanged(PolledState<WaveshareStatus> state)
+    {
+        Raise(OwnRulesChanged, new WaveshareState(state.IsConnected, state.Reading, state.LastContactUtc));
+    }
+
     void IPolledBoard<WaveshareStatus>.OnStep(BoardPollStep kind, string? detail)
     {
         switch (kind)
@@ -273,8 +293,9 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
     }
 
-    // Sends request(relay) for every relay in the mask: an ON, an OFF or a pulse.
-    private async Task<ulong> CommandAsync(ulong mask, Func<int, WaveshareRequest> request, CancellationToken cancellationToken)
+    // Sends request(relay) for every relay in the mask: an ON, an OFF, a pulse or a mode back to normal (readModes: the
+    // read after it reads the modes too).
+    private async Task<ulong> CommandAsync(ulong mask, Func<int, WaveshareRequest> request, CancellationToken cancellationToken, bool readModes = false)
     {
         if (!_model.Capabilities.AllRelays.ContainsAll(new ChannelMask(mask)))
         {
@@ -297,7 +318,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         try
         {
             var taken = new StrongBox<ulong>();
-            await _poller.RunSwitchesAsync(token => SwitchEachAsync(mask, request, taken, token), cancellationToken).ConfigureAwait(false);
+            await _poller.RunSwitchesAsync(token => SwitchEachAsync(mask, request, taken, readModes, token), cancellationToken).ConfigureAwait(false);
             return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
@@ -315,7 +336,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
     // Under the poller's lock. Returns the board's state read after the switches, which the poller takes as a poll's,
     // or none when that read failed, and puts the relays the board took in <paramref name="taken"/>.
-    private async Task<CommandReading<WaveshareStatus>> SwitchEachAsync(ulong mask, Func<int, WaveshareRequest> requestFor, StrongBox<ulong> taken, CancellationToken cancellationToken)
+    private async Task<CommandReading<WaveshareStatus>> SwitchEachAsync(ulong mask, Func<int, WaveshareRequest> requestFor, StrongBox<ulong> taken, bool readModes, CancellationToken cancellationToken)
     {
         string? refusal = null;
         var unreadable = false;
@@ -354,7 +375,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
         try
         {
-            return new CommandReading<WaveshareStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            return new CommandReading<WaveshareStatus>(await ReadStatusAsync(cancellationToken, readModes).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException || IsNoAnswer(ex))
         {
@@ -366,9 +387,20 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         }
     }
 
-    private async Task<WaveshareStatus> ReadStatusAsync(CancellationToken cancellationToken)
+    // The relays and inputs, and on the (B) and (C) the modes when due: at the first read on a connection, every
+    // ModesInterval after, and when readModes asks (after writing one).
+    private async Task<WaveshareStatus> ReadStatusAsync(CancellationToken cancellationToken, bool readModes = false)
     {
         var last = Volatile.Read(ref _lastTraced);
+
+        // The modes first, so a relay's state is read after its mode: a relay that just left linkage mode shows as it is.
+        if (WaveshareModels.HasRelayModes(_model)
+            && (readModes || _modesReadUtc is not { } readUtc || _timeProvider.GetUtcNow() - readUtc >= ModesInterval))
+        {
+            _modes = await ReadModesAsync(last?.Modes, cancellationToken).ConfigureAwait(false);
+            _modesReadUtc = _timeProvider.GetUtcNow();
+        }
+
         var relayCount = _model.Capabilities.RelayCount;
         var relayAnswer = await ExchangeAsync(WaveshareModbus.ReadCoils(WaveshareApi.UnitId, 0, (ushort)relayCount), routine: true, cancellationToken)
             .ConfigureAwait(false);
@@ -385,52 +417,36 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
             Trace(BoardTraceDirection.Received, WaveshareTraceText.Inputs(inputs, inputCount), WaveshareModbus.Hex(inputAnswer), isRoutine: last?.Inputs == inputs);
         }
 
-        var status = new WaveshareStatus(relays, inputs);
+        var status = new WaveshareStatus(relays, inputs, _modes);
         Volatile.Write(ref _lastTraced, status);
         return status;
     }
 
-    // The relays' control modes, on every connection of a (B) or (C): read first; all normal, nothing is written.
-    // Otherwise, or when the read is refused or unreadable, all eight are written to normal. A write that is refused or
-    // unreadable too is reported (RelayModesNotReset): the board still works, but its inputs may switch relays past the
-    // app. No answer to either fails the connection, which the poller tries again.
-    private async Task ResetRelayModesAsync(CancellationToken cancellationToken)
+    // The 8 mode registers, read with one FC 03; never written here. A read the board refuses, or whose answer can't be
+    // read or holds a mode the manual doesn't name, gives null: unknown, never a guess. No answer at all is thrown, and
+    // fails the poll as any other read's would.
+    private async Task<IReadOnlyList<ushort>?> ReadModesAsync(IReadOnlyList<ushort>? last, CancellationToken cancellationToken)
     {
-        ushort[]? modes = null;
         try
         {
             var read = WaveshareModbus.ReadHoldingRegisters(WaveshareApi.UnitId, WaveshareApi.RelayModeRegister, WaveshareApi.RelayModeCount);
-            var answer = await ExchangeAsync(read, routine: false, cancellationToken).ConfigureAwait(false);
-            modes = WaveshareModbus.Registers(answer);
-            Trace(BoardTraceDirection.Received, WaveshareTraceText.Modes(modes), WaveshareModbus.Hex(answer));
-            if (modes.All(m => m == WaveshareApi.ModeNormal))
+            var answer = await ExchangeAsync(read, routine: true, cancellationToken).ConfigureAwait(false);
+            var modes = WaveshareModbus.Registers(answer);
+            if (modes.Length != WaveshareApi.RelayModeCount || modes.Any(m => m > WaveshareApi.ModeEdge))
             {
-                return;
+                Trace(BoardTraceDirection.Received, $"Relay modes the app doesn't know: {string.Join(",", modes)}", WaveshareModbus.Hex(answer), isError: true);
+                return null;
             }
+
+            var unchanged = last is not null && last.SequenceEqual(modes);
+            Trace(BoardTraceDirection.Received, WaveshareTraceText.Modes(modes), WaveshareModbus.Hex(answer), isRoutine: unchanged);
+            return modes;
         }
         catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException)
         {
-            // Unknown modes may be anything: written to normal all the same.
             Trace(BoardTraceDirection.None, $"Couldn't read the relay modes: {ex.Message}", isError: true);
+            return null;
         }
-
-        try
-        {
-            var write = WaveshareModbus.WriteMultipleRegisters(WaveshareApi.UnitId, WaveshareApi.RelayModeRegister, new ushort[WaveshareApi.RelayModeCount]);
-            var echo = await ExchangeAsync(write, routine: false, cancellationToken).ConfigureAwait(false);
-            Trace(BoardTraceDirection.Received, WaveshareTraceText.Confirmed(echo), WaveshareModbus.Hex(echo));
-        }
-        catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException)
-        {
-            _logger.RelayModesNotReset(ex.Message);
-            Trace(BoardTraceDirection.None, $"Couldn't set the relays to normal mode: {ex.Message}", isError: true);
-            Raise(RelayModesNotReset, new WaveshareRelayModesNotReset(ex.Message, Endpoint));
-            return;
-        }
-
-        var found = modes is null ? "unknown" : string.Join(",", modes);
-        _logger.RelayModesReset(found);
-        Raise(RelayModesReset, new WaveshareRelayModesReset(modes, Endpoint));
     }
 
     // A request that got no answer at all: it counts as a failed poll, whether a poll or a command sent it.
@@ -445,12 +461,12 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     /// the connection when the answer doesn't come or can't be read. When the connection was open from before (not one
     /// opened while connecting) and turns out broken (the board may close one it found idle) before any of the answer
     /// came, the request goes once more on a new connection: every request the client sends does the same when done
-    /// twice (reading, switching one relay, starting its pulse again, writing the relay modes to normal).
+    /// twice (reading, switching one relay, starting its pulse again, writing one relay's mode to normal).
     /// </summary>
     private async Task<byte[]> ExchangeAsync(WaveshareRequest request, bool routine, CancellationToken cancellationToken)
     {
-        // Not one just opened while connecting: that one goes nowhere else.
-        var reused = _stream is not null && !_checking;
+        // A connection open before this request (the board may have closed it): a broken one gets the request once more.
+        var reused = _stream is not null;
         try
         {
             // None after an earlier request closed it (no answer, or an unreadable one).
@@ -551,6 +567,9 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
 
         _stream = tcp.GetStream();
         Interlocked.Exchange(ref _tcp, tcp);
+
+        // Each new connection reads the modes afresh with its next status: the board may have been changed meanwhile.
+        _modesReadUtc = null;
 
         // Disposed while connecting: Dispose's Close may have come before the connection was kept.
         if (Volatile.Read(ref _disposed) == 1)

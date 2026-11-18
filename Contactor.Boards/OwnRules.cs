@@ -20,6 +20,7 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         }
 
         Relays = ChannelMask.Of(_rules.Select(r => r.Relay));
+        Unavailable = ChannelMask.Of(_rules.Where(r => r.Kind == OwnRuleKind.InputLinkage).Select(r => r.Relay));
     }
 
     /// <summary>A board that has none.</summary>
@@ -31,6 +32,12 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
 
     /// <summary>The relays any of the rules switches.</summary>
     public ChannelMask Relays { get; }
+
+    /// <summary>
+    /// The relays the board controls by itself and ignores the app's commands for (<see cref="OwnRuleKind.InputLinkage"/>):
+    /// the app doesn't switch them until a person resets them.
+    /// </summary>
+    public ChannelMask Unavailable { get; }
 
     /// <summary>The rules that switch <paramref name="relay"/>, 1 being the first; none for a relay it doesn't have.</summary>
     public IReadOnlyList<OwnRule> For(int relay)

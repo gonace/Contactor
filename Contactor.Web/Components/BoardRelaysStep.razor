@@ -138,6 +138,10 @@
         {
             relay.Error = Texts["Relays.InGroup"];
         }
+        catch (RelayUnavailableException)
+        {
+            relay.Error = Texts["OwnRules.Unavailable.Refused"];
+        }
         catch (Exception ex)
         {
             Log.LogError(ex, "\"Try\" failed for relay {RelayId}", relay.Id);

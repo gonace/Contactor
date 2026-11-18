@@ -23,7 +23,7 @@ public sealed class WaveshareBoardTests
 
         Assert.Equal(name, model.Name);
         var pulse = new PulseAbility(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(3_276_700), TimeSpan.FromMilliseconds(100));
-        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: pulse, OwnRules: inputs > 0 ? OwnRulesAbility.CantTell : OwnRulesAbility.None), model.Capabilities);
+        Assert.Equal(new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: pulse, OwnRules: inputs > 0 ? OwnRulesAbility.ReadsAndTurnsOff : OwnRulesAbility.None), model.Capabilities);
         Assert.Equal(4196, model.DefaultPort);
         Assert.False(model.HasLogin);
         Assert.Equal(inputs > 0, WaveshareModels.HasRelayModes(model));
@@ -38,6 +38,71 @@ public sealed class WaveshareBoardTests
 
         Assert.Equal(new BoardState(true, ChannelMask.Of(30), ChannelMask.Of([1, 8]), at), state);
         Assert.Equal(BoardState.Initial, WaveshareBoard.ToBoardState(WaveshareState.Initial));
+    }
+
+    // Relay n's mode is tied to input n: mode 1 linkage, 2 toggle, 3 edge; 0 (normal) is no rule.
+    [Fact]
+    public void Should_MapTheModes_ToOwnRules()
+    {
+        var at = new DateTimeOffset(2026, 11, 13, 9, 0, 0, TimeSpan.Zero);
+
+        var state = WaveshareBoard.ToBoardState(new WaveshareState(true, new WaveshareStatus(0, 0, [0, 1, 2, 3, 0, 0, 0, 1]), at));
+
+        Assert.Equal(
+            new OwnRules([new(2, OwnRuleKind.InputLinkage), new(3, OwnRuleKind.InputToggle), new(4, OwnRuleKind.InputEdge), new(8, OwnRuleKind.InputLinkage)]),
+            state.OwnRules);
+        Assert.Equal(ChannelMask.Of([2, 8]), state.Unavailable);
+        Assert.Same(OwnRules.Empty, WaveshareBoard.ToBoardState(new WaveshareState(true, new WaveshareStatus(0, 0, new ushort[8]), at)).OwnRules);
+
+        // Not known: no rules at all, never a guess.
+        Assert.Null(WaveshareBoard.ToBoardState(new WaveshareState(true, new WaveshareStatus(0, 0), at)).OwnRules);
+        Assert.Equal(ChannelMask.None, WaveshareBoard.ToBoardState(new WaveshareState(true, new WaveshareStatus(0, 0), at)).Unavailable);
+    }
+
+    [Fact]
+    public async Task Should_TurnOffOnlyTheModesAsked_AndReturnTheRulesTheBoardTook()
+    {
+        await using var simulator = new WaveshareSimulator(WaveshareModels.Relay8B);
+        simulator.Start();
+        await simulator.SetRelayModeAsync(2, WaveshareApi.ModeLinkage);
+        await simulator.SetRelayModeAsync(3, WaveshareApi.ModeEdge);
+        using var client = new WaveshareClient(
+            Options.Create(new WaveshareOptions { Host = "127.0.0.1", Port = simulator.Port }),
+            WaveshareModels.Relay8B,
+            new ManualTimeProvider(),
+            NullLogger<WaveshareClient>.Instance);
+        var board = new WaveshareBoard(client, NullLogger<WaveshareBoard>.Instance);
+        List<BoardState> ownRules = [];
+        board.OwnRulesChanged += (_, s) => ownRules.Add(s);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => board.State.IsConnected);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.Timer)], Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOffOwnRulesAsync([new OwnRule(9, OwnRuleKind.InputEdge)], Cancel));
+        Assert.Empty(await board.TurnOffOwnRulesAsync([], Cancel));
+        var taken = await board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.InputLinkage), new OwnRule(2, OwnRuleKind.InputLinkage)], Cancel);
+
+        Assert.Equal([new OwnRule(2, OwnRuleKind.InputLinkage)], taken);
+        Assert.Equal(new ushort[] { 0, 0, 3, 0, 0, 0, 0, 0 }, simulator.RelayModes);
+        Assert.Equal(new OwnRules([new(3, OwnRuleKind.InputEdge)]), board.State.OwnRules);
+        Assert.Equal(new OwnRules([new(3, OwnRuleKind.InputEdge)]), Assert.Single(ownRules).OwnRules);
+        await stop.CancelAsync();
+        await run.WaitAsync(Cancel);
+    }
+
+    [Fact]
+    public async Task Should_SayTheModelsWithoutModes_CantTurnOwnRulesOff()
+    {
+        using var client = new WaveshareClient(
+            Options.Create(new WaveshareOptions { Host = "127.0.0.1" }),
+            WaveshareModels.Relay8,
+            new ManualTimeProvider(),
+            NullLogger<WaveshareClient>.Instance);
+        var board = new WaveshareBoard(client, NullLogger<WaveshareBoard>.Instance);
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => board.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.InputLinkage)], Cancel));
+        Assert.Null(board.State.OwnRules);
     }
 
     [Fact]

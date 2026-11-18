@@ -98,6 +98,13 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
             {
                 failedAt = runtime.RelayId;
 
+                // A relay the board controls by itself ignores an OFF: nothing is sent or logged, and its run and auto-off
+                // stay, quietly, until a person resets it; then the auto-off that is due turns it off.
+                if (OnBoard(board, channels, runtime.RelayId) is { } ignored && state.Unavailable.Contains(ignored))
+                {
+                    continue;
+                }
+
                 // The board's state and the command go by the relay's channel; a relay the board doesn't have isn't on.
                 if (OnBoard(board, channels, runtime.RelayId) is { } channel && state.IsOn(channel))
                 {

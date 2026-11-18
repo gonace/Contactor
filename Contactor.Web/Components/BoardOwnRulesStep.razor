@@ -24,6 +24,10 @@
         <li @key="rule">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
             <span>@Texts["Relays.DefaultName", rule.Relay]</span>
+            @if (rule.Kind == OwnRuleKind.InputLinkage)
+            {
+                <span class="note">@Texts["OwnRules.Unavailable.Step"]</span>
+            }
         </li>
     }
 </ul>

@@ -2,6 +2,7 @@
 @implements IDisposable
 @using Contactor.Boards
 @using Microsoft.EntityFrameworkCore
+@using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Identity
@@ -23,6 +24,8 @@
 @inject RelayStatusText StatusText
 @inject AppLanguage Language
 @inject ILogger<RelayDetail> Log
+@inject OwnRulesHandler OwnRules
+@inject OwnRulesText OwnRulesText
 
 <PageTitle>@(Texts["Common.PageTitle", _relay?.Name ?? Texts["Common.Screen.Relay"].Value])</PageTitle>
 
@@ -66,6 +69,18 @@
                     <section class="in-group">
                         <p><Sentence Text="@Texts["Relays.Detail.InGroup"]"><Arg0><strong>@group.Name</strong></Arg0></Sentence></p>
                         <a href="group/@group.Id">@Texts["Relays.Detail.OpenGroup"]</a>
+                    </section>
+                }
+                else if (State.Unavailable.Contains(_channel))
+                {
+                    @* The board controls it by itself: no switch here, only "Reset". *@
+                    <section class="in-group unavailable">
+                        <p>@OwnRulesText.Unavailable(_channel)</p>
+                        <button type="button" class="reset" disabled="@(_busy || !State.IsConnected)" @onclick="ResetAsync">@Texts["OwnRules.Reset"]</button>
+                        @if (_resetError is not null)
+                        {
+                            <p class="error" role="alert">@_resetError</p>
+                        }
                     </section>
                 }
                 else
@@ -193,6 +208,36 @@
 
     private BoardState State => Board?.State ?? BoardState.Initial;
 
+    // "Reset" that went wrong.
+    private string? _resetError;
+
+    // "Reset": sets the relay the board controls by itself back to normal, as the person pressed, and logs it. Nothing
+    // is queued without a connection.
+    private async Task ResetAsync()
+    {
+        if (_user is null || _busy || Board is not { } board)
+        {
+            return;
+        }
+
+        _busy = true;
+        _resetError = null;
+        try
+        {
+            _resetError = await OwnRules.TurnOffAsync(board.BoardId, [new OwnRule(_channel, OwnRuleKind.InputLinkage)], _user.Email, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Resetting relay {RelayId} failed", Id);
+            _resetError = Texts["Common.SomethingWrongTryAgain"];
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
     private BoardCapabilities Capabilities => Board?.Capabilities ?? LiveBoard.NoBoard;
 
     private const int EventCount = 4;
@@ -260,12 +305,14 @@
     protected override void OnInitialized()
     {
         Registry.StateChanged += OnBoardChanged;
+        Registry.OwnRulesChanged += OnBoardChanged;
         Changes.Changed += OnRelaysChanged;
     }
 
     public void Dispose()
     {
         Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnBoardChanged;
         Changes.Changed -= OnRelaysChanged;
     }
 
@@ -351,6 +398,11 @@
             _toggleFailed = true;
             _inGroup = true;
             _beingRemoved = false;
+        }
+        catch (RelayUnavailableException)
+        {
+            // The board took it over meanwhile: the page shows it as unavailable, with "Reset".
+            _toggleFailed = false;
         }
         finally
         {

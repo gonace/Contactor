@@ -87,6 +87,21 @@ public sealed class WaveshareModbusTests
         Assert.Equal(request.Frame, await WaveshareModbus.ReadAnswerAsync(stream, request, Cancel));
     }
 
+    // The (B)/(C) wiki, §5.3.7 "Read Relay Control Mode" and §5.3.8 "Set Single Relay Control Mode", byte for byte.
+    [Fact]
+    public async Task Should_ReadAndWriteTheModes_AsTheWikisExamples()
+    {
+        var read = WaveshareModbus.ReadHoldingRegisters(1, WaveshareApi.RelayModeRegister, 8);
+        Assert.Equal("01 03 10 00 00 08 40 CC", WaveshareModbus.Hex(read.Frame));
+        var answer = await ReadAsync(read, "01 03 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 E4 59");
+        Assert.Equal(new ushort[8], WaveshareModbus.Registers(answer));
+
+        var linkage = WaveshareModbus.WriteSingleRegister(1, WaveshareApi.RelayModeRegister, WaveshareApi.ModeLinkage);
+        Assert.Equal("01 06 10 00 00 01 4C CA", WaveshareModbus.Hex(linkage.Frame));
+        Assert.Equal("01 06 10 00 00 01 4C CA", WaveshareModbus.Hex(await ReadAsync(linkage, "01 06 10 00 00 01 4C CA")));
+        Assert.Equal("01 06 10 01 00 02 5D 0B", WaveshareModbus.Hex(WaveshareModbus.WriteSingleRegister(1, WaveshareApi.RelayModeRegister + 1, WaveshareApi.ModeToggle).Frame));
+    }
+
     [Fact]
     public void Should_WriteAllEightModes_InOneFrame()
     {

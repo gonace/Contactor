@@ -28,6 +28,9 @@ public sealed class WaveshareTraceTextTests
         Assert.Equal("Set every relay to normal mode", WaveshareTraceText.Request(WaveshareModbus.WriteMultipleRegisters(1, 0x1000, new ushort[8]).Frame));
         Assert.Equal("Set the relay modes", WaveshareTraceText.Request(WaveshareModbus.WriteMultipleRegisters(1, 0x1000, [1, 0]).Frame));
         Assert.Equal("Set relay 2 to linkage mode", WaveshareTraceText.Request(WaveshareModbus.WithCrc([1, 6, 0x10, 0x01, 0, 1])));
+        Assert.Equal("Set relay 3 to normal mode", WaveshareTraceText.Request(WaveshareModbus.WriteSingleRegister(1, 0x1002, 0).Frame));
+        Assert.Equal("Relay 3 set to normal mode", WaveshareTraceText.Confirmed(WaveshareModbus.WriteSingleRegister(1, 0x1002, 0).Frame));
+        Assert.Equal("Relay modes written", WaveshareTraceText.Confirmed(WaveshareModbus.WithCrc([1, 0x10, 0x10, 0, 0, 8])));
     }
 
     [Theory]
