@@ -178,7 +178,7 @@
                         <div class="power-choices">
                             @foreach (var state in powerOn.States)
                             {
-                                <button type="button" value="@state" aria-pressed="@(ChosenPowerOn == state ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="() => ChoosePowerOn(state)">
+                                <button type="button" value="@state" aria-pressed="@(ChosenPowerOn == state ? "true" : "false")" disabled="@(!State.IsConnected || _busy || !PowerOnAllowed(state))" @onclick="() => ChoosePowerOn(state)">
                                     <span class="power-name">@PowerOnName(state)</span>
                                     <span class="power-explain">@PowerOnExplanation(state)</span>
                                 </button>
@@ -187,6 +187,10 @@
                         @if (!powerOn.PerRelay)
                         {
                             <p class="hint">@Texts["Relays.PowerOn.WholeBoard"]</p>
+                        }
+                        @if (_onlyOff is not null)
+                        {
+                            <p class="hint">@_onlyOff</p>
                         }
                         @if (!State.IsConnected)
                         {
@@ -332,9 +336,17 @@
         };
     }
 
+    // Why only "Off" is allowed: a board with one state for every relay, with relays in a group. Null otherwise.
+    private string? _onlyOff;
+
+    private bool PowerOnAllowed(PowerOnState state)
+    {
+        return _onlyOff is null || state == PowerOnState.Off;
+    }
+
     private void ChoosePowerOn(PowerOnState state)
     {
-        if (_busy || !State.IsConnected)
+        if (_busy || !State.IsConnected || !PowerOnAllowed(state))
         {
             return;
         }
@@ -460,6 +472,7 @@
         _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, relayId: Id)];
         _schedules = [.. await Schedules.ListAsync(Id, CancellationToken.None)];
         _outlook = (await Outlook.GetAsync(CancellationToken.None)).GetValueOrDefault(Id);
+        _onlyOff = BoardId is { } boardId ? await PowerOn.OnlyOffAsync(boardId, CancellationToken.None) : null;
     }
 
     // Who turned the relay on, for the status sentence: the viewer, a schedule, outside the app, or someone or an

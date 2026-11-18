@@ -307,6 +307,133 @@ public sealed class RelayPowerOnTests
         Assert.Empty(await PowerOnEventsAsync(app));
     }
 
+    // A board with one state for every relay, and relays of it in a group: only "Off" can be chosen and saved, since every
+    // step would come on together after a power cut.
+    [Fact]
+    public async Task Should_AllowOnlyOff_OnAWholeBoardBoard_WithAGroup()
+    {
+        var board = WholeBoard();
+        await using var app = App(board);
+        await AddGroupAsync(app, "Fan", "Heat");
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/5", Cancel));
+
+        Assert.Contains("Fan and Heat are in a group, so the board can only be set to Off after a power cut.", html, StringComparison.Ordinal);
+        Assert.DoesNotMatch("value=\"Off\"[^>]*disabled", html);
+        Assert.Matches("value=\"On\"[^>]*disabled", html);
+        Assert.Matches("value=\"AsBefore\"[^>]*disabled", html);
+        Assert.Matches("value=\"FollowsInput\"[^>]*disabled", html);
+
+        using (var page = await OpenAsync(app, 5))
+        {
+            // A press on a disabled choice changes nothing; "Off" is saved.
+            await page.ClickAsync(PageRenderer.With("value", "On"));
+            await page.SubmitAsync(PageRenderer.With("id", "relay-form"));
+            Assert.IsType<NavigationException>(Assert.Single(page.Errors));
+        }
+
+        Assert.Empty(board.PowerOnWrites);
+        using (var page = await OpenAsync(app, 5))
+        {
+            await page.ClickAsync(PageRenderer.With("value", "Off"));
+            await page.SubmitAsync(PageRenderer.With("id", "relay-form"));
+            Assert.IsType<NavigationException>(Assert.Single(page.Errors));
+        }
+
+        Assert.Equal([(5, PowerOnState.Off)], board.PowerOnWrites);
+        Assert.Single(await PowerOnEventsAsync(app));
+    }
+
+    [Fact]
+    public async Task Should_SayOnlyOffIsAllowed_InSwedish()
+    {
+        await using var app = App(WholeBoard());
+        await AddGroupAsync(app, "Fläkt", "Värme");
+        using var http = app.CreateClient();
+        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/5", Cancel));
+
+        Assert.Contains("Fläkt och Värme ingår i en grupp, så kortet kan bara ställas på Av efter ett strömavbrott.", html, StringComparison.Ordinal);
+    }
+
+    // Checked at Save too: a group made on the board while the page was open is caught, and nothing is sent.
+    [Theory]
+    [InlineData(PowerOnState.On)]
+    [InlineData(PowerOnState.AsBefore)]
+    [InlineData(PowerOnState.FollowsInput)]
+    public async Task Should_RefuseAnyStateButOff_OnAWholeBoardBoard_WithAGroup(PowerOnState state)
+    {
+        var board = WholeBoard();
+        board.SetPowerOn(new PowerOnStates(Enumerable.Repeat<PowerOnState?>(PowerOnState.Off, 8)));
+        await using var app = App(board);
+        using var page = await OpenAsync(app, 5);
+        await page.ClickAsync(PageRenderer.With("value", state.ToString()));
+        await AddGroupAsync(app, "Fan", "Heat");
+
+        await page.SubmitAsync(PageRenderer.With("id", "relay-form"));
+
+        Assert.Empty(page.Errors);
+        Assert.Contains("Fan and Heat are in a group, so the board can only be set to Off after a power cut.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(board.PowerOnWrites);
+        Assert.Equal(
+            "Fan and Heat are in a group, so the board can only be set to Off after a power cut.",
+            await app.Services.GetRequiredService<RelayPowerOnHandler>().SetAsync(5, state, John, Cancel));
+        Assert.Empty(board.PowerOnWrites);
+        Assert.Null(await app.Services.GetRequiredService<RelayPowerOnHandler>().SetAsync(5, PowerOnState.Off, John, Cancel));
+        Assert.Equal([(5, PowerOnState.Off)], board.PowerOnWrites);
+    }
+
+    // Without a group on the board every state is allowed; a board with a state per relay is never limited.
+    [Fact]
+    public async Task Should_AllowEveryState_WithoutAGroup_OrWithAStatePerRelay()
+    {
+        var whole = WholeBoard();
+        await using (var app = App(whole))
+        {
+            var handler = app.Services.GetRequiredService<RelayPowerOnHandler>();
+            Assert.Null(await handler.OnlyOffAsync(1, Cancel));
+            Assert.Null(await handler.SetAsync(5, PowerOnState.On, John, Cancel));
+            Assert.Equal([(5, PowerOnState.On)], whole.PowerOnWrites);
+        }
+
+        var perRelay = Board();
+        await using (var app = App(perRelay))
+        {
+            await AddGroupAsync(app, "Fan", "Heat");
+            var handler = app.Services.GetRequiredService<RelayPowerOnHandler>();
+            using var http = app.CreateClient();
+            var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/5", Cancel));
+
+            Assert.Null(await handler.OnlyOffAsync(1, Cancel));
+            Assert.DoesNotContain("can only be set to Off", html, StringComparison.Ordinal);
+            Assert.DoesNotMatch("value=\"On\"[^>]*disabled", html);
+            Assert.Null(await handler.SetAsync(5, PowerOnState.FollowsInput, John, Cancel));
+            Assert.Equal([(5, PowerOnState.FollowsInput)], perRelay.PowerOnWrites);
+        }
+    }
+
+    // One relay in a group, or relays of several groups.
+    [Fact]
+    public async Task Should_NameTheGroupsRelays_ForOneRelay_AndForSeveralGroups()
+    {
+        await using var app = App(WholeBoard());
+        var handler = app.Services.GetRequiredService<RelayPowerOnHandler>();
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            var group = new RelayGroup { BoardId = 1, Name = "Light", Icon = GroupIcons.Flame };
+            group.AddStep("Lamp", [4]);
+            await db.AddWithRuntimesAsync(group);
+        }
+
+        Assert.Equal("Relay 4 is in a group, so the board can only be set to Off after a power cut.", await handler.OnlyOffAsync(1, Cancel));
+
+        await AddGroupAsync(app, "Fan", "Heat");
+
+        Assert.Equal("Fan, Heat and Relay 4 are in groups, so the board can only be set to Off after a power cut.", await handler.OnlyOffAsync(1, Cancel));
+    }
+
     // A choice made on one relay's page isn't carried to another relay's when the page opens that one.
     [Fact]
     public async Task Should_ForgetTheChoice_WhenThePageShowsAnotherRelay()
@@ -433,14 +560,30 @@ public sealed class RelayPowerOnTests
             });
     }
 
-    private static Task<PageRenderer> OpenAsync(TestWebApp app)
+    private static Task<PageRenderer> OpenAsync(TestWebApp app, int relayId = 3)
     {
-        return PageRenderer.StartAsync<RelayDetail>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(RelayDetail.Id)] = 3 });
+        return PageRenderer.StartAsync<RelayDetail>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(RelayDetail.Id)] = relayId });
     }
 
-    private static async Task AddGroupAsync(TestWebApp app)
+    // A board with one state for every relay, every state, set to "As before".
+    private static FakeRelayBoard WholeBoard()
+    {
+        var board = new FakeRelayBoard(powerOn: new PowerOnAbility(AllStates.States, perRelay: false));
+        board.SetPowerOn(new PowerOnStates(Enumerable.Repeat<PowerOnState?>(PowerOnState.AsBefore, 8)));
+        return board;
+    }
+
+    // A group of relays 2 and 3, named as given when names are given.
+    private static async Task AddGroupAsync(TestWebApp app, string? fan = null, string? heat = null)
     {
         await using var db = await Factory(app).CreateDbContextAsync(Cancel);
+        if (fan is not null && heat is not null)
+        {
+            (await db.Relays.SingleAsync(r => r.Id == 2, Cancel)).Name = fan;
+            (await db.Relays.SingleAsync(r => r.Id == 3, Cancel)).Name = heat;
+            await db.SaveChangesAsync(Cancel);
+        }
+
         var group = new RelayGroup { BoardId = 1, Name = "Heater", Icon = GroupIcons.Flame };
         group.AddStep("Fan", [2]);
         group.AddStep("Heat", [3]);

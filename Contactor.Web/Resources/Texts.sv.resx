@@ -2075,6 +2075,15 @@
   <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
     <value>Kortet tog inte emot ändringen. Försök igen.</value>
   </data>
+  <data name="Relays.PowerOn.OnlyOffGroups" xml:space="preserve">
+    <value>{0} ingår i grupper, så kortet kan bara ställas på Av efter ett strömavbrott.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_One" xml:space="preserve">
+    <value>{0} ingår i en grupp, så kortet kan bara ställas på Av efter ett strömavbrott.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_Other" xml:space="preserve">
+    <value>{0} ingår i en grupp, så kortet kan bara ställas på Av efter ett strömavbrott.</value>
+  </data>
   <data name="Relays.PowerOn.SeeAbove" xml:space="preserve">
     <value>Resten sparades. Se "Efter ett strömavbrott".</value>
   </data>

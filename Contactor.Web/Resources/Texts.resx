@@ -2289,6 +2289,15 @@
   <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
     <value>The board didn't take the change. Try again.</value>
   </data>
+  <data name="Relays.PowerOn.OnlyOffGroups" xml:space="preserve">
+    <value>{0} are in groups, so the board can only be set to Off after a power cut.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_One" xml:space="preserve">
+    <value>{0} is in a group, so the board can only be set to Off after a power cut.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_Other" xml:space="preserve">
+    <value>{0} are in a group, so the board can only be set to Off after a power cut.</value>
+  </data>
   <data name="Relays.PowerOn.SeeAbove" xml:space="preserve">
     <value>The rest was saved. See "After a power cut".</value>
   </data>

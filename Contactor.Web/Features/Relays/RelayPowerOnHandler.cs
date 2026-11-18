@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
 using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
@@ -97,6 +98,12 @@ public sealed partial class RelayPowerOnHandler : IDisposable
             return _texts["Boards.NotChosen"];
         }
 
+        if (state != PowerOnState.Off && await OnlyOffAsync(relay.BoardId, cancellationToken) is { } onlyOff)
+        {
+            // One state for every relay, and a group on the board: also a group added since the page opened.
+            return onlyOff;
+        }
+
         // A new write takes the place of one the board didn't answer.
         lock (_lock)
         {
@@ -139,6 +146,36 @@ public sealed partial class RelayPowerOnHandler : IDisposable
         // The board took it: logged also when the page closed meanwhile.
         await LogAsync(change);
         return null;
+    }
+
+    /// <summary>
+    /// Why only "Off" is allowed on the board: it has one state after a power cut for every relay
+    /// (<see cref="PowerOnAbility.PerRelay"/> false), and relays of it are in a group, whose steps would all come on
+    /// together after a power cut. E.g. "Fan and Heat are in a group, so the board can only be set to Off after a power
+    /// cut.", naming them in channel order. Null when every state the board has is allowed: a board with a state per
+    /// relay, or none of its relays in a group.
+    /// </summary>
+    public async Task<string?> OnlyOffAsync(int boardId, CancellationToken cancellationToken)
+    {
+        if (_registry.Find(boardId)?.Capabilities.PowerOn is not { PerRelay: false })
+        {
+            return null;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var members = await db.RelayGroupMembers.AsNoTracking()
+            .Where(m => m.Relay!.BoardId == boardId)
+            .Select(m => new { m.GroupId, m.Relay!.Name, m.Relay.Channel })
+            .ToListAsync(cancellationToken);
+        if (members.Count == 0)
+        {
+            return null;
+        }
+
+        List<string> names = [.. members.OrderBy(m => m.Channel).Select(m => m.Name)];
+        var list = names.Count == 1 ? names[0] : string.Join(", ", names.SkipLast(1)) + _texts["Events.List.And"] + names[^1];
+        var key = members.Select(m => m.GroupId).Distinct().Count() > 1 ? "Relays.PowerOn.OnlyOffGroups" : "Relays.PowerOn.OnlyOff" + Plurals.Form(names.Count);
+        return _texts[key, list];
     }
 
     // Keeps a write the board didn't answer, to log once the board's state shows it. True when its state already does:
