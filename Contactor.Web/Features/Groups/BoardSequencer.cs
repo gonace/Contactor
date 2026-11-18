@@ -65,8 +65,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         _timeProvider = timeProvider;
         _logger = logger;
 
-        // From its making, before the board's connection starts: no status may go unseen.
+        // From its making, before the board's connection starts: no status may go unseen. A change of the board's own
+        // rules alone too: a relay reset from the board controlling it by itself gets the interlock's commands at once.
         _board.StateChanged += OnStateChanged;
+        _board.OwnRulesChanged += OnOwnRulesChanged;
     }
 
     /// <inheritdoc/>
@@ -87,6 +89,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         }
 
         _board.StateChanged -= OnStateChanged;
+        _board.OwnRulesChanged -= OnOwnRulesChanged;
 
         // The step or request under way first, while the board's connection still runs; then the loop ends.
         await _gate.WaitAsync(CancellationToken.None);
@@ -176,6 +179,31 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         {
             throw new GroupUnavailableException();
         }
+    }
+
+    // A stop whose next OFF is for a relay the board controls by itself and shows on can't happen: the board ignores it.
+    // The stop ends there, as given up, without sending it again: what is still on stays on (above it, e.g. the fan
+    // keeps running), and the interlock still acts on every status.
+    private void GiveUpStopTheBoardIgnores(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime)
+    {
+        if (runtime.Phase != GroupPhases.Stopping || runtime.PendingOn || runtime.PendingStep is not { } step || step < 1 || step > steps.Count)
+        {
+            return;
+        }
+
+        var unavailable = state.Unavailable;
+        if (!steps[step - 1].Relays.Any(r => (runtime.PendingRelayId is not { } id || r.RelayId == id) && unavailable.Contains(r.Channel) && state.IsOn(r.Channel)))
+        {
+            return;
+        }
+
+        runtime.Phase = GroupPhases.Idle;
+        runtime.NextStepAtUtc = null;
+        runtime.StopRelayIds = [];
+        runtime.PendingStep = null;
+        runtime.PendingRelayId = null;
+        runtime.PendingOn = false;
+        runtime.PendingSinceUtc = null;
     }
 
     // Whether the board controls one of the group's relays by itself now.
@@ -470,6 +498,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     commands.On |= lost;
                 }
 
+                GiveUpStopTheBoardIgnores(steps, state, runtime);
                 all.Off |= commands.Off;
                 all.On |= commands.On;
                 if (runtime.Phase == GroupPhases.Stopping)
@@ -478,6 +507,14 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
                 events.AddRange(commands.Events.Select(e => (group.Id, e)));
             }
+
+            // A relay the board controls by itself (BoardState.Unavailable) ignores the app's commands: none is sent to it,
+            // so nothing goes out again and again while the planning, the interlock's included, stays as it is. Only a
+            // stop's run-on ON goes, which may be all that keeps a relay below running safely. Once the relay is reset,
+            // the next status plans and sends as ever.
+            var unavailable = state.Unavailable;
+            all.Off = all.Off.Except(unavailable);
+            all.On = all.On.Except(unavailable.Except(runOn));
 
             // OFF first, so a relay never runs alone below a gap. Nothing sent: nothing is saved, and the next step
             // plans again. Once anything went out, what was planned is saved even if the rest fails, so a trip or a
@@ -642,6 +679,17 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         }
 
         _wasConnected = state.IsConnected;
+        Wake();
+    }
+
+    // Only the board's own rules changed: a relay it controlled by itself may take commands again.
+    private void OnOwnRulesChanged(object? sender, BoardState state)
+    {
+        Wake();
+    }
+
+    private void Wake()
+    {
         if (_wake.CurrentCount == 0)
         {
             try

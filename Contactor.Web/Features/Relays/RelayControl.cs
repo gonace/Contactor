@@ -181,7 +181,9 @@ public sealed class RelayControl
 
         var expected = board.Expected;
         // Not a relay the board controls by itself: it ignores the OFF, and an "Off" would be logged that never happened.
-        var single = board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(boardId, cancellationToken)).Except(board.State.Unavailable);
+        // Its run (and auto-off) stays, as for a relay the board refused.
+        var unavailable = board.State.Unavailable;
+        var single = board.Capabilities.AllRelays.Except(await _groups.MemberMaskAsync(boardId, cancellationToken)).Except(unavailable);
 
         // A relay the app just turned on counts as on before its board shows it (a status still on its way, or the next
         // poll): otherwise its "Off" would be neither logged nor expected, and the board's OFF would show as a change
@@ -224,7 +226,7 @@ public sealed class RelayControl
         var relayIds = channels.AllRelayIds.ToList();
         foreach (var relayId in await db.RelayRuntimes.Where(r => r.OnSinceUtc != null && relayIds.Contains(r.RelayId)).Select(r => r.RelayId).ToListAsync(record))
         {
-            if (channels.RelayChannel(relayId) is not { } channel || !refused.Contains(channel))
+            if (channels.RelayChannel(relayId) is not { } channel || !(refused | unavailable).Contains(channel))
             {
                 await RelayRuns.EndAsync(db, relayId, sent, record);
             }

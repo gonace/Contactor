@@ -216,6 +216,7 @@ public sealed partial class BoardRemoval : IDisposable
     // "All off" for the board, its groups stopping in their order with their run-on times, until the board shows every
     // relay off and no group is stopping. The board is closed meanwhile, so nothing but a stop's run-on turns one on
     // again; a relay that is on again all the same gets "All off" once more, which logs no "Off": only the first does.
+    // A relay the board controls by itself (BoardState.Unavailable) is left as it is: no OFF reaches it.
     // A group still running on when the wait ends, or whose run-on ends after it, stops the removal. Returns why not,
     // and whether that was a lost contact.
     private async Task<(string? Error, bool Lost)> TurnOffAsync(LiveBoard live, string name, string userEmail, CancellationToken cancellationToken)
@@ -245,7 +246,8 @@ public sealed partial class BoardRemoval : IDisposable
                     return (_texts["Boards.Remove.RunsOn", runOn.Name, _clock.ToLocal(runOn.Off).ToString("HH:mm", CultureInfo.InvariantCulture), name], false);
                 }
 
-                if (stopping.Count == 0 && (state.Relays & all).IsEmpty)
+                // A relay the board controls by itself ignores every OFF: it stays as it is, as the confirmation said.
+                if (stopping.Count == 0 && (state.Relays & all).Except(state.Unavailable).IsEmpty)
                 {
                     return (null, false);
                 }
@@ -256,7 +258,7 @@ public sealed partial class BoardRemoval : IDisposable
                 }
 
                 await Task.Delay(OffCheck, _time, cancellationToken);
-                if (!(live.State.Relays & all).IsEmpty)
+                if (!(live.State.Relays & all).Except(live.State.Unavailable).IsEmpty)
                 {
                     // Once more for what is still on, without logging it again: a group that is already stopping
                     // carries on as it was.

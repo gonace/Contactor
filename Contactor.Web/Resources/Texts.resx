@@ -477,6 +477,12 @@
   <data name="Boards.Remove.Title" xml:space="preserve">
     <value>Remove board</value>
   </data>
+  <data name="Boards.Remove.Unavailable_One" xml:space="preserve">
+    <value>Relay {0} is controlled by the board itself and stays as it is.</value>
+  </data>
+  <data name="Boards.Remove.Unavailable_Other" xml:space="preserve">
+    <value>Relays {0} are controlled by the board itself and stay as they are.</value>
+  </data>
   <data name="Boards.Save.EnterName" xml:space="preserve">
     <value>Enter a name.</value>
   </data>

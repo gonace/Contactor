@@ -66,6 +66,118 @@ public sealed partial class UnavailableRelaysTests
         Assert.Equal(ChannelMask.Of(3), board.State.Relays);
         var offs = (await rig.EventsAsync()).Where(e => e.Action == EventActions.Off).Select(e => e.RelayId).ToList();
         Assert.Equal([rig.SecondRelayId(1)], offs);
+
+        // Its run, and its auto-off, stay: as for a relay the board refused, so it still goes off once reset.
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        var runtime = await db.RelayRuntimes.SingleAsync(r => r.RelayId == rig.SecondRelayId(3), Cancel);
+        Assert.Equal(John, runtime.TurnedOnBy);
+        Assert.NotNull(runtime.OnSinceUtc);
+        Assert.NotNull(runtime.AutoOffAtUtc);
+    }
+
+    [Fact]
+    public async Task Should_RefuseToPulseIt()
+    {
+        var board = new FakeRelayBoard(pulse: new PulseAbility(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(1)), ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App(board);
+        board.SetOwnRules(new OwnRules([Linkage3]));
+        var control = app.Services.GetRequiredService<RelayControl>();
+
+        await Assert.ThrowsAsync<RelayUnavailableException>(() => control.PulseAsync(3, TimeSpan.FromSeconds(2), John, Cancel));
+
+        Assert.Empty(board.Pulses);
+        await control.PulseAsync(2, TimeSpan.FromSeconds(2), John, Cancel);
+        Assert.Single(board.Pulses);
+    }
+
+    // The interlock's planning is as ever, but nothing is sent to a relay the board controls by itself, and nothing is
+    // sent again and again: Heat (relay 2) comes on by its input while Fan is off, so the trip turns Fan on to run on,
+    // and the stop, which can't turn Heat off, ends there. Once Heat is reset, the next status acts at once.
+    [Fact]
+    public async Task Should_SendNothingToIt_FromTheInterlock_AndActAtOnceWhenReset()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var board = rig.Second!;
+        var (id, error) = await rig.GroupSetup.CreateAsync(
+            new GroupDraft("Fan heater", GroupIcons.Fan, 120, [new GroupStepDraft("Fan", [rig.SecondRelayId(1)], 3, 0), new GroupStepDraft("Heat", [rig.SecondRelayId(2)], 3, 0)]),
+            John,
+            Cancel);
+        Assert.Null(error);
+        board.SetOwnRules(new OwnRules([new OwnRule(2, OwnRuleKind.InputLinkage)]));
+        board.SetRelay(2, on: true);
+
+        await rig.Groups.StepAsync(Cancel);
+        Assert.True(board.State.IsOn(1));
+        Assert.Contains(await rig.EventsAsync(), e => e.GroupId == id && e.Action == EventActions.InterlockTrip);
+
+        var changes = 0;
+        rig.Database.Services.GetRequiredService<RelayChanges>().Changed += (_, _) => Interlocked.Increment(ref changes);
+        for (var second = 0; second < 15; second++)
+        {
+            rig.Time.Now += TimeSpan.FromSeconds(1);
+            await rig.Groups.StepAsync(Cancel);
+        }
+
+        var sent = board.Sent.Count;
+        for (var second = 0; second < 15; second++)
+        {
+            rig.Time.Now += TimeSpan.FromSeconds(1);
+            await rig.Groups.StepAsync(Cancel);
+        }
+
+        // No OFF ever went to Heat; after the stop ended, nothing more went at all, and no page was told to redraw.
+        Assert.DoesNotContain(board.Sent, s => !s.On && s.Relays.Contains(2));
+        Assert.Equal(sent, board.Sent.Count);
+        Assert.True(board.State.IsOn(1) && board.State.IsOn(2));
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.Equal(GroupPhases.Idle, (await db.GroupRuntimes.SingleAsync(r => r.GroupId == id, Cancel)).Phase);
+        }
+
+        var quiet = changes;
+        rig.Time.Now += TimeSpan.FromSeconds(1);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.Equal(quiet, changes);
+
+        // Reset, and Fan goes off at the board: the interlock turns Heat off at once.
+        board.SetOwnRules(OwnRules.Empty);
+        board.SetRelay(1, on: false);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.False(board.State.IsOn(2));
+        Assert.Contains(board.Sent, s => !s.On && s.Relays.Contains(2));
+    }
+
+    // Removing its board: "All off" leaves it as it is, nothing waits for it to go off, and the confirmation says so.
+    [Fact]
+    public async Task Should_RemoveItsBoard_LeavingItAsItIs_AndSayingSo()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var barn = boards.Barn;
+        var control = boards.App.Services.GetRequiredService<RelayControl>();
+        await control.TurnOnAsync(await BarnRelayIdAsync(boards, 1), John, Cancel);
+
+        using (var page = await PageRenderer.StartAsync<BoardPage>(boards.App.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = boards.BarnId }))
+        {
+            await page.ClickAsync(PageRenderer.WithText("Remove Barn"));
+            Assert.DoesNotContain("controlled by the board itself", await page.TextAsync(), StringComparison.Ordinal);
+        }
+
+        barn.SetOwnRules(new OwnRules([Linkage3]));
+        barn.SetRelay(3, on: true);
+        using (var page = await PageRenderer.StartAsync<BoardPage>(boards.App.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = boards.BarnId }))
+        {
+            await page.ClickAsync(PageRenderer.WithText("Remove Barn"));
+            Assert.Contains("Relay 3 is controlled by the board itself and stays as it is.", await page.TextAsync(), StringComparison.Ordinal);
+        }
+
+        var error = await boards.App.Services.GetRequiredService<Contactor.Web.Features.Boards.BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
+
+        Assert.Null(error);
+        Assert.DoesNotContain(barn.Sent, s => !s.On && s.Relays.Contains(3));
+        Assert.Null(boards.App.Services.GetRequiredService<Contactor.Web.Features.Boards.BoardRegistry>().Find(boards.BarnId));
+
+        using var swedish = TestCulture.Language("sv");
+        Assert.Equal("Relä 3 och 5 styrs av kortet självt och lämnas som de är.", TestTexts.Localizer["Boards.Remove.Unavailable_Other", "3 och 5"].Value);
     }
 
     [Fact]
@@ -315,6 +427,12 @@ public sealed partial class UnavailableRelaysTests
     }
 
     // ----- Helpers -----
+
+    private static async Task<int> BarnRelayIdAsync(TwoBoards boards, int channel)
+    {
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        return await db.Relays.Where(r => r.BoardId == boards.BarnId && r.Channel == channel).Select(r => r.Id).SingleAsync(Cancel);
+    }
 
     private static GroupDraft Draft(BoardTestRig rig, int fan, int heat)
     {

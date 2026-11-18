@@ -447,6 +447,12 @@
   <data name="Boards.Remove.Title" xml:space="preserve">
     <value>Ta bort kortet</value>
   </data>
+  <data name="Boards.Remove.Unavailable_One" xml:space="preserve">
+    <value>Relä {0} styrs av kortet självt och lämnas som det är.</value>
+  </data>
+  <data name="Boards.Remove.Unavailable_Other" xml:space="preserve">
+    <value>Relä {0} styrs av kortet självt och lämnas som de är.</value>
+  </data>
   <data name="Boards.Save.EnterName" xml:space="preserve">
     <value>Skriv ett namn.</value>
   </data>

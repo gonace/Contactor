@@ -11,6 +11,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BoardPage> Log
 @inject AppLanguage Language
+@inject Contactor.Web.Features.Relays.BoardsText BoardsText
 
 <PageTitle>@(Texts["Common.PageTitle", _name ?? Texts["Common.Screen.RelayBoard"].Value])</PageTitle>
 
@@ -74,6 +75,12 @@
                 @if (hasContact)
                 {
                     <p>@Texts["Boards.Remove.OffFirst"]</p>
+                    @* A relay the board controls by itself ignores the OFF: said plainly, only when there is one. *@
+                    @if (Live?.State.Unavailable is { IsEmpty: false } unavailable)
+                    {
+                        var numbers = unavailable.Channels.Select(c => c.ToString(System.Globalization.CultureInfo.CurrentCulture)).ToList();
+                        <p class="unavailable">@Texts["Boards.Remove.Unavailable" + Plurals.Form(numbers.Count), BoardsText.And(numbers)]</p>
+                    }
                 }
                 else
                 {
