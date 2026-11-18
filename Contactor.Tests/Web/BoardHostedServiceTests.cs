@@ -38,7 +38,6 @@ public sealed class BoardHostedServiceTests
             {
                 ["Vm201:Host"] = "127.0.0.1",
                 ["Vm201:Port"] = fromSettings.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["Vm201:DisableBoardTimers"] = "false",
             });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");

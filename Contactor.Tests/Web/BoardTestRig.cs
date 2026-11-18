@@ -130,7 +130,6 @@ internal sealed class BoardTestRig : IAsyncDisposable
             {
                 ["Vm201:Host"] = "127.0.0.1",
                 ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["Vm201:DisableBoardTimers"] = "false",
             });
         var rig = new BoardTestRig(simulator, database, time, layout);
         await database.Services.InitializeDatabaseAsync(TestContext.Current.CancellationToken);

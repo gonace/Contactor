@@ -420,8 +420,7 @@ public sealed class BoardAddingTests
 
     // A VM201 that answers with its own timers on for relays 3 and 5: "This board has timers of its own" comes after
     // "Where is the board?", and "Turn them off" turns off just those timers at the board (one CMD_TMR_DIS for relays 3
-    // and 5), then "Name your relays". Vm201:DisableBoardTimers still turns them off at the first connection until part
-    // 6 of issue #497, so it is off here.
+    // and 5), then "Name your relays".
     [Fact]
     public async Task Should_AskAboutAVm201sOwnTimers_AndTurnThemOffAtTheBoard()
     {
@@ -430,7 +429,7 @@ public sealed class BoardAddingTests
         await simulator.SetTimerMaskAsync(0x14);
         await using var app = new TestWebApp(
             "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John, ["Vm201:DisableBoardTimers"] = "false" },
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
             TestWebApp.WithBoard(new FakeRelayBoard()));
         var registry = app.Services.GetRequiredService<BoardRegistry>();
         using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
