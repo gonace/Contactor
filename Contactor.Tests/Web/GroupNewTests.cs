@@ -114,7 +114,7 @@ public sealed class GroupNewTests
 
         await page.ClickAsync(PageRenderer.With("aria-label", "Remove Relay 3 from the group"));
         Assert.False(await page.HasAsync(PageRenderer.With("id", "step-2")));
-        Assert.False(await page.HasAsync(PageRenderer.With("class", "remove")));
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Remove")));
         await page.ClickAsync(PageRenderer.With("aria-label", "Move Relay 2 up"));
         Assert.Matches("STEP 1 · NAME[\\s\\S]*Relay 2[\\s\\S]*STEP 2 · NAME[\\s\\S]*Relay 1", await page.TextAsync());
 
