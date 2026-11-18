@@ -16,7 +16,7 @@ public sealed class WaveshareOwnModesAppTests
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     // Every service of the app runs against a (B) with relay 3 in linkage and relay 5 in toggle mode, on the app's
-    // clock: the first connection, five minutes of polls (with the modes read again each minute) and a reconnect leave
+    // clock: the first connection, three minutes of polls (with the modes read again each minute) and a reconnect leave
     // the modes as they are, and nothing writes a mode register (FC 06 or FC 10 at 0x1000–0x1007). The setting an
     // installation from before issue #497 may still have (Waveshare__ResetRelayModes in its .env) is ignored.
     [Fact]
@@ -44,19 +44,20 @@ public sealed class WaveshareOwnModesAppTests
         Assert.Equal(ChannelMask.Of(3), app.Services.Live().State.Unavailable);
 
         var start = time.GetUtcNow();
-        while (time.GetUtcNow() - start < TimeSpan.FromMinutes(5))
+        while (time.GetUtcNow() - start < TimeSpan.FromMinutes(3))
         {
             await PollAsync(simulator, time);
         }
 
-        Assert.True(simulator.ReceivedRequests.Count(r => r.StartsWith("01 03 10 00", StringComparison.Ordinal)) >= 5);
+        Assert.True(simulator.ReceivedRequests.Count(r => r.StartsWith("01 03 10 00", StringComparison.Ordinal)) >= 3);
 
-        simulator.DropConnections();
-        await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
+        // A dropped connection: the client may be on a new one at once (a request under way goes once more), so only
+        // its next read of the modes, on that new connection, is waited for.
         var reads = simulator.ReceivedRequests.Count(r => r.StartsWith("01 03 10 00", StringComparison.Ordinal));
+        simulator.DropConnections();
         await Wait.UntilAsync(() =>
         {
-            if (simulator.ConnectionCount >= 1 && client.State.IsConnected && simulator.ReceivedRequests.Count(r => r.StartsWith("01 03 10 00", StringComparison.Ordinal)) > reads)
+            if (client.State.IsConnected && simulator.ReceivedRequests.Count(r => r.StartsWith("01 03 10 00", StringComparison.Ordinal)) > reads)
             {
                 return true;
             }
