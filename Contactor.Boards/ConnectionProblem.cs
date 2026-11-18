@@ -22,10 +22,11 @@ public enum ConnectionProblemKind
     FirmwareTooOld,
 
     /// <summary>
-    /// The board asks the app to wait before it tries again, after too many wrong logins (or passwords). The app tries
-    /// again by itself, never in a quick loop.
+    /// The board asks the app to wait before it tries again, e.g. after wrong logins (or passwords) or with too many
+    /// clients at once. It doesn't say which, so the screens don't claim a wrong login. The app tries again by itself,
+    /// never in a quick loop.
     /// </summary>
-    TooManyTries,
+    AskedToWait,
 
     /// <summary>
     /// The board is set up to drive a cover, not to switch relays, e.g. a Shelly in the cover profile. Set up to switch
@@ -61,10 +62,10 @@ public sealed record ConnectionProblem(
     int? FoundRelayCount = null)
 {
     /// <summary>
-    /// Whether it is about the login (or the password): needed, refused, or too many wrong ones. The screens then open
+    /// Whether it is about the login (or the password): needed or refused. The screens then open
     /// the login fields.
     /// </summary>
-    public bool IsAboutLogin => Kind is ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused or ConnectionProblemKind.TooManyTries;
+    public bool IsAboutLogin => Kind is ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused;
 
     public override string ToString()
     {
@@ -80,9 +81,9 @@ public sealed record ConnectionProblem(
                 ? $"The board's firmware is too old: the app needs {min} or later."
                 : "The board's firmware is too old.",
             ConnectionProblemKind.CoverProfile => "The board is set up to drive a cover, not relays.",
-            ConnectionProblemKind.TooManyTries => Expected.PasswordOnly
-                ? "The board asks to wait after too many wrong passwords."
-                : "The board asks to wait after too many wrong logins.",
+            ConnectionProblemKind.AskedToWait => Expected.PasswordOnly
+                ? "The board asks Contactor to wait a while. If you just changed the password, check it."
+                : "The board asks Contactor to wait a while. If you just changed the user name or password, check them.",
             _ => Expected.PasswordOnly
                 ? $"The {Expected.ModelName} refused the password."
                 : $"The {Expected.ModelName} refused the login.",

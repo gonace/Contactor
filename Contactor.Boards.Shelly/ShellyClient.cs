@@ -554,8 +554,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
                 return parsed.Result!.Value;
             case HttpStatusCode.TooManyRequests:
-                // After too many wrong passwords: the screens say to check it and wait.
-                var throttled = new ShellyThrottledException(new ConnectionProblem(ConnectionProblemKind.TooManyTries, _model));
+                // After wrong passwords, or with too many clients: the screens say to wait, and to check a new password.
+                var throttled = new ShellyThrottledException(new ConnectionProblem(ConnectionProblemKind.AskedToWait, _model));
                 Trace(BoardTraceDirection.Received, throttled.Message, answer.Text, isError: true);
                 throw throttled;
             case HttpStatusCode.NotFound:

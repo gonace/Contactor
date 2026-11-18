@@ -315,6 +315,12 @@
   <data name="Boards.Port" xml:space="preserve">
     <value>Port</value>
   </data>
+  <data name="Boards.Problem.AskedToWait" xml:space="preserve">
+    <value>Kortet ber Contactor att vänta en stund. Kontrollera lösenordet om du nyss har ändrat det.</value>
+  </data>
+  <data name="Boards.Problem.AskedToWait.Login" xml:space="preserve">
+    <value>Kortet ber Contactor att vänta en stund. Kontrollera användarnamnet och lösenordet om du nyss har ändrat dem.</value>
+  </data>
   <data name="Boards.Problem.CoverProfile" xml:space="preserve">
     <value>Kortet är inställt på att styra en rullgardin eller markis, inte reläer. Ställ in dess profil på "switch" på kortets egen webbsida och kontrollera sedan igen.</value>
   </data>
@@ -330,6 +336,9 @@
   <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
     <value>Kortet vill ha ett lösenord.</value>
   </data>
+  <data name="Boards.Problem.Short.AskedToWait" xml:space="preserve">
+    <value>Ber oss vänta</value>
+  </data>
   <data name="Boards.Problem.Short.CoverProfile" xml:space="preserve">
     <value>Inställt för rullgardin</value>
   </data>
@@ -342,9 +351,6 @@
   <data name="Boards.Problem.Short.PasswordNeeded" xml:space="preserve">
     <value>Behöver lösenord</value>
   </data>
-  <data name="Boards.Problem.Short.TooManyTries" xml:space="preserve">
-    <value>För många försök</value>
-  </data>
   <data name="Boards.Problem.Short.WrongLogin" xml:space="preserve">
     <value>Fel inloggning</value>
   </data>
@@ -353,12 +359,6 @@
   </data>
   <data name="Boards.Problem.Short.WrongPassword" xml:space="preserve">
     <value>Fel lösenord</value>
-  </data>
-  <data name="Boards.Problem.TooManyLogins" xml:space="preserve">
-    <value>För många fel inloggningar. Kontrollera användarnamnet och lösenordet och vänta sedan några minuter: Contactor försöker igen av sig själv.</value>
-  </data>
-  <data name="Boards.Problem.TooManyPasswords" xml:space="preserve">
-    <value>För många fel lösenord. Kontrollera lösenordet och vänta sedan några minuter: Contactor försöker igen av sig själv.</value>
   </data>
   <data name="Boards.Problem.WrongLogin" xml:space="preserve">
     <value>Användarnamnet eller lösenordet är fel.</value>

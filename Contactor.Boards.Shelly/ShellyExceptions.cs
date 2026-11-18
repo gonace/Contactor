@@ -127,7 +127,7 @@ public sealed class ShellyThrottledException : Exception, IConnectionProblemSour
     {
     }
 
-    /// <param name="problem">For the screens: too many tries, which says the password was wrong; null for none.</param>
+    /// <param name="problem">For the screens: asked to wait; null for none.</param>
     public ShellyThrottledException(ConnectionProblem? problem)
         : this()
     {
@@ -135,8 +135,8 @@ public sealed class ShellyThrottledException : Exception, IConnectionProblemSour
     }
 
     /// <summary>
-    /// <see cref="ConnectionProblemKind.TooManyTries"/>: the screens say to check the password and wait, so a refused
-    /// password stays in the words; null when not given.
+    /// <see cref="ConnectionProblemKind.AskedToWait"/>: the screens say to wait, and to check a password just changed.
+    /// Null when not given.
     /// </summary>
     public ConnectionProblem? Problem { get; }
 }

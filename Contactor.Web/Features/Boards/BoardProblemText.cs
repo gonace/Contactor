@@ -36,7 +36,7 @@ public sealed class BoardProblemText
             ConnectionProblemKind.CoverProfile => _texts["Boards.Problem.CoverProfile"],
             ConnectionProblemKind.FirmwareTooOld when problem.MinFirmware is { } min => _texts["Boards.Problem.FirmwareTooOld", min],
             ConnectionProblemKind.FirmwareTooOld => _texts["Boards.Problem.FirmwareTooOld.Unknown"],
-            ConnectionProblemKind.TooManyTries => _texts[passwordOnly ? "Boards.Problem.TooManyPasswords" : "Boards.Problem.TooManyLogins"],
+            ConnectionProblemKind.AskedToWait => _texts[passwordOnly ? "Boards.Problem.AskedToWait" : "Boards.Problem.AskedToWait.Login"],
             _ => _texts[passwordOnly ? "Boards.Problem.WrongPassword" : "Boards.Problem.WrongLogin"],
         };
     }
@@ -52,7 +52,7 @@ public sealed class BoardProblemText
             ConnectionProblemKind.LoginNeeded => _texts[passwordOnly ? "Boards.Problem.Short.PasswordNeeded" : "Boards.Problem.Short.LoginNeeded"],
             ConnectionProblemKind.FirmwareTooOld => _texts["Boards.Problem.Short.FirmwareTooOld"],
             ConnectionProblemKind.CoverProfile => _texts["Boards.Problem.Short.CoverProfile"],
-            ConnectionProblemKind.TooManyTries => _texts["Boards.Problem.Short.TooManyTries"],
+            ConnectionProblemKind.AskedToWait => _texts["Boards.Problem.Short.AskedToWait"],
             _ => _texts[passwordOnly ? "Boards.Problem.Short.WrongPassword" : "Boards.Problem.Short.WrongLogin"],
         };
     }

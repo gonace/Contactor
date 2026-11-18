@@ -137,8 +137,9 @@ When the device refuses the connection, the state says why (`ShellyState.Problem
 - `LoginNeeded`: the device asks for a password and the app has none.
 - `LoginRefused`: the device refused the password.
 - `FirmwareTooOld`, with 1.7.0 as `MinFirmware`, for firmware that is too old or that the app can't read.
-- `TooManyTries` for a 429: the screens say that there were too many wrong passwords, to check the password and to
-  wait. The poller tries again after its own wait.
+- `AskedToWait` for a 429: the screens say that the device asks to wait, and to check the password if it was just
+  changed. A 429 comes after wrong passwords or with too many clients, so the words don't say the password is
+  wrong, and the login fields stay as they are. The poller tries again after its own wait.
 
 `ShellyWrongDeviceException.Mismatch` tells the four refusals of the device apart.
 
@@ -215,4 +216,4 @@ The `Shelly` section applies to all four entries:
 - The longest password the device's web page takes, and if a password with non-ASCII letters works.
 - How the device handles a poll every 2 s for days, with and without a password.
 - How many HTTP clients the device takes at once. The docs say 6 non-persistent channels. If too many clients also
-  get 429, the screens say "Too many wrong passwords" for that too.
+  get 429.

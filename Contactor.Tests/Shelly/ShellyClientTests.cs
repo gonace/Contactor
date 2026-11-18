@@ -158,7 +158,7 @@ public sealed class ShellyClientTests
     }
 
     [Fact]
-    public async Task Should_SayTooManyWrongPasswords_WhenTheDeviceThenAsksToWait()
+    public async Task Should_SayToWait_WhenTheDeviceAsksToWait_AfterARefusedPassword()
     {
         await using var simulator = Start(ShellyModels.OneRelay, Password);
         await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
@@ -166,14 +166,13 @@ public sealed class ShellyClientTests
         var refused = new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay);
         Assert.Equal(refused, run.Client.State.Problem);
 
-        // The device's brute-force protection answers 429 now: the screens say the password was wrong, and to wait.
+        // The device's brute-force protection answers 429 now: the screens say to wait, not why.
         simulator.Throttle = true;
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(2)));
 
-        var tooMany = new ConnectionProblem(ConnectionProblemKind.TooManyTries, ShellyModels.OneRelay);
+        var tooMany = new ConnectionProblem(ConnectionProblemKind.AskedToWait, ShellyModels.OneRelay);
         Assert.Equal(tooMany, run.Client.State.Problem);
-        Assert.True(tooMany.IsAboutLogin);
         var changes = run.Changes;
         Assert.Equal([refused, tooMany], changes.Select(c => c.Problem).OfType<ConnectionProblem>().Distinct());
     }
@@ -227,7 +226,7 @@ public sealed class ShellyClientTests
         Assert.Equal(1, simulator.ThrottledCount);
         Assert.Equal([ShellyApi.GetDeviceInfo, ShellyApi.GetStatus], simulator.Received);
         Assert.False(run.Client.State.IsConnected);
-        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.TooManyTries, ShellyModels.OneRelay), run.Client.State.Problem);
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.AskedToWait, ShellyModels.OneRelay), run.Client.State.Problem);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("The Shelly asks to wait", StringComparison.Ordinal) && t.IsError);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: The Shelly asks to wait", StringComparison.Ordinal));
 

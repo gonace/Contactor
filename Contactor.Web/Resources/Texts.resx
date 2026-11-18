@@ -338,6 +338,13 @@
   <data name="Boards.Port" xml:space="preserve">
     <value>Port</value>
   </data>
+  <data name="Boards.Problem.AskedToWait" xml:space="preserve">
+    <value>The board asks Contactor to wait a while. If you just changed the password, check it.</value>
+    <comment>For a board whose login is a password alone. The board may ask after wrong passwords or with too many clients at once, so the text doesn't say the password is wrong. Contactor tries again by itself.</comment>
+  </data>
+  <data name="Boards.Problem.AskedToWait.Login" xml:space="preserve">
+    <value>The board asks Contactor to wait a while. If you just changed the user name or password, check them.</value>
+  </data>
   <data name="Boards.Problem.CoverProfile" xml:space="preserve">
     <value>The board is set up to drive a cover, not relays. Set its profile to "switch" on its own web page, then check again.</value>
   </data>
@@ -354,6 +361,9 @@
   <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
     <value>The board asks for a password.</value>
   </data>
+  <data name="Boards.Problem.Short.AskedToWait" xml:space="preserve">
+    <value>Asked to wait</value>
+  </data>
   <data name="Boards.Problem.Short.CoverProfile" xml:space="preserve">
     <value>Set up for a cover</value>
   </data>
@@ -366,9 +376,6 @@
   <data name="Boards.Problem.Short.PasswordNeeded" xml:space="preserve">
     <value>Needs a password</value>
   </data>
-  <data name="Boards.Problem.Short.TooManyTries" xml:space="preserve">
-    <value>Too many tries</value>
-  </data>
   <data name="Boards.Problem.Short.WrongLogin" xml:space="preserve">
     <value>Wrong login</value>
   </data>
@@ -377,12 +384,6 @@
   </data>
   <data name="Boards.Problem.Short.WrongPassword" xml:space="preserve">
     <value>Wrong password</value>
-  </data>
-  <data name="Boards.Problem.TooManyLogins" xml:space="preserve">
-    <value>Too many wrong logins. Check the user name and password, then wait a few minutes: Contactor tries again by itself.</value>
-  </data>
-  <data name="Boards.Problem.TooManyPasswords" xml:space="preserve">
-    <value>Too many wrong passwords. Check the password, then wait a few minutes: Contactor tries again by itself.</value>
   </data>
   <data name="Boards.Problem.WrongLogin" xml:space="preserve">
     <value>The user name or password is wrong.</value>

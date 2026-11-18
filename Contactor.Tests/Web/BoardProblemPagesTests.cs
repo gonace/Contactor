@@ -39,7 +39,7 @@ public sealed class BoardProblemPagesTests
         { new ConnectionProblem(ConnectionProblemKind.FirmwareTooOld, DevantechModels.Eth008, MinFirmware: "1.7.0"), "The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", "Old firmware" },
         { new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays, FoundRelayCount: 4), "The board at this address has 4 relays, not 2.", "Wrong model" },
         { new ConnectionProblem(ConnectionProblemKind.CoverProfile, ShellyModels.TwoRelays), "The board is set up to drive a cover, not relays. Set its profile to \"switch\" on its own web page, then check again.", "Set up for a cover" },
-        { new ConnectionProblem(ConnectionProblemKind.TooManyTries, DevantechModels.Eth008), "Too many wrong passwords. Check the password, then wait a few minutes: Contactor tries again by itself.", "Too many tries" },
+        { new ConnectionProblem(ConnectionProblemKind.AskedToWait, DevantechModels.Eth008), "The board asks Contactor to wait a while. If you just changed the password, check it.", "Asked to wait" },
         { null, "No contact with the relay board at", "No contact yet" },
     };
 
@@ -210,10 +210,10 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
-    // A Shelly added in the app: its password, then too many wrong ones, which says to check it and wait, then the right
-    // one goes on, and the app switches its relays.
+    // A Shelly added in the app: its password, then a 429, which says to wait and doesn't claim the password is wrong,
+    // then the right one goes on, and the app switches its relays.
     [Fact]
-    public async Task Should_AddAShelly_AndSayToWait_AfterTooManyWrongPasswords()
+    public async Task Should_AddAShelly_AndSayToWait_WhenItAsks()
     {
         await using var simulator = new ShellySimulator(ShellyModels.TwoRelays, "apple", NullLogger.Instance);
         simulator.Start();
@@ -235,7 +235,7 @@ public sealed class BoardProblemPagesTests
         simulator.Throttle = true;
         await page.TypeAsync(PageRenderer.With("id", "password"), "plum");
         await page.ClickAsync(Button("Next"));
-        Assert.Contains("Too many wrong passwords. Check the password, then wait a few minutes: Contactor tries again by itself.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Contains("The board asks Contactor to wait a while. If you just changed the password, check it.", await page.TextAsync(), StringComparison.Ordinal);
 
         simulator.Throttle = false;
         await page.TypeAsync(PageRenderer.With("id", "password"), "apple");
@@ -287,6 +287,29 @@ public sealed class BoardProblemPagesTests
         simulator.Profile = "switch";
         await page.ClickAsync(Button("Check again"));
         await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Board online", StringComparison.Ordinal));
+        Assert.Empty(page.Errors);
+    }
+
+    // A Shelly that asks to wait from the start: the step says so, and leaves "no password" ticked, since a 429 doesn't
+    // say the password is wrong.
+    [Fact]
+    public async Task Should_SayToWait_AndLeaveTheLoginAsItIs_WhenAShellyAsks()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.OneRelay, "apple", NullLogger.Instance) { Throttle = true };
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-1");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+
+        Assert.Contains("The board asks Contactor to wait a while. If you just changed the password, check it.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(simulator.ThrottledCount > 0);
+        Assert.False(await page.HasAsync(PageRenderer.With("id", "password")));
+        Assert.DoesNotContain(page.Focused, id => id is "password" or "username");
+        Assert.True(await page.HasAsync(Button("Check again")));
         Assert.Empty(page.Errors);
     }
 
@@ -433,9 +456,11 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
-    // Too many wrong logins opens the login fields after a Save, as a wrong login does; old firmware isn't fixed there.
+    // Only a login needed or refused opens the login fields after a Save. Being asked to wait doesn't say the login is
+    // wrong, and old firmware isn't fixed there.
     [Theory]
-    [InlineData(ConnectionProblemKind.TooManyTries, true)]
+    [InlineData(ConnectionProblemKind.LoginRefused, true)]
+    [InlineData(ConnectionProblemKind.AskedToWait, false)]
     [InlineData(ConnectionProblemKind.FirmwareTooOld, false)]
     public async Task Should_OpenTheLogin_OnlyForAProblemAboutIt(ConnectionProblemKind kind, bool opens)
     {
@@ -447,7 +472,12 @@ public sealed class BoardProblemPagesTests
 
         await page.SubmitAsync(PageRenderer.With("class", "card"));
         board.SetProblem(new ConnectionProblem(kind, Vm201Model.Model, MinFirmware: "1.7.0"));
-        var text = kind == ConnectionProblemKind.TooManyTries ? "Too many wrong logins." : "The board's firmware is too old.";
+        var text = kind switch
+        {
+            ConnectionProblemKind.LoginRefused => "The user name or password is wrong.",
+            ConnectionProblemKind.AskedToWait => "The board asks Contactor to wait a while.",
+            _ => "The board's firmware is too old.",
+        };
         await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains(text, StringComparison.Ordinal));
 
         Assert.Equal(opens, await page.HasAsync(PageRenderer.With("id", "username")));
