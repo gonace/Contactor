@@ -788,12 +788,21 @@
         }
     }
 
-    // The saved group, so the warning names its new relays at once. A failure here only leaves the page as it was:
+    // The group as this page just saved it, so the warning names its new relays at once. The steps follow the saved ones
+    // first: they are this page's own change, not someone else's, so "Someone else changed the group" isn't said, also
+    // when the save's notification already reloaded the page meanwhile. A failure here only leaves the page as it was:
     // the next change reloads it.
     private async Task ReloadAfterSaveAsync()
     {
         try
         {
+            if (await Groups.GetAsync(Id, CancellationToken.None) is { } saved)
+            {
+                _group = saved;
+                SeedMembers(saved);
+            }
+
+            _changedElsewhere = false;
             await LoadLiveAsync();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

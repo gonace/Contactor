@@ -102,7 +102,7 @@ public sealed class RelayPowerOnTests
         var error = await app.Services.GetRequiredService<RelayPowerOnHandler>().SetAsync(3, PowerOnState.Off, John, Cancel);
 
         Assert.DoesNotContain("After a power cut", html, StringComparison.Ordinal);
-        Assert.Equal("This relay is in a group, so the board keeps it off after a power cut. Its group's page shows it.", error);
+        Assert.Equal("This relay is in a group, so it must be Off after a power cut. Its group's page shows what the board does.", error);
         Assert.Empty(board.PowerOnWrites);
         Assert.Empty(await PowerOnEventsAsync(app));
     }

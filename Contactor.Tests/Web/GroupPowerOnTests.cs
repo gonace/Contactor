@@ -351,8 +351,14 @@ public sealed class GroupPowerOnTests
 
         Assert.Empty(page.Errors);
         var text = await page.TextAsync();
-        Assert.Contains("The group was saved, but Contactor couldn't make sure that the board keeps its new relays off after a power cut. See the warning at the top.", text, StringComparison.Ordinal);
+        Assert.Contains("The group was saved, but Contactor couldn't make sure that the board keeps its new relays off after a power cut.", text, StringComparison.Ordinal);
+        // The message doesn't point to a warning that may not be drawn: a write the board took without answering has none.
+        Assert.DoesNotContain("See the warning", text, StringComparison.Ordinal);
         Assert.Contains("the board can turn Relay 5 on by itself", text, StringComparison.Ordinal);
+        // The steps are this page's own save, not someone else's change: also after the save's notification reloads it.
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Relay 5", StringComparison.Ordinal));
+        Assert.DoesNotContain("Someone else changed the group", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Someone else changed the group", text, StringComparison.Ordinal);
         await using var db = await Factory(app).CreateDbContextAsync(Cancel);
         Assert.True(await db.RelayGroupMembers.AnyAsync(m => m.GroupId == groupId && m.RelayId == 5, Cancel));
     }
@@ -415,6 +421,27 @@ public sealed class GroupPowerOnTests
         var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
 
         Assert.Contains("Kan inte se vad kortet gör efter ett strömavbrott. Kontrollera det på kortet.", page, StringComparison.Ordinal);
+    }
+
+    // A relay in a group must be Off after a power cut: the Relay screen's refusal doesn't claim what the board does.
+    [Fact]
+    public async Task Should_RefuseARelayInAGroup_WithoutClaimingTheBoardKeepsItOff()
+    {
+        var board = Board(heat: PowerOnState.On);
+        await using var app = App(board);
+        await AddGroupAsync(app);
+        var handler = app.Services.GetRequiredService<RelayPowerOnHandler>();
+
+        var english = await handler.SetAsync(3, PowerOnState.Off, John, Cancel);
+        string? swedish;
+        using (TestCulture.Language("sv"))
+        {
+            swedish = await handler.SetAsync(3, PowerOnState.Off, John, Cancel);
+        }
+
+        Assert.Equal("This relay is in a group, so it must be Off after a power cut. Its group's page shows what the board does.", english);
+        Assert.Equal("Reläet ingår i en grupp, så det måste vara av efter ett strömavbrott. Gruppens sida visar vad kortet gör.", swedish);
+        Assert.Empty(board.PowerOnWrites);
     }
 
     // Relays 1 to 8, with relay 2 (Fan) and 3 (Heat) as given and every other Off, unless relay 5's is given.

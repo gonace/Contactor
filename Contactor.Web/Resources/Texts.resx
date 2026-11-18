@@ -1479,7 +1479,7 @@
     <value>The group was created, but Contactor couldn't make sure that the board keeps its relays off after a power cut. Open the group to see what to do.</value>
   </data>
   <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
-    <value>The group was saved, but Contactor couldn't make sure that the board keeps its new relays off after a power cut. See the warning at the top.</value>
+    <value>The group was saved, but Contactor couldn't make sure that the board keeps its new relays off after a power cut.</value>
   </data>
   <data name="Groups.PowerOn.OnSave" xml:space="preserve">
     <value>When you save, Contactor sets the board to keep {0} off after a power cut.</value>
@@ -2311,7 +2311,7 @@
     <value>What the board does with this relay by itself when the power comes back, before Contactor runs.</value>
   </data>
   <data name="Relays.PowerOn.InGroup" xml:space="preserve">
-    <value>This relay is in a group, so the board keeps it off after a power cut. Its group's page shows it.</value>
+    <value>This relay is in a group, so it must be Off after a power cut. Its group's page shows what the board does.</value>
   </data>
   <data name="Relays.PowerOn.NoContact" xml:space="preserve">
     <value>No contact with the board, so what the relay does after a power cut wasn't changed. Try again when it answers.</value>

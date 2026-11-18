@@ -1347,7 +1347,7 @@
     <value>Gruppen skapades, men Contactor kunde inte se till att kortet håller dess reläer av efter ett strömavbrott. Öppna gruppen för att se vad du ska göra.</value>
   </data>
   <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
-    <value>Gruppen sparades, men Contactor kunde inte se till att kortet håller dess nya reläer av efter ett strömavbrott. Se varningen överst.</value>
+    <value>Gruppen sparades, men Contactor kunde inte se till att kortet håller dess nya reläer av efter ett strömavbrott.</value>
   </data>
   <data name="Groups.PowerOn.OnSave" xml:space="preserve">
     <value>När du sparar ställer Contactor in kortet så att {0} är av efter ett strömavbrott.</value>
@@ -2097,7 +2097,7 @@
     <value>Vad kortet gör med reläet av sig självt när strömmen kommer tillbaka, innan Contactor är igång.</value>
   </data>
   <data name="Relays.PowerOn.InGroup" xml:space="preserve">
-    <value>Reläet ingår i en grupp, så kortet håller det av efter ett strömavbrott. Gruppens sida visar det.</value>
+    <value>Reläet ingår i en grupp, så det måste vara av efter ett strömavbrott. Gruppens sida visar vad kortet gör.</value>
   </data>
   <data name="Relays.PowerOn.NoContact" xml:space="preserve">
     <value>Ingen kontakt med kortet, så det som reläet gör efter ett strömavbrott ändrades inte. Försök igen när kortet svarar.</value>

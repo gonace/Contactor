@@ -14,7 +14,8 @@ namespace Contactor.Web.Features.Relays;
 /// Sets what a relay does by itself when its board gets power back (Issue #516), as a person saved it on the Relay
 /// screen: at once through the board's <see cref="IRelayBoard.SetPowerOnAsync"/>, never on the app's own accord and never
 /// queued, and logged with the person. The board is the source of truth: the app keeps no copy, and the board's next
-/// state shows the new one (<see cref="BoardState.PowerOn"/>). A relay in a group gets its state on the group's page.
+/// state shows the new one (<see cref="BoardState.PowerOn"/>). A relay in a group is always Off (<see cref="GroupPowerOn"/>):
+/// set by "Make it safe", "Create group" or the group's Save (<see cref="MakeGroupSafeAsync"/>), never on the Relay screen.
 /// </summary>
 /// <remarks>
 /// A write the board didn't answer may still have been saved on the board. Such a write is kept as unconfirmed for
