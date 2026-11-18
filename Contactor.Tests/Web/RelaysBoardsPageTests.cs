@@ -269,6 +269,9 @@ public sealed partial class RelaysBoardsPageTests
     {
         await using var boards = await TwoBoards.StartAsync();
         var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
+        // The relay's page uses RelayPowerOnHandler, a singleton that listens to the registry from its start for as
+        // long as the app runs: start it first, so only the pages' own listeners are counted.
+        boards.App.Services.GetRequiredService<RelayPowerOnHandler>();
         var before = Listeners(registry);
         int inputId;
         await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))

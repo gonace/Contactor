@@ -410,6 +410,7 @@ public sealed class EventText
             EventActions.Rename => (Line("Events.Rename", Text(entry.Details, "from") ?? relayName ?? ""), Text(entry.Details, "to") ?? relayName),
             EventActions.Activate => (Line("Events.Activate"), relayName),
             EventActions.Deactivate => (Line("Events.Deactivate"), relayName),
+            EventActions.PowerOnSet => (PowerOnLine(entry.Details), relayName),
             EventActions.ScheduleAdd => (WithSchedule("Events.Schedule.Added", "Events.Schedule.AddedOne", entry.Details), relayName),
             EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is false => (WithSchedule("Events.Schedule.Paused", "Events.Schedule.PausedOne", entry.Details), relayName),
             EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is true => (WithSchedule("Events.Schedule.Resumed", "Events.Schedule.ResumedOne", entry.Details), relayName),
@@ -433,6 +434,23 @@ public sealed class EventText
                 : (Line("Events.Board.Address", Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null),
             _ => (Line("Events.Other", entry.Action), relayName),
         };
+    }
+
+    // "set the relay to turn on after a power cut", by the state saved; one this version doesn't know in plain words.
+    private string PowerOnLine(string? details)
+    {
+        if (!PowerOnStateNames.TryParse(Text(details, "to"), out var state))
+        {
+            return Line("Events.PowerOn.Changed");
+        }
+
+        return Line(state switch
+        {
+            PowerOnState.Off => "Events.PowerOn.Off",
+            PowerOnState.AsBefore => "Events.PowerOn.AsBefore",
+            PowerOnState.On => "Events.PowerOn.On",
+            _ => "Events.PowerOn.FollowsInput",
+        });
     }
 
     // "removed relay board Garage (Velleman VM204)", from what the event saved: the board's row is gone.
