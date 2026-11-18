@@ -4,12 +4,9 @@
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
-@using Contactor.Web.Persistence
-@using Microsoft.EntityFrameworkCore
 @inject EventsHandler Handler
 @inject RelayChanges Changes
 @inject BoardRegistry Registry
-@inject IDbContextFactory<ContactorDbContext> DbFactory
 @inject BoardsText BoardsText
 @inject AppLanguage Language
 @inject ILogger<Events> Log
@@ -30,7 +27,7 @@
             @* Which boards' events show: this browser's, in its own cookie (RelaysEndpoints). Events about no board always show.
                With one board there is nothing to filter: no chips (BoardPicker). *@
             <div class="boards-bar">
-                <BoardPicker Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" Plain="true" Showing="@ShowingText" />
+                <BoardPicker Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Plain="true" Showing="@ShowingText" />
             </div>
         }
     </header>
@@ -94,7 +91,6 @@
 
     private List<EventRow> _rows = [];
     private EventFilter _filter = EventFilter.All;
-    private BoardCounts _counts = BoardCounts.None;
 
     // What the board filter shows of each board's state (BoardPicker).
     private readonly ShownBoardStates _shown = new();
@@ -127,7 +123,7 @@
     protected override async Task OnInitializedAsync()
     {
         await ReloadAsync(EventsHandler.PageSize);
-        await LoadCountsAsync();
+        ResetShown();
 
         // Dispose ran during the load: subscribing now would leave the handlers for the life of the app. Dispose and this
         // both run on the page's own thread, so nothing can come between the check and the subscription.
@@ -152,21 +148,13 @@
     // The desktop's side menu: every board, to pick which to show.
     private RenderFragment BoardList => __builder =>
     {
-        <BoardPicker Side="true" Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" Counts="_counts" />
+        <BoardPicker Side="true" Screen="BoardFilterScreen.Events" Boards="Boards" Filter="BoardsFilter" />
     };
 
-    // BoardPicker.Counts, which it no longer reads (Issue #495), for the board filter, which shows while there is a board.
-    private async Task LoadCountsAsync()
+    // The board filter: only the boards there are now, so a removed board's entry goes.
+    private void ResetShown()
     {
-        // Only the boards there are now: a removed board's entry goes.
         _shown.Reset(Boards);
-        if (Boards.Count == 0)
-        {
-            return;
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _counts = await BoardCounts.LoadAsync(db, Registry, CancellationToken.None);
     }
 
     private async Task SetFilterAsync(EventFilter filter)
@@ -235,7 +223,7 @@
                 if (reload)
                 {
                     await ReloadAsync(Math.Max(EventsHandler.PageSize, _rows.Count));
-                    await LoadCountsAsync();
+                    ResetShown();
                 }
 
                 StateHasChanged();

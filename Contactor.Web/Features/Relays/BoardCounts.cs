@@ -1,7 +1,4 @@
 using Contactor.Boards;
-using Contactor.Web.Features.Boards;
-using Contactor.Web.Persistence;
-using Microsoft.EntityFrameworkCore;
 
 namespace Contactor.Web.Features.Relays;
 
@@ -36,24 +33,5 @@ public sealed class BoardCounts
         var on = _relays.Count(r => r.BoardId == boardId && state.IsOn(r.Channel))
             + _groups.Count(g => g.BoardId == boardId && state.Relays.Overlaps(g.Mask));
         return (on, active);
-    }
-
-    /// <summary>What there is to count now, from the database, for a screen that doesn't list the relays itself.</summary>
-    public static async Task<BoardCounts> LoadAsync(ContactorDbContext db, BoardRegistry registry, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(db);
-        ArgumentNullException.ThrowIfNull(registry);
-        var members = await db.RelayGroupMembers.AsNoTracking()
-            .Select(m => new { m.GroupId, m.RelayId, m.Relay!.Channel })
-            .ToListAsync(cancellationToken);
-        var inGroups = members.Select(m => m.RelayId).ToHashSet();
-        var relays = await db.Relays.AsNoTracking()
-            .Where(r => r.IsActive)
-            .Select(r => new { r.Id, r.BoardId, r.Channel })
-            .ToListAsync(cancellationToken);
-        var groups = await db.RelayGroups.AsNoTracking().Select(g => new { g.Id, g.BoardId }).ToListAsync(cancellationToken);
-        return new BoardCounts(
-            relays.Where(r => !inGroups.Contains(r.Id) && registry.HasRelay(r.BoardId, r.Channel) && registry.IsShown(r.BoardId)).Select(r => (r.BoardId, r.Channel)),
-            groups.Select(g => (g.BoardId, ChannelMask.Of(members.Where(m => m.GroupId == g.Id).Select(m => m.Channel)))));
     }
 }
