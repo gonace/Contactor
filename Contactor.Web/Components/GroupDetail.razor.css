@@ -432,6 +432,10 @@ button:disabled {
     color: var(--muted);
 }
 
+.safety p + p {
+    margin-top: 8px;
+}
+
 .delete {
     min-height: 48px;
     border-radius: 12px;

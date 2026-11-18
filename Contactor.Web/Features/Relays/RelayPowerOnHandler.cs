@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
 using Contactor.Web.Resources;
@@ -98,29 +99,98 @@ public sealed partial class RelayPowerOnHandler : IDisposable
             return _texts["Boards.NotChosen"];
         }
 
-        if (state != PowerOnState.Off && await OnlyOffAsync(relay.BoardId, cancellationToken) is { } onlyOff)
+        if (!GroupPowerOn.IsAllowed(state) && await OnlyOffAsync(relay.BoardId, cancellationToken) is { } onlyOff)
         {
             // One state for every relay, and a group on the board: also a group added since the page opened.
             return onlyOff;
         }
 
-        // A new write takes the place of one the board didn't answer.
-        lock (_lock)
+        if (!board.State.IsConnected)
         {
-            _unconfirmed.Remove(relayId);
+            // Nothing is sent or queued. A new write takes the place of one the board didn't answer.
+            Forget(relayId);
+            return _texts["Relays.PowerOn.NoContact"];
+        }
+
+        return await WriteAsync(relay.Id, relay.BoardId, relay.Channel, board, state, userEmail, cancellationToken);
+    }
+
+    /// <summary>
+    /// "Make it safe", "Create group" and saving a group with new relays: sets the group's relays that break the group's
+    /// rule (<see cref="GroupPowerOn"/>) to Off on the board at once, as <paramref name="userEmail"/> pressed it, and logs
+    /// each change the board took. With <paramref name="relayIds"/>, only those of the group's relays. Returns null when
+    /// there was nothing to set or the board took it all, otherwise the first message to show. Nothing is sent or queued
+    /// without a connection; a write the board didn't answer is kept as unconfirmed, as for the Relay screen. One write
+    /// that fails doesn't stop the others.
+    /// </summary>
+    public async Task<string?> MakeGroupSafeAsync(int groupId, string userEmail, IReadOnlyCollection<int>? relayIds, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        int boardId;
+        List<(int RelayId, int Channel)> members;
+        await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var group = await db.RelayGroups.AsNoTracking().Where(g => g.Id == groupId).Select(g => (int?)g.BoardId).SingleOrDefaultAsync(cancellationToken);
+            if (group is not { } id)
+            {
+                return _texts["Groups.Gone"];
+            }
+
+            boardId = id;
+            members = [.. (await db.RelayGroupMembers.AsNoTracking()
+                    .Where(m => m.GroupId == groupId)
+                    .Select(m => new { m.RelayId, m.Relay!.Channel, Step = m.Step!.Position, m.Order })
+                    .ToListAsync(cancellationToken))
+                .Where(m => relayIds is null || relayIds.Contains(m.RelayId))
+                .OrderBy(m => m.Step).ThenBy(m => m.Order)
+                .Select(m => (m.RelayId, m.Channel))];
+        }
+
+        if (_registry.Find(boardId) is not { } board)
+        {
+            return _texts["Boards.NotChosen"];
+        }
+
+        if (board.Capabilities.PowerOn is not { } ability)
+        {
+            // The board can't tell, so there is nothing Contactor can set.
+            return null;
+        }
+
+        var writes = GroupPowerOn.Writes(ability, GroupPowerOn.NotSafe(ability, board.State.PowerOn, members.Select(m => m.Channel)));
+        if (writes.Count == 0)
+        {
+            return null;
         }
 
         if (!board.State.IsConnected)
         {
             // Nothing is sent or queued.
-            return _texts["Relays.PowerOn.NoContact"];
+            return _texts["Groups.PowerOn.NoContact"];
         }
 
-        var from = board.State.PowerOn?.For(relay.Channel);
-        var change = new Unconfirmed(relay.Id, relay.BoardId, relay.Channel, state, from, userEmail, _time.GetUtcNow() + ConfirmFor);
+        string? first = null;
+        foreach (var channel in writes)
+        {
+            var relayId = members.First(m => m.Channel == channel).RelayId;
+            var message = await WriteAsync(relayId, boardId, channel, board, GroupPowerOn.Safe, userEmail, cancellationToken);
+            first ??= message;
+        }
+
+        return first;
+    }
+
+    // Sends one relay's state after a power cut to the board, and logs it when the board took it. Null when set,
+    // otherwise the message to show.
+    private async Task<string?> WriteAsync(int relayId, int boardId, int channel, LiveBoard board, PowerOnState state, string userEmail, CancellationToken cancellationToken)
+    {
+        // A new write takes the place of one the board didn't answer.
+        Forget(relayId);
+        var from = board.State.PowerOn?.For(channel);
+        var change = new Unconfirmed(relayId, boardId, channel, state, from, userEmail, _time.GetUtcNow() + ConfirmFor);
         try
         {
-            await board.SetPowerOnAsync(relay.Channel, state, cancellationToken);
+            await board.SetPowerOnAsync(channel, state, cancellationToken);
         }
         catch (BoardClosedException)
         {
@@ -139,13 +209,21 @@ public sealed partial class RelayPowerOnHandler : IDisposable
         catch (Exception ex) when (ex is NotSupportedException or ArgumentOutOfRangeException)
         {
             // A state or a relay the board doesn't have, e.g. after it got another model: nothing was sent.
-            LogNotSent(ex, relay.BoardId);
+            LogNotSent(ex, boardId);
             return _texts["Relays.PowerOn.NotTaken"];
         }
 
         // The board took it: logged also when the page closed meanwhile.
         await LogAsync(change);
         return null;
+    }
+
+    private void Forget(int relayId)
+    {
+        lock (_lock)
+        {
+            _unconfirmed.Remove(relayId);
+        }
     }
 
     /// <summary>

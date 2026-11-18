@@ -1256,6 +1256,12 @@
   <data name="Groups.New.OnBoard" xml:space="preserve">
     <value>PÅ {0}</value>
   </data>
+  <data name="Groups.New.PowerOn" xml:space="preserve">
+    <value>EFTER ETT STRÖMAVBROTT</value>
+  </data>
+  <data name="Groups.New.PowerOnText" xml:space="preserve">
+    <value>Contactor ställer in kortet så att {0} är av efter ett strömavbrott. Contactor startar sedan gruppen i sin ordning.</value>
+  </data>
   <data name="Groups.New.Preview" xml:space="preserve">
     <value>SÅ HÄR SER DEN UT I LISTAN</value>
   </data>
@@ -1327,6 +1333,33 @@
   </data>
   <data name="Groups.Plan.Then" xml:space="preserve">
     <value>{0} → vänta {1} → {2}</value>
+  </data>
+  <data name="Groups.PowerOn.CantTell" xml:space="preserve">
+    <value>Kan inte se vad kortet gör efter ett strömavbrott. Kontrollera det på kortet.</value>
+  </data>
+  <data name="Groups.PowerOn.MakeSafe" xml:space="preserve">
+    <value>Gör säkert</value>
+  </data>
+  <data name="Groups.PowerOn.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med kortet, så inget ändrades. Försök igen när kortet svarar.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetCreated" xml:space="preserve">
+    <value>Gruppen skapades, men Contactor kunde inte se till att kortet håller dess reläer av efter ett strömavbrott. Öppna gruppen för att se vad du ska göra.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
+    <value>Gruppen sparades, men Contactor kunde inte se till att kortet håller dess nya reläer av efter ett strömavbrott. Se varningen överst.</value>
+  </data>
+  <data name="Groups.PowerOn.OnSave" xml:space="preserve">
+    <value>När du sparar ställer Contactor in kortet så att {0} är av efter ett strömavbrott.</value>
+  </data>
+  <data name="Groups.PowerOn.Warning" xml:space="preserve">
+    <value>Efter ett strömavbrott kan kortet slå på {0} av sig självt, utan gruppens startordning.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_One" xml:space="preserve">
+    <value>"Gör säkert" ställer det på Av på kortet. Contactor startar sedan gruppen i sin ordning.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_Other" xml:space="preserve">
+    <value>"Gör säkert" ställer dem på Av på kortet. Contactor startar sedan gruppen i sin ordning.</value>
   </data>
   <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
     <value>Kräver att {0} är på.</value>
@@ -2064,7 +2097,7 @@
     <value>Vad kortet gör med reläet av sig självt när strömmen kommer tillbaka, innan Contactor är igång.</value>
   </data>
   <data name="Relays.PowerOn.InGroup" xml:space="preserve">
-    <value>Reläet ingår i en grupp: ställ in vad det gör efter ett strömavbrott på gruppens sida.</value>
+    <value>Reläet ingår i en grupp, så kortet håller det av efter ett strömavbrott. Gruppens sida visar det.</value>
   </data>
   <data name="Relays.PowerOn.NoContact" xml:space="preserve">
     <value>Ingen kontakt med kortet, så det som reläet gör efter ett strömavbrott ändrades inte. Försök igen när kortet svarar.</value>

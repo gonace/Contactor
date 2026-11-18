@@ -4,6 +4,7 @@
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Relays
 @using Contactor.Web.Persistence
 @inject GroupsHandler Groups
 @inject BoardRegistry Registry
@@ -11,6 +12,8 @@
 @inject NavigationManager Navigation
 @inject ILogger<GroupNew> Log
 @inject GroupPlanText Plan
+@inject RelayPowerOnHandler PowerOn
+@inject BoardsText BoardsText
 
 <PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.NewGroup"]])</PageTitle>
 
@@ -147,6 +150,14 @@
                     <dt class="label">@Texts["Groups.New.AutoOff"]</dt>
                     <dd>@Texts["Groups.New.AutoOffAfter", EventText.Duration(RelayGroup.DefaultMaxOnMinutes)]</dd>
                 </div>
+                @if (NotSafe is { Count: > 0 } notSafe)
+                {
+                    @* "Create group" sets them to Off after a power cut on the board (GroupPowerOn). *@
+                    <div class="power-on">
+                        <dt class="label">@Texts["Groups.New.PowerOn"]</dt>
+                        <dd>@Texts["Groups.New.PowerOnText", BoardsText.And([.. notSafe.Select(r => r.Name)])]</dd>
+                    </div>
+                }
             </dl>
         }
     </main>
@@ -156,7 +167,12 @@
         {
             <p class="error" role="alert">@_error</p>
         }
-        @if (_wizard.Step < GroupWizard.StepCount)
+        @if (_created is { } created)
+        {
+            @* The group is saved: a second "Create group" would make another one. *@
+            <a class="create open-group" href="group/@created">@Texts["Relays.Detail.OpenGroup"]</a>
+        }
+        else if (_wizard.Step < GroupWizard.StepCount)
         {
             var shown = _wizard.Step;
             <button type="button" disabled="@(!_wizard.CanGoOn)" @onclick="() => GoOn(shown)">@Texts["Common.Next"]</button>
@@ -225,6 +241,24 @@
             .Where(c => c.IsFree && _wizard.FitsBoard(c.BoardId) && _wizard.OrderOf(c.RelayId) == 0)
             .OrderBy(c => c.Channel)
             .Select(c => new EditRelay(c.RelayId, c.Channel, c.Name))];
+    // The picked relays whose board turns them on by itself after a power cut: "Create group" sets them to Off.
+    private IReadOnlyList<EditRelay> NotSafe
+    {
+        get
+        {
+            if (_wizard.BoardId is not { } boardId || Registry.Find(boardId) is not { } board)
+            {
+                return [];
+            }
+
+            var channels = GroupPowerOn.NotSafe(board.Capabilities.PowerOn, board.State.PowerOn, _wizard.Editor.Relays.Select(r => r.Channel));
+            return [.. _wizard.Editor.Relays.Where(r => channels.Contains(r.Channel))];
+        }
+    }
+
+    // The group "Create group" saved when the board didn't take Off after a power cut: the page stays, with a link to it.
+    private int? _created;
+
     private ElementReference _heading;
     private SignedInUser? _user;
     private string? _error;
@@ -288,7 +322,7 @@
 
     private void Back(int fromStep)
     {
-        if (!_busy && _wizard.Back(fromStep))
+        if (!_busy && _created is null && _wizard.Back(fromStep))
         {
             _error = null;
             _moved = true;
@@ -297,21 +331,17 @@
 
     private async Task CreateAsync()
     {
-        if (_user is null || _busy || _wizard.Step != GroupWizard.StepCount)
+        if (_user is null || _busy || _created is not null || _wizard.Step != GroupWizard.StepCount)
         {
             return;
         }
 
         _busy = true;
         _error = null;
+        int? id = null;
         try
         {
-            var (id, error) = await Groups.CreateAsync(_wizard.Draft, _user.Email, CancellationToken.None);
-            _error = error;
-            if (id is not null)
-            {
-                Navigation.NavigateTo("");
-            }
+            (id, _error) = await Groups.CreateAsync(_wizard.Draft, _user.Email, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -319,9 +349,41 @@
             Log.LogError(ex, "Creating a group failed");
             _error = Texts["Common.SomethingWrongTryAgain"];
         }
+
+        try
+        {
+            if (id is { } created)
+            {
+                // The group's relays Off after a power cut on the board, as the review said. The group is saved whatever
+                // the board does; when it didn't take it, the group's warning has "Make it safe".
+                if (await MakeSafeAsync(created))
+                {
+                    Navigation.NavigateTo("");
+                }
+                else
+                {
+                    _created = created;
+                    _error = Texts["Groups.PowerOn.NotSetCreated"];
+                }
+            }
+        }
         finally
         {
             _busy = false;
+        }
+    }
+
+    // True when the board took it, or there was nothing to set.
+    private async Task<bool> MakeSafeAsync(int groupId)
+    {
+        try
+        {
+            return await PowerOn.MakeGroupSafeAsync(groupId, _user!.Email, relayIds: null, CancellationToken.None) is null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Setting the state after a power cut of new group {GroupId} failed", groupId);
+            return false;
         }
     }
 }

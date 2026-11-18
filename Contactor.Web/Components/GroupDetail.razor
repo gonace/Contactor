@@ -29,8 +29,14 @@
 @inject AppLanguage Language
 @inject OwnRulesHandler OwnRules
 @inject OwnRulesText OwnRulesText
+@inject RelayPowerOnHandler PowerOn
+@inject BoardsText BoardsText
 
 <PageTitle>@(Texts["Common.PageTitle", _group?.Name ?? Texts["Common.Screen.Group"].Value])</PageTitle>
+
+@* What the power-cut warning and the note on saving show, kept as they are drawn: a change of the board's states after
+   a power cut that alters neither redraws nothing (OnPowerOnChanged). *@
+@{ _shownPowerOn = ShownPowerOn; }
 
 <div class="screen">
     <header class="header">
@@ -67,6 +73,31 @@
                             @if (_resetError is not null)
                             {
                                 <span class="reset-error" role="alert">@_resetError</span>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (NotSafe is { Count: > 0 } notSafe)
+                {
+                    @* The board turns some of the group's relays on by itself after a power cut, before Contactor runs and
+                       without the group's start order (GroupPowerOn). The group can still start. *@
+                    <div class="offline group-unavailable power-on" role="status">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                        <div>
+                            <strong>@Texts["Groups.PowerOn.Warning", BoardsText.And([.. notSafe.Select(m => m.RoleName).Distinct()])]</strong>
+                            <span>@Texts["Groups.PowerOn.WarningText" + Plurals.Form(notSafe.Count)]</span>
+                            @if (PowerOnAbility is { PerRelay: false })
+                            {
+                                <span>@Texts["Relays.PowerOn.WholeBoard"]</span>
+                            }
+                            @if (!State.IsConnected)
+                            {
+                                <span>@Texts["Relays.PowerOn.NoContactNow"]</span>
+                            }
+                            <button type="button" class="reset make-safe" disabled="@(_busy || !State.IsConnected)" @onclick="MakeSafeAsync">@Texts["Groups.PowerOn.MakeSafe"]</button>
+                            @if (_powerOnError is not null)
+                            {
+                                <span class="reset-error" role="alert">@_powerOnError</span>
                             }
                         </div>
                     </div>
@@ -153,6 +184,11 @@
                     {
                         <p class="hint">@Texts["Groups.TurnOffToChange"]</p>
                     }
+                    @if (AddedNotSafe is { Count: > 0 } added)
+                    {
+                        @* Save sets them to Off after a power cut on the board, as "Create group" does. *@
+                        <p class="hint power-on-save">@Texts["Groups.PowerOn.OnSave", BoardsText.And([.. added.Select(r => r.Name)])]</p>
+                    }
                 </section>
 
                 <section class="limits">
@@ -221,6 +257,10 @@
 
                 <section class="safety">
                     <p>@Texts["Groups.Safety"]</p>
+                    @if (Board is not null && PowerOnAbility is null)
+                    {
+                        <p class="power-on-unknown">@Texts["Groups.PowerOn.CantTell"]</p>
+                    }
                 </section>
 
                 @if (CanChangeMembers)
@@ -303,6 +343,50 @@
     // "Reset" that went wrong.
     private string? _resetError;
 
+    // What the board can do about its relays' state after a power cut; null when it can't tell.
+    private PowerOnAbility? PowerOnAbility => Board?.Capabilities.PowerOn;
+
+    // The group's relays (as saved) whose board turns them on by itself after a power cut (GroupPowerOn).
+    private IReadOnlyList<GroupMemberView> NotSafe
+    {
+        get
+        {
+            if (_group is null)
+            {
+                return [];
+            }
+
+            var channels = GroupPowerOn.NotSafe(PowerOnAbility, State.PowerOn, _group.Members.Select(m => m.Channel));
+            return [.. _group.Members.Where(m => channels.Contains(m.Channel))];
+        }
+    }
+
+    // The relays added in the form, not saved yet, that Save sets to Off after a power cut on the board.
+    private IReadOnlyList<EditRelay> AddedNotSafe
+    {
+        get
+        {
+            if (_group is null)
+            {
+                return [];
+            }
+
+            var added = _editor.Relays.Where(r => _group.Members.All(m => m.RelayId != r.RelayId)).ToList();
+            var channels = GroupPowerOn.NotSafe(PowerOnAbility, State.PowerOn, added.Select(r => r.Channel));
+            return [.. added.Where(r => channels.Contains(r.Channel))];
+        }
+    }
+
+    private (ChannelMask NotSafe, ChannelMask Added) ShownPowerOn =>
+        (ChannelMask.Of(NotSafe.Select(m => m.Channel)), ChannelMask.Of(AddedNotSafe.Select(r => r.Channel)));
+
+    private (ChannelMask NotSafe, ChannelMask Added) _shownPowerOn;
+
+    // "Make it safe" or a save's write that went wrong.
+    private string? _powerOnError;
+
+    private bool _disposed;
+
     private bool GroupOn => _group is not null && _group.IsOn(State);
 
     private int? Missing => _group?.MissingRelay(Capabilities.RelayCount);
@@ -331,6 +415,7 @@
         _toggleError = null;
         _memberError = null;
         _saveError = null;
+        _powerOnError = null;
         _confirmDelete = false;
         _changedElsewhere = false;
         _group = await Groups.GetAsync(Id, CancellationToken.None);
@@ -350,6 +435,7 @@
     {
         Registry.StateChanged += OnBoardChanged;
         Registry.OwnRulesChanged += OnBoardChanged;
+        Registry.PowerOnChanged += OnPowerOnChanged;
         Changes.Changed += OnRelaysChanged;
 
         // A start or stop counts down in seconds; nothing else re-renders the page that often.
@@ -364,8 +450,10 @@
 
     public void Dispose()
     {
+        _disposed = true;
         Registry.StateChanged -= OnBoardChanged;
         Registry.OwnRulesChanged -= OnBoardChanged;
+        Registry.PowerOnChanged -= OnPowerOnChanged;
         Changes.Changed -= OnRelaysChanged;
         _tick?.Dispose();
     }
@@ -568,6 +656,33 @@
         }
     }
 
+    // "Make it safe": sets the group's relays the board turns on by itself after a power cut to Off on the board, as the
+    // person pressed, and logs it. Nothing is sent or queued without a connection.
+    private async Task MakeSafeAsync()
+    {
+        if (_user is null || _busy || _group is null || NotSafe.Count == 0)
+        {
+            return;
+        }
+
+        _busy = true;
+        _powerOnError = null;
+        try
+        {
+            _powerOnError = await PowerOn.MakeGroupSafeAsync(Id, _user.Email, relayIds: null, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Making the state after a power cut of group {GroupId} safe failed", Id);
+            _powerOnError = SomethingWentWrong;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
     private async Task ToggleMemberAsync(int relayId, bool isOn)
     {
         if (_user is null || _busy)
@@ -635,15 +750,32 @@
         }
 
         _busy = true;
+        _powerOnError = null;
+        var saved = false;
+        List<int> added = [.. _editor.Relays.Select(r => r.RelayId).Where(id => _group.Members.All(m => m.RelayId != id))];
         try
         {
             var draft = new GroupDraft(_name, _icon, _maxOnMinutes, _editor.Drafts);
             _saveError = await Groups.SaveAsync(Id, draft, _user.Email, CancellationToken.None);
+            saved = _saveError is null;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Saving group {GroupId} failed", Id);
             _saveError = SomethingWentWrong;
+        }
+
+        try
+        {
+            // The relays the save added: Off after a power cut on the board, as the page said. The group is saved
+            // whatever the board does.
+            if (saved && added.Count > 0 && await MakeAddedSafeAsync(added) is { } error)
+            {
+                // The page stays open: the group as saved, with the warning and "Make it safe" at the top.
+                _powerOnError = error;
+                _saveError = Texts["Groups.PowerOn.NotSetSaved"];
+                await ReloadAfterSaveAsync();
+            }
         }
         finally
         {
@@ -653,6 +785,34 @@
         if (_saveError is null)
         {
             Navigation.NavigateTo("");
+        }
+    }
+
+    // The saved group, so the warning names its new relays at once. A failure here only leaves the page as it was:
+    // the next change reloads it.
+    private async Task ReloadAfterSaveAsync()
+    {
+        try
+        {
+            await LoadLiveAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.LogWarning(ex, "The page could not reload {What}", "the group");
+        }
+    }
+
+    // Null when the board took it or there was nothing to set, otherwise the message for the warning.
+    private async Task<string?> MakeAddedSafeAsync(IReadOnlyCollection<int> added)
+    {
+        try
+        {
+            return await PowerOn.MakeGroupSafeAsync(Id, _user!.Email, added, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Setting the state after a power cut of group {GroupId}'s new relays failed", Id);
+            return SomethingWentWrong;
         }
     }
 
@@ -694,6 +854,38 @@
         }
 
         _ = RefreshAsync(reload: false);
+    }
+
+    // Only the relays' states after a power cut changed, on any board: a redraw only when the warning or the note on
+    // saving would show other relays.
+    private void OnPowerOnChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId != BoardId)
+        {
+            return;
+        }
+
+        _ = RedrawForPowerOnAsync();
+    }
+
+    private async Task RedrawForPowerOnAsync()
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (!_disposed && ShownPowerOn != _shownPowerOn)
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the change was on its way.
+        }
     }
 
     private void OnRelaysChanged(object? sender, EventArgs e)
