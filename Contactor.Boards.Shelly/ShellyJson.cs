@@ -18,7 +18,11 @@ public sealed record ShellyFrame(JsonElement? Result, ShellyRpcError? Error);
 /// <c>sys.cfg_rev</c>, which grows with every change of the device's configuration ("Sys"); null when the status has
 /// none, or one that isn't a whole number.
 /// </param>
-public sealed record ShellySwitches(int Count, uint Outputs, long? ConfigRevision = null);
+/// <param name="ScheduleRevision">
+/// <c>sys.schedule_rev</c>, which grows with every change of the schedules ("Sys", "Schedule"); null when the status has
+/// none, or one that isn't a whole number.
+/// </param>
+public sealed record ShellySwitches(int Count, uint Outputs, long? ConfigRevision = null, long? ScheduleRevision = null);
 
 /// <summary>A request frame as the simulator reads it.</summary>
 /// <param name="Id">The request's <c>id</c> as JSON text, to send back as it came: a number or a string.</param>
@@ -125,6 +129,162 @@ public static class ShellyJson
         }
 
         return ShellyApi.ToPowerOnState(String(result, ShellyApi.InitialState));
+    }
+
+    /// <summary>
+    /// Reads a switch's auto-on from <c>Switch.GetConfig</c>'s result, after <see cref="ReadPowerOn"/> checked it ("Switch",
+    /// "Configuration"): its <c>auto_on</c>, or null when it has none or one that isn't true or false.
+    /// </summary>
+    public static bool? ReadAutoOn(JsonElement result)
+    {
+        return result.ValueKind == JsonValueKind.Object
+            && result.TryGetProperty(ShellyApi.AutoOn, out var value)
+            && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? value.GetBoolean()
+                : null;
+    }
+
+    /// <summary>
+    /// <c>Switch.SetConfig</c> that turns one relay's auto-on off, and nothing else of its configuration:
+    /// <c>{"id":relay-1,"config":{"auto_on":false}}</c> ("Switch", "Switch.SetConfig").
+    /// </summary>
+    public static byte[] WriteSwitchAutoOnOff(int id, int relay)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, ShellyApi.MaxRelayCount);
+        return WriteRequest(id, ShellyApi.SwitchSetConfig, writer =>
+        {
+            writer.WriteNumber("id", relay - 1);
+            writer.WriteStartObject("config");
+            writer.WriteBoolean(ShellyApi.AutoOn, false);
+            writer.WriteEndObject();
+        });
+    }
+
+    /// <summary>
+    /// <c>Schedule.Update</c> that turns one job off and changes nothing else of it: <c>{"id":job,"enable":false}</c>, as
+    /// the docs' own example ("Schedule", "Schedule.Update").
+    /// </summary>
+    public static byte[] WriteScheduleOff(int id, long job)
+    {
+        return WriteRequest(id, ShellyApi.ScheduleUpdate, writer =>
+        {
+            writer.WriteNumber("id", job);
+            writer.WriteBoolean("enable", false);
+        });
+    }
+
+    /// <summary>
+    /// Reads <c>Schedule.List</c>'s result ("Schedule", "Schedule.List" and "Schedule Object Structure"): <c>jobs</c> an
+    /// array of at most <see cref="ShellyApi.MaxScheduleJobs"/> objects, each with a whole-number <c>id</c> of its own,
+    /// <c>enable</c> true or false (true when missing, as the docs say), and <c>calls</c> an array of at most
+    /// <see cref="ShellyApi.MaxScheduleCalls"/>. Anything else is refused. In the calls, only those that switch one of
+    /// the device's <paramref name="switchCount"/> switches count (<see cref="ShellyJob.Relays"/>); a call the app can't
+    /// read, an id the device hasn't and any other method are skipped.
+    /// </summary>
+    public static ShellySchedules ReadSchedules(JsonElement result, int switchCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(switchCount, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(switchCount, ShellyApi.MaxRelayCount);
+        if (result.ValueKind != JsonValueKind.Object
+            || !result.TryGetProperty("jobs", out var jobs)
+            || jobs.ValueKind != JsonValueKind.Array)
+        {
+            throw new ShellyProtocolException("The Shelly's schedules have no list of jobs.");
+        }
+
+        if (jobs.GetArrayLength() > ShellyApi.MaxScheduleJobs)
+        {
+            throw new ShellyProtocolException($"The Shelly lists more than {ShellyApi.MaxScheduleJobs} schedules.");
+        }
+
+        List<ShellyJob> read = [];
+        foreach (var job in jobs.EnumerateArray())
+        {
+            if (job.ValueKind != JsonValueKind.Object
+                || !job.TryGetProperty("id", out var id)
+                || id.ValueKind != JsonValueKind.Number
+                || !id.TryGetInt64(out var number))
+            {
+                throw new ShellyProtocolException("The Shelly has a schedule without an id.");
+            }
+
+            if (read.Exists(j => j.Id == number))
+            {
+                throw new ShellyProtocolException("The Shelly has two schedules with the same id.");
+            }
+
+            var enabled = true;
+            if (job.TryGetProperty("enable", out var enable))
+            {
+                enabled = enable.ValueKind switch
+                {
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    _ => throw new ShellyProtocolException("The Shelly has a schedule that is neither on nor off."),
+                };
+            }
+
+            if (!job.TryGetProperty("calls", out var calls) || calls.ValueKind != JsonValueKind.Array)
+            {
+                throw new ShellyProtocolException("The Shelly has a schedule without calls.");
+            }
+
+            if (calls.GetArrayLength() > ShellyApi.MaxScheduleCalls)
+            {
+                throw new ShellyProtocolException($"The Shelly has a schedule with more than {ShellyApi.MaxScheduleCalls} calls.");
+            }
+
+            var relays = 0;
+            foreach (var call in calls.EnumerateArray())
+            {
+                relays |= CallRelays(call, switchCount);
+            }
+
+            read.Add(new ShellyJob(number, enabled, (byte)relays));
+        }
+
+        long? revision = result.TryGetProperty("rev", out var rev) && rev.ValueKind == JsonValueKind.Number && rev.TryGetInt64(out var r) ? r : null;
+        return new ShellySchedules(read, revision);
+    }
+
+    // The relays one call in a job switches, bit 0 = switch:0; 0 for a call the app can't read or that switches none.
+    private static int CallRelays(JsonElement call, int switchCount)
+    {
+        if (call.ValueKind != JsonValueKind.Object || String(call, "method") is not { } method)
+        {
+            return 0;
+        }
+
+        var parameters = call.TryGetProperty("params", out var value) && value.ValueKind == JsonValueKind.Object ? value : (JsonElement?)null;
+        switch (method)
+        {
+            case ShellyApi.SwitchSet or ShellyApi.SwitchToggle:
+                return parameters is { } p && p.TryGetProperty("id", out var id) ? SwitchBit(id, switchCount) : 0;
+            case ShellyApi.SwitchSetAll:
+                return (1 << switchCount) - 1;
+            case ShellyApi.SwitchSetMany:
+                if (parameters is not { } many || !many.TryGetProperty("ids", out var ids) || ids.ValueKind != JsonValueKind.Array)
+                {
+                    return 0;
+                }
+
+                var mask = 0;
+                foreach (var each in ids.EnumerateArray())
+                {
+                    mask |= SwitchBit(each, switchCount);
+                }
+
+                return mask;
+            default:
+                return 0;
+        }
+    }
+
+    // A switch id as its bit, or 0 for one that isn't a whole number the device has.
+    private static int SwitchBit(JsonElement id, int switchCount)
+    {
+        return id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var number) && number >= 0 && number < switchCount ? 1 << number : 0;
     }
 
     /// <summary>
@@ -258,7 +418,7 @@ public static class ShellyJson
             throw new ShellyProtocolException("The Shelly's switches aren't numbered from 0 without a gap.");
         }
 
-        return new ShellySwitches(count, outputs, ConfigRevision(result));
+        return new ShellySwitches(count, outputs, SysRevision(result, ShellyApi.ConfigRevision), SysRevision(result, ShellyApi.ScheduleRevision));
     }
 
     /// <summary>
@@ -324,12 +484,12 @@ public static class ShellyJson
         });
     }
 
-    // sys.cfg_rev, or null without a whole number there: then the app reads the settings at connect only.
-    private static long? ConfigRevision(JsonElement result)
+    // sys.cfg_rev or sys.schedule_rev, or null without a whole number there: then the app reads again every minute.
+    private static long? SysRevision(JsonElement result, string name)
     {
         return result.TryGetProperty("sys", out var sys)
             && sys.ValueKind == JsonValueKind.Object
-            && sys.TryGetProperty(ShellyApi.ConfigRevision, out var revision)
+            && sys.TryGetProperty(name, out var revision)
             && revision.ValueKind == JsonValueKind.Number
             && revision.TryGetInt64(out var number)
                 ? number

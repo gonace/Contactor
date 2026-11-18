@@ -4,8 +4,9 @@ namespace Contactor.Boards.Shelly;
 
 /// <summary>
 /// A Shelly Gen2+ device as an <see cref="IRelayBoard"/>: its entry's 1 to 4 relays, which it never reports by itself
-/// over HTTP, so <see cref="ShellyClient"/> polls it, and each relay's state after a power cut (its switch's
-/// <c>initial_state</c>), which the app sets only when a person saves it. This only translates the client's state and
+/// over HTTP, so <see cref="ShellyClient"/> polls it, each relay's state after a power cut (its switch's
+/// <c>initial_state</c>), which the app sets only when a person saves it, and the device's own schedules and auto-on,
+/// which the app turns off only on a person's press. This only translates the client's state and
 /// commands.
 /// </summary>
 public sealed class ShellyBoard : IRelayBoard
@@ -21,12 +22,16 @@ public sealed class ShellyBoard : IRelayBoard
         _logger = logger;
         _client.StateChanged += OnStateChanged;
         _client.PowerOnChanged += OnPowerOnChanged;
+        _client.OwnRulesChanged += OnOwnRulesChanged;
     }
 
     public event EventHandler<BoardState>? StateChanged;
 
     /// <inheritdoc/>
     public event EventHandler<BoardState>? PowerOnChanged;
+
+    /// <inheritdoc/>
+    public event EventHandler<BoardState>? OwnRulesChanged;
 
     public BoardCapabilities Capabilities => _client.Model.Capabilities;
 
@@ -55,6 +60,15 @@ public sealed class ShellyBoard : IRelayBoard
         return _client.SetPowerOnAsync(relay, state, cancellationToken);
     }
 
+    /// <summary>
+    /// Turns off the device's schedules behind the <see cref="OwnRuleKind.Timer"/> rules and the auto-on of the
+    /// <see cref="OwnRuleKind.AutoOn"/> rules (<see cref="ShellyClient.TurnOffOwnRulesAsync"/>), and reads them back.
+    /// </summary>
+    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        return _client.TurnOffOwnRulesAsync(rules, cancellationToken);
+    }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         _client.Refresh();
@@ -62,13 +76,13 @@ public sealed class ShellyBoard : IRelayBoard
     }
 
     /// <summary>
-    /// The device's state as a <see cref="BoardState"/>: its relays and their states after a power cut, no inputs or
-    /// analog readings.
+    /// The device's state as a <see cref="BoardState"/>: its relays, their states after a power cut and its own rules
+    /// (null while unknown), no inputs or analog readings.
     /// </summary>
     public static BoardState ToBoardState(ShellyState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), ChannelMask.None, state.LastContactUtc, state.Problem, PowerOn: state.PowerOn);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), ChannelMask.None, state.LastContactUtc, state.Problem, OwnRules: state.OwnRules, PowerOn: state.PowerOn);
     }
 
     // Only relays the entry has; throws before anything is sent.
@@ -91,6 +105,12 @@ public sealed class ShellyBoard : IRelayBoard
     private void OnPowerOnChanged(object? sender, ShellyState state)
     {
         Raise(PowerOnChanged, state);
+    }
+
+    // Only the own rules changed: not a change the safety services, which listen to StateChanged, must see.
+    private void OnOwnRulesChanged(object? sender, ShellyState state)
+    {
+        Raise(OwnRulesChanged, state);
     }
 
     // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
