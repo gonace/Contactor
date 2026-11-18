@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Resources;
 using Microsoft.Extensions.Localization;
 
@@ -28,14 +29,19 @@ public sealed class BoardProblemText
         var passwordOnly = problem.Expected.PasswordOnly;
         return problem.Kind switch
         {
+            ConnectionProblemKind.WrongModel when problem.FoundRelayCount is { } count => _texts["Boards.Problem.WrongRelayCount", _texts.Plural("Boards.Relays", count), problem.Expected.Capabilities.RelayCount],
             ConnectionProblemKind.WrongModel when problem.Found is { } found => _texts["Boards.Problem.WrongModel", found.ModelName, problem.Expected.ModelName],
             ConnectionProblemKind.WrongModel => _texts["Boards.Problem.WrongModel.Unknown", problem.Expected.ModelName],
             ConnectionProblemKind.LoginNeeded => _texts[passwordOnly ? "Boards.Problem.PasswordNeeded" : "Boards.Problem.LoginNeeded"],
+            ConnectionProblemKind.CoverProfile => _texts["Boards.Problem.CoverProfile"],
+            ConnectionProblemKind.FirmwareTooOld when problem.MinFirmware is { } min => _texts["Boards.Problem.FirmwareTooOld", min],
+            ConnectionProblemKind.FirmwareTooOld => _texts["Boards.Problem.FirmwareTooOld.Unknown"],
+            ConnectionProblemKind.AskedToWait => _texts[passwordOnly ? "Boards.Problem.AskedToWait" : "Boards.Problem.AskedToWait.Login"],
             _ => _texts[passwordOnly ? "Boards.Problem.WrongPassword" : "Boards.Problem.WrongLogin"],
         };
     }
 
-    /// <summary>e.g. "Wrong model", "Needs a password" or "Wrong login".</summary>
+    /// <summary>e.g. "Wrong model", "Needs a password", "Wrong login" or "Old firmware".</summary>
     public string Short(ConnectionProblem problem)
     {
         ArgumentNullException.ThrowIfNull(problem);
@@ -44,6 +50,9 @@ public sealed class BoardProblemText
         {
             ConnectionProblemKind.WrongModel => _texts["Boards.Problem.Short.WrongModel"],
             ConnectionProblemKind.LoginNeeded => _texts[passwordOnly ? "Boards.Problem.Short.PasswordNeeded" : "Boards.Problem.Short.LoginNeeded"],
+            ConnectionProblemKind.FirmwareTooOld => _texts["Boards.Problem.Short.FirmwareTooOld"],
+            ConnectionProblemKind.CoverProfile => _texts["Boards.Problem.Short.CoverProfile"],
+            ConnectionProblemKind.AskedToWait => _texts["Boards.Problem.Short.AskedToWait"],
             _ => _texts[passwordOnly ? "Boards.Problem.Short.WrongPassword" : "Boards.Problem.Short.WrongLogin"],
         };
     }
@@ -51,13 +60,19 @@ public sealed class BoardProblemText
 
     /// <summary>
     /// Where a model can't be changed (Settings): "Add it again as an ETH484-B with 'Add a board', then remove this
-    /// one."; null unless another model the app knows is at the address.
+    /// one.", or for another number of relays "Add it again with 'Add a board' and choose the one with 4 relays, then
+    /// remove this one."; null unless another model the app knows is at the address.
     /// </summary>
     public string? AddAgain(ConnectionProblem problem)
     {
         ArgumentNullException.ThrowIfNull(problem);
-        return problem is { Kind: ConnectionProblemKind.WrongModel, Found: { } found }
-            ? _texts["Boards.Problem.WrongModel.AddAgain", found.ModelName, _texts["Common.AddBoard"].Value].Value
-            : null;
+        return problem switch
+        {
+            { Kind: ConnectionProblemKind.WrongModel, Found: not null, FoundRelayCount: { } count }
+                => _texts["Boards.Problem.WrongRelayCount.AddAgain", _texts.Plural("Boards.Relays", count), _texts["Common.AddBoard"].Value].Value,
+            { Kind: ConnectionProblemKind.WrongModel, Found: { } found }
+                => _texts["Boards.Problem.WrongModel.AddAgain", found.ModelName, _texts["Common.AddBoard"].Value].Value,
+            _ => null,
+        };
     }
 }

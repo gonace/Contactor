@@ -335,7 +335,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             throw Refuse(
                 "The Shelly is set up to drive a cover, not relays. Set its profile to \"switch\" in its own web page.",
                 ShellyMismatch.CoverProfile,
-                new ConnectionProblem(ConnectionProblemKind.WrongModel, _model));
+                new ConnectionProblem(ConnectionProblemKind.CoverProfile, _model));
         }
 
         if (ShellyApi.ParseFirmware(info.Firmware) is not { } firmware || firmware < ShellyApi.MinFirmware)
@@ -343,7 +343,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             throw Refuse(
                 string.Create(CultureInfo.InvariantCulture, $"The Shelly's firmware is too old. Update it to {ShellyApi.MinFirmware.ToString(3)} or later in its own web page."),
                 ShellyMismatch.OldFirmware,
-                problem: null);
+                new ConnectionProblem(ConnectionProblemKind.FirmwareTooOld, _model, MinFirmware: ShellyApi.MinFirmware.ToString(3)));
         }
     }
 
@@ -354,7 +354,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             throw Refuse(
                 string.Create(CultureInfo.InvariantCulture, $"The Shelly at this address has {switches.Count} relays, not {_model.Capabilities.RelayCount}."),
                 ShellyMismatch.RelayCount,
-                new ConnectionProblem(ConnectionProblemKind.WrongModel, _model, ShellyModels.ModelFor(switches.Count)));
+                new ConnectionProblem(ConnectionProblemKind.WrongModel, _model, ShellyModels.ModelFor(switches.Count), FoundRelayCount: switches.Count));
         }
     }
 
@@ -554,8 +554,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
                 return parsed.Result!.Value;
             case HttpStatusCode.TooManyRequests:
-                // Says nothing new about the password: the reason the device gave before still holds.
-                var throttled = new ShellyThrottledException(_poller.State.Problem);
+                // After wrong passwords, or with too many clients: the screens say to wait, and to check a new password.
+                var throttled = new ShellyThrottledException(new ConnectionProblem(ConnectionProblemKind.AskedToWait, _model));
                 Trace(BoardTraceDirection.Received, throttled.Message, answer.Text, isError: true);
                 throw throttled;
             case HttpStatusCode.NotFound:

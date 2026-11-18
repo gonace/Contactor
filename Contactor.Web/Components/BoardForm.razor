@@ -250,7 +250,7 @@
         }
 
         _afterSave = AfterSave.None;
-        if (state.Problem is { Kind: ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused } && Model is { HasLogin: true })
+        if (state.Problem is { IsAboutLogin: true } && Model is { HasLogin: true })
         {
             _noLogin = false;
             _focusLogin = true;

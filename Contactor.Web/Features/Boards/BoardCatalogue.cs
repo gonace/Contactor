@@ -2,11 +2,13 @@ using Contactor.Boards;
 using Contactor.Boards.Advantech;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Advantech;
 using Contactor.Web.Features.Denkovi;
 using Contactor.Web.Features.Devantech;
+using Contactor.Web.Features.Shelly;
 using Contactor.Web.Features.Vm201;
 using Contactor.Web.Features.Vm204;
 using Contactor.Web.Features.Vm208;
@@ -55,6 +57,10 @@ public static class BoardCatalogue
         new(AdamModels.Adam6060, AdamBoards.Create),
         new(AdamModels.Adam6066, AdamBoards.Create),
         new(AdamModels.Adam6260, AdamBoards.Create),
+        new(ShellyModels.OneRelay, ShellyBoards.Create),
+        new(ShellyModels.TwoRelays, ShellyBoards.Create),
+        new(ShellyModels.ThreeRelays, ShellyBoards.Create),
+        new(ShellyModels.FourRelays, ShellyBoards.Create),
     ];
 
     /// <summary>The brands in alphabetical order, each with its models in the catalogue's order.</summary>

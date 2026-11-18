@@ -2,6 +2,7 @@ using Contactor.Boards;
 using Contactor.Boards.Advantech;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Web.Features.Boards;
@@ -164,11 +165,33 @@ public sealed class BoardCatalogueTests
         Assert.Equal(502, board.Connection.Endpoint.Port);
     }
 
+    [Theory]
+    [InlineData("shelly-1", 1)]
+    [InlineData("Shelly-2", 2)]
+    [InlineData(" shelly-3", 3)]
+    [InlineData("SHELLY-4 ", 4)]
+    public async Task Should_BuildEachShellyEntry_WhenChosen(string type, int relays)
+    {
+        await using var board = Build(type, settings: new() { ["Shelly:Password"] = "quince7" });
+
+        Assert.Contains(board.Model, ShellyModels.All);
+        Assert.Equal(type.Trim().ToLowerInvariant(), board.Model.Id);
+        var shelly = Assert.IsType<ShellyBoard>(board.Board);
+        Assert.Equal(relays, shelly.Capabilities.RelayCount);
+        Assert.Same(board.Model, board.Services.GetRequiredService<ShellyClient>().Model);
+        Assert.IsType<ShellyConnection>(board.Connection);
+        Assert.IsType<ShellyTraffic>(board.Traffic);
+        Assert.False(board.Connection.Endpoint.HasHost);
+        Assert.Equal(80, board.Connection.Endpoint.Port);
+        Assert.Equal(new BoardLogin("", "quince7"), board.Connection.Login);
+    }
+
     // Checked when the board is built, so a wrong setting fails where it is chosen, not later on the connection.
     [Fact]
     public void Should_RefuseToBuild_WithSettingsTheBoardCannotTake()
     {
         Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() => Build("vm204", settings: new() { ["Vm204:PollSeconds"] = "0" }));
+        Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() => Build("shelly-1", settings: new() { ["Shelly:Password"] = new string('x', ShellyApi.PasswordMaxLength + 1) }));
     }
 
     [Fact]
@@ -185,10 +208,13 @@ public sealed class BoardCatalogueTests
     [Fact]
     public void Should_ListTheBrands_InAlphabeticalOrder_EachWithItsModels()
     {
-        Assert.Equal(["Advantech", "Denkovi", "Devantech", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
+        Assert.Equal(["Advantech", "Denkovi", "Devantech", "Shelly", "Velleman", "Waveshare"], BoardCatalogue.Brands.Select(m => m.Name));
         Assert.Equal(
             ["VM201", "VM204", "VM208"],
             BoardCatalogue.Brands.Single(m => m.Name == "Velleman").Models.Select(m => m.ModelName));
+        Assert.Equal(
+            ["Gen2+ 1", "Gen2+ 2", "Gen2+ 3", "Gen2+ 4"],
+            BoardCatalogue.Brands.Single(m => m.Name == "Shelly").Models.Select(m => m.ModelName));
         Assert.Equal(
             BoardCatalogue.All.Select(r => r.Model).OrderBy(m => m.Brand, StringComparer.OrdinalIgnoreCase),
             BoardCatalogue.Brands.SelectMany(m => m.Models));
@@ -224,6 +250,10 @@ public sealed class BoardCatalogueTests
             ["advantech-adam-6060"] = cantTell,
             ["advantech-adam-6066"] = cantTell,
             ["advantech-adam-6260"] = cantTell,
+            ["shelly-1"] = cantTell,
+            ["shelly-2"] = cantTell,
+            ["shelly-3"] = cantTell,
+            ["shelly-4"] = cantTell,
         };
 
         Assert.Equal(
@@ -242,6 +272,7 @@ public sealed class BoardCatalogueTests
         });
         Assert.Equal("Waveshare Modbus PoE ETH Relay 30CH", BoardCatalogue.Find("waveshare-30")!.Model.Name);
         Assert.Equal("Denkovi DAEnetIP2 v2 16-relay kit", BoardCatalogue.Find("denkovi-daenetip2-v2-16")!.Model.Name);
+        Assert.Equal("Shelly Gen2+ 2", BoardCatalogue.Find("shelly-2")!.Model.Name);
     }
 
     private static ActiveBoard Build(string type, string vm208Host = "127.0.0.1", Dictionary<string, string?>? settings = null)

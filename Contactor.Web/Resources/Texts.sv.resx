@@ -315,11 +315,35 @@
   <data name="Boards.Port" xml:space="preserve">
     <value>Port</value>
   </data>
+  <data name="Boards.Problem.AskedToWait" xml:space="preserve">
+    <value>Kortet ber Contactor att vänta en stund. Kontrollera lösenordet om du nyss har ändrat det.</value>
+  </data>
+  <data name="Boards.Problem.AskedToWait.Login" xml:space="preserve">
+    <value>Kortet ber Contactor att vänta en stund. Kontrollera användarnamnet och lösenordet om du nyss har ändrat dem.</value>
+  </data>
+  <data name="Boards.Problem.CoverProfile" xml:space="preserve">
+    <value>Kortet är inställt på att styra en rullgardin eller markis, inte reläer. Ställ in dess profil på "switch" på kortets egen webbsida och kontrollera sedan igen.</value>
+  </data>
+  <data name="Boards.Problem.FirmwareTooOld" xml:space="preserve">
+    <value>Kortets firmware är för gammal. Uppdatera den till {0} eller senare på kortets egen webbsida.</value>
+  </data>
+  <data name="Boards.Problem.FirmwareTooOld.Unknown" xml:space="preserve">
+    <value>Kortets firmware är för gammal. Uppdatera den på kortets egen webbsida.</value>
+  </data>
   <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
     <value>Kortet vill ha ett användarnamn och lösenord.</value>
   </data>
   <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
     <value>Kortet vill ha ett lösenord.</value>
+  </data>
+  <data name="Boards.Problem.Short.AskedToWait" xml:space="preserve">
+    <value>Ber oss vänta</value>
+  </data>
+  <data name="Boards.Problem.Short.CoverProfile" xml:space="preserve">
+    <value>Inställt för rullgardin</value>
+  </data>
+  <data name="Boards.Problem.Short.FirmwareTooOld" xml:space="preserve">
+    <value>Gammal firmware</value>
   </data>
   <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
     <value>Behöver inloggning</value>
@@ -350,6 +374,12 @@
   </data>
   <data name="Boards.Problem.WrongPassword" xml:space="preserve">
     <value>Lösenordet är fel.</value>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount" xml:space="preserve">
+    <value>Kortet på den här adressen har {0}, inte {1}.</value>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount.AddAgain" xml:space="preserve">
+    <value>Lägg till det igen med "{1}", välj det med {0} och ta sedan bort det här.</value>
   </data>
   <data name="Boards.Relays.InGroup" xml:space="preserve">
     <value>I gruppen {0}, som styr det.</value>

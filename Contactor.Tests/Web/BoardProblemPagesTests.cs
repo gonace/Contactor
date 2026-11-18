@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
@@ -35,6 +36,10 @@ public sealed class BoardProblemPagesTests
         { new ConnectionProblem(ConnectionProblemKind.LoginNeeded, Vm201Model.Model), "The board asks for a user name and password.", "Needs a login" },
         { new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), "The password is wrong.", "Wrong password" },
         { new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model), "The user name or password is wrong.", "Wrong login" },
+        { new ConnectionProblem(ConnectionProblemKind.FirmwareTooOld, DevantechModels.Eth008, MinFirmware: "1.7.0"), "The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", "Old firmware" },
+        { new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays, FoundRelayCount: 4), "The board at this address has 4 relays, not 2.", "Wrong model" },
+        { new ConnectionProblem(ConnectionProblemKind.CoverProfile, ShellyModels.TwoRelays), "The board is set up to drive a cover, not relays. Set its profile to \"switch\" on its own web page, then check again.", "Set up for a cover" },
+        { new ConnectionProblem(ConnectionProblemKind.AskedToWait, DevantechModels.Eth008), "The board asks Contactor to wait a while. If you just changed the password, check it.", "Asked to wait" },
         { null, "No contact with the relay board at", "No contact yet" },
     };
 
@@ -59,8 +64,11 @@ public sealed class BoardProblemPagesTests
 
         // Another model the app knows is added again: the model can't be changed here.
         Assert.Equal(
-            problem is { Kind: ConnectionProblemKind.WrongModel, Found: not null },
+            problem is { Kind: ConnectionProblemKind.WrongModel, Found: not null, FoundRelayCount: null },
             html.Contains("Add it again as an ETH484-B with 'Add a board', then remove this one.", StringComparison.Ordinal));
+        Assert.Equal(
+            problem is { FoundRelayCount: 4 },
+            html.Contains("Add it again with 'Add a board' and choose the one with 4 relays, then remove this one.", StringComparison.Ordinal));
     }
 
     // The red box keeps its heading; the line under it says why, and where to go. The relays wait for the board.
@@ -202,6 +210,129 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
+    // A Shelly added in the app: its password, then a 429, which says to wait and doesn't claim the password is wrong,
+    // then the right one goes on, and the app switches its relays.
+    [Fact]
+    public async Task Should_AddAShelly_AndSayToWait_WhenItAsks()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.TwoRelays, "apple", NullLogger.Instance);
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-2");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The board asks for a password.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.With("id", "username")));
+
+        await page.TypeAsync(PageRenderer.With("id", "password"), "pear");
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
+
+        // The device's brute-force protection: another password now gets 429.
+        simulator.Throttle = true;
+        await page.TypeAsync(PageRenderer.With("id", "password"), "plum");
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The board asks Contactor to wait a while. If you just changed the password, check it.", await page.TextAsync(), StringComparison.Ordinal);
+
+        simulator.Throttle = false;
+        await page.TypeAsync(PageRenderer.With("id", "password"), "apple");
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+
+        var shelly = boards.App.Services.GetRequiredService<BoardRegistry>().All[^1];
+        Assert.Equal(ChannelMask.Of(2), await shelly.TurnOnAsync(ChannelMask.Of(2), Cancel));
+        Assert.Equal((byte)0b10, simulator.Relays);
+    }
+
+    // A Shelly with another number of relays: the counts, not the models, and "Choose model" back to the entries.
+    [Fact]
+    public async Task Should_SayTheRelayCount_OfAShellyWithAnotherNumber()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.FourRelays);
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-2");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The board at this address has 4 relays, not 2.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(Button("Choose model")));
+        Assert.Empty(page.Errors);
+    }
+
+    // A Shelly in the cover profile: no model fits, so the step says to set its profile and offers "Check again".
+    [Fact]
+    public async Task Should_SayToSetTheProfile_OfAShellyThatDrivesACover()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.TwoRelays) { Profile = "cover" };
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-2");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+
+        Assert.Contains("The board is set up to drive a cover, not relays. Set its profile to \"switch\" on its own web page, then check again.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(Button("Choose model")));
+        Assert.True(await page.HasAsync(Button("Check again")));
+
+        simulator.Profile = "switch";
+        await page.ClickAsync(Button("Check again"));
+        await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Board online", StringComparison.Ordinal));
+        Assert.Empty(page.Errors);
+    }
+
+    // A Shelly that asks to wait from the start: the step says so, and leaves "no password" ticked, since a 429 doesn't
+    // say the password is wrong.
+    [Fact]
+    public async Task Should_SayToWait_AndLeaveTheLoginAsItIs_WhenAShellyAsks()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.OneRelay, "apple", NullLogger.Instance) { Throttle = true };
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-1");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+
+        Assert.Contains("The board asks Contactor to wait a while. If you just changed the password, check it.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(simulator.ThrottledCount > 0);
+        Assert.False(await page.HasAsync(PageRenderer.With("id", "password")));
+        Assert.DoesNotContain(page.Focused, id => id is "password" or "username");
+        Assert.True(await page.HasAsync(Button("Check again")));
+        Assert.Empty(page.Errors);
+    }
+
+    // A Shelly with firmware before 1.7.0: the step says to update it.
+    [Fact]
+    public async Task Should_SayToUpdateTheFirmware_OfAnOldShelly()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.OneRelay) { Firmware = "1.6.2" };
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-1");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+
+        Assert.Contains("The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(Button("Check again")));
+        Assert.DoesNotContain(page.Focused, id => id is "password" or "username");
+        Assert.Empty(page.Errors);
+    }
+
     // A board with a user name: the cursor goes to User name.
     [Fact]
     public async Task Should_AskForTheLogin_AndPutTheCursorInUserName_OnABoardWithOne()
@@ -322,6 +453,36 @@ public sealed class BoardProblemPagesTests
         board.SetProblem(needed);
         await BoardTestRig.WaitUntilAsync(() => page.Focused.Count == 1);
         Assert.Equal(["username"], page.Focused);
+        Assert.Empty(page.Errors);
+    }
+
+    // Only a login needed or refused opens the login fields after a Save. Being asked to wait doesn't say the login is
+    // wrong, and old firmware isn't fixed there.
+    [Theory]
+    [InlineData(ConnectionProblemKind.LoginRefused, true)]
+    [InlineData(ConnectionProblemKind.AskedToWait, false)]
+    [InlineData(ConnectionProblemKind.FirmwareTooOld, false)]
+    public async Task Should_OpenTheLogin_OnlyForAProblemAboutIt(ConnectionProblemKind kind, bool opens)
+    {
+        var board = new FakeRelayBoard(connected: false);
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
+        var id = await app.Services.FirstBoardIdAsync();
+        await app.Services.GetRequiredService<BoardRegistry>().ReplaceAsync(new FakeBoardParts(board).Build(id, Vm201Model.Model), Cancel);
+        using var page = await PageRenderer.StartAsync<BoardForm>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardForm.BoardId)] = id });
+
+        await page.SubmitAsync(PageRenderer.With("class", "card"));
+        board.SetProblem(new ConnectionProblem(kind, Vm201Model.Model, MinFirmware: "1.7.0"));
+        var text = kind switch
+        {
+            ConnectionProblemKind.LoginRefused => "The user name or password is wrong.",
+            ConnectionProblemKind.AskedToWait => "The board asks Contactor to wait a while.",
+            _ => "The board's firmware is too old.",
+        };
+        await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains(text, StringComparison.Ordinal));
+
+        Assert.Equal(opens, await page.HasAsync(PageRenderer.With("id", "username")));
+        string?[] focused = opens ? ["username"] : [];
+        Assert.Equal(focused, page.Focused);
         Assert.Empty(page.Errors);
     }
 

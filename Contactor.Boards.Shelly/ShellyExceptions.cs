@@ -89,8 +89,8 @@ public sealed class ShellyWrongDeviceException : Exception, IConnectionProblemSo
     /// <param name="message">What is wrong, in plain English.</param>
     /// <param name="mismatch">Which of the checks it failed.</param>
     /// <param name="problem">
-    /// For the screens: another model (with the entry for its switch count when it has one), or null for old firmware,
-    /// which the screens can't say yet.
+    /// For the screens: another model or another number of relays (with the entry for its switch count when it has one),
+    /// the cover profile, or firmware too old.
     /// </param>
     public ShellyWrongDeviceException(string message, ShellyMismatch mismatch, ConnectionProblem? problem)
         : base(message)
@@ -102,7 +102,7 @@ public sealed class ShellyWrongDeviceException : Exception, IConnectionProblemSo
     /// <summary>Which of the checks it failed.</summary>
     public ShellyMismatch Mismatch { get; }
 
-    /// <summary>Another model, or null when it is something the screens can't say yet.</summary>
+    /// <summary>Another model or number of relays, the cover profile, or firmware too old; null when not given.</summary>
     public ConnectionProblem? Problem { get; }
 }
 
@@ -127,9 +127,7 @@ public sealed class ShellyThrottledException : Exception, IConnectionProblemSour
     {
     }
 
-    /// <param name="problem">
-    /// The reason the device gave before it asked to wait, e.g. a refused password, which still holds; null for none.
-    /// </param>
+    /// <param name="problem">For the screens: asked to wait; null for none.</param>
     public ShellyThrottledException(ConnectionProblem? problem)
         : this()
     {
@@ -137,8 +135,8 @@ public sealed class ShellyThrottledException : Exception, IConnectionProblemSour
     }
 
     /// <summary>
-    /// The reason the device gave before the 429, kept so the screens don't lose it: a 429 says nothing new about the
-    /// password. There is no problem kind for "wait" yet.
+    /// <see cref="ConnectionProblemKind.AskedToWait"/>: the screens say to wait, and to check a password just changed.
+    /// Null when not given.
     /// </summary>
     public ConnectionProblem? Problem { get; }
 }

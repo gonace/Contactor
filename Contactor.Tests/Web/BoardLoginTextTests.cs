@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Web.Features.Boards;
 
@@ -46,6 +47,8 @@ public sealed class BoardLoginTextTests
     public void Should_SayTheBoardsOwnProblems_InTheirOldEnglish()
     {
         Assert.Equal("The Devantech board takes a password only, no user name.", Login.Problem(new LoginProblem(LoginProblemKind.PasswordOnly, LoginField.UserName, Board: "Devantech")));
+        Assert.Equal("The Shelly board takes a password only, no user name.", Login.Problem(new ShellyConnection(new ShellyClient(Microsoft.Extensions.Options.Options.Create(new ShellyOptions()), ShellyModels.OneRelay, TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<ShellyClient>.Instance), Microsoft.Extensions.Options.Options.Create(new ShellyOptions())).CheckLogin(new BoardLogin("admin", "x"))!));
+        Assert.Equal("The password can be at most 128 characters.", Login.Problem(ShellyModels.CheckPassword(new string('x', 129))!));
         Assert.Equal("The VM208 takes no login: its password only protects its own web pages.", Login.Problem(new LoginProblem(LoginProblemKind.NoLoginWebPages, Board: "VM208")));
         Assert.Equal("The Waveshare board takes no login: its password only protects its own web page.", Login.Problem(new LoginProblem(LoginProblemKind.NoLoginWebPage, Board: "Waveshare")));
     }
@@ -59,6 +62,9 @@ public sealed class BoardLoginTextTests
         Assert.Equal(
             "The board's Read-write Community from its SNMP settings, 4 to 12 characters: letters, digits and plain symbols, no spaces. On a new board it is private. With a wrong community the board doesn't answer: check the address and the community.",
             Login.Hint(DaenetIp2Models.Relays8));
+
+        // A Shelly's password is the one set on the device; it takes any character, so there is no rule to give.
+        Assert.Null(Login.Hint(ShellyModels.OneRelay));
     }
 
     [Fact]

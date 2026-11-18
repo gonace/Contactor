@@ -294,7 +294,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
     {
         var before = _problem;
         _problem = problem;
-        if (problem is { Kind: ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused } && before?.Kind != problem.Kind && Model.HasLogin)
+        if (problem is { IsAboutLogin: true } && before?.Kind != problem.Kind && Model.HasLogin)
         {
             Values.NoLogin = false;
             _focusLogin = true;

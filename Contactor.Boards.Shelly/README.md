@@ -30,10 +30,10 @@ Also RFC 7616, *HTTP Digest Access Authentication*, section 3.4.1 (the response 
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `shelly-1` | Shelly 1 relay (Gen2+) | 1 | 0 | none | optional password |
-| `shelly-2` | Shelly 2 relays (Gen2+) | 2 | 0 | none | optional password |
-| `shelly-3` | Shelly 3 relays (Gen2+) | 3 | 0 | none | optional password |
-| `shelly-4` | Shelly 4 relays (Gen2+) | 4 | 0 | none | optional password |
+| `shelly-1` | Shelly Gen2+ 1 | 1 | 0 | none | optional password |
+| `shelly-2` | Shelly Gen2+ 2 | 2 | 0 | none | optional password |
+| `shelly-3` | Shelly Gen2+ 3 | 3 | 0 | none | optional password |
+| `shelly-4` | Shelly Gen2+ 4 | 4 | 0 | none | optional password |
 
 The docs list no model codes for the app to tell the devices apart, so the catalogue has one entry per number of
 relays (`ShellyModels`). The device must have that many `switch:N` components, or the app refuses it.
@@ -130,15 +130,18 @@ The device counts as connected only after a poll after that answered.
 
 When the device refuses the connection, the state says why (`ShellyState.Problem`, a `ConnectionProblem`):
 
-- `WrongModel` for another number of relays, with the entry for the count found (`ShellyModels.ModelFor`), or null
-  for a count the catalogue has no entry for. Also `WrongModel`, with no model found, for a Gen1 device and for the
-  cover profile.
+- `WrongModel` for another number of relays, with the count found (`FoundRelayCount`) and the entry for it
+  (`ShellyModels.ModelFor`), or null for a count the catalogue has no entry for. Also `WrongModel`, with no model
+  found, for a Gen1 device.
+- `CoverProfile` for a device in the cover profile: the screens say to set its profile to "switch".
 - `LoginNeeded`: the device asks for a password and the app has none.
 - `LoginRefused`: the device refused the password.
-- None for firmware that is too old. Only the Debug screen and the log say why.
-- A 429 says nothing new about the password: the state keeps the reason the device gave before, for example
-  `LoginRefused`, and the Debug screen and the log say to wait.
-  `ShellyWrongDeviceException.Mismatch` tells the four refusals apart.
+- `FirmwareTooOld`, with 1.7.0 as `MinFirmware`, for firmware that is too old or that the app can't read.
+- `AskedToWait` for a 429: the screens say that the device asks to wait, and to check the password if it was just
+  changed. A 429 comes after wrong passwords or with too many clients, so the words don't say the password is
+  wrong, and the login fields stay as they are. The poller tries again after its own wait.
+
+`ShellyWrongDeviceException.Mismatch` tells the four refusals of the device apart.
 
 A command (ON or OFF) switches the relays in the mask one at a time:
 
@@ -188,6 +191,8 @@ The `Shelly` section applies to all four entries:
 - `Generation` (null for a Gen1 device, which answers 404), `Firmware` and `Profile` make a device the app must
   refuse. `FailRelays` and `Refusal` make `Switch.Set` fail, by default with -109 "Overtemp condition present".
   `Throttle` answers 429. `ExpireNonces` and `ForgetNonces` make the next kept nonce fail.
+- The simulator's page (`Contactor.Simulator`) offers port 8180 for it, because port 80 needs rights a developer
+  doesn't have.
 - Relays can be switched "at the device", and connections can be dropped or refused. A request that is too long,
   cut short or not HTTP is closed without an answer. A request that isn't a request frame gets 400 (the docs don't
   say what the device does).
@@ -210,4 +215,5 @@ The `Shelly` section applies to all four entries:
 - What a Gen1 device answers to `POST /rpc`. The app expects 404.
 - The longest password the device's web page takes, and if a password with non-ASCII letters works.
 - How the device handles a poll every 2 s for days, with and without a password.
-- How many HTTP clients the device takes at once. The docs say 6 non-persistent channels.
+- How many HTTP clients the device takes at once. The docs say 6 non-persistent channels. If too many clients also
+  get 429.
