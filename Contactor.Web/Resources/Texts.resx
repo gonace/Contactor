@@ -1484,6 +1484,9 @@
   <data name="Groups.PowerOn.OnSave" xml:space="preserve">
     <value>When you save, Contactor sets the board to keep {0} off after a power cut.</value>
   </data>
+  <data name="Groups.PowerOn.Unknown" xml:space="preserve">
+    <value>Can't see yet what the board does after a power cut.</value>
+  </data>
   <data name="Groups.PowerOn.Warning" xml:space="preserve">
     <value>After a power cut, the board can turn {0} on by itself, without the group's start order.</value>
   </data>

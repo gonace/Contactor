@@ -1352,6 +1352,9 @@
   <data name="Groups.PowerOn.OnSave" xml:space="preserve">
     <value>När du sparar ställer Contactor in kortet så att {0} är av efter ett strömavbrott.</value>
   </data>
+  <data name="Groups.PowerOn.Unknown" xml:space="preserve">
+    <value>Kan inte se än vad kortet gör efter ett strömavbrott.</value>
+  </data>
   <data name="Groups.PowerOn.Warning" xml:space="preserve">
     <value>Efter ett strömavbrott kan kortet slå på {0} av sig självt, utan gruppens startordning.</value>
   </data>

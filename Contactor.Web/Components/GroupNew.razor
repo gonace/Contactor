@@ -241,7 +241,8 @@
             .Where(c => c.IsFree && _wizard.FitsBoard(c.BoardId) && _wizard.OrderOf(c.RelayId) == 0)
             .OrderBy(c => c.Channel)
             .Select(c => new EditRelay(c.RelayId, c.Channel, c.Name))];
-    // The picked relays whose board turns them on by itself after a power cut: "Create group" sets them to Off.
+    // The picked relays whose board turns them on by itself after a power cut, or whose state it hasn't reported:
+    // "Create group" sets them to Off.
     private IReadOnlyList<EditRelay> NotSafe
     {
         get
@@ -251,7 +252,7 @@
                 return [];
             }
 
-            var channels = GroupPowerOn.NotSafe(board.Capabilities.PowerOn, board.State.PowerOn, _wizard.Editor.Relays.Select(r => r.Channel));
+            var channels = GroupPowerOn.ToSetOnSave(board.Capabilities.PowerOn, board.State.PowerOn, _wizard.Editor.Relays.Select(r => r.Channel));
             return [.. _wizard.Editor.Relays.Where(r => channels.Contains(r.Channel))];
         }
     }
@@ -378,7 +379,7 @@
     {
         try
         {
-            return await PowerOn.MakeGroupSafeAsync(groupId, _user!.Email, relayIds: null, CancellationToken.None) is null;
+            return await PowerOn.MakeGroupSafeAsync(groupId, _user!.Email, relayIds: null, onSave: true, CancellationToken.None) is null;
         }
         catch (Exception ex)
         {

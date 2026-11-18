@@ -119,12 +119,14 @@ public sealed partial class RelayPowerOnHandler : IDisposable
     /// <summary>
     /// "Make it safe", "Create group" and saving a group with new relays: sets the group's relays that break the group's
     /// rule (<see cref="GroupPowerOn"/>) to Off on the board at once, as <paramref name="userEmail"/> pressed it, and logs
-    /// each change the board took. With <paramref name="relayIds"/>, only those of the group's relays. Returns null when
+    /// each change the board took. With <paramref name="relayIds"/>, only those of the group's relays. With
+    /// <paramref name="onSave"/> ("Create group" and Save) also those whose state is unknown
+    /// (<see cref="GroupPowerOn.ToSetOnSave"/>); "Make it safe" sets only those the board reported another state for. Returns null when
     /// there was nothing to set or the board took it all, otherwise the first message to show. Nothing is sent or queued
     /// without a connection; a write the board didn't answer is kept as unconfirmed, as for the Relay screen. One write
     /// that fails doesn't stop the others.
     /// </summary>
-    public async Task<string?> MakeGroupSafeAsync(int groupId, string userEmail, IReadOnlyCollection<int>? relayIds, CancellationToken cancellationToken)
+    public async Task<string?> MakeGroupSafeAsync(int groupId, string userEmail, IReadOnlyCollection<int>? relayIds, bool onSave, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         int boardId;
@@ -158,7 +160,10 @@ public sealed partial class RelayPowerOnHandler : IDisposable
             return null;
         }
 
-        var writes = GroupPowerOn.Writes(ability, GroupPowerOn.NotSafe(ability, board.State.PowerOn, members.Select(m => m.Channel)));
+        var channels = members.Select(m => m.Channel);
+        var writes = GroupPowerOn.Writes(ability, onSave
+            ? GroupPowerOn.ToSetOnSave(ability, board.State.PowerOn, channels)
+            : GroupPowerOn.NotSafe(ability, board.State.PowerOn, channels));
         if (writes.Count == 0)
         {
             return null;

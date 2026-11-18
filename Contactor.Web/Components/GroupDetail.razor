@@ -261,6 +261,10 @@
                     {
                         <p class="power-on-unknown">@Texts["Groups.PowerOn.CantTell"]</p>
                     }
+                    else if (AnyUnknown)
+                    {
+                        <p class="power-on-unknown">@Texts["Groups.PowerOn.Unknown"]</p>
+                    }
                 </section>
 
                 @if (CanChangeMembers)
@@ -361,7 +365,8 @@
         }
     }
 
-    // The relays added in the form, not saved yet, that Save sets to Off after a power cut on the board.
+    // The relays added in the form, not saved yet, that Save sets to Off after a power cut on the board: another state
+    // than Off, or unknown (GroupPowerOn.ToSetOnSave).
     private IReadOnlyList<EditRelay> AddedNotSafe
     {
         get
@@ -372,15 +377,18 @@
             }
 
             var added = _editor.Relays.Where(r => _group.Members.All(m => m.RelayId != r.RelayId)).ToList();
-            var channels = GroupPowerOn.NotSafe(PowerOnAbility, State.PowerOn, added.Select(r => r.Channel));
+            var channels = GroupPowerOn.ToSetOnSave(PowerOnAbility, State.PowerOn, added.Select(r => r.Channel));
             return [.. added.Where(r => channels.Contains(r.Channel))];
         }
     }
 
-    private (ChannelMask NotSafe, ChannelMask Added) ShownPowerOn =>
-        (ChannelMask.Of(NotSafe.Select(m => m.Channel)), ChannelMask.Of(AddedNotSafe.Select(r => r.Channel)));
+    // Whether the board, which has the ability, hasn't reported the state of any of the group's relays (as saved).
+    private bool AnyUnknown => _group is not null && GroupPowerOn.Unknown(PowerOnAbility, State.PowerOn, _group.Members.Select(m => m.Channel)).Count > 0;
 
-    private (ChannelMask NotSafe, ChannelMask Added) _shownPowerOn;
+    private (ChannelMask NotSafe, ChannelMask Added, bool Unknown) ShownPowerOn =>
+        (ChannelMask.Of(NotSafe.Select(m => m.Channel)), ChannelMask.Of(AddedNotSafe.Select(r => r.Channel)), AnyUnknown);
+
+    private (ChannelMask NotSafe, ChannelMask Added, bool Unknown) _shownPowerOn;
 
     // "Make it safe" or a save's write that went wrong.
     private string? _powerOnError;
@@ -669,7 +677,7 @@
         _powerOnError = null;
         try
         {
-            _powerOnError = await PowerOn.MakeGroupSafeAsync(Id, _user.Email, relayIds: null, CancellationToken.None);
+            _powerOnError = await PowerOn.MakeGroupSafeAsync(Id, _user.Email, relayIds: null, onSave: false, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -816,7 +824,7 @@
     {
         try
         {
-            return await PowerOn.MakeGroupSafeAsync(Id, _user!.Email, added, CancellationToken.None);
+            return await PowerOn.MakeGroupSafeAsync(Id, _user!.Email, added, onSave: true, CancellationToken.None);
         }
         catch (Exception ex)
         {

@@ -70,6 +70,21 @@ public sealed class GroupPowerOnTests
         Assert.Empty(GroupPowerOn.Writes(wholeBoard, []));
     }
 
+    // Unknown: a board with the ability that didn't report a relay's state, or no state at all. A board without the
+    // ability can't tell, so nothing is unknown there.
+    [Fact]
+    public void Should_FindTheUnknownRelays_AndSetThemOffOnSave_WithTheRelaysNotOff()
+    {
+        var states = new PowerOnStates([PowerOnState.On, null, PowerOnState.Off, null]);
+
+        Assert.Equal([4, 2], GroupPowerOn.Unknown(AllStates, states, [4, 1, 2, 3, 2]));
+        Assert.Equal([1, 2, 3], GroupPowerOn.Unknown(AllStates, null, [1, 2, 3]));
+        Assert.Empty(GroupPowerOn.Unknown(null, states, [2, 4]));
+        Assert.Equal([4, 1, 2], GroupPowerOn.ToSetOnSave(AllStates, states, [4, 3, 1, 2, 4]));
+        Assert.Equal([1, 2], GroupPowerOn.ToSetOnSave(AllStates, null, [1, 2]));
+        Assert.Empty(GroupPowerOn.ToSetOnSave(null, states, [1, 2]));
+    }
+
     [Fact]
     public async Task Should_WarnOnTheGroupsCardAndPage_NamingTheRelaysNotOff()
     {
@@ -139,6 +154,9 @@ public sealed class GroupPowerOnTests
         Assert.DoesNotContain("Make it safe", page, StringComparison.Ordinal);
         Assert.DoesNotContain("Can't see what the board does", card, StringComparison.Ordinal);
         Assert.Equal(what == "no ability", page.Contains("Can't see what the board does after a power cut. Check it on the board.", StringComparison.Ordinal));
+        Assert.Equal(what is "unknown" or "not reported", page.Contains("Can't see yet what the board does after a power cut.", StringComparison.Ordinal));
+        Assert.DoesNotContain("Can't see yet", card, StringComparison.Ordinal);
+        Assert.Empty(board.PowerOnWrites);
     }
 
     // "Make it safe" on the group's page writes Off for the group's relays that aren't Off, and only on the press.
@@ -190,7 +208,7 @@ public sealed class GroupPowerOnTests
 
         var card = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
         var html = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
-        var error = await app.Services.GetRequiredService<RelayPowerOnHandler>().MakeGroupSafeAsync(groupId, John, relayIds: null, Cancel);
+        var error = await app.Services.GetRequiredService<RelayPowerOnHandler>().MakeGroupSafeAsync(groupId, John, relayIds: null, onSave: false, Cancel);
 
         foreach (var shown in new[] { card, html })
         {
@@ -442,6 +460,91 @@ public sealed class GroupPowerOnTests
         Assert.Equal("This relay is in a group, so it must be Off after a power cut. Its group's page shows what the board does.", english);
         Assert.Equal("Reläet ingår i en grupp, så det måste vara av efter ett strömavbrott. Gruppens sida visar vad kortet gör.", swedish);
         Assert.Empty(board.PowerOnWrites);
+    }
+
+    // An unknown state gives no red warning and "Make it safe" doesn't touch it: only a quiet note on the group's page,
+    // until the board reports it. Nothing is written without a press.
+    [Fact]
+    public async Task Should_NoteAnUnknownState_UntilTheBoardReportsIt()
+    {
+        var board = Board(heat: null);
+        await using var app = App(board);
+        var groupId = await AddGroupAsync(app);
+        using var page = await OpenGroupAsync(app, groupId);
+        Assert.Contains("Can't see yet what the board does after a power cut.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Make it safe")));
+        Assert.Null(await app.Services.GetRequiredService<RelayPowerOnHandler>().MakeGroupSafeAsync(groupId, John, relayIds: null, onSave: false, Cancel));
+
+        board.SetPowerOn(States(heat: PowerOnState.Off));
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains("Can't see yet", StringComparison.Ordinal));
+
+        Assert.Empty(board.PowerOnWrites);
+        Assert.Empty(page.Errors);
+    }
+
+    // "Create group" also writes Off for a relay whose state is unknown, and the review names it.
+    [Fact]
+    public async Task Should_SetAnUnknownRelayToOff_OnCreate()
+    {
+        var board = Board(heat: null);
+        await using var app = App(board);
+        using var page = await AtReviewAsync(app, 2, 3);
+        Assert.Contains("Contactor sets the board to keep Relay 3 off after a power cut.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(board.PowerOnWrites);
+
+        await page.ClickAsync(Button("Create group"));
+
+        Assert.IsType<NavigationException>(Assert.Single(page.Errors));
+        Assert.Equal([(3, PowerOnState.Off)], board.PowerOnWrites);
+        var logged = Assert.Single(await PowerOnEventsAsync(app));
+        Assert.Equal((3, """{"to":"off"}"""), (logged.RelayId, logged.Details));
+    }
+
+    // A board that hasn't reported any state: every chosen relay is unknown, and all of them are written.
+    [Fact]
+    public async Task Should_SetEveryRelayToOff_OnCreate_BeforeTheBoardReported()
+    {
+        var board = new FakeRelayBoard(powerOn: AllStates);
+        await using var app = App(board);
+        using var page = await AtReviewAsync(app, 2, 3);
+        Assert.Contains("Contactor sets the board to keep Relay 2 and Relay 3 off after a power cut.", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.ClickAsync(Button("Create group"));
+
+        Assert.Equal([(2, PowerOnState.Off), (3, PowerOnState.Off)], board.PowerOnWrites);
+    }
+
+    // Save writes Off for an added relay whose state is unknown, and only for it.
+    [Fact]
+    public async Task Should_SetAnAddedUnknownRelayToOff_OnSave()
+    {
+        var board = new FakeRelayBoard(powerOn: AllStates);
+        board.SetPowerOn(new PowerOnStates([PowerOnState.Off, PowerOnState.Off, PowerOnState.Off, PowerOnState.Off, null, PowerOnState.Off, PowerOnState.Off, PowerOnState.Off]));
+        await using var app = App(board);
+        var groupId = await AddGroupAsync(app);
+        using var page = await OpenGroupAsync(app, groupId);
+
+        await AddStepAsync(page, relayId: 5);
+        Assert.Contains("When you save, Contactor sets the board to keep Relay 5 off after a power cut.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(board.PowerOnWrites);
+        await page.SubmitAsync(PageRenderer.With("id", "group-form"));
+
+        Assert.IsType<NavigationException>(Assert.Single(page.Errors));
+        Assert.Equal([(5, PowerOnState.Off)], board.PowerOnWrites);
+    }
+
+    [Fact]
+    public async Task Should_NoteAnUnknownState_InSwedish()
+    {
+        await using var app = App(Board(heat: null));
+        var groupId = await AddGroupAsync(app);
+        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
+        using var http = app.CreateClient();
+
+        var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
+
+        Assert.Contains("Kan inte se än vad kortet gör efter ett strömavbrott.", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Gör säkert", page, StringComparison.Ordinal);
     }
 
     // Relays 1 to 8, with relay 2 (Fan) and 3 (Heat) as given and every other Off, unless relay 5's is given.

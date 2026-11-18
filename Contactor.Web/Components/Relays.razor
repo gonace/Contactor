@@ -1273,7 +1273,7 @@
         _powerOnError = null;
         try
         {
-            if (await PowerOn.MakeGroupSafeAsync(groupId, _user.Email, relayIds: null, CancellationToken.None) is { } message)
+            if (await PowerOn.MakeGroupSafeAsync(groupId, _user.Email, relayIds: null, onSave: false, CancellationToken.None) is { } message)
             {
                 _powerOnError = (groupId, message);
             }

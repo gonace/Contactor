@@ -38,7 +38,38 @@ public static class GroupPowerOn
     }
 
     /// <summary>
-    /// The relays to write <see cref="Safe"/> to, so that none of <paramref name="notSafe"/> breaks the rule: each of
+    /// The relays among <paramref name="channels"/>, in the order given and each once, whose state after a power cut a
+    /// board with the ability hasn't reported: not read yet, or a read that failed. None for a board without the ability:
+    /// it can't tell at all.
+    /// </summary>
+    public static IReadOnlyList<int> Unknown(PowerOnAbility? ability, PowerOnStates? states, IEnumerable<int> channels)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        if (ability is null)
+        {
+            return [];
+        }
+
+        return [.. channels.Distinct().Where(c => states?.For(c) is null)];
+    }
+
+    /// <summary>
+    /// The relays "Create group" and a group's Save set to <see cref="Safe"/> for its new relays, on the person's press:
+    /// those that break the rule (<see cref="NotSafe"/>) and those whose state is unknown (<see cref="Unknown"/>), in
+    /// the order given and each once. "Make it safe" only acts on <see cref="NotSafe"/>: an unknown state gives no
+    /// warning.
+    /// </summary>
+    public static IReadOnlyList<int> ToSetOnSave(PowerOnAbility? ability, PowerOnStates? states, IEnumerable<int> channels)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        List<int> all = [.. channels.Distinct()];
+        var notSafe = NotSafe(ability, states, all);
+        var unknown = Unknown(ability, states, all);
+        return [.. all.Where(c => notSafe.Contains(c) || unknown.Contains(c))];
+    }
+
+    /// <summary>
+    /// The relays to write <see cref="Safe"/> to, so that each of <paramref name="notSafe"/> is Off: each of
     /// them on a board with a state per relay, and only the first on a board with one state for every relay
     /// (<see cref="PowerOnAbility.PerRelay"/> false), where one write sets them all.
     /// </summary>
