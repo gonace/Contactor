@@ -420,6 +420,9 @@
   <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
     <value>{0} ingångsåtgärder</value>
   </data>
+  <data name="Boards.Remove.KeptOn" xml:space="preserve">
+    <value>Relä {0} ({1}) är på så länge relä {2} ({3}) är på.</value>
+  </data>
   <data name="Boards.Remove.Lost" xml:space="preserve">
     <value>{0} har tappat kontakten, så dess reläer kunde inte stängas av. Inget togs bort.</value>
   </data>
@@ -1369,6 +1372,18 @@
   </data>
   <data name="Groups.StartWait" xml:space="preserve">
     <value>Vid start, vänta</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_One" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_Other" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_One" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_Other" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
   </data>
   <data name="Groups.Status.Off" xml:space="preserve">
     <value>Av</value>

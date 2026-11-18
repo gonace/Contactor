@@ -181,29 +181,40 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         }
     }
 
-    // A stop whose next OFF is for a relay the board controls by itself and shows on can't happen: the board ignores it.
-    // The stop ends there, as given up, without sending it again: what is still on stays on (above it, e.g. the fan
-    // keeps running), and the interlock still acts on every status.
-    private static void GiveUpStopTheBoardIgnores(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime)
+    // A stop whose OFF waits for a relay the board controls by itself and shows on: the board ignores the OFF, so it
+    // isn't sent again and the wait never times out (a 5 s timeout would send it again, or give up). The stop waits,
+    // as Stopping, while the interlock keeps what is above it on (the fan while the heater is), and carries on as usual
+    // once the board shows that relay off: the run-on above it, then the rest. Its pending time is moved to now only
+    // for the planning, and put back after it unless the planning changed the pending command, so nothing is saved
+    // (or drawn again) while it waits. Returns the pending time to put back, or null when nothing is held.
+    private static DateTime? HoldOffTheBoardIgnores(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime, DateTime now)
     {
-        if (runtime.Phase != GroupPhases.Stopping || runtime.PendingOn || runtime.PendingStep is not { } step || step < 1 || step > steps.Count)
+        if (runtime.Phase != GroupPhases.Stopping || runtime.PendingOn || runtime.PendingStep is not { } step || step < 1 || step > steps.Count
+            || runtime.PendingSinceUtc is not { } since)
         {
-            return;
+            return null;
         }
 
+        // Only while every relay of the pending OFF still on is one the board controls by itself: another one's OFF that
+        // got lost is sent again as ever.
         var unavailable = state.Unavailable;
-        if (!steps[step - 1].Relays.Any(r => (runtime.PendingRelayId is not { } id || r.RelayId == id) && unavailable.Contains(r.Channel) && state.IsOn(r.Channel)))
+        List<GroupRelayInfo> stillOn = [.. steps[step - 1].Relays.Where(r => (runtime.PendingRelayId is not { } id || r.RelayId == id) && state.IsOn(r.Channel))];
+        if (stillOn.Count == 0 || !stillOn.All(r => unavailable.Contains(r.Channel)))
         {
-            return;
+            return null;
         }
 
-        runtime.Phase = GroupPhases.Idle;
-        runtime.NextStepAtUtc = null;
-        runtime.StopRelayIds = [];
-        runtime.PendingStep = null;
-        runtime.PendingRelayId = null;
-        runtime.PendingOn = false;
-        runtime.PendingSinceUtc = null;
+        runtime.PendingSinceUtc = now;
+        return since;
+    }
+
+    // Puts back the pending time HoldOffTheBoardIgnores moved, when the planning left the pending command as it was.
+    private static void PutBackHold(GroupRuntime runtime, int? step, DateTime? held, DateTime now)
+    {
+        if (held is { } since && runtime.Phase == GroupPhases.Stopping && !runtime.PendingOn && runtime.PendingStep == step && runtime.PendingSinceUtc == now)
+        {
+            runtime.PendingSinceUtc = since;
+        }
     }
 
     // Whether the board controls one of the group's relays by itself now.
@@ -477,7 +488,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 if (commands.IsEmpty)
                 {
+                    var heldStep = runtime.PendingStep;
+                    var held = HoldOffTheBoardIgnores(steps, state, runtime, now);
                     GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay, _onOnItsWay);
+                    PutBackHold(runtime, heldStep, held, now);
                 }
 
                 GroupPlanner.GiveOwnerlessAutoOff(steps, state, runtime, group.MaxOnMinutes, now);
@@ -498,7 +512,6 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                     commands.On |= lost;
                 }
 
-                GiveUpStopTheBoardIgnores(steps, state, runtime);
                 all.Off |= commands.Off;
                 all.On |= commands.On;
                 if (runtime.Phase == GroupPhases.Stopping)

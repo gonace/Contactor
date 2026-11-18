@@ -92,7 +92,8 @@ public sealed partial class UnavailableRelaysTests
 
     // The interlock's planning is as ever, but nothing is sent to a relay the board controls by itself, and nothing is
     // sent again and again: Heat (relay 2) comes on by its input while Fan is off, so the trip turns Fan on to run on,
-    // and the stop, which can't turn Heat off, ends there. Once Heat is reset, the next status acts at once.
+    // and the stop, which can't turn Heat off, waits for it without sending anything again. Once Heat is reset, the next
+    // status acts at once.
     [Fact]
     public async Task Should_SendNothingToIt_FromTheInterlock_AndActAtOnceWhenReset()
     {
@@ -131,7 +132,8 @@ public sealed partial class UnavailableRelaysTests
         Assert.True(board.State.IsOn(1) && board.State.IsOn(2));
         await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
         {
-            Assert.Equal(GroupPhases.Idle, (await db.GroupRuntimes.SingleAsync(r => r.GroupId == id, Cancel)).Phase);
+            // The trip's stop waits for Heat, as Stopping, with Fan kept on.
+            Assert.Equal(GroupPhases.Stopping, (await db.GroupRuntimes.SingleAsync(r => r.GroupId == id, Cancel)).Phase);
         }
 
         var quiet = changes;
@@ -145,6 +147,113 @@ public sealed partial class UnavailableRelaysTests
         await rig.Groups.StepAsync(Cancel);
         Assert.False(board.State.IsOn(2));
         Assert.Contains(board.Sent, s => !s.On && s.Relays.Contains(2));
+    }
+
+    // A stop meets Heat, which the board controls by itself, on: it waits, as Stopping, sending Heat nothing, while Fan
+    // keeps running; once Heat goes off at the board, Fan runs on and the stop finishes, also after a reconnect or a
+    // restart in between (the wait is in the saved GroupRuntime, and Fan's run-on is never skipped).
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Should_WaitForItInAStop_ThenRunOnAndFinish(bool reconnect)
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var board = rig.Second!;
+        var (id, error) = await rig.GroupSetup.CreateAsync(
+            new GroupDraft("Fan heater", GroupIcons.Fan, 120, [new GroupStepDraft("Fan", [rig.SecondRelayId(1)], 3, 60), new GroupStepDraft("Heat", [rig.SecondRelayId(2)], 3, 0)]),
+            John,
+            Cancel);
+        Assert.Null(error);
+        board.SetRelay(1, on: true);
+        board.SetRelay(2, on: true);
+        board.SetOwnRules(new OwnRules([new OwnRule(2, OwnRuleKind.InputLinkage)]));
+        await rig.Groups.StepAsync(Cancel);
+
+        await rig.Groups.StopGroupAsync(id!.Value, John, Cancel);
+        var sent = board.Sent.Count;
+        for (var second = 0; second < 20; second++)
+        {
+            rig.Time.Now += TimeSpan.FromSeconds(1);
+            await rig.Groups.StepAsync(Cancel);
+        }
+
+        Assert.Equal(sent, board.Sent.Count);
+        Assert.True(board.State.IsOn(1) && board.State.IsOn(2));
+        var view = (await rig.GroupSetup.GetAsync(id.Value, Cancel))!;
+        Assert.Equal(GroupPhases.Stopping, view.Runtime.Phase);
+        Assert.Equal("Fan keeps running while Heat is on.", TestTexts.GroupStatus.For(view, board.State, rig.Time.Now.UtcDateTime, t => t, n => n));
+        using (TestCulture.Language("sv"))
+        {
+            Assert.Equal("Fan går så länge Heat är på.", TestTexts.GroupStatus.For(view, board.State, rig.Time.Now.UtcDateTime, t => t, n => n));
+        }
+
+        if (reconnect)
+        {
+            // The connection drops (or the app restarts) and comes back an hour later: only what was saved is known.
+            board.SetConnected(false);
+            await rig.Groups.StepAsync(Cancel);
+            rig.SecondLive.Expected.Clear();
+            rig.Time.Now += TimeSpan.FromHours(1);
+            board.SetConnected(true);
+            for (var second = 0; second < 10; second++)
+            {
+                rig.Time.Now += TimeSpan.FromSeconds(1);
+                await rig.Groups.StepAsync(Cancel);
+            }
+
+            Assert.Equal(sent, board.Sent.Count);
+            Assert.True(board.State.IsOn(1));
+        }
+
+        // Heat goes off at the board (its input): Fan runs on for its 60 s, then goes off, and the stop is done.
+        board.SetRelay(2, on: false);
+        await rig.Groups.StepAsync(Cancel);
+        rig.Time.Now += TimeSpan.FromSeconds(30);
+        await rig.Groups.StepAsync(Cancel);
+        Assert.True(board.State.IsOn(1));
+        rig.Time.Now += TimeSpan.FromSeconds(31);
+        await rig.Groups.StepAsync(Cancel);
+        await rig.Groups.StepAsync(Cancel);
+
+        Assert.False(board.State.IsOn(1));
+        Assert.Equal(GroupPhases.Idle, (await rig.GroupSetup.GetAsync(id.Value, Cancel))!.Runtime.Phase);
+        Assert.DoesNotContain(board.Sent, s => s.Relays.Contains(2));
+        Assert.Contains(await rig.EventsAsync(), e => e.GroupId == id && e.Action == EventActions.RunOnStart);
+    }
+
+    // A group with Heat (relay 2), which the board controls by itself, on: removing the board can't turn Heat off, nor
+    // Fan (relay 1, "Barn light"), which the interlock keeps on while Heat is; both stay, and the confirmation says so.
+    [Fact]
+    public async Task Should_RemoveTheBoardOfAGroupItKeepsRunning()
+    {
+        await using var boards = await TwoBoards.StartAsync();
+        var barn = boards.Barn;
+        var handler = boards.App.Services.GetRequiredService<GroupsHandler>();
+        var (id, error) = await handler.CreateAsync(
+            new GroupDraft("Fan heater", GroupIcons.Fan, 120, [new GroupStepDraft("Fan", [await BarnRelayIdAsync(boards, 1)], 3, 600), new GroupStepDraft("Heat", [await BarnRelayIdAsync(boards, 2)], 3, 0)]),
+            John,
+            Cancel);
+        Assert.Null(error);
+        barn.SetRelay(1, on: true);
+        barn.SetRelay(2, on: true);
+        barn.SetOwnRules(new OwnRules([new OwnRule(2, OwnRuleKind.InputLinkage)]));
+
+        using (var page = await PageRenderer.StartAsync<BoardPage>(boards.App.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = boards.BarnId }))
+        {
+            await page.ClickAsync(PageRenderer.WithText("Remove Barn"));
+            var text = await page.TextAsync();
+            Assert.Contains("Relay 2 is controlled by the board itself and stays as it is.", text, StringComparison.Ordinal);
+            Assert.Contains("Relay 1 (Barn light) stays on while relay 2 (Relay 2) is on.", text, StringComparison.Ordinal);
+        }
+
+        var error2 = await boards.App.Services.GetRequiredService<Contactor.Web.Features.Boards.BoardRemoval>().RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel);
+
+        Assert.Null(error2);
+        Assert.True(barn.State.IsOn(1) && barn.State.IsOn(2));
+        Assert.DoesNotContain(barn.Sent, s => !s.On && s.Relays.Contains(2));
+
+        using var swedish = TestCulture.Language("sv");
+        Assert.Equal("Relä 1 (Fläkt) är på så länge relä 2 (Värme) är på.", TestTexts.Localizer["Boards.Remove.KeptOn", 1, "Fläkt", 2, "Värme"].Value);
     }
 
     // Removing its board: "All off" leaves it as it is, nothing waits for it to go off, and the confirmation says so.

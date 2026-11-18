@@ -111,6 +111,36 @@ public static class GroupPlanner
         return steps.SelectMany(s => s.Relays.Select(r => (s, r)));
     }
 
+    /// <summary>
+    /// What the app can't turn off in the group now because its board controls one of its relays by itself
+    /// (<see cref="BoardState.Unavailable"/>) and shows it on: <paramref name="By"/> are those relays, in the lowest step
+    /// that has one, and <paramref name="Kept"/> every relay above that step that is on, which the interlock keeps on
+    /// while they are (e.g. the fan while the heater is). Both empty when there is none.
+    /// </summary>
+    public sealed record HeldOnRelays(IReadOnlyList<(GroupStepInfo Step, GroupRelayInfo Relay)> Kept, IReadOnlyList<(GroupStepInfo Step, GroupRelayInfo Relay)> By)
+    {
+        public bool IsEmpty => By.Count == 0;
+    }
+
+    /// <summary>See <see cref="HeldOnRelays"/>.</summary>
+    public static HeldOnRelays HeldOn(IReadOnlyList<GroupStepInfo> steps, BoardState state)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+        ArgumentNullException.ThrowIfNull(state);
+        var unavailable = state.Unavailable;
+        for (var p = steps.Count; p >= 1; p--)
+        {
+            List<(GroupStepInfo, GroupRelayInfo)> by = [.. steps[p - 1].Relays.Where(r => unavailable.Contains(r.Channel) && state.IsOn(r.Channel)).Select(r => (steps[p - 1], r))];
+            if (by.Count > 0)
+            {
+                List<(GroupStepInfo, GroupRelayInfo)> kept = [.. steps.Take(p - 1).SelectMany(s => s.Relays.Where(r => state.IsOn(r.Channel)).Select(r => (s, r)))];
+                return new HeldOnRelays(kept, by);
+            }
+        }
+
+        return new HeldOnRelays([], []);
+    }
+
     /// <summary>The relay at a position in the group's start order, from 1, with its step.</summary>
     public static (GroupStepInfo Step, GroupRelayInfo Relay) RelayAt(IReadOnlyList<GroupStepInfo> steps, int position)
     {

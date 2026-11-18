@@ -449,6 +449,9 @@
   <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
     <value>{0} input actions</value>
   </data>
+  <data name="Boards.Remove.KeptOn" xml:space="preserve">
+    <value>Relay {0} ({1}) stays on while relay {2} ({3}) is on.</value>
+  </data>
   <data name="Boards.Remove.Lost" xml:space="preserve">
     <value>{0} has lost contact, so its relays couldn't be turned off. Nothing was removed.</value>
   </data>
@@ -1504,6 +1507,18 @@
   </data>
   <data name="Groups.StartWait" xml:space="preserve">
     <value>On start, wait</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_One" xml:space="preserve">
+    <value>{0} keeps running while {1} are on.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_Other" xml:space="preserve">
+    <value>{0} keep running while {1} are on.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_One" xml:space="preserve">
+    <value>{0} keeps running while {1} is on.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_Other" xml:space="preserve">
+    <value>{0} keep running while {1} is on.</value>
   </data>
   <data name="Groups.Status.Off" xml:space="preserve">
     <value>Off</value>

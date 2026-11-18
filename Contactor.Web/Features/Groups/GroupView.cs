@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
@@ -134,6 +135,14 @@ public sealed class GroupStatusText
 
         if (runtime.Phase == GroupPhases.Stopping)
         {
+            // A stop that waits for a relay the board controls by itself: "Fan keeps running while Heat is on."
+            if (GroupPlanner.HeldOn(steps, state) is { IsEmpty: false, Kept.Count: > 0 } held)
+            {
+                List<string> kept = [.. held.Kept.Select(k => GroupPlanner.NameOf(k.Step, k.Relay)).Distinct()];
+                List<string> by = [.. held.By.Select(b => GroupPlanner.NameOf(b.Step, b.Relay)).Distinct()];
+                return _texts["Groups.Status.KeepsRunning" + (by.Count == 1 ? "" : "WhileSeveral") + Plurals.Form(kept.Count), And(kept), And(by)];
+            }
+
             var running = GroupPlanner.RunningOn(steps, state, runtime);
             if (running.Count > 0 && runtime.NextStepAtUtc is { } next && next > nowUtc)
             {
@@ -244,6 +253,12 @@ public sealed class GroupStatusText
     public string Remaining(TimeSpan left)
     {
         return _lengths.Seconds(Math.Max((int)Math.Ceiling(left.TotalSeconds), 1));
+    }
+
+    // "Fan", "Fan and Pump", "Fan, Pump and Light".
+    private string And(List<string> names)
+    {
+        return names.Count <= 1 ? string.Concat(names) : string.Join(", ", names.SkipLast(1)) + _texts["Events.List.And"] + names[^1];
     }
 }
 
