@@ -371,6 +371,23 @@ internal sealed class FakeRelayBoard : IRelayBoard
         PowerOnChanged?.Invoke(this, state);
     }
 
+    private readonly List<(int Relay, PowerOnState State)> _powerOnWrites = [];
+
+    /// <summary>When set, the board answers but doesn't take a state after a power cut, as a real board says so.</summary>
+    public bool RefusePowerOn { get; set; }
+
+    /// <summary>Each state after a power cut the board took, in order.</summary>
+    public IReadOnlyList<(int Relay, PowerOnState State)> PowerOnWrites
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _powerOnWrites];
+            }
+        }
+    }
+
     /// <summary>
     /// Sets one relay's state after a power cut and reports it, as a board that reads it back does. Only on a board made
     /// with the ability.
@@ -390,9 +407,15 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
         ThrowIfCancelled(cancellationToken);
         EnsureConnected();
+        if (RefusePowerOn)
+        {
+            throw new BoardNotConnectedException("The board didn't take the state after a power cut.");
+        }
+
         PowerOnStates states;
         lock (_lock)
         {
+            _powerOnWrites.Add((relay, state));
             PowerOnState?[] now = _state.PowerOn is { } known ? [.. known] : new PowerOnState?[Capabilities.RelayCount];
             if (ability.PerRelay)
             {

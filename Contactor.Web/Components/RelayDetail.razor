@@ -26,8 +26,13 @@
 @inject ILogger<RelayDetail> Log
 @inject OwnRulesHandler OwnRules
 @inject OwnRulesText OwnRulesText
+@inject RelayPowerOnHandler PowerOn
 
 <PageTitle>@(Texts["Common.PageTitle", _relay?.Name ?? Texts["Common.Screen.Relay"].Value])</PageTitle>
+
+@* The state after a power cut the field shows, kept as it is drawn: a change that alters it is the only one that
+   redraws the page (OnPowerOnChanged). *@
+@{ _shownPowerOn = ShownPowerOn; }
 
 <div class="screen">
     <header class="header">
@@ -159,6 +164,41 @@
                 </section>
                 }
 
+                @if (PowerOnAbility is { } powerOn)
+                {
+                    @* What the board does with the relay by itself when the power comes back (Issue #516): written to
+                       the board only by Save, and only when the choice changed. *@
+                    <section class="power-on">
+                        <h2>@Texts["Relays.PowerOn.Heading"]</h2>
+                        <p class="hint">@Texts["Relays.PowerOn.Hint"]</p>
+                        @if (ReadPowerOn is null)
+                        {
+                            <p class="hint">@Texts["Relays.PowerOn.Unknown"]</p>
+                        }
+                        <div class="power-choices">
+                            @foreach (var state in powerOn.States)
+                            {
+                                <button type="button" value="@state" aria-pressed="@(ChosenPowerOn == state ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="() => ChoosePowerOn(state)">
+                                    <span class="power-name">@PowerOnName(state)</span>
+                                    <span class="power-explain">@PowerOnExplanation(state)</span>
+                                </button>
+                            }
+                        </div>
+                        @if (!powerOn.PerRelay)
+                        {
+                            <p class="hint">@Texts["Relays.PowerOn.WholeBoard"]</p>
+                        }
+                        @if (!State.IsConnected)
+                        {
+                            <p class="hint">@Texts["Relays.PowerOn.NoContactNow"]</p>
+                        }
+                        @if (_powerOnError is not null)
+                        {
+                            <p class="error" role="alert">@_powerOnError</p>
+                        }
+                    </section>
+                }
+
                 <section class="events">
                     <div class="section-head">
                         <h2>@Texts["Common.Screen.Events"]</h2>
@@ -240,6 +280,86 @@
 
     private BoardCapabilities Capabilities => Board?.Capabilities ?? LiveBoard.NoBoard;
 
+    private bool _disposed;
+
+    // The field "After a power cut": only for a board that has the ability, and not for a relay in a group, whose
+    // state is set on the group's page.
+    private PowerOnAbility? PowerOnAbility => _relay is not null && _group is null ? Capabilities.PowerOn : null;
+
+    // The relay's state after a power cut as the board last reported it; null while it is unknown.
+    private PowerOnState? ReadPowerOn => State.PowerOn?.For(_channel);
+
+    // What the field shows from the board, null when there is no field; and what it showed when last drawn.
+    private PowerOnState? ShownPowerOn => PowerOnAbility is null ? null : ReadPowerOn;
+    private PowerOnState? _shownPowerOn;
+
+    // The person's choice, until Save writes it; null while they haven't chosen.
+    private PowerOnState? _powerOnChoice;
+
+    private PowerOnState? ChosenPowerOn => _powerOnChoice ?? ReadPowerOn;
+
+    // What Save writes to the board: the person's choice, only when it differs from what the board has.
+    private PowerOnState? PowerOnToWrite => PowerOnAbility is not null && _powerOnChoice is { } choice && choice != ReadPowerOn ? choice : null;
+
+    // A state after a power cut the board didn't take on Save.
+    private string? _powerOnError;
+
+    private string PowerOnName(PowerOnState state)
+    {
+        return state switch
+        {
+            PowerOnState.Off => Texts["Relays.PowerOn.State.Off"],
+            PowerOnState.AsBefore => Texts["Relays.PowerOn.State.AsBefore"],
+            PowerOnState.On => Texts["Relays.PowerOn.State.On"],
+            _ => Texts["Relays.PowerOn.State.FollowsInput"],
+        };
+    }
+
+    // What the board does by itself when the power comes back, without Contactor.
+    private string PowerOnExplanation(PowerOnState state)
+    {
+        return state switch
+        {
+            PowerOnState.Off => Texts["Relays.PowerOn.Explain.Off"],
+            PowerOnState.AsBefore => Texts["Relays.PowerOn.Explain.AsBefore"],
+            PowerOnState.On => Texts["Relays.PowerOn.Explain.On"],
+            _ => Texts["Relays.PowerOn.Explain.FollowsInput"],
+        };
+    }
+
+    private void ChoosePowerOn(PowerOnState state)
+    {
+        if (_busy || !State.IsConnected)
+        {
+            return;
+        }
+
+        _powerOnChoice = state;
+        _powerOnError = null;
+    }
+
+    // Writes the person's choice to the board at once, never queued, and logs it. Null when the board took it.
+    private async Task<string?> SetPowerOnAsync(PowerOnState state)
+    {
+        try
+        {
+            var error = await PowerOn.SetAsync(Id, state, _user!.Email, CancellationToken.None);
+            if (error is null)
+            {
+                // The board has it now, and its next state shows it.
+                _powerOnChoice = null;
+            }
+
+            return error;
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Setting the state after a power cut of relay {RelayId} failed", Id);
+            return Texts["Common.SomethingWrongTryAgain"];
+        }
+    }
+
     private const int EventCount = 4;
 
     private RelaySettings? _relay;
@@ -296,6 +416,8 @@
             _name = _relay.Name;
             _isActive = _relay.IsActive;
             _maxOnMinutes = _relay.MaxOnMinutes;
+            _powerOnChoice = null;
+            _powerOnError = null;
             await LoadLiveAsync();
         }
 
@@ -306,13 +428,16 @@
     {
         Registry.StateChanged += OnBoardChanged;
         Registry.OwnRulesChanged += OnBoardChanged;
+        Registry.PowerOnChanged += OnPowerOnChanged;
         Changes.Changed += OnRelaysChanged;
     }
 
     public void Dispose()
     {
+        _disposed = true;
         Registry.StateChanged -= OnBoardChanged;
         Registry.OwnRulesChanged -= OnBoardChanged;
+        Registry.PowerOnChanged -= OnPowerOnChanged;
         Changes.Changed -= OnRelaysChanged;
     }
 
@@ -437,16 +562,22 @@
         }
 
         _busy = true;
+        _powerOnError = null;
         try
         {
             _saveError = await Settings.SaveAsync(new RelaySettings(Id, _name, _isActive, _maxOnMinutes), _user.Email, CancellationToken.None);
+            if (_saveError is null && PowerOnToWrite is { } state)
+            {
+                _powerOnError = await SetPowerOnAsync(state);
+            }
         }
         finally
         {
             _busy = false;
         }
 
-        if (_saveError is null)
+        // A state the board didn't take keeps the page open with its message; the rest was saved.
+        if (_saveError is null && _powerOnError is null)
         {
             Navigation.NavigateTo("");
         }
@@ -461,6 +592,37 @@
         }
 
         _ = RefreshAsync(reload: false);
+    }
+
+    // Only the relays' states after a power cut changed, on any board: a redraw only when the field would show another.
+    private void OnPowerOnChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId != BoardId)
+        {
+            return;
+        }
+
+        _ = RedrawForPowerOnAsync();
+    }
+
+    private async Task RedrawForPowerOnAsync()
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (!_disposed && ShownPowerOn != _shownPowerOn)
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the change was on its way.
+        }
     }
 
     private void OnRelaysChanged(object? sender, EventArgs e)

@@ -1035,6 +1035,21 @@
     <value>The board's</value>
     <comment>The board in the genitive at the start of a line, with one board.</comment>
   </data>
+  <data name="Events.PowerOn.AsBefore" xml:space="preserve">
+    <value>{0} set the relay to go back as it was after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.Changed" xml:space="preserve">
+    <value>{0} changed what the relay does after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.FollowsInput" xml:space="preserve">
+    <value>{0} set the relay to follow its switch after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.Off" xml:space="preserve">
+    <value>{0} set the relay to stay off after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.On" xml:space="preserve">
+    <value>{0} set the relay to turn on after a power cut</value>
+  </data>
   <data name="Events.Pulse" xml:space="preserve">
     <value>{0} tried for {1}</value>
     <comment>{1} is a length, e.g. "2 s".</comment>
@@ -1061,21 +1076,6 @@
   </data>
   <data name="Events.Schedule.AddedOne" xml:space="preserve">
     <value>{0} added a schedule</value>
-  </data>
-  <data name="Events.PowerOn.AsBefore" xml:space="preserve">
-    <value>{0} set the relay to go back as it was after a power cut</value>
-  </data>
-  <data name="Events.PowerOn.Changed" xml:space="preserve">
-    <value>{0} changed what the relay does after a power cut</value>
-  </data>
-  <data name="Events.PowerOn.FollowsInput" xml:space="preserve">
-    <value>{0} set the relay to follow its switch after a power cut</value>
-  </data>
-  <data name="Events.PowerOn.Off" xml:space="preserve">
-    <value>{0} set the relay to stay off after a power cut</value>
-  </data>
-  <data name="Events.PowerOn.On" xml:space="preserve">
-    <value>{0} set the relay to turn on after a power cut</value>
   </data>
   <data name="Events.Schedule.Changed" xml:space="preserve">
     <value>{0} changed schedule to {1}</value>
@@ -2259,21 +2259,6 @@
     <value>Online · updated {0}</value>
     <comment>As Relays.Online.One, under a board's name.</comment>
   </data>
-  <data name="Relays.Problem.SeeSettings" xml:space="preserve">
-    <value>{0} See Settings.</value>
-    <comment>{0} is why the board refuses the connection, as Boards.Problem.* gives it.</comment>
-  </data>
-  <data name="Relays.RelayLabel" xml:space="preserve">
-    <value>RELAY {0}</value>
-    <comment>Over a relay's name: {0} is its number on the board.</comment>
-  </data>
-  <data name="Relays.Relays" xml:space="preserve">
-    <value>Relays</value>
-    <comment>The heading over the relay cards.</comment>
-  </data>
-  <data name="Relays.Save.EnterName" xml:space="preserve">
-    <value>Enter a name.</value>
-  </data>
   <data name="Relays.PowerOn.Explain.AsBefore" xml:space="preserve">
     <value>The board puts it back by itself as it was when the power went, on or off.</value>
   </data>
@@ -2321,6 +2306,21 @@
   </data>
   <data name="Relays.PowerOn.WholeBoard" xml:space="preserve">
     <value>This applies to every relay on the board.</value>
+  </data>
+  <data name="Relays.Problem.SeeSettings" xml:space="preserve">
+    <value>{0} See Settings.</value>
+    <comment>{0} is why the board refuses the connection, as Boards.Problem.* gives it.</comment>
+  </data>
+  <data name="Relays.RelayLabel" xml:space="preserve">
+    <value>RELAY {0}</value>
+    <comment>Over a relay's name: {0} is its number on the board.</comment>
+  </data>
+  <data name="Relays.Relays" xml:space="preserve">
+    <value>Relays</value>
+    <comment>The heading over the relay cards.</comment>
+  </data>
+  <data name="Relays.Save.EnterName" xml:space="preserve">
+    <value>Enter a name.</value>
   </data>
   <data name="Relays.Save.NameTooLong" xml:space="preserve">
     <value>The name can be at most {0} characters.</value>
