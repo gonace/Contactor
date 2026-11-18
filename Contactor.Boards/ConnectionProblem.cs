@@ -11,6 +11,18 @@ public enum ConnectionProblemKind
 
     /// <summary>The board refused the login (or the password) the app sent.</summary>
     LoginRefused,
+
+    /// <summary>
+    /// The board's firmware is older than the app takes; <see cref="ConnectionProblem.MinFirmware"/> is the oldest it
+    /// takes, when known.
+    /// </summary>
+    FirmwareTooOld,
+
+    /// <summary>
+    /// The board asks the app to wait before it tries again, after too many wrong logins (or passwords). The app tries
+    /// again by itself, never in a quick loop.
+    /// </summary>
+    TooManyTries,
 }
 
 /// <summary>
@@ -24,8 +36,18 @@ public enum ConnectionProblemKind
 /// For <see cref="ConnectionProblemKind.WrongModel"/>, the model in the board catalogue that is at the address; null
 /// when it is a model the app doesn't support, or doesn't know.
 /// </param>
-public sealed record ConnectionProblem(ConnectionProblemKind Kind, BoardModel Expected, BoardModel? Found = null)
+/// <param name="MinFirmware">
+/// For <see cref="ConnectionProblemKind.FirmwareTooOld"/>, the oldest firmware version the app takes, e.g. "1.7.0"; null
+/// when the board doesn't say.
+/// </param>
+public sealed record ConnectionProblem(ConnectionProblemKind Kind, BoardModel Expected, BoardModel? Found = null, string? MinFirmware = null)
 {
+    /// <summary>
+    /// Whether it is about the login (or the password): needed, refused, or too many wrong ones. The screens then open
+    /// the login fields.
+    /// </summary>
+    public bool IsAboutLogin => Kind is ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused or ConnectionProblemKind.TooManyTries;
+
     public override string ToString()
     {
         return Kind switch
@@ -35,6 +57,12 @@ public sealed record ConnectionProblem(ConnectionProblemKind Kind, BoardModel Ex
             ConnectionProblemKind.LoginNeeded => Expected.PasswordOnly
                 ? $"The {Expected.ModelName} asks for a password."
                 : $"The {Expected.ModelName} asks for a login.",
+            ConnectionProblemKind.FirmwareTooOld => MinFirmware is { } min
+                ? $"The board's firmware is too old: the app needs {min} or later."
+                : "The board's firmware is too old.",
+            ConnectionProblemKind.TooManyTries => Expected.PasswordOnly
+                ? "The board asks to wait after too many wrong passwords."
+                : "The board asks to wait after too many wrong logins.",
             _ => Expected.PasswordOnly
                 ? $"The {Expected.ModelName} refused the password."
                 : $"The {Expected.ModelName} refused the login.",

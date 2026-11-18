@@ -4,6 +4,7 @@ using Contactor.Boards;
 using Contactor.Boards.Advantech;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Simulator;
@@ -163,6 +164,34 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.False(board.HasLogin);
         Assert.Equal((8502, 502), (SimulatorCatalogue.Find(type)!.Port, SimulatorCatalogue.Find(type)!.Model.DefaultPort));
         Assert.Equal("The ADAM module takes no login.", _boards.Add(type, FreePort(), "admin", "secret"));
+    }
+
+    [Theory]
+    [InlineData("shelly-1", 1)]
+    [InlineData("shelly-2", 2)]
+    [InlineData("shelly-3", 3)]
+    [InlineData(" SHELLY-4 ", 4)]
+    public async Task Should_RunEachShellyEntry_WithOrWithoutAPassword(string type, int relays)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        Assert.Null(_boards.Add(type, FreePort(), "", "apple"));
+
+        var boards = _boards.Boards;
+        Assert.All(boards, b => Assert.IsType<ShellySimulator>(b.Board));
+        Assert.All(boards, b => Assert.Equal(type.Trim().ToLowerInvariant(), b.Board.Model.Id));
+        Assert.All(boards, b => Assert.Equal(relays, b.Board.Model.Capabilities.RelayCount));
+        Assert.Null(Assert.Single(boards, b => !b.Board.HasLogin).Username);
+        Assert.Equal("", Assert.Single(boards, b => b.Board.HasLogin).Username);
+
+        // Port 80 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8180, 80), (SimulatorCatalogue.Find(type)!.Port, ShellyApi.DefaultPort));
+        Assert.Equal("The Shelly takes a password only, no user name.", _boards.Add(type, FreePort(), "admin", "apple"));
+        Assert.Equal("The password can be at most 128 characters.", _boards.Add(type, FreePort(), "", new string('a', 129)));
+
+        // Each relay switched at the device, as a person on the simulator's page does.
+        var board = boards[0];
+        await board.SwitchRelayAsync(relays, turnOn: true);
+        Assert.Equal(ChannelMask.Of(relays), board.Board.State.Relays);
     }
 
     [Theory]

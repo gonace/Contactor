@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Web.Features.Boards;
 
@@ -18,6 +19,10 @@ public sealed class BoardProblemTextTests
         { new(ConnectionProblemKind.LoginNeeded, Vm201Model.Model), "The board asks for a user name and password.", "Needs a login" },
         { new(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), "The password is wrong.", "Wrong password" },
         { new(ConnectionProblemKind.LoginRefused, Vm204Model.Model), "The user name or password is wrong.", "Wrong login" },
+        { new(ConnectionProblemKind.FirmwareTooOld, ShellyModels.TwoRelays, MinFirmware: "1.7.0"), "The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", "Old firmware" },
+        { new(ConnectionProblemKind.FirmwareTooOld, ShellyModels.TwoRelays), "The board's firmware is too old. Update it on the board's own web page.", "Old firmware" },
+        { new(ConnectionProblemKind.TooManyTries, ShellyModels.TwoRelays), "Too many wrong passwords. Check the password, then wait a few minutes: Contactor tries again by itself.", "Too many tries" },
+        { new(ConnectionProblemKind.TooManyTries, Vm204Model.Model), "Too many wrong logins. Check the user name and password, then wait a few minutes: Contactor tries again by itself.", "Too many tries" },
     };
 
     public static TheoryData<ConnectionProblem, string, string> Swedish { get; } = new()
@@ -28,6 +33,10 @@ public sealed class BoardProblemTextTests
         { new(ConnectionProblemKind.LoginNeeded, Vm201Model.Model), "Kortet vill ha ett användarnamn och lösenord.", "Behöver inloggning" },
         { new(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), "Lösenordet är fel.", "Fel lösenord" },
         { new(ConnectionProblemKind.LoginRefused, Vm204Model.Model), "Användarnamnet eller lösenordet är fel.", "Fel inloggning" },
+        { new(ConnectionProblemKind.FirmwareTooOld, ShellyModels.TwoRelays, MinFirmware: "1.7.0"), "Kortets firmware är för gammal. Uppdatera den till 1.7.0 eller senare på kortets egen webbsida.", "Gammal firmware" },
+        { new(ConnectionProblemKind.FirmwareTooOld, ShellyModels.TwoRelays), "Kortets firmware är för gammal. Uppdatera den på kortets egen webbsida.", "Gammal firmware" },
+        { new(ConnectionProblemKind.TooManyTries, ShellyModels.TwoRelays), "För många fel lösenord. Kontrollera lösenordet och vänta sedan några minuter: Contactor försöker igen av sig själv.", "För många försök" },
+        { new(ConnectionProblemKind.TooManyTries, Vm204Model.Model), "För många fel inloggningar. Kontrollera användarnamnet och lösenordet och vänta sedan några minuter: Contactor försöker igen av sig själv.", "För många försök" },
     };
 
     [Theory]
@@ -46,6 +55,26 @@ public sealed class BoardProblemTextTests
 
         Assert.Equal(longText, Problem.Long(problem));
         Assert.Equal(shortText, Problem.Short(problem));
+    }
+
+    // A new kind of problem gets its words in both languages, and a test here.
+    [Fact]
+    public void Should_HaveATestForEveryKindOfProblem_InBothLanguages()
+    {
+        Assert.Equal(Enum.GetValues<ConnectionProblemKind>().Order(), English.Select(p => p.Data.Item1.Kind).Distinct().Order());
+        Assert.Equal(Enum.GetValues<ConnectionProblemKind>().Order(), Swedish.Select(p => p.Data.Item1.Kind).Distinct().Order());
+    }
+
+    // Only the problems about the login open the login fields: a wrong model or old firmware isn't fixed there.
+    [Theory]
+    [InlineData(ConnectionProblemKind.WrongModel, false)]
+    [InlineData(ConnectionProblemKind.LoginNeeded, true)]
+    [InlineData(ConnectionProblemKind.LoginRefused, true)]
+    [InlineData(ConnectionProblemKind.FirmwareTooOld, false)]
+    [InlineData(ConnectionProblemKind.TooManyTries, true)]
+    public void Should_SayWhetherAProblemIsAboutTheLogin(ConnectionProblemKind kind, bool aboutLogin)
+    {
+        Assert.Equal(aboutLogin, new ConnectionProblem(kind, ShellyModels.OneRelay).IsAboutLogin);
     }
 
     // Settings can't change a board's model: another one is added again, but only when the app knows which.

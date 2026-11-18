@@ -315,17 +315,29 @@
   <data name="Boards.Port" xml:space="preserve">
     <value>Port</value>
   </data>
+  <data name="Boards.Problem.FirmwareTooOld" xml:space="preserve">
+    <value>Kortets firmware är för gammal. Uppdatera den till {0} eller senare på kortets egen webbsida.</value>
+  </data>
+  <data name="Boards.Problem.FirmwareTooOld.Unknown" xml:space="preserve">
+    <value>Kortets firmware är för gammal. Uppdatera den på kortets egen webbsida.</value>
+  </data>
   <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
     <value>Kortet vill ha ett användarnamn och lösenord.</value>
   </data>
   <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
     <value>Kortet vill ha ett lösenord.</value>
   </data>
+  <data name="Boards.Problem.Short.FirmwareTooOld" xml:space="preserve">
+    <value>Gammal firmware</value>
+  </data>
   <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
     <value>Behöver inloggning</value>
   </data>
   <data name="Boards.Problem.Short.PasswordNeeded" xml:space="preserve">
     <value>Behöver lösenord</value>
+  </data>
+  <data name="Boards.Problem.Short.TooManyTries" xml:space="preserve">
+    <value>För många försök</value>
   </data>
   <data name="Boards.Problem.Short.WrongLogin" xml:space="preserve">
     <value>Fel inloggning</value>
@@ -335,6 +347,12 @@
   </data>
   <data name="Boards.Problem.Short.WrongPassword" xml:space="preserve">
     <value>Fel lösenord</value>
+  </data>
+  <data name="Boards.Problem.TooManyLogins" xml:space="preserve">
+    <value>För många fel inloggningar. Kontrollera användarnamnet och lösenordet och vänta sedan några minuter: Contactor försöker igen av sig själv.</value>
+  </data>
+  <data name="Boards.Problem.TooManyPasswords" xml:space="preserve">
+    <value>För många fel lösenord. Kontrollera lösenordet och vänta sedan några minuter: Contactor försöker igen av sig själv.</value>
   </data>
   <data name="Boards.Problem.WrongLogin" xml:space="preserve">
     <value>Användarnamnet eller lösenordet är fel.</value>

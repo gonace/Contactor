@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
@@ -35,6 +36,8 @@ public sealed class BoardProblemPagesTests
         { new ConnectionProblem(ConnectionProblemKind.LoginNeeded, Vm201Model.Model), "The board asks for a user name and password.", "Needs a login" },
         { new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), "The password is wrong.", "Wrong password" },
         { new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model), "The user name or password is wrong.", "Wrong login" },
+        { new ConnectionProblem(ConnectionProblemKind.FirmwareTooOld, DevantechModels.Eth008, MinFirmware: "1.7.0"), "The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", "Old firmware" },
+        { new ConnectionProblem(ConnectionProblemKind.TooManyTries, DevantechModels.Eth008), "Too many wrong passwords. Check the password, then wait a few minutes: Contactor tries again by itself.", "Too many tries" },
         { null, "No contact with the relay board at", "No contact yet" },
     };
 
@@ -202,6 +205,64 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
+    // A Shelly added in the app: its password, then too many wrong ones, which says to check it and wait, then the right
+    // one goes on, and the app switches its relays.
+    [Fact]
+    public async Task Should_AddAShelly_AndSayToWait_AfterTooManyWrongPasswords()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.TwoRelays, "apple", NullLogger.Instance);
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-2");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The board asks for a password.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(PageRenderer.With("id", "username")));
+
+        await page.TypeAsync(PageRenderer.With("id", "password"), "pear");
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
+
+        // The device's brute-force protection: another password now gets 429.
+        simulator.Throttle = true;
+        await page.TypeAsync(PageRenderer.With("id", "password"), "plum");
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("Too many wrong passwords. Check the password, then wait a few minutes: Contactor tries again by itself.", await page.TextAsync(), StringComparison.Ordinal);
+
+        simulator.Throttle = false;
+        await page.TypeAsync(PageRenderer.With("id", "password"), "apple");
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+
+        var shelly = boards.App.Services.GetRequiredService<BoardRegistry>().All[^1];
+        Assert.Equal(ChannelMask.Of(2), await shelly.TurnOnAsync(ChannelMask.Of(2), Cancel));
+        Assert.Equal((byte)0b10, simulator.Relays);
+    }
+
+    // A Shelly with firmware before 1.7.0: the step says to update it.
+    [Fact]
+    public async Task Should_SayToUpdateTheFirmware_OfAnOldShelly()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.OneRelay) { Firmware = "1.6.2" };
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-1");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+
+        Assert.Contains("The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(Button("Check again")));
+        Assert.DoesNotContain(page.Focused, id => id is "password" or "username");
+        Assert.Empty(page.Errors);
+    }
+
     // A board with a user name: the cursor goes to User name.
     [Fact]
     public async Task Should_AskForTheLogin_AndPutTheCursorInUserName_OnABoardWithOne()
@@ -322,6 +383,29 @@ public sealed class BoardProblemPagesTests
         board.SetProblem(needed);
         await BoardTestRig.WaitUntilAsync(() => page.Focused.Count == 1);
         Assert.Equal(["username"], page.Focused);
+        Assert.Empty(page.Errors);
+    }
+
+    // Too many wrong logins opens the login fields after a Save, as a wrong login does; old firmware isn't fixed there.
+    [Theory]
+    [InlineData(ConnectionProblemKind.TooManyTries, true)]
+    [InlineData(ConnectionProblemKind.FirmwareTooOld, false)]
+    public async Task Should_OpenTheLogin_OnlyForAProblemAboutIt(ConnectionProblemKind kind, bool opens)
+    {
+        var board = new FakeRelayBoard(connected: false);
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
+        var id = await app.Services.FirstBoardIdAsync();
+        await app.Services.GetRequiredService<BoardRegistry>().ReplaceAsync(new FakeBoardParts(board).Build(id, Vm201Model.Model), Cancel);
+        using var page = await PageRenderer.StartAsync<BoardForm>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardForm.BoardId)] = id });
+
+        await page.SubmitAsync(PageRenderer.With("class", "card"));
+        board.SetProblem(new ConnectionProblem(kind, Vm201Model.Model, MinFirmware: "1.7.0"));
+        var text = kind == ConnectionProblemKind.TooManyTries ? "Too many wrong logins." : "The board's firmware is too old.";
+        await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains(text, StringComparison.Ordinal));
+
+        Assert.Equal(opens, await page.HasAsync(PageRenderer.With("id", "username")));
+        string?[] focused = opens ? ["username"] : [];
+        Assert.Equal(focused, page.Focused);
         Assert.Empty(page.Errors);
     }
 

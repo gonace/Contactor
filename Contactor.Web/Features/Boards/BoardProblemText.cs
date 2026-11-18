@@ -31,11 +31,14 @@ public sealed class BoardProblemText
             ConnectionProblemKind.WrongModel when problem.Found is { } found => _texts["Boards.Problem.WrongModel", found.ModelName, problem.Expected.ModelName],
             ConnectionProblemKind.WrongModel => _texts["Boards.Problem.WrongModel.Unknown", problem.Expected.ModelName],
             ConnectionProblemKind.LoginNeeded => _texts[passwordOnly ? "Boards.Problem.PasswordNeeded" : "Boards.Problem.LoginNeeded"],
+            ConnectionProblemKind.FirmwareTooOld when problem.MinFirmware is { } min => _texts["Boards.Problem.FirmwareTooOld", min],
+            ConnectionProblemKind.FirmwareTooOld => _texts["Boards.Problem.FirmwareTooOld.Unknown"],
+            ConnectionProblemKind.TooManyTries => _texts[passwordOnly ? "Boards.Problem.TooManyPasswords" : "Boards.Problem.TooManyLogins"],
             _ => _texts[passwordOnly ? "Boards.Problem.WrongPassword" : "Boards.Problem.WrongLogin"],
         };
     }
 
-    /// <summary>e.g. "Wrong model", "Needs a password" or "Wrong login".</summary>
+    /// <summary>e.g. "Wrong model", "Needs a password", "Wrong login" or "Old firmware".</summary>
     public string Short(ConnectionProblem problem)
     {
         ArgumentNullException.ThrowIfNull(problem);
@@ -44,6 +47,8 @@ public sealed class BoardProblemText
         {
             ConnectionProblemKind.WrongModel => _texts["Boards.Problem.Short.WrongModel"],
             ConnectionProblemKind.LoginNeeded => _texts[passwordOnly ? "Boards.Problem.Short.PasswordNeeded" : "Boards.Problem.Short.LoginNeeded"],
+            ConnectionProblemKind.FirmwareTooOld => _texts["Boards.Problem.Short.FirmwareTooOld"],
+            ConnectionProblemKind.TooManyTries => _texts["Boards.Problem.Short.TooManyTries"],
             _ => _texts[passwordOnly ? "Boards.Problem.Short.WrongPassword" : "Boards.Problem.Short.WrongLogin"],
         };
     }

@@ -44,7 +44,8 @@ public static class ShellyModels
 
     private static BoardModel Create(int relays)
     {
-        var name = relays == 1 ? "1 relay (Gen2+)" : $"{relays} relays (Gen2+)";
+        // "Shelly Gen2+ with 2 relays" in full (BoardModel.Name), and "Gen2+ with 2 relays" under the brand Shelly.
+        var name = relays == 1 ? "Gen2+ with 1 relay" : $"Gen2+ with {relays} relays";
         return new BoardModel(
             $"shelly-{relays}",
             Brand,

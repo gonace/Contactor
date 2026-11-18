@@ -22,6 +22,8 @@ public sealed class SimulatorCatalogueTests
     [InlineData("advantech-adam-6060", 8502)]
     [InlineData("advantech-adam-6066", 8502)]
     [InlineData("advantech-adam-6260", 8502)]
+    [InlineData("shelly-1", 8180)]
+    [InlineData("shelly-4", 8180)]
     public void Should_OfferTheModelsOwnPort_WhenItIsFree(string type, int port)
     {
         Assert.Equal(port, SimulatorCatalogue.FreePort(type, [9761, 4197]));

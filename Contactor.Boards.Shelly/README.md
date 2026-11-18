@@ -30,10 +30,10 @@ Also RFC 7616, *HTTP Digest Access Authentication*, section 3.4.1 (the response 
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `shelly-1` | Shelly 1 relay (Gen2+) | 1 | 0 | none | optional password |
-| `shelly-2` | Shelly 2 relays (Gen2+) | 2 | 0 | none | optional password |
-| `shelly-3` | Shelly 3 relays (Gen2+) | 3 | 0 | none | optional password |
-| `shelly-4` | Shelly 4 relays (Gen2+) | 4 | 0 | none | optional password |
+| `shelly-1` | Shelly Gen2+ with 1 relay | 1 | 0 | none | optional password |
+| `shelly-2` | Shelly Gen2+ with 2 relays | 2 | 0 | none | optional password |
+| `shelly-3` | Shelly Gen2+ with 3 relays | 3 | 0 | none | optional password |
+| `shelly-4` | Shelly Gen2+ with 4 relays | 4 | 0 | none | optional password |
 
 The docs list no model codes for the app to tell the devices apart, so the catalogue has one entry per number of
 relays (`ShellyModels`). The device must have that many `switch:N` components, or the app refuses it.
@@ -135,10 +135,11 @@ When the device refuses the connection, the state says why (`ShellyState.Problem
   cover profile.
 - `LoginNeeded`: the device asks for a password and the app has none.
 - `LoginRefused`: the device refused the password.
-- None for firmware that is too old. Only the Debug screen and the log say why.
-- A 429 says nothing new about the password: the state keeps the reason the device gave before, for example
-  `LoginRefused`, and the Debug screen and the log say to wait.
-  `ShellyWrongDeviceException.Mismatch` tells the four refusals apart.
+- `FirmwareTooOld`, with 1.7.0 as `MinFirmware`, for firmware that is too old or that the app can't read.
+- `TooManyTries` for a 429: the screens say that there were too many wrong passwords, to check the password and to
+  wait. The poller tries again after its own wait.
+
+`ShellyWrongDeviceException.Mismatch` tells the four refusals of the device apart.
 
 A command (ON or OFF) switches the relays in the mask one at a time:
 

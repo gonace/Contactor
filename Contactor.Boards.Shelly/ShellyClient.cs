@@ -343,7 +343,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             throw Refuse(
                 string.Create(CultureInfo.InvariantCulture, $"The Shelly's firmware is too old. Update it to {ShellyApi.MinFirmware.ToString(3)} or later in its own web page."),
                 ShellyMismatch.OldFirmware,
-                problem: null);
+                new ConnectionProblem(ConnectionProblemKind.FirmwareTooOld, _model, MinFirmware: ShellyApi.MinFirmware.ToString(3)));
         }
     }
 
@@ -554,8 +554,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
                 return parsed.Result!.Value;
             case HttpStatusCode.TooManyRequests:
-                // Says nothing new about the password: the reason the device gave before still holds.
-                var throttled = new ShellyThrottledException(_poller.State.Problem);
+                // After too many wrong passwords: the screens say to check it and wait.
+                var throttled = new ShellyThrottledException(new ConnectionProblem(ConnectionProblemKind.TooManyTries, _model));
                 Trace(BoardTraceDirection.Received, throttled.Message, answer.Text, isError: true);
                 throw throttled;
             case HttpStatusCode.NotFound:
