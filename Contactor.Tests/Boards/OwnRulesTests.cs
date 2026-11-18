@@ -82,6 +82,84 @@ public sealed class OwnRulesTests
         await Assert.ThrowsAsync<NotSupportedException>(() => board.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], TestContext.Current.CancellationToken));
     }
 
+    // Relay 1's timer is a schedule that also switches relay 2, which has no other: turning it off takes relay 2's too.
+    // Relay 2's timer is that schedule and another that switches relay 1: turning it off leaves relay 1's.
+    [Fact]
+    public void Should_KnowWhichRulesGoWithATurnOff_AndNoneByDefault()
+    {
+        var timer1 = new OwnRule(1, OwnRuleKind.Timer);
+        var timer2 = new OwnRule(2, OwnRuleKind.Timer);
+        var autoOn3 = new OwnRule(3, OwnRuleKind.AutoOn);
+        var rules = new OwnRules([timer1, timer2, autoOn3], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>>
+        {
+            [timer1] = [timer2, timer1, timer2],
+            [timer2] = [],
+        });
+
+        Assert.Equal([timer2], rules.GoesWith(timer1));
+        Assert.Empty(rules.GoesWith(timer2));
+        Assert.Empty(rules.GoesWith(autoOn3));
+        Assert.Empty(rules.GoesWith(new OwnRule(4, OwnRuleKind.Timer)));
+        Assert.Equal([timer2], rules.GoesWith([timer1, autoOn3]));
+        Assert.Empty(rules.GoesWith([timer1, timer2]));
+        Assert.Empty(rules.GoesWith([]));
+        Assert.Empty(new OwnRules([timer1, timer2]).GoesWith([timer1]));
+        Assert.Empty(OwnRules.Empty.GoesWith(timer1));
+        Assert.Equal("[Timer 1, Timer 2, AutoOn 3; Timer 1 takes Timer 2]", rules.ToString());
+    }
+
+    // Two boards' rules are the same only when the same rules go together: a change in that alone is a change.
+    [Fact]
+    public void Should_BeEqual_OnlyWithTheSameRulesGoingTogether()
+    {
+        var timer1 = new OwnRule(1, OwnRuleKind.Timer);
+        var timer2 = new OwnRule(2, OwnRuleKind.Timer);
+        var linked = new OwnRules([timer1, timer2], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer1] = [timer2] });
+
+        Assert.Equal(linked, new OwnRules([timer1, timer2], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer1] = [timer2] }));
+        Assert.Equal(linked.GetHashCode(), new OwnRules([timer1, timer2], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer1] = [timer2] }).GetHashCode());
+        Assert.NotEqual(linked, new OwnRules([timer1, timer2]));
+        Assert.NotEqual(linked, new OwnRules([timer1, timer2], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer2] = [timer1] }));
+        Assert.Equal(new OwnRules([timer1, timer2]), new OwnRules([timer1, timer2], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer1] = [] }));
+        Assert.NotEqual(BoardState.Initial with { OwnRules = linked }, BoardState.Initial with { OwnRules = new OwnRules([timer1, timer2]) });
+    }
+
+    [Fact]
+    public void Should_RefuseRulesGoingTogether_ThatTheBoardDoesntHave()
+    {
+        var timer1 = new OwnRule(1, OwnRuleKind.Timer);
+        var timer2 = new OwnRule(2, OwnRuleKind.Timer);
+
+        Assert.Throws<ArgumentException>(() => new OwnRules([timer1], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer1] = [timer2] }));
+        Assert.Throws<ArgumentException>(() => new OwnRules([timer1], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer2] = [timer1] }));
+        Assert.Throws<ArgumentException>(() => new OwnRules([timer1], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer1] = null! }));
+        Assert.Throws<ArgumentException>(() => new OwnRules([timer1], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer1] = [null!] }));
+        Assert.Throws<ArgumentNullException>(() => new OwnRules([timer1]).GoesWith((IEnumerable<OwnRule>)null!));
+        Assert.Empty(new OwnRules([timer1]).GoesWith((OwnRule)null!));
+    }
+
+    // The board in memory turns off what goes with the rules asked, returns only those asked, and keeps what goes with
+    // the rules left.
+    [Fact]
+    public async Task Should_TurnOffTheRulesThatGoWithThem_OnTheBoardInMemory()
+    {
+        var timer1 = new OwnRule(1, OwnRuleKind.Timer);
+        var timer2 = new OwnRule(2, OwnRuleKind.Timer);
+        var timer3 = new OwnRule(3, OwnRuleKind.Timer);
+        var autoOn4 = new OwnRule(4, OwnRuleKind.AutoOn);
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        board.SetOwnRules(new OwnRules([timer1, timer2, timer3, autoOn4], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>>
+        {
+            [timer1] = [timer2],
+            [timer3] = [autoOn4],
+        }));
+
+        var taken = await board.TurnOffOwnRulesAsync([timer1], TestContext.Current.CancellationToken);
+
+        Assert.Equal([timer1], taken);
+        Assert.Equal(new OwnRules([timer3, autoOn4], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [timer3] = [autoOn4] }), board.State.OwnRules);
+    }
+
     // A board that implements only what every board must.
     private sealed class PlainBoard : IRelayBoard
     {

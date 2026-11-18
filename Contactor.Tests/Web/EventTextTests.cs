@@ -212,6 +212,8 @@ public sealed class EventTextTests
     [InlineData("""{"kind":"input-toggle","new":true,"relay":2}""", null, "the board", "Input 2 now switches relay 2 with each pulse on the board")]
     [InlineData("""{"kind":"input-edge","new":false,"relay":4}""", null, "the board", "Input 4 switches relay 4 at each change on the board")]
     [InlineData("""{"kind":"input-edge","new":true,"relay":4}""", null, "the board", "Input 4 now switches relay 4 at each change on the board")]
+    [InlineData("""{"kind":"auto-on","new":false,"relay":3}""", null, "The board", "The board turns relay 3 on again by itself after it goes off")]
+    [InlineData("""{"kind":"auto-on","new":true,"relay":3}""", "Garage", "Garage", "Garage now turns relay 3 on again by itself after it goes off")]
     [InlineData("""{"kind":"later","new":true,"relay":3}""", null, "The board's", "The board's own rule for relay 3 was turned on")]
     [InlineData("not json", null, "The board", "The board has a rule of its own for relay ?")]
     public void Should_DescribeABoardsOwnRuleFound(string details, string? boardName, string who, string text)
@@ -229,6 +231,8 @@ public sealed class EventTextTests
     [InlineData("""{"kind":"timer","new":true,"relay":3}""", "Garage", "Garages egna timer för relä 3 slogs på")]
     [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "Relä 3 blev otillgängligt: kortet styr det självt")]
     [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Relä 3 blev otillgängligt: Garage styr det självt")]
+    [InlineData("""{"kind":"auto-on","new":false,"relay":3}""", null, "Kortet slår på relä 3 igen av sig självt när det har stängts av")]
+    [InlineData("""{"kind":"auto-on","new":true,"relay":3}""", "Garage", "Garage slår nu på relä 3 igen av sig självt när det har stängts av")]
     public void Should_DescribeABoardsOwnRuleFound_InSwedish(string details, string? boardName, string text)
     {
         using var swedish = TestCulture.Language("sv");
@@ -263,6 +267,9 @@ public sealed class EventTextTests
     [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5,7],"kinds":["input-linkage","input-edge"]}""", null, "Erik turned off the board's own input rules for relays 3, 5 and 7", false)]
     [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer","input-edge"]}""", null, "Erik turned off the board's own rules for relays 3 and 5", false)]
     [InlineData(EventActions.BoardOwnRulesTurnedOff, null, null, "Erik turned off the board's own rule for relay ?", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["auto-on"]}""", null, "Erik turned off the board's own auto-on for relays 3 and 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on","timer"]}""", null, "Erik turned off the board's own rule for relay 3", false)]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik kept Garage's own auto-on for relay 3", true)]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik kept the board's own timer for relay 3", true)]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"input-toggle","relay":3}""", "Garage", "Erik kept Garage's own input rule for relay 3", true)]
     public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules(string action, string? details, string? boardName, string text, bool hasTarget)
@@ -281,6 +288,8 @@ public sealed class EventTextTests
     [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"]}""", "Garage", "Erik stängde av Garages egna timer för relä 3")]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik behöll kortets egna timer för relä 3")]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", "Garage", "Erik behöll Garages egna timer för relä 3")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on"]}""", null, "Erik stängde av kortets egna automatiska påslag för relä 3")]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik behöll Garages egna automatiska påslag för relä 3")]
     public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules_InSwedish(string action, string details, string? boardName, string text)
     {
         using var swedish = TestCulture.Language("sv");

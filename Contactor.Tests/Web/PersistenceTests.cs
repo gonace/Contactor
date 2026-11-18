@@ -288,6 +288,7 @@ public sealed class PersistenceTests
             db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
             db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.InputEdge, FoundUtc = Earlier });
             db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 4, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 4, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
             db.BoardOwnRules.Add(new BoardOwnRule { BoardId = other.Id, Channel = 3, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
             await db.SaveChangesAsync(Cancel);
         }
@@ -311,7 +312,30 @@ public sealed class PersistenceTests
         }
 
         await using var check = await database.Factory.CreateDbContextAsync(Cancel);
-        Assert.Equal(4, await check.BoardOwnRules.CountAsync(Cancel));
+        Assert.Equal(5, await check.BoardOwnRules.CountAsync(Cancel));
+    }
+
+    // The version before the auto-on kind refuses it: going back removes those rows and keeps the others.
+    [Fact]
+    public async Task Should_RemoveAutoOnRules_WhenMigratedBackBeforeTheKind()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 2, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            await db.SaveChangesAsync(Cancel);
+            await db.GetService<IMigrator>().MigrateAsync("20261117204846_AddBoardOwnRules", cancellationToken: Cancel);
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.Equal([3], await db.Database.SqlQueryRaw<int>("SELECT \"Channel\" AS \"Value\" FROM \"BoardOwnRule\"").ToListAsync(Cancel));
+            await db.Database.MigrateAsync(Cancel);
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 2, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
+            await db.SaveChangesAsync(Cancel);
+        }
     }
 
     [Fact]

@@ -787,6 +787,12 @@ button:disabled {
     cursor: pointer;
 }
 
+/* Other relays' rules that go with them, said before the press. */
+.own-rules .also {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
 .own-rules .rules-error {
     margin-top: 4px;
     font-weight: 600;

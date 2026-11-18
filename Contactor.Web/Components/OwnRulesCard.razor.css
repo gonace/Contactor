@@ -83,6 +83,11 @@ h2 {
     color: var(--danger-ink);
 }
 
+.also {
+    font-size: 14px;
+    color: var(--ink);
+}
+
 .kept .note {
     color: var(--muted);
 }

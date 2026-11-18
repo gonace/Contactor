@@ -18,7 +18,8 @@
 
 @* The board's own rules (issue #497), on the board's page and on Settings with one board: each rule the app found,
    with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself), or a line for a board that may have rules the app can't see. None for a board that has
-   none. *@
+   none. A rule whose turn-off takes other relays' rules with it says so under it ("Also turns off the board's timer
+   for Heat."). *@
 @if (Board is { } board && (_rows.Count > 0 || Ability(board).MayHaveUnseen))
 {
     var ability = Ability(board);
@@ -39,6 +40,11 @@
                             <span class="label">@Texts["Relays.RelayLabel", row.Channel]</span>
                             <span class="name">@(_names.GetValueOrDefault(row.Channel) ?? Texts["Relays.DefaultName", row.Channel])</span>
                             <span class="note">@(kept ? Texts["OwnRules.Kept"] : Words.Found(Clock.ToLocal(row.FoundUtc), Clock.Now))</span>
+                            @if (ability.TurnsOff && Also(row) is { } also)
+                            {
+                                @* Said before the press: the other relays' rules this "Turn off" takes with it. *@
+                                <span class="also">@also</span>
+                            }
                         </span>
                         <span class="buttons">
                             @if (ability.TurnsOff)
@@ -77,8 +83,9 @@
     // Counts the loads, on the page's own thread: only the latest one shows its rows.
     private int _loads;
 
-    // What was drawn: a board's change redraws the card only when its contact changes.
+    // What was drawn: a board's change redraws the card only when its contact or what goes with its rules changes.
     private bool? _shownConnected;
+    private string _shownAlso = "";
 
     // Set when the card closes, on the page's own thread: an event already on its way doesn't load or draw it.
     private bool _disposed;
@@ -99,6 +106,7 @@
     protected override void OnInitialized()
     {
         Registry.StateChanged += OnBoardChanged;
+        Registry.OwnRulesChanged += OnBoardChanged;
         Rows.Changed += OnRowsChanged;
     }
 
@@ -116,13 +124,27 @@
     protected override void OnAfterRender(bool firstRender)
     {
         _shownConnected = Board?.State.IsConnected;
+        _shownAlso = AlsoShown();
     }
 
     public void Dispose()
     {
         _disposed = true;
         Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnBoardChanged;
         Rows.Changed -= OnRowsChanged;
+    }
+
+    // "Also turns off the board's timer for Heat.": what turning off the row's rule takes with it, or null.
+    private string? Also(OwnRuleRow row)
+    {
+        return Words.AlsoTurnsOff(Handler.AlsoTurnsOff(BoardId, [new OwnRule(row.Channel, row.Kind)]), _names);
+    }
+
+    // Every row's "also" words, to tell when the board's rules going together changed.
+    private string AlsoShown()
+    {
+        return Board is { } board && Ability(board).TurnsOff ? string.Join("\n", _rows.Select(Also)) : "";
     }
 
     // The rows, in relay order, and the names of their relays. Only the latest load shows: an older one that finishes
@@ -185,7 +207,7 @@
         }
     }
 
-    // From a board's read loop: the buttons follow the board's contact.
+    // From a board's read loop: the buttons follow the board's contact, the "also" words its rules.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
         if (change.BoardId == BoardId)
@@ -220,7 +242,7 @@
                     await LoadAsync();
                     StateHasChanged();
                 }
-                else if (Board?.State.IsConnected != _shownConnected)
+                else if (Board?.State.IsConnected != _shownConnected || AlsoShown() != _shownAlso)
                 {
                     StateHasChanged();
                 }

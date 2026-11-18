@@ -88,6 +88,18 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
+    /// The other rules of the board's own that turning off <paramref name="rules"/> also removes on the board
+    /// (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>), e.g. relay 2's timer when relay 1's timer is a schedule
+    /// on the board that switches both: each once, in the board's order. None for a board whose rules go alone, or
+    /// while its rules aren't known. A screen names them before a person presses "Turn off".
+    /// </summary>
+    public IReadOnlyList<OwnRule> AlsoTurnsOff(int boardId, IReadOnlyCollection<OwnRule> rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        return _registry.Find(boardId)?.State.OwnRules?.GoesWith(rules) ?? [];
+    }
+
+    /// <summary>
     /// "Turn them off" while the board is being added: turns them off as <see cref="TurnOffAsync"/> does (logged when the
     /// board took them, never queued), then waits up to <see cref="ConfirmWait"/> for the board's state to no longer have
     /// any of them, asking it for a fresh state once. Returns null once confirmed, otherwise the message to show.
@@ -173,7 +185,8 @@ public sealed partial class OwnRulesHandler
     /// Turns off the board's own <paramref name="rules"/> at once, as <paramref name="userEmail"/> pressed, and logs the
     /// rules the board took. Returns null when sent (or none asked), otherwise the message to show: without a
     /// connection, or when the board didn't take them, nothing is logged or queued. The board's next state shows them
-    /// gone, and their rows go then.
+    /// gone, and their rows go then; so do the rules that went with them (<see cref="AlsoTurnsOff"/>), which the event
+    /// doesn't name.
     /// </summary>
     public async Task<string?> TurnOffAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {

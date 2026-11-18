@@ -59,6 +59,14 @@ h1:focus {
     color: var(--muted);
 }
 
+/* Other rules "Turn them off" takes with these, said before the press. */
+.also {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 600;
+}
+
 /* A relay the board controls by itself: it stays unavailable until reset. */
 .rules .note {
     margin-left: auto;

@@ -13,7 +13,7 @@
 @* "This board has timers of its own" (issue #497): the board's own rules it reports now, after "Where is the board?".
    Shared by the setup guide and "Add a board" (BoardNew); the page has the buttons ("Turn them off", "Keep them") and
    calls TurnOffAsync or KeepAsync. A page shows the step only while ShouldAsk holds. The relays have no names yet, so
-   they are "Relay 3", "Relay 5". *@
+   they are "Relay 3", "Relay 5". When turning them off takes other rules with it, the step says so first. *@
 <div class="intro">
     <h1 tabindex="-1" @ref="_heading">@Words.StepTitle(_rules)</h1>
     <p>@Words.StepIntro(_rules.Count)</p>
@@ -32,6 +32,11 @@
     }
 </ul>
 <p class="hint">@Words.Recommend(_rules.Count)</p>
+@if (Words.AlsoTurnsOff(_also, null) is { } also)
+{
+    @* Said before the press: rules a person kept earlier that "Turn them off" takes with these. *@
+    <p class="also">@also</p>
+}
 
 @code {
     private ElementReference _heading;
@@ -44,6 +49,9 @@
     // The rules shown: what the board reports now that no person kept, kept while a press is under way so the list
     // doesn't change under it.
     private IReadOnlyList<OwnRule> _rules = [];
+
+    // The other rules turning _rules off takes with it (OwnRulesHandler.AlsoTurnsOff): none on a board that can't.
+    private IReadOnlyList<OwnRule> _also = [];
 
     /// <summary>The board being added; it must have a model.</summary>
     [Parameter]
@@ -91,7 +99,7 @@
 
         if (!_busy)
         {
-            _rules = Handler.ToAsk(Board.BoardId);
+            Show(Handler.ToAsk(Board.BoardId));
         }
     }
 
@@ -144,9 +152,21 @@
         finally
         {
             _busy = false;
-            _rules = Handler.ToAsk(Board.BoardId);
+            Show(Handler.ToAsk(Board.BoardId));
             await BusyChanged.InvokeAsync(false);
         }
+    }
+
+    // The rules to show, and what turning them off takes with them.
+    private void Show(IReadOnlyList<OwnRule> rules)
+    {
+        _rules = rules;
+        _also = Also(rules);
+    }
+
+    private IReadOnlyList<OwnRule> Also(IReadOnlyList<OwnRule> rules)
+    {
+        return Board.Capabilities.OwnRulesOrCantTell.TurnsOff ? Handler.AlsoTurnsOff(Board.BoardId, rules) : [];
     }
 
     private void Unsubscribe()
@@ -188,9 +208,9 @@
                 }
 
                 var now = Handler.ToAsk(_watched);
-                if (!now.SequenceEqual(_rules))
+                if (!now.SequenceEqual(_rules) || !Also(now).SequenceEqual(_also))
                 {
-                    _rules = now;
+                    Show(now);
                     StateHasChanged();
                 }
             });

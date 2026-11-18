@@ -160,7 +160,7 @@ public sealed class EventText
 
     // A rule of the board's own the app saw, with the board as the subject: "The board has its own timer for relay 3",
     // "The board's own timer for relay 3 was turned on" (new: while the app watched), "Relay 3 became unavailable: the
-    // board controls it itself". With two or more boards, the board's name in place of "the board".
+    // board controls it itself", "The board turns relay 3 on again by itself after it goes off". With two or more boards, the board's name in place of "the board".
     private EventView OwnRuleFound(EventLogEntry entry, string? relayName, string? boardName)
     {
         var isNew = Bool(entry.Details, "new") == true;
@@ -177,6 +177,8 @@ public sealed class EventText
             (OwnRuleKind.InputEdge, true) => ("Events.OwnRules.FoundNew.Edge", theBoard),
             (OwnRuleKind.Timer, false) => ("Events.OwnRules.Found.Timer", boardName ?? _texts["Events.Who.Board"]),
             (OwnRuleKind.Timer, true) => ("Events.OwnRules.FoundNew.Timer", BoardsOwn(boardName)),
+            (OwnRuleKind.AutoOn, false) => ("Events.OwnRules.Found.AutoOn", boardName ?? _texts["Events.Who.Board"]),
+            (OwnRuleKind.AutoOn, true) => ("Events.OwnRules.FoundNew.AutoOn", boardName ?? _texts["Events.Who.Board"]),
             (_, false) => ("Events.OwnRules.Found.Rule", boardName ?? _texts["Events.Who.Board"]),
             (_, true) => ("Events.OwnRules.FoundNew.Rule", BoardsOwn(boardName)),
         };
@@ -239,6 +241,7 @@ public sealed class EventText
         var what = distinct switch
         {
             [OwnRuleKind.Timer] => several ? "Events.OwnRules.Kind.Timers" : "Events.OwnRules.Kind.Timer",
+            [OwnRuleKind.AutoOn] => "Events.OwnRules.Kind.AutoOn",
             _ when distinct.Count > 0 && distinct.All(k => k is OwnRuleKind.InputLinkage or OwnRuleKind.InputToggle or OwnRuleKind.InputEdge)
                 => several ? "Events.OwnRules.Kind.InputRules" : "Events.OwnRules.Kind.InputRule",
             _ => several ? "Events.OwnRules.Kind.Rules" : "Events.OwnRules.Kind.Rule",
