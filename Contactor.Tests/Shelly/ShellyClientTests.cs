@@ -249,7 +249,8 @@ public sealed class ShellyClientTests
 
         await Wait.UntilAsync(() => run.Client.State.Problem is not null);
 
-        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays), run.Client.State.Problem);
+        var kind = profile is null ? ConnectionProblemKind.WrongModel : ConnectionProblemKind.CoverProfile;
+        Assert.Equal(new ConnectionProblem(kind, ShellyModels.TwoRelays), run.Client.State.Problem);
         Assert.False(run.Client.State.IsConnected);
         var reason = profile is null ? "isn't a Shelly of the second generation or later" : "set up to drive a cover";
         Assert.Contains(run.Traces, t => t.Text.Contains(reason, StringComparison.Ordinal) && t.IsError);
@@ -289,7 +290,7 @@ public sealed class ShellyClientTests
 
         await Wait.UntilAsync(() => run.Client.State.Problem is not null);
 
-        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays), run.Client.State.Problem);
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays, FoundRelayCount: 4), run.Client.State.Problem);
         Assert.Contains(run.Traces, t => t.Text == "The Shelly at this address has 4 relays, not 2." && t.IsError);
         Assert.False(run.Client.State.IsConnected);
     }

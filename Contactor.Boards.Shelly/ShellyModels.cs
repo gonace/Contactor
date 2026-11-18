@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Contactor.Boards.Shelly;
 
 /// <summary>
@@ -44,8 +46,9 @@ public static class ShellyModels
 
     private static BoardModel Create(int relays)
     {
-        // "Shelly Gen2+ with 2 relays" in full (BoardModel.Name), and "Gen2+ with 2 relays" under the brand Shelly.
-        var name = relays == 1 ? "Gen2+ with 1 relay" : $"Gen2+ with {relays} relays";
+        // "Shelly Gen2+ 2" in full (BoardModel.Name), and "Gen2+ 2" under the brand Shelly: the number of relays, as
+        // Shelly's own names have it (Pro 4PM, Plus 2PM), without a word that needs a translation.
+        var name = string.Create(CultureInfo.InvariantCulture, $"Gen2+ {relays}");
         return new BoardModel(
             $"shelly-{relays}",
             Brand,

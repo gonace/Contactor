@@ -89,7 +89,8 @@ public sealed class ShellyWrongDeviceException : Exception, IConnectionProblemSo
     /// <param name="message">What is wrong, in plain English.</param>
     /// <param name="mismatch">Which of the checks it failed.</param>
     /// <param name="problem">
-    /// For the screens: another model (with the entry for its switch count when it has one), or firmware too old.
+    /// For the screens: another model or another number of relays (with the entry for its switch count when it has one),
+    /// the cover profile, or firmware too old.
     /// </param>
     public ShellyWrongDeviceException(string message, ShellyMismatch mismatch, ConnectionProblem? problem)
         : base(message)
@@ -101,7 +102,7 @@ public sealed class ShellyWrongDeviceException : Exception, IConnectionProblemSo
     /// <summary>Which of the checks it failed.</summary>
     public ShellyMismatch Mismatch { get; }
 
-    /// <summary>Another model, or firmware too old; null when not given.</summary>
+    /// <summary>Another model or number of relays, the cover profile, or firmware too old; null when not given.</summary>
     public ConnectionProblem? Problem { get; }
 }
 

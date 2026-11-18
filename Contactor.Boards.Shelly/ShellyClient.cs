@@ -335,7 +335,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             throw Refuse(
                 "The Shelly is set up to drive a cover, not relays. Set its profile to \"switch\" in its own web page.",
                 ShellyMismatch.CoverProfile,
-                new ConnectionProblem(ConnectionProblemKind.WrongModel, _model));
+                new ConnectionProblem(ConnectionProblemKind.CoverProfile, _model));
         }
 
         if (ShellyApi.ParseFirmware(info.Firmware) is not { } firmware || firmware < ShellyApi.MinFirmware)
@@ -354,7 +354,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             throw Refuse(
                 string.Create(CultureInfo.InvariantCulture, $"The Shelly at this address has {switches.Count} relays, not {_model.Capabilities.RelayCount}."),
                 ShellyMismatch.RelayCount,
-                new ConnectionProblem(ConnectionProblemKind.WrongModel, _model, ShellyModels.ModelFor(switches.Count)));
+                new ConnectionProblem(ConnectionProblemKind.WrongModel, _model, ShellyModels.ModelFor(switches.Count), FoundRelayCount: switches.Count));
         }
     }
 

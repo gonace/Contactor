@@ -338,6 +338,9 @@
   <data name="Boards.Port" xml:space="preserve">
     <value>Port</value>
   </data>
+  <data name="Boards.Problem.CoverProfile" xml:space="preserve">
+    <value>The board is set up to drive a cover, not relays. Set its profile to "switch" on its own web page, then check again.</value>
+  </data>
   <data name="Boards.Problem.FirmwareTooOld" xml:space="preserve">
     <value>The board's firmware is too old. Update it to {0} or later on the board's own web page.</value>
     <comment>{0} is the oldest firmware version the app takes, e.g. "1.7.0".</comment>
@@ -350,6 +353,9 @@
   </data>
   <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
     <value>The board asks for a password.</value>
+  </data>
+  <data name="Boards.Problem.Short.CoverProfile" xml:space="preserve">
+    <value>Set up for a cover</value>
   </data>
   <data name="Boards.Problem.Short.FirmwareTooOld" xml:space="preserve">
     <value>Old firmware</value>
@@ -395,6 +401,14 @@
   </data>
   <data name="Boards.Problem.WrongPassword" xml:space="preserve">
     <value>The password is wrong.</value>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount" xml:space="preserve">
+    <value>The board at this address has {0}, not {1}.</value>
+    <comment>{0} is Boards.Relays for the number found, e.g. "4 relays"; {1} is the number the chosen model has, e.g. "2".</comment>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount.AddAgain" xml:space="preserve">
+    <value>Add it again with '{1}' and choose the one with {0}, then remove this one.</value>
+    <comment>{0} is Boards.Relays for the number found, e.g. "4 relays"; {1} is Common.AddBoard.</comment>
   </data>
   <data name="Boards.Relays.InGroup" xml:space="preserve">
     <value>In the group {0}, which switches it.</value>

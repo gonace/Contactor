@@ -30,10 +30,10 @@ Also RFC 7616, *HTTP Digest Access Authentication*, section 3.4.1 (the response 
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `shelly-1` | Shelly Gen2+ with 1 relay | 1 | 0 | none | optional password |
-| `shelly-2` | Shelly Gen2+ with 2 relays | 2 | 0 | none | optional password |
-| `shelly-3` | Shelly Gen2+ with 3 relays | 3 | 0 | none | optional password |
-| `shelly-4` | Shelly Gen2+ with 4 relays | 4 | 0 | none | optional password |
+| `shelly-1` | Shelly Gen2+ 1 | 1 | 0 | none | optional password |
+| `shelly-2` | Shelly Gen2+ 2 | 2 | 0 | none | optional password |
+| `shelly-3` | Shelly Gen2+ 3 | 3 | 0 | none | optional password |
+| `shelly-4` | Shelly Gen2+ 4 | 4 | 0 | none | optional password |
 
 The docs list no model codes for the app to tell the devices apart, so the catalogue has one entry per number of
 relays (`ShellyModels`). The device must have that many `switch:N` components, or the app refuses it.
@@ -130,9 +130,10 @@ The device counts as connected only after a poll after that answered.
 
 When the device refuses the connection, the state says why (`ShellyState.Problem`, a `ConnectionProblem`):
 
-- `WrongModel` for another number of relays, with the entry for the count found (`ShellyModels.ModelFor`), or null
-  for a count the catalogue has no entry for. Also `WrongModel`, with no model found, for a Gen1 device and for the
-  cover profile.
+- `WrongModel` for another number of relays, with the count found (`FoundRelayCount`) and the entry for it
+  (`ShellyModels.ModelFor`), or null for a count the catalogue has no entry for. Also `WrongModel`, with no model
+  found, for a Gen1 device.
+- `CoverProfile` for a device in the cover profile: the screens say to set its profile to "switch".
 - `LoginNeeded`: the device asks for a password and the app has none.
 - `LoginRefused`: the device refused the password.
 - `FirmwareTooOld`, with 1.7.0 as `MinFirmware`, for firmware that is too old or that the app can't read.

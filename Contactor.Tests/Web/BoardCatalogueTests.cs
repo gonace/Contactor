@@ -213,7 +213,7 @@ public sealed class BoardCatalogueTests
             ["VM201", "VM204", "VM208"],
             BoardCatalogue.Brands.Single(m => m.Name == "Velleman").Models.Select(m => m.ModelName));
         Assert.Equal(
-            ["Gen2+ with 1 relay", "Gen2+ with 2 relays", "Gen2+ with 3 relays", "Gen2+ with 4 relays"],
+            ["Gen2+ 1", "Gen2+ 2", "Gen2+ 3", "Gen2+ 4"],
             BoardCatalogue.Brands.Single(m => m.Name == "Shelly").Models.Select(m => m.ModelName));
         Assert.Equal(
             BoardCatalogue.All.Select(r => r.Model).OrderBy(m => m.Brand, StringComparer.OrdinalIgnoreCase),
@@ -272,7 +272,7 @@ public sealed class BoardCatalogueTests
         });
         Assert.Equal("Waveshare Modbus PoE ETH Relay 30CH", BoardCatalogue.Find("waveshare-30")!.Model.Name);
         Assert.Equal("Denkovi DAEnetIP2 v2 16-relay kit", BoardCatalogue.Find("denkovi-daenetip2-v2-16")!.Model.Name);
-        Assert.Equal("Shelly Gen2+ with 2 relays", BoardCatalogue.Find("shelly-2")!.Model.Name);
+        Assert.Equal("Shelly Gen2+ 2", BoardCatalogue.Find("shelly-2")!.Model.Name);
     }
 
     private static ActiveBoard Build(string type, string vm208Host = "127.0.0.1", Dictionary<string, string?>? settings = null)

@@ -10,7 +10,10 @@ public sealed record ShellyStatus(byte Relays);
 /// <param name="IsConnected">The device answered an authenticated <c>Shelly.GetStatus</c> on the current connection.</param>
 /// <param name="Status">The last answer, or null before the first.</param>
 /// <param name="LastContactUtc">When the device last answered a poll, or null if it never has.</param>
-/// <param name="Problem">Why the device refused the last connection: another device, or a password needed or refused.</param>
+/// <param name="Problem">
+/// Why the device refused the last connection: another device or another number of relays, the cover profile, firmware
+/// too old, a password needed or refused, or too many tries (a 429).
+/// </param>
 public sealed record ShellyState(bool IsConnected, ShellyStatus? Status, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null)
 {
     public static ShellyState Initial { get; } = new(false, null, null);

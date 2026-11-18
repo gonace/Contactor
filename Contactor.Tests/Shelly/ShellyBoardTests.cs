@@ -28,8 +28,8 @@ public sealed class ShellyBoardTests
             Assert.Equal(ShellyApi.PasswordMaxLength, m.LoginMaxLength);
         });
         Assert.Equal([1, 2, 3, 4], ShellyModels.All.Select(m => m.Capabilities.RelayCount));
-        Assert.Equal("Shelly Gen2+ with 1 relay", ShellyModels.OneRelay.Name);
-        Assert.Equal("Shelly Gen2+ with 4 relays", ShellyModels.FourRelays.Name);
+        Assert.Equal("Shelly Gen2+ 1", ShellyModels.OneRelay.Name);
+        Assert.Equal("Shelly Gen2+ 4", ShellyModels.FourRelays.Name);
         Assert.Same(ShellyModels.ThreeRelays, ShellyModels.ModelFor(3));
         Assert.Null(ShellyModels.ModelFor(0));
         Assert.Null(ShellyModels.ModelFor(5));

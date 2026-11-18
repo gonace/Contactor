@@ -37,6 +37,8 @@ public sealed class BoardProblemPagesTests
         { new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), "The password is wrong.", "Wrong password" },
         { new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model), "The user name or password is wrong.", "Wrong login" },
         { new ConnectionProblem(ConnectionProblemKind.FirmwareTooOld, DevantechModels.Eth008, MinFirmware: "1.7.0"), "The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", "Old firmware" },
+        { new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays, FoundRelayCount: 4), "The board at this address has 4 relays, not 2.", "Wrong model" },
+        { new ConnectionProblem(ConnectionProblemKind.CoverProfile, ShellyModels.TwoRelays), "The board is set up to drive a cover, not relays. Set its profile to \"switch\" on its own web page, then check again.", "Set up for a cover" },
         { new ConnectionProblem(ConnectionProblemKind.TooManyTries, DevantechModels.Eth008), "Too many wrong passwords. Check the password, then wait a few minutes: Contactor tries again by itself.", "Too many tries" },
         { null, "No contact with the relay board at", "No contact yet" },
     };
@@ -62,8 +64,11 @@ public sealed class BoardProblemPagesTests
 
         // Another model the app knows is added again: the model can't be changed here.
         Assert.Equal(
-            problem is { Kind: ConnectionProblemKind.WrongModel, Found: not null },
+            problem is { Kind: ConnectionProblemKind.WrongModel, Found: not null, FoundRelayCount: null },
             html.Contains("Add it again as an ETH484-B with 'Add a board', then remove this one.", StringComparison.Ordinal));
+        Assert.Equal(
+            problem is { FoundRelayCount: 4 },
+            html.Contains("Add it again with 'Add a board' and choose the one with 4 relays, then remove this one.", StringComparison.Ordinal));
     }
 
     // The red box keeps its heading; the line under it says why, and where to go. The relays wait for the board.
@@ -241,6 +246,48 @@ public sealed class BoardProblemPagesTests
         var shelly = boards.App.Services.GetRequiredService<BoardRegistry>().All[^1];
         Assert.Equal(ChannelMask.Of(2), await shelly.TurnOnAsync(ChannelMask.Of(2), Cancel));
         Assert.Equal((byte)0b10, simulator.Relays);
+    }
+
+    // A Shelly with another number of relays: the counts, not the models, and "Choose model" back to the entries.
+    [Fact]
+    public async Task Should_SayTheRelayCount_OfAShellyWithAnotherNumber()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.FourRelays);
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-2");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The board at this address has 4 relays, not 2.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(Button("Choose model")));
+        Assert.Empty(page.Errors);
+    }
+
+    // A Shelly in the cover profile: no model fits, so the step says to set its profile and offers "Check again".
+    [Fact]
+    public async Task Should_SayToSetTheProfile_OfAShellyThatDrivesACover()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.TwoRelays) { Profile = "cover" };
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-2");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+
+        await page.ClickAsync(Button("Next"));
+
+        Assert.Contains("The board is set up to drive a cover, not relays. Set its profile to \"switch\" on its own web page, then check again.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(Button("Choose model")));
+        Assert.True(await page.HasAsync(Button("Check again")));
+
+        simulator.Profile = "switch";
+        await page.ClickAsync(Button("Check again"));
+        await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Board online", StringComparison.Ordinal));
+        Assert.Empty(page.Errors);
     }
 
     // A Shelly with firmware before 1.7.0: the step says to update it.
