@@ -189,6 +189,8 @@ The `Shelly` section applies to all four entries:
 - `Generation` (null for a Gen1 device, which answers 404), `Firmware` and `Profile` make a device the app must
   refuse. `FailRelays` and `Refusal` make `Switch.Set` fail, by default with -109 "Overtemp condition present".
   `Throttle` answers 429. `ExpireNonces` and `ForgetNonces` make the next kept nonce fail.
+- The simulator's page (`Contactor.Simulator`) offers port 8180 for it, because port 80 needs rights a developer
+  doesn't have.
 - Relays can be switched "at the device", and connections can be dropped or refused. A request that is too long,
   cut short or not HTTP is closed without an answer. A request that isn't a request frame gets 400 (the docs don't
   say what the device does).
@@ -211,4 +213,5 @@ The `Shelly` section applies to all four entries:
 - What a Gen1 device answers to `POST /rpc`. The app expects 404.
 - The longest password the device's web page takes, and if a password with non-ASCII letters works.
 - How the device handles a poll every 2 s for days, with and without a password.
-- How many HTTP clients the device takes at once. The docs say 6 non-persistent channels.
+- How many HTTP clients the device takes at once. The docs say 6 non-persistent channels. If too many clients also
+  get 429, the screens say "Too many wrong passwords" for that too.
