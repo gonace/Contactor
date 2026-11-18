@@ -110,7 +110,7 @@ public sealed class ShellyWrongDeviceException : Exception, IConnectionProblemSo
 /// The device answered 429 Too Many Requests: after too many wrong passwords, or with too many clients at once. The
 /// client never tries again by itself within a request; the poller's next attempt comes after its wait.
 /// </summary>
-public sealed class ShellyThrottledException : Exception
+public sealed class ShellyThrottledException : Exception, IConnectionProblemSource
 {
     public ShellyThrottledException()
         : base("The Shelly asks to wait: it refuses requests for a while after too many wrong passwords or too many clients. The app tries again by itself.")
@@ -126,6 +126,21 @@ public sealed class ShellyThrottledException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <param name="problem">
+    /// The reason the device gave before it asked to wait, e.g. a refused password, which still holds; null for none.
+    /// </param>
+    public ShellyThrottledException(ConnectionProblem? problem)
+        : this()
+    {
+        Problem = problem;
+    }
+
+    /// <summary>
+    /// The reason the device gave before the 429, kept so the screens don't lose it: a 429 says nothing new about the
+    /// password. There is no problem kind for "wait" yet.
+    /// </summary>
+    public ConnectionProblem? Problem { get; }
 }
 
 /// <summary>The device answered a request with an error frame, e.g. -109 "Overtemp condition present".</summary>

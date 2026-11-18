@@ -135,7 +135,9 @@ When the device refuses the connection, the state says why (`ShellyState.Problem
   cover profile.
 - `LoginNeeded`: the device asks for a password and the app has none.
 - `LoginRefused`: the device refused the password.
-- None for firmware that is too old, and for a 429. Only the Debug screen and the log say why.
+- None for firmware that is too old. Only the Debug screen and the log say why.
+- A 429 says nothing new about the password: the state keeps the reason the device gave before, for example
+  `LoginRefused`, and the Debug screen and the log say to wait.
   `ShellyWrongDeviceException.Mismatch` tells the four refusals apart.
 
 A command (ON or OFF) switches the relays in the mask one at a time:
@@ -143,6 +145,9 @@ A command (ON or OFF) switches the relays in the mask one at a time:
 - The client sends `Switch.Set` for every relay in the mask, also when the device refuses one.
 - A refused relay shows the device's own message, for example "The Shelly didn't take the command: relay 2:
   Overtemp condition present (error -109)".
+- The whole command goes to the address it started on. When the address moves, or the device counts as lost, while
+  it runs, nothing more is sent: the command throws `BoardNotConnectedException`. A kept nonce only goes back to the
+  address that gave it.
 - A request with no answer stops the rest of the mask: the device is gone. A 401 or a 429 also stops it: every other
   relay would get the same, and each try counts toward the device's brute-force protection.
 - When the device takes no relay, the command throws. Otherwise it returns the relays the device took.

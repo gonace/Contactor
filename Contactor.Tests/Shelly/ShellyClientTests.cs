@@ -158,6 +158,49 @@ public sealed class ShellyClientTests
     }
 
     [Fact]
+    public async Task Should_KeepTheRefusedPassword_WhenTheDeviceThenAsksToWait()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
+        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        var refused = new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay);
+        Assert.Equal(refused, run.Client.State.Problem);
+
+        // The device's brute-force protection answers 429 now: the reason it gave before still holds.
+        simulator.Throttle = true;
+        run.Time.Advance(TimeSpan.FromSeconds(1));
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(2)));
+
+        Assert.Equal(refused, run.Client.State.Problem);
+        var changes = run.Changes;
+        Assert.All(changes.Skip(changes.FindIndex(c => c.Problem is not null)), c => Assert.Equal(refused, c.Problem));
+    }
+
+    [Fact]
+    public async Task Should_SendNothingMore_WhenTheAddressMovesDuringACommand()
+    {
+        await using var first = Start(ShellyModels.TwoRelays);
+        await using var second = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(first, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // While the first relay's Switch.Set reaches the first device, the address moves to the second.
+        first.Traced += (_, entry) =>
+        {
+            if (entry.Text == "Turn on relay 1")
+            {
+                run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+            }
+        };
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0011, Cancel));
+
+        Assert.Equal(0b0001, first.Relays);
+        Assert.Equal(0, second.Relays);
+        Assert.DoesNotContain(ShellyApi.SwitchSet, second.Received);
+    }
+
+    [Fact]
     public async Task Should_SayAPasswordIsNeeded_WhenTheAppHasNone()
     {
         await using var simulator = Start(ShellyModels.OneRelay, Password);

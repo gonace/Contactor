@@ -61,6 +61,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private int _nextId;
     private bool _reuseNonce;
     private ShellyChallenge? _nonce;
+    private BoardEndpoint? _nonceEndpoint;
     private int _nonceCount;
 
     public ShellyClient(IOptions<ShellyOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<ShellyClient> logger)
@@ -234,19 +235,21 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         // Another device may answer now, or the same one after a reboot: nothing of the last connection's digest is kept.
         _reuseNonce = false;
         _nonce = null;
+        _nonceEndpoint = null;
         _nonceCount = 0;
 
-        var info = await GetDeviceInfoAsync(cancellationToken).ConfigureAwait(false);
+        var target = Endpoint;
+        var info = await GetDeviceInfoAsync(target, cancellationToken).ConfigureAwait(false);
         Check(info);
         _reuseNonce = ShellyApi.ParseFirmware(info.Firmware) >= ShellyApi.NonceReuseFirmware;
 
-        var switches = await GetSwitchesAsync(routine: false, cancellationToken).ConfigureAwait(false);
+        var switches = await GetSwitchesAsync(target, routine: false, cancellationToken).ConfigureAwait(false);
         CheckCount(switches);
     }
 
     async Task<ShellyStatus> IPolledBoard<ShellyStatus>.ReadAsync(CancellationToken cancellationToken)
     {
-        return await ReadStatusAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadStatusAsync(Endpoint, cancellationToken).ConfigureAwait(false);
     }
 
     void IPolledBoard<ShellyStatus>.OnStateChanged(PolledState<ShellyStatus> state)
@@ -306,10 +309,10 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     }
 
     // Under the poller's lock.
-    private async Task<ShellyDeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken)
+    private async Task<ShellyDeviceInfo> GetDeviceInfoAsync(BoardEndpoint target, CancellationToken cancellationToken)
     {
         var id = NextId();
-        var result = await CallAsync(ShellyJson.WriteRequest(id, ShellyApi.GetDeviceInfo), id, ShellyTraceText.Request(ShellyApi.GetDeviceInfo), routine: false, cancellationToken)
+        var result = await CallAsync(ShellyJson.WriteRequest(id, ShellyApi.GetDeviceInfo), id, ShellyTraceText.Request(ShellyApi.GetDeviceInfo), routine: false, target, cancellationToken)
             .ConfigureAwait(false);
         var info = ShellyJson.ReadDeviceInfo(result);
         Trace(BoardTraceDirection.Received, ShellyTraceText.DeviceInfo(info));
@@ -362,18 +365,18 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     }
 
     // Under the poller's lock.
-    private async Task<ShellySwitches> GetSwitchesAsync(bool routine, CancellationToken cancellationToken)
+    private async Task<ShellySwitches> GetSwitchesAsync(BoardEndpoint target, bool routine, CancellationToken cancellationToken)
     {
         var id = NextId();
-        var result = await CallAsync(ShellyJson.WriteRequest(id, ShellyApi.GetStatus), id, ShellyTraceText.Request(ShellyApi.GetStatus), routine, cancellationToken)
+        var result = await CallAsync(ShellyJson.WriteRequest(id, ShellyApi.GetStatus), id, ShellyTraceText.Request(ShellyApi.GetStatus), routine, target, cancellationToken)
             .ConfigureAwait(false);
         return ShellyJson.ReadSwitches(result);
     }
 
     // Under the poller's lock: a poll, or the read after a command.
-    private async Task<ShellyStatus> ReadStatusAsync(CancellationToken cancellationToken)
+    private async Task<ShellyStatus> ReadStatusAsync(BoardEndpoint target, CancellationToken cancellationToken)
     {
-        var switches = await GetSwitchesAsync(routine: true, cancellationToken).ConfigureAwait(false);
+        var switches = await GetSwitchesAsync(target, routine: true, cancellationToken).ConfigureAwait(false);
 
         // The profile can change while the app runs: a device with other switches now is lost, and the connect after
         // it says why.
@@ -403,10 +406,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
         // A poll under way gives way. The device switches one relay per Switch.Set, and the whole mask goes out, as one
         // command on a board that takes a mask would: a group's interlock and "All off" rely on every OFF being sent.
+        // The address the whole command goes to: one that moves while it runs gets nothing more (EnsureSameDevice).
+        var target = Endpoint;
         try
         {
             var taken = new StrongBox<byte>();
-            await _poller.RunSwitchesAsync(token => SwitchEachAsync(mask, on, taken, token), cancellationToken).ConfigureAwait(false);
+            await _poller.RunSwitchesAsync(token => SwitchEachAsync(target, mask, on, taken, token), cancellationToken).ConfigureAwait(false);
             return taken.Value;
         }
         catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
@@ -424,12 +429,18 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
     // Under the poller's lock. Returns the device's state read after the switches, or none when that read failed, and
     // puts the relays the device took in <paramref name="taken"/>.
-    private async Task<CommandReading<ShellyStatus>> SwitchEachAsync(byte mask, bool on, StrongBox<byte> taken, CancellationToken cancellationToken)
+    private async Task<CommandReading<ShellyStatus>> SwitchEachAsync(BoardEndpoint target, byte mask, bool on, StrongBox<byte> taken, CancellationToken cancellationToken)
     {
-        await SwitchAsync(mask, on, taken, cancellationToken).ConfigureAwait(false);
+        await SwitchAsync(target, mask, on, taken, cancellationToken).ConfigureAwait(false);
+        if (Endpoint != target)
+        {
+            // Moved after the last switch: the device at the new address says nothing about this command.
+            return default;
+        }
+
         try
         {
-            return new CommandReading<ShellyStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            return new CommandReading<ShellyStatus>(await ReadStatusAsync(target, cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (IsNotTaken(ex) || IsNoAnswer(ex))
         {
@@ -440,19 +451,23 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     }
 
     // Under the poller's lock: one Switch.Set per relay of the mask. Throws when not one was taken.
-    private async Task SwitchAsync(byte mask, bool on, StrongBox<byte> taken, CancellationToken cancellationToken)
+    private async Task SwitchAsync(BoardEndpoint target, byte mask, bool on, StrongBox<byte> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
         ExceptionDispatchInfo? unreadable = null;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
+            // Another device may be at a new address, unchecked: nothing more goes once the address moved or the
+            // device was lost.
+            EnsureSameDevice(target);
+
             // No answer is thrown as it is and stops the rest: the device is gone, and the poller counts it. A password
             // the device refuses, or a 429, stops the rest too: every other relay would get the same, and each try
             // counts toward the device's brute-force protection.
             try
             {
                 var id = NextId();
-                var result = await CallAsync(ShellyJson.WriteSwitchSet(id, relay, on), id, ShellyTraceText.Request(ShellyApi.SwitchSet, relay, on), routine: false, cancellationToken)
+                var result = await CallAsync(ShellyJson.WriteSwitchSet(id, relay, on), id, ShellyTraceText.Request(ShellyApi.SwitchSet, relay, on), routine: false, target, cancellationToken)
                     .ConfigureAwait(false);
                 bool? wasOn = result.TryGetProperty("was_on", out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
                     ? value.GetBoolean()
@@ -487,6 +502,18 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
     }
 
+    /// <summary>
+    /// Throws <see cref="BoardNotConnectedException"/> when the address moved from <paramref name="target"/> (another
+    /// device may be there now), or when the device counts as lost: nothing more is sent then.
+    /// </summary>
+    private void EnsureSameDevice(BoardEndpoint target)
+    {
+        if (Endpoint != target || !_poller.State.IsConnected)
+        {
+            throw new BoardNotConnectedException("The Shelly's address changed, or it was lost: nothing more was sent.");
+        }
+    }
+
     // A request that got no answer at all.
     private static bool IsNoAnswer(Exception exception)
     {
@@ -512,9 +539,9 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// a 404 (no <c>/rpc</c>: not a Gen2+ device) and <see cref="ShellyProtocolException"/> for anything else it can't
     /// read. Sends at most two requests.
     /// </summary>
-    private async Task<JsonElement> CallAsync(byte[] frame, int id, string text, bool routine, CancellationToken cancellationToken)
+    private async Task<JsonElement> CallAsync(byte[] frame, int id, string text, bool routine, BoardEndpoint target, CancellationToken cancellationToken)
     {
-        var answer = await AuthenticatedPostAsync(frame, text, routine, cancellationToken).ConfigureAwait(false);
+        var answer = await AuthenticatedPostAsync(frame, text, routine, target, cancellationToken).ConfigureAwait(false);
         switch (answer.StatusCode)
         {
             case HttpStatusCode.OK:
@@ -527,7 +554,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
                 return parsed.Result!.Value;
             case HttpStatusCode.TooManyRequests:
-                var throttled = new ShellyThrottledException();
+                // Says nothing new about the password: the reason the device gave before still holds.
+                var throttled = new ShellyThrottledException(_poller.State.Problem);
                 Trace(BoardTraceDirection.Received, throttled.Message, answer.Text, isError: true);
                 throw throttled;
             case HttpStatusCode.NotFound:
@@ -552,13 +580,15 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
     // The digest dance of "Authentication": a kept nonce first when the firmware takes one (2.0.0 and later), otherwise
     // no password first. A 401 gives a challenge, which the request answers once; a 401 to that is a wrong password.
-    private async Task<Answer> AuthenticatedPostAsync(byte[] frame, string text, bool routine, CancellationToken cancellationToken)
+    private async Task<Answer> AuthenticatedPostAsync(byte[] frame, string text, bool routine, BoardEndpoint target, CancellationToken cancellationToken)
     {
         Answer answer;
-        if (_reuseNonce && _nonce is { } kept && _nonceCount < MaxNonceCount)
+
+        // A kept nonce only ever goes back to the address that gave it.
+        if (_reuseNonce && _nonce is { } kept && _nonceEndpoint == target && _nonceCount < MaxNonceCount)
         {
             _nonceCount++;
-            answer = await PostAsync(frame, ShellyDigest.Authorization(kept, Password, _nonceCount, ShellyDigest.NewClientNonce()), text, routine, cancellationToken)
+            answer = await PostAsync(frame, ShellyDigest.Authorization(kept, Password, _nonceCount, ShellyDigest.NewClientNonce()), text, routine, target, cancellationToken)
                 .ConfigureAwait(false);
             if (answer.StatusCode != HttpStatusCode.Unauthorized)
             {
@@ -572,7 +602,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         else
         {
             _nonce = null;
-            answer = await PostAsync(frame, authorization: null, text, routine, cancellationToken).ConfigureAwait(false);
+            answer = await PostAsync(frame, authorization: null, text, routine, target, cancellationToken).ConfigureAwait(false);
             if (answer.StatusCode != HttpStatusCode.Unauthorized)
             {
                 return answer;
@@ -596,7 +626,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
 
         Trace(BoardTraceDirection.Received, "The Shelly asks for the password", answer.Text, isRoutine: true);
-        answer = await PostAsync(frame, ShellyDigest.Authorization(challenge, password, 1, ShellyDigest.NewClientNonce()), text, routine, cancellationToken)
+        answer = await PostAsync(frame, ShellyDigest.Authorization(challenge, password, 1, ShellyDigest.NewClientNonce()), text, routine, target, cancellationToken)
             .ConfigureAwait(false);
         if (answer.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -609,6 +639,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         if (answer.StatusCode == HttpStatusCode.OK && _reuseNonce)
         {
             _nonce = challenge;
+            _nonceEndpoint = target;
             _nonceCount = 1;
         }
 
@@ -619,12 +650,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// One POST to the device, with a timeout, and its answer read up to <see cref="ShellyApi.MaxResponseBytes"/>.
     /// Traces the request; the caller traces the answer, which it knows the meaning of.
     /// </summary>
-    private async Task<Answer> PostAsync(byte[] frame, string? authorization, string text, bool routine, CancellationToken cancellationToken)
+    private async Task<Answer> PostAsync(byte[] frame, string? authorization, string text, bool routine, BoardEndpoint target, CancellationToken cancellationToken)
     {
         Trace(BoardTraceDirection.Sent, text, ShellyTraceText.RequestBytes(frame, authorization is not null), isRoutine: routine);
         try
         {
-            return await PostCoreAsync(frame, authorization, cancellationToken).ConfigureAwait(false);
+            return await PostCoreAsync(frame, authorization, target, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or TimeoutException or ShellyProtocolException or UriFormatException)
         {
@@ -634,13 +665,13 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
     }
 
-    private async Task<Answer> PostCoreAsync(byte[] frame, string? authorization, CancellationToken cancellationToken)
+    private async Task<Answer> PostCoreAsync(byte[] frame, string? authorization, BoardEndpoint target, CancellationToken cancellationToken)
     {
         using var timeout = new CancellationTokenSource(RequestTimeout, _timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri($"http://{Endpoint}{ShellyApi.RpcPath}"))
+            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri($"http://{target}{ShellyApi.RpcPath}"))
             {
                 Version = HttpVersion.Version11,
                 VersionPolicy = HttpVersionPolicy.RequestVersionExact,

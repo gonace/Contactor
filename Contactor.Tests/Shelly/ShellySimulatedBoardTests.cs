@@ -173,7 +173,7 @@ public sealed class ShellySimulatedBoardTests
     [Fact]
     public async Task Should_TellWhoAskedRecently_AndWhatChangedAtTheDevice()
     {
-        await using var device = new ShellySimulator(ShellyModels.ThreeRelays);
+        await using var device = new ShellySimulator(ShellyModels.ThreeRelays) { TimeProvider = new ManualTimeProvider() };
         var changes = 0;
         device.Changed += (_, _) => Interlocked.Increment(ref changes);
         device.Start();
