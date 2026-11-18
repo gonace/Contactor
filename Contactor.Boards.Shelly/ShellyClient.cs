@@ -31,6 +31,11 @@ namespace Contactor.Boards.Shelly;
 /// goes more than twice, and a 429 is never tried again within a call. The password and the digest are never logged
 /// or traced.
 /// </para>
+/// <para>
+/// Each switch's state after a power cut is its <c>initial_state</c>, read with one <c>Switch.GetConfig</c> per switch
+/// at connect, and again only when <c>sys.cfg_rev</c> in a status differs from the one it was read with: never on every
+/// poll. <see cref="SetPowerOnAsync"/> sets it for one switch with <c>Switch.SetConfig</c> and reads it back at once.
+/// </para>
 /// </summary>
 public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsyncDisposable
 {
@@ -63,6 +68,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private ShellyChallenge? _nonce;
     private BoardEndpoint? _nonceEndpoint;
     private int _nonceCount;
+
+    // Only used under the poller's lock: the switches' states after a power cut as last read, the cfg_rev they were read
+    // with, and whether they are read for the current connection. ConnectAsync and a SetConfig start them afresh.
+    private PowerOnStates? _powerOn;
+    private long? _configRevision;
+    private bool _configRead;
 
     public ShellyClient(IOptions<ShellyOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<ShellyClient> logger)
     {
@@ -109,7 +120,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             // The requests time out with _timeProvider instead, see PostAsync.
             Timeout = Timeout.InfiniteTimeSpan,
         };
-        _poller = new BoardPoller<ShellyStatus>(this, timeProvider)
+        // A change of a power-on state alone is no state change: it comes as PowerOnChanged.
+        _poller = new BoardPoller<ShellyStatus>(this, timeProvider, ShellyStatus.RelaysComparer)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
         };
@@ -120,6 +132,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// On the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<ShellyState>? StateChanged;
+
+    /// <summary>
+    /// Raised when only the switches' states after a power cut changed (<see cref="ShellyState.PowerOn"/>), not the
+    /// relays or the connection, which come as <see cref="StateChanged"/>. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<ShellyState>? PowerOnChanged;
 
     /// <summary>
     /// Every request and answer and every connection step, in plain words. The password and the digest never show. On
@@ -201,6 +219,42 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         return CommandAsync(mask, on: false, cancellationToken);
     }
 
+    /// <summary>
+    /// Sets what <paramref name="relay"/> does at power on to <paramref name="state"/> with one <c>Switch.SetConfig</c>
+    /// for that switch only, then reads every switch's <c>initial_state</c> back in the same command, which the poller
+    /// takes as the new state. Throws <see cref="ArgumentOutOfRangeException"/> for a relay the entry hasn't or a state
+    /// the device hasn't, and <see cref="BoardNotConnectedException"/> without a connection, both before anything is
+    /// sent; and <see cref="BoardNotConnectedException"/> when the device didn't take it or didn't answer.
+    /// </summary>
+    public async Task SetPowerOnAsync(int relay, PowerOnState state, CancellationToken cancellationToken = default)
+    {
+        _model.Capabilities.Relay(relay);
+        if (_model.Capabilities.PowerOn?.Has(state) != true)
+        {
+            throw new ArgumentOutOfRangeException(nameof(state), state, "Not a state a Shelly has after a power cut.");
+        }
+
+        if (!State.IsConnected)
+        {
+            throw new BoardNotConnectedException();
+        }
+
+        var target = Endpoint;
+        try
+        {
+            await _poller.RunSwitchesAsync(token => SetPowerOnAndReadAsync(target, relay, state, token), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
+        {
+            // The poller counted it as a failed poll and reads the device at once, settings included.
+            throw new BoardNotConnectedException("The Shelly didn't answer; the setting may not have been saved.", ex);
+        }
+        catch (Exception ex) when (IsNotTaken(ex) || ex is BoardRefusedException)
+        {
+            throw new BoardNotConnectedException($"The Shelly didn't take the setting: {ex.Message}", ex);
+        }
+    }
+
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
     public void Refresh()
     {
@@ -243,8 +297,13 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         Check(info);
         _reuseNonce = ShellyApi.ParseFirmware(info.Firmware) >= ShellyApi.NonceReuseFirmware;
 
+        _powerOn = null;
+        _configRevision = null;
+        _configRead = false;
+
         var switches = await GetSwitchesAsync(target, routine: false, cancellationToken).ConfigureAwait(false);
         CheckCount(switches);
+        await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
     }
 
     async Task<ShellyStatus> IPolledBoard<ShellyStatus>.ReadAsync(CancellationToken cancellationToken)
@@ -261,7 +320,18 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             _logger.Connected(endpoint.Host, endpoint.Port);
         }
 
-        if (StateChanged is not { } handlers)
+        Raise(StateChanged, state);
+    }
+
+    // The comparer leaves out only the power-on states: that is what changed.
+    void IPolledBoard<ShellyStatus>.OnReadingChanged(PolledState<ShellyStatus> state)
+    {
+        Raise(PowerOnChanged, state);
+    }
+
+    private void Raise(EventHandler<ShellyState>? handlers, PolledState<ShellyStatus> state)
+    {
+        if (handlers is null)
         {
             return;
         }
@@ -381,10 +451,86 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         // The profile can change while the app runs: a device with other switches now is lost, and the connect after
         // it says why.
         CheckCount(switches);
-        var status = new ShellyStatus((byte)switches.Outputs);
+
+        // The settings again only when they may have changed: not read yet on this connection (a read cut short, or a
+        // SetConfig), or another cfg_rev. A device without cfg_rev is read at connect only.
+        if (!_configRead || switches.ConfigRevision != _configRevision)
+        {
+            await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
+        }
+
+        var status = new ShellyStatus((byte)switches.Outputs, _powerOn);
         var routine = Interlocked.Exchange(ref _lastTraced, status) == status;
         Trace(BoardTraceDirection.Received, ShellyTraceText.Status(status, _model.Capabilities.RelayCount), isRoutine: routine);
         return status;
+    }
+
+    // Under the poller's lock: each switch's initial_state, one Switch.GetConfig each, after the status that gave
+    // configRevision, so a change in between shows as another cfg_rev at the next poll. A switch the device refuses
+    // with an error of its own, or whose value the docs don't list, is unknown; no answer, or one the app can't read,
+    // fails the read, and the next read starts again.
+    private async Task ReadPowerOnAsync(BoardEndpoint target, long? configRevision, CancellationToken cancellationToken)
+    {
+        _configRead = false;
+        var states = new PowerOnState?[_model.Capabilities.RelayCount];
+        for (var relay = 1; relay <= states.Length; relay++)
+        {
+            try
+            {
+                var id = NextId();
+                var result = await CallAsync(ShellyJson.WriteSwitchGetConfig(id, relay), id, ShellyTraceText.Request(ShellyApi.SwitchGetConfig, relay), routine: false, target, cancellationToken)
+                    .ConfigureAwait(false);
+                states[relay - 1] = ShellyJson.ReadPowerOn(result, relay);
+            }
+            catch (ShellyRpcException)
+            {
+                // Traced as refused by CallAsync.
+                states[relay - 1] = null;
+            }
+
+            Trace(BoardTraceDirection.Received, ShellyTraceText.PowerOnRead(relay, states[relay - 1]));
+        }
+
+        _powerOn = new PowerOnStates(states);
+        _configRevision = configRevision;
+        _configRead = true;
+    }
+
+    // Under the poller's lock: one Switch.SetConfig, then the status and every switch's settings read back.
+    private async Task<CommandReading<ShellyStatus>> SetPowerOnAndReadAsync(BoardEndpoint target, int relay, PowerOnState state, CancellationToken cancellationToken)
+    {
+        // Another device may be at a new address, unchecked: nothing goes once the address moved or the device was lost.
+        EnsureSameDevice(target);
+
+        // Whatever comes of it, the next read reads the settings again, also when cfg_rev didn't move.
+        _configRead = false;
+        try
+        {
+            var id = NextId();
+            await CallAsync(ShellyJson.WriteSwitchSetPowerOn(id, relay, state), id, ShellyTraceText.SetPowerOn(relay, state), routine: false, target, cancellationToken)
+                .ConfigureAwait(false);
+            Trace(BoardTraceDirection.Received, ShellyTraceText.SettingSaved(relay));
+        }
+        catch (ShellyRpcException ex)
+        {
+            // Refused with the device's own message: an answer, which doesn't count toward losing it.
+            throw new BoardRefusedException(string.Create(CultureInfo.InvariantCulture, $"relay {relay}: {(object?)ex.Error ?? ex.Message}"));
+        }
+
+        if (Endpoint != target)
+        {
+            return default;
+        }
+
+        try
+        {
+            return new CommandReading<ShellyStatus>(await ReadStatusAsync(target, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (IsNotTaken(ex) || IsNoAnswer(ex))
+        {
+            // The setting went out; the poller keeps the last state and reads again at once, settings included.
+            return default;
+        }
     }
 
     private async Task<byte> CommandAsync(byte mask, bool on, CancellationToken cancellationToken)

@@ -12,8 +12,10 @@ namespace Contactor.Boards.Shelly;
 
 /// <summary>
 /// A fake Shelly Gen2+ device on a local TCP port: a small HTTP/1.1 server with <c>POST /rpc</c> as the docs describe
-/// it ("RPC Channels", "RPC Protocol"), answering <c>Shelly.GetDeviceInfo</c>, <c>Shelly.GetStatus</c> and
-/// <c>Switch.Set</c> with 1 to 4 switches, and one request per connection. With a password it asks for the digest of
+/// it ("RPC Channels", "RPC Protocol"), answering <c>Shelly.GetDeviceInfo</c>, <c>Shelly.GetStatus</c>,
+/// <c>Switch.Set</c>, and <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> for each switch's <c>initial_state</c>,
+/// with 1 to 4 switches, and one request per connection. Every change of a switch's settings grows <c>sys.cfg_rev</c>,
+/// as "Sys" says; a setting set to what it was doesn't. With a password it asks for the digest of
 /// "Authentication": in the way of firmware 2.0.0 and later (a nonce for many requests with a growing <c>nc</c>, stale
 /// after an hour or 30,000 requests, and 429 after too many wrong passwords) or, for an older <see cref="Firmware"/>,
 /// in the way before it (a new challenge for every request). Its generation, firmware and profile can be set, for a
@@ -62,8 +64,10 @@ public sealed class ShellySimulator : ISimulatedBoard
     private readonly Queue<DateTimeOffset> _failures = new();
     private TcpListener? _listener;
     private Task? _acceptLoop;
+    private readonly string[] _initialStates;
     private byte _relays;
     private byte _lastStatusSent = byte.MaxValue;
+    private long _configRevision = 10;
     private int _deniedCount;
     private int _challengeCount;
     private int _staleCount;
@@ -90,6 +94,7 @@ public sealed class ShellySimulator : ISimulatedBoard
         _password = password ?? "";
         _logger = logger;
         _deviceId = string.Create(CultureInfo.InvariantCulture, $"shellysim{model.Capabilities.RelayCount}-0a1b2c3d4e5f");
+        _initialStates = [.. Enumerable.Repeat("off", model.Capabilities.RelayCount)];
     }
 
     public event EventHandler? Changed;
@@ -134,6 +139,12 @@ public sealed class ShellySimulator : ISimulatedBoard
     /// present". Bit 0 = relay 1.
     /// </summary>
     public byte FailRelays { get; set; }
+
+    /// <summary>
+    /// The relays whose <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> the device refuses with <see cref="Refusal"/>.
+    /// Bit 0 = relay 1.
+    /// </summary>
+    public byte FailConfigRelays { get; set; }
 
     /// <summary>The error a relay in <see cref="FailRelays"/> gets: -109 "Overtemp condition present" ("Common Errors").</summary>
     public ShellyRpcError Refusal { get; set; } = new(ShellyApi.FailedPrecondition, "Overtemp condition present");
@@ -183,6 +194,51 @@ public sealed class ShellySimulator : ISimulatedBoard
             {
                 return _relays;
             }
+        }
+    }
+
+    /// <summary><c>sys.cfg_rev</c>: 10 at start, 1 more for every change of a switch's settings.</summary>
+    public long ConfigRevision
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _configRevision;
+            }
+        }
+    }
+
+    /// <summary>A relay's <c>initial_state</c>, as <c>Switch.GetConfig</c> gives it: "off" at start.</summary>
+    public string InitialState(int relay)
+    {
+        _model.Capabilities.Relay(relay);
+        lock (_lock)
+        {
+            return _initialStates[relay - 1];
+        }
+    }
+
+    /// <summary>
+    /// Sets a relay's <c>initial_state</c> "at the device", e.g. on its own web page: any text, also one the docs don't
+    /// list. Grows <c>cfg_rev</c> when it changed.
+    /// </summary>
+    public void SetInitialState(int relay, string initialState)
+    {
+        ArgumentNullException.ThrowIfNull(initialState);
+        _model.Capabilities.Relay(relay);
+        if (SetConfig(relay, initialState))
+        {
+            RaiseChanged();
+        }
+    }
+
+    /// <summary>Another setting changes "at the device", e.g. a switch's name: <c>cfg_rev</c> grows, and nothing else.</summary>
+    public void ChangeAnotherSetting()
+    {
+        lock (_lock)
+        {
+            _configRevision++;
         }
     }
 
@@ -405,7 +461,12 @@ public sealed class ShellySimulator : ISimulatedBoard
         var signed = http.Authorization is not null;
         var rpc = http.Method == "POST" && http.Target == ShellyApi.RpcPath ? ShellyJson.TryReadRequest(http.Body) : null;
         var (relay, on) = SwitchParameters(rpc);
-        var text = rpc is null ? $"{ShellyRpcError.Printable(http.Method)} {ShellyRpcError.Printable(http.Target)}" : ShellyTraceText.Request(rpc.Method, relay ?? 0, on ?? false);
+        var initialState = InitialStateParameter(rpc);
+        var text = rpc is null
+            ? $"{ShellyRpcError.Printable(http.Method)} {ShellyRpcError.Printable(http.Target)}"
+            : rpc.Method == ShellyApi.SwitchSetConfig && relay is { } setting && ShellyApi.ToPowerOnState(initialState) is { } state
+                ? ShellyTraceText.SetPowerOn(setting, state)
+                : ShellyTraceText.Request(rpc.Method, relay ?? 0, on ?? false);
         Trace(BoardTraceDirection.Sent, text, ShellyTraceText.RequestBytes(http.Body, signed), isRoutine: rpc?.Method == ShellyApi.GetStatus);
         _received.Enqueue(rpc is null ? "?" : rpc.Method + (signed ? " (signed)" : ""));
         while (_received.Count > ReceivedKept && _received.TryDequeue(out _))
@@ -435,6 +496,8 @@ public sealed class ShellySimulator : ISimulatedBoard
             ShellyApi.GetDeviceInfo => Result(rpc, WriteDeviceInfo, ShellyTraceText.DeviceInfo(new ShellyDeviceInfo(_deviceId, Model.Id, Generation, Firmware, Profile))),
             ShellyApi.GetStatus => RespondStatus(rpc),
             ShellyApi.SwitchSet => SetSwitch(rpc, relay, on),
+            ShellyApi.SwitchGetConfig => GetConfig(rpc, relay),
+            ShellyApi.SwitchSetConfig => SetConfig(rpc, relay, initialState),
 
             // Not from the docs read: the app sends no other method, and any error tells it so.
             _ => Error(rpc, new ShellyRpcError(404, $"No handler for {rpc.Method}")),
@@ -636,6 +699,7 @@ public sealed class ShellySimulator : ISimulatedBoard
             writer.WriteStartObject("sys");
             writer.WriteString("mac", "0A1B2C3D4E5F");
             writer.WriteBoolean("restart_required", false);
+            writer.WriteNumber(ShellyApi.ConfigRevision, ConfigRevision);
             writer.WriteEndObject();
         });
         var text = cover ? "Status: a cover, no relays" : ShellyTraceText.Status(new ShellyStatus(relays), _model.Capabilities.RelayCount);
@@ -671,10 +735,115 @@ public sealed class ShellySimulator : ISimulatedBoard
         return Result(rpc, writer => writer.WriteBoolean("was_on", wasOn), ShellyTraceText.Switched(relay.Value, on.Value, wasOn));
     }
 
-    // Switch.Set's id as a relay (id + 1), and its on; null for one missing or of another type.
+    // As "Switch.GetConfig": "id" required; -103 without it, -105 "Bad id=N" for a switch it hasn't (the docs' example
+    // for Input.GetConfig). The members in the order of the docs' example; only initial_state is the device's own.
+    private byte[] GetConfig(ShellyRequest rpc, int? relay)
+    {
+        if (CheckSwitch(rpc, relay) is { } refusal)
+        {
+            return refusal;
+        }
+
+        var initialState = InitialState(relay!.Value);
+        return Result(
+            rpc,
+            writer =>
+            {
+                writer.WriteNumber("id", relay.Value - 1);
+                writer.WriteNull("name");
+                writer.WriteString("in_mode", "follow");
+                writer.WriteBoolean("in_locked", false);
+                writer.WriteString(ShellyApi.InitialState, initialState);
+                writer.WriteBoolean("auto_on", false);
+                writer.WriteNumber("auto_on_delay", 60);
+                writer.WriteBoolean("auto_off", false);
+                writer.WriteNumber("auto_off_delay", 60);
+                writer.WriteBoolean("power_restore_delay_enable", false);
+                writer.WriteNumber("power_restore_delay", 60);
+            },
+            ShellyTraceText.PowerOnRead(relay.Value, ShellyApi.ToPowerOnState(initialState)));
+    }
+
+    // As "Switch.SetConfig": "id" and "config" required; only initial_state is taken, and only a value the docs list
+    // (the docs don't say what another one gets: -103 is "Common Errors"' error for parameters that don't match). Its
+    // result is the docs' {"restart_required":false}.
+    private byte[] SetConfig(ShellyRequest rpc, int? relay, string? initialState)
+    {
+        if (CheckSwitch(rpc, relay) is { } refusal)
+        {
+            return refusal;
+        }
+
+        if (rpc.Params is not { } parameters || !parameters.TryGetProperty("config", out var config) || config.ValueKind != JsonValueKind.Object)
+        {
+            return Error(rpc, new ShellyRpcError(-103, "Missing required 'config'"));
+        }
+
+        if (config.TryGetProperty(ShellyApi.InitialState, out _))
+        {
+            if (ShellyApi.ToPowerOnState(initialState) is null)
+            {
+                return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'initial_state'"));
+            }
+
+            if (SetConfig(relay!.Value, initialState!))
+            {
+                RaiseChanged();
+            }
+        }
+
+        return Result(rpc, writer => writer.WriteBoolean("restart_required", false), ShellyTraceText.SettingSaved(relay!.Value));
+    }
+
+    // -103 without an id, -105 for a switch it hasn't, and the refusal for a relay in FailConfigRelays; null to go on.
+    private byte[]? CheckSwitch(ShellyRequest rpc, int? relay)
+    {
+        if (relay is null)
+        {
+            return Error(rpc, new ShellyRpcError(-103, "Missing required 'id'"));
+        }
+
+        if (relay < 1 || relay > _model.Capabilities.RelayCount || string.Equals(Profile, "cover", StringComparison.OrdinalIgnoreCase))
+        {
+            return Error(rpc, new ShellyRpcError(-105, string.Create(CultureInfo.InvariantCulture, $"Bad id={relay - 1}")));
+        }
+
+        return (FailConfigRelays & (1 << (relay.Value - 1))) != 0 ? Error(rpc, Refusal) : null;
+    }
+
+    // Sets a relay's initial_state; cfg_rev grows only when it changed. Whether it changed.
+    private bool SetConfig(int relay, string initialState)
+    {
+        lock (_lock)
+        {
+            if (_initialStates[relay - 1] == initialState)
+            {
+                return false;
+            }
+
+            _initialStates[relay - 1] = initialState;
+            _configRevision++;
+            return true;
+        }
+    }
+
+    // Switch.SetConfig's config.initial_state; null when missing or not a string.
+    private static string? InitialStateParameter(ShellyRequest? rpc)
+    {
+        return rpc?.Method == ShellyApi.SwitchSetConfig
+            && rpc.Params is { } parameters
+            && parameters.TryGetProperty("config", out var config)
+            && config.ValueKind == JsonValueKind.Object
+            && config.TryGetProperty(ShellyApi.InitialState, out var value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+    }
+
+    // A Switch method's id as a relay (id + 1), and Switch.Set's on; null for one missing or of another type.
     private static (int? Relay, bool? On) SwitchParameters(ShellyRequest? rpc)
     {
-        if (rpc?.Method != ShellyApi.SwitchSet || rpc.Params is not { } parameters)
+        if (rpc?.Method is not (ShellyApi.SwitchSet or ShellyApi.SwitchGetConfig or ShellyApi.SwitchSetConfig) || rpc.Params is not { } parameters)
         {
             return (null, null);
         }

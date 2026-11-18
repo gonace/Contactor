@@ -21,6 +21,7 @@ public static class ShellyTraceText
             ShellyApi.GetDeviceInfo => "Ask which device it is",
             ShellyApi.GetStatus => "Ask for status",
             ShellyApi.SwitchSet when relay > 0 => string.Create(CultureInfo.InvariantCulture, $"Turn {(on ? "on" : "off")} relay {relay}"),
+            ShellyApi.SwitchGetConfig when relay > 0 => string.Create(CultureInfo.InvariantCulture, $"Ask for relay {relay}'s settings"),
             _ => $"Call {Shorten(Printable(method))}",
         };
     }
@@ -65,6 +66,37 @@ public static class ShellyTraceText
             null => "",
         };
         return string.Create(CultureInfo.InvariantCulture, $"Relay {relay} is {now}{before}");
+    }
+
+    /// <summary>A request to set a relay's state after a power cut: "Set relay 2 after a power cut: as before".</summary>
+    public static string SetPowerOn(int relay, PowerOnState state)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Set relay {relay} after a power cut: {PowerOn(state)}");
+    }
+
+    /// <summary>A relay's state after a power cut as read: "Relay 2 after a power cut: as before", or "unknown".</summary>
+    public static string PowerOnRead(int relay, PowerOnState? state)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Relay {relay} after a power cut: {PowerOn(state)}");
+    }
+
+    /// <summary>The device took a setting: "Relay 2's setting saved".</summary>
+    public static string SettingSaved(int relay)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s setting saved");
+    }
+
+    /// <summary>"off", "as before", "on", "follows its switch", or "unknown" for null.</summary>
+    public static string PowerOn(PowerOnState? state)
+    {
+        return state switch
+        {
+            PowerOnState.Off => "off",
+            PowerOnState.AsBefore => "as before",
+            PowerOnState.On => "on",
+            PowerOnState.FollowsInput => "follows its switch",
+            _ => "unknown",
+        };
     }
 
     /// <summary>An answer's bytes as text: "200 {…}", with anything unprintable as "·", cut at 200 characters.</summary>
