@@ -537,9 +537,9 @@
                 @if (board.Capabilities.OwnRulesOrCantTell.TurnsOff)
                 {
                     @* Said before the press: other relays' rules that go with these ("Also turns off the board's timer for Heat."). *@
-                    @if (OwnRulesText.AlsoTurnsOff(_shownAlso.GetValueOrDefault(board.BoardId) ?? [], RelayNames(board.BoardId)) is { } also)
+                    @if (_shownAlso.GetValueOrDefault(board.BoardId) is { Count: > 0 } also)
                     {
-                        <span class="also">@also</span>
+                        <span class="also">@OwnRulesText.AlsoTurnsOff(also, RelayNames(board.BoardId))</span>
                     }
                     <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, rules)">@OwnRulesText.TurnOffAll(rules.Count)</button>
                 }
