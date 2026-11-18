@@ -5,6 +5,7 @@
 @using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
+@using Contactor.Web.Features.Groups
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
@@ -341,7 +342,7 @@
 
     private bool PowerOnAllowed(PowerOnState state)
     {
-        return _onlyOff is null || state == PowerOnState.Off;
+        return _onlyOff is null || GroupPowerOn.IsAllowed(state);
     }
 
     private void ChoosePowerOn(PowerOnState state)

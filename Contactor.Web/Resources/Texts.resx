@@ -1383,6 +1383,12 @@
     <value>ON {0}</value>
     <comment>{0} is the board's name, in capitals.</comment>
   </data>
+  <data name="Groups.New.PowerOn" xml:space="preserve">
+    <value>AFTER A POWER CUT</value>
+  </data>
+  <data name="Groups.New.PowerOnText" xml:space="preserve">
+    <value>Contactor sets the board to keep {0} off after a power cut. Contactor then starts the group in its order.</value>
+  </data>
   <data name="Groups.New.Preview" xml:space="preserve">
     <value>HOW IT LOOKS IN THE LIST</value>
   </data>
@@ -1459,6 +1465,36 @@
   <data name="Groups.Plan.Then" xml:space="preserve">
     <value>{0} → wait {1} → {2}</value>
     <comment>When the group turns on: {0} is the start so far, {1} a wait, {2} the next relay.</comment>
+  </data>
+  <data name="Groups.PowerOn.CantTell" xml:space="preserve">
+    <value>Can't see what the board does after a power cut. Check it on the board.</value>
+  </data>
+  <data name="Groups.PowerOn.MakeSafe" xml:space="preserve">
+    <value>Make it safe</value>
+  </data>
+  <data name="Groups.PowerOn.NoContact" xml:space="preserve">
+    <value>No contact with the board, so nothing was changed. Try again when it answers.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetCreated" xml:space="preserve">
+    <value>The group was created, but Contactor couldn't make sure that the board keeps its relays off after a power cut. Open the group to see what to do.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
+    <value>The group was saved, but Contactor couldn't make sure that the board keeps its new relays off after a power cut.</value>
+  </data>
+  <data name="Groups.PowerOn.OnSave" xml:space="preserve">
+    <value>When you save, Contactor sets the board to keep {0} off after a power cut.</value>
+  </data>
+  <data name="Groups.PowerOn.Unknown" xml:space="preserve">
+    <value>Can't see yet what the board does after a power cut.</value>
+  </data>
+  <data name="Groups.PowerOn.Warning" xml:space="preserve">
+    <value>After a power cut, the board can turn {0} on by itself, without the group's start order.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_One" xml:space="preserve">
+    <value>"Make it safe" sets it to Off on the board. Contactor then starts the group in its order.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_Other" xml:space="preserve">
+    <value>"Make it safe" sets them to Off on the board. Contactor then starts the group in its order.</value>
   </data>
   <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
     <value>Needs {0} to be on.</value>
@@ -2278,7 +2314,7 @@
     <value>What the board does with this relay by itself when the power comes back, before Contactor runs.</value>
   </data>
   <data name="Relays.PowerOn.InGroup" xml:space="preserve">
-    <value>This relay is in a group: set what it does after a power cut on the group's page.</value>
+    <value>This relay is in a group, so it must be Off after a power cut. Its group's page shows what the board does.</value>
   </data>
   <data name="Relays.PowerOn.NoContact" xml:space="preserve">
     <value>No contact with the board, so what the relay does after a power cut wasn't changed. Try again when it answers.</value>
