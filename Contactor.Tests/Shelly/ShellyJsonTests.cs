@@ -1,4 +1,5 @@
 using System.Text;
+using Contactor.Boards;
 using Contactor.Boards.Shelly;
 
 namespace Contactor.Tests.Shelly;
@@ -224,6 +225,39 @@ public sealed class ShellyJsonTests
         }
         """;
 
+    // "Switch", "Switch.GetConfig example", the HTTP GET response, as the docs print it.
+    private const string GetConfigExample = """
+        {
+          "id": 0,
+          "name": "Switchdsds",
+          "in_mode": "follow",
+          "in_locked": false,
+          "initial_state": "match_input",
+          "auto_on": false,
+          "auto_on_delay": 60,
+          "auto_off": false,
+          "auto_off_delay": 60,
+          "power_restore_delay_enable": false,
+          "power_restore_delay": 60,
+          "autorecover_voltage_errors": false,
+          "power_limit": 4480,
+          "voltage_limit": 280,
+          "undervoltage_limit": 0,
+          "current_limit": 16,
+          "counts": {
+            "enable": true,
+            "power_thr": 100
+          }
+        }
+        """;
+
+    // "Switch", "Switch.SetConfig example", the HTTP GET response.
+    private const string SetConfigExample = """
+        {
+          "restart_required": false
+        }
+        """;
+
     [Fact]
     public void Should_ReadTheDocsSwitchSetAnswers()
     {
@@ -262,7 +296,8 @@ public sealed class ShellyJsonTests
     {
         using var document = System.Text.Json.JsonDocument.Parse(StatusExample);
 
-        Assert.Equal(new ShellySwitches(4, 0b0001), ShellyJson.ReadSwitches(document.RootElement));
+        // sys.cfg_rev is 26 in the docs' example.
+        Assert.Equal(new ShellySwitches(4, 0b0001, 26), ShellyJson.ReadSwitches(document.RootElement));
     }
 
     [Fact]
@@ -275,6 +310,94 @@ public sealed class ShellyJsonTests
         Assert.Equal("{\"id\":7,\"src\":\"contactor\",\"method\":\"Shelly.GetStatus\"}", Encoding.UTF8.GetString(ShellyJson.WriteRequest(7, ShellyApi.GetStatus)));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchSet(1, relay: 5, on: true));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchSet(1, relay: 0, on: true));
+    }
+
+    [Fact]
+    public void Should_ReadTheDocsGetConfig_AsSwitchZerosPowerOnState()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(GetConfigExample);
+
+        Assert.Equal(PowerOnState.FollowsInput, ShellyJson.ReadPowerOn(document.RootElement, relay: 1));
+
+        // An answer about switch 0 isn't relay 2's.
+        Assert.Throws<ShellyProtocolException>(() => ShellyJson.ReadPowerOn(document.RootElement, relay: 2));
+    }
+
+    [Fact]
+    public void Should_ReadTheDocsSetConfigAnswer()
+    {
+        var frame = ShellyJson.ReadFrame(Encoding.UTF8.GetBytes($"{{\"id\":4,\"result\":{SetConfigExample}}}"), 4);
+
+        Assert.False(frame.Result!.Value.GetProperty("restart_required").GetBoolean());
+    }
+
+    [Fact]
+    public void Should_WriteTheDocsConfigRequests_WithOnlyInitialState()
+    {
+        // "Switch", the curl examples, with the src the app always sends and only initial_state in config.
+        Assert.Equal(
+            "{\"id\":1,\"src\":\"contactor\",\"method\":\"Switch.GetConfig\",\"params\":{\"id\":0}}",
+            Encoding.UTF8.GetString(ShellyJson.WriteSwitchGetConfig(1, relay: 1)));
+        Assert.Equal(
+            "{\"id\":1,\"src\":\"contactor\",\"method\":\"Switch.SetConfig\",\"params\":{\"id\":3,\"config\":{\"initial_state\":\"restore_last\"}}}",
+            Encoding.UTF8.GetString(ShellyJson.WriteSwitchSetPowerOn(1, relay: 4, PowerOnState.AsBefore)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchGetConfig(1, relay: 5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchSetPowerOn(1, relay: 0, PowerOnState.Off));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchSetPowerOn(1, relay: 1, (PowerOnState)4));
+    }
+
+    [Theory]
+    [InlineData("off", PowerOnState.Off)]
+    [InlineData("restore_last", PowerOnState.AsBefore)]
+    [InlineData("on", PowerOnState.On)]
+    [InlineData("match_input", PowerOnState.FollowsInput)]
+    public void Should_MapEachInitialState_BothWays(string initialState, PowerOnState state)
+    {
+        Assert.Equal(state, ShellyApi.ToPowerOnState(initialState));
+        Assert.Equal(initialState, ShellyApi.ToInitialState(state));
+        Assert.True(ShellyApi.PowerOn.Has(state));
+    }
+
+    [Theory]
+    [InlineData("{\"id\":0,\"initial_state\":\"ON\"}")]
+    [InlineData("{\"id\":0,\"initial_state\":\"\"}")]
+    [InlineData("{\"id\":0,\"initial_state\":1}")]
+    [InlineData("{\"id\":0,\"initial_state\":null}")]
+    [InlineData("{\"id\":0}")]
+    [InlineData("{\"initial_state\":\"later\"}")]
+    public void Should_ReadAnInitialStateTheDocsDontList_AsUnknown(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Null(ShellyJson.ReadPowerOn(document.RootElement, relay: 1));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{\"id\":\"0\",\"initial_state\":\"on\"}")]
+    [InlineData("{\"id\":1,\"initial_state\":\"on\"}")]
+    [InlineData("{\"id\":0.5,\"initial_state\":\"on\"}")]
+    public void Should_RefuseSettingsThatArentThisSwitchs(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Throws<ShellyProtocolException>(() => ShellyJson.ReadPowerOn(document.RootElement, relay: 1));
+    }
+
+    [Theory]
+    [InlineData("{\"switch:0\":{\"output\":true}}", null)]
+    [InlineData("{\"switch:0\":{\"output\":true},\"sys\":{}}", null)]
+    [InlineData("{\"switch:0\":{\"output\":true},\"sys\":[]}", null)]
+    [InlineData("{\"switch:0\":{\"output\":true},\"sys\":{\"cfg_rev\":\"7\"}}", null)]
+    [InlineData("{\"switch:0\":{\"output\":true},\"sys\":{\"cfg_rev\":7.5}}", null)]
+    [InlineData("{\"switch:0\":{\"output\":true},\"sys\":{\"cfg_rev\":1e30}}", null)]
+    [InlineData("{\"switch:0\":{\"output\":true},\"sys\":{\"cfg_rev\":0}}", 0L)]
+    [InlineData("{\"switch:0\":{\"output\":true},\"sys\":{\"cfg_rev\":9007199254740993}}", 9007199254740993L)]
+    public void Should_ReadCfgRev_OnlyAsAWholeNumber(string json, long? revision)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Equal(new ShellySwitches(1, 1, revision), ShellyJson.ReadSwitches(document.RootElement));
     }
 
     [Theory]

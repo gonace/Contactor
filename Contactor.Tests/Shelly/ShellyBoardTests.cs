@@ -21,6 +21,7 @@ public sealed class ShellyBoardTests
             Assert.Equal(0, m.Capabilities.InputCount);
             Assert.False(m.Capabilities.ReportsChanges);
             Assert.Equal(OwnRulesAbility.CantTell, m.Capabilities.OwnRules);
+            Assert.Equal(new PowerOnAbility([PowerOnState.Off, PowerOnState.AsBefore, PowerOnState.On, PowerOnState.FollowsInput], perRelay: true), m.Capabilities.PowerOn);
             Assert.Null(m.Capabilities.Pulse);
             Assert.True(m.PasswordOnly);
             Assert.False(m.LoginRequired);
@@ -93,6 +94,68 @@ public sealed class ShellyBoardTests
             }
 
             Assert.True(Volatile.Read(ref traced) > 0);
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await run;
+        }
+    }
+
+    [Fact]
+    public async Task Should_ReportAndSetPowerOnStates_ThroughTheBoard()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.TwoRelays);
+        simulator.SetInitialState(2, "restore_last");
+        simulator.Start();
+        var time = new ManualTimeProvider();
+        using var client = new ShellyClient(Options.Create(new ShellyOptions { Host = "127.0.0.1", Port = simulator.Port, PollSeconds = 60 }), ShellyModels.TwoRelays, time, NullLogger<ShellyClient>.Instance);
+        var board = new ShellyBoard(client, NullLogger<ShellyBoard>.Instance);
+        List<BoardState> states = [];
+        List<BoardState> powerOns = [];
+        board.StateChanged += (_, state) =>
+        {
+            lock (states)
+            {
+                states.Add(state);
+            }
+        };
+        board.PowerOnChanged += (_, _) => throw new InvalidOperationException("A subscriber's bug.");
+        board.PowerOnChanged += (_, state) =>
+        {
+            lock (powerOns)
+            {
+                powerOns.Add(state);
+            }
+        };
+        using var cts = new CancellationTokenSource();
+        var run = client.RunAsync(cts.Token);
+        try
+        {
+            await Wait.UntilAsync(() => board.State.IsConnected);
+            Assert.Equal(new PowerOnStates([PowerOnState.Off, PowerOnState.AsBefore]), board.State.PowerOn);
+            int statesBefore;
+            lock (states)
+            {
+                statesBefore = states.Count;
+            }
+
+            await board.SetPowerOnAsync(1, PowerOnState.On, Cancel);
+
+            Assert.Equal("on", simulator.InitialState(1));
+            Assert.Equal(new PowerOnStates([PowerOnState.On, PowerOnState.AsBefore]), board.State.PowerOn);
+            lock (powerOns)
+            {
+                Assert.Equal(new PowerOnStates([PowerOnState.On, PowerOnState.AsBefore]), Assert.Single(powerOns).PowerOn);
+            }
+
+            // Only the power-on states changed: no state for the safety services.
+            lock (states)
+            {
+                Assert.Equal(statesBefore, states.Count);
+            }
+
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.SetPowerOnAsync(3, PowerOnState.Off, Cancel));
         }
         finally
         {

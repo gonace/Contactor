@@ -35,7 +35,7 @@ public sealed class ShellySimulatedBoardTests
 
         var status = Body(await PostAsync(device.Port, "{\"id\":2,\"method\":\"Shelly.GetStatus\"}"));
         var frame = ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(status), 2);
-        Assert.Equal(new ShellySwitches(2, 0b10), ShellyJson.ReadSwitches(frame.Result!.Value));
+        Assert.Equal(new ShellySwitches(2, 0b10, 10), ShellyJson.ReadSwitches(frame.Result!.Value));
     }
 
     [Fact]
@@ -49,6 +49,53 @@ public sealed class ShellySimulatedBoardTests
         Assert.EndsWith("\"error\":{\"code\":-103,\"message\":\"Missing required 'id'\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.Set\",\"params\":{\"on\":true}}"), StringComparison.Ordinal);
         Assert.EndsWith("\"error\":{\"code\":-103,\"message\":\"Missing required 'on'\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.Set\",\"params\":{\"id\":1}}"), StringComparison.Ordinal);
         Assert.Equal(ChannelMask.None, device.State.Relays);
+    }
+
+    [Fact]
+    public async Task Should_AnswerTheSwitchSettings_AsTheDocsShow_AndGrowCfgRevOnAChange()
+    {
+        await using var device = new ShellySimulator(ShellyModels.TwoRelays);
+        device.Start();
+        Assert.Equal(10, device.ConfigRevision);
+
+        var config = Body(await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.GetConfig\",\"params\":{\"id\":1}}"));
+        Assert.Equal(
+            "{\"id\":1,\"src\":\"shellysim2-0a1b2c3d4e5f\",\"result\":{\"id\":1,\"name\":null,\"in_mode\":\"follow\",\"in_locked\":false,\"initial_state\":\"off\",\"auto_on\":false,\"auto_on_delay\":60,\"auto_off\":false,\"auto_off_delay\":60,\"power_restore_delay_enable\":false,\"power_restore_delay\":60}}",
+            config);
+
+        // The docs' SetConfig answer; cfg_rev grows only when the value changed.
+        var set = await PostAsync(device.Port, "{\"id\":2,\"method\":\"Switch.SetConfig\",\"params\":{\"id\":1,\"config\":{\"initial_state\":\"match_input\"}}}");
+        Assert.EndsWith("\"result\":{\"restart_required\":false}}", set, StringComparison.Ordinal);
+        Assert.Equal("match_input", device.InitialState(2));
+        Assert.Equal("off", device.InitialState(1));
+        Assert.Equal(11, device.ConfigRevision);
+        await PostAsync(device.Port, "{\"id\":3,\"method\":\"Switch.SetConfig\",\"params\":{\"id\":1,\"config\":{\"initial_state\":\"match_input\"}}}");
+        Assert.Equal(11, device.ConfigRevision);
+
+        // Set at the device, and another setting: both grow it.
+        device.SetInitialState(1, "on");
+        device.ChangeAnotherSetting();
+        Assert.Equal(13, device.ConfigRevision);
+        var status = Body(await PostAsync(device.Port, "{\"id\":4,\"method\":\"Shelly.GetStatus\"}"));
+        Assert.Equal(13, ShellyJson.ReadSwitches(ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(status), 4).Result!.Value).ConfigRevision);
+    }
+
+    [Fact]
+    public async Task Should_RefuseSwitchSettings_ItCantTake()
+    {
+        await using var device = new ShellySimulator(ShellyModels.TwoRelays) { FailConfigRelays = 0b10 };
+        device.Start();
+
+        Assert.EndsWith("\"error\":{\"code\":-105,\"message\":\"Bad id=2\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.GetConfig\",\"params\":{\"id\":2}}"), StringComparison.Ordinal);
+        Assert.EndsWith("\"error\":{\"code\":-103,\"message\":\"Missing required 'id'\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.GetConfig\"}"), StringComparison.Ordinal);
+        Assert.EndsWith("\"error\":{\"code\":-109,\"message\":\"Overtemp condition present\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.GetConfig\",\"params\":{\"id\":1}}"), StringComparison.Ordinal);
+        Assert.EndsWith("\"error\":{\"code\":-103,\"message\":\"Missing required 'config'\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.SetConfig\",\"params\":{\"id\":0}}"), StringComparison.Ordinal);
+        Assert.EndsWith("\"error\":{\"code\":-103,\"message\":\"Invalid argument 'initial_state'\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.SetConfig\",\"params\":{\"id\":0,\"config\":{\"initial_state\":\"sometimes\"}}}"), StringComparison.Ordinal);
+        Assert.EndsWith("\"error\":{\"code\":-109,\"message\":\"Overtemp condition present\"}}", await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.SetConfig\",\"params\":{\"id\":1,\"config\":{\"initial_state\":\"on\"}}}"), StringComparison.Ordinal);
+
+        Assert.Equal("off", device.InitialState(1));
+        Assert.Equal("off", device.InitialState(2));
+        Assert.Equal(10, device.ConfigRevision);
     }
 
     [Fact]

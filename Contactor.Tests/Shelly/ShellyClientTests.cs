@@ -28,10 +28,14 @@ public sealed class ShellyClientTests
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Equal(new ShellyStatus(0b0010), run.Client.State.Status);
+        Assert.Equal(new ShellyStatus(0b0010, AllOff(4)), run.Client.State.Status);
         Assert.True(run.Client.State.IsOn(2));
         Assert.Null(run.Client.State.Problem);
-        Assert.Equal([ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, ShellyApi.GetStatus], simulator.Received);
+
+        // Each switch's settings once at connect, after the status: not with the first poll.
+        Assert.Equal(
+            [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, .. Enumerable.Repeat(ShellyApi.SwitchGetConfig, 4), ShellyApi.GetStatus],
+            simulator.Received);
         Assert.Contains(run.Traces, t => t.Text == "Device SIM-4, generation 2, firmware 2.0.0");
         Assert.Contains(run.Traces, t => t.Text == "Status: relay 2 on" && t.Direction == BoardTraceDirection.Received);
     }
@@ -53,7 +57,7 @@ public sealed class ShellyClientTests
         // Only Switch.Set, one per relay, each followed by nothing else until the read after the command.
         Assert.Equal(
             [ShellyApi.SwitchSet, ShellyApi.SwitchSet, ShellyApi.GetStatus, ShellyApi.SwitchSet, ShellyApi.GetStatus],
-            simulator.Received.Skip(3));
+            simulator.Received.Skip(7));
         Assert.Contains(run.Traces, t => t.Text == "Turn on relay 3" && t.Direction == BoardTraceDirection.Sent);
         Assert.Contains(run.Traces, t => t.Text == "Relay 3 is on (it was off)");
         Assert.Equal(0, await run.Client.TurnOnAsync(0, Cancel));
@@ -93,11 +97,12 @@ public sealed class ShellyClientTests
 
         await run.Client.TurnOnAsync(0b0010, Cancel);
 
-        // Status at connect, the first poll, a poll, the Switch.Set and the read after it: five challenges, each answered.
-        Assert.Equal(5, simulator.ChallengeCount);
+        // Status and two Switch.GetConfig at connect, the first poll, a poll, the Switch.Set and the read after it: seven
+        // challenges, each answered.
+        Assert.Equal(7, simulator.ChallengeCount);
         Assert.Equal(0, simulator.DeniedCount);
         Assert.Equal(
-            [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)", ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)"],
+            [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)", ShellyApi.SwitchGetConfig, $"{ShellyApi.SwitchGetConfig} (signed)"],
             simulator.Received.Take(5));
         Assert.Equal(0b0010, simulator.Relays);
         Assert.True(run.Client.State.IsConnected);
@@ -361,6 +366,9 @@ public sealed class ShellyClientTests
 
         await Wait.UntilAsync(() => !run.Client.State.IsConnected);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: ", StringComparison.Ordinal) && t.IsError);
+
+        // The states after a power cut are kept while disconnected, as the relays are.
+        Assert.Equal(AllOff(1), run.Client.State.PowerOn);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
 
         simulator.RejectConnections = false;
@@ -482,6 +490,164 @@ public sealed class ShellyClientTests
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "No answer: The Shelly did not answer within 5 s." && t.IsError));
     }
 
+    [Fact]
+    public async Task Should_ReadEachSwitchsPowerOnState_AtConnect()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays);
+        simulator.SetInitialState(1, "on");
+        simulator.SetInitialState(2, "restore_last");
+        simulator.SetInitialState(3, "match_input");
+        simulator.SetInitialState(4, "something_new");
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // A value the docs don't list is unknown for that relay only.
+        Assert.Equal(new PowerOnStates([PowerOnState.On, PowerOnState.AsBefore, PowerOnState.FollowsInput, null]), run.Client.State.PowerOn);
+        Assert.Contains(run.Traces, t => t.Text == "Ask for relay 2's settings" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 2 after a power cut: as before" && t.Direction == BoardTraceDirection.Received);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 4 after a power cut: unknown");
+        Assert.Empty(run.PowerOnChanges);
+    }
+
+    [Fact]
+    public async Task Should_ReadTheSettingsAgain_OnlyWhenCfgRevChanges()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var reads = GetConfigs(simulator);
+        Assert.Equal(2, reads);
+
+        await run.PollAsync();
+        await run.PollAsync();
+        Assert.Equal(reads, GetConfigs(simulator));
+
+        // Changed at the device: the next poll reads every switch again, and tells only the power-on states changed.
+        var changes = run.Changes.Count;
+        simulator.SetInitialState(2, "on");
+        await run.PollAsync();
+        Assert.Equal(reads + 2, GetConfigs(simulator));
+        Assert.Equal(new PowerOnStates([PowerOnState.Off, PowerOnState.On]), run.Client.State.PowerOn);
+        Assert.Equal(new PowerOnStates([PowerOnState.Off, PowerOnState.On]), Assert.Single(run.PowerOnChanges).PowerOn);
+        Assert.Equal(changes, run.Changes.Count);
+
+        // Another setting: read again, but nothing to tell.
+        simulator.ChangeAnotherSetting();
+        await run.PollAsync();
+        await run.PollAsync();
+        Assert.Equal(reads + 4, GetConfigs(simulator));
+        Assert.Single(run.PowerOnChanges);
+        Assert.Equal(0, simulator.DeniedCount);
+    }
+
+    [Fact]
+    public async Task Should_SetOneRelaysPowerOnState_AndReadItBack()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+        var revision = simulator.ConfigRevision;
+
+        await run.Client.SetPowerOnAsync(3, PowerOnState.On, Cancel);
+
+        Assert.Equal(["off", "off", "on", "off"], Enumerable.Range(1, 4).Select(simulator.InitialState));
+        Assert.Equal(revision + 1, simulator.ConfigRevision);
+
+        // One Switch.SetConfig for that switch, then the status and every switch's settings, in the same command.
+        Assert.Equal(
+            [ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, .. Enumerable.Repeat(ShellyApi.SwitchGetConfig, 4)],
+            simulator.Received.Skip(before));
+        Assert.Equal(new PowerOnStates([PowerOnState.Off, PowerOnState.Off, PowerOnState.On, PowerOnState.Off]), run.Client.State.PowerOn);
+        Assert.Equal(PowerOnState.On, Assert.Single(run.PowerOnChanges).PowerOn!.For(3));
+        Assert.Contains(run.Traces, t => t.Text == "Set relay 3 after a power cut: on" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 3's setting saved");
+
+        // The same again: the device takes it and cfg_rev stays, but the client still reads it back.
+        await run.Client.SetPowerOnAsync(3, PowerOnState.On, Cancel);
+        Assert.Equal(revision + 1, simulator.ConfigRevision);
+        Assert.Equal(8, simulator.Received.Skip(before).Count(r => r == ShellyApi.SwitchGetConfig));
+        Assert.Single(run.PowerOnChanges);
+    }
+
+    [Theory]
+    [InlineData(PowerOnState.Off, "off")]
+    [InlineData(PowerOnState.AsBefore, "restore_last")]
+    [InlineData(PowerOnState.On, "on")]
+    [InlineData(PowerOnState.FollowsInput, "match_input")]
+    public async Task Should_SetEachState_AsTheDocsNameIt(PowerOnState state, string initialState)
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.SetInitialState(1, state == PowerOnState.On ? "off" : "on");
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        await run.Client.SetPowerOnAsync(1, state, Cancel);
+
+        Assert.Equal(initialState, simulator.InitialState(1));
+        Assert.Equal(state, run.Client.State.PowerOn!.For(1));
+    }
+
+    [Fact]
+    public async Task Should_RefuseAPowerOnState_BeforeSendingAnything()
+    {
+        using var unconnected = CreateClient(1, ShellyModels.TwoRelays);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => unconnected.SetPowerOnAsync(1, PowerOnState.Off, Cancel));
+
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.SetPowerOnAsync(0, PowerOnState.Off, Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.SetPowerOnAsync(3, PowerOnState.Off, Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.SetPowerOnAsync(1, (PowerOnState)4, Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.SetPowerOnAsync(1, (PowerOnState)(-1), Cancel));
+
+        Assert.Equal(before, simulator.Received.Count);
+    }
+
+    [Fact]
+    public async Task Should_SayTheDeviceRefusedTheSetting_AndStayConnected()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        simulator.FailConfigRelays = 0b10;
+
+        var refused = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.SetPowerOnAsync(2, PowerOnState.On, Cancel));
+
+        Assert.Equal("The Shelly didn't take the setting: relay 2: Overtemp condition present (error -109)", refused.Message);
+        Assert.Equal("off", simulator.InitialState(2));
+
+        // The poller reads the device at once after a refusal, settings included: relay 2's is refused now, so unknown.
+        await Wait.UntilAsync(() => run.Client.State.PowerOn == new PowerOnStates([PowerOnState.Off, null]));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_LeaveARelayUnknown_WhenTheDeviceRefusesItsSettings()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.FailConfigRelays = 0b01;
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal(new PowerOnStates([null, PowerOnState.Off]), run.Client.State.PowerOn);
+    }
+
+    private static int GetConfigs(ShellySimulator simulator)
+    {
+        return simulator.Received.Count(r => r.StartsWith(ShellyApi.SwitchGetConfig, StringComparison.Ordinal) && r.EndsWith("(signed)", StringComparison.Ordinal));
+    }
+
+    private static PowerOnStates AllOff(int relays)
+    {
+        return new PowerOnStates(Enumerable.Repeat<PowerOnState?>(PowerOnState.Off, relays));
+    }
+
     private static ShellySimulator Start(BoardModel model, string? password = null, string firmware = "2.0.0")
     {
         var simulator = new ShellySimulator(model, password, NullLogger.Instance) { Firmware = firmware };
@@ -501,6 +667,7 @@ public sealed class ShellyClientTests
         private readonly Task _task;
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<ShellyState> _changes = [];
+        private readonly List<ShellyState> _powerOnChanges = [];
 
         private ClientRun(ShellyClient client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
@@ -520,6 +687,13 @@ public sealed class ShellyClientTests
                 lock (_changes)
                 {
                     _changes.Add(state);
+                }
+            };
+            client.PowerOnChanged += (_, state) =>
+            {
+                lock (_powerOnChanges)
+                {
+                    _powerOnChanges.Add(state);
                 }
             };
             _task = client.RunAsync(cts.Token);
@@ -549,6 +723,17 @@ public sealed class ShellyClientTests
                 lock (_changes)
                 {
                     return [.. _changes];
+                }
+            }
+        }
+
+        public List<ShellyState> PowerOnChanges
+        {
+            get
+            {
+                lock (_powerOnChanges)
+                {
+                    return [.. _powerOnChanges];
                 }
             }
         }

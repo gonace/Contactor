@@ -1,4 +1,5 @@
 using System.Text;
+using Contactor.Boards;
 using Contactor.Boards.Shelly;
 
 namespace Contactor.Tests.Shelly;
@@ -60,5 +61,17 @@ public sealed class ShellyTraceTextTests
             ShellyTraceText.DeviceInfo(new ShellyDeviceInfo("shelly1-x", null, null, null, null)));
         Assert.Equal("Relay 2 is on (it was off)", ShellyTraceText.Switched(2, true, false));
         Assert.Equal("Relay 1 is off", ShellyTraceText.Switched(1, false, null));
+    }
+
+    [Fact]
+    public void Should_DescribeThePowerOnSettings()
+    {
+        Assert.Equal("Ask for relay 2's settings", ShellyTraceText.Request(ShellyApi.SwitchGetConfig, 2));
+        Assert.Equal("Call Switch.GetConfig", ShellyTraceText.Request(ShellyApi.SwitchGetConfig));
+        Assert.Equal("Set relay 3 after a power cut: follows its switch", ShellyTraceText.SetPowerOn(3, PowerOnState.FollowsInput));
+        Assert.Equal("Relay 1 after a power cut: as before", ShellyTraceText.PowerOnRead(1, PowerOnState.AsBefore));
+        Assert.Equal("Relay 4 after a power cut: unknown", ShellyTraceText.PowerOnRead(4, null));
+        Assert.Equal("Relay 2's setting saved", ShellyTraceText.SettingSaved(2));
+        Assert.Equal(["off", "as before", "on", "follows its switch"], Enum.GetValues<PowerOnState>().Select(s => ShellyTraceText.PowerOn(s)));
     }
 }

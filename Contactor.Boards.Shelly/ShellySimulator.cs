@@ -227,7 +227,7 @@ public sealed class ShellySimulator : ISimulatedBoard
     {
         ArgumentNullException.ThrowIfNull(initialState);
         _model.Capabilities.Relay(relay);
-        if (SetConfig(relay, initialState))
+        if (ChangeInitialState(relay, initialState))
         {
             RaiseChanged();
         }
@@ -786,7 +786,7 @@ public sealed class ShellySimulator : ISimulatedBoard
                 return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'initial_state'"));
             }
 
-            if (SetConfig(relay!.Value, initialState!))
+            if (ChangeInitialState(relay!.Value, initialState!))
             {
                 RaiseChanged();
             }
@@ -812,7 +812,7 @@ public sealed class ShellySimulator : ISimulatedBoard
     }
 
     // Sets a relay's initial_state; cfg_rev grows only when it changed. Whether it changed.
-    private bool SetConfig(int relay, string initialState)
+    private bool ChangeInitialState(int relay, string initialState)
     {
         lock (_lock)
         {

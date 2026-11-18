@@ -20,7 +20,8 @@ The pages, and what the app takes from each:
 | General → *Common Errors* | The error object (`code`, `message`), and -109 FAILED PRECONDITION, e.g. "Overtemp condition present" |
 | General → *Firmware Update Policy* | The Plus devices (Plus 1, Plus 1PM, Plus 2PM, Plus Plug S …) stay on firmware 1.7.x |
 | Components and Services → *Shelly* | `Shelly.GetDeviceInfo` (`id`, `model`, `gen`, `ver`, `profile`) and `Shelly.GetStatus` (a member per component, e.g. `switch:0`), with their examples |
-| Components and Services → *Switch* | `Switch.Set` (`id` and `on`, and its result `was_on`) and the switch status (`output`) |
+| Components and Services → *Switch* | `Switch.Set` (`id` and `on`, and its result `was_on`) and the switch status (`output`). `Switch.GetConfig` (`id`) and `Switch.SetConfig` (`id` and `config`, and its result `restart_required`), with their examples. In the configuration, `initial_state`: "Output state to set on power_on. Range of values: off, on, restore_last, match_input" |
+| Components and Services → *Sys* | `cfg_rev` in the status: "Configuration revision. This number will be incremented for every configuration change of a device component. If the new config value is the same as the old one there will be no change of this property" |
 | *Changelog* | 2.0.0 (2026-07-13): "Authentication: Implement brute-force protection" and "RFC 7616-compliant nonce management" |
 
 Also RFC 7616, *HTTP Digest Access Authentication*, section 3.4.1 (the response with qop "auth") and section 3.9.1
@@ -41,6 +42,8 @@ relays (`ShellyModels`). The device must have that many `switch:N` components, o
 - Port 80.
 - The device's own schedules, auto-on and auto-off can switch its relays. The app can't see them yet:
   `OwnRules: OwnRulesAbility.CantTell`.
+- Each relay has its own state after a power cut, its switch's `initial_state`: `PowerOn: ShellyApi.PowerOn`, all four
+  states, per relay.
 - The app doesn't read the device's inputs, power metering or `errors` list, and doesn't use the WebSocket.
 
 ## Protocol
@@ -54,6 +57,8 @@ HTTP, so the app polls it every 2 s.
 | Which device it is | `{"id":1,"src":"contactor","method":"Shelly.GetDeviceInfo"}` | `{"id":"shellypro4pm-f008d1d8b8b8","model":"SPSW-004PE16EU","gen":2,"ver":"0.6.7",…}` |
 | Read the relays | `{"id":2,"src":"contactor","method":"Shelly.GetStatus"}` | `{"switch:0":{"id":0,"output":true,…},"switch:1":{…},…}` |
 | Switch one relay | `{"id":3,"src":"contactor","method":"Switch.Set","params":{"id":1,"on":true}}` | `{"was_on":false}` |
+| Read one relay's settings | `{"id":4,"src":"contactor","method":"Switch.GetConfig","params":{"id":1}}` | `{"id":1,"name":null,"in_mode":"follow","initial_state":"match_input",…}` |
+| Set one relay's state after a power cut | `{"id":5,"src":"contactor","method":"Switch.SetConfig","params":{"id":1,"config":{"initial_state":"off"}}}` | `{"restart_required":false}` |
 
 - `switch:0` is relay 1. `Switch.Set`'s `id` is the relay number minus 1.
 - The app switches one relay per `Switch.Set`. It never sends `Switch.SetAll`, `Switch.Toggle` or a method that
@@ -66,9 +71,31 @@ HTTP, so the app polls it every 2 s.
 - The app reads `output` (`true` or `false`) of each `switch:N`. The ids must be 0 to the count minus 1, without a
   gap. Every other component is skipped.
 
-`ShellyJsonTests` reads the docs' own examples, byte for byte: the `Shelly.GetStatus` result of a Pro 4PM, the
-`/shelly` answer, the `Switch.Set` answers of "RPC Channels" and "RPC Protocol", and the error frames of "RPC
-Protocol" (-105) and "Common Errors" (-109).
+`ShellyJsonTests` reads the docs' own examples, byte for byte: the `Shelly.GetStatus` result of a Pro 4PM (with
+`cfg_rev` 26), the `/shelly` answer, the `Switch.Set` answers of "RPC Channels" and "RPC Protocol", the
+`Switch.GetConfig` and `Switch.SetConfig` answers of "Switch", and the error frames of "RPC Protocol" (-105) and
+"Common Errors" (-109).
+
+### The state after a power cut
+
+`initial_state` in a switch's configuration says what the relay does when the device gets power:
+
+| `initial_state` | `PowerOnState` |
+|---|---|
+| `off` | `Off` |
+| `restore_last` | `AsBefore` |
+| `on` | `On` |
+| `match_input` | `FollowsInput` |
+
+- The app reads it with one `Switch.GetConfig` per switch: at each new connection, after the status, and again only
+  when `sys.cfg_rev` in a status differs from the one the settings were read with. It never reads the settings on
+  every poll. A device whose status has no `cfg_rev` is read at connect only.
+- A value the docs don't list, or none, is unknown for that relay (null). So is a switch whose `Switch.GetConfig` the
+  device refuses with an error frame. No answer, or an answer the app can't read, fails the poll, and the next read
+  reads every switch again.
+- The app writes it only when a person saves it, with one `Switch.SetConfig` for that switch and only `initial_state`
+  in `config`. In the same command it then reads the status and every switch's settings back, also when `cfg_rev`
+  didn't change. A refusal with an error frame is an answer (`BoardRefusedException`), not a lost device.
 
 ### Password
 
@@ -159,6 +186,10 @@ A command (ON or OFF) switches the relays in the mask one at a time:
 - After the switches, the client reads `Shelly.GetStatus` in the same command, and the poller takes that as the new
   state. When that read fails, the client keeps the last state and reads again at once.
 
+`SetPowerOnAsync` goes like a command: at once or `BoardNotConnectedException`, to the address it started on, and
+`ArgumentOutOfRangeException` for a relay or a state the entry hasn't, before anything is sent. A change of the
+states after a power cut alone comes as `PowerOnChanged`, not `StateChanged` (`ShellyStatus.RelaysComparer`).
+
 `ShellyBoard`, `ShellyConnection` and `ShellyTraffic` are the adapters for the app. `ShellyTraceText` puts each
 request in plain words. The polls and the answers that change nothing are routine.
 
@@ -181,7 +212,12 @@ The `Shelly` section applies to all four entries:
 
 - It answers `POST /rpc` with `Shelly.GetDeviceInfo`, `Shelly.GetStatus` and `Switch.Set`, in the docs' format.
   `Switch.Set` gets -103 without `id` or `on`, and -105 "Bad id=N" for a switch it doesn't have, as "Common Errors"
-  shows them. Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
+  shows them.
+- It holds an `initial_state` per switch ("off" at start) and answers `Switch.GetConfig` and `Switch.SetConfig` with
+  the docs' members. `Switch.SetConfig` takes only `initial_state`, and -103 "Invalid argument 'initial_state'" for a
+  value the docs don't list (the docs don't say what the device answers then). `sys.cfg_rev` starts at 10 and grows
+  with each change, but not for a value set to what it was. `SetInitialState` sets one "at the device" (any text),
+  `ChangeAnotherSetting` grows `cfg_rev` alone, and `FailConfigRelays` refuses both methods for those relays. Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
   other method.
 - With a password it asks for the digest, in the way of the firmware it is set to (`Firmware`, "2.0.0" by default):
   - 2.0.0 and later: a base64 nonce for many requests, `nc` strictly higher each time, `stale=true` after 1 hour or
@@ -202,7 +238,11 @@ The `Shelly` section applies to all four entries:
 > **Warning: check the first two points first, before anything is connected to the relays.**
 
 - That `switch:0` is the relay marked O1 (or O) on the device, and so on.
-- The relay states after a power cut, with each `initial_state` (Issue #516).
+- The relay states after a power cut, with each `initial_state`: `off`, `restore_last` (once with the relay on and
+  once off), `on` and `match_input`. Also with `power_restore_delay_enable`, which keeps the output off for a while
+  first.
+- That `cfg_rev` grows when `initial_state` changes, through `Switch.SetConfig` and through the device's own web page,
+  and that `Switch.SetConfig` answers `restart_required` false for it.
 - Both firmware lines: a Plus device on 1.7.x (a challenge for every request) and a Pro or Gen3/Gen4 device on 2.x
   (one nonce, a growing `nc`, `stale=true` after an hour).
 - What a refused `Switch.Set` answers: the -109 frame of "Common Errors", its HTTP status, and its message, for

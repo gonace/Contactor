@@ -261,6 +261,19 @@ public sealed class BoardCatalogueTests
             BoardCatalogue.All.Select(r => KeyValuePair.Create(r.Model.Id, r.Model.Capabilities.OwnRules!)).OrderBy(e => e.Key, StringComparer.Ordinal));
     }
 
+    // Only the Shelly devices say what their relays do after a power cut; every other model leaves it at "can't tell"
+    // until its own issue (the smartDEN's and the DAEnetIP2 v2's "Save Outputs": Issue #514 and Issue #515).
+    [Fact]
+    public void Should_StateThePowerOnAbility_OfTheShellyDevicesOnly()
+    {
+        Assert.Equal(
+            ["shelly-1", "shelly-2", "shelly-3", "shelly-4"],
+            BoardCatalogue.All.Where(r => r.Model.Capabilities.PowerOn is not null).Select(r => r.Model.Id).Order(StringComparer.Ordinal));
+        Assert.All(
+            BoardCatalogue.All.Where(r => r.Model.Capabilities.PowerOn is not null),
+            r => Assert.True(r.Model.Capabilities.PowerOn!.PerRelay));
+    }
+
     // The brand isn't repeated in the model's name, and the full name still reads as people know it.
     [Fact]
     public void Should_NameEachModel_WithoutItsBrand()
