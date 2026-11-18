@@ -44,13 +44,13 @@ public sealed class OwnRulesHandlerTests
     }
 
     // Relay 3's timer takes relay 5's auto-on with it: the handler says so for that board only, and a turn-off of relay
-    // 3's logs relay 3's alone, while the auto-on's row goes with the board's next state as well.
+    // 3's logs relay 3's with the auto-on as "also", while the auto-on's row goes with the board's next state as well.
     [Fact]
-    public async Task Should_KnowWhatGoesWithATurnOff_AndLogOnlyWhatWasAsked()
+    public async Task Should_KnowWhatGoesWithATurnOff_AndLogItAsAlso()
     {
         var autoOn5 = new OwnRule(5, OwnRuleKind.AutoOn);
         await using var rig = await OwnRulesRig.StartAsync();
-        rig.Board.SetOwnRules(new OwnRules([Timer3, autoOn5], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [Timer3] = [autoOn5] }));
+        rig.Board.SetOwnRules(new OwnRules([Timer3, autoOn5], [[Timer3, autoOn5], [Timer3]]));
         rig.Other.SetOwnRules(new OwnRules([Timer3, autoOn5]));
         await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 2 && rig.Service.Rows(rig.OtherId).Count == 2);
 
@@ -63,7 +63,7 @@ public sealed class OwnRulesHandlerTests
         Assert.Null(await rig.Handler.TurnOffAsync(rig.BoardId, [Timer3], Erik, Cancel));
 
         var entry = Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRulesTurnedOff));
-        Assert.Equal("""{"relays":[3],"kinds":["timer"]}""", entry.Details);
+        Assert.Equal("""{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"auto-on"}]}""", entry.Details);
         await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 0);
         Assert.Equal(2, rig.Service.Rows(rig.OtherId).Count);
         Assert.Contains(await rig.EventsAsync(EventActions.BoardOwnRuleFound), e => e.Details!.Contains("\"kind\":\"auto-on\"", StringComparison.Ordinal));

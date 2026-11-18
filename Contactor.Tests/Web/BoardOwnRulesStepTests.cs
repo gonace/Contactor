@@ -171,7 +171,7 @@ public sealed class BoardOwnRulesStepTests
         await using var app = App();
         using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
         var live = await ToWhereAsync(app, page, board);
-        board.SetOwnRules(new OwnRules([Timer3, Timer5], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [Timer3] = [Timer5] }));
+        board.SetOwnRules(new OwnRules([Timer3, Timer5], [[Timer3, Timer5], [Timer3]]));
         Assert.Null(await app.Services.GetRequiredService<OwnRulesHandler>().KeepAllAsync(live.BoardId, [Timer5], John, Cancel));
         await page.ClickAsync(Button("Next"));
 
@@ -186,6 +186,26 @@ public sealed class BoardOwnRulesStepTests
         Assert.Equal(OwnRules.Empty, board.State.OwnRules);
         var logged = Assert.Single(await EventsAsync(app, live.BoardId, EventActions.BoardOwnRulesTurnedOff));
         Assert.Contains("\"relays\":[3]", logged.Details, StringComparison.Ordinal);
+        Assert.Contains("\"also\":[{\"relay\":5,\"kind\":\"timer\"}]", logged.Details, StringComparison.Ordinal);
+        Assert.Empty(Errors(page));
+    }
+
+    // What goes together changes while the step shows (the rules asked stay the same): the step follows it.
+    [Fact]
+    public async Task Should_RedrawTheStep_WhenWhatGoesTogetherChanges()
+    {
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App();
+        using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+        var live = await ToWhereAsync(app, page, board, Timer3, Timer5);
+        Assert.Null(await app.Services.GetRequiredService<OwnRulesHandler>().KeepAllAsync(live.BoardId, [Timer5], John, Cancel));
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("This board has a timer of its own", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Also", await page.TextAsync(), StringComparison.Ordinal);
+
+        board.SetOwnRules(new OwnRules([Timer3, Timer5], [[Timer3, Timer5], [Timer3]]));
+
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Also turns off the board's timer for Relay 5.", StringComparison.Ordinal));
         Assert.Empty(Errors(page));
     }
 

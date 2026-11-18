@@ -15,6 +15,9 @@ namespace Contactor.Web.Features.BoardRules;
 /// </summary>
 public sealed partial class OwnRulesHandler
 {
+    // An event's details without the properties it has none of.
+    private static readonly JsonSerializerOptions LeaveOutNull = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+
     /// <summary>How long "Turn them off" on the steps of adding a board waits for the board's state to show them gone.</summary>
     public static readonly TimeSpan ConfirmWait = TimeSpan.FromSeconds(5);
 
@@ -45,13 +48,22 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
-    /// Whether a person may keep a rule of this kind, so the app stops warning: never one with which the board controls
-    /// the relay by itself and ignores the app (<see cref="OwnRuleKind.InputLinkage"/>). The app can't switch that relay,
-    /// so it stays shown as unavailable until a person resets it.
+    /// Whether a person may keep a rule of this kind on a relay, so the app stops warning; the one place this is decided.
+    /// Never one with which the board controls the relay by itself and ignores the app
+    /// (<see cref="OwnRuleKind.InputLinkage"/>): the app can't switch that relay, so it stays shown as unavailable until
+    /// a person resets it. Never the board's auto-on (<see cref="OwnRuleKind.AutoOn"/>) on a relay in a group
+    /// (<paramref name="inGroup"/>): the board would turn it on again without the group's order, so its warning stays
+    /// until it is turned off, and a "Keep" from before the relay joined the group is forgotten then
+    /// (<see cref="OwnRulesService.ForgetKeepsInGroupsAsync"/>). Every other rule may be kept.
     /// </summary>
-    public static bool CanKeep(OwnRuleKind kind)
+    public static bool CanKeep(OwnRuleKind kind, bool inGroup)
     {
-        return kind != OwnRuleKind.InputLinkage;
+        return kind switch
+        {
+            OwnRuleKind.InputLinkage => false,
+            OwnRuleKind.AutoOn => !inGroup,
+            _ => true,
+        };
     }
 
     /// <summary>
@@ -164,7 +176,7 @@ public sealed partial class OwnRulesHandler
 
     /// <summary>
     /// "Keep them" while the board is being added: keeps each of <paramref name="rules"/> a person may keep
-    /// (<see cref="CanKeep"/>), as <see cref="KeepAsync"/> does, at once: a rule the app hasn't noted yet is noted now
+    /// (<see cref="CanKeep"/>, on the board's relays as they are in groups now), as <see cref="KeepAsync"/> does, at once: a rule the app hasn't noted yet is noted now
     /// (<see cref="OwnRulesService.KeepReportedAsync"/>). The others are left as they are, nothing saved for them.
     /// Returns null when all are kept (or none could be), otherwise the message to show; then none is kept.
     /// </summary>
@@ -172,7 +184,13 @@ public sealed partial class OwnRulesHandler
     {
         ArgumentNullException.ThrowIfNull(rules);
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        List<OwnRule> keepable = [.. rules.Where(r => CanKeep(r.Kind))];
+        Dictionary<int, string> grouped;
+        await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            grouped = await OwnRulesService.GroupedRelaysAsync(db, boardId, cancellationToken);
+        }
+
+        List<OwnRule> keepable = [.. rules.Where(r => CanKeep(r.Kind, grouped.ContainsKey(r.Relay)))];
         if (keepable.Count == 0)
         {
             return null;
@@ -186,7 +204,7 @@ public sealed partial class OwnRulesHandler
     /// rules the board took. Returns null when sent (or none asked), otherwise the message to show: without a
     /// connection, or when the board didn't take them, nothing is logged or queued. The board's next state shows them
     /// gone, and their rows go then; so do the rules that went with them (<see cref="AlsoTurnsOff"/>), which the event
-    /// doesn't name.
+    /// names as "also", as the board's rules before the command said.
     /// </summary>
     public async Task<string?> TurnOffAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {
@@ -197,6 +215,8 @@ public sealed partial class OwnRulesHandler
             return _texts["Boards.NotChosen"];
         }
 
+        // What the board's rules were before the command: what goes with the rules taken is read from them.
+        var before = board.State.OwnRules;
         IReadOnlyList<OwnRule> taken;
         try
         {
@@ -223,7 +243,8 @@ public sealed partial class OwnRulesHandler
             return null;
         }
 
-        // The board took them: logged also when the page closed meanwhile.
+        // The board took them: logged also when the page closed meanwhile, with what went with them (none: no "also").
+        List<OwnRule> also = [.. (before?.GoesWith(taken) ?? []).OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
         await using var db = await _dbFactory.CreateDbContextAsync(CancellationToken.None);
         db.EventLog.Add(new EventLogEntry
         {
@@ -235,7 +256,8 @@ public sealed partial class OwnRulesHandler
             {
                 relays = taken.Select(r => r.Relay).Distinct().Order(),
                 kinds = taken.Select(r => r.Kind).Distinct().Order().Select(OwnRuleKinds.For),
-            }),
+                also = also.Count == 0 ? null : also.Select(r => new { relay = r.Relay, kind = OwnRuleKinds.For(r.Kind) }),
+            }, LeaveOutNull),
         });
         await db.SaveChangesAsync(CancellationToken.None);
         return null;
@@ -244,18 +266,39 @@ public sealed partial class OwnRulesHandler
     /// <summary>
     /// Keeps the board's own rule for the relay on <paramref name="channel"/>, as <paramref name="userEmail"/> chose: the
     /// app no longer warns about it, until the board no longer has it. Logged once. Returns null when kept, otherwise
-    /// the message to show, also for a rule a person may not keep (<see cref="CanKeep"/>).
+    /// the message to show, also for a rule a person may not keep (<see cref="CanKeep"/>, e.g. the auto-on of a relay in
+    /// a group).
     /// </summary>
     public async Task<string?> KeepAsync(int boardId, int channel, OwnRuleKind kind, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
-        if (!CanKeep(kind))
+        if (!CanKeep(kind, inGroup: false))
         {
             // No "Keep" is offered for it; nothing is saved.
             return _texts["OwnRules.Keep.Unavailable"].Value;
         }
 
+        if (!CanKeep(kind, inGroup: true))
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+            if ((await OwnRulesService.GroupedRelaysAsync(db, boardId, cancellationToken)).TryGetValue(channel, out var name))
+            {
+                // No "Keep" is offered for it on a relay in a group; nothing is saved.
+                return InGroup(channel, name);
+            }
+        }
+
         return await _rules.KeepAsync(boardId, channel, kind, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
+    }
+
+    /// <summary>
+    /// Why a rule on a relay in a group can't be kept (<see cref="CanKeep"/>), shown where "Keep" would be: "Can't be
+    /// kept: Heat is in a group, and the board would turn it on again without the group's order." The relay by its name,
+    /// or "Relay 3" without one.
+    /// </summary>
+    public string InGroup(int channel, string? name)
+    {
+        return _texts["OwnRules.Keep.InGroup", string.IsNullOrWhiteSpace(name) ? _texts["Relays.DefaultName", channel].Value : name];
     }
 
     // Whether the board's state shows none of the rules any more: a state that knows its rules, without them.

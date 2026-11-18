@@ -307,7 +307,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
     }
 
     /// <summary>
-    /// Turns off the rules it has of those asked, and with them the rules that go with them (<see cref="OwnRules.GoesWith(OwnRule)"/>),
+    /// Turns off the rules it has of those asked, and with them the rules that go with them (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>),
     /// and reports what is left, as a board that reads its rules does. Returns only the rules asked. Only on a board made
     /// with an ability that turns them off.
     /// </summary>
@@ -353,11 +353,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
                 return Task.FromResult(taken);
             }
 
-            // The rules that go with those taken go too (OwnRules.GoesWith); the others keep what goes with them.
+            // Every unit behind a rule taken goes off, and the rules only those units made go too (OwnRules.GoesWith).
             HashSet<OwnRule> gone = [.. taken, .. had.GoesWith(taken)];
             List<OwnRule> left = [.. had.Where(r => !gone.Contains(r))];
-            var goesWith = left.Distinct().ToDictionary(r => r, IReadOnlyCollection<OwnRule> (r) => [.. had.GoesWith(r).Where(left.Contains)]);
-            state = _state = Stamp(_state with { OwnRules = new OwnRules(left, goesWith) });
+            var units = had.Units.Where(u => !u.Any(taken.Contains)).Select(IReadOnlyCollection<OwnRule> (u) => [.. u.Where(left.Contains)]);
+            state = _state = Stamp(_state with { OwnRules = new OwnRules(left, units) });
         }
 
         OwnRulesChanged?.Invoke(this, state);

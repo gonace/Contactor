@@ -267,9 +267,15 @@ public sealed class EventTextTests
     [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5,7],"kinds":["input-linkage","input-edge"]}""", null, "Erik turned off the board's own input rules for relays 3, 5 and 7", false)]
     [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer","input-edge"]}""", null, "Erik turned off the board's own rules for relays 3 and 5", false)]
     [InlineData(EventActions.BoardOwnRulesTurnedOff, null, null, "Erik turned off the board's own rule for relay ?", false)]
-    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["auto-on"]}""", null, "Erik turned off the board's own auto-on for relays 3 and 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["auto-on"]}""", null, "Erik stopped the board turning relays 3 and 5 on again by itself", false)]
     [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on","timer"]}""", null, "Erik turned off the board's own rule for relay 3", false)]
-    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik kept Garage's own auto-on for relay 3", true)]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik let Garage keep turning relay 3 on again by itself", true)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"timer"}]}""", null, "Erik turned off the board's own timer for relay 3, and with it the timer for relay 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":6,"kind":"timer"},{"relay":5,"kind":"timer"}]}""", null, "Erik turned off the board's own timer for relay 3, and with it the timers for relays 5 and 6", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"auto-on"}]}""", "Garage", "Erik turned off Garage's own timer for relay 3, and with it the board turning relay 5 on again by itself", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on"],"also":[{"relay":5,"kind":"timer"},{"relay":5,"kind":"later"}]}""", null, "Erik stopped the board turning relay 3 on again by itself, and with it the rule for relay 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["input-linkage"],"also":[{"relay":"5"},7,{"kind":"timer"}]}""", null, "Erik reset relay 3", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[]}""", null, "Erik turned off the board's own timer for relay 3", false)]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik kept the board's own timer for relay 3", true)]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"input-toggle","relay":3}""", "Garage", "Erik kept Garage's own input rule for relay 3", true)]
     public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules(string action, string? details, string? boardName, string text, bool hasTarget)
@@ -288,8 +294,10 @@ public sealed class EventTextTests
     [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"]}""", "Garage", "Erik stängde av Garages egna timer för relä 3")]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik behöll kortets egna timer för relä 3")]
     [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", "Garage", "Erik behöll Garages egna timer för relä 3")]
-    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on"]}""", null, "Erik stängde av kortets egna automatiska påslag för relä 3")]
-    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik behöll Garages egna automatiska påslag för relä 3")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on"]}""", null, "Erik gjorde att kortet inte längre slår på relä 3 igen av sig självt")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"timer"}]}""", null, "Erik stängde av kortets egna timer för relä 3, och därmed timern för relä 5")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"auto-on"}]}""", "Garage", "Erik stängde av Garages egna timer för relä 3, och därmed det automatiska påslaget för relä 5")]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik lät Garage fortsätta slå på relä 3 igen av sig självt")]
     public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules_InSwedish(string action, string details, string? boardName, string text)
     {
         using var swedish = TestCulture.Language("sv");

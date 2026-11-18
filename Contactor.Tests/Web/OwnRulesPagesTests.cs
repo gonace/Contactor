@@ -4,6 +4,7 @@ using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
 using Contactor.Web.Features.BoardRules;
+using Contactor.Web.Features.Groups;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,6 +113,11 @@ public sealed partial class OwnRulesPagesTests
         Assert.Equal("Also turns off the board's own rules for Relay 3 and Heat.", TestTexts.OwnRules.AlsoTurnsOff([autoOn3, Timer5], names));
         Assert.Equal("Also stops the inputs switching Heat.", TestTexts.OwnRules.AlsoTurnsOff([new OwnRule(5, OwnRuleKind.InputEdge), new OwnRule(5, OwnRuleKind.InputToggle)], names));
         Assert.Equal("Also resets Heat.", TestTexts.OwnRules.AlsoTurnsOff([new OwnRule(5, OwnRuleKind.InputLinkage)], names));
+        Assert.Equal("Also stops the inputs switching Heat.", TestTexts.OwnRules.AlsoTurnsOff([new OwnRule(5, OwnRuleKind.InputLinkage), new OwnRule(5, OwnRuleKind.InputToggle)], names));
+        Assert.Equal("Also stops the inputs switching Fan.", TestTexts.OwnRules.AlsoTurnsOff([new OwnRule(6, OwnRuleKind.InputToggle)], names));
+
+        // Two relays with the same name are both named.
+        Assert.Equal("Also turns off the board's timer for Heat and Heat.", TestTexts.OwnRules.AlsoTurnsOff([Timer3, Timer5], new Dictionary<int, string> { [3] = "Heat", [5] = "Heat" }));
 
         using var swedish = TestCulture.Language("sv");
         names = new() { [5] = "Värme", [6] = "Fläkt" };
@@ -150,6 +156,7 @@ public sealed partial class OwnRulesPagesTests
         await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 0);
         var entry = (await EventsAsync(app)).Single(e => e.Action == EventActions.BoardOwnRulesTurnedOff);
         Assert.Contains("\"relays\":[3]", entry.Details, StringComparison.Ordinal);
+        Assert.Contains("\"also\":[{\"relay\":5,\"kind\":\"timer\"}]", entry.Details, StringComparison.Ordinal);
         Assert.Empty(page.Errors);
     }
 
@@ -191,6 +198,94 @@ public sealed partial class OwnRulesPagesTests
         var entry = (await EventsAsync(app)).Single();
         Assert.Equal(EventActions.BoardOwnRulesTurnedOff, entry.Action);
         Assert.Contains("\"relays\":[3]", entry.Details, StringComparison.Ordinal);
+        Assert.Contains("\"also\":[{\"relay\":5,\"kind\":\"timer\"}]", entry.Details, StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+    }
+
+    // The auto-on of a relay in a group (Heat, relay 2) can't be kept: no "Keep" on the card, a line why in its place, and
+    // the handler refuses it. An auto-on on a relay in no group (relay 5) and a timer keep their "Keep", also in "Keep them".
+    [Fact]
+    public async Task Should_RefuseToKeepAnAutoOn_OnARelayInAGroup()
+    {
+        var auto2 = new OwnRule(2, OwnRuleKind.AutoOn);
+        var auto5 = new OwnRule(5, OwnRuleKind.AutoOn);
+        var board = Board();
+        await using var app = App(board);
+        await NameAsync(app, 2, "Heat");
+        Assert.Null((await CreateGroupAsync(app)).Error);
+        await RulesAsync(app, board, auto2, Timer3, auto5);
+        const string Why = "Can't be kept: Heat is in a group, and the board would turn it on again without the group's order.";
+
+        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        var rows = Regex.Split(card, "<li[^>]*>").Skip(1).Select(r => WebUtility.HtmlDecode(Tags().Replace(r, " "))).Select(r => Regex.Replace(r, "\\s+", " ").Trim()).ToList();
+        Assert.Equal(3, rows.Count);
+        Assert.EndsWith("Turn off " + Why, rows[0], StringComparison.Ordinal);
+        Assert.EndsWith("Turn off Keep", rows[1], StringComparison.Ordinal);
+        Assert.EndsWith("Turn off Keep", rows[2], StringComparison.Ordinal);
+
+        var handler = app.Services.GetRequiredService<OwnRulesHandler>();
+        Assert.Equal(Why, await handler.KeepAsync(BoardId, 2, OwnRuleKind.AutoOn, John, Cancel));
+        Assert.Null(await handler.KeepAllAsync(BoardId, [auto2, Timer3, auto5], John, Cancel));
+        Assert.Equal([auto2], handler.Warnings(BoardId));
+        Assert.Contains("The board turns a relay on again by itself", Box(await PageAsync(app, "/")), StringComparison.Ordinal);
+        Assert.Equal(2, (await EventsAsync(app)).Count(e => e.Action == EventActions.BoardOwnRuleKept));
+
+        using var swedish = TestCulture.Language("sv");
+        Assert.Equal("Kan inte behållas: Värme ingår i en grupp, och kortet skulle slå på det igen utan gruppens ordning.", TestTexts.Localizer["OwnRules.Keep.InGroup", "Värme"].Value);
+    }
+
+    // A kept auto-on whose relay then joins a group, by a new group or a group's new relay, is not kept from then on: the
+    // warning shows again, also after the group is gone.
+    [Fact]
+    public async Task Should_ForgetAKeptAutoOn_WhenItsRelayJoinsAGroup()
+    {
+        var auto2 = new OwnRule(2, OwnRuleKind.AutoOn);
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, auto2, Timer3);
+        var handler = app.Services.GetRequiredService<OwnRulesHandler>();
+        Assert.Null(await handler.KeepAsync(BoardId, 2, OwnRuleKind.AutoOn, John, Cancel));
+        Assert.Null(await handler.KeepAsync(BoardId, 3, OwnRuleKind.Timer, John, Cancel));
+        Assert.Empty(handler.Warnings(BoardId));
+
+        // A new group with relays 1 and 4, then relay 2 joins it.
+        var groups = app.Services.GetRequiredService<GroupsHandler>();
+        var (id, error) = await groups.CreateAsync(new GroupDraft("Fan heater", GroupIcons.Fan, 120, [new GroupStepDraft("Fan", [1]), new GroupStepDraft("Heat", [4])]), John, Cancel);
+        Assert.Null(error);
+        Assert.Empty(handler.Warnings(BoardId));
+        Assert.Null(await groups.SaveAsync(id!.Value, new GroupDraft("Fan heater", GroupIcons.Fan, 120, [new GroupStepDraft("Fan", [1]), new GroupStepDraft("Heat", [2])]), John, Cancel));
+
+        Assert.Equal([auto2], handler.Warnings(BoardId));
+        Assert.Contains("The board turns a relay on again by itself", Box(await PageAsync(app, "/")), StringComparison.Ordinal);
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            var rows = await db.BoardOwnRules.AsNoTracking().OrderBy(r => r.Channel).ToListAsync(Cancel);
+            Assert.Equal([(2, false), (3, true)], rows.Select(r => (r.Channel, r.KeptUtc is not null)));
+            Assert.Null(rows[0].KeptBy);
+        }
+
+        // The group goes: the warning stays until someone keeps it again.
+        Assert.Null(await groups.DeleteAsync(id.Value, John, Cancel));
+        Assert.Equal([auto2], handler.Warnings(BoardId));
+        Assert.Null(await handler.KeepAsync(BoardId, 2, OwnRuleKind.AutoOn, John, Cancel));
+        Assert.Empty(handler.Warnings(BoardId));
+    }
+
+    // What goes together changes while Relays is open (the board's rules stay the same): the warning follows it.
+    [Fact]
+    public async Task Should_RedrawRelays_WhenWhatGoesTogetherChanges()
+    {
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3, Timer5);
+        Assert.Null(await app.Services.GetRequiredService<OwnRulesHandler>().KeepAsync(BoardId, 5, OwnRuleKind.Timer, John, Cancel));
+        using var page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("It can switch relay 3 without Contactor.", StringComparison.Ordinal));
+        Assert.DoesNotContain("Also", await page.TextAsync(), StringComparison.Ordinal);
+
+        board.SetOwnRules(Linked());
+
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Also turns off the board's timer for Relay 5.", StringComparison.Ordinal));
         Assert.Empty(page.Errors);
     }
 
@@ -625,10 +720,20 @@ public sealed partial class OwnRulesPagesTests
         await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == rules.Count);
     }
 
-    // Relays 3 and 5 have timers, and turning off relay 3's takes relay 5's with it.
+    // Relays 3 and 5 have timers: one schedule switches both, and another relay 3 alone. Turning off relay 3's takes
+    // relay 5's with it, but not the other way round.
     private static OwnRules Linked()
     {
-        return new OwnRules([Timer3, Timer5], new Dictionary<OwnRule, IReadOnlyCollection<OwnRule>> { [Timer3] = [Timer5] });
+        return new OwnRules([Timer3, Timer5], [[Timer3, Timer5], [Timer3]]);
+    }
+
+    // A group of relays 1 (Fan) and 2 (Heat).
+    private static Task<(int? Id, string? Error)> CreateGroupAsync(TestWebApp app)
+    {
+        return app.Services.GetRequiredService<GroupsHandler>().CreateAsync(
+            new GroupDraft("Fan heater", GroupIcons.Fan, 120, [new GroupStepDraft("Fan", [1]), new GroupStepDraft("Heat", [2])]),
+            John,
+            Cancel);
     }
 
     private static async Task NameAsync(TestWebApp app, int channel, string name)

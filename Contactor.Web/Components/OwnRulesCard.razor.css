@@ -88,6 +88,13 @@ h2 {
     color: var(--ink);
 }
 
+/* In place of "Keep" for a rule that can't be kept on a relay in a group. */
+.cant-keep {
+    flex-basis: 100%;
+    font-size: 14px;
+    color: var(--muted);
+}
+
 .kept .note {
     color: var(--muted);
 }

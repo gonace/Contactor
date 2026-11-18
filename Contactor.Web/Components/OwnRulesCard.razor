@@ -52,10 +52,15 @@
                                 @* A relay the board controls by itself is reset; the app can't switch it until then. *@
                                 <button type="button" class="@(kept ? "secondary" : "primary")" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => TurnOffAsync(row)">@Texts[row.Kind == OwnRuleKind.InputLinkage ? "OwnRules.Reset" : "OwnRules.TurnOff"]</button>
                             }
-                            @* Never "Keep" for a relay the board controls by itself: it stays unavailable until reset. *@
-                            @if (!kept && OwnRulesHandler.CanKeep(row.Kind))
+                            @* Never "Keep" for a relay the board controls by itself: it stays unavailable until reset. Nor
+                               for the auto-on of a relay in a group: a line says why in its place. *@
+                            @if (!kept && OwnRulesHandler.CanKeep(row.Kind, _grouped.ContainsKey(row.Channel)))
                             {
                                 <button type="button" class="secondary" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => KeepAsync(row)">@Texts["OwnRules.Keep"]</button>
+                            }
+                            else if (!kept && OwnRulesHandler.CanKeep(row.Kind, inGroup: false))
+                            {
+                                <span class="cant-keep">@Handler.InGroup(row.Channel, _names.GetValueOrDefault(row.Channel))</span>
                             }
                         </span>
                     </li>
@@ -76,6 +81,9 @@
 @code {
     private IReadOnlyList<OwnRuleRow> _rows = [];
     private Dictionary<int, string> _names = [];
+
+    // The board's relays in a group, by channel: a rule that can't be kept there has no "Keep" (OwnRulesHandler.CanKeep).
+    private Dictionary<int, string> _grouped = [];
     private string? _error;
     private bool _busy;
     private int? _loadedFor;
@@ -162,12 +170,14 @@
 
         await using var db = await DbFactory.CreateDbContextAsync();
         var names = await db.Relays.AsNoTracking().Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Name);
+        var grouped = await OwnRulesService.GroupedRelaysAsync(db, boardId, CancellationToken.None);
         if (load != _loads)
         {
             return;
         }
 
         _names = names;
+        _grouped = grouped;
         _rows = [.. rows.OrderBy(r => r.Channel).ThenBy(r => r.Kind)];
     }
 

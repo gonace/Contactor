@@ -2,6 +2,7 @@ using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -137,6 +138,7 @@ public sealed class BoardEventRecorderTests
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
         await database.Services.UseFakeBoardAsync(board);
@@ -177,6 +179,7 @@ public sealed class BoardEventRecorderTests
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 1, Cancel);
         await database.Services.UseFakeBoardAsync(board);
@@ -226,6 +229,7 @@ public sealed class BoardEventRecorderTests
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 4, Cancel);
         await database.Services.UseFakeBoardAsync(board);
@@ -702,6 +706,7 @@ public sealed class BoardEventRecorderTests
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
             services.AddSingleton<InputChangeFeed>();
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);

@@ -212,7 +212,7 @@ public sealed partial class OwnRulesService : BackgroundService
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
                 var row = await db.BoardOwnRules.SingleOrDefaultAsync(r => r.BoardId == boardId && r.Channel == channel && r.Kind == text, cancellationToken);
-                if (row is null || !OwnRulesHandler.CanKeep(kind))
+                if (row is null || !OwnRulesHandler.CanKeep(kind, (await GroupedRelaysAsync(db, boardId, cancellationToken)).ContainsKey(channel)))
                 {
                     return false;
                 }
@@ -275,7 +275,7 @@ public sealed partial class OwnRulesService : BackgroundService
         await _work.WaitAsync(cancellationToken);
         try
         {
-            if (_registry.Find(boardId)?.State.OwnRules is not { } reported || !rules.All(reported.Contains) || !rules.All(r => OwnRulesHandler.CanKeep(r.Kind)))
+            if (_registry.Find(boardId)?.State.OwnRules is not { } reported || !rules.All(reported.Contains))
             {
                 return false;
             }
@@ -283,6 +283,12 @@ public sealed partial class OwnRulesService : BackgroundService
             List<BoardOwnRule> rows;
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
+                var grouped = await GroupedRelaysAsync(db, boardId, cancellationToken);
+                if (!rules.All(r => OwnRulesHandler.CanKeep(r.Kind, grouped.ContainsKey(r.Relay))))
+                {
+                    return false;
+                }
+
                 var now = _clock.UtcNow;
                 var existing = await db.BoardOwnRules.Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
                 var relays = await db.Relays.Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Id, cancellationToken);
@@ -348,6 +354,61 @@ public sealed partial class OwnRulesService : BackgroundService
                 RaiseChanged(boardId);
             }
         }
+    }
+
+    /// <summary>The board's relays that are in a group, by channel, with their names.</summary>
+    public static async Task<Dictionary<int, string>> GroupedRelaysAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        return await db.RelayGroupMembers
+            .Where(m => m.Relay!.BoardId == boardId)
+            .Select(m => new { m.Relay!.Channel, m.Relay.Name })
+            .ToDictionaryAsync(m => m.Channel, m => m.Name, cancellationToken);
+    }
+
+    /// <summary>
+    /// Forgets the "Keep" of every rule of the board's own that may not be kept on a relay in a group
+    /// (<see cref="OwnRulesHandler.CanKeep"/>, e.g. the auto-on) on the board's relays that are in a group now, so the
+    /// app warns about it again; also if the relay leaves the group later. Run in the transaction that saves a group's
+    /// relays, after they are saved; <see cref="ReloadAsync"/> shows it once committed. Logs nothing.
+    /// </summary>
+    public static async Task ForgetKeepsInGroupsAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        List<string> kinds = [.. Enum.GetValues<OwnRuleKind>().Where(k => OwnRulesHandler.CanKeep(k, inGroup: false) && !OwnRulesHandler.CanKeep(k, inGroup: true)).Select(OwnRuleKinds.For)];
+        var grouped = db.RelayGroupMembers.Where(m => m.Relay!.BoardId == boardId).Select(m => m.Relay!.Channel);
+        await db.BoardOwnRules
+            .Where(r => r.BoardId == boardId && r.KeptUtc != null && kinds.Contains(r.Kind) && grouped.Contains(r.Channel))
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.KeptUtc, (DateTime?)null).SetProperty(x => x.KeptBy, (string?)null), cancellationToken);
+    }
+
+    /// <summary>
+    /// The board's groups changed: its rows are read again (<see cref="ForgetKeepsInGroupsAsync"/> may have changed them)
+    /// and <see cref="Changed"/> is raised, so the screens see which relays are in a group now. A board whose rows the
+    /// service hasn't read yet is left to its first reading. A failed read is logged, not thrown: the group is saved.
+    /// </summary>
+    public async Task ReloadAsync(int boardId, CancellationToken cancellationToken)
+    {
+        await _work.WaitAsync(cancellationToken);
+        try
+        {
+            if (TryGetRows(boardId, out _))
+            {
+                await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+                Publish(boardId, await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The group is saved: the screens keep what they had until the board's rows are read again.
+            LogReloadFailed(ex, boardId);
+        }
+        finally
+        {
+            _work.Release();
+        }
+
+        RaiseChanged(boardId);
     }
 
     private void Unsubscribe()
@@ -606,6 +667,9 @@ public sealed partial class OwnRulesService : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not save the own rules of relay board {BoardId}; tried again later")]
     private partial void LogFailed(Exception exception, int boardId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read the own rules of relay board {BoardId} again after its groups changed")]
+    private partial void LogReloadFailed(Exception exception, int boardId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "A listener to the own rules of relay board {BoardId} failed")]
     private partial void LogListenerFailed(Exception exception, int boardId);

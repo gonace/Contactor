@@ -899,8 +899,8 @@
   <data name="Events.OwnRules.Kept" xml:space="preserve">
     <value>{0} behöll {1} {2} för {3}</value>
   </data>
-  <data name="Events.OwnRules.Kind.AutoOn" xml:space="preserve">
-    <value>egna automatiska påslag</value>
+  <data name="Events.OwnRules.Kept.AutoOn" xml:space="preserve">
+    <value>{0} lät {1} fortsätta slå på {2} igen av sig självt</value>
   </data>
   <data name="Events.OwnRules.Kind.InputRule" xml:space="preserve">
     <value>egna ingångsregel</value>
@@ -941,11 +941,32 @@
   <data name="Events.OwnRules.TurnedOff" xml:space="preserve">
     <value>{0} stängde av {1} {2} för {3}</value>
   </data>
+  <data name="Events.OwnRules.TurnedOff.AutoOn" xml:space="preserve">
+    <value>{0} gjorde att {1} inte längre slår på {2} igen av sig självt</value>
+  </data>
   <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
     <value>kortet</value>
   </data>
   <data name="Events.OwnRules.Who.TheBoards" xml:space="preserve">
     <value>Kortets</value>
+  </data>
+  <data name="Events.OwnRules.With" xml:space="preserve">
+    <value>, och därmed {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.AutoOn" xml:space="preserve">
+    <value>det automatiska påslaget för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Rule" xml:space="preserve">
+    <value>regeln för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Rules" xml:space="preserve">
+    <value>reglerna för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Timer" xml:space="preserve">
+    <value>timern för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Timers" xml:space="preserve">
+    <value>timrarna för {0}</value>
   </data>
   <data name="Events.PowerOn.AsBefore" xml:space="preserve">
     <value>{0} ställde in att reläet blir som innan efter ett strömavbrott</value>
@@ -1682,6 +1703,9 @@
   <data name="OwnRules.Also.AutoOn" xml:space="preserve">
     <value>Gör också att kortet inte längre slår på {0} igen av sig självt.</value>
   </data>
+  <data name="OwnRules.Also.Edge" xml:space="preserve">
+    <value>Gör också att ingångarna inte längre slår om {0}.</value>
+  </data>
   <data name="OwnRules.Also.Input" xml:space="preserve">
     <value>Gör också att ingångarna inte längre slår om {0}.</value>
   </data>
@@ -1693,6 +1717,9 @@
   </data>
   <data name="OwnRules.Also.Timer" xml:space="preserve">
     <value>Stänger också av kortets timer för {0}.</value>
+  </data>
+  <data name="OwnRules.Also.Toggle" xml:space="preserve">
+    <value>Gör också att ingångarna inte längre slår om {0}.</value>
   </data>
   <data name="OwnRules.CanSwitch_One" xml:space="preserve">
     <value>Den kan slå om {0} utan Contactor.</value>
@@ -1783,6 +1810,9 @@
   </data>
   <data name="OwnRules.Keep.Gone" xml:space="preserve">
     <value>Kortet har inte längre den regeln.</value>
+  </data>
+  <data name="OwnRules.Keep.InGroup" xml:space="preserve">
+    <value>Kan inte behållas: {0} ingår i en grupp, och kortet skulle slå på det igen utan gruppens ordning.</value>
   </data>
   <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
     <value>Kortet styr reläet självt, så det kan inte behållas. Återställ det i stället.</value>

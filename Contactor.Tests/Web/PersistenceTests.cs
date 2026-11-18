@@ -336,6 +336,12 @@ public sealed class PersistenceTests
             db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 2, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
             await db.SaveChangesAsync(Cancel);
         }
+
+        // Up again: the timer's row came through both rebuilds of the table.
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        var rows = await check.BoardOwnRules.AsNoTracking().OrderBy(r => r.Channel).ToListAsync(Cancel);
+        Assert.Equal([(2, OwnRuleKinds.AutoOn), (3, OwnRuleKinds.Timer)], rows.Select(r => (r.Channel, r.Kind)));
+        Assert.Equal(Earlier, rows[1].FoundUtc);
     }
 
     [Fact]

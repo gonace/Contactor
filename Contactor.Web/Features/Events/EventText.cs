@@ -202,7 +202,8 @@ public sealed class EventText
     }
 
     // A person turned off or kept rules of the board's own: "turned off the board's own timers for relays 3 and 5",
-    // "kept Garage's own timer for relay 3", "reset relay 3" (a relay the board controlled by itself).
+    // "kept Garage's own timer for relay 3", "reset relay 3" (a relay the board controlled by itself), "stopped the board
+    // turning relay 3 on again by itself"; a turn-off adds the rules that went with it.
     private string OwnRulesLine(string key, EventLogEntry entry, string? boardName)
     {
         var board = boardName is null ? _texts["Events.OwnRules.TheBoards"].Value : Genitive(boardName);
@@ -225,28 +226,79 @@ public sealed class EventText
 
         var several = relays.Count > 1;
         var distinct = kinds.Distinct().ToList();
-        var numbers = relays.Count == 0
-            ? _texts["Events.Unknown"].Value
-            : relays.Count == 1
-                ? relays[0].ToString(CultureInfo.CurrentCulture)
-                : string.Join(", ", relays.SkipLast(1).Select(r => r.ToString(CultureInfo.CurrentCulture))) + _texts["Events.List.And"] + relays[^1].ToString(CultureInfo.CurrentCulture);
-        var which = _texts[several ? "Events.OwnRules.Relays" : "Events.OwnRules.Relay", numbers].Value;
+        var which = Which(relays);
+        var also = entry.Action == EventActions.BoardOwnRulesTurnedOff ? AlsoWent(entry.Details) : "";
 
         // Relays the board controlled by itself, set back to normal: "Erik reset relay 3".
         if (entry.Action == EventActions.BoardOwnRulesTurnedOff && distinct is [OwnRuleKind.InputLinkage])
         {
-            return Line("Events.OwnRules.Reset", which);
+            return Line("Events.OwnRules.Reset", which) + also;
+        }
+
+        // The board turning relays on again by itself, in the screens' plain words: "Erik stopped the board turning
+        // relay 3 on again by itself".
+        if (distinct is [OwnRuleKind.AutoOn])
+        {
+            return Line(key + ".AutoOn", boardName ?? _texts["Events.OwnRules.Who.TheBoard"].Value, which) + also;
         }
 
         var what = distinct switch
         {
             [OwnRuleKind.Timer] => several ? "Events.OwnRules.Kind.Timers" : "Events.OwnRules.Kind.Timer",
-            [OwnRuleKind.AutoOn] => "Events.OwnRules.Kind.AutoOn",
             _ when distinct.Count > 0 && distinct.All(k => k is OwnRuleKind.InputLinkage or OwnRuleKind.InputToggle or OwnRuleKind.InputEdge)
                 => several ? "Events.OwnRules.Kind.InputRules" : "Events.OwnRules.Kind.InputRule",
             _ => several ? "Events.OwnRules.Kind.Rules" : "Events.OwnRules.Kind.Rule",
         };
-        return Line(key, board, _texts[what], which);
+        return Line(key, board, _texts[what], which) + also;
+    }
+
+    // "relay 3", "relays 3, 5 and 7", "relay ?" for none.
+    private string Which(List<int> relays)
+    {
+        var numbers = relays.Count == 0
+            ? _texts["Events.Unknown"].Value
+            : relays.Count == 1
+                ? relays[0].ToString(CultureInfo.CurrentCulture)
+                : string.Join(", ", relays.SkipLast(1).Select(r => r.ToString(CultureInfo.CurrentCulture))) + _texts["Events.List.And"] + relays[^1].ToString(CultureInfo.CurrentCulture);
+        return _texts[relays.Count > 1 ? "Events.OwnRules.Relays" : "Events.OwnRules.Relay", numbers].Value;
+    }
+
+    // The rules that went with a turn-off (its "also": the relay and kind of each), as the end of its line: ", and with it
+    // the timer for relay 5". Nothing when there were none or none can be read. Braces are escaped, as Line leaves the
+    // person's "{0}" in the line.
+    private string AlsoWent(string? details)
+    {
+        if (Read(details, "also") is not { ValueKind: JsonValueKind.Array } list)
+        {
+            return "";
+        }
+
+        List<(int Relay, OwnRuleKind? Kind)> went = [];
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty("relay", out var relay) && relay.ValueKind == JsonValueKind.Number && relay.TryGetInt32(out var number))
+            {
+                var kind = item.TryGetProperty("kind", out var text) && text.ValueKind == JsonValueKind.String && OwnRuleKinds.TryParse(text.GetString(), out var parsed) ? parsed : (OwnRuleKind?)null;
+                went.Add((number, kind));
+            }
+        }
+
+        if (went.Count == 0)
+        {
+            return "";
+        }
+
+        List<int> relays = [.. went.Select(w => w.Relay).Distinct().Order()];
+        var several = relays.Count > 1;
+        var phrase = went.Select(w => w.Kind).Distinct().ToList() switch
+        {
+            [OwnRuleKind.Timer] => several ? "Events.OwnRules.With.Timers" : "Events.OwnRules.With.Timer",
+            [OwnRuleKind.AutoOn] => "Events.OwnRules.With.AutoOn",
+            _ => several ? "Events.OwnRules.With.Rules" : "Events.OwnRules.With.Rule",
+        };
+        return _texts["Events.OwnRules.With", _texts[phrase, Which(relays)].Value].Value
+            .Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal);
     }
 
     // The relay's number on the board in an own rule's event, "?" when it can't be read.

@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -53,6 +54,7 @@ public sealed class CancelAfterSendTests : IAsyncLifetime
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
             services.AddSchedules(configuration);
         });
         await _database.Services.InitializeDatabaseAsync(relayCount: 4, Cancel);
