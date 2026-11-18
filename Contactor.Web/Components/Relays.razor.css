@@ -770,3 +770,34 @@ button:disabled {
     flex-direction: column;
     gap: 10px;
 }
+
+/* A board's own rules (e.g. the VM201's timers) in the red warning box: a filled red button. */
+.own-rules .turn-off-rules {
+    align-self: flex-start;
+    margin-top: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 12px;
+    background: var(--danger-solid);
+    color: var(--on-danger);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.own-rules .rules-error {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+/* On a relay's card: the board's own rule can switch it. */
+.own-rule-line {
+    color: var(--danger-ink);
+}
+
+.own-rule-line svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+}

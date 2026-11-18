@@ -48,7 +48,6 @@ public sealed class RelayControlTests : IAsyncLifetime
             {
                 ["Vm201:Host"] = "127.0.0.1",
                 ["Vm201:Port"] = _simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["Vm201:DisableBoardTimers"] = "false",
             });
         await _database.Services.InitializeDatabaseAsync(Cancel);
         await _database.Services.UseBoardAsync("vm201");

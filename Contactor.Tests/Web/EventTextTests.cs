@@ -200,6 +200,96 @@ public sealed class EventTextTests
         Assert.Equal(new EventView(false, "A", "The board", "{0} couldn't have its relays set to normal mode, so its inputs may switch them", null, IsAlert: true), view);
     }
 
+    // A rule of the board's own the app saw: the board is the subject, "The board" with one board, its name with several.
+    [Theory]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", null, "The board", "The board has its own timer for relay 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", null, "The board's", "The board's own timer for relay 3 was turned on")]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", "Garage", "Garage", "Garage has its own timer for relay 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", "Garage", "Garage's", "Garage's own timer for relay 3 was turned on")]
+    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "the board", "Relay 3 follows input 3 on the board")]
+    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Garage", "Relay 3 now follows input 3 on Garage")]
+    [InlineData("""{"kind":"input-toggle","new":false,"relay":2}""", null, "the board", "Input 2 switches relay 2 with each pulse on the board")]
+    [InlineData("""{"kind":"input-toggle","new":true,"relay":2}""", null, "the board", "Input 2 now switches relay 2 with each pulse on the board")]
+    [InlineData("""{"kind":"input-edge","new":false,"relay":4}""", null, "the board", "Input 4 switches relay 4 at each change on the board")]
+    [InlineData("""{"kind":"input-edge","new":true,"relay":4}""", null, "the board", "Input 4 now switches relay 4 at each change on the board")]
+    [InlineData("""{"kind":"later","new":true,"relay":3}""", null, "The board's", "The board's own rule for relay 3 was turned on")]
+    [InlineData("not json", null, "The board", "The board has a rule of its own for relay ?")]
+    public void Should_DescribeABoardsOwnRuleFound(string details, string? boardName, string who, string text)
+    {
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.BoardOwnRuleFound, details), Relay, personName: null, boardName: boardName);
+
+        Assert.Equal((false, "A", who, text, Relay), (view.IsPerson, view.Badge, view.Who, view.Text, view.Target));
+        Assert.True(EventText.IsAboutBoard(Entry(EventActors.System, EventActions.BoardOwnRuleFound, details)));
+    }
+
+    [Theory]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", null, "Kortet har en egen timer för relä 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", null, "Kortets egna timer för relä 3 slogs på")]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", "Garage", "Garage har en egen timer för relä 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", "Garage", "Garages egna timer för relä 3 slogs på")]
+    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "Relä 3 följer ingång 3 på kortet")]
+    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Relä 3 följer nu ingång 3 på Garage")]
+    public void Should_DescribeABoardsOwnRuleFound_InSwedish(string details, string? boardName, string text)
+    {
+        using var swedish = TestCulture.Language("sv");
+
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.BoardOwnRuleFound, details), Relay, personName: null, boardName: boardName);
+
+        Assert.Equal(text, view.Text);
+    }
+
+    // Swedish adds no s to a name that already ends in s, x or z.
+    [Theory]
+    [InlineData("Garage", "sv", "Garages egna timer för relä 3 slogs på", "Erik behöll Garages egna timer för relä 3")]
+    [InlineData("Lars", "sv", "Lars egna timer för relä 3 slogs på", "Erik behöll Lars egna timer för relä 3")]
+    [InlineData("Fax", "sv", "Fax egna timer för relä 3 slogs på", "Erik behöll Fax egna timer för relä 3")]
+    [InlineData("Ritz", "sv", "Ritz egna timer för relä 3 slogs på", "Erik behöll Ritz egna timer för relä 3")]
+    [InlineData("Lars", "en", "Lars's own timer for relay 3 was turned on", "Erik kept Lars's own timer for relay 3")]
+    public void Should_PutABoardsNameInTheGenitive_AsTheLanguageDoes(string name, string language, string found, string kept)
+    {
+        using var culture = TestCulture.Language(language);
+
+        var foundView = TestTexts.Events.For(Entry(EventActors.System, EventActions.BoardOwnRuleFound, """{"kind":"timer","new":true,"relay":3}"""), Relay, null, boardName: name);
+        var keptView = TestTexts.Events.For(Entry("erik@example.com", EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}"""), Relay, "Erik", boardName: name);
+
+        Assert.Equal((found, kept), (foundView.Text, keptView.Text));
+    }
+
+    // A person turned off or kept the board's own rules: the board is named in the line, so the Events screen doesn't
+    // name it again before the target.
+    [Theory]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer"]}""", null, "Erik turned off the board's own timers for relays 3 and 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"]}""", "Garage", "Erik turned off Garage's own timer for relay 3", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5,7],"kinds":["input-linkage","input-edge"]}""", null, "Erik turned off the board's own input rules for relays 3, 5 and 7", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer","input-edge"]}""", null, "Erik turned off the board's own rules for relays 3 and 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, null, null, "Erik turned off the board's own rule for relay ?", false)]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik kept the board's own timer for relay 3", true)]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"input-toggle","relay":3}""", "Garage", "Erik kept Garage's own input rule for relay 3", true)]
+    public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules(string action, string? details, string? boardName, string text, bool hasTarget)
+    {
+        var entry = Entry("erik@example.com", action, details, relayId: hasTarget ? 1 : null);
+
+        var view = TestTexts.Events.For(entry, hasTarget ? Relay : null, "Erik", boardName: boardName);
+
+        Assert.Equal((true, "E", "Erik", text, hasTarget ? Relay : null), (view.IsPerson, view.Badge, view.Who, view.Text, view.Target));
+        Assert.False(EventText.IsAboutBoard(entry));
+        Assert.True(EventText.NamesBoard(entry));
+    }
+
+    [Theory]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer"]}""", null, "Erik stängde av kortets egna timrar för relä 3 och 5")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"]}""", "Garage", "Erik stängde av Garages egna timer för relä 3")]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik behöll kortets egna timer för relä 3")]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", "Garage", "Erik behöll Garages egna timer för relä 3")]
+    public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules_InSwedish(string action, string details, string? boardName, string text)
+    {
+        using var swedish = TestCulture.Language("sv");
+
+        var view = TestTexts.Events.For(Entry("erik@example.com", action, details), Relay, "Erik", boardName: boardName);
+
+        Assert.Equal(text, view.Text);
+    }
+
     [Theory]
     [InlineData(EventActors.Schedule, "schedule")]
     [InlineData(EventActors.AutoOff, "auto-off")]

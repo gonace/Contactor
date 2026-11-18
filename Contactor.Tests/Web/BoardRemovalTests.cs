@@ -34,6 +34,7 @@ public sealed class BoardRemovalTests
         await SeedAsync(boards, boards.BarnId);
         var firstBefore = await CountAsync(boards, 1);
         Assert.Equal((1, 2), (firstBefore.AnalogInputs, (await CountAsync(boards, boards.BarnId)).AnalogInputs));
+        Assert.Equal((2, 2), (firstBefore.OwnRules, (await CountAsync(boards, boards.BarnId)).OwnRules));
 
         // Board 1's input acting on one of Barn's relays goes with Barn; board 1's own actions stay.
         int crossId;
@@ -95,9 +96,10 @@ public sealed class BoardRemovalTests
         var removal = boards.App.Services.GetRequiredService<BoardRemoval>();
         await Assert.ThrowsAnyAsync<Exception>(() => removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
 
-        // Its events too; the board running again may log more of its own meanwhile (its first status).
+        // Its events too; the board running again may log more of its own meanwhile (its first status). Its own rules'
+        // rows follow what the board running again reads: the simulator has no timers, so they may go meanwhile.
         var after = await CountAsync(boards, boards.BarnId);
-        Assert.Equal(before with { Events = 0 }, after with { Events = 0 });
+        Assert.Equal(before with { Events = 0, OwnRules = 0 }, after with { Events = 0, OwnRules = 0 });
         Assert.True(after.Events >= before.Events);
         await using (var check = await boards.Factory.CreateDbContextAsync(Cancel))
         {
@@ -637,6 +639,8 @@ public sealed class BoardRemovalTests
         db.InputActions.Add(new InputAction { InputId = input, RelayId = relays[2] });
         db.InputActions.Add(new InputAction { InputId = input, GroupId = group.Id });
         db.EventLog.Add(new EventLogEntry { TimestampUtc = DateTime.UtcNow, BoardId = boardId, RelayId = relays[1], Actor = John, Action = EventActions.Rename });
+        db.BoardOwnRules.Add(new BoardOwnRule { BoardId = boardId, Channel = 1, Kind = OwnRuleKinds.Timer, FoundUtc = DateTime.UtcNow, KeptUtc = DateTime.UtcNow, KeptBy = John });
+        db.BoardOwnRules.Add(new BoardOwnRule { BoardId = boardId, Channel = 2, Kind = OwnRuleKinds.Timer, FoundUtc = DateTime.UtcNow });
         await db.SaveChangesAsync(Cancel);
 
         // The group's runtime row comes from its board's sequencer, at its next step.
@@ -697,7 +701,8 @@ public sealed class BoardRemovalTests
             await db.InputActions.CountAsync(a => inputIds.Contains(a.InputId) || (a.RelayId != null && relayIds.Contains(a.RelayId.Value)) || (a.GroupId != null && groupIds.Contains(a.GroupId.Value)), Cancel),
             await db.EventLog.CountAsync(e => e.BoardId == boardId, Cancel),
             await db.BoardRuntimes.CountAsync(r => r.BoardId == boardId, Cancel),
-            await db.AnalogInputs.CountAsync(i => i.BoardId == boardId, Cancel));
+            await db.AnalogInputs.CountAsync(i => i.BoardId == boardId, Cancel),
+            await db.BoardOwnRules.CountAsync(r => r.BoardId == boardId, Cancel));
     }
 
     private static async Task<int> RelayIdAsync(TwoBoards boards, int boardId, int channel)
@@ -706,8 +711,8 @@ public sealed class BoardRemovalTests
         return await db.Relays.Where(r => r.BoardId == boardId && r.Channel == channel).Select(r => r.Id).SingleAsync(Cancel);
     }
 
-    private sealed record Counts(int Relays, int RelayRuntimes, int Inputs, int Groups, int Members, int GroupRuntimes, int Schedules, int InputActions, int Events, int BoardRuntimes, int AnalogInputs)
+    private sealed record Counts(int Relays, int RelayRuntimes, int Inputs, int Groups, int Members, int GroupRuntimes, int Schedules, int InputActions, int Events, int BoardRuntimes, int AnalogInputs, int OwnRules)
     {
-        public static Counts None { get; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        public static Counts None { get; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 }

@@ -178,7 +178,7 @@ public sealed class BoardAddressHandlerTests
     public void Should_PutTheAddressError_InWords(BoardEndpointError error, string host, string text)
     {
         var texts = TestTexts.Localizer;
-        var handler = new BoardAddressHandler(null!, null!, null!, null!, texts, new BoardLoginText(texts));
+        var handler = new BoardAddressHandler(null!, null!, null!, null!, texts, new BoardLoginText(texts), null!);
 
         Assert.Equal(text, handler.EndpointError(error, host));
     }

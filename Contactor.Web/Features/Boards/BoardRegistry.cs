@@ -249,7 +249,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     /// <summary>
     /// Runs <paramref name="model"/> on the board's row from now on, unless it already is its model: the setup guide's
     /// choice. A row made since start (the guide's first board) gets its live board now. Built before anything changes,
-    /// so a model the app can't build (e.g. its settings are wrong) leaves the board as it was. Doesn't save the model.
+    /// so a model the app can't build (e.g. its settings are wrong) leaves the board as it was. The board's own rules the
+    /// app remembered (<see cref="BoardOwnRule"/>) are deleted: they were the old model's. Doesn't save the model.
     /// </summary>
     public async Task<LiveBoard> ReplaceModelAsync(int boardId, BoardModel model, CancellationToken cancellationToken)
     {
@@ -269,6 +270,13 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             var built = Build(registration, BoardSetup.From(row, isFirst));
             try
             {
+                // The rules of their own the old model reported are no rules of this one's (OwnRulesService reads them
+                // afresh from the new model's first state).
+                await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+                {
+                    await db.BoardOwnRules.Where(r => r.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
+                }
+
                 live ??= await AddAsync(row);
             }
             catch

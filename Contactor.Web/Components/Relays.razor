@@ -1,6 +1,7 @@
 @page "/"
 @implements IDisposable
 @using Contactor.Boards
+@using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
@@ -32,8 +33,15 @@
 @inject GroupStatusText GroupStatus
 @inject InputsText InputsText
 @inject AppLanguage Language
+@inject OwnRulesHandler OwnRules
+@inject OwnRulesService OwnRuleRows
+@inject OwnRulesText OwnRulesText
 
 <PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Relays"]])</PageTitle>
+
+@* The board's own rules each board's box and cards show, kept as they are drawn: a change that alters none of them
+   redraws nothing (OnOwnRulesChanged). *@
+@{ KeepShownRules(); }
 
 <div class="screen">
     <header class="header">
@@ -109,6 +117,7 @@
         @* One board: nothing to filter, so no chips; the side menu shows the board (BoardPicker). *@
         <div class="connection">
             @ConnectionLine(State, null)
+            @OwnRulesBox(OnlyOne, null)
             @if (_allOffFailedBoardId is not null)
             {
                 <p class="error" role="alert">@Texts["Common.BoardNotResponding"]</p>
@@ -151,6 +160,7 @@
                     </div>
                     <div class="board-line">
                         @ConnectionLine(state, board.Name)
+                        @OwnRulesBox(board, board.Name)
                         @if (_allOffFailedBoardId == board.BoardId)
                         {
                             <p class="error" role="alert">@Texts["Common.BoardNotResponding"]</p>
@@ -265,6 +275,12 @@
 
     // What each analog card shows: a new reading redraws the page only when it changes one (OnAnalogChanged).
     private readonly ShownAnalogValues _shownAnalog = new(showsVolts: false);
+
+    // The board's own rules each board's warning and cards show, by board id: kept as the page is drawn.
+    private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownRules = [];
+
+    // "Turn them off" that went wrong, on the board's warning.
+    private (int BoardId, string Message)? _rulesError;
 
     // The inputs that control each relay and each group, by its id.
     private ILookup<int, InputControl> _relayInputs = Array.Empty<InputControl>().ToLookup(c => 0);
@@ -451,6 +467,68 @@
         }
     };
 
+    // A warning under the board's connection line while it has rules of its own that switch relays without the app,
+    // e.g. the VM201's timers, that no person kept. Only while the board answers; nothing for a board that can't tell.
+    private RenderFragment OwnRulesBox(LiveBoard? board, string? boardName) => __builder =>
+    {
+        if (board is null || _shownRules.GetValueOrDefault(board.BoardId) is not { Count: > 0 } rules)
+        {
+            return;
+        }
+
+        <div class="offline own-rules" role="status">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+            <div>
+                <strong>@OwnRulesText.Heading(rules, boardName)</strong>
+                <span>@OwnRulesText.CanSwitch(rules)</span>
+                @if (board.Capabilities.OwnRulesOrCantTell.TurnsOff)
+                {
+                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, rules)">@OwnRulesText.TurnOffAll(rules.Count)</button>
+                }
+                @if (_rulesError is { } error && error.BoardId == board.BoardId)
+                {
+                    <span class="rules-error" role="alert">@error.Message</span>
+                }
+            </div>
+        </div>
+    };
+
+    // A line on the card of a relay the board's own rules can switch: "(clock) The board's timer can switch it".
+    private RenderFragment OwnRuleLine(Relay relay) => __builder =>
+    {
+        if (_shownRules.GetValueOrDefault(relay.BoardId) is not { Count: > 0 } rules || !rules.Any(r => r.Relay == relay.Channel))
+        {
+            return;
+        }
+
+        <span class="input-line own-rule-line">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            <span>@OwnRulesText.CardLine(rules.Where(r => r.Relay == relay.Channel).Select(r => r.Kind))</span>
+        </span>
+    };
+
+    // A line on the card of a group whose relays the board's own rules can switch, naming them by their role in the
+    // group: "(clock) The board's timer can switch Heat". The relays have no card of their own.
+    private RenderFragment OwnRuleGroupLine(GroupView group) => __builder =>
+    {
+        if (_shownRules.GetValueOrDefault(group.BoardId) is not { Count: > 0 } rules)
+        {
+            return;
+        }
+
+        var members = group.Members.Where(m => rules.Any(r => r.Relay == m.Channel)).ToList();
+        if (members.Count == 0)
+        {
+            return;
+        }
+
+        var channels = members.Select(m => m.Channel).ToHashSet();
+        <span class="input-line own-rule-line">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            <span>@OwnRulesText.GroupLine(rules.Where(r => channels.Contains(r.Relay)).Select(r => r.Kind), members.Select(m => m.RoleName))</span>
+        </span>
+    };
+
     // The desktop's side menu: every board, to pick which to show.
     private RenderFragment BoardList => __builder =>
     {
@@ -477,6 +555,7 @@
                     <span class="name">@group.Name</span>
                     <span class="status @(group.Runtime.Phase != GroupPhases.Idle && state.HasAnswered ? "busy" : null)">@(!state.HasAnswered ? StatusText.Waiting : missing is { } m ? GroupStatus.MissingRelay(m) : GroupStatus.For(group, state, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
                     @InputLines(_groupInputs[group.Id])
+                    @OwnRuleGroupLine(group)
                     @if (_failedGroupId == group.Id)
                     {
                         <span class="error" role="alert">@_groupError</span>
@@ -525,6 +604,7 @@
                 <span class="name">@relay.Name</span>
                 <span class="status">@(state.HasAnswered ? StatusFor(relay, on) : StatusText.Waiting)</span>
                 @InputLines(_relayInputs[relay.Id])
+                @OwnRuleLine(relay)
                 @if (_failedRelayId == relay.Id && _inGroup)
                 {
                     <span class="error" role="alert">@Texts["Relays.InGroup"]</span>
@@ -659,6 +739,8 @@
         Registry.AnalogChanged += OnAnalogChanged;
         Registry.BoardsChanged += OnBoardsChanged;
         Changes.Changed += OnRelaysChanged;
+        Registry.OwnRulesChanged += OnOwnRulesChanged;
+        OwnRuleRows.Changed += OnOwnRuleRowsChanged;
     }
 
     public void Dispose()
@@ -668,6 +750,8 @@
         Registry.AnalogChanged -= OnAnalogChanged;
         Registry.BoardsChanged -= OnBoardsChanged;
         Changes.Changed -= OnRelaysChanged;
+        Registry.OwnRulesChanged -= OnOwnRulesChanged;
+        OwnRuleRows.Changed -= OnOwnRuleRowsChanged;
         _tick?.Dispose();
     }
 
@@ -909,6 +993,89 @@
         finally
         {
             _busy = false;
+        }
+    }
+
+    // "Turn them off": the board's own rules the warning shows, at once, as the person pressed. The board's next state
+    // takes the warning away; nothing is queued without a connection, and the warning says why.
+    private async Task TurnOffRulesAsync(int boardId, IReadOnlyList<OwnRule> rules)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _rulesError = null;
+        try
+        {
+            if (await OwnRules.TurnOffAsync(boardId, rules, _user.Email, CancellationToken.None) is { } message)
+            {
+                _rulesError = (boardId, message);
+            }
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Turning off the own rules of relay board {BoardId} failed", boardId);
+            _rulesError = (boardId, Texts["Common.SomethingWrongTryAgain"]);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // What each board's warning shows now: only while the board answers.
+    private IReadOnlyList<OwnRule> RulesToShow(LiveBoard board)
+    {
+        return board.State.IsConnected ? OwnRules.Warnings(board.BoardId) : [];
+    }
+
+    private void KeepShownRules()
+    {
+        _shownRules.Clear();
+        foreach (var board in Boards)
+        {
+            _shownRules[board.BoardId] = RulesToShow(board);
+        }
+    }
+
+    // From a board's read loop: only its own rules changed.
+    private void OnOwnRulesChanged(object? sender, BoardStateChange change)
+    {
+        _ = RedrawForRulesAsync(change.BoardId);
+    }
+
+    // A rule kept, found or gone: OwnRulesService's rows, which the warnings leave the kept rules out by.
+    private void OnOwnRuleRowsChanged(object? sender, int boardId)
+    {
+        _ = RedrawForRulesAsync(boardId);
+    }
+
+    // A redraw only when the board's warning or cards would show other rules.
+    private async Task RedrawForRulesAsync(int boardId)
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (_disposed || Boards.FirstOrDefault(b => b.BoardId == boardId) is not { } board)
+                {
+                    return;
+                }
+
+                if (!RulesToShow(board).SequenceEqual(_shownRules.GetValueOrDefault(boardId) ?? []))
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the change was on its way.
         }
     }
 

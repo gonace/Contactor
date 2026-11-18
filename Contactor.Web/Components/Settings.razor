@@ -35,6 +35,7 @@
                 @* One board: its card as it always was. *@
                 <div class="board-stack">
                     <BoardForm BoardId="only.BoardId" Title="@Texts["Common.Screen.RelayBoard"]" @key="only.BoardId" />
+                    <OwnRulesCard BoardId="only.BoardId" @key="@($"own-rules-{only.BoardId}")" />
                     @AddBoard
                 </div>
             }

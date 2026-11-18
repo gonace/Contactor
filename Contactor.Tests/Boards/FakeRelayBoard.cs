@@ -275,6 +275,20 @@ internal sealed class FakeRelayBoard : IRelayBoard
         AnalogChanged?.Invoke(this, state);
     }
 
+    /// <summary>When set, the board refuses to turn its own rules off, and they stay as they are.</summary>
+    public bool RefuseOwnRules { get; set; }
+
+    /// <summary>
+    /// When set, the board takes the rules it is asked to turn off but its state keeps showing them, like a board whose
+    /// command didn't change them.
+    /// </summary>
+    public bool HoldOwnRules { get; set; }
+
+    /// <summary>How many times the board was asked to turn its own rules off.</summary>
+    public int OwnRulesTurnOffs => Volatile.Read(ref _ownRulesTurnOffs);
+
+    private int _ownRulesTurnOffs;
+
     /// <summary>Only the board's own rules change, and the board reports them as rules, not as a state.</summary>
     public void SetOwnRules(OwnRules? rules)
     {
@@ -306,9 +320,15 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
         ThrowIfCancelled(cancellationToken);
         EnsureConnected();
+        Interlocked.Increment(ref _ownRulesTurnOffs);
         if (rules.Count == 0)
         {
             return Task.FromResult<IReadOnlyList<OwnRule>>([]);
+        }
+
+        if (RefuseOwnRules)
+        {
+            throw new BoardRefusedException("The board refused to turn its own rules off.");
         }
 
         BoardState state;
@@ -320,6 +340,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
             if (taken.Count == 0)
             {
                 throw new BoardNotConnectedException("The board has none of those rules.");
+            }
+
+            if (HoldOwnRules)
+            {
+                return Task.FromResult(taken);
             }
 
             state = _state = Stamp(_state with { OwnRules = new OwnRules(had.Where(r => !taken.Contains(r))) });

@@ -17,9 +17,23 @@ public static class EventActions
     public const string ConnectionLost = "connection-lost";
     public const string ConnectionRestored = "connection-restored";
     public const string InputChanged = "input-changed";
+    /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardTimersDisabled = "board-timers-disabled";
     public const string BoardRelayModesReset = "board-relay-modes-reset";
     public const string BoardRelayModesNotReset = "board-relay-modes-not-reset";
+
+    /// <summary>
+    /// The app saw a rule of the board's own (a <c>BoardOwnRule</c>), logged by "system" with the relay. Details:
+    /// <c>{"kind":"timer","new":true,"relay":3}</c>: <c>new</c> when it came while the app watched the board, <c>relay</c>
+    /// its channel.
+    /// </summary>
+    public const string BoardOwnRuleFound = "board-own-rule-found";
+
+    /// <summary>A person turned off rules of the board's own. Details: <c>{"relays":[3,5],"kinds":["timer"]}</c>, by channel.</summary>
+    public const string BoardOwnRulesTurnedOff = "board-own-rules-turned-off";
+
+    /// <summary>A person kept a rule of the board's own, with the relay. Details: <c>{"kind":"timer","relay":3}</c>.</summary>
+    public const string BoardOwnRuleKept = "board-own-rule-kept";
     public const string BoardAddressChanged = "board-address-changed";
     public const string BoardLoginChanged = "board-login-changed";
 

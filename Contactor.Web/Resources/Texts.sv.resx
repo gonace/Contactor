@@ -819,6 +819,81 @@
   <data name="Events.Other" xml:space="preserve">
     <value>{0} {1}</value>
   </data>
+  <data name="Events.OwnRules.Found.Edge" xml:space="preserve">
+    <value>Ingång {1} slår om relä {1} vid varje ändring på {0}</value>
+  </data>
+  <data name="Events.OwnRules.Found.Linkage" xml:space="preserve">
+    <value>Relä {1} följer ingång {1} på {0}</value>
+  </data>
+  <data name="Events.OwnRules.Found.Rule" xml:space="preserve">
+    <value>{0} har en egen regel för relä {1}</value>
+  </data>
+  <data name="Events.OwnRules.Found.Timer" xml:space="preserve">
+    <value>{0} har en egen timer för relä {1}</value>
+  </data>
+  <data name="Events.OwnRules.Found.Toggle" xml:space="preserve">
+    <value>Ingång {1} slår om relä {1} vid varje puls på {0}</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Edge" xml:space="preserve">
+    <value>Ingång {1} slår nu om relä {1} vid varje ändring på {0}</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Linkage" xml:space="preserve">
+    <value>Relä {1} följer nu ingång {1} på {0}</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Rule" xml:space="preserve">
+    <value>{0} egna regel för relä {1} slogs på</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Timer" xml:space="preserve">
+    <value>{0} egna timer för relä {1} slogs på</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Toggle" xml:space="preserve">
+    <value>Ingång {1} slår nu om relä {1} vid varje puls på {0}</value>
+  </data>
+  <data name="Events.OwnRules.Kept" xml:space="preserve">
+    <value>{0} behöll {1} {2} för {3}</value>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRule" xml:space="preserve">
+    <value>egna ingångsregel</value>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRules" xml:space="preserve">
+    <value>egna ingångsregler</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rule" xml:space="preserve">
+    <value>egna regel</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rules" xml:space="preserve">
+    <value>egna regler</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timer" xml:space="preserve">
+    <value>egna timer</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timers" xml:space="preserve">
+    <value>egna timrar</value>
+  </data>
+  <data name="Events.OwnRules.Named" xml:space="preserve">
+    <value>{0}s</value>
+  </data>
+  <data name="Events.OwnRules.NamedEndingInS" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Events.OwnRules.Relay" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="Events.OwnRules.Relays" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="Events.OwnRules.TheBoards" xml:space="preserve">
+    <value>kortets</value>
+  </data>
+  <data name="Events.OwnRules.TurnedOff" xml:space="preserve">
+    <value>{0} stängde av {1} {2} för {3}</value>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
+    <value>kortet</value>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoards" xml:space="preserve">
+    <value>Kortets</value>
+  </data>
   <data name="Events.Pulse" xml:space="preserve">
     <value>{0} provkörde i {1}</value>
   </data>
@@ -1478,6 +1553,126 @@
   </data>
   <data name="Inputs.WhyUnknownLabel" xml:space="preserve">
     <value>Varför är tiden okänd?</value>
+  </data>
+  <data name="OwnRules.CanSwitch_One" xml:space="preserve">
+    <value>Den kan slå om {0} utan Contactor.</value>
+  </data>
+  <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
+    <value>De kan slå om {0} utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.CantTell" xml:space="preserve">
+    <value>Kortet kan ha egna timers. Titta på kortets egen webbsida.</value>
+  </data>
+  <data name="OwnRules.Card.Hint" xml:space="preserve">
+    <value>De kan slå på och stänga av reläer utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
+    <value>Kortets egna regler</value>
+  </data>
+  <data name="OwnRules.Card.Title.Timer" xml:space="preserve">
+    <value>Kortets egna timers</value>
+  </data>
+  <data name="OwnRules.CardLine.Rule" xml:space="preserve">
+    <value>Kortets egen regel kan slå om det</value>
+  </data>
+  <data name="OwnRules.CardLine.Timer" xml:space="preserve">
+    <value>Kortets timer kan slå om det</value>
+  </data>
+  <data name="OwnRules.Found.Date" xml:space="preserve">
+    <value>Hittades {0} {1}</value>
+  </data>
+  <data name="OwnRules.Found.Today" xml:space="preserve">
+    <value>Hittades i dag {0}</value>
+  </data>
+  <data name="OwnRules.Found.Yesterday" xml:space="preserve">
+    <value>Hittades i går {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Rule" xml:space="preserve">
+    <value>Kortets egen regel kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Timer" xml:space="preserve">
+    <value>Kortets timer kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.Keep" xml:space="preserve">
+    <value>Behåll</value>
+  </data>
+  <data name="OwnRules.Keep.Gone" xml:space="preserve">
+    <value>Kortet har inte längre den regeln.</value>
+  </data>
+  <data name="OwnRules.KeepAll_One" xml:space="preserve">
+    <value>Behåll den</value>
+  </data>
+  <data name="OwnRules.KeepAll_Other" xml:space="preserve">
+    <value>Behåll dem</value>
+  </data>
+  <data name="OwnRules.Kept" xml:space="preserve">
+    <value>Behålls med flit</value>
+  </data>
+  <data name="OwnRules.Relay" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.Relays" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.Step.Intro_One" xml:space="preserve">
+    <value>Den kan slå på och stänga av ett relä utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Step.Intro_Other" xml:space="preserve">
+    <value>De kan slå på och stänga av reläer utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
+    <value>Kortet visar den fortfarande som på. Försök igen, eller behåll den.</value>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_Other" xml:space="preserve">
+    <value>Kortet visar dem fortfarande som på. Försök igen, eller behåll dem.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_One" xml:space="preserve">
+    <value>Vi rekommenderar att du stänger av den.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
+    <value>Vi rekommenderar att du stänger av dem.</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_One" xml:space="preserve">
+    <value>Kortet har en egen regel</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_Other" xml:space="preserve">
+    <value>Kortet har egna regler</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_One" xml:space="preserve">
+    <value>Kortet har en egen timer</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_Other" xml:space="preserve">
+    <value>Kortet har egna timers</value>
+  </data>
+  <data name="OwnRules.TheBoard" xml:space="preserve">
+    <value>Kortet</value>
+  </data>
+  <data name="OwnRules.TurnOff" xml:space="preserve">
+    <value>Stäng av</value>
+  </data>
+  <data name="OwnRules.TurnOff.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Inget stängdes av.</value>
+  </data>
+  <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
+    <value>Reläkortet stängde inte av dem. Försök igen.</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
+    <value>Stäng av den</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
+    <value>Stäng av dem</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_One" xml:space="preserve">
+    <value>{0} har en egen regel</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_Other" xml:space="preserve">
+    <value>{0} har egna regler</value>
+  </data>
+  <data name="OwnRules.Warning.Timer_One" xml:space="preserve">
+    <value>{0} har en egen timer</value>
+  </data>
+  <data name="OwnRules.Warning.Timer_Other" xml:space="preserve">
+    <value>{0} har egna timers</value>
   </data>
   <data name="Relays.AllBoardsOff" xml:space="preserve">
     <value>Stäng av alla kort</value>

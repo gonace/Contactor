@@ -22,9 +22,6 @@ public sealed class Vm201Options
     [MaxLength(Vm201Command.CredentialMaxLength)]
     public string Password { get; set; } = "";
 
-    /// <summary>Disable the board's own timer programs on the first connection, so they don't fight the app's schedules.</summary>
-    public bool DisableBoardTimers { get; set; } = true;
-
     /// <summary>
     /// Logs every packet to and from the board, as hex with its command letter, to see how a real board behaves.
     /// The user name and password are never written out. Off by default: with the keep-alive it is a line every 15 s.

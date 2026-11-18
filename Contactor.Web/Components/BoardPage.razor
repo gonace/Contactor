@@ -34,6 +34,7 @@
         else if (_name is not null)
         {
             <BoardForm BoardId="Id" Title="@Texts["Boards.Board"]" WithName="true" NameSaved="OnNameSaved" />
+            <OwnRulesCard BoardId="Id" />
 
             <section class="card remove-card">
                 <h2>@Texts["Boards.Remove.Title"]</h2>
