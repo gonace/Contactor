@@ -72,6 +72,7 @@ public sealed class ShellyTraceTextTests
         Assert.Equal("Relay 1 after a power cut: as before", ShellyTraceText.PowerOnRead(1, PowerOnState.AsBefore));
         Assert.Equal("Relay 4 after a power cut: unknown", ShellyTraceText.PowerOnRead(4, null));
         Assert.Equal("Relay 2's setting saved", ShellyTraceText.SettingSaved(2));
+        Assert.Equal("Settings not read from relay 2 on: unknown after a power cut", ShellyTraceText.PowerOnReadStopped(2));
         Assert.Equal(["off", "as before", "on", "follows its switch"], Enum.GetValues<PowerOnState>().Select(s => ShellyTraceText.PowerOn(s)));
     }
 }

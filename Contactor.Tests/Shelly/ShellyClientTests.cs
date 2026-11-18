@@ -638,6 +638,130 @@ public sealed class ShellyClientTests
         Assert.Equal(new PowerOnStates([null, PowerOnState.Off]), run.Client.State.PowerOn);
     }
 
+    // The read that confirms a Switch.Set is the one a group's next step waits for: it never reads the settings, also
+    // when cfg_rev moved. The next poll does.
+    [Fact]
+    public async Task Should_NeverReadTheSettings_InTheReadThatConfirmsASwitch()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.ChangeAnotherSetting();
+        var before = simulator.Received.Count;
+
+        Assert.Equal(0b0001, await run.Client.TurnOnAsync(0b0001, Cancel));
+
+        Assert.Equal([ShellyApi.SwitchSet, ShellyApi.GetStatus], simulator.Received.Skip(before));
+        Assert.Equal(AllOff(4), run.Client.State.PowerOn);
+
+        await run.PollAsync();
+        Assert.Equal(4, simulator.Received.Skip(before).Count(r => r == ShellyApi.SwitchGetConfig));
+    }
+
+    [Fact]
+    public async Task Should_Connect_WhenASwitchsSettingsCantBeRead()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.UnreadableConfigRelays = 0b01;
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // The device answered: the next switch is still asked.
+        Assert.Equal(new PowerOnStates([null, PowerOnState.Off]), run.Client.State.PowerOn);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Connection lost", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_Connect_WhenASettingsRequestGetsNoAnswer_AndReadAgainAMinuteLater()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SilentConfigRelays = 0b01;
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 30);
+
+        // Every request has the same timeout: wait until it is the settings request that waits.
+        await Wait.UntilAsync(() => simulator.Received.Contains(ShellyApi.SwitchGetConfig) && run.Time.WaitsOnly(ShellyClient.RequestTimeout));
+        run.Time.Advance(ShellyClient.RequestTimeout);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        // No answer stops the read: relay 2 isn't asked, and both are unknown.
+        Assert.Equal(new PowerOnStates([null, null]), run.Client.State.PowerOn);
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig));
+        Assert.Contains(run.Traces, t => t.Text == "Settings not read from relay 1 on: unknown after a power cut" && t.IsError);
+
+        // Not at the next poll, 30 s on; at the one a minute after the read.
+        simulator.SilentConfigRelays = 0;
+        await run.PollAsync();
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig));
+        await run.PollAsync();
+        Assert.Equal(AllOff(2), run.Client.State.PowerOn);
+        Assert.Equal(3, simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig));
+    }
+
+    [Fact]
+    public async Task Should_StayConnected_WhenAPollsSettingsReadFails()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.UnreadableConfigRelays = 0b11;
+        simulator.ChangeAnotherSetting();
+        var reads = simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig);
+
+        // Each poll is answered: a broken settings read never loses the device.
+        for (var poll = 0; poll < BoardPoller<ShellyStatus>.DefaultFailuresBeforeLost + 1; poll++)
+        {
+            await run.PollAsync();
+        }
+
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(new PowerOnStates([null, null]), run.Client.State.PowerOn);
+
+        // Read once after the change, and not again within the minute.
+        Assert.Equal(reads + 2, simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig));
+    }
+
+    [Fact]
+    public async Task Should_ReadTheSettingsEveryMinute_OnADeviceWithoutCfgRev()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.ReportsConfigRevision = false;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig));
+
+        simulator.SetInitialState(1, "on");
+        await run.PollAsync();
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig));
+
+        await run.PollAsync();
+        Assert.Equal(2, simulator.Received.Count(r => r == ShellyApi.SwitchGetConfig));
+        Assert.Equal(PowerOnState.On, run.Client.State.PowerOn!.For(1));
+    }
+
+    [Fact]
+    public async Task Should_TraceSettingsReads_AsRoutine_UnlessAStateChanged()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var before = run.Traces.Count;
+        simulator.ChangeAnotherSetting();
+        await run.PollAsync();
+        var same = run.Traces.Skip(before).ToList();
+        Assert.Equal(2, same.Count(t => t.Text.StartsWith("Ask for relay", StringComparison.Ordinal) && t.IsRoutine));
+        Assert.Equal(2, same.Count(t => t.Text.EndsWith("after a power cut: off", StringComparison.Ordinal) && t.IsRoutine));
+        Assert.DoesNotContain(same, t => !t.IsRoutine);
+
+        before = run.Traces.Count;
+        simulator.SetInitialState(2, "on");
+        await run.PollAsync();
+        var changed = run.Traces.Skip(before).ToList();
+        Assert.Contains(changed, t => t.Text == "Relay 1 after a power cut: off" && t.IsRoutine);
+        Assert.Contains(changed, t => t.Text == "Relay 2 after a power cut: on" && !t.IsRoutine);
+    }
+
     private static int GetConfigs(ShellySimulator simulator)
     {
         return simulator.Received.Count(r => r.StartsWith(ShellyApi.SwitchGetConfig, StringComparison.Ordinal) && r.EndsWith("(signed)", StringComparison.Ordinal));

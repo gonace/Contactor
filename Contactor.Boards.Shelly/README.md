@@ -87,12 +87,18 @@ HTTP, so the app polls it every 2 s.
 | `on` | `On` |
 | `match_input` | `FollowsInput` |
 
-- The app reads it with one `Switch.GetConfig` per switch: at each new connection, after the status, and again only
-  when `sys.cfg_rev` in a status differs from the one the settings were read with. It never reads the settings on
-  every poll. A device whose status has no `cfg_rev` is read at connect only.
-- A value the docs don't list, or none, is unknown for that relay (null). So is a switch whose `Switch.GetConfig` the
-  device refuses with an error frame. No answer, or an answer the app can't read, fails the poll, and the next read
-  reads every switch again.
+- The app reads it with one `Switch.GetConfig` per switch: at each new connection, after the status, and in a poll
+  only when `sys.cfg_rev` differs from the one the settings were read with. While `cfg_rev` can't tell (the status
+  has none, or the last read failed for a switch), a poll reads them again once a minute
+  (`ShellyClient.SettingsInterval`). It never reads the settings on every poll, and never in the read that confirms
+  a `Switch.Set`, which a group's next step waits for: that read keeps the last settings.
+- A settings read never fails the connect or the poll. Only `Shelly.GetStatus` decides if the device is there, so a
+  broken settings read can't keep the app from turning a relay off.
+  - A value the docs don't list, or none, is unknown for that relay (null). So is a switch whose `Switch.GetConfig`
+    the device refuses with an error frame, or answers with something the app can't read. The next switch is still
+    asked.
+  - No answer, a password refused or a 429 stops the read. That switch and the ones after it are unknown.
+- The settings reads are routine in the Debug trace. Only a state that differs from the last read gets a toast.
 - The app writes it only when a person saves it, with one `Switch.SetConfig` for that switch and only `initial_state`
   in `config`. In the same command it then reads the status and every switch's settings back, also when `cfg_rev`
   didn't change. A refusal with an error frame is an answer (`BoardRefusedException`), not a lost device.
@@ -217,7 +223,9 @@ The `Shelly` section applies to all four entries:
   the docs' members. `Switch.SetConfig` takes only `initial_state`, and -103 "Invalid argument 'initial_state'" for a
   value the docs don't list (the docs don't say what the device answers then). `sys.cfg_rev` starts at 10 and grows
   with each change, but not for a value set to what it was. `SetInitialState` sets one "at the device" (any text),
-  `ChangeAnotherSetting` grows `cfg_rev` alone, and `FailConfigRelays` refuses both methods for those relays. Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
+  `ChangeAnotherSetting` grows `cfg_rev` alone, and `FailConfigRelays` refuses both methods for those relays.
+  `UnreadableConfigRelays` answers `Switch.GetConfig` with a frame cut short, `SilentConfigRelays` never answers it,
+  and `ReportsConfigRevision` false leaves `cfg_rev` out of the status. Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
   other method.
 - With a password it asks for the digest, in the way of the firmware it is set to (`Firmware`, "2.0.0" by default):
   - 2.0.0 and later: a base64 nonce for many requests, `nc` strictly higher each time, `stale=true` after 1 hour or

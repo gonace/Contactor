@@ -146,6 +146,20 @@ public sealed class ShellySimulator : ISimulatedBoard
     /// </summary>
     public byte FailConfigRelays { get; set; }
 
+    /// <summary>
+    /// The relays whose <c>Switch.GetConfig</c> gets an answer cut short, which isn't JSON. Bit 0 = relay 1.
+    /// </summary>
+    public byte UnreadableConfigRelays { get; set; }
+
+    /// <summary>
+    /// The relays whose <c>Switch.GetConfig</c> the device never answers, holding the connection until the simulator
+    /// stops. Bit 0 = relay 1.
+    /// </summary>
+    public byte SilentConfigRelays { get; set; }
+
+    /// <summary>Whether the status has <c>sys.cfg_rev</c>; true by default. False: a device that gives none.</summary>
+    public bool ReportsConfigRevision { get; set; } = true;
+
     /// <summary>The error a relay in <see cref="FailRelays"/> gets: -109 "Overtemp condition present" ("Common Errors").</summary>
     public ShellyRpcError Refusal { get; set; } = new(ShellyApi.FailedPrecondition, "Overtemp condition present");
 
@@ -373,6 +387,13 @@ public sealed class ShellySimulator : ISimulatedBoard
 
             var response = Handle(request);
             Interlocked.Increment(ref _requestCount);
+            if (response is null)
+            {
+                // Never answered (SilentConfigRelays): held until the simulator stops.
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
@@ -456,7 +477,8 @@ public sealed class ShellySimulator : ISimulatedBoard
         return new HttpRequest(parts[0], parts[1], authorization, buffer[bodyStart..total]);
     }
 
-    private byte[] Handle(HttpRequest http)
+    // Null for a request the device never answers.
+    private byte[]? Handle(HttpRequest http)
     {
         var signed = http.Authorization is not null;
         var rpc = http.Method == "POST" && http.Target == ShellyApi.RpcPath ? ShellyJson.TryReadRequest(http.Body) : null;
@@ -699,7 +721,10 @@ public sealed class ShellySimulator : ISimulatedBoard
             writer.WriteStartObject("sys");
             writer.WriteString("mac", "0A1B2C3D4E5F");
             writer.WriteBoolean("restart_required", false);
-            writer.WriteNumber(ShellyApi.ConfigRevision, ConfigRevision);
+            if (ReportsConfigRevision)
+            {
+                writer.WriteNumber(ShellyApi.ConfigRevision, ConfigRevision);
+            }
             writer.WriteEndObject();
         });
         var text = cover ? "Status: a cover, no relays" : ShellyTraceText.Status(new ShellyStatus(relays), _model.Capabilities.RelayCount);
@@ -737,11 +762,23 @@ public sealed class ShellySimulator : ISimulatedBoard
 
     // As "Switch.GetConfig": "id" required; -103 without it, -105 "Bad id=N" for a switch it hasn't (the docs' example
     // for Input.GetConfig). The members in the order of the docs' example; only initial_state is the device's own.
-    private byte[] GetConfig(ShellyRequest rpc, int? relay)
+    private byte[]? GetConfig(ShellyRequest rpc, int? relay)
     {
         if (CheckSwitch(rpc, relay) is { } refusal)
         {
             return refusal;
+        }
+
+        var bit = 1 << (relay!.Value - 1);
+        if ((SilentConfigRelays & bit) != 0)
+        {
+            Trace(BoardTraceDirection.None, "No answer to the settings request", null, isError: true);
+            return null;
+        }
+
+        if ((UnreadableConfigRelays & bit) != 0)
+        {
+            return Respond(HttpStatusCode.OK, "{\"id\":", "An answer cut short", isError: true);
         }
 
         var initialState = InitialState(relay!.Value);

@@ -80,6 +80,12 @@ public static class ShellyTraceText
         return string.Create(CultureInfo.InvariantCulture, $"Relay {relay} after a power cut: {PowerOn(state)}");
     }
 
+    /// <summary>A settings read that stopped at a relay: "Settings not read from relay 2 on: unknown after a power cut".</summary>
+    public static string PowerOnReadStopped(int relay)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Settings not read from relay {relay} on: unknown after a power cut");
+    }
+
     /// <summary>The device took a setting: "Relay 2's setting saved".</summary>
     public static string SettingSaved(int relay)
     {
