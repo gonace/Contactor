@@ -1709,14 +1709,111 @@
     <value>Why is the time unknown?</value>
     <comment>Read out by screen readers.</comment>
   </data>
+  <data name="OwnRules.CanSwitch_One" xml:space="preserve">
+    <value>It can switch {0} without Contactor.</value>
+    <comment>Under OwnRules.Warning: {0} is e.g. "relay 3" (OwnRules.Relay).</comment>
+  </data>
+  <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
+    <value>They can switch {0} without Contactor.</value>
+    <comment>Under OwnRules.Warning: {0} is e.g. "relays 3 and 5" (OwnRules.Relays).</comment>
+  </data>
+  <data name="OwnRules.Card.CantTell" xml:space="preserve">
+    <value>This board may have timers of its own. Check its own web page.</value>
+    <comment>A board whose own rules the app can't see.</comment>
+  </data>
+  <data name="OwnRules.Card.Hint" xml:space="preserve">
+    <value>They can turn relays on and off without Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
+    <value>The board's own rules</value>
+    <comment>The card on the board's page, for rules other than timers.</comment>
+  </data>
+  <data name="OwnRules.Card.Title.Timer" xml:space="preserve">
+    <value>The board's own timers</value>
+    <comment>The card on the board's page.</comment>
+  </data>
+  <data name="OwnRules.CardLine.Rule" xml:space="preserve">
+    <value>The board's own rule can switch it</value>
+    <comment>On a relay's card on Relays.</comment>
+  </data>
+  <data name="OwnRules.CardLine.Timer" xml:space="preserve">
+    <value>The board's timer can switch it</value>
+    <comment>On a relay's card on Relays.</comment>
+  </data>
+  <data name="OwnRules.Found.Date" xml:space="preserve">
+    <value>Found {0} at {1}</value>
+    <comment>{0} is a date in Relays.When.DateFormat, {1} a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.Found.Today" xml:space="preserve">
+    <value>Found today at {0}</value>
+    <comment>{0} is a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.Found.Yesterday" xml:space="preserve">
+    <value>Found yesterday at {0}</value>
+    <comment>{0} is a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.GroupLine.Rule" xml:space="preserve">
+    <value>The board's own rule can switch {0}</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
+  </data>
+  <data name="OwnRules.GroupLine.Timer" xml:space="preserve">
+    <value>The board's timer can switch {0}</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
+  </data>
+  <data name="OwnRules.Keep" xml:space="preserve">
+    <value>Keep</value>
+    <comment>Stop warning about this rule of the board's own.</comment>
+  </data>
   <data name="OwnRules.Keep.Gone" xml:space="preserve">
     <value>The board no longer has that rule.</value>
+  </data>
+  <data name="OwnRules.Kept" xml:space="preserve">
+    <value>Kept on purpose</value>
+    <comment>A rule a person chose to keep.</comment>
+  </data>
+  <data name="OwnRules.Relay" xml:space="preserve">
+    <value>relay {0}</value>
+    <comment>{0} is a relay's number.</comment>
+  </data>
+  <data name="OwnRules.Relays" xml:space="preserve">
+    <value>relays {0}</value>
+    <comment>{0} is a list of numbers, e.g. "3 and 5" (Relays.List.Last).</comment>
+  </data>
+  <data name="OwnRules.TheBoard" xml:space="preserve">
+    <value>The board</value>
+    <comment>The board at the start of OwnRules.Warning, with one board.</comment>
+  </data>
+  <data name="OwnRules.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+    <comment>Turns off one rule of the board's own.</comment>
   </data>
   <data name="OwnRules.TurnOff.NoContact" xml:space="preserve">
     <value>No contact with the relay board. Nothing was turned off.</value>
   </data>
   <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
     <value>The relay board didn't turn them off. Try again.</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
+    <value>Turn it off</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
+    <value>Turn them off</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_One" xml:space="preserve">
+    <value>{0} has a rule of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Rule_Other" xml:space="preserve">
+    <value>{0} has rules of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Timer_One" xml:space="preserve">
+    <value>{0} has a timer of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Timer_Other" xml:space="preserve">
+    <value>{0} has timers of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
   </data>
   <data name="Relays.AllBoardsOff" xml:space="preserve">
     <value>Turn off all boards</value>

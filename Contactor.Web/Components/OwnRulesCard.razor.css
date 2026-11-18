@@ -1,0 +1,121 @@
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+}
+
+h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.hint {
+    margin: 0;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.error {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger-ink);
+}
+
+.rules {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* A rule: its relay and when it was found, then "Turn off" and "Keep"; the buttons go under it when narrow. */
+.rule {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--row-line);
+}
+
+.rule:last-child {
+    padding-bottom: 0;
+}
+
+.rule svg {
+    flex-shrink: 0;
+    color: var(--danger-ink);
+}
+
+.rule.kept svg {
+    color: var(--muted);
+}
+
+.text {
+    flex: 1;
+    min-width: 140px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-wrap: anywhere;
+}
+
+.label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.name {
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.note {
+    font-size: 14px;
+    color: var(--danger-ink);
+}
+
+.kept .note {
+    color: var(--muted);
+}
+
+.buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.buttons button {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 10px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.buttons .primary {
+    border: none;
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.buttons .secondary {
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+}
+
+.buttons button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
