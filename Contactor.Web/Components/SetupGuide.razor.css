@@ -398,6 +398,12 @@ input[type="password"] {
     color: var(--on-accent);
 }
 
+.next > button.secondary {
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+}
+
 .next > button.link {
     height: 44px;
     background: transparent;

@@ -1,6 +1,7 @@
 @page "/board/new"
 @implements IDisposable
 @using Contactor.Boards
+@using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Languages
@@ -10,6 +11,9 @@
 @inject BoardRegistry Registry
 @inject BoardAddressHandler Address
 @inject BoardRemoval Removal
+@inject OwnRulesHandler OwnRules
+@inject OwnRulesService OwnRulesRows
+@inject OwnRulesText OwnRulesWords
 @inject SetupHandler Setup
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
@@ -45,13 +49,13 @@
                 @Texts["Common.Back"]
             </button>
         }
-        <span class="step-count">@Texts["Boards.New.Step", _step, StepCount]</span>
+        <span class="step-count">@Texts["Boards.New.Step", StepShown, StepCount]</span>
     </header>
 
     <div class="progress" aria-hidden="true" inert="@_sheetOpen">
         @for (var i = 1; i <= StepCount; i++)
         {
-            <span class="@(i <= _step ? "done" : null)"></span>
+            <span class="@(i <= StepShown ? "done" : null)"></span>
         }
     </div>
 
@@ -75,6 +79,11 @@
             <BoardWhereStep @ref="_where" Board="board" Values="_whereFields" UserEmail="@_user?.Email" Busy="Busy"
                             BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" ChooseModel="() => Back(StepWhere)" />
         }
+        else if (_step == StepRules)
+        {
+            <BoardOwnRulesStep @ref="_rulesStep" Board="board" UserEmail="@_user?.Email"
+                               BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" />
+        }
         else
         {
             <BoardRelaysStep @ref="_relaysStep" Board="board" Rows="_relays" UserEmail="@_user?.Email" />
@@ -90,7 +99,16 @@
             var step = _step;
             var gone = step > StepBoard && Chosen is null;
         }
-        @if (step < StepRelays)
+        @if (step == StepRules && !gone)
+        {
+            var asked = OwnRules.ToAsk(_boardId!.Value);
+            @if (Chosen!.Capabilities.OwnRulesOrCantTell.TurnsOff)
+            {
+                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@OwnRulesWords.TurnOffAll(asked.Count)</button>
+            }
+            <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@OwnRulesWords.KeepAll(asked.Count)</button>
+        }
+        else if (step < StepRelays)
         {
             <button type="button" disabled="@(Busy || gone || (step == StepBoard && BoardCatalogue.Find(_type) is null))" @onclick="() => GoOnAsync(step)">@Texts["Common.Next"]</button>
         }
@@ -114,10 +132,19 @@
 @code {
     private const int StepBoard = 1;
     private const int StepWhere = 2;
-    private const int StepRelays = 3;
-    private const int StepCount = 3;
+
+    // "This board has timers of its own": only for a board that answers with rules of its own no person kept.
+    private const int StepRules = 3;
+    private const int StepRelays = 4;
 
     private int _step = StepBoard;
+
+    // Whether "Name your relays" came after the rules step, so the count keeps it once its rules are gone.
+    private bool _throughRules;
+
+    // What the header and the progress bar last showed of the rules step, so a board's change redraws only when it
+    // comes or goes.
+    private bool _rulesInCount;
     private string _type = "";
     private string _name = "";
     private SignedInUser? _user;
@@ -134,6 +161,7 @@
     private BoardModelPicker? _picker;
     private BoardWhereStep? _where;
     private BoardRelaysStep? _relaysStep;
+    private BoardOwnRulesStep? _rulesStep;
     private BoardWhereStep.Fields _whereFields = new();
     private List<BoardRelaysStep.Row> _relays = [];
 
@@ -144,6 +172,20 @@
     private LiveBoard? Chosen => _boardId is { } id ? Registry.Find(id) : null;
 
     private bool Busy => _busy || _stepBusy;
+
+    // The rules step counts while it may come (the board answers with rules to ask about), while it shows, and after it;
+    // otherwise it is skipped and never counted.
+    private bool RulesInCount => _step switch
+    {
+        StepRules => true,
+        StepRelays => _throughRules,
+        _ => BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules),
+    };
+
+    private int StepCount => RulesInCount ? 4 : 3;
+
+    // The step's number as shown: one less after a rules step that was skipped.
+    private int StepShown => _step > StepRules && !RulesInCount ? _step - 1 : _step;
 
     // The name an empty field gives the board: the model's, made unique among the other boards.
     private string DefaultName => BoardCatalogue.Find(_type)?.Model is { } model
@@ -162,12 +204,18 @@
         }
 
         Registry.BoardsChanged += OnBoardsChanged;
+        Registry.StateChanged += OnBoardChanged;
+        Registry.OwnRulesChanged += OnBoardChanged;
+        OwnRulesRows.Changed += OnRulesChanged;
     }
 
     public void Dispose()
     {
         _disposed = true;
         Registry.BoardsChanged -= OnBoardsChanged;
+        Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnBoardChanged;
+        OwnRulesRows.Changed -= OnRulesChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -179,6 +227,7 @@
             {
                 StepBoard when _picker is not null => _picker.FocusAsync(),
                 StepWhere when _where is not null => _where.FocusAsync(),
+                StepRules when _rulesStep is not null => _rulesStep.FocusAsync(),
                 StepRelays when _relaysStep is not null => _relaysStep.FocusAsync(),
                 _ => ValueTask.CompletedTask,
             });
@@ -199,7 +248,9 @@
     {
         if (!Busy && _step == fromStep && _step > StepBoard)
         {
-            _step--;
+            // Back to the rules step only from the relays that came after it, while it still has something to ask: one
+            // skipped ("Go on without a connection", no rules then) stays skipped, so the count never jumps.
+            _step = _step == StepRelays && !(_throughRules && BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules)) ? StepWhere : _step - 1;
             _error = null;
             _moved = true;
         }
@@ -222,7 +273,7 @@
             }
             else if (_step == StepWhere && _where is not null && await _where.GoOnAsync())
             {
-                Move(StepRelays);
+                MoveFromWhere();
             }
         }
         catch (Exception ex)
@@ -303,6 +354,8 @@
                     return;
                 }
 
+                // Without a connection, the rules step is skipped: Relays warns once the board answers.
+                _throughRules = false;
                 Move(StepRelays);
             }
         }
@@ -400,6 +453,40 @@
         return true;
     }
 
+    // "Next" on "Where is the board?" once it answered: the rules step when it has rules to ask about, else the relays.
+    private void MoveFromWhere()
+    {
+        _throughRules = false;
+        Move(BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules) ? StepRules : StepRelays);
+    }
+
+    // "Turn them off": on to the relays once the board's state shows them gone; otherwise the step says why and stays.
+    private async Task TurnOffRulesAsync()
+    {
+        if (!Busy && _step == StepRules && _rulesStep is not null && await _rulesStep.TurnOffAsync())
+        {
+            LeaveRules();
+        }
+    }
+
+    // "Keep them": on to the relays once kept.
+    private async Task KeepRulesAsync()
+    {
+        if (!Busy && _step == StepRules && _rulesStep is not null && await _rulesStep.KeepAsync())
+        {
+            LeaveRules();
+        }
+    }
+
+    private void LeaveRules()
+    {
+        if (_step == StepRules)
+        {
+            _throughRules = true;
+            Move(StepRelays);
+        }
+    }
+
     private void Move(int step)
     {
         _step = step;
@@ -412,6 +499,62 @@
         // An exception that leaves the handler would end the page's live connection.
         Log.LogError(ex, "{What}", what);
         _error = Texts["Common.SomethingWrongTryAgain"];
+    }
+
+    // From a board's read loop, or the own rules' loop.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == _boardId)
+        {
+            _ = RulesChangedAsync();
+        }
+    }
+
+    private void OnRulesChanged(object? sender, int boardId)
+    {
+        if (boardId == _boardId)
+        {
+            _ = RulesChangedAsync();
+        }
+    }
+
+    // The rules step comes or goes from the count as the board's rules do; on the step, rules that went by themselves
+    // (turned off at the board) leave nothing to ask, so the page goes on. Redrawn only for a change it shows.
+    private async Task RulesChangedAsync()
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                if (_step == StepRules && !Busy && _boardId is { } id && OwnRules.ToAsk(id).Count == 0)
+                {
+                    LeaveRules();
+                    StateHasChanged();
+                    return;
+                }
+
+                // On the rules step the buttons' words follow the rules.
+                if (_step == StepRules || RulesInCount != _rulesInCount)
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed meanwhile.
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _rulesInCount = RulesInCount;
     }
 
     // A board added or removed elsewhere: the default name, or this board removed meanwhile.

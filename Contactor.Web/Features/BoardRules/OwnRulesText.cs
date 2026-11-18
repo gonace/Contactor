@@ -45,6 +45,31 @@ public sealed class OwnRulesText
         return _texts["OwnRules.TurnOffAll" + Plurals.Form(count)];
     }
 
+    /// <summary>The step's heading while the board is being added: "This board has timers of its own".</summary>
+    public string StepTitle(IReadOnlyCollection<OwnRule> rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        return _texts[$"OwnRules.Step.Title.{Kind(rules.Select(r => r.Kind))}{Plurals.Form(rules.Count)}"];
+    }
+
+    /// <summary>The step's text under its heading: "They can turn relays on and off without Contactor."</summary>
+    public string StepIntro(int count)
+    {
+        return _texts["OwnRules.Step.Intro" + Plurals.Form(count)];
+    }
+
+    /// <summary>The step's advice: "We recommend turning them off."</summary>
+    public string Recommend(int count)
+    {
+        return _texts["OwnRules.Step.Recommend" + Plurals.Form(count)];
+    }
+
+    /// <summary>The step's second button: "Keep them", or "Keep it" for one rule.</summary>
+    public string KeepAll(int count)
+    {
+        return _texts["OwnRules.KeepAll" + Plurals.Form(count)];
+    }
+
     /// <summary>The line on a relay's card: "The board's timer can switch it".</summary>
     public string CardLine(IEnumerable<OwnRuleKind> kinds)
     {

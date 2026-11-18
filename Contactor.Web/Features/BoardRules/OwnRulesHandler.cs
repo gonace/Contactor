@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
 using Contactor.Web.Resources;
 using Microsoft.EntityFrameworkCore;
@@ -14,10 +15,14 @@ namespace Contactor.Web.Features.BoardRules;
 /// </summary>
 public sealed partial class OwnRulesHandler
 {
+    /// <summary>How long "Turn them off" on the steps of adding a board waits for the board's state to show them gone.</summary>
+    public static readonly TimeSpan ConfirmWait = TimeSpan.FromSeconds(5);
+
     private readonly IDbContextFactory<ContactorDbContext> _dbFactory;
     private readonly BoardRegistry _registry;
     private readonly OwnRulesService _rules;
     private readonly LocalClock _clock;
+    private readonly TimeProvider _time;
     private readonly IStringLocalizer<Texts> _texts;
     private readonly ILogger<OwnRulesHandler> _logger;
 
@@ -26,6 +31,7 @@ public sealed partial class OwnRulesHandler
         BoardRegistry registry,
         OwnRulesService rules,
         LocalClock clock,
+        TimeProvider time,
         IStringLocalizer<Texts> texts,
         ILogger<OwnRulesHandler> logger)
     {
@@ -33,6 +39,7 @@ public sealed partial class OwnRulesHandler
         _registry = registry;
         _rules = rules;
         _clock = clock;
+        _time = time;
         _texts = texts;
         _logger = logger;
     }
@@ -51,6 +58,98 @@ public sealed partial class OwnRulesHandler
 
         var kept = rows.Where(r => r.KeptUtc is not null).Select(r => new OwnRule(r.Channel, r.Kind)).ToHashSet();
         return [.. rules.Distinct().Where(r => !kept.Contains(r))];
+    }
+
+    /// <summary>
+    /// The board's own rules to ask about while it is being added ("Add a board" and the setup guide): those it reports
+    /// now that no person kept, in relay order, for a board that reads them; none for a board that can't (it has none,
+    /// or can't tell) or hasn't reported them yet. Unlike <see cref="Warnings"/>, also before the app has read which
+    /// rules people kept: a board just added has none kept.
+    /// </summary>
+    public IReadOnlyList<OwnRule> ToAsk(int boardId)
+    {
+        if (_registry.Find(boardId) is not { } board || !board.Capabilities.OwnRulesOrCantTell.Reads || board.State.OwnRules is not { } rules)
+        {
+            return [];
+        }
+
+        var kept = _rules.Rows(boardId).Where(r => r.KeptUtc is not null).Select(r => new OwnRule(r.Channel, r.Kind)).ToHashSet();
+        return [.. rules.Distinct().Where(r => !kept.Contains(r)).OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
+    }
+
+    /// <summary>
+    /// "Turn them off" while the board is being added: turns them off as <see cref="TurnOffAsync"/> does (logged when the
+    /// board took them, never queued), then waits up to <see cref="ConfirmWait"/> for the board's state to no longer have
+    /// any of them, asking it for a fresh state once. Returns null once confirmed, otherwise the message to show.
+    /// </summary>
+    public async Task<string?> TurnOffAndConfirmAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        var gone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnChanged(object? sender, BoardStateChange change)
+        {
+            if (change.BoardId == boardId && AreGone(change.State, rules))
+            {
+                gone.TrySetResult();
+            }
+        }
+
+        // Listening from before the command: the board's answer may come before it returns.
+        _registry.StateChanged += OnChanged;
+        _registry.OwnRulesChanged += OnChanged;
+        try
+        {
+            if (await TurnOffAsync(boardId, rules, userEmail, cancellationToken) is { } error)
+            {
+                return error;
+            }
+
+            if (_registry.Find(boardId) is not { } board)
+            {
+                return _texts["Boards.NotChosen"];
+            }
+
+            if (AreGone(board.State, rules))
+            {
+                return null;
+            }
+
+            try
+            {
+                // A board that says nothing of its own on such a change answers this with its state.
+                await board.RefreshAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is BoardNotConnectedException or BoardRefusedException)
+            {
+                // No fresh state: what the board sends on its own still counts, until the wait is over.
+            }
+
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var wait = Task.Delay(ConfirmWait, _time, stop.Token);
+            await Task.WhenAny(gone.Task, wait);
+            await stop.CancelAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            return gone.Task.IsCompleted || AreGone(board.State, rules)
+                ? null
+                : _texts["OwnRules.Step.NotConfirmed" + Plurals.Form(rules.Distinct().Count())].Value;
+        }
+        finally
+        {
+            _registry.StateChanged -= OnChanged;
+            _registry.OwnRulesChanged -= OnChanged;
+        }
+    }
+
+    /// <summary>
+    /// "Keep them" while the board is being added: keeps each of <paramref name="rules"/>, as <see cref="KeepAsync"/>
+    /// does, at once: a rule the app hasn't noted yet is noted now (<see cref="OwnRulesService.KeepReportedAsync"/>).
+    /// Returns null when all are kept, otherwise the message to show; then none is kept.
+    /// </summary>
+    public async Task<string?> KeepAllAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        return await _rules.KeepReportedAsync(boardId, rules, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
     }
 
     /// <summary>
@@ -121,6 +220,12 @@ public sealed partial class OwnRulesHandler
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
         return await _rules.KeepAsync(boardId, channel, kind, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
+    }
+
+    // Whether the board's state shows none of the rules any more: a state that knows its rules, without them.
+    private static bool AreGone(BoardState state, IReadOnlyCollection<OwnRule> rules)
+    {
+        return state.OwnRules is { } now && !rules.Any(now.Contains);
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The own rules of relay board {BoardId} weren't turned off: the board doesn't have them")]
