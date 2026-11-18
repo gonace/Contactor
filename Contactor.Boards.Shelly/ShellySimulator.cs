@@ -308,7 +308,14 @@ public sealed class ShellySimulator : ISimulatedBoard
                 request = await ReadRequestAsync(stream, reading.Token).ConfigureAwait(false);
             }
 
-            var response = request is null ? Respond(HttpStatusCode.BadRequest, "", "A request the device doesn't understand", isError: true) : Handle(request);
+            if (request is null)
+            {
+                // Too long, cut short or not HTTP: closed without an answer.
+                Trace(BoardTraceDirection.None, "A request the device doesn't understand: connection closed", null, isError: true);
+                return;
+            }
+
+            var response = Handle(request);
             Interlocked.Increment(ref _requestCount);
             await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         }

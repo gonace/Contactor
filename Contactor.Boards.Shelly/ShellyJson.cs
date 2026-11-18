@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace Contactor.Boards.Shelly;
@@ -302,7 +303,9 @@ public static class ShellyJson
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(source);
         var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
+
+        // As the device writes text: "Missing required 'id'", not with the quote as \u0027.
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
         {
             writer.WriteStartObject();
             writer.WritePropertyName("id");
