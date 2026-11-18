@@ -228,6 +228,7 @@ public sealed class BoardCatalogueTests
         var none = OwnRulesAbility.None;
         var cantTell = OwnRulesAbility.CantTell;
         var reads = OwnRulesAbility.ReadsAndTurnsOff;
+        var readsMayHaveUnseen = new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true);
         Dictionary<string, OwnRulesAbility> expected = new()
         {
             ["vm201"] = reads,
@@ -250,10 +251,10 @@ public sealed class BoardCatalogueTests
             ["advantech-adam-6060"] = cantTell,
             ["advantech-adam-6066"] = cantTell,
             ["advantech-adam-6260"] = cantTell,
-            ["shelly-1"] = cantTell,
-            ["shelly-2"] = cantTell,
-            ["shelly-3"] = cantTell,
-            ["shelly-4"] = cantTell,
+            ["shelly-1"] = readsMayHaveUnseen,
+            ["shelly-2"] = readsMayHaveUnseen,
+            ["shelly-3"] = readsMayHaveUnseen,
+            ["shelly-4"] = readsMayHaveUnseen,
         };
 
         Assert.Equal(

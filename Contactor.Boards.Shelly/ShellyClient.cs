@@ -679,7 +679,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         ShellySchedules? schedules = null;
         if (skip)
         {
-            Trace(BoardTraceDirection.None, ShellyTraceText.SchedulesNotRead("no answer to the settings"), isError: true, isRoutine: _schedulesFailed);
+            Trace(BoardTraceDirection.None, ShellyTraceText.SchedulesNotRead("the settings read before it stopped"), isError: true, isRoutine: _schedulesFailed);
         }
         else
         {
@@ -815,7 +815,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         List<ShellyJob> jobs = schedules is null ? [] : [.. timers.SelectMany(r => schedules.Switching(r.Relay)).Distinct()];
 
         HashSet<long> off = [];
-        string? refusal = schedules is null && timers.Count > 0 ? "its schedules aren't known" : null;
+        string? refusal = null;
         ExceptionDispatchInfo? unreadable = null;
         var sent = false;
         foreach (var job in jobs)
