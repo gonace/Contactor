@@ -118,6 +118,18 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 
 ## Testing
 
+- **Test what can switch a relay or get a board wrong; nothing else needs a test.** The suite must stay fast and steady.
+  - **Must have tests:**
+    - the safety rules above: the interlock, nothing queued, nothing sent without a press;
+    - each board's protocol, byte for byte against the manual, and its `IRelayBoard` contract;
+    - scheduling, auto-off and daylight saving;
+    - the board's own rules, logins, identity and data that is saved or migrated.
+  - **No new tests needed, a screenshot is enough:**
+    - layout and looks;
+    - the simulator's page, which only developers use;
+    - texts beyond the existing resx checks.
+  - **Fewer, sharper tests:** one test per behaviour, not one per variation of the same path.
+  - **Never a test that waits on real time** or counts events that arrive at their own pace: it is flaky on a busy machine. Drive time with a fake `TimeProvider`, and wait for a condition. Rewrite or remove a test like that when you meet it.
 - **Codec:** encode/decode, checksum, the verified example (`02 06 4F 01 A8 03`, in `Contactor.Boards.Velleman/README.md`), split and merged TCP packets, and an invalid checksum.
 - **Client against the simulator:** login with and without auth, wrong password, pushed status, reconnect after a disconnect.
 - **Scheduling:** with an injected `TimeProvider`. Test weekdays, over midnight, both daylight saving changes, overlaps and the reconciliation at start.
@@ -137,8 +149,8 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 - On your own working branch, commit and push freely, and keep its pull request up to date. No permission is needed for that.
 - Never commit or push to `main`, and never merge a pull request, without explicit permission from the user. Permission to merge is explicit only when the user tells you to merge and names the pull requests. If it is unclear whether the user will merge themselves, ask.
 - Work in small, reviewable chunks: one branch and one pull request per chunk.
-- Before every push, review your own diff as a hostile reviewer would and fix what you find, with tests: crashes, unhandled input (empty, huge, negative, malformed), leaked subscriptions and timers, races, the safety rules above, these conventions, and stale comments or docs. Never skip this to save time or tokens; keep scope small instead.
-- **Independent review:** before a pull request is ready, a reviewer that did not write the code reviews its whole diff by the checklist in `.agents/review.md` (in Claude Code, the `code-reviewer` agent in `.claude/agents/`), knowing only the diff, the surrounding code and these rules, not the author's notes. Every bug, safety and security problem in the pull request's own changes, or caused or made worse by them, is fixed before the merge, with tests, and the reviewer checks the fixes once more. At most two review rounds: one full review, then one check of only the fixes. What is still open after that goes to the user as a decision, not a third round. What the reviewer finds outside the pull request's scope becomes its own issue. A finding the author disagrees with, or a judgement call, goes to the user. The remaining nitpicks of a pull request go together into one follow-up issue, "Nitpicks from the review of PR #N".
+- Before every push, review your own diff as a hostile reviewer would and fix what you find, with a test where the rules under Testing ask for one: crashes, unhandled input (empty, huge, negative, malformed), leaked subscriptions and timers, races, the safety rules above, these conventions, and stale comments or docs. Never skip this to save time or tokens; keep scope small instead.
+- **Independent review:** before a pull request is ready, a reviewer that did not write the code reviews its whole diff by the checklist in `.agents/review.md` (in Claude Code, the `code-reviewer` agent in `.claude/agents/`), knowing only the diff, the surrounding code and these rules, not the author's notes. Every bug, safety and security problem in the pull request's own changes, or caused or made worse by them, is fixed before the merge, with a test where the rules under Testing ask for one, and the reviewer checks the fixes once more. At most two review rounds: one full review, then one check of only the fixes. What is still open after that goes to the user as a decision, not a third round. What the reviewer finds outside the pull request's scope becomes its own issue. A finding the author disagrees with, or a judgement call, goes to the user. The remaining nitpicks of a pull request go together into one follow-up issue, "Nitpicks from the review of PR #N".
 - A pull request is **ready to merge** only when all of these hold for its latest commit:
   - the independent review covers the latest commit, and nothing it found is left open;
   - every review thread is resolved, except a thread whose finding the user explicitly decided not to act on, with that decision replied on the thread;
