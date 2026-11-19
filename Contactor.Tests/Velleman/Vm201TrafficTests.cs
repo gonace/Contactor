@@ -84,6 +84,7 @@ public sealed class Vm201TrafficTests : IDisposable
     [InlineData(Vm201TraceKind.ConnectionLost, Vm201Client.StoppedByApp, "The app closed the connection", false)]
     [InlineData(Vm201TraceKind.Reconnecting, "4", "Trying again in 4 s", false)]
     [InlineData(Vm201TraceKind.DiscardedBytes, "3", "Skipped 3 broken bytes from the board", true)]
+    [InlineData(Vm201TraceKind.Held, "", "Not trying again until a new login is saved or a person checks again", false)]
     public void Should_DescribeAConnectionStep(Vm201TraceKind kind, string detail, string expected, bool error)
     {
         var (text, hex, isError) = Vm201TraceText.Describe(new Vm201TraceEntry(Now, kind, default, detail));
