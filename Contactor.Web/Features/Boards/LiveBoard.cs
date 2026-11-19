@@ -301,7 +301,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         (Active ?? throw new InvalidOperationException(NotChosen)).Connection.SetLogin(login);
     }
 
-    /// <summary>A person's "Check again"; nothing before a model is chosen, or while the board is connected.</summary>
+    /// <summary>A person's "Check again". Nothing happens before a model is chosen, or while the board is connected.</summary>
     public void TryAgain()
     {
         Active?.Connection.TryAgain();

@@ -1010,7 +1010,7 @@ public sealed class BoardPollerTests
         await run;
     }
 
-    // Issue #522: a refused login isn't tried again by itself, however long the clock runs; no timer even waits.
+    // Issue #522: a refused login isn't tried again by itself, however long the clock runs. No timer even waits.
     [Fact]
     public async Task Should_NotTryARefusedLoginAgain_UntilRestartedOrAskedTo()
     {
@@ -1047,7 +1047,7 @@ public sealed class BoardPollerTests
         await run;
     }
 
-    // "Check again" on a board that answers changes nothing; and the run still ends while the poller holds.
+    // "Check again" on a board that answers changes nothing. The run still ends while the poller holds.
     [Fact]
     public async Task Should_LeaveAConnectedBoard_WhenAskedToTryAgain_AndStopWhileHeld()
     {
@@ -1072,14 +1072,17 @@ public sealed class BoardPollerTests
         }
 
         time.Advance(Interval);
+        await WaitUntilAsync(() => board.Steps.Contains((BoardPollStep.Waiting, "1")) && time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        time.Advance(TimeSpan.FromSeconds(1));
         await WaitUntilAsync(() => board.Steps.Any(s => s.Kind == BoardPollStep.Held));
         Assert.Equal(2, board.Connects);
+        Assert.Equal(Refused, poller.State.Problem);
 
         await stop.CancelAsync();
         await run;
     }
 
-    // A board that asks to wait gets one attempt after AskedToWaitPause, not the quick loop; "Check again" goes at once.
+    // A board that asks to wait gets one attempt after AskedToWaitPause, not the quick loop. "Check again" goes at once.
     [Fact]
     public async Task Should_WaitTheLongPause_WhenTheBoardAsksToWait()
     {

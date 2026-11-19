@@ -78,8 +78,8 @@ public interface IPolledBoard<TReading>
 /// to 30 s while it keeps failing. A connect the board refused on purpose isn't tried again in that loop: after a
 /// refused login (<see cref="ConnectionProblemKind.LoginRefused"/>) the poller waits for a new login
 /// (<see cref="Restart"/>) or a person's "Check again" (<see cref="TryAgain"/>), and after the board asked it to wait
-/// (<see cref="ConnectionProblemKind.AskedToWait"/>) it waits <see cref="AskedToWaitPause"/> too. Commands go through <see cref="RunCommandAsync"/>: never behind a poll, and never
-/// to a board that is lost. Protocol-neutral: the board's own code does the talking.
+/// (<see cref="ConnectionProblemKind.AskedToWait"/>) it waits <see cref="AskedToWaitPause"/> too. Commands go through
+/// <see cref="RunCommandAsync"/>: never behind a poll, and never to a board that is lost. Protocol-neutral: the board's own code does the talking.
 /// </summary>
 public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
 {
@@ -92,6 +92,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     /// for (10 minutes, Issue #522), so its own wait runs out and the one attempt after can't keep it going.
     /// </summary>
     public static readonly TimeSpan AskedToWaitPause = TimeSpan.FromMinutes(10);
+
     public const int DefaultFailuresBeforeLost = 3;
     public static readonly TimeSpan DefaultDisposeWait = TimeSpan.FromSeconds(15);
 

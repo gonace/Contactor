@@ -306,17 +306,17 @@
             {
                 await LoadLoginAsync();
                 var moved = Live is { } live && endpoint is not null && login is not null && BoardContact.HasMoved(live, endpoint, login);
+                _afterSave = moved && State.IsConnected ? AfterSave.Drop : AfterSave.Answer;
+                _savedAt = Time.GetUtcNow();
+                ReactToProblem();
 
                 // The same address and login saved again, e.g. after the password was put right on the board itself:
-                // one attempt now, since a refused login isn't tried again by itself (Issue #522).
+                // one attempt now, since a refused login isn't tried again by itself (Issue #522). After the reaction
+                // above, so the problem the person saw still opens the login fields.
                 if (!moved && Live is { State.IsConnected: false } waiting)
                 {
                     waiting.TryAgain();
                 }
-
-                _afterSave = moved && State.IsConnected ? AfterSave.Drop : AfterSave.Answer;
-                _savedAt = Time.GetUtcNow();
-                ReactToProblem();
             }
         }
         finally
