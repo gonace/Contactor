@@ -142,10 +142,7 @@ public sealed class BoardSwitches
             return;
         }
 
-        lock (_lock)
-        {
-            vm208.BusyNext = Math.Max(vm208.BusyNext, 0) + 1;
-        }
+        vm208.AddBusy();
 
         _log("The next status comes busy here");
     }
@@ -158,10 +155,7 @@ public sealed class BoardSwitches
             return;
         }
 
-        lock (_lock)
-        {
-            daenet.DropRequests++;
-        }
+        daenet.AddDrop();
 
         _log("The next request is lost here");
     }

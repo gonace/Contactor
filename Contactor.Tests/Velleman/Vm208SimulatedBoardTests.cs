@@ -28,6 +28,25 @@ public sealed class Vm208SimulatedBoardTests
         Assert.Equal(-5, board.BusyNext);
     }
 
+    // A press on the page adds one busy status, from none or on top of those still to come, never two at once.
+    [Fact]
+    public async Task Should_AddOneBusyStatus_PerAddBusy()
+    {
+        await using var board = new Vm208Simulator();
+        board.Start();
+        board.BusyNext = -5;
+
+        board.AddBusy();
+        Assert.Equal(1, board.BusyNext);
+        board.AddBusy();
+        Assert.Equal(2, board.BusyNext);
+
+        Assert.EndsWith("{\"Channels\":[]}", await SendAsync(board.Port, "GET /status?interface=-1&socket=0"), StringComparison.Ordinal);
+        Assert.EndsWith("{\"Channels\":[]}", await SendAsync(board.Port, "GET /status?interface=-1&socket=0"), StringComparison.Ordinal);
+        Assert.EndsWith(Vm208Json.WriteStatus(new Vm208Status(0, false, 0)), await SendAsync(board.Port, "GET /status?interface=-1&socket=0"), StringComparison.Ordinal);
+        Assert.Equal(0, board.BusyNext);
+    }
+
     [Fact]
     public async Task Should_AnswerAsTheFirmware()
     {

@@ -348,9 +348,15 @@
                                             @foreach (var schedule in schedules)
                                             {
                                                 var id = schedule.Id;
-                                                <label class="check" @key="id">
-                                                    <input type="checkbox" checked="@rules.FailsUpdate(id)" @onchange="e => rules.SetFailUpdate(id, e.Value is true)" />
-                                                    Schedule.Update of schedule @id.ToString(CultureInfo.InvariantCulture) refused
+                                                var updateAnswer = rules.UpdateAnswer(id);
+                                                <label class="mode" @key="id">
+                                                    <span>Schedule.Update of schedule @id.ToString(CultureInfo.InvariantCulture)</span>
+                                                    <select @onchange="e => rules.SetUpdateAnswer(id, e.Value as string)">
+                                                        @foreach (var value in ShellyControls.UpdateAnswers)
+                                                        {
+                                                            <option value="@value" selected="@(updateAnswer == value)">@value</option>
+                                                        }
+                                                    </select>
                                                 </label>
                                             }
                                         </div>
@@ -370,7 +376,7 @@
                                                 </label>
                                             }
                                         </div>
-                                        <span class="hint">Switch.GetConfig and SetConfig, which the app reads and turns auto-on off with. "Never answered" holds the connection until the simulator stops.</span>
+                                        <span class="hint">Switch.GetConfig and SetConfig, which the app reads and turns auto-on off with. "Never answered" holds the connection until the simulator stops, for a schedule's Schedule.Update too.</span>
                                     }
                                 </div>
                             </details>

@@ -248,10 +248,15 @@ public sealed class ShellyControls
     /// <summary>Whether <c>Schedule.List</c> is refused.</summary>
     public bool FailSchedules => _device.FailSchedules;
 
-    /// <summary>Whether one schedule's <c>Schedule.Update</c> is refused.</summary>
-    public bool FailsUpdate(long id)
+    /// <summary>How a schedule's <c>Schedule.Update</c> can be answered, as the page offers it.</summary>
+    public static IReadOnlyList<string> UpdateAnswers { get; } = [ConfigAnswered, ConfigRefused, ConfigSilent];
+
+    /// <summary>How one schedule's <c>Schedule.Update</c> is answered: one of <see cref="UpdateAnswers"/>.</summary>
+    public string UpdateAnswer(long id)
     {
-        return _device.FailScheduleUpdates.Contains(id);
+        return _device.SilentScheduleUpdates.Contains(id) ? ConfigSilent
+            : _device.FailScheduleUpdates.Contains(id) ? ConfigRefused
+            : ConfigAnswered;
     }
 
     /// <summary>How a relay's <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> are answered: one of <see cref="ConfigAnswers"/>.</summary>
@@ -342,22 +347,33 @@ public sealed class ShellyControls
         _log(fail ? "Schedule.List refused here" : "Schedule.List answered again here");
     }
 
-    /// <summary>Makes one schedule's <c>Schedule.Update</c> refused, or carried out again; nothing for a job the device doesn't hold.</summary>
-    public void SetFailUpdate(long id, bool fail)
+    /// <summary>
+    /// Sets how one schedule's <c>Schedule.Update</c> is answered: one of <see cref="UpdateAnswers"/>; nothing for a job
+    /// the device doesn't hold.
+    /// </summary>
+    public void SetUpdateAnswer(long id, string? answer)
     {
+        if (answer is null || !UpdateAnswers.Contains(answer))
+        {
+            return;
+        }
+
         lock (_lock)
         {
-            if (_device.Schedules.All(s => s.Id != id) || FailsUpdate(id) == fail)
+            if (_device.Schedules.All(s => s.Id != id) || UpdateAnswer(id) == answer)
             {
                 return;
             }
 
-            var ids = new HashSet<long>(_device.FailScheduleUpdates);
-            _ = fail ? ids.Add(id) : ids.Remove(id);
-            _device.FailScheduleUpdates = ids;
+            var failing = new HashSet<long>(_device.FailScheduleUpdates);
+            var silent = new HashSet<long>(_device.SilentScheduleUpdates);
+            _ = answer == ConfigRefused ? failing.Add(id) : failing.Remove(id);
+            _ = answer == ConfigSilent ? silent.Add(id) : silent.Remove(id);
+            _device.FailScheduleUpdates = failing;
+            _device.SilentScheduleUpdates = silent;
         }
 
-        _log(string.Create(CultureInfo.InvariantCulture, $"Schedule.Update of schedule {id} {(fail ? "refused" : "carried out again")} here"));
+        _log(string.Create(CultureInfo.InvariantCulture, $"Schedule.Update of schedule {id} {answer} here"));
     }
 
     /// <summary>Sets how a relay's <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> are answered: one of <see cref="ConfigAnswers"/>.</summary>

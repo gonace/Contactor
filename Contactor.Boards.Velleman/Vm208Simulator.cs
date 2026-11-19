@@ -605,6 +605,22 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         return null;
     }
 
+    /// <summary>
+    /// Makes one more of the next statuses come busy, at once against the board counting them down: from none (0 or
+    /// less), the next one.
+    /// </summary>
+    public void AddBusy()
+    {
+        while (true)
+        {
+            var left = Volatile.Read(ref _busyNext);
+            if (Interlocked.CompareExchange(ref _busyNext, Math.Max(left, 0) + 1, left) == left)
+            {
+                return;
+            }
+        }
+    }
+
     // Counts BusyNext down while it is above 0; 0 or less answers normally.
     private bool TakeBusy()
     {

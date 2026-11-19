@@ -526,6 +526,12 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         return DaenetIp2Snmp.Decode(answer).Pdu;
     }
 
+    /// <summary>Makes one more of the next requests lost, at once against the board counting them down.</summary>
+    public void AddDrop()
+    {
+        Interlocked.Increment(ref _dropRequests);
+    }
+
     private bool TryDrop()
     {
         while (true)
