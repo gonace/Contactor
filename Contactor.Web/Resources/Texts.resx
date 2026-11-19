@@ -397,7 +397,7 @@
     <comment>{0} is the model found at the address; {1} is Common.AddBoard.</comment>
   </data>
   <data name="Boards.Problem.WrongModel.Unknown" xml:space="preserve">
-    <value>The board at this address is another model, not an {0}.</value>
+    <value>The board at this address is another model, not the {0}.</value>
     <comment>{0} is the model chosen, e.g. "ETH008-B".</comment>
   </data>
   <data name="Boards.Problem.WrongPassword" xml:space="preserve">

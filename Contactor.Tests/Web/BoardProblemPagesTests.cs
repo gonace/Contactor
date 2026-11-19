@@ -31,7 +31,7 @@ public sealed class BoardProblemPagesTests
     public static TheoryData<ConnectionProblem?, string, string> Problems { get; } = new()
     {
         { WrongModel, "The board at this address is an ETH484-B, not an ETH008-B.", "Wrong model" },
-        { new ConnectionProblem(ConnectionProblemKind.WrongModel, DevantechModels.Eth008), "The board at this address is another model, not an ETH008-B.", "Wrong model" },
+        { new ConnectionProblem(ConnectionProblemKind.WrongModel, DevantechModels.Eth008), "The board at this address is another model, not the ETH008-B.", "Wrong model" },
         { new ConnectionProblem(ConnectionProblemKind.LoginNeeded, DevantechModels.Eth008), "The board asks for a password.", "Needs a password" },
         { new ConnectionProblem(ConnectionProblemKind.LoginNeeded, Vm201Model.Model), "The board asks for a user name and password.", "Needs a login" },
         { new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), "The password is wrong.", "Wrong password" },
