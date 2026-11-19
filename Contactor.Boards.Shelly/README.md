@@ -235,7 +235,9 @@ A command (ON or OFF) switches the relays in the mask one at a time:
   it runs, nothing more is sent: the command throws `BoardNotConnectedException`. A kept nonce only goes back to the
   address that gave it.
 - A request with no answer stops the rest of the mask: the device is gone. A 401 or a 429 also stops it: every other
-  relay would get the same, and each try counts toward the device's brute-force protection.
+  relay would get the same, and each try counts toward the device's brute-force protection. When the device took
+  some relays before that, the command returns those, and the client reads the device again at once. Otherwise the
+  command throws `BoardNotConnectedException`.
 - When the device takes no relay, the command throws. Otherwise it returns the relays the device took.
 - When the device refused every relay with an error frame, it answered: that is a refusal (`BoardRefusedException`),
   which does not count toward losing the device. Anything else counts as a failed poll.
@@ -294,7 +296,8 @@ The `Shelly` section applies to all four entries:
   - Before 2.0.0: a numeric nonce for one request.
 - `Generation` (null for a Gen1 device, which answers 404), `Firmware` and `Profile` make a device the app must
   refuse. `FailRelays` and `Refusal` make `Switch.Set` fail, by default with -109 "Overtemp condition present".
-  `Throttle` answers 429. `ExpireNonces` and `ForgetNonces` make the next kept nonce fail.
+  `Throttle` answers 429. `ExpireNonces` and `ForgetNonces` make the next kept nonce fail. `ChangePassword` changes
+  the password while the app runs. `AfterSwitchSet` lets a test change the device between two relays of one command.
 - The simulator's page (`Contactor.Simulator`) offers port 8180 for it, because port 80 needs rights a developer
   doesn't have.
 - Relays can be switched "at the device", and connections can be dropped or refused. A request that is too long,

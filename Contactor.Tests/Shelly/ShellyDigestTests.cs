@@ -54,6 +54,17 @@ public sealed class ShellyDigestTests
             ShellyDigest.ParseChallenge(["Basic realm=\"x\"", "Digest qop=\"auth\", realm=\"r\", nonce=\"n1\", algorithm=MD5", "Digest qop=\"auth-int,auth\", realm=\"r\", nonce=\"n2\", algorithm=sha-256"])!.Nonce);
     }
 
+    // One header may hold more than one challenge: the Digest's parameters end where the next challenge starts.
+    [Theory]
+    [InlineData("Digest qop=\"auth\", realm=\"r\", nonce=\"n\", algorithm=SHA-256, Basic realm=\"x\"")]
+    [InlineData("Digest qop=\"auth\", realm=\"r\", nonce=\"n\", algorithm=SHA-256,Basic realm=\"x\"")]
+    [InlineData("Digest qop=\"auth\", realm=\"r\", nonce=\"n\", algorithm=SHA-256, Negotiate")]
+    [InlineData("Digest qop=\"auth\", realm=\"r\", nonce=\"n\", algorithm=SHA-256, Bearer abc==")]
+    public void Should_ReadTheDigestChallenge_WhenAnotherFollowsInTheSameHeader(string header)
+    {
+        Assert.Equal(new ShellyChallenge("r", "n", Stale: false), ShellyDigest.ParseChallenge([header]));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("Digest")]
@@ -69,6 +80,8 @@ public sealed class ShellyDigestTests
     [InlineData("Digest qop=\"auth\", realm=\"r\", nonce=\"n\u0001\", algorithm=SHA-256")]
     [InlineData("Digest qop=\"auth\", realm=\"r\", nonce=\"n, algorithm=SHA-256")]
     [InlineData("Digest qop=\"auth\", realm, nonce=\"n\", algorithm=SHA-256")]
+    [InlineData("Digest qop=\"auth\", Basic realm=\"r\", nonce=\"n\", algorithm=SHA-256")]
+    [InlineData("Digest Basic realm=\"r\"")]
     public void Should_RefuseAChallengeItCantAnswer(string header)
     {
         Assert.Null(ShellyDigest.ParseChallenge([header]));

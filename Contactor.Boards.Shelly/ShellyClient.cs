@@ -59,6 +59,9 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// </summary>
     public const int MaxNonceCount = 30_000;
 
+    /// <summary>The most requests the client uses one nonce for: <see cref="MaxNonceCount"/>, lower only in the tests.</summary>
+    internal int NonceLimit { get; set; } = MaxNonceCount;
+
     /// <summary>
     /// How often a poll reads the switches' settings again while <c>cfg_rev</c> can't tell whether they changed: the
     /// device gives none, or the last read failed for a switch.
@@ -955,7 +958,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     // puts the relays the device took in <paramref name="taken"/>.
     private async Task<CommandReading<ShellyStatus>> SwitchEachAsync(BoardEndpoint target, byte mask, bool on, StrongBox<byte> taken, CancellationToken cancellationToken)
     {
-        await SwitchAsync(target, mask, on, taken, cancellationToken).ConfigureAwait(false);
+        if (!await SwitchAsync(target, mask, on, taken, cancellationToken).ConfigureAwait(false))
+        {
+            // Stopped after some relays were taken: the read would meet the same. The poller reads at once instead.
+            return default;
+        }
+
         if (Endpoint != target)
         {
             // Moved after the last switch: the device at the new address says nothing about this command.
@@ -974,20 +982,23 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
     }
 
-    // Under the poller's lock: one Switch.Set per relay of the mask. Throws when not one was taken.
-    private async Task SwitchAsync(BoardEndpoint target, byte mask, bool on, StrongBox<byte> taken, CancellationToken cancellationToken)
+    // Under the poller's lock: one Switch.Set per relay of the mask. Throws when not one was taken. Returns false when
+    // it stopped part-way after some were taken (see below), true when every relay of the mask got its request.
+    private async Task<bool> SwitchAsync(BoardEndpoint target, byte mask, bool on, StrongBox<byte> taken, CancellationToken cancellationToken)
     {
         string? refusal = null;
         ExceptionDispatchInfo? unreadable = null;
         foreach (var relay in new ChannelMask(mask).Channels)
         {
             // Another device may be at a new address, unchecked: nothing more goes once the address moved or the
-            // device was lost.
+            // device was lost, and the command throws, as what the old address took says nothing about the new one.
             EnsureSameDevice(target);
 
-            // No answer is thrown as it is and stops the rest: the device is gone, and the poller counts it. A password
-            // the device refuses, or a 429, stops the rest too: every other relay would get the same, and each try
-            // counts toward the device's brute-force protection.
+            // No answer stops the rest: the device is gone. A password the device refuses, or a 429, stops the rest
+            // too: every other relay would get the same, and each try counts toward the device's brute-force
+            // protection. Before any relay was taken, that is thrown as it is, and the poller counts it. After, the
+            // command returns the relays taken (the IRelayBoard contract), and the poller reads the device at once,
+            // which counts on its own if it fails too.
             try
             {
                 var id = NextId();
@@ -1015,6 +1026,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
                 Trace(BoardTraceDirection.None, $"The Shelly didn't take the command for {message}", isError: true);
             }
+            catch (Exception ex) when (taken.Value != 0 && IsStop(ex))
+            {
+                Trace(BoardTraceDirection.None, string.Create(CultureInfo.InvariantCulture, $"Stopped at relay {relay}, nothing more sent: {ex.Message}"), isError: true);
+                return false;
+            }
         }
 
         // Not one relay was taken: the command failed. When the device refused every relay with an error frame, it
@@ -1024,6 +1040,16 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             unreadable?.Throw();
             throw new BoardRefusedException(refusal!);
         }
+
+        return true;
+    }
+
+    // What stops the rest of a command's mask at the same address: no answer, a password needed or refused, a 429, or
+    // not the device it was.
+    private static bool IsStop(Exception exception)
+    {
+        return IsNoAnswer(exception)
+            || exception is UriFormatException or ShellyAccessDeniedException or ShellyThrottledException or ShellyWrongDeviceException;
     }
 
     /// <summary>
@@ -1109,7 +1135,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         Answer answer;
 
         // A kept nonce only ever goes back to the address that gave it.
-        if (_reuseNonce && _nonce is { } kept && _nonceEndpoint == target && _nonceCount < MaxNonceCount)
+        if (_reuseNonce && _nonce is { } kept && _nonceEndpoint == target && _nonceCount < NonceLimit)
         {
             _nonceCount++;
             answer = await PostAsync(frame, ShellyDigest.Authorization(kept, Password, _nonceCount, ShellyDigest.NewClientNonce()), text, routine, target, cancellationToken)

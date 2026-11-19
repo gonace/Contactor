@@ -51,7 +51,7 @@ public sealed class ShellySimulator : ISimulatedBoard
     private static readonly TimeSpan ClientWindow = TimeSpan.FromSeconds(10);
 
     private readonly BoardModel _model;
-    private readonly string _password;
+    private string _password;
     private readonly ILogger _logger;
     private readonly string _deviceId;
     private readonly CancellationTokenSource _stopping = new();
@@ -114,7 +114,7 @@ public sealed class ShellySimulator : ISimulatedBoard
 
     public int Port { get; private set; }
 
-    public bool HasLogin => _password.Length > 0;
+    public bool HasLogin => Volatile.Read(ref _password).Length > 0;
 
     /// <summary>The device id, which is also the digest realm.</summary>
     public string DeviceId => _deviceId;
@@ -139,6 +139,12 @@ public sealed class ShellySimulator : ISimulatedBoard
 
     /// <summary>When true, every request that needs the password gets 429, as a device that throttles.</summary>
     public bool Throttle { get; set; }
+
+    /// <summary>
+    /// Called with the relay after each <c>Switch.Set</c> the device carried out, before it answers: a test changes the
+    /// device there between two requests of one command, e.g. with <see cref="Throttle"/> or <see cref="RejectConnections"/>.
+    /// </summary>
+    public Action<int>? AfterSwitchSet { get; set; }
 
     /// <summary>
     /// The relays whose <c>Switch.Set</c> the device refuses with <see cref="Refusal"/>, as with "Overtemp condition
@@ -396,6 +402,21 @@ public sealed class ShellySimulator : ISimulatedBoard
                 nonce.Expired = true;
             }
         }
+    }
+
+    /// <summary>
+    /// Changes the password, as a person would on the device's own web page while the app runs: a kept nonce still
+    /// answers, but the old password is wrong from now on. Not to or from no password.
+    /// </summary>
+    public void ChangePassword(string password)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(password);
+        if (!HasLogin)
+        {
+            throw new InvalidOperationException("The device has no password to change.");
+        }
+
+        Volatile.Write(ref _password, password);
     }
 
     /// <summary>Forgets every nonce, as after a reboot: the next request with one gets a plain 401.</summary>
@@ -677,7 +698,7 @@ public sealed class ShellySimulator : ISimulatedBoard
                 && credentials.NonceCount.Length == 8
                 && CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(credentials.Response),
-                    Encoding.ASCII.GetBytes(ShellyDigest.Response(ShellyApi.Username, _deviceId, _password, ShellyDigest.Method, ShellyApi.RpcPath, credentials.Nonce, credentials.NonceCount, credentials.ClientNonce)));
+                    Encoding.ASCII.GetBytes(ShellyDigest.Response(ShellyApi.Username, _deviceId, Volatile.Read(ref _password), ShellyDigest.Method, ShellyApi.RpcPath, credentials.Nonce, credentials.NonceCount, credentials.ClientNonce)));
             if (!right)
             {
                 Interlocked.Increment(ref _deniedCount);
@@ -873,6 +894,7 @@ public sealed class ShellySimulator : ISimulatedBoard
         }
 
         Change(() => _relays = on.Value ? (byte)(_relays | mask) : (byte)(_relays & ~mask));
+        AfterSwitchSet?.Invoke(relay.Value);
         return Result(rpc, writer => writer.WriteBoolean("was_on", wasOn), ShellyTraceText.Switched(relay.Value, on.Value, wasOn));
     }
 
