@@ -183,11 +183,13 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         return SetTimerMaskAsync((byte)timers.Bits);
     }
 
-    public Task SetTimerAsync(int relay, bool turnOn)
+    public async Task SetTimerAsync(int relay, bool turnOn)
     {
-        // Read and written under the gate, so a command from the app in between isn't overwritten.
+        // A relay the board doesn't have faults the task, as an async method should, instead of throwing at once.
         var mask = (byte)Model.Capabilities.Relay(relay).Bits;
-        return ChangeAsync(() => _timerMask = turnOn ? (byte)(_timerMask | mask) : (byte)(_timerMask & ~mask));
+
+        // Read and written under the gate, so a command from the app in between isn't overwritten.
+        await ChangeAsync(() => _timerMask = turnOn ? (byte)(_timerMask | mask) : (byte)(_timerMask & ~mask)).ConfigureAwait(false);
     }
 
     /// <summary>Closes every open connection, as if the network dropped.</summary>

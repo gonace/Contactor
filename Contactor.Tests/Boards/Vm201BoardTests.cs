@@ -120,7 +120,8 @@ public sealed class Vm201BoardTests
         var client = CreateClient(simulator.Port);
         var board = new Vm201Board(client, NullLogger<Vm201Board>.Instance);
         BoardState? reported = null;
-        board.StateChanged += (_, state) => reported = state;
+        // Written on the client's thread and read on the test's.
+        board.StateChanged += (_, state) => Volatile.Write(ref reported, state);
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = client.RunAsync(stop.Token);
         await WaitUntilAsync(() => board.State.IsConnected);
@@ -133,7 +134,7 @@ public sealed class Vm201BoardTests
         await WaitUntilAsync(() => simulator.ReceivedCommands.Any(p => p.Command == Vm201Command.TimerDisable));
         var sent = Assert.Single(simulator.ReceivedCommands, p => p.Command == Vm201Command.TimerDisable);
         Assert.Equal(new byte[] { 0x14 }, sent.Data.ToArray());
-        await WaitUntilAsync(() => reported?.OwnRules?.Count == 2);
+        await WaitUntilAsync(() => Volatile.Read(ref reported)?.OwnRules?.Count == 2);
         Assert.Equal(new OwnRules([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(6, OwnRuleKind.Timer)]), board.State.OwnRules);
         Assert.Equal(ChannelMask.Of([2, 3]), board.State.Relays);
         Assert.Equal(0b0010_0001, simulator.TimerMask);

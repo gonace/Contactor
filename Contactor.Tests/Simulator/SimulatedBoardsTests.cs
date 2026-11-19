@@ -316,7 +316,9 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         await board.SetTimerAsync(9, turnOn: true);
         Assert.Equal(ChannelMask.Of([3, 8]), timers.Timers);
         Assert.Equal(logged, board.Traffic.Count);
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => timers.SetTimerAsync(9, turnOn: true));
+        // The board itself refuses it in the task it returns, not at once.
+        var refused = timers.SetTimerAsync(9, turnOn: true);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => refused);
     }
 
     // The Waveshare (B)'s relay modes, one relay at a time, as its own tool would set them; a relay in linkage mode then
