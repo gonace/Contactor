@@ -44,6 +44,36 @@ public sealed class MethodCatalogueTests
         Assert.Contains(CloudflareMethods.AccessId, AccessCatalogue.Find(CloudflareMethods.TunnelId)!.SignIns);
     }
 
+    // The guide shows the ways in by group, local first, then private, then public.
+    [Fact]
+    public void Should_PutEveryWayIn_InAGroup_LocalThenPrivateThenPublic()
+    {
+        Assert.Equal([AccessGroup.LocalNetwork, AccessGroup.PrivateAccess, AccessGroup.PublicAddress], Enum.GetValues<AccessGroup>());
+        Assert.All(AccessCatalogue.All, m => Assert.True(Enum.IsDefined(m.Group), m.Id));
+        Assert.Equal(AccessGroup.LocalNetwork, AccessCatalogue.Find(AccessCatalogue.LocalId)!.Group);
+        Assert.Equal(AccessGroup.PrivateAccess, AccessCatalogue.Find(TailscaleMethods.NetworkId)!.Group);
+        Assert.Equal(AccessGroup.PublicAddress, AccessCatalogue.Find(CloudflareMethods.TunnelId)!.Group);
+    }
+
+    // Each icon in the guide, for every way in and sign-in: the companies' in their colour, ours in the tile's grey.
+    [Fact]
+    public void Should_ColourEachMethodsIcon()
+    {
+        var expected = new Dictionary<string, string?>
+        {
+            [AccessCatalogue.LocalId] = null,
+            [CloudflareMethods.TunnelId] = "cloudflare-icon",
+            [TailscaleMethods.NetworkId] = "tailscale-icon",
+            [CloudflareMethods.AccessId] = "cloudflare-icon",
+            [TailscaleMethods.IdentityId] = "tailscale-icon",
+            [SignInCatalogue.NoneId] = null,
+        };
+
+        Assert.Equal(expected.Keys.Order(), AccessCatalogue.All.Select(m => m.Id).Concat(SignInCatalogue.All.Select(m => m.Id)).Order());
+        Assert.All(expected, e => Assert.Equal(e.Value, Contactor.Web.Components.AccessMethodIcon.ColourClass(e.Key)));
+        Assert.Null(Contactor.Web.Components.AccessMethodIcon.ColourClass("carrier-pigeon"));
+    }
+
     // A new installation, or one whose sign-in was reset: nothing runs, and the app is in setup mode.
     [Theory]
     [InlineData(false)]

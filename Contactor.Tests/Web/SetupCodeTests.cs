@@ -194,6 +194,12 @@ public sealed partial class SetupCodeTests
         var none = html[html.IndexOf("No sign-in", StringComparison.Ordinal)..];
         Assert.Contains("Only on this network.", none[..300], StringComparison.Ordinal);
         Assert.Matches("<input type=\"radio\" name=\"sign-in\"[^>]*disabled", html);
+
+        // Every sign-in is still a choice of the step, each with its icon in a tile.
+        Assert.Equal(SignInCatalogue.All.Count, Regex.Count(html, "<input type=\"radio\" name=\"sign-in\""));
+        Assert.Equal(SignInCatalogue.All.Count, Regex.Count(html, "class=\"way-in-icon-tile\""));
+        Assert.All(SignInCatalogue.All, m => Assert.Contains(TestTexts.Setup.Name(m), html, StringComparison.Ordinal));
+        Assert.Matches("<svg[^>]* class=\"cloudflare-icon\"", html);
     }
 
     // reset-sign-in forgets the sign-in of an installation in use, and tells the running app: a new code, and the

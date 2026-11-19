@@ -17,6 +17,8 @@
     --accent: #C2410C;
     --accent-tint: #FFF4EC;
     --accent-border: #F0BE9C;
+    --cloudflare: #F38020;
+    --tailscale: #3F5DB3;
     --ok: #2F7D4F;
     --danger-bg: #FDECEA;
     --danger-border: #E5A29B;
@@ -50,6 +52,8 @@
         --accent: #F06A2C;
         --accent-tint: #33201A;
         --accent-border: #7A3A1E;
+        --cloudflare: #F38020;
+        --tailscale: #ADC7FC;
         --ok: #5CC08A;
         --danger-bg: #3A1613;
         --danger-border: #8C3B32;

@@ -128,6 +128,24 @@ public sealed class SwedishTests
         Assert.Contains("placeholder=\"T.ex. Garage\"", board, StringComparison.Ordinal);
     }
 
+    // The setup guide's way-in step in Swedish, its choices grouped under Swedish headings.
+    [Fact]
+    public async Task Should_GroupTheWaysIn_InSwedish()
+    {
+        await using var app = new TestWebApp(setUp: false);
+        using (var http = app.CreateClient())
+        {
+            await http.GetAsync("/setup", Cancel);
+        }
+
+        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
+        using var swedish = TestCulture.Language("sv");
+        using var page = await PageRenderer.StartAsync<SetupGuide>(app.Services, John, "John");
+        await page.ClickAsync(a => a.ContainsKey("type") && PageRenderer.WithText("Nästa")(a));
+
+        await SetupTests.AssertWaysInGroupedAsync(page, ["Lokalt nätverk", "Privat åtkomst", "Publik adress"], "ENKLAST");
+    }
+
     [Fact]
     public async Task Should_OfferEveryLanguage_ByItsOwnName_InSwedish()
     {

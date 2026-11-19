@@ -234,23 +234,35 @@
             <h1 tabindex="-1" @ref="_heading">@Texts["Setup.WayIn.Title"]</h1>
             <p>@Texts["Setup.WayIn.Intro"]</p>
         </div>
-        <div class="choices" role="radiogroup" aria-label="@Texts["Setup.WayIn.Label"]">
-            @foreach (var way in AccessCatalogue.All)
+        <div class="choices way-in-choices" role="radiogroup" aria-label="@Texts["Setup.WayIn.Label"]">
+            @foreach (var group in Enum.GetValues<AccessGroup>())
             {
-                var id = way.Id;
-                <label class="choice @(id == _wayIn ? "chosen" : null)">
-                    <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
-                    <span class="choice-text">
-                        <span class="title">
-                            <span class="name">@SetupText.Name(way)</span>
-                            @if (way.Simplest)
-                            {
-                                <span class="tag">@Texts["Setup.Simplest"]</span>
-                            }
-                        </span>
-                        <span class="note">@SetupText.Description(way)</span>
-                    </span>
-                </label>
+                var ways = AccessCatalogue.All.Where(way => way.Group == group).ToArray();
+                if (ways.Length > 0)
+                {
+                    var headingId = GroupHeadingId(group);
+                    <div class="way-in-group" role="group" aria-labelledby="@headingId">
+                        <h2 id="@headingId" class="way-in-group-title">@SetupText.Name(group)</h2>
+                        @foreach (var way in ways)
+                        {
+                            var id = way.Id;
+                            <label class="choice way-in-choice @(id == _wayIn ? "chosen" : null)">
+                                <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
+                                <span class="way-in-icon-tile"><AccessMethodIcon MethodId="@id" /></span>
+                                <span class="choice-text">
+                                    <span class="title">
+                                        <span class="name">@SetupText.Name(way)</span>
+                                        @if (way.Simplest)
+                                        {
+                                            <span class="tag">@Texts["Setup.Simplest"]</span>
+                                        }
+                                    </span>
+                                    <span class="note">@SetupText.Description(way)</span>
+                                </span>
+                            </label>
+                        }
+                    </div>
+                }
             }
         </div>
         @if (_wayIn == CloudflareMethods.TunnelId)
@@ -303,8 +315,9 @@
                 @foreach (var option in options)
                 {
                     var id = option.Method.Id;
-                    <label class="choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
+                    <label class="choice sign-in-choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
                         <input type="radio" name="sign-in" checked="@(id == _signInId)" disabled="@(!option.Allowed)" @onchange="() => _signInId = id" />
+                        <span class="way-in-icon-tile"><AccessMethodIcon MethodId="@id" /></span>
                         <span class="choice-text">
                             <span class="title">
                                 <span class="name">@SetupText.Name(option.Method)</span>
@@ -532,6 +545,9 @@
             // The page closed meanwhile.
         }
     }
+
+    /// <summary>The id of a way-in group's heading, which names its group of choices, e.g. "way-in-group-localnetwork".</summary>
+    public static string GroupHeadingId(AccessGroup group) => $"way-in-group-{group.ToString().ToLowerInvariant()}";
 
     /// <summary>
     /// Whether the guide sends the person to the relays: only someone signed in, once Part 1 and the guide are done.
