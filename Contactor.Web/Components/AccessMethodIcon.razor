@@ -3,7 +3,7 @@
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Tailscale
 
-<svg class="access-method-icon" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<svg class="access-method-icon @ColourClass" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     @switch (MethodId)
     {
         case AccessCatalogue.LocalId:
@@ -33,6 +33,14 @@
 </svg>
 
 @code {
+    private string ColourClass => MethodId switch
+    {
+        CloudflareMethods.TunnelId or CloudflareMethods.AccessId => "cloudflare-icon",
+        TailscaleMethods.NetworkId or TailscaleMethods.IdentityId => "tailscale-icon",
+        SignInCatalogue.NoneId => "no-sign-in-icon",
+        _ => "",
+    };
+
     [Parameter, EditorRequired]
     public string MethodId { get; set; } = "";
 }

@@ -1,0 +1,11 @@
+.cloudflare-icon {
+    color: var(--cloudflare);
+}
+
+.tailscale-icon {
+    color: var(--tailscale);
+}
+
+.no-sign-in-icon {
+    color: var(--muted);
+}

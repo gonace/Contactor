@@ -616,6 +616,8 @@ Blazor Server gives live updates for free. When the board reports a new state (`
 --accent: #C2410C;    /* ON, links, primary action */
 --accent-tint: #FFF4EC; /* card when the relay is on */
 --accent-border: #F0BE9C;
+--cloudflare: #F38020;  /* Cloudflare's icon in setup */
+--tailscale: #3F5DB3;   /* Tailscale's icon in setup; lighter blue in dark mode */
 --ok: #2F7D4F;
 --danger-bg: #FDECEA; --danger-border: #E5A29B; --danger-ink: #7A1A10;
 font: "IBM Plex Sans" (UI), "IBM Plex Mono" (times, labels)
