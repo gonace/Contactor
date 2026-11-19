@@ -3,6 +3,7 @@
 @using System.Globalization
 @using Contactor.Boards
 @using Contactor.Boards.Shelly
+@using Contactor.Boards.Velleman
 @using Microsoft.Extensions.Options
 @inject SimulatedBoards Simulator
 @inject IOptions<SimulatorOptions> Options
@@ -318,6 +319,20 @@
                                                 </label>
                                             }
                                         </div>
+                                        @if (current.Board is Vm208Simulator vm208)
+                                        {
+                                            <h4 class="label" id="alarms-head">EACH RELAY'S WEEK SCHEDULE</h4>
+                                            <div class="schedule-list" role="group" aria-labelledby="alarms-head">
+                                                @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                                {
+                                                    <div class="rule-line" @key="relay">
+                                                        <span>Relay @relay</span>
+                                                        <span class="hint">@Vm208ScheduleText.Describe(vm208.Alarms(relay))</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                            <span class="hint">A relay's checkbox turns all its alarms on or off, as the app's "Turn them off" does.</span>
+                                        }
                                     }
                                     @if (current.Shelly is { } rules)
                                     {
@@ -960,10 +975,12 @@
         return channels.Count == 1 ? $"relay {channels[0]}" : $"relays {string.Join(", ", channels)}";
     }
 
-    // "512 · 3.30 V": the count the converter gives, and the voltage at the terminal it stands for.
+    // "512 · 1.65 V": the count the converter gives, and the voltage at the terminal it stands for. The top count means
+    // that voltage or more, as on a real board (Issue #564): "1023 · 3.30 V or more".
     private static string AnalogText(AnalogAbility analog, int counts)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"{counts} · {analog.Volts(counts):0.00} V");
+        var text = string.Create(CultureInfo.InvariantCulture, $"{counts} · {analog.Volts(counts):0.00} V");
+        return analog.IsFullScale(counts) ? $"{text} or more" : text;
     }
 
     // The slider sends its value as text; anything else is ignored, and RunningBoard checks the range.

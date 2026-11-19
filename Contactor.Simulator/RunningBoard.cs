@@ -141,7 +141,7 @@ public sealed class RunningBoard : IAsyncDisposable
 
         Add(TrafficKind.AtBoard, string.Create(
             CultureInfo.InvariantCulture,
-            $"Analog input {input} set to {counts} ({ability.Volts(counts):0.00} V) here"));
+            $"Analog input {input} set to {counts} ({ability.Volts(counts):0.00} V{(ability.IsFullScale(counts) ? " or more" : "")}) here"));
         return Board.SetAnalogAsync(input, counts);
     }
 
