@@ -39,6 +39,14 @@ namespace Contactor.Boards.Shelly;
 /// poll: the switches it couldn't read are unknown. <see cref="SetPowerOnAsync"/> sets it for one switch with
 /// <c>Switch.SetConfig</c> and reads it back at once.
 /// </para>
+/// <para>
+/// The device's own rules (<see cref="ShellyStatus.OwnRules"/>) come from the same <c>Switch.GetConfig</c> (each switch's
+/// <c>auto_on</c>) and from <c>Schedule.List</c>, read at connect, and in a poll only when <c>sys.schedule_rev</c>
+/// differs from the one it was read with, or every <see cref="SettingsInterval"/> while that can't tell; never in the
+/// read that confirms a <c>Switch.Set</c>. A read that fails makes the rules unknown, never the device lost.
+/// <see cref="TurnOffOwnRulesAsync"/> turns them off with <c>Schedule.Update</c> and <c>Switch.SetConfig</c>, only on a
+/// person's press, and reads them back at once.
+/// </para>
 /// </summary>
 public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsyncDisposable
 {
@@ -86,6 +94,20 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private bool _configRead;
     private bool _configFailed;
     private DateTimeOffset _configReadUtc;
+
+    // Only used under the poller's lock: each switch's auto_on as last read with its settings (null for one it couldn't
+    // read; the array null before the first read), and the schedules as last read, with the schedule_rev they were read
+    // with, whether they are read for the current connection, when, and whether the read failed. ConnectAsync starts
+    // them afresh.
+    private bool?[]? _autoOn;
+    private ShellySchedules? _schedules;
+    private long? _scheduleRevision;
+    private bool _schedulesRead;
+    private bool _schedulesFailed;
+    private DateTimeOffset _schedulesReadUtc;
+
+    // The reading last reported, to tell which part of it changed when the poller's comparer sees no change.
+    private ShellyStatus? _lastReported;
 
     public ShellyClient(IOptions<ShellyOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<ShellyClient> logger)
     {
@@ -150,6 +172,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// relays or the connection, which come as <see cref="StateChanged"/>. On the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<ShellyState>? PowerOnChanged;
+
+    /// <summary>
+    /// Raised when only the device's own rules changed (<see cref="ShellyState.OwnRules"/>), not the relays or the
+    /// connection, which come as <see cref="StateChanged"/>. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<ShellyState>? OwnRulesChanged;
 
     /// <summary>
     /// Every request and answer and every connection step, in plain words. The password and the digest never show. On
@@ -267,6 +295,73 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
     }
 
+    /// <summary>
+    /// Turns off the device's own <paramref name="rules"/>, as a person asked, and reads them back in the same command.
+    /// A <see cref="OwnRuleKind.Timer"/> rule turns off, with one <c>Schedule.Update {id, enable:false}</c> each, every
+    /// enabled schedule that switches its relay as last read (so the other relays such a schedule switches lose theirs
+    /// too, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says); a schedule is never deleted and its calls
+    /// never changed. An <see cref="OwnRuleKind.AutoOn"/> rule is one <c>Switch.SetConfig</c> with only
+    /// <c>auto_on:false</c> for that switch. A rule given twice is taken once. Returns the rules asked that the device
+    /// took, in relay order: a timer once every schedule behind it took its update (also when, as last read, none
+    /// switches it any more). Throws <see cref="ArgumentOutOfRangeException"/> for a relay the entry hasn't or another
+    /// kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent;
+    /// and <see cref="BoardNotConnectedException"/> when the device took none of them or didn't answer.
+    /// </summary>
+    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        List<OwnRule> asked = [];
+        foreach (var rule in rules)
+        {
+            if (rule is null)
+            {
+                throw new ArgumentException("A rule can't be null.", nameof(rules));
+            }
+
+            if (rule.Kind is not (OwnRuleKind.Timer or OwnRuleKind.AutoOn))
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "A Shelly's own rules are its schedules and its auto-on.");
+            }
+
+            if (rule.Relay > _model.Capabilities.RelayCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Relay, $"The {_model.Name} has relays 1–{_model.Capabilities.RelayCount} only.");
+            }
+
+            if (!asked.Contains(rule))
+            {
+                asked.Add(rule);
+            }
+        }
+
+        if (asked.Count == 0)
+        {
+            return [];
+        }
+
+        if (!State.IsConnected)
+        {
+            throw new BoardNotConnectedException();
+        }
+
+        var target = Endpoint;
+        try
+        {
+            var taken = new StrongBox<IReadOnlyList<OwnRule>>([]);
+            await _poller.RunSwitchesAsync(token => TurnOffRulesAndReadAsync(target, asked, taken, token), cancellationToken).ConfigureAwait(false);
+            return taken.Value ?? [];
+        }
+        catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
+        {
+            // The poller counted it as a failed poll and reads the device at once, rules included.
+            throw new BoardNotConnectedException("The Shelly didn't answer; its rules may not have been turned off.", ex);
+        }
+        catch (Exception ex) when (IsNotTaken(ex) || ex is BoardRefusedException)
+        {
+            throw new BoardNotConnectedException($"The Shelly didn't turn its rules off: {ex.Message}", ex);
+        }
+    }
+
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
     public void Refresh()
     {
@@ -313,10 +408,16 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         _configRevision = null;
         _configRead = false;
         _configFailed = false;
+        _autoOn = null;
+        _schedules = null;
+        _scheduleRevision = null;
+        _schedulesRead = false;
+        _schedulesFailed = false;
 
         var switches = await GetSwitchesAsync(target, routine: false, cancellationToken).ConfigureAwait(false);
         CheckCount(switches);
-        await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
+        var stopped = await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
+        await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
     }
 
     async Task<ShellyStatus> IPolledBoard<ShellyStatus>.ReadAsync(CancellationToken cancellationToken)
@@ -326,6 +427,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
     void IPolledBoard<ShellyStatus>.OnStateChanged(PolledState<ShellyStatus> state)
     {
+        Volatile.Write(ref _lastReported, state.Reading);
         var wasConnected = Interlocked.Exchange(ref _wasConnected, state.IsConnected ? 1 : 0) == 1;
         if (state.IsConnected && !wasConnected)
         {
@@ -336,10 +438,19 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         Raise(StateChanged, state);
     }
 
-    // The comparer leaves out only the power-on states: that is what changed.
+    // The comparer leaves out the power-on states and the own rules: one of them, or both, changed.
     void IPolledBoard<ShellyStatus>.OnReadingChanged(PolledState<ShellyStatus> state)
     {
-        Raise(PowerOnChanged, state);
+        var before = Interlocked.Exchange(ref _lastReported, state.Reading);
+        if (before is null || before.PowerOn != state.Reading?.PowerOn)
+        {
+            Raise(PowerOnChanged, state);
+        }
+
+        if (before is null || before.OwnRules != state.Reading?.OwnRules)
+        {
+            Raise(OwnRulesChanged, state);
+        }
     }
 
     private void Raise(EventHandler<ShellyState>? handlers, PolledState<ShellyStatus> state)
@@ -468,15 +579,25 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
         // The settings again only when they may have changed: not read yet on this connection (a read cancelled, or a
         // SetConfig), another cfg_rev, or SettingsInterval since the last read while cfg_rev can't tell.
+        var stopped = false;
         if (readSettings
             && (!_configRead
                 || switches.ConfigRevision != _configRevision
                 || ((switches.ConfigRevision is null || _configFailed) && _timeProvider.GetUtcNow() - _configReadUtc >= SettingsInterval)))
         {
-            await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
+            stopped = await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
         }
 
-        var status = new ShellyStatus((byte)switches.Outputs, _powerOn);
+        // The schedules the same way, by schedule_rev.
+        if (readSettings
+            && (!_schedulesRead
+                || switches.ScheduleRevision != _scheduleRevision
+                || ((switches.ScheduleRevision is null || _schedulesFailed) && _timeProvider.GetUtcNow() - _schedulesReadUtc >= SettingsInterval)))
+        {
+            await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
+        }
+
+        var status = new ShellyStatus((byte)switches.Outputs, _powerOn, CurrentOwnRules());
         var routine = Interlocked.Exchange(ref _lastTraced, status) == status;
         Trace(BoardTraceDirection.Received, ShellyTraceText.Status(status, _model.Capabilities.RelayCount), isRoutine: routine);
         return status;
@@ -489,20 +610,26 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     // don't list, is unknown, and the others are still read. No answer, a password refused or a 429 stops the read:
     // that switch and the ones after it are unknown. Either way the read is tried again after SettingsInterval, or at
     // the next cfg_rev. Only a cancelled poll (a command takes its place, or the app stops) ends it without a result.
-    private async Task ReadPowerOnAsync(BoardEndpoint target, long? configRevision, CancellationToken cancellationToken)
+    // Each switch's auto_on comes from the same answer: unknown for a switch whose settings couldn't be read. Returns
+    // whether the read stopped for no answer, a password refused or a 429.
+    private async Task<bool> ReadPowerOnAsync(BoardEndpoint target, long? configRevision, CancellationToken cancellationToken)
     {
         _configRead = false;
         var failed = false;
+        var stopped = false;
         var states = new PowerOnState?[_model.Capabilities.RelayCount];
+        var autoOn = new bool?[states.Length];
         for (var relay = 1; relay <= states.Length; relay++)
         {
             var before = _powerOn?.For(relay);
+            var autoOnBefore = _autoOn?[relay - 1];
             try
             {
                 var id = NextId();
                 var result = await CallAsync(ShellyJson.WriteSwitchGetConfig(id, relay), id, ShellyTraceText.Request(ShellyApi.SwitchGetConfig, relay), routine: true, target, cancellationToken)
                     .ConfigureAwait(false);
                 states[relay - 1] = ShellyJson.ReadPowerOn(result, relay);
+                autoOn[relay - 1] = ShellyJson.ReadAutoOn(result);
             }
             catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
             {
@@ -519,19 +646,110 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
                 // Traced by CallAsync or PostAsync. Asking the next switches would only wait or count toward the
                 // device's brute-force protection.
                 failed = true;
+                stopped = true;
                 Trace(BoardTraceDirection.None, ShellyTraceText.PowerOnReadStopped(relay), isError: true);
                 break;
             }
 
             // A toast only when it differs from the last read.
-            Trace(BoardTraceDirection.Received, ShellyTraceText.PowerOnRead(relay, states[relay - 1]), isRoutine: _powerOn is not null && states[relay - 1] == before);
+            Trace(
+                BoardTraceDirection.Received,
+                ShellyTraceText.SettingsRead(relay, states[relay - 1], autoOn[relay - 1]),
+                isRoutine: _powerOn is not null && states[relay - 1] == before && autoOn[relay - 1] == autoOnBefore);
         }
 
         _powerOn = new PowerOnStates(states);
+        _autoOn = autoOn;
         _configRevision = configRevision;
-        _configFailed = failed;
+        _configFailed = failed || Array.Exists(autoOn, a => a is null);
         _configReadUtc = _timeProvider.GetUtcNow();
         _configRead = true;
+        return stopped;
+    }
+
+    // Under the poller's lock: one Schedule.List, after the status that gave scheduleRevision. Never fails the connect
+    // or the poll, as the settings read: a refusal, an answer that can't be read, no answer, a password refused or a 429
+    // makes the schedules unknown, and the read is tried again after SettingsInterval, or at the next schedule_rev.
+    // With skip, the settings read just before stopped for one of the last three: nothing is sent, and it counts as
+    // failed. Only a cancelled poll ends it without a result.
+    private async Task ReadSchedulesAsync(BoardEndpoint target, long? scheduleRevision, bool skip, CancellationToken cancellationToken)
+    {
+        _schedulesRead = false;
+        var before = _schedules;
+        ShellySchedules? schedules = null;
+        if (skip)
+        {
+            Trace(BoardTraceDirection.None, ShellyTraceText.SchedulesNotRead("the settings read before it stopped"), isError: true, isRoutine: _schedulesFailed);
+        }
+        else
+        {
+            try
+            {
+                var id = NextId();
+                var result = await CallAsync(ShellyJson.WriteRequest(id, ShellyApi.ScheduleList), id, ShellyTraceText.Request(ShellyApi.ScheduleList), routine: true, target, cancellationToken)
+                    .ConfigureAwait(false);
+                schedules = ShellyJson.ReadSchedules(result, _model.Capabilities.RelayCount);
+                Trace(BoardTraceDirection.Received, ShellyTraceText.Schedules(schedules, _model.Capabilities.RelayCount), isRoutine: before is not null && Same(before, schedules));
+            }
+            catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException || IsNoAnswer(ex) || IsNotTaken(ex) || ex is UriFormatException)
+            {
+                // A refusal, no answer or a 429 is traced by CallAsync or PostAsync; this says what it means. A toast
+                // only the first time: the read is tried again every SettingsInterval.
+                Trace(BoardTraceDirection.None, ShellyTraceText.SchedulesNotRead(ex.Message), isError: true, isRoutine: _schedulesFailed);
+            }
+        }
+
+        _schedules = schedules;
+        _scheduleRevision = scheduleRevision;
+        _schedulesFailed = schedules is null;
+        _schedulesReadUtc = _timeProvider.GetUtcNow();
+        _schedulesRead = true;
+
+        // What the rules are made of: an enabled schedule's relays. Its id or rev alone doesn't make a new toast.
+        static bool Same(ShellySchedules a, ShellySchedules b)
+        {
+            return a.Jobs.Where(j => j.Enabled && j.Relays != 0).Select(j => j.Relays)
+                .SequenceEqual(b.Jobs.Where(j => j.Enabled && j.Relays != 0).Select(j => j.Relays));
+        }
+    }
+
+    // Under the poller's lock: the own rules as last read, or null while the schedules or a switch's auto_on is unknown.
+    // A Timer rule on each relay an enabled schedule switches, one unit per such schedule (its relays' timers), and an
+    // AutoOn rule on each relay whose auto_on is on, its own unit; in relay order, the timer first.
+    private OwnRules? CurrentOwnRules()
+    {
+        if (_schedules is not { } schedules || _autoOn is not { } autoOn || Array.Exists(autoOn, a => a is null))
+        {
+            return null;
+        }
+
+        List<OwnRule> rules = [];
+        for (var relay = 1; relay <= autoOn.Length; relay++)
+        {
+            if ((schedules.Relays & (1 << (relay - 1))) != 0)
+            {
+                rules.Add(new OwnRule(relay, OwnRuleKind.Timer));
+            }
+
+            if (autoOn[relay - 1] == true)
+            {
+                rules.Add(new OwnRule(relay, OwnRuleKind.AutoOn));
+            }
+        }
+
+        if (rules.Count == 0)
+        {
+            return Contactor.Boards.OwnRules.Empty;
+        }
+
+        List<IReadOnlyCollection<OwnRule>> units = [];
+        foreach (var job in schedules.Jobs.Where(j => j.Enabled && j.Relays != 0))
+        {
+            units.Add([.. new ChannelMask(job.Relays).Channels.Select(r => new OwnRule(r, OwnRuleKind.Timer))]);
+        }
+
+        units.AddRange(rules.Where(r => r.Kind == OwnRuleKind.AutoOn).Select(r => (IReadOnlyCollection<OwnRule>)[r]));
+        return new OwnRules(rules, units);
     }
 
     // Under the poller's lock: one Switch.SetConfig, then the status and every switch's settings read back.
@@ -568,6 +786,115 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         {
             // The setting went out; the poller keeps the last state and reads again at once, settings included.
             return default;
+        }
+    }
+
+    // Under the poller's lock: one Schedule.Update per schedule behind the timers asked, one Switch.SetConfig per auto-on
+    // asked, then the status, the settings and the schedules read back. Puts the rules the device took in taken.
+    private async Task<CommandReading<ShellyStatus>> TurnOffRulesAndReadAsync(BoardEndpoint target, IReadOnlyList<OwnRule> asked, StrongBox<IReadOnlyList<OwnRule>> taken, CancellationToken cancellationToken)
+    {
+        // Another device may be at a new address, unchecked: nothing goes once the address moved or the device was lost.
+        EnsureSameDevice(target);
+
+        var timers = asked.Where(r => r.Kind == OwnRuleKind.Timer).ToList();
+        var autoOn = asked.Where(r => r.Kind == OwnRuleKind.AutoOn).ToList();
+
+        // Whatever comes of it, the next read reads what was asked about again, also when a rev didn't move.
+        if (timers.Count > 0)
+        {
+            _schedulesRead = false;
+        }
+
+        if (autoOn.Count > 0)
+        {
+            _configRead = false;
+        }
+
+        // The schedules as last read, which the person saw: the ones behind the timers asked, each once.
+        var schedules = _schedules;
+        List<ShellyJob> jobs = schedules is null ? [] : [.. timers.SelectMany(r => schedules.Switching(r.Relay)).Distinct()];
+
+        HashSet<long> off = [];
+        string? refusal = null;
+        ExceptionDispatchInfo? unreadable = null;
+        var sent = false;
+        foreach (var job in jobs)
+        {
+            EnsureSameDevice(target);
+            sent = true;
+            try
+            {
+                var id = NextId();
+                await CallAsync(ShellyJson.WriteScheduleOff(id, job.Id), id, ShellyTraceText.TurnOffSchedule(job.Id), routine: false, target, cancellationToken)
+                    .ConfigureAwait(false);
+                Trace(BoardTraceDirection.Received, ShellyTraceText.ScheduleOff(job.Id));
+                off.Add(job.Id);
+            }
+            catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
+            {
+                Refused(string.Create(CultureInfo.InvariantCulture, $"schedule {job.Id}"), ex, ref refusal, ref unreadable);
+            }
+        }
+
+        List<OwnRule> done = [.. timers.Where(r => schedules is not null && schedules.Switching(r.Relay).All(j => off.Contains(j.Id)))];
+        foreach (var rule in autoOn)
+        {
+            EnsureSameDevice(target);
+            sent = true;
+            try
+            {
+                var id = NextId();
+                await CallAsync(ShellyJson.WriteSwitchAutoOnOff(id, rule.Relay), id, ShellyTraceText.TurnOffAutoOn(rule.Relay), routine: false, target, cancellationToken)
+                    .ConfigureAwait(false);
+                Trace(BoardTraceDirection.Received, ShellyTraceText.AutoOnOff(rule.Relay));
+                done.Add(rule);
+            }
+            catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
+            {
+                Refused(string.Create(CultureInfo.InvariantCulture, $"relay {rule.Relay}'s auto-on"), ex, ref refusal, ref unreadable);
+            }
+        }
+
+        if (done.Count == 0)
+        {
+            if (!sent)
+            {
+                // Nothing went out: the schedules weren't known. Not an answer, and not a failure of the device.
+                throw new BoardNotConnectedException("The Shelly's schedules aren't known yet; nothing was sent.");
+            }
+
+            unreadable?.Throw();
+            throw new BoardRefusedException(refusal!);
+        }
+
+        taken.Value = [.. done.OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
+        if (Endpoint != target)
+        {
+            return default;
+        }
+
+        try
+        {
+            return new CommandReading<ShellyStatus>(await ReadStatusAsync(target, readSettings: true, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (IsNotTaken(ex) || IsNoAnswer(ex))
+        {
+            // The changes went out; the poller keeps the last state and reads again at once, rules included.
+            return default;
+        }
+
+        void Refused(string what, Exception ex, ref string? first, ref ExceptionDispatchInfo? broken)
+        {
+            // Refused with the device's own message, or an answer that can't be read: the change may or may not have
+            // been made. The others still go; the read after them shows the truth.
+            var message = ex is ShellyRpcException { Error: { } error } ? $"{what}: {error}" : $"{what}: {ex.Message}";
+            first ??= message;
+            if (ex is not ShellyRpcException)
+            {
+                broken ??= ExceptionDispatchInfo.Capture(ex);
+            }
+
+            Trace(BoardTraceDirection.None, $"The Shelly didn't take the change for {message}", isError: true);
         }
     }
 

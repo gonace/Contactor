@@ -50,6 +50,46 @@ public static class ShellyApi
     public const string ConfigRevision = "cfg_rev";
 
     /// <summary>
+    /// The member of a switch's configuration that turns it on again by itself: "True if the \"Automatic ON\" function
+    /// is enabled, false otherwise" ("Switch", "Configuration"). The app reads it and sets it to false only.
+    /// </summary>
+    public const string AutoOn = "auto_on";
+
+    /// <summary>"toggles the output state": <c>{"id":n}</c> ("Switch", "Switch.Toggle"). The app only reads it in a schedule.</summary>
+    public const string SwitchToggle = "Switch.Toggle";
+
+    /// <summary>"sets the output state of all Switch components": <c>{"on":bool}</c> ("Switch", "Switch.SetAll"). Only read in a schedule.</summary>
+    public const string SwitchSetAll = "Switch.SetAll";
+
+    /// <summary>"applies the same state change to multiple Switch components": <c>{"ids":[n,…],"on":bool}</c> ("Switch", "Switch.SetMany"). Only read in a schedule.</summary>
+    public const string SwitchSetMany = "Switch.SetMany";
+
+    /// <summary>"lists all existing schedules for this device": its result has <c>jobs</c> and <c>rev</c> ("Schedule", "Schedule.List").</summary>
+    public const string ScheduleList = "Schedule.List";
+
+    /// <summary>"updates an existing schedule job": <c>{"id":n,"enable":false}</c> ("Schedule", "Schedule.Update").</summary>
+    public const string ScheduleUpdate = "Schedule.Update";
+
+    /// <summary>
+    /// The member of <c>sys</c> in <see cref="GetStatus"/>'s result with the "Schedules revision number, present if
+    /// schedules are enabled" ("Sys", "Status"), which "is incremented on every update of the schedules" ("Schedule").
+    /// </summary>
+    public const string ScheduleRevision = "schedule_rev";
+
+    /// <summary>"There is a limit of 20 schedule instances per device" ("Schedule"): a list with more is refused.</summary>
+    public const int MaxScheduleJobs = 20;
+
+    /// <summary>"There is a limit of 5 calls per schedule job" ("Schedule"): a job with more is refused.</summary>
+    public const int MaxScheduleCalls = 5;
+
+    /// <summary>
+    /// What the app knows of a device's own rules: it reads its schedules that switch a relay and each switch's auto-on,
+    /// and turns them off; it can't see scripts, webhooks, MQTT, the cloud, auto-off or the inputs, so a person should
+    /// still check the device's own page.
+    /// </summary>
+    public static OwnRulesAbility OwnRules { get; } = new(Reads: true, TurnsOff: true, MayHaveUnseen: true);
+
+    /// <summary>
     /// What a switch's <see cref="InitialState"/> does after a power cut, all four the docs list (per relay).
     /// </summary>
     public static PowerOnAbility PowerOn { get; } = new([PowerOnState.Off, PowerOnState.AsBefore, PowerOnState.On, PowerOnState.FollowsInput], perRelay: true);

@@ -269,6 +269,17 @@ public sealed class BoardOwnRulesStepTests
             Assert.DoesNotContain(Line, text, StringComparison.Ordinal);
         }
 
+        // A board that reads its rules but may have others it can't see: "also", not the line above.
+        await using (var app = App())
+        {
+            using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+            await ToWhereAsync(app, page, new FakeRelayBoard(ownRules: new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true)));
+            await page.ClickAsync(Button("Next"));
+            var text = await page.TextAsync();
+            Assert.Matches("(?s)Name your relays.*This board may also have rules Contactor can't see\\. Check its own web page\\..*RELAY 1", text);
+            Assert.DoesNotContain(Line, text, StringComparison.Ordinal);
+        }
+
         using (TestCulture.Language("sv"))
         {
             Assert.Equal("Kortet kan ha egna timers. Titta på kortets egen webbsida.", TestTexts.Localizer["OwnRules.Card.CantTell"].Value);

@@ -69,7 +69,7 @@
         }
         @if (ability.MayHaveUnseen)
         {
-            <p class="hint">@Texts["OwnRules.Card.CantTell"]</p>
+            <p class="hint">@Texts[ability.Reads ? "OwnRules.Card.MayHaveUnseen" : "OwnRules.Card.CantTell"]</p>
         }
         @if (_error is not null)
         {

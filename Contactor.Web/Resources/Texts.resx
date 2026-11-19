@@ -1910,6 +1910,10 @@
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>They can turn relays on and off without Contactor.</value>
   </data>
+  <data name="OwnRules.Card.MayHaveUnseen" xml:space="preserve">
+    <value>This board may also have rules Contactor can't see. Check its own web page.</value>
+    <comment>A board whose own rules the app reads, but which may have others it can't see, e.g. the Shelly's scripts.</comment>
+  </data>
   <data name="OwnRules.Card.Title.AutoOn" xml:space="preserve">
     <value>Relays the board turns on again</value>
     <comment>The card on the board's page, for relays the board turns on again by itself after they go off.</comment>

@@ -1733,6 +1733,9 @@
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>De kan slå på och stänga av reläer utan Contactor.</value>
   </data>
+  <data name="OwnRules.Card.MayHaveUnseen" xml:space="preserve">
+    <value>Kortet kan också ha regler som Contactor inte ser. Kontrollera kortets egen webbsida.</value>
+  </data>
   <data name="OwnRules.Card.Title.AutoOn" xml:space="preserve">
     <value>Reläer som kortet slår på igen</value>
   </data>
