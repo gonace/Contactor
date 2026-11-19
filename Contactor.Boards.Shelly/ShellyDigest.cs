@@ -186,6 +186,8 @@ public static class ShellyDigest
 
             // A name with no "=" after the Digest's own parameters starts the header's next challenge, e.g.
             // "Digest …, Basic realm="x"" (RFC 7235: a scheme, then a space or nothing): the Digest's are complete.
+            // The client gets the challenges from HttpResponseHeaders, which already splits them, so this matters only
+            // for a header passed whole, without that splitting.
             if (parameters.Count > 0 && name.Length > 0 && (i >= text.Length || (i > afterName && text[i] != '=' && text[i] != ',')))
             {
                 return parameters;
