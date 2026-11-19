@@ -124,9 +124,10 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
     - each board's protocol, byte for byte against the manual, and its `IRelayBoard` contract;
     - scheduling, auto-off and daylight saving;
     - the board's own rules, logins, identity and data that is saved or migrated.
+    - what the simulator emulates: each simulated board answers as the manual says, and its power cut, own rules and failures behave as the real board's would.
   - **No new tests needed, a screenshot is enough:**
     - layout and looks;
-    - the simulator's page, which only developers use;
+    - the simulator's page itself (its controls and layout), which only developers use;
     - texts beyond the existing resx checks.
   - **Fewer, sharper tests:** one test per behaviour, not one per variation of the same path.
   - **Never a test that waits on real time** or counts events that arrive at their own pace: it is flaky on a busy machine. Drive time with a fake `TimeProvider`, and wait for a condition. Rewrite or remove a test like that when you meet it.
