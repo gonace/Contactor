@@ -8,7 +8,8 @@ namespace Contactor.Boards.Velleman;
 
 /// <summary>
 /// Holds exactly one connection to the VM201 board, logs in, tracks the status the board pushes and reconnects with
-/// exponential backoff. Commands go through one channel per connection, so only one writer touches the socket.
+/// exponential backoff. A refused login isn't tried again in that loop, as on the polled boards (Issue #537): see
+/// <see cref="RunAsync"/>. Commands go through one channel per connection, so only one writer touches the socket.
 /// Commands are never queued while disconnected: they fail at once with <see cref="BoardNotConnectedException"/>. A
 /// command cancelled before the writer takes it is not sent.
 /// </summary>
@@ -18,6 +19,18 @@ public sealed class Vm201Client
     internal static readonly TimeSpan LoginTimeout = TimeSpan.FromSeconds(5);
     internal static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
     internal static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long it waits before it tries a refused login that logged in before once more: the polled boards' time
+    /// (<see cref="BoardPoller{TReading}.AskedToWaitPause"/>, Issue #522).
+    /// </summary>
+    public static readonly TimeSpan RefusedLoginPause = BoardPoller<Vm201State>.AskedToWaitPause;
+
+    /// <summary>
+    /// How long a refused login that logged in before is still tried, from the first refusal: the polled boards' time
+    /// (<see cref="BoardPoller{TReading}.RefusedLoginRetries"/>). After that it is held as a login that never worked.
+    /// </summary>
+    public static readonly TimeSpan RefusedLoginRetries = BoardPoller<Vm201State>.RefusedLoginRetries;
 
     /// <summary>The <see cref="Vm201TraceKind.ConnectionLost"/> detail when the app itself ended the connection.</summary>
     public const string StoppedByApp = "Closed by the app.";
@@ -41,6 +54,11 @@ public sealed class Vm201Client
     // Which address and login a connection is for: SetEndpoint and SetLogin move on to the next, so a refused login
     // from the connection before is dropped. Under _stateLock.
     private int _logins;
+
+    // Whether the login in use logged in since the last new address or login, and when the board first refused it after
+    // that. Under _stateLock. "Check again" (TryAgain) keeps them: it is the same login.
+    private bool _loginWorked;
+    private DateTimeOffset? _firstRefusalUtc;
 
     // The current connection attempt (connect, session and the wait after it); SetEndpoint cancels it to move at once.
     private CancellationTokenSource? _attempt;
@@ -97,6 +115,7 @@ public sealed class Vm201Client
         lock (_stateLock)
         {
             _logins++;
+            ForgetRefusals();
             ClearProblem();
         }
 
@@ -124,6 +143,7 @@ public sealed class Vm201Client
         lock (_stateLock)
         {
             _logins++;
+            ForgetRefusals();
             if (!Equals(State, Vm201State.Initial))
             {
                 SetState(Vm201State.Initial);
@@ -131,6 +151,36 @@ public sealed class Vm201Client
         }
 
         Reconnect();
+    }
+
+    /// <summary>
+    /// A person's "Check again" while the board isn't connected: ends the wait (also the one after a refused login,
+    /// which only this or a new address or login ends) and connects again at once, with the problem cleared until the
+    /// board answers again. The login is the same: whether it worked before, and since when the board refuses it, are
+    /// kept. Nothing happens while the board is connected.
+    /// </summary>
+    public void TryAgain()
+    {
+        lock (_stateLock)
+        {
+            if (State.IsConnected)
+            {
+                return;
+            }
+
+            // A problem from the attempt before still on its way is dropped.
+            _logins++;
+            ClearProblem();
+        }
+
+        Reconnect();
+    }
+
+    // A new address or login: it counts as one that never logged in, until it does. Callers hold _stateLock.
+    private void ForgetRefusals()
+    {
+        _loginWorked = false;
+        _firstRefusalUtc = null;
     }
 
     // Ends the current connection, attempt or wait, so the next one starts at once with what was just set.
@@ -206,7 +256,11 @@ public sealed class Vm201Client
 
     /// <summary>
     /// Connects and keeps the connection open until <paramref name="cancellationToken"/> is cancelled. Never throws
-    /// because of the board; it logs and reconnects. Call it once, e.g. from a hosted service.
+    /// because of the board; it logs and reconnects. Call it once, e.g. from a hosted service. A login the board refused
+    /// (<see cref="ConnectionProblemKind.LoginRefused"/>) isn't tried again in the backoff loop, as on the polled boards
+    /// (Issue #537): one that never logged in since the last new address or login is held, with no timer, until
+    /// <see cref="SetLogin"/>, <see cref="SetEndpoint"/> or <see cref="TryAgain"/>; one that logged in before is tried
+    /// every <see cref="RefusedLoginPause"/> for <see cref="RefusedLoginRetries"/> from the first refusal, and then held.
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -222,7 +276,7 @@ public sealed class Vm201Client
             {
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 Volatile.Write(ref _attempt, attempt);
-                var loggedIn = await RunSessionAsync(attempt.Token).ConfigureAwait(false);
+                var (loggedIn, refused) = await RunSessionAsync(attempt.Token).ConfigureAwait(false);
                 if (cancellationToken.IsCancellationRequested)
                 {
                     break;
@@ -239,11 +293,26 @@ public sealed class Vm201Client
                     continue;
                 }
 
-                Vm201Log.Reconnecting(_logger, backoff.TotalSeconds);
-                Trace(Vm201TraceKind.Reconnecting, detail: ((int)backoff.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                // Never a refused login in a loop (Issue #537): the same login gets the same answer. Only SetLogin,
+                // SetEndpoint or TryAgain end a hold, by cancelling the attempt.
+                var wait = refused ? RefusedLoginWait() : backoff;
+                if (wait == Timeout.InfiniteTimeSpan)
+                {
+                    Vm201Log.Held(_logger);
+                    Trace(Vm201TraceKind.Held);
+                }
+                else
+                {
+                    Vm201Log.Reconnecting(_logger, wait.TotalSeconds);
+                    Trace(Vm201TraceKind.Reconnecting, detail: ((int)wait.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+
                 try
                 {
-                    await Task.Delay(backoff, _timeProvider, attempt.Token).ConfigureAwait(false);
+                    // No timer for the hold: only a cancel ends it.
+                    await (wait == Timeout.InfiniteTimeSpan
+                        ? Task.Delay(Timeout.InfiniteTimeSpan, attempt.Token)
+                        : Task.Delay(wait, _timeProvider, attempt.Token)).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
@@ -260,7 +329,10 @@ public sealed class Vm201Client
                     Volatile.Write(ref _attempt, null);
                 }
 
-                backoff = backoff * 2 > MaxBackoff ? MaxBackoff : backoff * 2;
+                if (!refused)
+                {
+                    backoff = backoff * 2 > MaxBackoff ? MaxBackoff : backoff * 2;
+                }
             }
         }
         finally
@@ -295,12 +367,31 @@ public sealed class Vm201Client
         await write.Completion!.Task.ConfigureAwait(false);
     }
 
+    // After a refused login: held (infinite) for a login that never logged in since the last new address or login, or
+    // once its RefusedLoginRetries from the first refusal are over. Otherwise the next try after RefusedLoginPause.
+    private TimeSpan RefusedLoginWait()
+    {
+        lock (_stateLock)
+        {
+            if (!_loginWorked)
+            {
+                return Timeout.InfiniteTimeSpan;
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            _firstRefusalUtc ??= now;
+            return now - _firstRefusalUtc.Value >= RefusedLoginRetries ? Timeout.InfiniteTimeSpan : RefusedLoginPause;
+        }
+    }
+
     /// <summary>
-    /// One connection, from connect to close. Returns whether the login succeeded, which resets the backoff.
+    /// One connection, from connect to close. Returns whether the login succeeded, which resets the backoff, and whether
+    /// the board refused the login, which isn't tried again in the backoff loop.
     /// </summary>
-    private async Task<bool> RunSessionAsync(CancellationToken cancellationToken)
+    private async Task<(bool LoggedIn, bool Refused)> RunSessionAsync(CancellationToken cancellationToken)
     {
         var loggedIn = false;
+        var refused = false;
         Session? session = null;
         using var tcp = new TcpClient { NoDelay = true };
 
@@ -340,6 +431,13 @@ public sealed class Vm201Client
             lock (_stateLock)
             {
                 ClearProblem();
+
+                // The login works, and the time of its refusals starts over. Not for the login before a new one.
+                if (logins == _logins)
+                {
+                    _loginWorked = true;
+                    _firstRefusalUtc = null;
+                }
             }
 
             session = new Session();
@@ -387,6 +485,9 @@ public sealed class Vm201Client
             {
                 var kind = askedWithoutLogin.Value ? ConnectionProblemKind.LoginNeeded : ConnectionProblemKind.LoginRefused;
                 SetProblem(new ConnectionProblem(kind, Vm201Model.Model), logins);
+
+                // A login is needed: the usual backoff, as on the polled boards.
+                refused = kind == ConnectionProblemKind.LoginRefused;
             }
         }
         catch (Exception ex) when (ex is IOException or SocketException or TimeoutException or OperationCanceledException)
@@ -412,7 +513,7 @@ public sealed class Vm201Client
             SetDisconnected();
         }
 
-        return loggedIn;
+        return (loggedIn, refused);
     }
 
     // Sets askedWithoutLogin when the board asks for a login and the app has none: its refusal then means one is needed.
