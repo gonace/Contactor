@@ -712,7 +712,7 @@ h3 {
     }
 
     /* Each model's numbers are named on the phone, so the table needs no header row. */
-    .model-head {
+    .model.model-head {
         display: none;
     }
 
