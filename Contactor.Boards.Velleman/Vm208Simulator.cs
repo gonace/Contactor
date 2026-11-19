@@ -316,7 +316,17 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
                 return;
             }
 
-            var response = Handle(request.Value.Head, request.Value.Form);
+            byte[]? response;
+            try
+            {
+                response = Handle(request.Value.Head, request.Value.Form);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // A fault of the simulator's own is never a fault of the connection's task: the request goes unanswered.
+                response = NoAnswer($"No answer: the simulator failed on this request ({ex.GetType().Name})");
+            }
+
             if (response is null)
             {
                 Interlocked.Increment(ref _unansweredCount);

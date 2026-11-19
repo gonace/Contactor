@@ -8,8 +8,8 @@ namespace Contactor.Boards.Velleman;
 /// (<see cref="IndexOf"/>).
 /// </summary>
 /// <param name="DayOfWeek">The day, as the firmware counts it (<c>tm_wday</c>): 0 = Sunday … 6 = Saturday.</param>
-/// <param name="Hour">The hour, 0–23.</param>
-/// <param name="Minute">The minute, 0–59.</param>
+/// <param name="Hour">The hour, 0–23 (the firmware stores any 0–255 it is sent: <see cref="IsStored"/>).</param>
+/// <param name="Minute">The minute, 0–59 (likewise 0–255).</param>
 /// <param name="TurnsOn">True for an "on" alarm, false for an "off" alarm.</param>
 /// <param name="Enabled">Whether the board runs it.</param>
 public sealed record Vm208Alarm(int DayOfWeek, int Hour, int Minute, bool TurnsOn, bool Enabled)
@@ -31,6 +31,22 @@ public sealed record Vm208Alarm(int DayOfWeek, int Hour, int Minute, bool TurnsO
     /// </summary>
     public static bool IsSchedule(IReadOnlyList<Vm208Alarm> alarms)
     {
+        return IsInOrder(alarms, maxHour: 23, maxMinute: 59);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="alarms"/> is a relay's whole schedule as the firmware can store it: 14 alarms, each in its
+    /// place, with any hour and minute that fit its <c>uint8_t</c> fields (0–255). <c>POST /shedule_set</c> takes a time
+    /// such as 99:00 as given and <c>GET /getalarms</c> answers it so (<c>src/Network/server_VM208.cpp</c> lines
+    /// 231–281 and 522–572, <c>ChannelShedule::setShedule</c>); the board never runs such an alarm.
+    /// </summary>
+    public static bool IsStored(IReadOnlyList<Vm208Alarm> alarms)
+    {
+        return IsInOrder(alarms, maxHour: byte.MaxValue, maxMinute: byte.MaxValue);
+    }
+
+    private static bool IsInOrder(IReadOnlyList<Vm208Alarm> alarms, int maxHour, int maxMinute)
+    {
         ArgumentNullException.ThrowIfNull(alarms);
         if (alarms.Count != Vm208Api.AlarmCount)
         {
@@ -42,8 +58,8 @@ public sealed record Vm208Alarm(int DayOfWeek, int Hour, int Minute, bool TurnsO
             if (alarms[index] is not { } alarm
                 || alarm.DayOfWeek != index % 7
                 || alarm.TurnsOn != index < 7
-                || alarm.Hour is < 0 or > 23
-                || alarm.Minute is < 0 or > 59)
+                || alarm.Hour < 0 || alarm.Hour > maxHour
+                || alarm.Minute < 0 || alarm.Minute > maxMinute)
             {
                 return false;
             }

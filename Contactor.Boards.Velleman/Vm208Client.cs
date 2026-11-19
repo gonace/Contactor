@@ -287,7 +287,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     {
         for (var attempt = 0; ; attempt++)
         {
-            var answer = await SendAsync(method, pathAndQuery, form, routine, cancellationToken).ConfigureAwait(false);
+            var answer = await SendAsync(method, pathAndQuery, form, routine, quietErrors: false, cancellationToken).ConfigureAwait(false);
             var willRetry = attempt < Vm208Api.BusyRetries;
             try
             {
@@ -498,11 +498,12 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             {
                 // Never to another board: the poll that began it was for this address.
                 EnsureSameBoard(target, command: false);
-                schedules[relay - 1] = await GetScheduleAsync(relay, routine: true, before?[relay - 1], cancellationToken).ConfigureAwait(false);
+                schedules[relay - 1] = await GetScheduleAsync(relay, routine: true, before?[relay - 1], quietErrors: _schedulesFailed, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsNoAnswer(ex) || ex is Vm208ProtocolException or UriFormatException or BoardNotConnectedException)
             {
-                // Traced by SendAsync or GetScheduleAsync; this says what it means. A toast only the first time.
+                // Traced by SendAsync or GetScheduleAsync; this says what it means. A toast only the first time: while the
+                // reads keep failing (a firmware without /getalarms answers 404 every minute), every trace is routine.
                 Trace(BoardTraceDirection.None, $"The board's schedules can't be read: {ex.Message}", isError: true, isRoutine: _schedulesFailed);
                 failed = true;
                 break;
@@ -516,10 +517,16 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     }
 
     // One relay's schedule, relays 1–4 only (Vm208Api.AlarmsQuery): GET /getalarms?channel=N. Throws as SendAsync, and
-    // Vm208ProtocolException for an answer that isn't 200 or isn't a schedule. A toast only when it differs from before.
-    private async Task<IReadOnlyList<Vm208Alarm>> GetScheduleAsync(int relay, bool routine, IReadOnlyList<Vm208Alarm>? before, CancellationToken cancellationToken)
+    // Vm208ProtocolException for an answer that isn't 200 or isn't a schedule. A toast only when it differs from before,
+    // and for a failure only unless quietErrors (one that already showed).
+    private async Task<IReadOnlyList<Vm208Alarm>> GetScheduleAsync(
+        int relay,
+        bool routine,
+        IReadOnlyList<Vm208Alarm>? before,
+        bool quietErrors,
+        CancellationToken cancellationToken)
     {
-        var answer = await SendAsync(HttpMethod.Get, $"{Vm208Api.AlarmsPath}?{Vm208Api.AlarmsQuery(relay)}", form: null, routine, cancellationToken).ConfigureAwait(false);
+        var answer = await SendAsync(HttpMethod.Get, $"{Vm208Api.AlarmsPath}?{Vm208Api.AlarmsQuery(relay)}", form: null, routine, quietErrors, cancellationToken).ConfigureAwait(false);
         if (answer.StatusCode != HttpStatusCode.OK)
         {
             throw new Vm208ProtocolException(string.Create(CultureInfo.InvariantCulture, $"The VM208 answered {(int)answer.StatusCode}."));
@@ -532,7 +539,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         }
         catch (Vm208ProtocolException ex)
         {
-            Trace(BoardTraceDirection.Received, ex.Message, answer.Text, isError: true);
+            Trace(BoardTraceDirection.Received, ex.Message, answer.Text, isError: true, isRoutine: quietErrors);
             throw;
         }
 
@@ -587,11 +594,11 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             {
                 // Only to the board the command began with, while it counts as connected.
                 EnsureSameBoard(target, command: true);
-                var alarms = await GetScheduleAsync(relay, routine: false, before: null, cancellationToken).ConfigureAwait(false);
+                var alarms = await GetScheduleAsync(relay, routine: false, before: null, quietErrors: false, cancellationToken).ConfigureAwait(false);
                 EnsureSameBoard(target, command: true);
                 var form = Vm208Api.ScheduleForm(relay, [.. alarms.Select(a => a with { Enabled = false })]);
                 posted = true;
-                var answer = await SendAsync(HttpMethod.Post, Vm208Api.ScheduleSetPath, form, routine: false, cancellationToken).ConfigureAwait(false);
+                var answer = await SendAsync(HttpMethod.Post, Vm208Api.ScheduleSetPath, form, routine: false, quietErrors: false, cancellationToken).ConfigureAwait(false);
                 if (answer.StatusCode != HttpStatusCode.OK)
                 {
                     // Traced by SendCoreAsync with the board's answer: a 400 has no body.
@@ -628,7 +635,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             try
             {
                 EnsureSameBoard(target, command: true);
-                var after = await GetScheduleAsync(relay, routine: false, before: null, cancellationToken).ConfigureAwait(false);
+                var after = await GetScheduleAsync(relay, routine: false, before: null, quietErrors: false, cancellationToken).ConfigureAwait(false);
                 if (_schedules is { } known)
                 {
                     var schedules = (IReadOnlyList<Vm208Alarm>[])known.Clone();
@@ -716,32 +723,34 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
 
     /// <summary>
     /// One request to the board, with a timeout, and its answer read up to <see cref="Vm208Api.MaxResponseBytes"/>.
-    /// Traces the request and an answer other than 200; a 200 is traced by the caller, which knows what it says.
+    /// Traces the request and an answer other than 200; a 200 is traced by the caller, which knows what it says. With
+    /// <paramref name="quietErrors"/> a failure is traced as routine, without a toast: one that already showed, and
+    /// shows again only after a read that worked.
     /// </summary>
-    private async Task<Answer> SendAsync(HttpMethod method, string pathAndQuery, string? form, bool routine, CancellationToken cancellationToken)
+    private async Task<Answer> SendAsync(HttpMethod method, string pathAndQuery, string? form, bool routine, bool quietErrors, CancellationToken cancellationToken)
     {
         var parts = pathAndQuery.Split('?', 2);
         var path = parts[0];
         Trace(BoardTraceDirection.Sent, Vm208TraceText.Request(method.Method, path, form, parts.Length > 1 ? parts[1] : null), Vm208TraceText.RequestBytes(method.Method, pathAndQuery, form), isRoutine: routine);
         try
         {
-            return await SendCoreAsync(method, pathAndQuery, form, cancellationToken).ConfigureAwait(false);
+            return await SendCoreAsync(method, pathAndQuery, form, quietErrors, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or TimeoutException or UriFormatException)
         {
             // One failed poll doesn't lose the connection, so it shows here.
-            Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true);
+            Trace(BoardTraceDirection.None, $"No answer: {ex.Message}", isError: true, isRoutine: quietErrors);
             throw;
         }
         catch (Vm208ProtocolException ex)
         {
             // An answer too long to be a VM208's: it answered, but nothing of it is read.
-            Trace(BoardTraceDirection.Received, $"Answer too long: {ex.Message}", isError: true);
+            Trace(BoardTraceDirection.Received, $"Answer too long: {ex.Message}", isError: true, isRoutine: quietErrors);
             throw;
         }
     }
 
-    private async Task<Answer> SendCoreAsync(HttpMethod method, string pathAndQuery, string? form, CancellationToken cancellationToken)
+    private async Task<Answer> SendCoreAsync(HttpMethod method, string pathAndQuery, string? form, bool quietErrors, CancellationToken cancellationToken)
     {
         using var timeout = new CancellationTokenSource(RequestTimeout, _timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
@@ -774,7 +783,8 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
                     BoardTraceDirection.Received,
                     string.Create(CultureInfo.InvariantCulture, $"The board answered {(int)response.StatusCode}"),
                     text,
-                    isError: true);
+                    isError: true,
+                    isRoutine: quietErrors);
             }
 
             return new Answer(response.StatusCode, body, text);

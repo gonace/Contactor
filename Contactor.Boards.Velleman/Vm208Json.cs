@@ -167,13 +167,17 @@ public static class Vm208Json
         return alarms;
     }
 
-    /// <summary>A relay's schedule as the firmware writes it, compact (ArduinoJson 5's <c>printTo</c>); for the simulator.</summary>
+    /// <summary>
+    /// A relay's schedule as the firmware writes it, compact (ArduinoJson 5's <c>printTo</c>); for the simulator. Any
+    /// schedule the firmware can store (<see cref="Vm208Alarm.IsStored"/>), a time such as 99:00 too, as the board
+    /// answers it.
+    /// </summary>
     public static string WriteAlarms(IReadOnlyList<Vm208Alarm> alarms)
     {
         ArgumentNullException.ThrowIfNull(alarms);
-        if (!Vm208Alarm.IsSchedule(alarms))
+        if (!Vm208Alarm.IsStored(alarms))
         {
-            throw new ArgumentException("A VM208 schedule is 14 alarms in the firmware's order, each at a time of day.", nameof(alarms));
+            throw new ArgumentException("A VM208 schedule is 14 alarms in the firmware's order, each hour and minute 0–255.", nameof(alarms));
         }
 
         var text = new StringBuilder("{\"Channel\":{\"alarms\":[");

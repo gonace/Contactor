@@ -167,6 +167,32 @@ public sealed class Vm208ScheduleTests
         Assert.Equal(0, board.UnansweredCount);
     }
 
+    // The firmware takes a time as given into its uint8_t fields (99:00 stays 99:00, -1 is 255), saves it and answers
+    // it so (src/Network/server_VM208.cpp lines 231–281 and 522–572); the board never runs such an alarm. The
+    // simulator does the same and keeps answering; the client reads such a schedule as unreadable, never as none.
+    [Fact]
+    public async Task Should_KeepATimeOutOfRange_AsTheFirmware_AndKeepAnswering()
+    {
+        await using var board = new Vm208Simulator();
+        board.Start();
+        var form = ReplaceFirst(ReplaceFirst(Vm208Api.ScheduleForm(1, Weekdays), "alarm_time_1=06%3A30", "alarm_time_1=99%3A00"), "alarm_time_2=06%3A30", "alarm_time_2=-1%3A30");
+
+        Assert.Equal("200", Code(await SendAsync(board.Port, "POST /shedule_set", form)));
+        Assert.Equal(new Vm208Alarm(1, 99, 0, true, true), board.Alarms(1)[1]);
+        Assert.Equal(new Vm208Alarm(2, 255, 30, true, true), board.Alarms(1)[2]);
+
+        var answer = await SendAsync(board.Port, "GET /getalarms?channel=1");
+        Assert.Equal("200", Code(answer));
+        Assert.Contains("{\"dow\":1,\"hour\":99,\"minute\":0,\"onoff\":true,\"enabled\":true}", answer, StringComparison.Ordinal);
+        Assert.Contains("\"hour\":255,", answer, StringComparison.Ordinal);
+        Assert.Equal("200", Code(await SendAsync(board.Port, StatusRequest)));
+        Assert.Equal(0, board.UnansweredCount);
+
+        await using var run = Run.Start(board.Port, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Null(run.Client.State.OwnRules);
+    }
+
     // Channel 0 and a channel from 269 on crash the real board; 5–268 are an extension module's, not simulated.
     [Theory]
     [InlineData("GET /getalarms", null)]
@@ -333,6 +359,107 @@ public sealed class Vm208ScheduleTests
         Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules);
     }
 
+    // Relays 1 and 2 have schedules; relay 1's save is refused (400) or answered too long to read (-1), relay 2's is
+    // taken. The other relay still goes, and only what was taken comes back.
+    [Theory]
+    [InlineData(400)]
+    [InlineData(-1)]
+    public async Task Should_ReturnOnlyWhatWasTaken_WhenOneRelaysSaveFails(int firstSave)
+    {
+        await using var board = FakeBoard.Start();
+        board.Fixed = true;
+        board.Timers.Add(2);
+        board.SaveCodes[1] = firstSave;
+        await using var run = Run.Start(board.Port, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer)], run.Client.State.OwnRules);
+
+        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer)], Cancel);
+
+        Assert.Equal<OwnRule>([new OwnRule(2, OwnRuleKind.Timer)], taken);
+        Assert.Equal(2, board.Saves);
+        Assert.True(run.Client.State.IsConnected);
+        if (firstSave == 400)
+        {
+            // Refused: the board kept relay 1's schedule, and the read back of relay 2's confirms it.
+            Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules);
+        }
+        else
+        {
+            // An answer that can't be read may hide a save (this board made it): relay 1's rule stays as last read
+            // until the next poll, which reads every schedule again, not a minute later.
+            Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules);
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+            var reads = board.ScheduleRequests;
+            run.Time.Advance(run.PollInterval);
+            await Wait.UntilAsync(() => run.Client.State.OwnRules is { Count: 0 } && run.Time.WaitsOnly(run.PollInterval));
+            Assert.Equal(reads + Vm208Api.RelayCount, board.ScheduleRequests);
+        }
+    }
+
+    // The board answered 200 to the save, so the rule counts as taken; only the next state confirms it. A read back
+    // that still shows enabled alarms keeps the rule, and one that fails makes the rules unknown, never gone.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Should_CountASaveAsTaken_ButLeaveTheRuleToTheReadBack(bool readBackFails)
+    {
+        await using var board = FakeBoard.Start();
+        board.Fixed = true;
+        board.IgnoreSaves = !readBackFails;
+        board.BreakAfterSave = readBackFails;
+        await using var run = Run.Start(board.Port, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+
+        Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], taken);
+        Assert.Equal(1, board.Saves);
+        Assert.True(run.Client.State.IsConnected);
+        if (readBackFails)
+        {
+            Assert.Null(run.Client.State.OwnRules);
+        }
+        else
+        {
+            Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules);
+        }
+    }
+
+    // A firmware without /getalarms answers 404 every minute: the first failure toasts, the next ones are routine (in
+    // the Debug list, no toast) until a read works again.
+    [Fact]
+    public async Task Should_ToastAFailedScheduleRead_OnlyOnce_UntilAReadWorks()
+    {
+        await using var board = FakeBoard.Start();
+        board.BrokenCode = 404;
+        await using var run = Run.Start(board.Port, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var toasts = Toasts(run);
+        Assert.NotEmpty(toasts);
+        Assert.Contains(toasts, t => t.Text == "The board answered 404");
+        Assert.Contains(toasts, t => t.Text.StartsWith("The board's schedules can't be read: ", StringComparison.Ordinal));
+
+        // Two more failed reads, a minute apart: in the trace, but no toast.
+        for (var reads = 2; reads <= 3; reads++)
+        {
+            await NextScheduleReadAsync(run, board, reads);
+        }
+
+        Assert.Equal(toasts.Count, Toasts(run).Count);
+        Assert.Contains(run.Traces, t => t.IsError && t.IsRoutine && t.Text == "The board answered 404");
+
+        // A read that works, then a failure again: that one toasts.
+        board.Fixed = true;
+        await NextScheduleReadAsync(run, board, 3 + Vm208Api.RelayCount);
+        var afterFixed = Toasts(run).Count;
+        board.Fixed = false;
+        await NextScheduleReadAsync(run, board, 4 + Vm208Api.RelayCount);
+        Assert.True(Toasts(run).Count > afterFixed);
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
     // A save without an answer may have been made: the next poll reads every schedule again, not a minute later.
     [Fact]
     public async Task Should_ReadTheSchedulesAgain_AfterASaveWithoutAnAnswer()
@@ -453,6 +580,24 @@ public sealed class Vm208ScheduleTests
                 Assert.Matches("^POST /shedule_set relay=[1-4]&", r);
             }
         });
+    }
+
+    private static List<BoardTraceEntry> Toasts(Run run)
+    {
+        return [.. run.Traces.Where(t => t.IsError && !t.IsRoutine)];
+    }
+
+    // Two polls on: the schedules are read once a minute.
+    private static async Task NextScheduleReadAsync(Run run, FakeBoard board, int scheduleRequests)
+    {
+        for (var poll = 0; poll < 2; poll++)
+        {
+            var statuses = board.StatusRequests;
+            run.Time.Advance(run.PollInterval);
+            await Wait.UntilAsync(() => board.StatusRequests == statuses + 1 && run.Time.WaitsOnly(run.PollInterval));
+        }
+
+        Assert.Equal(scheduleRequests, board.ScheduleRequests);
     }
 
     private static string ReplaceFirst(string text, string old, string replacement)
@@ -578,8 +723,11 @@ public sealed class Vm208ScheduleTests
     }
 
     /// <summary>
-    /// A board whose status is fine, whose schedules answer 500 until <see cref="Fixed"/> and then relay 1's has an
-    /// enabled alarm, and that answers a save with <see cref="SaveCode"/>, or closes the connection without an answer for 0.
+    /// A board whose status is fine, whose schedules answer <see cref="BrokenCode"/> (500) until <see cref="Fixed"/> and
+    /// then the relays in <see cref="Timers"/> (relay 1) have enabled alarms, and that answers a save with
+    /// <see cref="SaveCode"/> (or <see cref="SaveCodes"/> for its relay), or closes the connection without an answer for 0,
+    /// or answers 200 too long to read for -1. A save answered 200 turns the relay's alarms off, unless
+    /// <see cref="IgnoreSaves"/>; after a save, the reads answer 500 while <see cref="BreakAfterSave"/>.
     /// </summary>
     private sealed class FakeBoard : IAsyncDisposable
     {
@@ -589,6 +737,7 @@ public sealed class Vm208ScheduleTests
         private int _statusRequests;
         private int _scheduleRequests;
         private int _saves;
+        private bool _saved;
 
         private FakeBoard(TcpListener listener)
         {
@@ -601,6 +750,16 @@ public sealed class Vm208ScheduleTests
         public bool Fixed { get; set; }
 
         public int SaveCode { get; set; } = 200;
+
+        public int BrokenCode { get; set; } = 500;
+
+        public Dictionary<int, int> SaveCodes { get; } = [];
+
+        public bool IgnoreSaves { get; set; }
+
+        public bool BreakAfterSave { get; set; }
+
+        public HashSet<int> Timers { get; } = [1];
 
         public int Saves => Volatile.Read(ref _saves);
 
@@ -640,15 +799,28 @@ public sealed class Vm208ScheduleTests
                 {
                     using var tcp = await _listener.AcceptTcpClientAsync(_stop.Token);
                     var stream = tcp.GetStream();
-                    var buffer = new byte[4096];
-                    var read = await stream.ReadAsync(buffer, _stop.Token);
-                    var request = Encoding.ASCII.GetString(buffer, 0, read);
+                    var request = await ReadRequestAsync(stream);
                     if (request.StartsWith("POST /shedule_set", StringComparison.Ordinal))
                     {
                         Interlocked.Increment(ref _saves);
-                        if (SaveCode != 0)
+                        var relay = int.Parse(request.Split("relay=", 2)[1].Split('&', 2)[0], System.Globalization.CultureInfo.InvariantCulture);
+                        var code = SaveCodes.GetValueOrDefault(relay, SaveCode);
+                        if (code == 200 || code == -1)
                         {
-                            await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {SaveCode} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), _stop.Token);
+                            lock (Timers)
+                            {
+                                _saved = true;
+                                if (!IgnoreSaves)
+                                {
+                                    Timers.Remove(relay);
+                                }
+                            }
+                        }
+
+                        if (code != 0)
+                        {
+                            var answer = code == -1 ? new string('x', Vm208Api.MaxResponseBytes + 1) : "";
+                            await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {(code == -1 ? 200 : code)} X\r\nContent-Length: {answer.Length}\r\nConnection: close\r\n\r\n{answer}"), _stop.Token);
                         }
 
                         continue;
@@ -664,16 +836,60 @@ public sealed class Vm208ScheduleTests
                         Interlocked.Increment(ref _statusRequests);
                     }
 
-                    var (code, body) = isSchedule
-                        ? (Fixed ? (200, request.StartsWith("GET /getalarms?channel=1 ", StringComparison.Ordinal) ? Vm208Json.WriteAlarms(Weekdays) : FactoryAlarms) : (500, ""))
-                        : (200, Vm208Json.WriteStatus(new Vm208Status(0, false, 0)));
-                    await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {code} X\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), _stop.Token);
+                    var (status, body) = isSchedule ? Schedule(request) : (200, Vm208Json.WriteStatus(new Vm208Status(0, false, 0)));
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} X\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), _stop.Token);
                 }
             }
             catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException or IOException
                 || (ex is InvalidOperationException && _stop.IsCancellationRequested))
             {
                 // Stopped.
+            }
+        }
+
+        // The request line and its form, once the whole body its Content-Length gives has come.
+        private async Task<string> ReadRequestAsync(NetworkStream stream)
+        {
+            var buffer = new byte[8192];
+            var length = 0;
+            while (length < buffer.Length)
+            {
+                var read = await stream.ReadAsync(buffer.AsMemory(length), _stop.Token);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                length += read;
+                var text = Encoding.ASCII.GetString(buffer, 0, length);
+                var end = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                if (end < 0)
+                {
+                    continue;
+                }
+
+                var header = text[..end].Split("\r\n").FirstOrDefault(l => l.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase));
+                var bodyLength = header is null ? 0 : int.Parse(header["Content-Length:".Length..].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                if (text.Length - end - 4 >= bodyLength)
+                {
+                    return $"{text.Split("\r\n", 2)[0]} {text[(end + 4)..]}";
+                }
+            }
+
+            return Encoding.ASCII.GetString(buffer, 0, length);
+        }
+
+        private (int Code, string Body) Schedule(string request)
+        {
+            lock (Timers)
+            {
+                if (!Fixed || (BreakAfterSave && _saved))
+                {
+                    return (Fixed ? 500 : BrokenCode, "");
+                }
+
+                var relay = int.Parse(request.Split("channel=", 2)[1].Split(' ', 2)[0], System.Globalization.CultureInfo.InvariantCulture);
+                return (200, Timers.Contains(relay) ? Vm208Json.WriteAlarms(Weekdays) : FactoryAlarms);
             }
         }
     }
