@@ -2,8 +2,8 @@ using Contactor.Web.Features.Inputs;
 
 namespace Contactor.Tests.Web;
 
-/// <summary>The analog input screen: a number typed into its scale, read as the app saves it.</summary>
-public sealed class AnalogPagesTests
+/// <summary>A number typed into an analog input's scale, read as the app saves it.</summary>
+public sealed class AnalogNumbersTests
 {
     [Theory]
     [InlineData("", true, null)]

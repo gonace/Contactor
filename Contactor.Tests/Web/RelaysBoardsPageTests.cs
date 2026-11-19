@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 using Contactor.Boards;
+using Contactor.Tests.Boards;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -196,6 +197,19 @@ public sealed partial class RelaysBoardsPageTests
         Assert.Empty(page.Errors);
     }
 
+    [Fact]
+    public async Task Should_StillShowABoardWithNoContact_WhenTheFilterHidesIt()
+    {
+        await using var boards = await TwoBoards.StartAsync(FakeRelayBoard.LostContact(relayCount: 4, inputCount: 2));
+        using var http = boards.App.CreateClient();
+
+        var html = await PickAsync(http, "1");
+
+        Assert.DoesNotContain($"id=\"board-{boards.BarnId}\"", html, StringComparison.Ordinal);
+        Assert.Matches("class=\"lost-line\"[^>]*>[\\s\\S]*?<strong[^>]*>Barn:</strong> no contact since", html);
+        Assert.Matches("class=\"chip-filter  lost\" aria-pressed=\"false\"", html);
+    }
+
     // Issue #423: a board's box in the side menu and its chip show the board's own state: a lamp for each of its relays,
     // lit when on, in use, in a group or not, and "3 of 8 on" counts the same; "All boards" adds them up. The heading and
     // each board's section still count what the page shows, a group as one.
@@ -339,4 +353,21 @@ public sealed partial class RelaysBoardsPageTests
 
     [GeneratedRegex("name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"")]
     private static partial Regex TokenPattern();
+
+    // Taps a board in the filter: the page's form, with its antiforgery token, and back to the page.
+    private static async Task<string> PickAsync(HttpClient http, string show)
+    {
+        var page = await PageAsync(http);
+        var token = TokenPattern().Match(page);
+        Assert.True(token.Success, "The filter's form has its antiforgery token.");
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["show"] = show,
+            ["__RequestVerificationToken"] = token.Groups[1].Value,
+        });
+        using var response = await http.PostAsync(RelaysEndpoints.BoardsPath, form, Cancel);
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("/", response.RequestMessage!.RequestUri!.AbsolutePath);
+        return WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Cancel));
+    }
 }
