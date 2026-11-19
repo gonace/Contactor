@@ -99,6 +99,7 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 
 ## Adding a relay board
 
+- **The same situation, the same behaviour.** When a board has the same situation as a board the app already supports, give it the same behaviour, so two boards never act differently. For example, a rule on the board that switches several relays at once works like the Shelly's schedules. Ask the user when the situation is new. This is about behaviour, not the protocol: a gap in the manual still means stop and ask.
 - **Protocol from the manufacturer's manual only.** Name the manual, its date and the section for every command and answer format, in the board's README. Never guess a format, and never mix two interfaces. If something isn't documented, stop and ask.
 - **The simulator speaks the manual's format, not the client's.** Each board's tests include the manual's own example answer, byte for byte, parsed by the client.
 - **Switch one relay without touching the others.** Never read a whole port, change a bit and write it back: a change at the board in between would be overwritten. Use the board's per-relay command; if it has none, ask.
