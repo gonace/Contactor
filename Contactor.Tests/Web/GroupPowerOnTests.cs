@@ -317,6 +317,30 @@ public sealed class GroupPowerOnTests
         Assert.Contains(">Make it safe</button>", WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel)), StringComparison.Ordinal);
     }
 
+    // A write that fails for a state the board hasn't reported: the group's page has no warning yet, only the quiet
+    // note, so the page doesn't send the person there for something to press.
+    [Fact]
+    public async Task Should_SayTheGroupWarnsLater_WhenTheWriteFailsForAnUnknownState()
+    {
+        var board = Board(heat: null);
+        board.RefusePowerOn = true;
+        await using var app = App(board);
+        using var page = await AtReviewAsync(app, 2, 3);
+
+        await page.ClickAsync(Button("Create group"));
+
+        Assert.Empty(page.Errors);
+        var text = await page.TextAsync();
+        Assert.Contains("The group was created, but Contactor couldn't make sure that the board keeps its relays off after a power cut. The board hasn't reported yet what they do. If it reports that it turns one on, the group's page warns.", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Open the group to see what to do.", text, StringComparison.Ordinal);
+        var groupId = await SingleGroupIdAsync(app);
+        Assert.True(await page.HasAsync(PageRenderer.With("href", $"group/{groupId}")));
+        using var http = app.CreateClient();
+        var group = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
+        Assert.DoesNotContain(">Make it safe</button>", group, StringComparison.Ordinal);
+        Assert.Contains("Can't see yet what the board does after a power cut.", group, StringComparison.Ordinal);
+    }
+
     // Adding a relay on the group's page: the page says it, and Save writes Off for the added relay only.
     [Fact]
     public async Task Should_SetAnAddedRelayToOff_OnSave()

@@ -1376,6 +1376,9 @@
   <data name="Groups.PowerOn.NotSetCreated" xml:space="preserve">
     <value>Gruppen skapades, men Contactor kunde inte se till att kortet håller dess reläer av efter ett strömavbrott. Öppna gruppen för att se vad du ska göra.</value>
   </data>
+  <data name="Groups.PowerOn.NotSetCreated.Unknown" xml:space="preserve">
+    <value>Gruppen skapades, men Contactor kunde inte se till att kortet håller dess reläer av efter ett strömavbrott. Kortet har inte visat än vad de gör. Om det visar att det slår på något av dem varnar gruppens sida.</value>
+  </data>
   <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
     <value>Gruppen sparades, men Contactor kunde inte se till att kortet håller dess nya reläer av efter ett strömavbrott.</value>
   </data>
