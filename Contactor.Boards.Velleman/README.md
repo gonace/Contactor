@@ -103,6 +103,7 @@ relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
 ### The simulator
 
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change, a pulse that ends by itself on its `TimeProvider` and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
+- "Run now" for a timer program (`ISimulatedBoardRules`): Velleman's description doesn't say what a timer program switches. The simulator assumes it turns its relay on at one time and off at another, so it offers both.
 - A power cut (`ISimulatedBoardPower`): Velleman's description doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off. It assumes the timer programs stay, which is unknown too.
 
 ### Settings on the board that switch relays without the app

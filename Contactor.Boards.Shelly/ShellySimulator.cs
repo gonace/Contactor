@@ -537,8 +537,8 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     }
 
     /// <summary>
-    /// Each schedule that is on, with the relays its <c>Switch.Set</c> calls switch, and each relay with auto-on, which
-    /// turns it on again, as the device does at their times. A schedule without a <c>Switch.Set</c> the simulator can
+    /// Each schedule that is on, with the relays its <c>Switch.Set</c> calls switch, and each relay with auto-on that is
+    /// off, which it turns on again, as the device does at their times. A schedule without a <c>Switch.Set</c> the simulator can
     /// read isn't among them.
     /// </summary>
     public IReadOnlyList<SimulatedRule> RunnableRules
@@ -560,7 +560,8 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
 
             for (var relay = 1; relay <= _model.Capabilities.RelayCount; relay++)
             {
-                if (AutoOn(relay))
+                // Auto-on turns a relay on again some time after it went off: only a relay that is off has one to run.
+                if (AutoOn(relay) && !State.Relays.Contains(relay))
                 {
                     rules.Add(new SimulatedRule(
                         string.Create(CultureInfo.InvariantCulture, $"auto-on-{relay}"),

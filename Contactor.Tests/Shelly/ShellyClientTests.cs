@@ -139,6 +139,24 @@ public sealed class ShellyClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    // "Run now" of a schedule or an auto-on switches the relay at the device: the app sees it on its next poll.
+    [Fact]
+    public async Task Should_SeeARelayTheDevicesOwnRulesSwitched_OnTheNextPoll()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        var job = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        simulator.SetAutoOn(2, true);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        await simulator.RunRuleAsync($"schedule-{job}");
+        await simulator.RunRuleAsync("auto-on-2");
+        await run.PollAsync();
+
+        Assert.True(run.Client.State.IsOn(1));
+        Assert.True(run.Client.State.IsOn(2));
+    }
+
     // A power cut is a reboot: the device forgot its nonces, so the kept one gets a plain 401 and the app takes a new one.
     [Fact]
     public async Task Should_TakeANewNonce_AfterAPowerCut()

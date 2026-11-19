@@ -42,6 +42,25 @@ public sealed class Vm208ClientTests
         Assert.Contains(run.Changes, s => s.IsConnected && s.Relays == 0b0010);
     }
 
+    // "Run now" of a schedule switches the relay at the board: the app sees it on its next poll.
+    [Fact]
+    public async Task Should_SeeARelayItsScheduleSwitched_OnTheNextPoll()
+    {
+        await using var simulator = new Vm208Simulator();
+        simulator.Start();
+        var alarms = Vm208Simulator.FactorySchedule.ToArray();
+        alarms[Vm208Alarm.IndexOf(3, turnsOn: true)] = alarms[Vm208Alarm.IndexOf(3, turnsOn: true)] with { Hour = 6, Enabled = true };
+        await simulator.SetAlarmsAsync(2, alarms);
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(0, run.Client.State.Relays);
+
+        await simulator.RunRuleAsync("alarm-2-on");
+        run.Time.Advance(run.PollInterval);
+
+        await Wait.UntilAsync(() => run.Client.State.Relays == 0b0010);
+    }
+
     // A poll the board answers busy is asked again, 250 ms later, and doesn't count toward losing the board.
     [Fact]
     public async Task Should_AskAgain_WhenAPollIsBusy_AndNotCountIt()

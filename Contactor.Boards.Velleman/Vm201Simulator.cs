@@ -243,8 +243,9 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private static readonly bool[] OnThenOff = [true, false];
 
     /// <summary>
-    /// Each relay whose timer program is on, twice: its timer switching it on, and off, as the board's program does at
-    /// its times. The app learns of it as of any change at the board, from the status the board pushes.
+    /// Each relay whose timer program is on, twice: its timer switching it on, and off. Velleman's description doesn't
+    /// say what a timer program switches; the simulator assumes it turns its relay on at one time and off at another
+    /// (README.md). The app learns of it as of any change at the board, from the status the board pushes.
     /// </summary>
     public IReadOnlyList<SimulatedRule> RunnableRules =>
     [
