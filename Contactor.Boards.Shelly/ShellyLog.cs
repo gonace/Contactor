@@ -17,6 +17,9 @@ internal static partial class ShellyLog
     [LoggerMessage(Level = LogLevel.Information, Message = "Reconnecting to the Shelly in {DelaySeconds} s")]
     public static partial void Reconnecting(this ILogger logger, string? delaySeconds);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The Shelly refused the password: not trying again until a new one is saved or a person checks again")]
+    public static partial void Held(this ILogger logger);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "A Shelly subscriber failed")]
     public static partial void SubscriberFailed(this ILogger logger, Exception exception);
 

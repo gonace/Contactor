@@ -133,6 +133,15 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
         _poller.Restart();
     }
 
+    /// <summary>
+    /// A person's "Check again": connects again at once while the board isn't connected, also after it refused the
+    /// login, which isn't tried again otherwise. Nothing happens while it is connected.
+    /// </summary>
+    public void TryAgain()
+    {
+        _poller.TryAgain();
+    }
+
     /// <summary>Connects and polls until cancelled. Never throws because of the board. Call it once.</summary>
     public Task RunAsync(CancellationToken cancellationToken)
     {
@@ -222,6 +231,10 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
             case BoardPollStep.Waiting:
                 Vm204Log.Reconnecting(_logger, detail);
                 Trace(BoardTraceDirection.None, $"Trying again in {detail} s");
+                break;
+            case BoardPollStep.Held:
+                Vm204Log.Held(_logger);
+                Trace(BoardTraceDirection.None, "Not trying again until a new login is saved or a person checks again");
                 break;
             case BoardPollStep.Stopped:
                 ForgetLastStatus();

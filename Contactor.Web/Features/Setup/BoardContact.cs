@@ -129,7 +129,8 @@ public sealed class BoardContact : IDisposable
 
             // A problem the board reported already is the answer at once. That holds after a move too, only because the
             // board's connection clears its problem synchronously in SetEndpoint and SetLogin, before the save returns:
-            // what is left is about the new address and login.
+            // what is left is about the new address and login. "Check again" with nothing changed clears it the same way
+            // (TryAgain) before it waits.
             if (!state.IsConnected && state.Problem is { } problem)
             {
                 return new BoardContactResult(false, problem);

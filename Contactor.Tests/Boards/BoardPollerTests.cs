@@ -847,20 +847,25 @@ public sealed class BoardPollerTests
 
     private static readonly BoardModel Model = new("x", "Brand", "X1", new BoardCapabilities(1, 0, false), 1, 8);
 
+    // A problem the poller tries again after its usual wait, e.g. another model at the address.
+    private static readonly ConnectionProblem Mismatch = new(ConnectionProblemKind.WrongModel, Model);
+
     private static readonly ConnectionProblem Refused = new(ConnectionProblemKind.LoginRefused, Model);
+
+    private static readonly ConnectionProblem AskedToWait = new(ConnectionProblemKind.AskedToWait, Model);
 
     [Fact]
     public async Task Should_ReportWhyTheBoardRefusedTheConnect_OnceForTheSameProblem()
     {
         var time = new ManualTimeProvider();
-        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Mismatch) };
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
 
         await WaitForConnectWaitAsync(board, time, TimeSpan.FromSeconds(1));
-        Assert.Equal([new PolledState<int>(false, 0, null, Refused)], board.Changes);
-        Assert.Equal(Refused, poller.State.Problem);
+        Assert.Equal([new PolledState<int>(false, 0, null, Mismatch)], board.Changes);
+        Assert.Equal(Mismatch, poller.State.Problem);
 
         // The same refusal again: nothing new to report.
         time.Advance(TimeSpan.FromSeconds(1));
@@ -870,14 +875,14 @@ public sealed class BoardPollerTests
 
         await stop.CancelAsync();
         await run;
-        Assert.Equal(Refused, poller.State.Problem);
+        Assert.Equal(Mismatch, poller.State.Problem);
     }
 
     [Fact]
     public async Task Should_ClearTheProblem_WhenTheNextConnectGetsNoAnswer()
     {
         var time = new ManualTimeProvider();
-        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Mismatch) };
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
@@ -897,7 +902,7 @@ public sealed class BoardPollerTests
     public async Task Should_ClearTheProblem_AtTheFirstAnswer()
     {
         var time = new ManualTimeProvider();
-        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Mismatch) };
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
@@ -917,7 +922,7 @@ public sealed class BoardPollerTests
     public async Task Should_ClearTheProblem_WhenForgotten()
     {
         var time = new ManualTimeProvider();
-        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Mismatch) };
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
@@ -935,7 +940,7 @@ public sealed class BoardPollerTests
     public async Task Should_ClearTheProblem_WhenRestartedWithANewLogin()
     {
         var time = new ManualTimeProvider();
-        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Mismatch) };
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
@@ -963,7 +968,7 @@ public sealed class BoardPollerTests
     public async Task Should_DropAProblem_FromAConnectBeforeARestart()
     {
         var time = new ManualTimeProvider();
-        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Mismatch) };
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         board.OnLost = () =>
         {
@@ -996,11 +1001,111 @@ public sealed class BoardPollerTests
         await WaitUntilAsync(() => board.Connects == 1);
 
         poller.Forget();
-        connect.SetException(new ProblemException(Refused));
+        connect.SetException(new ProblemException(Mismatch));
         await WaitUntilAsync(() => board.Steps.Any(s => s.Kind == BoardPollStep.Lost));
 
         Assert.Null(poller.State.Problem);
         Assert.DoesNotContain(board.Changes, c => c.Problem is not null);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    // Issue #522: a refused login isn't tried again by itself, however long the clock runs; no timer even waits.
+    [Fact]
+    public async Task Should_NotTryARefusedLoginAgain_UntilRestartedOrAskedTo()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(Refused) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+
+        await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Held) == 1);
+        Assert.Equal(0, time.PendingTimers);
+        Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Waiting);
+        Assert.Equal(Refused, poller.State.Problem);
+        time.Advance(TimeSpan.FromDays(1));
+        Assert.Equal(1, board.Connects);
+
+        // "Check again": exactly one attempt, at once, with the problem cleared until the board answers.
+        poller.TryAgain();
+        Assert.Null(poller.State.Problem);
+        await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Held) == 2);
+        Assert.Equal(2, board.Connects);
+        Assert.Equal(Refused, poller.State.Problem);
+        time.Advance(TimeSpan.FromDays(1));
+        Assert.Equal(2, board.Connects);
+
+        // A new login: at once, and it connects.
+        board.ConnectError = null;
+        poller.Restart();
+        await WaitForPollAsync(board, time, reads: 1);
+        Assert.Equal(3, board.Connects);
+        Assert.Equal(new PolledState<int>(true, 1, time.GetUtcNow()), poller.State);
+
+        await stop.CancelAsync();
+        await run;
+    }
+
+    // "Check again" on a board that answers changes nothing; and the run still ends while the poller holds.
+    [Fact]
+    public async Task Should_LeaveAConnectedBoard_WhenAskedToTryAgain_AndStopWhileHeld()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1, new IOException("a"), new IOException("b"), new IOException("c"));
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+        await WaitForPollAsync(board, time, reads: 1);
+
+        poller.TryAgain();
+        Assert.True(poller.State.IsConnected);
+        Assert.Equal(1, board.Connects);
+        Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Stopped);
+
+        // The login was changed on the board: lost after three failed polls, then refused at the connect, and held.
+        board.ConnectError = new ProblemException(Refused);
+        for (var reads = 2; reads <= 3; reads++)
+        {
+            time.Advance(Interval);
+            await WaitForPollAsync(board, time, reads);
+        }
+
+        time.Advance(Interval);
+        await WaitUntilAsync(() => board.Steps.Any(s => s.Kind == BoardPollStep.Held));
+        Assert.Equal(2, board.Connects);
+
+        await stop.CancelAsync();
+        await run;
+    }
+
+    // A board that asks to wait gets one attempt after AskedToWaitPause, not the quick loop; "Check again" goes at once.
+    [Fact]
+    public async Task Should_WaitTheLongPause_WhenTheBoardAsksToWait()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakePolledBoard(1) { ConnectError = new ProblemException(AskedToWait) };
+        var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = poller.RunAsync(stop.Token);
+
+        await WaitForConnectWaitAsync(board, time, BoardPoller<int>.AskedToWaitPause);
+        Assert.Equal("600", board.Steps.Last(s => s.Kind == BoardPollStep.Waiting).Detail);
+        time.Advance(BoardPoller<int>.AskedToWaitPause - TimeSpan.FromSeconds(1));
+        Assert.Equal(1, board.Connects);
+
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => board.Connects == 2 && time.WaitsOnly(BoardPoller<int>.AskedToWaitPause));
+
+        poller.TryAgain();
+        await WaitUntilAsync(() => board.Connects == 3 && time.WaitsOnly(BoardPoller<int>.AskedToWaitPause));
+        Assert.Equal(AskedToWait, poller.State.Problem);
+
+        // Once the board stops asking, the quick loop starts over from 1 s.
+        board.ConnectError = new TimeoutException("no answer");
+        poller.TryAgain();
+        await WaitUntilAsync(() => board.Connects == 4 && time.WaitsOnly(BoardPoller<int>.MinBackoff));
+
         await stop.CancelAsync();
         await run;
     }

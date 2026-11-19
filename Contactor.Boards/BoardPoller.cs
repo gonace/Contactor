@@ -14,6 +14,12 @@ public enum BoardPollStep
 
     /// <summary>The app ended the connection: it is stopping, or the address or login changed. No detail.</summary>
     Stopped,
+
+    /// <summary>
+    /// The board refused the login: the poller sends nothing more until a person saves a new one or asks to check again
+    /// (<see cref="BoardPoller{TReading}.TryAgain"/>). No detail.
+    /// </summary>
+    Held,
 }
 
 /// <summary>A polled board's state as <see cref="BoardPoller{TReading}"/> keeps it.</summary>
@@ -69,7 +75,10 @@ public interface IPolledBoard<TReading>
 /// reports the state only when it changed. <see cref="State"/> itself is refreshed on every poll, so its
 /// <see cref="PolledState{TReading}.LastContactUtc"/> is always current. After <see cref="FailuresBeforeLost"/> failed
 /// polls in a row the board counts as disconnected and the poller connects again, with a wait that doubles from 1 s
-/// to 30 s while it keeps failing. Commands go through <see cref="RunCommandAsync"/>: never behind a poll, and never
+/// to 30 s while it keeps failing. A connect the board refused on purpose isn't tried again in that loop: after a
+/// refused login (<see cref="ConnectionProblemKind.LoginRefused"/>) the poller waits for a new login
+/// (<see cref="Restart"/>) or a person's "Check again" (<see cref="TryAgain"/>), and after the board asked it to wait
+/// (<see cref="ConnectionProblemKind.AskedToWait"/>) it waits <see cref="AskedToWaitPause"/> too. Commands go through <see cref="RunCommandAsync"/>: never behind a poll, and never
 /// to a board that is lost. Protocol-neutral: the board's own code does the talking.
 /// </summary>
 public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
@@ -77,6 +86,12 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
     public static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long the poller waits by itself after the board asked it to wait. Longer than a Shelly counts wrong passwords
+    /// for (10 minutes, Issue #522), so its own wait runs out and the one attempt after can't keep it going.
+    /// </summary>
+    public static readonly TimeSpan AskedToWaitPause = TimeSpan.FromMinutes(10);
     public const int DefaultFailuresBeforeLost = 3;
     public static readonly TimeSpan DefaultDisposeWait = TimeSpan.FromSeconds(15);
 
@@ -198,6 +213,19 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
         }
 
         Cancel(ref _attempt);
+    }
+
+    /// <summary>
+    /// A person's "Check again" while the board isn't connected: as <see cref="Restart"/>, it ends the wait (also the
+    /// one after a refused login, which only this or a new login ends) and connects again at once, with the problem
+    /// cleared until the board answers again. Nothing happens while the board is connected.
+    /// </summary>
+    public void TryAgain()
+    {
+        if (!State.IsConnected)
+        {
+            Restart();
+        }
     }
 
     /// <summary>
@@ -389,7 +417,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                 Volatile.Write(ref _attempt, attempt);
                 try
                 {
-                    var answered = await RunSessionAsync(attempt.Token).ConfigureAwait(false);
+                    var (answered, refused) = await RunSessionAsync(attempt.Token).ConfigureAwait(false);
                     if (cancellationToken.IsCancellationRequested)
                     {
                         break;
@@ -407,10 +435,30 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                         backoff = MinBackoff;
                     }
 
-                    _board.OnStep(BoardPollStep.Waiting, ((int)backoff.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    // Never a refused login in a loop (Issue #522): each try counts toward a board's lockout, e.g. a
+                    // Shelly's brute-force protection, and the same login gets the same answer. Only Restart (a new
+                    // address or login) or TryAgain (a person's "Check again") ends this wait, by cancelling the attempt.
+                    var wait = refused switch
+                    {
+                        ConnectionProblemKind.LoginRefused => Timeout.InfiniteTimeSpan,
+                        ConnectionProblemKind.AskedToWait => AskedToWaitPause,
+                        _ => backoff,
+                    };
+                    if (wait == Timeout.InfiniteTimeSpan)
+                    {
+                        _board.OnStep(BoardPollStep.Held, null);
+                    }
+                    else
+                    {
+                        _board.OnStep(BoardPollStep.Waiting, ((int)wait.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    }
+
                     try
                     {
-                        await Task.Delay(backoff, _timeProvider, attempt.Token).ConfigureAwait(false);
+                        // No timer for the hold: only a cancel ends it.
+                        await (wait == Timeout.InfiniteTimeSpan
+                            ? Task.Delay(Timeout.InfiniteTimeSpan, attempt.Token)
+                            : Task.Delay(wait, _timeProvider, attempt.Token)).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                     {
@@ -422,7 +470,10 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                         break;
                     }
 
-                    backoff = backoff * 2 > MaxBackoff ? MaxBackoff : backoff * 2;
+                    if (refused is not (ConnectionProblemKind.LoginRefused or ConnectionProblemKind.AskedToWait))
+                    {
+                        backoff = backoff * 2 > MaxBackoff ? MaxBackoff : backoff * 2;
+                    }
                 }
                 finally
                 {
@@ -436,10 +487,14 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
         }
     }
 
-    /// <summary>One connection, from connect until it is lost or ended. Returns whether the board answered a poll.</summary>
-    private async Task<bool> RunSessionAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// One connection, from connect until it is lost or ended. Returns whether the board answered a poll, and the kind of
+    /// problem a refused connect put on the state (null when it put none, e.g. a Restart came first).
+    /// </summary>
+    private async Task<(bool Answered, ConnectionProblemKind? Refused)> RunSessionAsync(CancellationToken cancellationToken)
     {
         var answered = false;
+        ConnectionProblemKind? refused = null;
         var lost = false;
         var connected = false;
         int generation;
@@ -480,7 +535,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                     {
                         // Commands that failed lost the board; that was reported then.
                         lost = true;
-                        return answered;
+                        return (answered, null);
                     }
 
                     var reading = await _board.ReadAsync(poll.Token).ConfigureAwait(false);
@@ -499,7 +554,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                     if (CountFailure(ex.Message))
                     {
                         lost = true;
-                        return answered;
+                        return (answered, null);
                     }
                 }
                 finally
@@ -528,7 +583,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                 // the connect began, also one that came just now, drops it (SetProblem).
                 if (!connected)
                 {
-                    SetProblem((ex as IConnectionProblemSource)?.Problem, generation, restarts);
+                    refused = SetProblem((ex as IConnectionProblemSource)?.Problem, generation, restarts);
                 }
             }
         }
@@ -549,7 +604,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             }
         }
 
-        return answered;
+        return (answered, refused);
     }
 
     // Until the next poll is due, or PollNow.
@@ -600,20 +655,26 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     }
 
     // A problem from a connect for a board Forget has moved on from, or a login Restart has moved on from, is dropped.
-    // The same problem again is no change to report.
-    private void SetProblem(ConnectionProblem? problem, int generation, int restarts)
+    // The same problem again is no change to report. Returns the kind of the problem now on the state for this connect,
+    // or null when it was dropped or there is none.
+    private ConnectionProblemKind? SetProblem(ConnectionProblem? problem, int generation, int restarts)
     {
         lock (_stateLock)
         {
             var state = _state;
-            if (generation != _generation || restarts != _restarts || Equals(state.Problem, problem))
+            if (generation != _generation || restarts != _restarts)
             {
-                return;
+                return null;
             }
 
-            var after = state with { Problem = problem };
-            Volatile.Write(ref _state, after);
-            _board.OnStateChanged(after);
+            if (!Equals(state.Problem, problem))
+            {
+                var after = state with { Problem = problem };
+                Volatile.Write(ref _state, after);
+                _board.OnStateChanged(after);
+            }
+
+            return problem?.Kind;
         }
     }
 
