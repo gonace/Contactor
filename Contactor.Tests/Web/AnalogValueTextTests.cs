@@ -32,6 +32,17 @@ public sealed class AnalogValueTextTests
         Assert.Equal(AnalogValueState.NoReading, Show(-1).State);
     }
 
+    // A reading from before the contact was lost may be stale, and the board may not have read its inputs yet: no value.
+    [Fact]
+    public void Should_ShowNoValue_WithoutContact_OrBeforeTheBoardsFirstReading()
+    {
+        var lost = Connected with { IsConnected = false, Analog = new AnalogReadings([430]) };
+
+        Assert.Equal(new AnalogValue(AnalogValueState.NoContact, "–", "", null, ""), AnalogValueText.Show(Celsius, TenBitFiveVolts, lost, 1));
+        Assert.Equal(AnalogValueState.Waiting, AnalogValueText.Show(Celsius, TenBitFiveVolts, BoardState.Initial, 1).State);
+        Assert.Equal(AnalogValueState.Waiting, AnalogValueText.Show(Celsius, TenBitFiveVolts, Connected, 1).State);
+    }
+
     private static AnalogValue Show(int? counts)
     {
         return AnalogValueText.Show(Celsius, TenBitFiveVolts, Connected with { Analog = new AnalogReadings([counts]) }, 1);
