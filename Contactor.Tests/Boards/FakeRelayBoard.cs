@@ -345,7 +345,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             taken = [.. rules.Where(had.Contains).Distinct()];
             if (taken.Count == 0)
             {
-                throw new BoardNotConnectedException("The board has none of those rules.");
+                throw new BoardRefusedException("The board has none of those rules.");
             }
 
             if (HoldOwnRules)
