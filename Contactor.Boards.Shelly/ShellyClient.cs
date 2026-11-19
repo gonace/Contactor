@@ -59,7 +59,10 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// </summary>
     public const int MaxNonceCount = 30_000;
 
-    /// <summary>The most requests the client uses one nonce for: <see cref="MaxNonceCount"/>, lower only in the tests.</summary>
+    /// <summary>
+    /// The most requests the client uses one nonce for: <see cref="MaxNonceCount"/>. Internal, for the tests only
+    /// (<c>InternalsVisibleTo</c>): they lower it, as reaching 30,000 requests a nonce would take too long.
+    /// </summary>
     internal int NonceLimit { get; set; } = MaxNonceCount;
 
     /// <summary>
