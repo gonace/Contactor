@@ -184,6 +184,10 @@ input[type="password"] {
     align-items: center;
 }
 
+.sign-in-choice {
+    align-items: center;
+}
+
 .way-in-icon-tile {
     width: 40px;
     height: 40px;

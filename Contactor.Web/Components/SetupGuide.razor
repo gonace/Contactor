@@ -313,8 +313,9 @@
                 @foreach (var option in options)
                 {
                     var id = option.Method.Id;
-                    <label class="choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
+                    <label class="choice sign-in-choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
                         <input type="radio" name="sign-in" checked="@(id == _signInId)" disabled="@(!option.Allowed)" @onchange="() => _signInId = id" />
+                        <span class="way-in-icon-tile"><AccessMethodIcon MethodId="@id" /></span>
                         <span class="choice-text">
                             <span class="title">
                                 <span class="name">@SetupText.Name(option.Method)</span>
