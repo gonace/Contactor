@@ -135,6 +135,28 @@ public sealed class DevantechSimulatedBoardTests
         Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
     }
 
+    // An off-pulse of a relay that is off is no permanent change: Latched Outputs brings it back off.
+    [Fact]
+    public async Task Should_LatchTheRelayOff_AfterAnOffPulseOfARelayThatWasOff()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        simulator.LatchedOutputs = true;
+        using (var board = await Board.ConnectAsync(simulator))
+        {
+            Assert.Equal("00", await board.AskAsync("21 02 0A", 1));
+        }
+
+        // The pulse's end turns it on, as 0x21 does; still no permanent change.
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
+
+        await simulator.CutPowerAsync();
+        await simulator.RestorePowerAsync();
+
+        Assert.True(simulator.State.Relays.IsEmpty);
+    }
+
     [Fact]
     public async Task Should_EndAPulse_WhenTheRelayIsSwitchedForGood()
     {

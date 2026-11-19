@@ -151,7 +151,7 @@ public sealed class RunningBoard : IAsyncDisposable
     /// </summary>
     public Task SetTimerAsync(int relay, bool turnOn)
     {
-        if (Board is not ISimulatedBoardTimers timers || relay < 1 || relay > Board.Model.Capabilities.RelayCount)
+        if (Power?.IsPoweredOff == true || Board is not ISimulatedBoardTimers timers || relay < 1 || relay > Board.Model.Capabilities.RelayCount)
         {
             return Task.CompletedTask;
         }
@@ -168,7 +168,7 @@ public sealed class RunningBoard : IAsyncDisposable
     /// </summary>
     public Task SetModeAsync(int relay, int mode)
     {
-        if (Board is not ISimulatedBoardRelayModes modes || relay < 1 || relay > modes.Modes.Count || mode < 0 || mode >= modes.ModeNames.Count)
+        if (Power?.IsPoweredOff == true || Board is not ISimulatedBoardRelayModes modes || relay < 1 || relay > modes.Modes.Count || mode < 0 || mode >= modes.ModeNames.Count)
         {
             return Task.CompletedTask;
         }
