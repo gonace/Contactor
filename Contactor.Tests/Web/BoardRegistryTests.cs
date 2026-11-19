@@ -194,13 +194,15 @@ public sealed class BoardRegistryTests
         Assert.Equal([new OwnRule(3, OwnRuleKind.Timer)], await board.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer)], Cancel));
         Assert.Equal(OwnRules.Empty, rules[^1].OwnRules);
 
+        // Only the next model's rules come through, and they are the board's.
         await registry.ReplaceAsync(next.Build(id, Vm201Model.Model), Cancel);
+        var other = new OwnRules([new OwnRule(5, OwnRuleKind.Timer)]);
         old.Fake.SetOwnRules(timer);
-        next.Fake.SetOwnRules(OwnRules.Empty);
+        next.Fake.SetOwnRules(other);
 
         Assert.Equal(3, rules.Count);
-        Assert.Same(next.Fake, next.Board);
-        Assert.Equal(OwnRules.Empty, rules[2].OwnRules);
+        Assert.Equal(other, rules[2].OwnRules);
+        Assert.Equal(other, board.State.OwnRules);
         Assert.Equal(3, changes.Count);
         Assert.False(old.Fake.HasListeners);
     }
@@ -405,6 +407,43 @@ public sealed class BoardRegistryTests
         Assert.Equal(new BoardEndpoint("10.0.0.8", 9761), next.Connection.Endpoint);
         await again.CancelAsync();
         await second;
+    }
+
+    // A board taken out, or the registry disposed, passes on no more analog values or own rules.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Should_PassOnNoMoreAnalogOrOwnRulesChanges_WhenTheBoardIsRemovedOrTheRegistryDisposed(bool disposed)
+    {
+        await using var database = await DatabaseAsync();
+        var id = await AddRowAsync(database);
+        var registry = Registry(database);
+        var parts = new FakeBoardParts(new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff));
+        await registry.ReplaceAsync(parts.Build(id, Vm204Model.Model), Cancel);
+        var analogs = new List<BoardStateChange>();
+        var rules = new List<BoardStateChange>();
+        registry.AnalogChanged += (_, change) => analogs.Add(change);
+        registry.OwnRulesChanged += (_, change) => rules.Add(change);
+        parts.Fake.SetAnalog(new AnalogReadings([512]));
+        parts.Fake.SetOwnRules(new OwnRules([new OwnRule(3, OwnRuleKind.Timer)]));
+        Assert.Single(analogs);
+        Assert.Single(rules);
+
+        if (disposed)
+        {
+            await registry.DisposeAsync();
+        }
+        else
+        {
+            Assert.True(await registry.RemoveAsync(id, Cancel));
+        }
+
+        parts.Fake.SetAnalog(new AnalogReadings([600]));
+        parts.Fake.SetOwnRules(OwnRules.Empty);
+
+        Assert.Single(analogs);
+        Assert.Single(rules);
+        Assert.False(parts.Fake.HasListeners);
     }
 
     // Disposing lets go of everything: the model's events and its connection.

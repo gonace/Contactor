@@ -28,13 +28,13 @@ public sealed class ShellyClientTests
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Equal(new ShellyStatus(0b0010, AllOff(4)), run.Client.State.Status);
+        Assert.Equal(new ShellyStatus(0b0010, AllOff(4), OwnRules.Empty), run.Client.State.Status);
         Assert.True(run.Client.State.IsOn(2));
         Assert.Null(run.Client.State.Problem);
 
-        // Each switch's settings once at connect, after the status: not with the first poll.
+        // Each switch's settings and the schedules once at connect, after the status: not with the first poll.
         Assert.Equal(
-            [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, .. Enumerable.Repeat(ShellyApi.SwitchGetConfig, 4), ShellyApi.GetStatus],
+            [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, .. Enumerable.Repeat(ShellyApi.SwitchGetConfig, 4), ShellyApi.ScheduleList, ShellyApi.GetStatus],
             simulator.Received);
         Assert.Contains(run.Traces, t => t.Text == "Device SIM-4, generation 2, firmware 2.0.0");
         Assert.Contains(run.Traces, t => t.Text == "Status: relay 2 on" && t.Direction == BoardTraceDirection.Received);
@@ -57,7 +57,7 @@ public sealed class ShellyClientTests
         // Only Switch.Set, one per relay, each followed by nothing else until the read after the command.
         Assert.Equal(
             [ShellyApi.SwitchSet, ShellyApi.SwitchSet, ShellyApi.GetStatus, ShellyApi.SwitchSet, ShellyApi.GetStatus],
-            simulator.Received.Skip(7));
+            simulator.Received.Skip(8));
         Assert.Contains(run.Traces, t => t.Text == "Turn on relay 3" && t.Direction == BoardTraceDirection.Sent);
         Assert.Contains(run.Traces, t => t.Text == "Relay 3 is on (it was off)");
         Assert.Equal(0, await run.Client.TurnOnAsync(0, Cancel));
@@ -97,9 +97,9 @@ public sealed class ShellyClientTests
 
         await run.Client.TurnOnAsync(0b0010, Cancel);
 
-        // Status and two Switch.GetConfig at connect, the first poll, a poll, the Switch.Set and the read after it: seven
-        // challenges, each answered.
-        Assert.Equal(7, simulator.ChallengeCount);
+        // Status, two Switch.GetConfig and Schedule.List at connect, the first poll, a poll, the Switch.Set and the read
+        // after it: eight challenges, each answered.
+        Assert.Equal(8, simulator.ChallengeCount);
         Assert.Equal(0, simulator.DeniedCount);
         Assert.Equal(
             [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)", ShellyApi.SwitchGetConfig, $"{ShellyApi.SwitchGetConfig} (signed)"],
@@ -139,27 +139,120 @@ public sealed class ShellyClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    // The password changed on the device while the app runs: the kept nonce is refused, the new challenge is answered
+    // once, and that is refused too. Nothing more in that request, and no kept nonce for the next.
     [Fact]
-    public async Task Should_StayDisconnectedAndRetry_WhenThePasswordIsWrong()
+    public async Task Should_StopAfterOneNewChallenge_WhenTheKeptNonceAndThenThePasswordAreRefused()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var challenges = simulator.ChallengeCount;
+        var sent = simulator.Received.Count;
+        simulator.ChangePassword("changed");
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.DeniedCount == 2 && run.Time.WaitsOnly(run.PollInterval));
+
+        // The kept nonce (wrong, as the password is) and one answer to the new challenge: two requests, two refusals.
+        Assert.Equal([$"{ShellyApi.GetStatus} (signed)", $"{ShellyApi.GetStatus} (signed)"], simulator.Received.Skip(sent));
+        Assert.Equal(challenges + 2, simulator.ChallengeCount);
+        Assert.Contains(run.Traces, t => t.Text == "The Shelly wants a new nonce");
+        Assert.Contains(run.Traces, t => t.Text == "Wrong password" && t.IsError);
+        Assert.True(run.Client.State.IsConnected);
+
+        // The next poll has no kept nonce: it asks without the password first, then answers the challenge once.
+        sent = simulator.Received.Count;
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.DeniedCount == 3 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal([ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)"], simulator.Received.Skip(sent));
+    }
+
+    // "A single nonce can be reused for up to 30,000 requests": the client asks for a new one when it reaches the limit,
+    // without waiting for the device to refuse it. The limit is lowered here, so the test doesn't send 30,000 requests.
+    [Fact]
+    public async Task Should_TakeANewNonce_WhenItUsedTheKeptOneForTheMostRequests()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(ShellyClient.MaxNonceCount, run.Client.NonceLimit);
+        run.Client.NonceLimit = 2;
+        await run.PollAsync();
+        var challenges = simulator.ChallengeCount;
+        var sent = simulator.Received.Count;
+
+        // The poll above took a new nonce (the old one was past the limit), its first request. The next poll uses it a
+        // second time; the one after goes without it, gets a new challenge and answers it.
+        await run.PollAsync();
+        await run.PollAsync();
+
+        Assert.Equal([$"{ShellyApi.GetStatus} (signed)", ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)"], simulator.Received.Skip(sent));
+        Assert.Equal(challenges + 1, simulator.ChallengeCount);
+        Assert.Equal(0, simulator.DeniedCount);
+        Assert.Equal(0, simulator.StaleCount);
+        Assert.DoesNotContain(run.Traces, t => t.Text == "The Shelly wants a new nonce");
+    }
+
+    // Issue #522: each try counts toward the device's brute-force protection, so a refused password isn't tried again
+    // by itself, however long the clock runs.
+    [Fact]
+    public async Task Should_StayDisconnected_AndNotTryARefusedPasswordAgain()
     {
         await using var simulator = Start(ShellyModels.OneRelay, Password);
         await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
 
-        // Refused, then tried again after the wait: only when the clock gets there.
-        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        run.Time.Advance(TimeSpan.FromSeconds(1));
-        await Wait.UntilAsync(() => simulator.DeniedCount == 2 && run.Time.WaitsOnly(TimeSpan.FromSeconds(2)));
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Not trying again until a new password is saved or a person checks again"));
+        Assert.Equal(1, simulator.DeniedCount);
+        Assert.Equal(0, run.Time.PendingTimers);
+        var sent = simulator.Received.Count;
 
+        run.Time.Advance(TimeSpan.FromDays(1));
+        await Task.Yield();
+
+        Assert.Equal(1, simulator.DeniedCount);
+        Assert.Equal(sent, simulator.Received.Count);
         Assert.False(run.Client.State.IsConnected);
         Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay), run.Client.State.Problem);
         Assert.Single(run.Changes, c => c.Problem is not null);
         Assert.Contains(run.Traces, t => t.Text == "Wrong password" && t.IsError);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Trying again in", StringComparison.Ordinal));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
 
         // A new password connects at once, and clears the problem.
         run.Client.SetPassword(Password);
         Assert.Null(run.Client.State.Problem);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal(1, simulator.DeniedCount);
+    }
+
+    // "Check again" tries the same password once, and holds again when the device refuses it again.
+    [Fact]
+    public async Task Should_TryOnce_WhenAPersonChecksAgain_AfterARefusedPassword()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
+        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && HeldCount(run) == 1);
+
+        run.Client.TryAgain();
+        Assert.Null(run.Client.State.Problem);
+        await Wait.UntilAsync(() => simulator.DeniedCount == 2 && HeldCount(run) == 2);
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay), run.Client.State.Problem);
+
+        run.Time.Advance(TimeSpan.FromHours(1));
+        await Task.Yield();
+        Assert.Equal(2, simulator.DeniedCount);
+
+        run.Client.SetPassword(Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Problem);
+        Assert.Equal(2, simulator.DeniedCount);
+
+        // Connected: "Check again" leaves the connection as it is.
+        var connects = run.Traces.Count(t => t.Text.StartsWith("Connecting to", StringComparison.Ordinal));
+        run.Client.TryAgain();
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(connects, run.Traces.Count(t => t.Text.StartsWith("Connecting to", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -167,14 +260,14 @@ public sealed class ShellyClientTests
     {
         await using var simulator = Start(ShellyModels.OneRelay, Password);
         await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
-        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && HeldCount(run) == 1);
         var refused = new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay);
         Assert.Equal(refused, run.Client.State.Problem);
 
         // The device's brute-force protection answers 429 now: the screens say to wait, not why.
         simulator.Throttle = true;
-        run.Time.Advance(TimeSpan.FromSeconds(1));
-        await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(2)));
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
 
         var tooMany = new ConnectionProblem(ConnectionProblemKind.AskedToWait, ShellyModels.OneRelay);
         Assert.Equal(tooMany, run.Client.State.Problem);
@@ -226,7 +319,8 @@ public sealed class ShellyClientTests
         simulator.Throttle = true;
         await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        // Issue #522: not in the poller's quick loop, but after a wait longer than the device counts wrong passwords for.
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 600 s") && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
 
         Assert.Equal(1, simulator.ThrottledCount);
         Assert.Equal([ShellyApi.GetDeviceInfo, ShellyApi.GetStatus], simulator.Received);
@@ -235,9 +329,38 @@ public sealed class ShellyClientTests
         Assert.Contains(run.Traces, t => t.Text.StartsWith("The Shelly asks to wait", StringComparison.Ordinal) && t.IsError);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: The Shelly asks to wait", StringComparison.Ordinal));
 
+        // Nothing more until the wait runs out.
+        run.Time.Advance(BoardPoller<ShellyStatus>.AskedToWaitPause - TimeSpan.FromSeconds(1));
+        await Task.Yield();
+        Assert.Equal(1, simulator.ThrottledCount);
+        Assert.Equal(2, simulator.Received.Count);
+
         simulator.Throttle = false;
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
+    }
+
+    // "Check again" doesn't wait for the 10 minutes: one attempt at once.
+    [Fact]
+    public async Task Should_TryOnceAtOnce_WhenAPersonChecksAgain_AfterA429()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        simulator.Throttle = true;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
+
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 2 && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
+
+        simulator.Throttle = false;
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal(2, simulator.ThrottledCount);
+    }
+
+    private static int HeldCount(ClientRun run)
+    {
+        return run.Traces.Count(t => t.Text == "Not trying again until a new password is saved or a person checks again");
     }
 
     [Theory]
@@ -344,6 +467,48 @@ public sealed class ShellyClientTests
         }
 
         Assert.True(run.Client.State.IsConnected);
+    }
+
+    // A 429 part-way through a mask stops the rest, and the relays the device took before it are returned (the
+    // IRelayBoard contract). The device is read again at once.
+    [Fact]
+    public async Task Should_ReturnTheRelaysTaken_WhenA429StopsTheRestOfTheMask()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays, Password, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var sent = simulator.Received.Count;
+        simulator.AfterSwitchSet = _ => simulator.Throttle = true;
+
+        Assert.Equal(0b0001, await run.Client.TurnOnAsync(0b0111, Cancel));
+
+        // Relay 1, then the 429 for relay 2, and nothing for relay 3; then the read at once, throttled too.
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 2);
+        Assert.Equal(0b0001, simulator.Relays);
+        Assert.Equal(
+            [$"{ShellyApi.SwitchSet} (signed)", $"{ShellyApi.SwitchSet} (signed)", $"{ShellyApi.GetStatus} (signed)"],
+            simulator.Received.Skip(sent));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Stopped at relay 2, nothing more sent: ", StringComparison.Ordinal) && t.IsError);
+
+        // Before any relay was taken, the same 429 fails the command.
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0100, Cancel));
+    }
+
+    // No answer part-way through a mask stops the rest too, and the relays the device took before it are returned.
+    [Fact]
+    public async Task Should_ReturnTheRelaysTaken_WhenNoAnswerStopsTheRestOfTheMask()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var sent = simulator.Received.Count;
+        simulator.AfterSwitchSet = relay => simulator.RejectConnections = relay == 2;
+
+        Assert.Equal(0b0011, await run.Client.TurnOnAsync(0b1011, Cancel));
+
+        Assert.Equal(0b0011, simulator.Relays);
+        Assert.Equal([ShellyApi.SwitchSet, ShellyApi.SwitchSet], simulator.Received.Skip(sent));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Stopped at relay 4, nothing more sent: ", StringComparison.Ordinal) && t.IsError);
     }
 
     [Fact]
@@ -762,6 +927,401 @@ public sealed class ShellyClientTests
         Assert.Contains(changed, t => t.Text == "Relay 2 after a power cut: on" && !t.IsRoutine);
     }
 
+    [Fact]
+    public async Task Should_ReadSchedulesAndAutoOn_AtConnect_AsRulesWithAUnitPerSchedule()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays);
+        simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}},{"method":"Switch.SetMany","params":{"ids":[1],"on":true}}]""");
+        simulator.AddSchedule("""[{"method":"Switch.Toggle","params":{"id":1}}]""");
+        simulator.AddSchedule("""[{"method":"Switch.SetAll","params":{"on":true}}]""", enable: false);
+        simulator.AddSchedule("""[{"method":"Shelly.Reboot"}]""");
+        simulator.SetAutoOn(3, true);
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        OwnRule timer1 = new(1, OwnRuleKind.Timer), timer2 = new(2, OwnRuleKind.Timer), autoOn3 = new(3, OwnRuleKind.AutoOn);
+        var rules = run.Client.State.OwnRules!;
+        Assert.Equal(new OwnRules([timer1, timer2, autoOn3], [[timer1, timer2], [timer2], [autoOn3]]), rules);
+
+        // Relay 2's timer is also behind the second schedule: turning off relay 1's leaves it. Relay 2's takes both
+        // schedules, so relay 1's goes with it.
+        Assert.Empty(rules.GoesWith(timer1));
+        Assert.Equal([timer1], rules.GoesWith(timer2));
+        Assert.Empty(rules.GoesWith(autoOn3));
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Contains(run.Traces, t => t.Text == "Ask for the schedules" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Schedules: 2 switch relay 1 and 2" && t.Direction == BoardTraceDirection.Received);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 3 after a power cut: off · turns on again by itself");
+        Assert.Empty(run.OwnRulesChanges);
+    }
+
+    [Fact]
+    public async Task Should_ReadTheSchedulesAgain_OnlyWhenScheduleRevChanges()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays, Password);
+        var job = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":1,"on":true}}]""");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(new OwnRules([new OwnRule(2, OwnRuleKind.Timer)], [[new OwnRule(2, OwnRuleKind.Timer)]]), run.Client.State.OwnRules);
+
+        await run.PollAsync();
+        await run.PollAsync();
+        Assert.Equal(1, simulator.Received.Count(r => r.StartsWith(ShellyApi.ScheduleList, StringComparison.Ordinal)));
+
+        // Turned off at the device: the next poll reads the schedules again, and tells only the rules changed.
+        var changes = run.Changes.Count;
+        simulator.SetScheduleEnabled(job, false);
+        await run.PollAsync();
+        Assert.Equal(2, simulator.Received.Count(r => r.StartsWith(ShellyApi.ScheduleList, StringComparison.Ordinal)));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+        Assert.Equal(OwnRules.Empty, Assert.Single(run.OwnRulesChanges).OwnRules);
+        Assert.Equal(changes, run.Changes.Count);
+        Assert.Empty(run.PowerOnChanges);
+
+        // Auto-on comes with the settings, at the next cfg_rev; not the schedules.
+        simulator.SetAutoOn(1, true);
+        await run.PollAsync();
+        Assert.Equal(new OwnRules([new OwnRule(1, OwnRuleKind.AutoOn)], [[new OwnRule(1, OwnRuleKind.AutoOn)]]), run.Client.State.OwnRules);
+        Assert.Equal(2, run.OwnRulesChanges.Count);
+        Assert.Empty(run.PowerOnChanges);
+        Assert.Equal(2, simulator.Received.Count(r => r.StartsWith(ShellyApi.ScheduleList, StringComparison.Ordinal)));
+        Assert.Equal(changes, run.Changes.Count);
+    }
+
+    [Fact]
+    public async Task Should_ReadTheSchedulesEveryMinute_OnADeviceWithoutScheduleRev()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.ReportsScheduleRevision = false;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+
+        simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        await run.PollAsync();
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+
+        await run.PollAsync();
+        Assert.Equal(2, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules!);
+    }
+
+    [Fact]
+    public async Task Should_LeaveTheRulesUnknown_WhenTheSchedulesCantBeRead_AndStayConnected()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.FailSchedules = true;
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 30);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.Equal(AllOff(2), run.Client.State.PowerOn);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Schedules not read", StringComparison.Ordinal) && t.IsError && !t.IsRoutine);
+
+        // Each poll is answered; the read again a minute after, not at every poll, and quietly while it still fails.
+        for (var poll = 0; poll < BoardPoller<ShellyStatus>.DefaultFailuresBeforeLost + 1; poll++)
+        {
+            await run.PollAsync();
+        }
+
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(3, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Single(run.Traces, t => t.Text.StartsWith("Schedules not read", StringComparison.Ordinal) && !t.IsRoutine);
+
+        simulator.FailSchedules = false;
+        await run.PollAsync();
+        await run.PollAsync();
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+        Assert.Equal(OwnRules.Empty, Assert.Single(run.OwnRulesChanges).OwnRules);
+    }
+
+    [Fact]
+    public async Task Should_LeaveTheRulesUnknown_WhenASwitchsSettingsCantBeRead()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.FailConfigRelays = 0b10;
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // Relay 2's auto-on isn't known, so neither are the rules; its state after a power cut is unknown alone.
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.Equal(new PowerOnStates([PowerOnState.Off, null]), run.Client.State.PowerOn);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_SkipTheSchedules_WhenTheSettingsGetNoAnswer()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.SilentConfigRelays = 0b1;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 30);
+
+        await Wait.UntilAsync(() => simulator.Received.Contains(ShellyApi.SwitchGetConfig) && run.Time.WaitsOnly(ShellyClient.RequestTimeout));
+        run.Time.Advance(ShellyClient.RequestTimeout);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        // The device didn't answer: the schedules aren't asked for at once, and the rules are unknown.
+        Assert.DoesNotContain(ShellyApi.ScheduleList, simulator.Received);
+        Assert.Null(run.Client.State.OwnRules);
+
+        simulator.SilentConfigRelays = 0;
+        await run.PollAsync();
+        await run.PollAsync();
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+    }
+
+    [Fact]
+    public async Task Should_NeverReadTheSchedules_InTheReadThatConfirmsASwitch()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        var before = simulator.Received.Count;
+
+        Assert.Equal(0b01, await run.Client.TurnOnAsync(0b01, Cancel));
+
+        Assert.Equal([ShellyApi.SwitchSet, ShellyApi.GetStatus], simulator.Received.Skip(before));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+
+        await run.PollAsync();
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules!);
+    }
+
+    [Fact]
+    public async Task Should_TurnOffEveryScheduleBehindATimer_AndReadThemBack()
+    {
+        await using var simulator = Start(ShellyModels.ThreeRelays);
+        var both = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}},{"method":"Switch.Set","params":{"id":1,"on":true}}]""");
+        var two = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":1,"on":false}}]""");
+        var three = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":2,"on":true}}]""");
+        await using var run = ClientRun.Start(simulator, ShellyModels.ThreeRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+        var changes = run.Changes.Count;
+
+        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+
+        // Only the schedule behind relay 1's timer, never deleted or rewritten; then the schedules read back at once.
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], taken);
+        Assert.Equal([ShellyApi.ScheduleUpdate, ShellyApi.GetStatus, ShellyApi.ScheduleList], simulator.Received.Skip(before));
+        Assert.Equal((false, true, true), (simulator.ScheduleEnabled(both), simulator.ScheduleEnabled(two), simulator.ScheduleEnabled(three)));
+        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], run.Client.State.OwnRules!);
+        Assert.Single(run.OwnRulesChanges);
+        Assert.Equal(changes, run.Changes.Count);
+        Assert.Contains(run.Traces, t => t.Text == "Turn off schedule 1" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Schedule 1 is off");
+
+        // Relay 2's timer and relay 3's, given twice: the one schedule still behind each, once each.
+        before = simulator.Received.Count;
+        taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], Cancel);
+        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], taken);
+        Assert.Equal([ShellyApi.ScheduleUpdate, ShellyApi.ScheduleUpdate, ShellyApi.GetStatus, ShellyApi.ScheduleList], simulator.Received.Skip(before));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+    }
+
+    [Fact]
+    public async Task Should_TurnOffASharedSchedule_WithTheRulesThatGoWithIt()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        var shared = simulator.AddSchedule("""[{"method":"Switch.SetAll","params":{"on":true}}]""");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        OwnRule timer1 = new(1, OwnRuleKind.Timer), timer2 = new(2, OwnRuleKind.Timer);
+        Assert.Equal([timer2], run.Client.State.OwnRules!.GoesWith(timer1));
+
+        Assert.Equal([timer1], await run.Client.TurnOffOwnRulesAsync([timer1], Cancel));
+
+        // The one schedule switched both: relay 2's timer went with it, as GoesWith said, but isn't returned.
+        Assert.False(simulator.ScheduleEnabled(shared));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+    }
+
+    [Fact]
+    public async Task Should_TurnOffAutoOn_ForThatSwitchOnly_AndReadItBack()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SetAutoOn(1, true);
+        simulator.SetAutoOn(2, true);
+        simulator.SetInitialState(2, "restore_last");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+
+        Assert.Equal([new OwnRule(2, OwnRuleKind.AutoOn)], await run.Client.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.AutoOn)], Cancel));
+
+        // One Switch.SetConfig with auto_on alone, then the status and every switch's settings, in the same command.
+        Assert.Equal([ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, ShellyApi.SwitchGetConfig, ShellyApi.SwitchGetConfig], simulator.Received.Skip(before));
+        Assert.Equal((true, false), (simulator.AutoOn(1), simulator.AutoOn(2)));
+        Assert.Equal("restore_last", simulator.InitialState(2));
+        Assert.Equal([new OwnRule(1, OwnRuleKind.AutoOn)], run.Client.State.OwnRules!);
+        Assert.Contains(run.Traces, t => t.Text == "Turn off relay 2's auto-on" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 2's auto-on is off");
+        Assert.Empty(run.PowerOnChanges);
+    }
+
+    [Fact]
+    public async Task Should_TakeATimerNoScheduleSwitchesAnyMore_WithoutSendingIt()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+
+        // Already gone as last read: nothing to turn off, and the schedules read back to confirm it.
+        Assert.Equal([ShellyApi.GetStatus, ShellyApi.ScheduleList], simulator.Received.Skip(before));
+    }
+
+    [Fact]
+    public async Task Should_RefuseRulesItCantTurnOff_BeforeSendingAnything()
+    {
+        using var unconnected = CreateClient(1, ShellyModels.TwoRelays);
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => unconnected.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+        Assert.Empty(await unconnected.TurnOffOwnRulesAsync([], Cancel));
+
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.AutoOn), new OwnRule(1, OwnRuleKind.InputLinkage)], Cancel));
+        await Assert.ThrowsAsync<ArgumentException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), null!], Cancel));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => run.Client.TurnOffOwnRulesAsync(null!, Cancel));
+        Assert.Empty(await run.Client.TurnOffOwnRulesAsync([], Cancel));
+
+        Assert.Equal(before, simulator.Received.Count);
+    }
+
+    [Fact]
+    public async Task Should_SayTheDeviceDidntTakeIt_AndReturnOnlyWhatItTook()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        var first = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        var second = simulator.AddSchedule("""[{"method":"Switch.Toggle","params":{"id":0}}]""");
+        simulator.SetAutoOn(2, true);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        simulator.FailScheduleUpdates = new HashSet<long> { first };
+
+        // One of the two schedules behind relay 1's timer refused: the timer isn't taken, the other schedule still went.
+        var refused = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+        Assert.Equal("The Shelly didn't turn its rules off: schedule 1: Overtemp condition present (error -109)", refused.Message);
+        Assert.Equal((true, false), (simulator.ScheduleEnabled(first), simulator.ScheduleEnabled(second)));
+
+        // With an auto-on that goes: only that is returned.
+        Assert.Equal(
+            [new OwnRule(2, OwnRuleKind.AutoOn)],
+            await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.AutoOn)], Cancel));
+        Assert.True(simulator.ScheduleEnabled(first));
+        Assert.False(simulator.AutoOn(2));
+
+        // A refusal is an answer: the device stays connected, and the rules show what is still there.
+        await Wait.UntilAsync(() => run.Client.State.OwnRules == new OwnRules([new OwnRule(1, OwnRuleKind.Timer)], [[new OwnRule(1, OwnRuleKind.Timer)]]));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_SendNothing_WhileTheSchedulesArentKnown()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.FailSchedules = true;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+
+        Assert.DoesNotContain(ShellyApi.ScheduleUpdate, simulator.Received.Skip(before));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_StopAndCountAFailure_WhenAScheduleUpdateGetsNoAnswer()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        var first = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        var silent = simulator.AddSchedule("""[{"method":"Switch.Toggle","params":{"id":0}}]""");
+        var last = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":false}}]""");
+        simulator.SilentScheduleUpdates = new HashSet<long> { silent };
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var turnOff = run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+        await Wait.UntilAsync(() => simulator.Received.Count(r => r == ShellyApi.ScheduleUpdate) == 2 && run.Time.Waits(ShellyClient.RequestTimeout));
+
+        // From here the device answers nothing: the read the poller makes at once after the command fails too.
+        simulator.RejectConnections = true;
+        run.Time.Advance(ShellyClient.RequestTimeout);
+        var failed = await Assert.ThrowsAsync<BoardNotConnectedException>(() => turnOff);
+
+        // No answer stops the rest: the last schedule is never asked.
+        Assert.Equal("The Shelly didn't answer; its rules may not have been turned off.", failed.Message);
+        Assert.IsType<TimeoutException>(failed.InnerException);
+        Assert.Equal((false, true, true), (simulator.ScheduleEnabled(first), simulator.ScheduleEnabled(silent), simulator.ScheduleEnabled(last)));
+        Assert.Equal(2, simulator.Received.Count(r => r == ShellyApi.ScheduleUpdate));
+
+        // The command counted as one failed poll and the read after it as a second: the next poll is the third, and
+        // loses the device.
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        Assert.True(run.Client.State.IsConnected);
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_SendNoMoreScheduleUpdates_WhenTheAddressMovesPartway()
+    {
+        await using var first = Start(ShellyModels.OneRelay);
+        await using var second = Start(ShellyModels.OneRelay);
+        var one = first.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        var two = first.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":false}}]""");
+        second.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        second.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":false}}]""");
+        await using var run = ClientRun.Start(first, ShellyModels.OneRelay, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // While the first schedule's update reaches the first device, the address moves to the second.
+        first.Traced += (_, entry) =>
+        {
+            if (entry.Text == $"Turn off schedule {one}")
+            {
+                run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+            }
+        };
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+
+        Assert.Equal((false, true), (first.ScheduleEnabled(one), first.ScheduleEnabled(two)));
+        Assert.Equal(1, first.Received.Count(r => r == ShellyApi.ScheduleUpdate));
+        Assert.DoesNotContain(ShellyApi.ScheduleUpdate, second.Received);
+    }
+
+    [Fact]
+    public async Task Should_TurnOffOnlyTheAutoOn_WhileTheSchedulesArentKnown()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.FailSchedules = true;
+        simulator.SetAutoOn(1, true);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+
+        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(1, OwnRuleKind.AutoOn)], Cancel);
+
+        // The timer can't be taken without the schedules: nothing goes for it, and the auto-on goes alone.
+        Assert.Equal([new OwnRule(1, OwnRuleKind.AutoOn)], taken);
+        Assert.False(simulator.AutoOn(1));
+        Assert.DoesNotContain(ShellyApi.ScheduleUpdate, simulator.Received.Skip(before));
+        Assert.Equal(1, simulator.Received.Skip(before).Count(r => r == ShellyApi.SwitchSetConfig));
+    }
+
     private static int GetConfigs(ShellySimulator simulator)
     {
         return simulator.Received.Count(r => r.StartsWith(ShellyApi.SwitchGetConfig, StringComparison.Ordinal) && r.EndsWith("(signed)", StringComparison.Ordinal));
@@ -792,6 +1352,7 @@ public sealed class ShellyClientTests
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<ShellyState> _changes = [];
         private readonly List<ShellyState> _powerOnChanges = [];
+        private readonly List<ShellyState> _ownRulesChanges = [];
 
         private ClientRun(ShellyClient client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
@@ -818,6 +1379,13 @@ public sealed class ShellyClientTests
                 lock (_powerOnChanges)
                 {
                     _powerOnChanges.Add(state);
+                }
+            };
+            client.OwnRulesChanged += (_, state) =>
+            {
+                lock (_ownRulesChanges)
+                {
+                    _ownRulesChanges.Add(state);
                 }
             };
             _task = client.RunAsync(cts.Token);
@@ -858,6 +1426,17 @@ public sealed class ShellyClientTests
                 lock (_powerOnChanges)
                 {
                     return [.. _powerOnChanges];
+                }
+            }
+        }
+
+        public List<ShellyState> OwnRulesChanges
+        {
+            get
+            {
+                lock (_ownRulesChanges)
+                {
+                    return [.. _ownRulesChanges];
                 }
             }
         }

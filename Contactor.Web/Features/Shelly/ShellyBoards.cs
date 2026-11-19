@@ -9,7 +9,8 @@ public static class ShellyBoards
     /// <summary>
     /// A Shelly Gen2+ device with 1 to 4 relays, built by the board catalogue when one is chosen:
     /// <see cref="ShellyClient"/> behind the app's board interfaces, with its settings from <c>Shelly</c>. It has nothing
-    /// of its own in the app yet; the device's own schedules, auto-on and auto-off are left as they are.
+    /// of its own in the app: its own schedules and auto-on show and turn off through the board's own rules, as any
+    /// board's; its auto-off is left as it is.
     /// </summary>
     public static ActiveBoard Create(BoardModel model, BoardSetup setup, IServiceProvider app, IConfiguration configuration)
     {

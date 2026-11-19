@@ -8,11 +8,16 @@ namespace Contactor.Boards.Shelly;
 /// Each switch's <c>initial_state</c> as last read with <c>Switch.GetConfig</c> (at connect, and when <c>cfg_rev</c>
 /// changed); null before it was read.
 /// </param>
-public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null)
+/// <param name="OwnRules">
+/// The device's own rules as last read: a <c>Timer</c> rule on each relay an enabled schedule switches, one unit per
+/// schedule, and an <c>AutoOn</c> rule on each relay whose switch has <c>auto_on</c>. Null before they were read, and
+/// when the last read of the schedules or of a switch's settings failed.
+/// </param>
+public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, OwnRules? OwnRules = null)
 {
     /// <summary>
-    /// Compares the relays only, for the poller: a change in <see cref="PowerOn"/> alone isn't a state change, and comes
-    /// as <see cref="ShellyClient.PowerOnChanged"/>.
+    /// Compares the relays only, for the poller: a change in <see cref="PowerOn"/> or <see cref="OwnRules"/> alone isn't
+    /// a state change, and comes as <see cref="ShellyClient.PowerOnChanged"/> or <see cref="ShellyClient.OwnRulesChanged"/>.
     /// </summary>
     public static IEqualityComparer<ShellyStatus> RelaysComparer { get; } = new RelaysOnly();
 
@@ -39,7 +44,7 @@ public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null)
 /// <param name="LastContactUtc">When the device last answered a poll, or null if it never has.</param>
 /// <param name="Problem">
 /// Why the device refused the last connection: another device or another number of relays, the cover profile, firmware
-/// too old, a password needed or refused, or too many tries (a 429).
+/// too old, a password needed or refused, or asked to wait (a 429).
 /// </param>
 public sealed record ShellyState(bool IsConnected, ShellyStatus? Status, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null)
 {
@@ -49,6 +54,9 @@ public sealed record ShellyState(bool IsConnected, ShellyStatus? Status, DateTim
 
     /// <summary>Each switch's state after a power cut as last read, kept while disconnected; null before it was read.</summary>
     public PowerOnStates? PowerOn => Status?.PowerOn;
+
+    /// <summary>The device's own rules as last read, kept while disconnected; null when unknown.</summary>
+    public OwnRules? OwnRules => Status?.OwnRules;
 
     public bool IsOn(int relay)
     {

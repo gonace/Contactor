@@ -15,7 +15,8 @@ namespace Contactor.Boards.Shelly;
 /// it ("RPC Channels", "RPC Protocol"), answering <c>Shelly.GetDeviceInfo</c>, <c>Shelly.GetStatus</c>,
 /// <c>Switch.Set</c>, and <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> for each switch's <c>initial_state</c>,
 /// with 1 to 4 switches, and one request per connection. Every change of a switch's settings grows <c>sys.cfg_rev</c>,
-/// as "Sys" says; a setting set to what it was doesn't. With a password it asks for the digest of
+/// as "Sys" says; a setting set to what it was doesn't. It holds each switch's <c>auto_on</c> and schedule jobs, with
+/// <c>Schedule.List</c> and <c>Schedule.Update</c>, and <c>sys.schedule_rev</c>, which grows with every update. With a password it asks for the digest of
 /// "Authentication": in the way of firmware 2.0.0 and later (a nonce for many requests with a growing <c>nc</c>, stale
 /// after an hour or 30,000 requests, and 429 after too many wrong passwords) or, for an older <see cref="Firmware"/>,
 /// in the way before it (a new challenge for every request). Its generation, firmware and profile can be set, for a
@@ -50,7 +51,7 @@ public sealed class ShellySimulator : ISimulatedBoard
     private static readonly TimeSpan ClientWindow = TimeSpan.FromSeconds(10);
 
     private readonly BoardModel _model;
-    private readonly string _password;
+    private string _password;
     private readonly ILogger _logger;
     private readonly string _deviceId;
     private readonly CancellationTokenSource _stopping = new();
@@ -65,6 +66,10 @@ public sealed class ShellySimulator : ISimulatedBoard
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private readonly string[] _initialStates;
+    private readonly bool[] _autoOn;
+    private readonly List<SimulatedJob> _jobs = [];
+    private long _scheduleRevision;
+    private long _nextJobId = 1;
     private byte _relays;
     private byte _lastStatusSent = byte.MaxValue;
     private long _configRevision = 10;
@@ -95,6 +100,7 @@ public sealed class ShellySimulator : ISimulatedBoard
         _logger = logger;
         _deviceId = string.Create(CultureInfo.InvariantCulture, $"shellysim{model.Capabilities.RelayCount}-0a1b2c3d4e5f");
         _initialStates = [.. Enumerable.Repeat("off", model.Capabilities.RelayCount)];
+        _autoOn = new bool[model.Capabilities.RelayCount];
     }
 
     public event EventHandler? Changed;
@@ -108,7 +114,7 @@ public sealed class ShellySimulator : ISimulatedBoard
 
     public int Port { get; private set; }
 
-    public bool HasLogin => _password.Length > 0;
+    public bool HasLogin => Volatile.Read(ref _password).Length > 0;
 
     /// <summary>The device id, which is also the digest realm.</summary>
     public string DeviceId => _deviceId;
@@ -135,6 +141,12 @@ public sealed class ShellySimulator : ISimulatedBoard
     public bool Throttle { get; set; }
 
     /// <summary>
+    /// Called with the relay after each <c>Switch.Set</c> the device carried out, before it answers: a test changes the
+    /// device there between two requests of one command, e.g. with <see cref="Throttle"/> or <see cref="RejectConnections"/>.
+    /// </summary>
+    public Action<int>? AfterSwitchSet { get; set; }
+
+    /// <summary>
     /// The relays whose <c>Switch.Set</c> the device refuses with <see cref="Refusal"/>, as with "Overtemp condition
     /// present". Bit 0 = relay 1.
     /// </summary>
@@ -159,6 +171,21 @@ public sealed class ShellySimulator : ISimulatedBoard
 
     /// <summary>Whether the status has <c>sys.cfg_rev</c>; true by default. False: a device that gives none.</summary>
     public bool ReportsConfigRevision { get; set; } = true;
+
+    /// <summary>Whether the status has <c>sys.schedule_rev</c>; true by default. False: a device that gives none.</summary>
+    public bool ReportsScheduleRevision { get; set; } = true;
+
+    /// <summary>When true, <c>Schedule.List</c> is refused with <see cref="Refusal"/>.</summary>
+    public bool FailSchedules { get; set; }
+
+    /// <summary>The schedules whose <c>Schedule.Update</c> is refused with <see cref="Refusal"/>, by job id.</summary>
+    public IReadOnlySet<long> FailScheduleUpdates { get; set; } = new HashSet<long>();
+
+    /// <summary>
+    /// The schedules whose <c>Schedule.Update</c> the device never answers, holding the connection until the simulator
+    /// stops, by job id.
+    /// </summary>
+    public IReadOnlySet<long> SilentScheduleUpdates { get; set; } = new HashSet<long>();
 
     /// <summary>The error a relay in <see cref="FailRelays"/> gets: -109 "Overtemp condition present" ("Common Errors").</summary>
     public ShellyRpcError Refusal { get; set; } = new(ShellyApi.FailedPrecondition, "Overtemp condition present");
@@ -270,6 +297,122 @@ public sealed class ShellySimulator : ISimulatedBoard
         _logger.SimulatorListening(Port);
     }
 
+    /// <summary><c>sys.schedule_rev</c>: 0 at start, 1 more for every job added and every update.</summary>
+    public long ScheduleRevision
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _scheduleRevision;
+            }
+        }
+    }
+
+    /// <summary>A relay's <c>auto_on</c>, as <c>Switch.GetConfig</c> gives it: false at start.</summary>
+    public bool AutoOn(int relay)
+    {
+        _model.Capabilities.Relay(relay);
+        lock (_lock)
+        {
+            return _autoOn[relay - 1];
+        }
+    }
+
+    /// <summary>Sets a relay's <c>auto_on</c> "at the device"; grows <c>cfg_rev</c> when it changed.</summary>
+    public void SetAutoOn(int relay, bool autoOn)
+    {
+        _model.Capabilities.Relay(relay);
+        if (ChangeAutoOn(relay, autoOn))
+        {
+            RaiseChanged();
+        }
+    }
+
+    /// <summary>
+    /// Adds a schedule job "at the device", as <c>Schedule.Create</c> would: <paramref name="calls"/> is the JSON array of
+    /// its calls, as the docs write them, e.g. <c>[{"method":"Switch.Set","params":{"id":0,"on":true}}]</c>, taken as it
+    /// is. Grows <c>schedule_rev</c>. Returns the new job's id: 1 for the first, then 1 more each.
+    /// </summary>
+    public long AddSchedule(string calls, bool enable = true, string timespec = "0 0 8 * * *")
+    {
+        ArgumentNullException.ThrowIfNull(calls);
+        ArgumentNullException.ThrowIfNull(timespec);
+        using (var document = JsonDocument.Parse(calls))
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                throw new ArgumentException("The calls are a JSON array.", nameof(calls));
+            }
+        }
+
+        long id;
+        lock (_lock)
+        {
+            id = _nextJobId++;
+            _jobs.Add(new SimulatedJob(id, timespec, calls) { Enable = enable });
+            _scheduleRevision++;
+        }
+
+        RaiseChanged();
+        return id;
+    }
+
+    /// <summary>Turns a job on or off "at the device"; grows <c>schedule_rev</c>, as every update does.</summary>
+    public void SetScheduleEnabled(long id, bool enable)
+    {
+        lock (_lock)
+        {
+            Job(id).Enable = enable;
+            _scheduleRevision++;
+        }
+
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// Turns a job on or off "at the device" when it isn't already, as one step under the device's lock; grows
+    /// <c>schedule_rev</c> only then. Whether it changed: false for a job it doesn't hold, too.
+    /// </summary>
+    public bool TrySetScheduleEnabled(long id, bool enable)
+    {
+        lock (_lock)
+        {
+            var job = _jobs.Find(j => j.Id == id);
+            if (job is null || job.Enable == enable)
+            {
+                return false;
+            }
+
+            job.Enable = enable;
+            _scheduleRevision++;
+        }
+
+        RaiseChanged();
+        return true;
+    }
+
+    /// <summary>The schedule jobs, oldest first.</summary>
+    public IReadOnlyList<ShellySimulatedSchedule> Schedules
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _jobs.Select(j => new ShellySimulatedSchedule(j.Id, j.Enable, j.Timespec, j.Calls))];
+            }
+        }
+    }
+
+    /// <summary>Whether a job is enabled.</summary>
+    public bool ScheduleEnabled(long id)
+    {
+        lock (_lock)
+        {
+            return Job(id).Enable;
+        }
+    }
+
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
         var mask = (byte)_model.Capabilities.Relay(relay).Bits;
@@ -293,6 +436,21 @@ public sealed class ShellySimulator : ISimulatedBoard
                 nonce.Expired = true;
             }
         }
+    }
+
+    /// <summary>
+    /// Changes the password, as a person would on the device's own web page while the app runs: a kept nonce still
+    /// answers, but the old password is wrong from now on. Not to or from no password.
+    /// </summary>
+    public void ChangePassword(string password)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(password);
+        if (!HasLogin)
+        {
+            throw new InvalidOperationException("The device has no password to change.");
+        }
+
+        Volatile.Write(ref _password, password);
     }
 
     /// <summary>Forgets every nonce, as after a reboot: the next request with one gets a plain 401.</summary>
@@ -389,7 +547,7 @@ public sealed class ShellySimulator : ISimulatedBoard
             Interlocked.Increment(ref _requestCount);
             if (response is null)
             {
-                // Never answered (SilentConfigRelays): held until the simulator stops.
+                // Never answered (SilentConfigRelays, SilentScheduleUpdates): held until the simulator stops.
                 await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -484,11 +642,17 @@ public sealed class ShellySimulator : ISimulatedBoard
         var rpc = http.Method == "POST" && http.Target == ShellyApi.RpcPath ? ShellyJson.TryReadRequest(http.Body) : null;
         var (relay, on) = SwitchParameters(rpc);
         var initialState = InitialStateParameter(rpc);
+        var autoOn = AutoOnParameter(rpc);
+        var job = JobParameter(rpc);
         var text = rpc is null
             ? $"{ShellyRpcError.Printable(http.Method)} {ShellyRpcError.Printable(http.Target)}"
             : rpc.Method == ShellyApi.SwitchSetConfig && relay is { } setting && ShellyApi.ToPowerOnState(initialState) is { } state
                 ? ShellyTraceText.SetPowerOn(setting, state)
-                : ShellyTraceText.Request(rpc.Method, relay ?? 0, on ?? false);
+                : rpc.Method == ShellyApi.SwitchSetConfig && relay is { } autoOnRelay && autoOn == false
+                    ? ShellyTraceText.TurnOffAutoOn(autoOnRelay)
+                    : rpc.Method == ShellyApi.ScheduleUpdate && job is { } jobId && EnableParameter(rpc) == false
+                        ? ShellyTraceText.TurnOffSchedule(jobId)
+                        : ShellyTraceText.Request(rpc.Method, relay ?? 0, on ?? false);
         Trace(BoardTraceDirection.Sent, text, ShellyTraceText.RequestBytes(http.Body, signed), isRoutine: rpc?.Method == ShellyApi.GetStatus);
         _received.Enqueue(rpc is null ? "?" : rpc.Method + (signed ? " (signed)" : ""));
         while (_received.Count > ReceivedKept && _received.TryDequeue(out _))
@@ -519,7 +683,9 @@ public sealed class ShellySimulator : ISimulatedBoard
             ShellyApi.GetStatus => RespondStatus(rpc),
             ShellyApi.SwitchSet => SetSwitch(rpc, relay, on),
             ShellyApi.SwitchGetConfig => GetConfig(rpc, relay),
-            ShellyApi.SwitchSetConfig => SetConfig(rpc, relay, initialState),
+            ShellyApi.SwitchSetConfig => SetConfig(rpc, relay, initialState, autoOn),
+            ShellyApi.ScheduleList => ListSchedules(rpc),
+            ShellyApi.ScheduleUpdate => UpdateSchedule(rpc, job),
 
             // Not from the docs read: the app sends no other method, and any error tells it so.
             _ => Error(rpc, new ShellyRpcError(404, $"No handler for {rpc.Method}")),
@@ -566,7 +732,7 @@ public sealed class ShellySimulator : ISimulatedBoard
                 && credentials.NonceCount.Length == 8
                 && CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(credentials.Response),
-                    Encoding.ASCII.GetBytes(ShellyDigest.Response(ShellyApi.Username, _deviceId, _password, ShellyDigest.Method, ShellyApi.RpcPath, credentials.Nonce, credentials.NonceCount, credentials.ClientNonce)));
+                    Encoding.ASCII.GetBytes(ShellyDigest.Response(ShellyApi.Username, _deviceId, Volatile.Read(ref _password), ShellyDigest.Method, ShellyApi.RpcPath, credentials.Nonce, credentials.NonceCount, credentials.ClientNonce)));
             if (!right)
             {
                 Interlocked.Increment(ref _deniedCount);
@@ -725,6 +891,11 @@ public sealed class ShellySimulator : ISimulatedBoard
             {
                 writer.WriteNumber(ShellyApi.ConfigRevision, ConfigRevision);
             }
+
+            if (ReportsScheduleRevision)
+            {
+                writer.WriteNumber(ShellyApi.ScheduleRevision, ScheduleRevision);
+            }
             writer.WriteEndObject();
         });
         var text = cover ? "Status: a cover, no relays" : ShellyTraceText.Status(new ShellyStatus(relays), _model.Capabilities.RelayCount);
@@ -757,6 +928,7 @@ public sealed class ShellySimulator : ISimulatedBoard
         }
 
         Change(() => _relays = on.Value ? (byte)(_relays | mask) : (byte)(_relays & ~mask));
+        AfterSwitchSet?.Invoke(relay.Value);
         return Result(rpc, writer => writer.WriteBoolean("was_on", wasOn), ShellyTraceText.Switched(relay.Value, on.Value, wasOn));
     }
 
@@ -782,6 +954,7 @@ public sealed class ShellySimulator : ISimulatedBoard
         }
 
         var initialState = InitialState(relay!.Value);
+        var autoOn = AutoOn(relay.Value);
         return Result(
             rpc,
             writer =>
@@ -791,20 +964,20 @@ public sealed class ShellySimulator : ISimulatedBoard
                 writer.WriteString("in_mode", "follow");
                 writer.WriteBoolean("in_locked", false);
                 writer.WriteString(ShellyApi.InitialState, initialState);
-                writer.WriteBoolean("auto_on", false);
+                writer.WriteBoolean(ShellyApi.AutoOn, autoOn);
                 writer.WriteNumber("auto_on_delay", 60);
                 writer.WriteBoolean("auto_off", false);
                 writer.WriteNumber("auto_off_delay", 60);
                 writer.WriteBoolean("power_restore_delay_enable", false);
                 writer.WriteNumber("power_restore_delay", 60);
             },
-            ShellyTraceText.PowerOnRead(relay.Value, ShellyApi.ToPowerOnState(initialState)));
+            ShellyTraceText.SettingsRead(relay.Value, ShellyApi.ToPowerOnState(initialState), autoOn));
     }
 
-    // As "Switch.SetConfig": "id" and "config" required; only initial_state is taken, and only a value the docs list
-    // (the docs don't say what another one gets: -103 is "Common Errors"' error for parameters that don't match). Its
-    // result is the docs' {"restart_required":false}.
-    private byte[] SetConfig(ShellyRequest rpc, int? relay, string? initialState)
+    // As "Switch.SetConfig": "id" and "config" required; only initial_state and auto_on are taken, and only a value the
+    // docs list (the docs don't say what another one gets: -103 is "Common Errors"' error for parameters that don't
+    // match). Its result is the docs' {"restart_required":false}.
+    private byte[] SetConfig(ShellyRequest rpc, int? relay, string? initialState, bool? autoOn)
     {
         if (CheckSwitch(rpc, relay) is { } refusal)
         {
@@ -816,13 +989,23 @@ public sealed class ShellySimulator : ISimulatedBoard
             return Error(rpc, new ShellyRpcError(-103, "Missing required 'config'"));
         }
 
-        if (config.TryGetProperty(ShellyApi.InitialState, out _))
+        if (config.TryGetProperty(ShellyApi.InitialState, out _) && ShellyApi.ToPowerOnState(initialState) is null)
         {
-            if (ShellyApi.ToPowerOnState(initialState) is null)
-            {
-                return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'initial_state'"));
-            }
+            return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'initial_state'"));
+        }
 
+        if (config.TryGetProperty(ShellyApi.AutoOn, out _) && autoOn is null)
+        {
+            return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'auto_on'"));
+        }
+
+        if (autoOn is { } newAutoOn && ChangeAutoOn(relay!.Value, newAutoOn))
+        {
+            RaiseChanged();
+        }
+
+        if (initialState is not null)
+        {
             if (ChangeInitialState(relay!.Value, initialState!))
             {
                 RaiseChanged();
@@ -830,6 +1013,115 @@ public sealed class ShellySimulator : ISimulatedBoard
         }
 
         return Result(rpc, writer => writer.WriteBoolean("restart_required", false), ShellyTraceText.SettingSaved(relay!.Value));
+    }
+
+    // As "Schedule.List": every job in the order it was made, with "id", "enable", "timespec" and "calls", and "rev".
+    private byte[] ListSchedules(ShellyRequest rpc)
+    {
+        if (FailSchedules)
+        {
+            return Error(rpc, Refusal);
+        }
+
+        List<SimulatedJob> jobs;
+        long revision;
+        lock (_lock)
+        {
+            jobs = [.. _jobs.Select(j => new SimulatedJob(j.Id, j.Timespec, j.Calls) { Enable = j.Enable })];
+            revision = _scheduleRevision;
+        }
+
+        var text = string.Create(CultureInfo.InvariantCulture, $"{jobs.Count} schedules, {jobs.Count(j => j.Enable)} enabled");
+        return Result(
+            rpc,
+            writer =>
+            {
+                writer.WriteStartArray("jobs");
+                foreach (var job in jobs)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteNumber("id", job.Id);
+                    writer.WriteBoolean("enable", job.Enable);
+                    writer.WriteString("timespec", job.Timespec);
+                    writer.WritePropertyName("calls");
+                    writer.WriteRawValue(job.Calls);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+                writer.WriteNumber("rev", revision);
+            },
+            text);
+    }
+
+    // As "Schedule.Update": "id" required (-103 without it); the docs don't say what an unknown id gets, so -105 as for
+    // a switch it hasn't. Only "enable" is taken; every update grows schedule_rev ("incremented on every update").
+    // Its result is {"rev":n}.
+    private byte[]? UpdateSchedule(ShellyRequest rpc, long? id)
+    {
+        if (id is not { } jobId)
+        {
+            return Error(rpc, new ShellyRpcError(-103, "Missing required 'id'"));
+        }
+
+        if (FailScheduleUpdates.Contains(jobId))
+        {
+            return Error(rpc, Refusal);
+        }
+
+        if (SilentScheduleUpdates.Contains(jobId))
+        {
+            Trace(BoardTraceDirection.None, "No answer to the schedule update", null, isError: true);
+            return null;
+        }
+
+        var enable = EnableParameter(rpc);
+        if (rpc.Params is { } parameters && parameters.TryGetProperty("enable", out _) && enable is null)
+        {
+            return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'enable'"));
+        }
+
+        long revision;
+        lock (_lock)
+        {
+            var job = _jobs.Find(j => j.Id == jobId);
+            if (job is null)
+            {
+                return Error(rpc, new ShellyRpcError(-105, string.Create(CultureInfo.InvariantCulture, $"Bad id={jobId}")));
+            }
+
+            if (enable is { } value)
+            {
+                job.Enable = value;
+            }
+
+            revision = ++_scheduleRevision;
+        }
+
+        RaiseChanged();
+        return Result(rpc, writer => writer.WriteNumber("rev", revision), string.Create(CultureInfo.InvariantCulture, $"Schedule {jobId} saved"));
+    }
+
+    // Under _lock: the job with this id; throws for one it hasn't.
+    private SimulatedJob Job(long id)
+    {
+        return _jobs.Find(j => j.Id == id) ?? throw new ArgumentOutOfRangeException(nameof(id), id, "No such schedule.");
+    }
+
+    // Sets a relay's auto_on; cfg_rev grows only when it changed. Whether it changed.
+    private bool ChangeAutoOn(int relay, bool autoOn)
+    {
+        lock (_lock)
+        {
+            if (_autoOn[relay - 1] == autoOn)
+            {
+                return false;
+            }
+
+            _autoOn[relay - 1] = autoOn;
+            _configRevision++;
+            return true;
+        }
     }
 
     // -103 without an id, -105 for a switch it hasn't, and the refusal for a relay in FailConfigRelays; null to go on.
@@ -874,6 +1166,41 @@ public sealed class ShellySimulator : ISimulatedBoard
             && config.TryGetProperty(ShellyApi.InitialState, out var value)
             && value.ValueKind == JsonValueKind.String
                 ? value.GetString()
+                : null;
+    }
+
+    // Switch.SetConfig's config.auto_on; null when missing or not true or false.
+    private static bool? AutoOnParameter(ShellyRequest? rpc)
+    {
+        return rpc?.Method == ShellyApi.SwitchSetConfig
+            && rpc.Params is { } parameters
+            && parameters.TryGetProperty("config", out var config)
+            && config.ValueKind == JsonValueKind.Object
+            && config.TryGetProperty(ShellyApi.AutoOn, out var value)
+            && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? value.GetBoolean()
+                : null;
+    }
+
+    // Schedule.Update's id; null when missing or not a whole number.
+    private static long? JobParameter(ShellyRequest? rpc)
+    {
+        return rpc?.Method == ShellyApi.ScheduleUpdate
+            && rpc.Params is { } parameters
+            && parameters.TryGetProperty("id", out var id)
+            && id.ValueKind == JsonValueKind.Number
+            && id.TryGetInt64(out var number)
+                ? number
+                : null;
+    }
+
+    // Schedule.Update's enable; null when missing or not true or false.
+    private static bool? EnableParameter(ShellyRequest? rpc)
+    {
+        return rpc?.Params is { } parameters
+            && parameters.TryGetProperty("enable", out var value)
+            && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? value.GetBoolean()
                 : null;
     }
 
@@ -990,6 +1317,25 @@ public sealed class ShellySimulator : ISimulatedBoard
     }
 
     private sealed record HttpRequest(string Method, string Target, string? Authorization, byte[] Body);
+
+    // A schedule job: its calls as the JSON text they were given in.
+    private sealed class SimulatedJob
+    {
+        public SimulatedJob(long id, string timespec, string calls)
+        {
+            Id = id;
+            Timespec = timespec;
+            Calls = calls;
+        }
+
+        public long Id { get; }
+
+        public string Timespec { get; }
+
+        public string Calls { get; }
+
+        public bool Enable { get; set; }
+    }
 
     private sealed class NonceEntry
     {

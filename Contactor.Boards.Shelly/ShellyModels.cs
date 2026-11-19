@@ -6,7 +6,8 @@ namespace Contactor.Boards.Shelly;
 /// The Shelly Gen2+ devices in the board catalogue: one entry per relay count, 1 to 4, as the docs list no model codes
 /// to tell them apart. Each relay is a Switch component (<c>switch:0</c> is relay 1). The login is the password of the
 /// device's digest authentication; the user name is always "admin", so the screens ask for the password only. The
-/// device's own schedules, auto-on and auto-off are rules the app can't see yet: <see cref="OwnRulesAbility.CantTell"/>.
+/// device's own schedules and auto-on are rules the app reads and turns off, and it may have others the app can't see,
+/// such as scripts and auto-off: <see cref="ShellyApi.OwnRules"/>.
 /// Each switch's <c>initial_state</c> is its state after a power cut, which the app reads and sets
 /// (<see cref="ShellyApi.PowerOn"/>).
 /// </summary>
@@ -55,7 +56,7 @@ public static class ShellyModels
             $"shelly-{relays}",
             Brand,
             name,
-            new BoardCapabilities(relays, InputCount: 0, ReportsChanges: false, OwnRules: OwnRulesAbility.CantTell, PowerOn: ShellyApi.PowerOn),
+            new BoardCapabilities(relays, InputCount: 0, ReportsChanges: false, OwnRules: ShellyApi.OwnRules, PowerOn: ShellyApi.PowerOn),
             ShellyApi.DefaultPort,
             LoginMaxLength: ShellyApi.PasswordMaxLength,
             PasswordOnly: true);

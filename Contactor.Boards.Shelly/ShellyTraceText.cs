@@ -22,6 +22,7 @@ public static class ShellyTraceText
             ShellyApi.GetStatus => "Ask for status",
             ShellyApi.SwitchSet when relay > 0 => string.Create(CultureInfo.InvariantCulture, $"Turn {(on ? "on" : "off")} relay {relay}"),
             ShellyApi.SwitchGetConfig when relay > 0 => string.Create(CultureInfo.InvariantCulture, $"Ask for relay {relay}'s settings"),
+            ShellyApi.ScheduleList => "Ask for the schedules",
             _ => $"Call {Shorten(Printable(method))}",
         };
     }
@@ -78,6 +79,62 @@ public static class ShellyTraceText
     public static string PowerOnRead(int relay, PowerOnState? state)
     {
         return string.Create(CultureInfo.InvariantCulture, $"Relay {relay} after a power cut: {PowerOn(state)}");
+    }
+
+    /// <summary>
+    /// A relay's settings as read: "Relay 2 after a power cut: off", and " · turns on again by itself" with its auto-on
+    /// on, or " · auto-on unknown" when it couldn't be read.
+    /// </summary>
+    public static string SettingsRead(int relay, PowerOnState? state, bool? autoOn)
+    {
+        var suffix = autoOn switch
+        {
+            true => " · turns on again by itself",
+            false => "",
+            null => " · auto-on unknown",
+        };
+        return PowerOnRead(relay, state) + suffix;
+    }
+
+    /// <summary>"Schedules: none switches a relay", "Schedules: 2 switch relay 1 and 3", from the enabled ones.</summary>
+    public static string Schedules(ShellySchedules schedules, int relayCount)
+    {
+        ArgumentNullException.ThrowIfNull(schedules);
+        var switching = schedules.Jobs.Count(j => j.Enabled && j.Relays != 0);
+        return switching == 0
+            ? "Schedules: none switches a relay"
+            : string.Create(CultureInfo.InvariantCulture, $"Schedules: {switching} {(switching == 1 ? "switches" : "switch")} {Channels(schedules.Relays, relayCount)}");
+    }
+
+    /// <summary>A schedules read that failed: "Schedules not read: the device's own rules are unknown".</summary>
+    public static string SchedulesNotRead(string reason)
+    {
+        ArgumentNullException.ThrowIfNull(reason);
+        return $"Schedules not read ({Shorten(Printable(reason))}): the device's own rules are unknown";
+    }
+
+    /// <summary>A request to turn one schedule off: "Turn off schedule 3".</summary>
+    public static string TurnOffSchedule(long job)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Turn off schedule {job}");
+    }
+
+    /// <summary>The device took it: "Schedule 3 is off".</summary>
+    public static string ScheduleOff(long job)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Schedule {job} is off");
+    }
+
+    /// <summary>A request to turn one relay's auto-on off: "Turn off relay 2's auto-on".</summary>
+    public static string TurnOffAutoOn(int relay)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Turn off relay {relay}'s auto-on");
+    }
+
+    /// <summary>The device took it: "Relay 2's auto-on is off".</summary>
+    public static string AutoOnOff(int relay)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s auto-on is off");
     }
 
     /// <summary>A settings read that stopped at a relay: "Settings not read from relay 2 on: unknown after a power cut".</summary>

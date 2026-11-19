@@ -39,6 +39,7 @@ public sealed class SimulatorPageTests
         Assert.Contains("Board's own timers: none on", html, StringComparison.Ordinal);
         Assert.Matches("<input type=\"checkbox\"[^>]*/?>\\s*Relay 8\\s*</label>", html);
         Assert.DoesNotContain("secret", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ask the app to wait", html, StringComparison.Ordinal);
 
         // A new board's login in two fields, so either may hold ':'.
         Assert.Matches("<label for=\"username\"[^>]*>User name</label>", html);
@@ -64,6 +65,72 @@ public sealed class SimulatorPageTests
         Assert.Equal(8, System.Text.RegularExpressions.Regex.Count(html, "<label class=\"mode\"[^>]*>\\s*<span[^>]*>Relay \\d</span>\\s*<select"));
         Assert.Matches("<span[^>]*>Relay 8</span>\\s*<select", html);
         Assert.Contains(">linkage</option>", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Should_ShowTheShellysSpecialCases_WithTheDevicesCurrentValues()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        await using var app = new WebApplicationFactory<Contactor.Simulator.Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureLogging(logging => logging.ClearProviders());
+            builder.UseSetting("Simulator:Boards:0:Type", "shelly-2");
+            builder.UseSetting("Simulator:Boards:0:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            builder.UseSetting("Simulator:Boards:0:Password", "apple");
+        });
+        using var http = app.CreateClient();
+        var shelly = app.Services.GetRequiredService<Contactor.Simulator.SimulatedBoards>().Boards.Single().Shelly!;
+        shelly.SetThrottle(true);
+        Assert.Null(shelly.SetFirmware("1.6.0"));
+        shelly.SetProfile("cover");
+        shelly.SetRefused(2, true);
+        shelly.SetAutoOn(1, true);
+        shelly.SetInitialState(2, "restore_last");
+        Assert.Null(shelly.AddSchedule(2, turnOn: true, "06:30"));
+        Assert.Null(shelly.AddSchedule(1, turnOn: false, "22:00"));
+        shelly.SetScheduleEnabled(2, false);
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
+
+        Assert.Matches("<input type=\"checkbox\" checked[^>]*/?>\\s*Ask the app to wait \\(429\\)\\s*</label>", html);
+        Assert.Contains("Before 1.7.0 the app refuses it; before 2.0.0 the password is asked for on every request.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("apple", html, StringComparison.Ordinal);
+        Assert.Matches("<span[^>]*>Firmware</span>\\s*<input class=\"mono firmware\" maxlength=\"32\"[^>]*value=\"1.6.0\"", html);
+        Assert.Matches("<option value=\"cover\" selected[^>]*>cover</option>", html);
+        Assert.Contains(">none</option>", html, StringComparison.Ordinal);
+        Assert.Contains("Switch.Set refused: relay 2", html, StringComparison.Ordinal);
+        Assert.Contains("Auto-on: relay 1", html, StringComparison.Ordinal);
+        Assert.Contains("After a power cut (initial_state)", html, StringComparison.Ordinal);
+        Assert.Matches("<option value=\"restore_last\" selected[^>]*>restore_last</option>", html);
+        Assert.Contains("Schedules (the device's own rules): 2 of 20", html, StringComparison.Ordinal);
+        Assert.Matches("<input type=\"checkbox\" checked[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 1 · 06:30 every day · relay 2 on</span>", html);
+        Assert.Matches("<input type=\"checkbox\"(?! checked)[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 2 · 22:00 every day · relay 1 off</span>", html);
+        Assert.Matches("<input id=\"schedule-time\" type=\"time\"[^>]*value=\"08:00\"", html);
+        Assert.Matches("<option value=\"on\" selected[^>]*>on</option>", html);
+        Assert.Matches("<option value=\"off\"(?! selected)[^>]*>off</option>", html);
+        Assert.Matches("<option value=\"1\" selected[^>]*>Relay 1</option>", html);
+        Assert.Contains("Add schedule</button>", html, StringComparison.Ordinal);
+    }
+
+    // Without a password the device asks for no digest, so it can't ask the app to wait; its firmware still counts.
+    [Fact]
+    public async Task Should_LeaveOutAskingTheAppToWait_ForAShellyWithoutAPassword()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        await using var app = new WebApplicationFactory<Contactor.Simulator.Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureLogging(logging => logging.ClearProviders());
+            builder.UseSetting("Simulator:Boards:0:Type", "shelly-1");
+            builder.UseSetting("Simulator:Boards:0:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
+
+        Assert.DoesNotContain("Ask the app to wait", html, StringComparison.Ordinal);
+        Assert.Matches("<span[^>]*>Firmware</span>", html);
+        Assert.Matches("<span class=\"hint\"[^>]*>Before 1.7.0 the app refuses it.</span>", html);
+        Assert.DoesNotContain("before 2.0.0", html, StringComparison.Ordinal);
     }
 
     [Fact]

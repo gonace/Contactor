@@ -38,11 +38,12 @@ public static class OwnRuleKinds
     public const string InputLinkage = "input-linkage";
     public const string InputToggle = "input-toggle";
     public const string InputEdge = "input-edge";
+    public const string AutoOn = "auto-on";
 
     public const int MaxLength = 16;
 
     /// <summary>Every kind, in the order of <see cref="OwnRuleKind"/>.</summary>
-    public static IReadOnlyList<string> All { get; } = [Timer, InputLinkage, InputToggle, InputEdge];
+    public static IReadOnlyList<string> All { get; } = [Timer, InputLinkage, InputToggle, InputEdge, AutoOn];
 
     /// <summary>The kind as it is saved.</summary>
     public static string For(OwnRuleKind kind)
@@ -53,6 +54,7 @@ public static class OwnRuleKinds
             OwnRuleKind.InputLinkage => InputLinkage,
             OwnRuleKind.InputToggle => InputToggle,
             OwnRuleKind.InputEdge => InputEdge,
+            OwnRuleKind.AutoOn => AutoOn,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a kind of rule."),
         };
     }
@@ -73,6 +75,9 @@ public static class OwnRuleKinds
                 return true;
             case InputEdge:
                 kind = OwnRuleKind.InputEdge;
+                return true;
+            case AutoOn:
+                kind = OwnRuleKind.AutoOn;
                 return true;
             default:
                 kind = default;

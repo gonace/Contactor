@@ -793,19 +793,35 @@ public sealed class DevantechClientTests
     }
 
     [Fact]
-    public async Task Should_NotConnect_WithAWrongPassword_AndTryAgainLater()
+    public async Task Should_NotConnect_WithAWrongPassword_NorTryItAgainByItself()
     {
         var time = new ManualTimeProvider();
         await using var simulator = Started(DevantechModels.Eth008, "apple", time);
         await using var run = ClientRun.Start(simulator.Port, DevantechModels.Eth008, password: "pear", time: time);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s"));
+        // Issue #522: a refused password waits for a new one or a person's "Check again", not for the clock.
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Not trying again until a new password is saved or a person checks again"));
+        var sent = simulator.ReceivedRequests.Count;
+        time.Advance(TimeSpan.FromHours(1));
+        Assert.Equal(sent, simulator.ReceivedRequests.Count);
 
         Assert.False(run.Client.State.IsConnected);
         Assert.Contains(run.Traces, t => t.Text == "Password refused" && t.IsError);
         Assert.Contains(run.Traces, t => t.Text == "Connection lost: The Devantech board refused the password." && t.IsError);
         Assert.DoesNotContain(simulator.ReceivedRequests, r => r.StartsWith('2'));
         Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008), run.Client.State.Problem);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Trying again in", StringComparison.Ordinal));
+
+        // "Check again" sends the password once more, and is refused once more.
+        var refusals = run.Traces.Count(t => t.Text == "Password refused");
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => run.Traces.Count(t => t.Text == "Password refused") == refusals + 1
+            && run.Traces.Count(t => t.Text == "Not trying again until a new password is saved or a person checks again") == 2);
+
+        // The right password connects at once.
+        run.Client.SetPassword("apple");
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Problem);
     }
 
     // The password is a secret: the problem, and the state that carries it, never hold it.

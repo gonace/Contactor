@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.Boards;
@@ -21,6 +22,11 @@ namespace Contactor.Web.Features.Relays;
 /// A write the board didn't answer may still have been saved on the board. Such a write is kept as unconfirmed for
 /// <see cref="ConfirmFor"/>: when the board's state shows it meanwhile, it is logged with the person then. It is never
 /// sent again on its own; only a person's next Save sends anything.
+/// <para>
+/// One write at a time on each board, the Relay screen's checks and write and a group's together (<c>_writes</c>): a
+/// group saved between the Relay screen's check of the groups and its write is then made safe after that write, and
+/// sees its state. Another board's writes don't wait for it.
+/// </para>
 /// </remarks>
 public sealed partial class RelayPowerOnHandler : IDisposable
 {
@@ -37,6 +43,13 @@ public sealed partial class RelayPowerOnHandler : IDisposable
     // Writes the board didn't answer, by relay id: at most one per relay, the latest.
     private readonly Lock _lock = new();
     private readonly Dictionary<int, Unconfirmed> _unconfirmed = [];
+
+    // One write at a time on each board, with the checks before it (see the remarks), by board id. One per board the
+    // app ever wrote to; none is disposed, as none uses its wait handle.
+    private readonly ConcurrentDictionary<int, SemaphoreSlim> _writes = new();
+
+    // The events of writes the board's state confirmed later, still being saved (OnBoardChanged).
+    private readonly HashSet<Task> _logging = [];
 
     public RelayPowerOnHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -63,6 +76,18 @@ public sealed partial class RelayPowerOnHandler : IDisposable
     }
 
     /// <summary>
+    /// Completes once the events of the writes the board's state has confirmed so far are saved (or failed to be): they
+    /// are saved in the background, when the board's state shows them. For the tests.
+    /// </summary>
+    public Task WhenLoggedAsync()
+    {
+        lock (_lock)
+        {
+            return Task.WhenAll([.. _logging]);
+        }
+    }
+
+    /// <summary>
     /// Sets the relay's state after a power cut to <paramref name="state"/> at once, as <paramref name="userEmail"/>
     /// saved it, and logs it when the board took it. Returns null when set, otherwise the message to show: without a
     /// connection, or when the board refused it, nothing is logged or queued. When the board didn't answer, it says
@@ -76,6 +101,18 @@ public sealed partial class RelayPowerOnHandler : IDisposable
             throw new ArgumentOutOfRangeException(nameof(state), state, "Not a state after a power cut.");
         }
 
+        int? boardId;
+        await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            boardId = await db.Relays.AsNoTracking().Where(r => r.Id == relayId).Select(r => (int?)r.BoardId).SingleOrDefaultAsync(cancellationToken);
+        }
+
+        return await OneAtATimeAsync(boardId, () => SetUnderLockAsync(relayId, state, userEmail, cancellationToken), cancellationToken);
+    }
+
+    // Under the board's lock (_writes): the relay's checks, then the write.
+    private async Task<string?> SetUnderLockAsync(int relayId, PowerOnState state, string userEmail, CancellationToken cancellationToken)
+    {
         Relay? relay;
         bool inGroup;
         await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
@@ -129,6 +166,38 @@ public sealed partial class RelayPowerOnHandler : IDisposable
     public async Task<string?> MakeGroupSafeAsync(int groupId, string userEmail, IReadOnlyCollection<int>? relayIds, bool onSave, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        int? boardId;
+        await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+        {
+            boardId = await db.RelayGroups.AsNoTracking().Where(g => g.Id == groupId).Select(g => (int?)g.BoardId).SingleOrDefaultAsync(cancellationToken);
+        }
+
+        return await OneAtATimeAsync(boardId, () => MakeGroupSafeUnderLockAsync(groupId, userEmail, relayIds, onSave, cancellationToken), cancellationToken);
+    }
+
+    // Runs work under the board's lock; without a board (the relay or group is gone) as it is, which says so.
+    private async Task<string?> OneAtATimeAsync(int? boardId, Func<Task<string?>> work, CancellationToken cancellationToken)
+    {
+        if (boardId is not { } id)
+        {
+            return await work();
+        }
+
+        var gate = _writes.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await work();
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    // Under the board's lock (_writes): the board's states are read after any write before it.
+    private async Task<string?> MakeGroupSafeUnderLockAsync(int groupId, string userEmail, IReadOnlyCollection<int>? relayIds, bool onSave, CancellationToken cancellationToken)
+    {
         int boardId;
         List<(int RelayId, int Channel)> members;
         await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
@@ -324,7 +393,25 @@ public sealed partial class RelayPowerOnHandler : IDisposable
 
         foreach (var write in confirmed)
         {
-            _ = LogAsync(write);
+            // Kept until saved, for WhenLoggedAsync. LogAsync catches a failed save; only a RelayChanges subscriber that
+            // throws could fault it, and the task leaves the set either way.
+            var logging = LogAsync(write);
+            lock (_lock)
+            {
+                _logging.Add(logging);
+            }
+
+            _ = logging.ContinueWith(
+                done =>
+                {
+                    lock (_lock)
+                    {
+                        _logging.Remove(done);
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
     }
 

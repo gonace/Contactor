@@ -501,8 +501,8 @@ public sealed partial class UnavailableRelaysTests
         Assert.Equal(1, Regex.Count(cardHtml, ">Reset</button>"));
         Assert.Equal(2, Regex.Count(cardHtml, ">Turn off</button>"));
 
-        Assert.False(OwnRulesHandler.CanKeep(OwnRuleKind.InputLinkage));
-        Assert.True(OwnRulesHandler.CanKeep(OwnRuleKind.InputToggle) && OwnRulesHandler.CanKeep(OwnRuleKind.InputEdge));
+        Assert.False(OwnRulesHandler.CanKeep(OwnRuleKind.InputLinkage, inGroup: false));
+        Assert.True(OwnRulesHandler.CanKeep(OwnRuleKind.InputToggle, inGroup: false) && OwnRulesHandler.CanKeep(OwnRuleKind.InputEdge, inGroup: false));
         Assert.Equal("The board controls this relay itself, so it can't be kept. Reset it instead.", await rules.KeepAsync(BoardId, 3, OwnRuleKind.InputLinkage, John, Cancel));
         Assert.Null(await rules.KeepAsync(BoardId, 5, OwnRuleKind.InputToggle, John, Cancel));
 

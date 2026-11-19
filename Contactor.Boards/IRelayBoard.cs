@@ -83,9 +83,11 @@ public interface IRelayBoard
     /// <see cref="BoardNotConnectedException"/> and is never queued. Throws <see cref="ArgumentOutOfRangeException"/> for
     /// a relay or a kind of rule the board doesn't have, before anything is sent. A rule given more than once is taken
     /// once. Returns the rules the board took, each once, and none (sending nothing) for none asked; when it took none
-    /// of them, it throws instead. The next state confirms it
-    /// (<see cref="BoardState.OwnRules"/>). Throws <see cref="NotSupportedException"/> on a board that can't turn its
-    /// rules off (<see cref="OwnRulesAbility.TurnsOff"/>), the default.
+    /// of them, it throws instead. Turning off a rule turns off the units behind it (<see cref="OwnRules.Units"/>), so it
+    /// may also remove other rules (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>), e.g. a schedule that switches
+    /// two relays: those aren't returned. The next state confirms what is gone (<see cref="BoardState.OwnRules"/>).
+    /// Throws <see cref="NotSupportedException"/> on a board that can't turn its rules off
+    /// (<see cref="OwnRulesAbility.TurnsOff"/>), the default.
     /// </summary>
     Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {

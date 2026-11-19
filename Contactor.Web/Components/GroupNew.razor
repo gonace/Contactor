@@ -257,6 +257,12 @@
         }
     }
 
+    // Whether the board reported a state other than Off for a picked relay: the group's page then warns at once.
+    private bool ReportedNotSafe =>
+        _wizard.BoardId is { } boardId
+        && Registry.Find(boardId) is { } board
+        && GroupPowerOn.NotSafe(board.Capabilities.PowerOn, board.State.PowerOn, _wizard.Editor.Relays.Select(r => r.Channel)).Count > 0;
+
     // The group "Create group" saved when the board didn't take Off after a power cut: the page stays, with a link to it.
     private int? _created;
 
@@ -356,7 +362,8 @@
             if (id is { } created)
             {
                 // The group's relays Off after a power cut on the board, as the review said. The group is saved whatever
-                // the board does; when it didn't take it, the group's warning has "Make it safe".
+                // the board does; when it didn't take it, the group's warning has "Make it safe". A state the board
+                // hasn't reported gets no warning until it does, so the page says that instead.
                 if (await MakeSafeAsync(created))
                 {
                     Navigation.NavigateTo("");
@@ -364,7 +371,7 @@
                 else
                 {
                     _created = created;
-                    _error = Texts["Groups.PowerOn.NotSetCreated"];
+                    _error = Texts[ReportedNotSafe ? "Groups.PowerOn.NotSetCreated" : "Groups.PowerOn.NotSetCreated.Unknown"];
                 }
             }
         }

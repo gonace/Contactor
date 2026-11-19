@@ -35,7 +35,7 @@ public sealed class ShellySimulatedBoardTests
 
         var status = Body(await PostAsync(device.Port, "{\"id\":2,\"method\":\"Shelly.GetStatus\"}"));
         var frame = ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(status), 2);
-        Assert.Equal(new ShellySwitches(2, 0b10, 10), ShellyJson.ReadSwitches(frame.Result!.Value));
+        Assert.Equal(new ShellySwitches(2, 0b10, 10, 0), ShellyJson.ReadSwitches(frame.Result!.Value));
     }
 
     [Fact]
@@ -215,6 +215,24 @@ public sealed class ShellySimulatedBoardTests
         }
 
         Assert.Equal("", await ReadAllAsync(stream));
+    }
+
+    [Fact]
+    public async Task Should_TurnAScheduleOnOrOff_OnlyWhenItIsNotAlready()
+    {
+        await using var device = new ShellySimulator(ShellyModels.TwoRelays);
+        var changed = 0;
+        device.Changed += (_, _) => changed++;
+        var id = device.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        Assert.Equal((1, 1), (device.ScheduleRevision, changed));
+
+        Assert.False(device.TrySetScheduleEnabled(id, enable: true));
+        Assert.True(device.TrySetScheduleEnabled(id, enable: false));
+        Assert.False(device.TrySetScheduleEnabled(id, enable: false));
+        Assert.False(device.TrySetScheduleEnabled(id + 1, enable: false));
+
+        Assert.False(device.ScheduleEnabled(id));
+        Assert.Equal((2, 2), (device.ScheduleRevision, changed));
     }
 
     [Fact]

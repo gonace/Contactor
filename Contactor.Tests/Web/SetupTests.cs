@@ -3,6 +3,7 @@ using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -192,6 +193,7 @@ public sealed class SetupTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
             });
         await database.Services.InitializeDatabaseAsync(Cancel);
@@ -228,6 +230,7 @@ public sealed class SetupTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
             });
         await database.Services.InitializeDatabaseAsync(Cancel);
@@ -933,6 +936,24 @@ public sealed class SetupTests
         Assert.Equal(BoardContactResult.NoAnswer, await contact.WaitAsync(moved: true, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
     }
 
+    // Issue #522: "Check again" asks the connection to try once more only while it waits after a refusal, never during
+    // a connect under way or its usual short wait, so one press never sends the password twice.
+    [Theory]
+    [InlineData(false, null, false)]
+    [InlineData(false, ConnectionProblemKind.LoginRefused, true)]
+    [InlineData(false, ConnectionProblemKind.AskedToWait, true)]
+    [InlineData(false, ConnectionProblemKind.LoginNeeded, false)]
+    [InlineData(false, ConnectionProblemKind.WrongModel, false)]
+    [InlineData(false, ConnectionProblemKind.CoverProfile, false)]
+    [InlineData(true, null, false)]
+    public void Should_TryAgain_OnlyWhileTheConnectionWaitsAfterARefusal(bool connected, ConnectionProblemKind? kind, bool expected)
+    {
+        var problem = kind is { } k ? new ConnectionProblem(k, Vm201Model.Model) : null;
+        var state = new BoardState(connected, ChannelMask.None, ChannelMask.None, null, problem);
+
+        Assert.Equal(expected, BoardContact.ShouldTryAgain(state));
+    }
+
     [Theory]
     [InlineData(8, 1, 0, "8 relays · 1 input")]
     [InlineData(4, 4, 1, "4 relays · 4 inputs · 1 analog input")]
@@ -1147,6 +1168,7 @@ public sealed class SetupTests
                 services.AddEvents(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddSetup(configuration);
             });
             await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);

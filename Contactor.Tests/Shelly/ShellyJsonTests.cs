@@ -296,8 +296,8 @@ public sealed class ShellyJsonTests
     {
         using var document = System.Text.Json.JsonDocument.Parse(StatusExample);
 
-        // sys.cfg_rev is 26 in the docs' example.
-        Assert.Equal(new ShellySwitches(4, 0b0001, 26), ShellyJson.ReadSwitches(document.RootElement));
+        // sys.cfg_rev is 26 and sys.schedule_rev 0 in the docs' example.
+        Assert.Equal(new ShellySwitches(4, 0b0001, 26, 0), ShellyJson.ReadSwitches(document.RootElement));
     }
 
     [Fact]
@@ -521,5 +521,196 @@ public sealed class ShellyJsonTests
         Assert.Null(ShellyJson.TryReadRequest("{\"id\":1,\"method\":\"x\",\"params\":[]}"u8));
         Assert.Null(ShellyJson.TryReadRequest("{\"id\":{},\"method\":\"x\"}"u8));
         Assert.Null(ShellyJson.TryReadRequest("nope"u8));
+    }
+
+    // "Schedule", "Schedule.List example", the HTTP GET response, byte for byte.
+    private const string ScheduleListExample = """
+        {
+          "jobs": [
+            {
+              "id": 1,
+              "enable": true,
+              "timespec": "0 0 8 * * SUN,MON,TUE,WED,THU,FRI,SAT",
+              "calls": [
+                {
+                  "method": "Switch.Set",
+                  "params": {
+                    "id": 0,
+                    "on": false
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "enable": true,
+              "timespec": "0 30 19 * * MON,TUE,WED,THU,FRI",
+              "calls": [
+                {
+                  "method": "Switch.Set",
+                  "params": {
+                    "id": 0,
+                    "on": true
+                  }
+                }
+              ]
+            }
+          ],
+          "rev": 4
+        }
+        """;
+
+    [Fact]
+    public void Should_ReadTheDocsScheduleList_AsTwoJobsOnRelayOne()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(ScheduleListExample);
+
+        var schedules = ShellyJson.ReadSchedules(document.RootElement, switchCount: 4);
+
+        Assert.Equal([new ShellyJob(1, true, 0b0001), new ShellyJob(2, true, 0b0001)], schedules.Jobs);
+        Assert.Equal(4, schedules.Revision);
+        Assert.Equal(0b0001, schedules.Relays);
+        Assert.Equal([1L, 2L], schedules.Switching(1).Select(j => j.Id));
+        Assert.Empty(schedules.Switching(2));
+    }
+
+    [Theory]
+    [InlineData("""{"method":"Switch.Set","params":{"id":2,"on":true}}""", 0b0100)]
+    [InlineData("""{"method":"Switch.Set","params":{"id":0,"on":false,"toggle_after":60}}""", 0b0001)]
+    [InlineData("""{"method":"Switch.Toggle","params":{"id":3}}""", 0b1000)]
+    [InlineData("""{"method":"Switch.SetAll","params":{"on":true}}""", 0b1111)]
+    [InlineData("""{"method":"Switch.SetAll"}""", 0b1111)]
+    [InlineData("""{"method":"Switch.SetMany","params":{"ids":[0,3],"on":true}}""", 0b1001)]
+    [InlineData("""{"method":"Switch.SetMany","params":{"ids":[1,4,-1,1.5,"2",null],"on":true}}""", 0b0010)]
+    [InlineData("""{"method":"Switch.SetMany","params":{"ids":1,"on":true}}""", 0)]
+    [InlineData("""{"method":"Switch.Set","params":{"id":4,"on":true}}""", 0)]
+    [InlineData("""{"method":"Switch.Set","params":{"id":-1,"on":true}}""", 0)]
+    [InlineData("""{"method":"Switch.Set","params":{"id":"0","on":true}}""", 0)]
+    [InlineData("""{"method":"Switch.Set","params":{"id":99999999999,"on":true}}""", 0)]
+    [InlineData("""{"method":"Switch.Set"}""", 0)]
+    [InlineData("""{"method":"Switch.Set","params":[0]}""", 0)]
+    [InlineData("""{"method":"switch.set","params":{"id":0,"on":true}}""", 0)]
+    [InlineData("""{"method":"Shelly.Reboot"}""", 0)]
+    [InlineData("""{"method":"Script.Start","params":{"id":0}}""", 0)]
+    [InlineData("""{"method":7}""", 0)]
+    [InlineData("""{"params":{"id":0}}""", 0)]
+    [InlineData("""[]""", 0)]
+    [InlineData("""null""", 0)]
+    public void Should_ReadOnlyTheCallsThatSwitchARelay(string call, int relays)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse($$"""{"jobs":[{"id":5,"enable":true,"timespec":"@sunset","calls":[{{call}}]}],"rev":1}""");
+
+        Assert.Equal(new ShellyJob(5, true, (byte)relays), Assert.Single(ShellyJson.ReadSchedules(document.RootElement, switchCount: 4).Jobs));
+    }
+
+    [Fact]
+    public void Should_JoinEveryCallOfAJob_AndLeaveDisabledJobsOutOfTheRelays()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse("""
+            {"jobs":[
+              {"id":1,"enable":false,"timespec":"0 0 8 * * *","calls":[{"method":"Switch.Set","params":{"id":0,"on":true}}]},
+              {"id":2,"timespec":"0 0 9 * * *","calls":[{"method":"Switch.Set","params":{"id":1,"on":true}},{"method":"Shelly.Reboot"},{"method":"Switch.Toggle","params":{"id":2}}]},
+              {"id":3,"enable":true,"timespec":"0 0 9 * * *","calls":[]}
+            ]}
+            """);
+
+        var schedules = ShellyJson.ReadSchedules(document.RootElement, switchCount: 3);
+
+        // "enable": "It is true by default"; a job without a call that switches a relay switches none.
+        Assert.Equal([new ShellyJob(1, false, 0b001), new ShellyJob(2, true, 0b110), new ShellyJob(3, true, 0)], schedules.Jobs);
+        Assert.Null(schedules.Revision);
+        Assert.Equal(0b110, schedules.Relays);
+        Assert.Empty(schedules.Switching(1));
+        Assert.Equal([2L], schedules.Switching(3).Select(j => j.Id));
+    }
+
+    [Theory]
+    [InlineData("""[]""")]
+    [InlineData("""{}""")]
+    [InlineData("""{"jobs":{}}""")]
+    [InlineData("""{"jobs":[1]}""")]
+    [InlineData("""{"jobs":[{"enable":true,"calls":[]}]}""")]
+    [InlineData("""{"jobs":[{"id":"1","enable":true,"calls":[]}]}""")]
+    [InlineData("""{"jobs":[{"id":1.5,"enable":true,"calls":[]}]}""")]
+    [InlineData("""{"jobs":[{"id":1,"enable":"yes","calls":[]}]}""")]
+    [InlineData("""{"jobs":[{"id":1,"enable":null,"calls":[]}]}""")]
+    [InlineData("""{"jobs":[{"id":1,"enable":true}]}""")]
+    [InlineData("""{"jobs":[{"id":1,"enable":true,"calls":{}}]}""")]
+    [InlineData("""{"jobs":[{"id":1,"calls":[]},{"id":1,"calls":[]}]}""")]
+    public void Should_RefuseSchedulesItCantRead(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Throws<ShellyProtocolException>(() => ShellyJson.ReadSchedules(document.RootElement, switchCount: 2));
+    }
+
+    // "There is a limit of 20 schedule instances per device" and "a limit of 5 calls per schedule job": more is refused.
+    [Fact]
+    public void Should_RefuseMoreJobsOrCallsThanTheDocsAllow()
+    {
+        static string Jobs(int jobs, int calls)
+        {
+            var call = """{"method":"Switch.Set","params":{"id":0,"on":true}}""";
+            var job = string.Join(",", Enumerable.Range(1, jobs).Select(i => $$"""{"id":{{i}},"enable":true,"calls":[{{string.Join(",", Enumerable.Repeat(call, calls))}}]}"""));
+            return $$"""{"jobs":[{{job}}],"rev":1}""";
+        }
+
+        using (var most = System.Text.Json.JsonDocument.Parse(Jobs(ShellyApi.MaxScheduleJobs, ShellyApi.MaxScheduleCalls)))
+        {
+            Assert.Equal(20, ShellyJson.ReadSchedules(most.RootElement, switchCount: 1).Jobs.Count);
+        }
+
+        using var tooManyJobs = System.Text.Json.JsonDocument.Parse(Jobs(ShellyApi.MaxScheduleJobs + 1, 1));
+        Assert.Throws<ShellyProtocolException>(() => ShellyJson.ReadSchedules(tooManyJobs.RootElement, switchCount: 1));
+        using var tooManyCalls = System.Text.Json.JsonDocument.Parse(Jobs(1, ShellyApi.MaxScheduleCalls + 1));
+        Assert.Throws<ShellyProtocolException>(() => ShellyJson.ReadSchedules(tooManyCalls.RootElement, switchCount: 1));
+    }
+
+    [Fact]
+    public void Should_ReadTheDocsGetConfig_AutoOnOff()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(GetConfigExample);
+
+        Assert.False(ShellyJson.ReadAutoOn(document.RootElement));
+    }
+
+    [Theory]
+    [InlineData("""{"id":0,"auto_on":true}""", true)]
+    [InlineData("""{"id":0,"auto_on":false}""", false)]
+    [InlineData("""{"id":0}""", null)]
+    [InlineData("""{"id":0,"auto_on":"true"}""", null)]
+    [InlineData("""{"id":0,"auto_on":1}""", null)]
+    [InlineData("""[]""", null)]
+    public void Should_ReadAutoOn_OnlyAsTrueOrFalse(string json, bool? autoOn)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Equal(autoOn, ShellyJson.ReadAutoOn(document.RootElement));
+    }
+
+    [Fact]
+    public void Should_WriteTheDocsScheduleUpdate_AndAnAutoOnSetConfig_WithNothingElse()
+    {
+        // As the docs' Schedule.Update example: {"id":1,"method":"Schedule.Update","params":{"id":3,"enable":false}}.
+        Assert.Equal(
+            """{"id":1,"src":"contactor","method":"Schedule.Update","params":{"id":3,"enable":false}}""",
+            Encoding.UTF8.GetString(ShellyJson.WriteScheduleOff(1, job: 3)));
+        Assert.Equal(
+            """{"id":2,"src":"contactor","method":"Switch.SetConfig","params":{"id":1,"config":{"auto_on":false}}}""",
+            Encoding.UTF8.GetString(ShellyJson.WriteSwitchAutoOnOff(2, relay: 2)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchAutoOnOff(1, relay: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchAutoOnOff(1, relay: 5));
+    }
+
+    [Theory]
+    [InlineData("""{"switch:0":{"output":true},"sys":{"schedule_rev":7}}""", 7L)]
+    [InlineData("""{"switch:0":{"output":true},"sys":{}}""", null)]
+    [InlineData("""{"switch:0":{"output":true},"sys":{"schedule_rev":"7"}}""", null)]
+    [InlineData("""{"switch:0":{"output":true},"sys":{"schedule_rev":7.5}}""", null)]
+    public void Should_ReadScheduleRev_OnlyAsAWholeNumber(string json, long? revision)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Equal(revision, ShellyJson.ReadSwitches(document.RootElement).ScheduleRevision);
     }
 }

@@ -20,7 +20,7 @@ public sealed class ShellyBoardTests
             Assert.Equal("Shelly", m.Brand);
             Assert.Equal(0, m.Capabilities.InputCount);
             Assert.False(m.Capabilities.ReportsChanges);
-            Assert.Equal(OwnRulesAbility.CantTell, m.Capabilities.OwnRules);
+            Assert.Equal(new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true), m.Capabilities.OwnRules);
             Assert.Equal(new PowerOnAbility([PowerOnState.Off, PowerOnState.AsBefore, PowerOnState.On, PowerOnState.FollowsInput], perRelay: true), m.Capabilities.PowerOn);
             Assert.Null(m.Capabilities.Pulse);
             Assert.True(m.PasswordOnly);
@@ -156,6 +156,71 @@ public sealed class ShellyBoardTests
             }
 
             await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.SetPowerOnAsync(3, PowerOnState.Off, Cancel));
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await run;
+        }
+    }
+
+    [Fact]
+    public async Task Should_ReportAndTurnOffOwnRules_ThroughTheBoard()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.TwoRelays);
+        var job = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":1,"on":true}}]""");
+        simulator.SetAutoOn(1, true);
+        simulator.Start();
+        var time = new ManualTimeProvider();
+        using var client = new ShellyClient(Options.Create(new ShellyOptions { Host = "127.0.0.1", Port = simulator.Port, PollSeconds = 60 }), ShellyModels.TwoRelays, time, NullLogger<ShellyClient>.Instance);
+        var board = new ShellyBoard(client, NullLogger<ShellyBoard>.Instance);
+        List<BoardState> states = [];
+        List<BoardState> rules = [];
+        board.StateChanged += (_, state) =>
+        {
+            lock (states)
+            {
+                states.Add(state);
+            }
+        };
+        board.OwnRulesChanged += (_, _) => throw new InvalidOperationException("A subscriber's bug.");
+        board.OwnRulesChanged += (_, state) =>
+        {
+            lock (rules)
+            {
+                rules.Add(state);
+            }
+        };
+        using var cts = new CancellationTokenSource();
+        var run = client.RunAsync(cts.Token);
+        try
+        {
+            await Wait.UntilAsync(() => board.State.IsConnected);
+            OwnRule autoOn1 = new(1, OwnRuleKind.AutoOn), timer2 = new(2, OwnRuleKind.Timer);
+            Assert.Equal(new OwnRules([autoOn1, timer2], [[timer2], [autoOn1]]), board.State.OwnRules);
+            Assert.True(board.Capabilities.OwnRulesOrCantTell.TurnsOff);
+            int statesBefore;
+            lock (states)
+            {
+                statesBefore = states.Count;
+            }
+
+            Assert.Equal([timer2], await board.TurnOffOwnRulesAsync([timer2], Cancel));
+
+            Assert.False(simulator.ScheduleEnabled(job));
+            Assert.Equal([autoOn1], board.State.OwnRules!);
+            lock (rules)
+            {
+                Assert.Equal([autoOn1], Assert.Single(rules).OwnRules!);
+            }
+
+            // Only the rules changed: no state for the safety services.
+            lock (states)
+            {
+                Assert.Equal(statesBefore, states.Count);
+            }
+
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.AutoOn)], Cancel));
         }
         finally
         {

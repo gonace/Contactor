@@ -17,9 +17,10 @@
     <p>@Texts["Boards.Relays.Intro", (int)SetupHandler.TryLength.TotalSeconds]</p>
 </div>
 @* A board that may have rules of its own the app can't see (issue #497) gets no step for them: this one line. *@
-@if (Board.Capabilities.OwnRulesOrCantTell.MayHaveUnseen)
+@if (Board.Capabilities.OwnRulesOrCantTell is { MayHaveUnseen: true } unseen)
 {
-    <p class="hint own-rules">@Texts["OwnRules.Card.CantTell"]</p>
+    @* A board that reads its rules (the Shelly) may still have others it can't see: "also". *@
+    <p class="hint own-rules">@Texts[unseen.Reads ? "OwnRules.Card.MayHaveUnseen" : "OwnRules.Card.CantTell"]</p>
 }
 @if (!Board.State.IsConnected)
 {

@@ -280,7 +280,10 @@ internal sealed class FakeRelayBoard : IRelayBoard
         AnalogChanged?.Invoke(this, state);
     }
 
-    /// <summary>When set, the board refuses to turn its own rules off, and they stay as they are.</summary>
+    /// <summary>
+    /// When set, the board refuses to turn its own rules off, and they stay as they are. As outside
+    /// <c>RunCommandAsync</c> on a real board, the refusal is a <see cref="BoardNotConnectedException"/>.
+    /// </summary>
     public bool RefuseOwnRules { get; set; }
 
     /// <summary>
@@ -307,8 +310,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     }
 
     /// <summary>
-    /// Turns off the rules it has of those asked, and reports what is left, as a board that reads its rules does. Only on
-    /// a board made with an ability that turns them off.
+    /// Turns off the rules it has of those asked, and with them the rules that go with them (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>),
+    /// and reports what is left, as a board that reads its rules does. Returns only the rules asked. Only on a board made
+    /// with an ability that turns them off.
     /// </summary>
     public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
@@ -333,7 +337,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
         if (RefuseOwnRules)
         {
-            throw new BoardRefusedException("The board refused to turn its own rules off.");
+            throw new BoardNotConnectedException("The board refused to turn its own rules off.");
         }
 
         BoardState state;
@@ -352,7 +356,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
                 return Task.FromResult(taken);
             }
 
-            state = _state = Stamp(_state with { OwnRules = new OwnRules(had.Where(r => !taken.Contains(r))) });
+            // Every unit behind a rule taken goes off, and the rules only those units made go too (OwnRules.GoesWith).
+            HashSet<OwnRule> gone = [.. taken, .. had.GoesWith(taken)];
+            List<OwnRule> left = [.. had.Where(r => !gone.Contains(r))];
+            var units = had.Units.Where(u => !u.Any(taken.Contains)).Select(IReadOnlyCollection<OwnRule> (u) => [.. u.Where(left.Contains)]);
+            state = _state = Stamp(_state with { OwnRules = new OwnRules(left, units) });
         }
 
         OwnRulesChanged?.Invoke(this, state);
@@ -372,6 +380,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
     }
 
     private readonly List<(int Relay, PowerOnState State)> _powerOnWrites = [];
+    private int _powerOnWritesHeld;
 
     /// <summary>
     /// When set, the board doesn't take a state after a power cut, and the write throws
@@ -384,6 +393,15 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// <see cref="BoardNotConnectedException"/> all the same, as a board whose answer was lost does.
     /// </summary>
     public bool LoseAnswerToPowerOn { get; set; }
+
+    /// <summary>
+    /// When set, a write of a state after a power cut waits for this task before the board takes it;
+    /// <see cref="PowerOnWritesHeld"/> counts the writes that got there.
+    /// </summary>
+    public Task? HoldPowerOn { get; set; }
+
+    /// <summary>How many writes of a state after a power cut waited for <see cref="HoldPowerOn"/>.</summary>
+    public int PowerOnWritesHeld => Volatile.Read(ref _powerOnWritesHeld);
 
     /// <summary>Each state after a power cut the board took, in order.</summary>
     public IReadOnlyList<(int Relay, PowerOnState State)> PowerOnWrites
@@ -416,6 +434,25 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
         ThrowIfCancelled(cancellationToken);
         EnsureConnected();
+        if (HoldPowerOn is { } hold)
+        {
+            return HeldAsync(hold);
+        }
+
+        TakePowerOn(relay, state, ability);
+        return Task.CompletedTask;
+
+        async Task HeldAsync(Task held)
+        {
+            Interlocked.Increment(ref _powerOnWritesHeld);
+            await held.WaitAsync(cancellationToken);
+            TakePowerOn(relay, state, ability);
+        }
+    }
+
+    // The board takes the state, or refuses it, and reports it.
+    private void TakePowerOn(int relay, PowerOnState state, PowerOnAbility ability)
+    {
         if (RefusePowerOn)
         {
             throw new BoardNotConnectedException("The board didn't take the state after a power cut.");
@@ -443,8 +480,6 @@ internal sealed class FakeRelayBoard : IRelayBoard
         {
             throw new BoardNotConnectedException("The board's answer was lost.");
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>The board's state is forgotten, as a client does when its address changes: nothing is known.</summary>

@@ -389,6 +389,22 @@ h2 {
     font-size: 14px;
 }
 
+.firmware {
+    width: 12em;
+}
+
+/* A simulated Shelly's schedules: each in words, and a line to add one. */
+.schedule {
+    overflow-wrap: anywhere;
+}
+
+.schedule-add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
 .analog {
     display: grid;
     grid-template-columns: auto minmax(120px, 1fr) auto;

@@ -157,7 +157,7 @@ namespace Contactor.Web.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_BoardOwnRule_Channel", "\"Channel\" BETWEEN 1 AND 64");
 
-                            t.HasCheckConstraint("CK_BoardOwnRule_Kind", "\"Kind\" IN ('timer', 'input-linkage', 'input-toggle', 'input-edge')");
+                            t.HasCheckConstraint("CK_BoardOwnRule_Kind", "\"Kind\" IN ('timer', 'input-linkage', 'input-toggle', 'input-edge', 'auto-on')");
                         });
                 });
 

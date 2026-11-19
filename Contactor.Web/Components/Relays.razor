@@ -305,6 +305,10 @@
     // The board's own rules each board's warning and cards show, by board id: kept as the page is drawn.
     private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownRules = [];
 
+    // The other rules each board's "Turn them off" takes with it (OwnRulesHandler.AlsoTurnsOff), by board id: kept as
+    // the page is drawn.
+    private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownAlso = [];
+
     // The relays each board controls by itself, by board id: kept as the page is drawn.
     private readonly Dictionary<int, ChannelMask> _shownUnavailable = [];
 
@@ -532,6 +536,11 @@
                 <span>@OwnRulesText.CanSwitch(rules)</span>
                 @if (board.Capabilities.OwnRulesOrCantTell.TurnsOff)
                 {
+                    @* Said before the press: other relays' rules that go with these ("Also turns off the board's timer for Heat."). *@
+                    @if (_shownAlso.GetValueOrDefault(board.BoardId) is { Count: > 0 } also)
+                    {
+                        <span class="also">@OwnRulesText.AlsoTurnsOff(also, RelayNames(board.BoardId))</span>
+                    }
                     <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, rules)">@OwnRulesText.TurnOffAll(rules.Count)</button>
                 }
                 @if (_rulesError is { } error && error.BoardId == board.BoardId)
@@ -1211,13 +1220,27 @@
         return board.State.IsConnected ? [.. OwnRules.Warnings(board.BoardId).Where(r => r.Kind != OwnRuleKind.InputLinkage)] : [];
     }
 
+    // What turning off the warning's rules takes with it: only for a board that turns them off.
+    private IReadOnlyList<OwnRule> AlsoToShow(LiveBoard board, IReadOnlyList<OwnRule> rules)
+    {
+        return rules.Count > 0 && board.Capabilities.OwnRulesOrCantTell.TurnsOff ? OwnRules.AlsoTurnsOff(board.BoardId, rules) : [];
+    }
+
+    // A board's relays by their channel, to their names.
+    private Dictionary<int, string> RelayNames(int boardId)
+    {
+        return _relays.Where(r => r.BoardId == boardId).GroupBy(r => r.Channel).ToDictionary(g => g.Key, g => g.First().Name);
+    }
+
     private void KeepShownRules()
     {
         _shownRules.Clear();
+        _shownAlso.Clear();
         _shownUnavailable.Clear();
         foreach (var board in Boards)
         {
             _shownRules[board.BoardId] = RulesToShow(board);
+            _shownAlso[board.BoardId] = AlsoToShow(board, _shownRules[board.BoardId]);
             _shownUnavailable[board.BoardId] = board.State.Unavailable;
         }
 
@@ -1316,7 +1339,9 @@
                     return;
                 }
 
-                if (!RulesToShow(board).SequenceEqual(_shownRules.GetValueOrDefault(boardId) ?? [])
+                var rules = RulesToShow(board);
+                if (!rules.SequenceEqual(_shownRules.GetValueOrDefault(boardId) ?? [])
+                    || !AlsoToShow(board, rules).SequenceEqual(_shownAlso.GetValueOrDefault(boardId) ?? [])
                     || board.State.Unavailable != _shownUnavailable.GetValueOrDefault(boardId))
                 {
                     StateHasChanged();

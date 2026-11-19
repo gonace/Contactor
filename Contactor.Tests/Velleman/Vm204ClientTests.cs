@@ -52,25 +52,31 @@ public sealed class Vm204ClientTests
     }
 
     [Fact]
-    public async Task Should_StayDisconnectedAndRetry_WhenThePasswordIsWrong()
+    public async Task Should_StayDisconnected_AndTryAgainOnlyWhenAsked_WhenThePasswordIsWrong()
     {
         await using var simulator = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
         simulator.Start();
         await using var run = ClientRun.Start(simulator.Port, "admin", "vm204");
 
-        // Refused, then tried again after the wait: only when the clock gets there.
-        await Wait.UntilAsync(() => simulator.DeniedLoginCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        run.Time.Advance(TimeSpan.FromSeconds(1));
-        await Wait.UntilAsync(() => simulator.DeniedLoginCount == 2 && run.Time.WaitsOnly(TimeSpan.FromSeconds(2)));
+        // Issue #522: refused, and not tried again by itself, however long the clock runs.
+        const string held = "Not trying again until a new login is saved or a person checks again";
+        await Wait.UntilAsync(() => simulator.DeniedLoginCount == 1 && run.Traces.Any(t => t.Text == held));
+        Assert.Equal(0, run.Time.PendingTimers);
+        run.Time.Advance(TimeSpan.FromDays(1));
+        Assert.Equal(1, simulator.DeniedLoginCount);
+
+        // "Check again": once.
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => simulator.DeniedLoginCount == 2 && run.Traces.Count(t => t.Text == held) == 2);
 
         Assert.False(run.Client.State.IsConnected);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
         Assert.Contains(run.Traces, t => t.Text == "Wrong user name or password" && t.IsError);
         Assert.All(run.Traces, t => Assert.DoesNotContain("vm204", $"{t.Text} {t.Bytes}", StringComparison.Ordinal));
 
-        // Why, once: the second refusal is the same. Never the password.
+        // Why, once for each attempt: "Check again" clears it until the board answers. Never the password.
         Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm204Model.Model), run.Client.State.Problem);
-        Assert.Single(run.Changes, c => c.Problem is not null);
+        Assert.Equal(2, run.Changes.Count(c => c.Problem is not null));
         Assert.DoesNotContain("vm204", run.Client.State.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("vm204", Vm204Board.ToBoardState(run.Client.State).ToString(), StringComparison.Ordinal);
     }

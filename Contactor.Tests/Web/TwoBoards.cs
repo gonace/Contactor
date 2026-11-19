@@ -32,9 +32,9 @@ internal sealed class TwoBoards : IAsyncDisposable
 
     public IDbContextFactory<ContactorDbContext> Factory => App.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
 
-    public static async Task<TwoBoards> StartAsync(FakeRelayBoard? barn = null)
+    public static async Task<TwoBoards> StartAsync(FakeRelayBoard? barn = null, FakeRelayBoard? first = null)
     {
-        var first = new FakeRelayBoard();
+        first ??= new FakeRelayBoard();
         barn ??= new FakeRelayBoard(relayCount: 4, inputCount: 2);
         var app = new TestWebApp(
             "Development",
