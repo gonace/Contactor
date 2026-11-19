@@ -299,8 +299,14 @@ The `Shelly` section applies to all four entries:
   refuse. `FailRelays` and `Refusal` make `Switch.Set` fail, by default with -109 "Overtemp condition present".
   `Throttle` answers 429. `ExpireNonces` and `ForgetNonces` make the next kept nonce fail. `ChangePassword` changes
   the password while the app runs. `AfterSwitchSet` lets a test change the device between two relays of one command.
+- `Schedules` gives the jobs it holds, for the simulator's page.
 - The simulator's page (`Contactor.Simulator`) offers port 8180 for it, because port 80 needs rights a developer
-  doesn't have.
+  doesn't have. The page has controls for `Throttle` (only for a device with a password: only then
+  does it ask for the digest, so only then can it answer 429), `Firmware` (1 to 32 letters, digits, '.', '-', '_' or
+  '+'; without a password it only decides whether the app refuses it, before 1.7.0),
+  `Profile` (none, "switch" or "cover"), `FailRelays`, `SetAutoOn` and `SetInitialState` (the four values the docs
+  list) per relay, and `SetScheduleEnabled` per job. It adds a job with `AddSchedule` that switches one relay on or
+  off every day at a time ("HH:mm"), at most 20, as the device holds.
 - Relays can be switched "at the device", and connections can be dropped or refused. A request that is too long,
   cut short or not HTTP is closed without an answer. A request that isn't a request frame gets 400 (the docs don't
   say what the device does).

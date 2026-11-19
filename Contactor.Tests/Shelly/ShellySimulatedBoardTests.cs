@@ -218,6 +218,24 @@ public sealed class ShellySimulatedBoardTests
     }
 
     [Fact]
+    public async Task Should_TurnAScheduleOnOrOff_OnlyWhenItIsNotAlready()
+    {
+        await using var device = new ShellySimulator(ShellyModels.TwoRelays);
+        var changed = 0;
+        device.Changed += (_, _) => changed++;
+        var id = device.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        Assert.Equal((1, 1), (device.ScheduleRevision, changed));
+
+        Assert.False(device.TrySetScheduleEnabled(id, enable: true));
+        Assert.True(device.TrySetScheduleEnabled(id, enable: false));
+        Assert.False(device.TrySetScheduleEnabled(id, enable: false));
+        Assert.False(device.TrySetScheduleEnabled(id + 1, enable: false));
+
+        Assert.False(device.ScheduleEnabled(id));
+        Assert.Equal((2, 2), (device.ScheduleRevision, changed));
+    }
+
+    [Fact]
     public async Task Should_TellWhoAskedRecently_AndWhatChangedAtTheDevice()
     {
         await using var device = new ShellySimulator(ShellyModels.ThreeRelays) { TimeProvider = new ManualTimeProvider() };
