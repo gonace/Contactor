@@ -139,6 +139,61 @@ public sealed class ShellyClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    // The password changed on the device while the app runs: the kept nonce is refused, the new challenge is answered
+    // once, and that is refused too. Nothing more in that request, and no kept nonce for the next.
+    [Fact]
+    public async Task Should_StopAfterOneNewChallenge_WhenTheKeptNonceAndThenThePasswordAreRefused()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var challenges = simulator.ChallengeCount;
+        var sent = simulator.Received.Count;
+        simulator.ChangePassword("changed");
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.DeniedCount == 2 && run.Time.WaitsOnly(run.PollInterval));
+
+        // The kept nonce (wrong, as the password is) and one answer to the new challenge: two requests, two refusals.
+        Assert.Equal([$"{ShellyApi.GetStatus} (signed)", $"{ShellyApi.GetStatus} (signed)"], simulator.Received.Skip(sent));
+        Assert.Equal(challenges + 2, simulator.ChallengeCount);
+        Assert.Contains(run.Traces, t => t.Text == "The Shelly wants a new nonce");
+        Assert.Contains(run.Traces, t => t.Text == "Wrong password" && t.IsError);
+        Assert.True(run.Client.State.IsConnected);
+
+        // The next poll has no kept nonce: it asks without the password first, then answers the challenge once.
+        sent = simulator.Received.Count;
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => simulator.DeniedCount == 3 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal([ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)"], simulator.Received.Skip(sent));
+    }
+
+    // "A single nonce can be reused for up to 30,000 requests": the client asks for a new one when it reaches the limit,
+    // without waiting for the device to refuse it. The limit is lowered here, so the test doesn't send 30,000 requests.
+    [Fact]
+    public async Task Should_TakeANewNonce_WhenItUsedTheKeptOneForTheMostRequests()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(ShellyClient.MaxNonceCount, run.Client.NonceLimit);
+        run.Client.NonceLimit = 2;
+        await run.PollAsync();
+        var challenges = simulator.ChallengeCount;
+        var sent = simulator.Received.Count;
+
+        // The poll above took a new nonce (the old one was past the limit), its first request. The next poll uses it a
+        // second time; the one after goes without it, gets a new challenge and answers it.
+        await run.PollAsync();
+        await run.PollAsync();
+
+        Assert.Equal([$"{ShellyApi.GetStatus} (signed)", ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)"], simulator.Received.Skip(sent));
+        Assert.Equal(challenges + 1, simulator.ChallengeCount);
+        Assert.Equal(0, simulator.DeniedCount);
+        Assert.Equal(0, simulator.StaleCount);
+        Assert.DoesNotContain(run.Traces, t => t.Text == "The Shelly wants a new nonce");
+    }
+
     // Issue #522: each try counts toward the device's brute-force protection, so a refused password isn't tried again
     // by itself, however long the clock runs.
     [Fact]
@@ -412,6 +467,48 @@ public sealed class ShellyClientTests
         }
 
         Assert.True(run.Client.State.IsConnected);
+    }
+
+    // A 429 part-way through a mask stops the rest, and the relays the device took before it are returned (the
+    // IRelayBoard contract). The device is read again at once.
+    [Fact]
+    public async Task Should_ReturnTheRelaysTaken_WhenA429StopsTheRestOfTheMask()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays, Password, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var sent = simulator.Received.Count;
+        simulator.AfterSwitchSet = _ => simulator.Throttle = true;
+
+        Assert.Equal(0b0001, await run.Client.TurnOnAsync(0b0111, Cancel));
+
+        // Relay 1, then the 429 for relay 2, and nothing for relay 3; then the read at once, throttled too.
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 2);
+        Assert.Equal(0b0001, simulator.Relays);
+        Assert.Equal(
+            [$"{ShellyApi.SwitchSet} (signed)", $"{ShellyApi.SwitchSet} (signed)", $"{ShellyApi.GetStatus} (signed)"],
+            simulator.Received.Skip(sent));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Stopped at relay 2, nothing more sent: ", StringComparison.Ordinal) && t.IsError);
+
+        // Before any relay was taken, the same 429 fails the command.
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0100, Cancel));
+    }
+
+    // No answer part-way through a mask stops the rest too, and the relays the device took before it are returned.
+    [Fact]
+    public async Task Should_ReturnTheRelaysTaken_WhenNoAnswerStopsTheRestOfTheMask()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays);
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var sent = simulator.Received.Count;
+        simulator.AfterSwitchSet = relay => simulator.RejectConnections = relay == 2;
+
+        Assert.Equal(0b0011, await run.Client.TurnOnAsync(0b1011, Cancel));
+
+        Assert.Equal(0b0011, simulator.Relays);
+        Assert.Equal([ShellyApi.SwitchSet, ShellyApi.SwitchSet], simulator.Received.Skip(sent));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Stopped at relay 4, nothing more sent: ", StringComparison.Ordinal) && t.IsError);
     }
 
     [Fact]

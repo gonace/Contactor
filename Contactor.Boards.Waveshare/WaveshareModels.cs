@@ -36,7 +36,7 @@ public static class WaveshareModels
     public static bool HasRelayModes(BoardModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
-        return model.Capabilities.InputCount > 0;
+        return HasRelayModes(model.Capabilities.InputCount);
     }
 
     /// <summary>Whether <paramref name="model"/> is one of these.</summary>
@@ -49,7 +49,13 @@ public static class WaveshareModels
     // sets back to normal on a person's press; the others have none.
     private static BoardModel Create(string id, string name, int relays, int inputs)
     {
-        var ownRules = inputs > 0 ? OwnRulesAbility.ReadsAndTurnsOff : OwnRulesAbility.None;
+        var ownRules = HasRelayModes(inputs) ? OwnRulesAbility.ReadsAndTurnsOff : OwnRulesAbility.None;
         return new BoardModel(id, Brand, name, new BoardCapabilities(relays, inputs, ReportsChanges: false, Pulse: Pulse, OwnRules: ownRules), WaveshareApi.DefaultPort, LoginMaxLength: 0);
+    }
+
+    // The one place the rule lives: the models with inputs have relay control modes.
+    private static bool HasRelayModes(int inputs)
+    {
+        return inputs > 0;
     }
 }

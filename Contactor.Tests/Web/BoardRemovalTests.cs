@@ -77,8 +77,10 @@ public sealed class BoardRemovalTests
     [Fact]
     public async Task Should_LeaveEverything_AndRunTheBoardAgain_WhenTheDeleteFails()
     {
+        // The board has the timers its own-rule rows tell of (relay 1 and 2), so the board running again keeps the rows.
         await using var simulator = new Vm201Simulator();
         simulator.Start();
+        await simulator.SetTimerMaskAsync(0b0000_0011);
         await using var boards = await TwoBoards.StartAsync();
         await SeedAsync(boards, boards.BarnId);
         var shedId = await AddShedAsync(boards);
@@ -93,14 +95,16 @@ public sealed class BoardRemovalTests
         // And the rows of that model, as a VM201's would have: loaded again, a board gets the rows its model lacks.
         await boards.App.Services.SeedBoardAsync(boards.BarnId, BoardCatalogue.Find("vm201")!.Model.Capabilities, Cancel);
         var before = await CountAsync(boards, boards.BarnId);
+        var rulesBefore = await OwnRuleRowsAsync(boards, boards.BarnId);
         var removal = boards.App.Services.GetRequiredService<BoardRemoval>();
         await Assert.ThrowsAnyAsync<Exception>(() => removal.RemoveAsync(boards.BarnId, turnOffFirst: true, John, Cancel));
 
         // Its events too; the board running again may log more of its own meanwhile (its first status). Its own rules'
-        // rows follow what the board running again reads: the simulator has no timers, so they may go meanwhile.
+        // rows are the same rows, with the "Keep": a row the board's reading made again would have no "Keep".
         var after = await CountAsync(boards, boards.BarnId);
-        Assert.Equal(before with { Events = 0, OwnRules = 0 }, after with { Events = 0, OwnRules = 0 });
+        Assert.Equal(before with { Events = 0 }, after with { Events = 0 });
         Assert.True(after.Events >= before.Events);
+        Assert.Equal(rulesBefore, await OwnRuleRowsAsync(boards, boards.BarnId));
         await using (var check = await boards.Factory.CreateDbContextAsync(Cancel))
         {
             Assert.True(await check.Boards.AnyAsync(b => b.Id == boards.BarnId, Cancel));
@@ -115,6 +119,7 @@ public sealed class BoardRemovalTests
         await Wait.UntilAsync(() => barn.State.IsConnected);
         await boards.App.Services.GetRequiredService<RelayControl>().TurnOnAsync(await RelayIdAsync(boards, boards.BarnId, 1), John, Cancel);
         await Wait.UntilAsync(() => (simulator.Outputs & 1) == 1);
+        Assert.Equal(rulesBefore, await OwnRuleRowsAsync(boards, boards.BarnId));
     }
 
     // Its relays go off first, a group's in its order; the live board is stopped and let go before the rows go, and the
@@ -682,6 +687,13 @@ public sealed class BoardRemovalTests
     private static DateTime Min(DateTime a, DateTime b)
     {
         return a < b ? a : b;
+    }
+
+    private static async Task<List<(int Channel, string Kind, DateTime FoundUtc, string? KeptBy)>> OwnRuleRowsAsync(TwoBoards boards, int boardId)
+    {
+        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
+        var rows = await db.BoardOwnRules.Where(r => r.BoardId == boardId).OrderBy(r => r.Channel).ThenBy(r => r.Kind).ToListAsync(Cancel);
+        return [.. rows.Select(r => (r.Channel, r.Kind, r.FoundUtc, r.KeptBy))];
     }
 
     private static async Task<Counts> CountAsync(TwoBoards boards, int boardId)

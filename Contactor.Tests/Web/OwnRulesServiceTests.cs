@@ -212,7 +212,7 @@ public sealed class OwnRulesServiceTests
         Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRuleFound));
 
         rig.Time.Advance(OwnRulesService.RetryDelay);
-        await Wait.UntilAsync(() => rig.EventsAsync(EventActions.BoardOwnRuleFound).GetAwaiter().GetResult().Count == 2);
+        await Wait.UntilAsync(async () => (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count == 2);
 
         Assert.Equal([false, false], (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Select(OwnRulesRig.IsNew));
         Assert.Single(await rig.RowsAsync());

@@ -397,7 +397,7 @@
     <comment>{0} is the model found at the address; {1} is Common.AddBoard.</comment>
   </data>
   <data name="Boards.Problem.WrongModel.Unknown" xml:space="preserve">
-    <value>The board at this address is another model, not an {0}.</value>
+    <value>The board at this address is another model, not the {0}.</value>
     <comment>{0} is the model chosen, e.g. "ETH008-B".</comment>
   </data>
   <data name="Boards.Problem.WrongPassword" xml:space="preserve">
@@ -1517,6 +1517,9 @@
   </data>
   <data name="Groups.PowerOn.NotSetCreated" xml:space="preserve">
     <value>The group was created, but Contactor couldn't make sure that the board keeps its relays off after a power cut. Open the group to see what to do.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetCreated.Unknown" xml:space="preserve">
+    <value>The group was created, but Contactor couldn't make sure that the board keeps its relays off after a power cut. The board hasn't reported yet what they do. If it reports that it turns one on, the group's page warns.</value>
   </data>
   <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
     <value>The group was saved, but Contactor couldn't make sure that the board keeps its new relays off after a power cut.</value>

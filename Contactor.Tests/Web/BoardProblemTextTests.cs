@@ -14,7 +14,8 @@ public sealed class BoardProblemTextTests
     public static TheoryData<ConnectionProblem, string, string> English { get; } = new()
     {
         { new(ConnectionProblemKind.WrongModel, DevantechModels.Eth008, DevantechModels.Eth484), "The board at this address is an ETH484-B, not an ETH008-B.", "Wrong model" },
-        { new(ConnectionProblemKind.WrongModel, DevantechModels.Eth008), "The board at this address is another model, not an ETH008-B.", "Wrong model" },
+        { new(ConnectionProblemKind.WrongModel, DevantechModels.Eth008), "The board at this address is another model, not the ETH008-B.", "Wrong model" },
+        { new(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays), "The board at this address is another model, not the Gen2+ 2.", "Wrong model" },
         { new(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays, FoundRelayCount: 4), "The board at this address has 4 relays, not 2.", "Wrong model" },
         { new(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.OneRelay, FoundRelayCount: 1), "The board at this address has 1 relay, not 2.", "Wrong model" },
         { new(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, FoundRelayCount: 6), "The board at this address has 6 relays, not 2.", "Wrong model" },
@@ -33,6 +34,7 @@ public sealed class BoardProblemTextTests
     {
         { new(ConnectionProblemKind.WrongModel, DevantechModels.Eth008, DevantechModels.Eth484), "Kortet på den här adressen är ett ETH484-B, inte ett ETH008-B.", "Fel modell" },
         { new(ConnectionProblemKind.WrongModel, DevantechModels.Eth008), "Kortet på den här adressen är en annan modell, inte ett ETH008-B.", "Fel modell" },
+        { new(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays), "Kortet på den här adressen är en annan modell, inte ett Gen2+ 2.", "Fel modell" },
         { new(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays, FoundRelayCount: 4), "Kortet på den här adressen har 4 reläer, inte 2.", "Fel modell" },
         { new(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.OneRelay, FoundRelayCount: 1), "Kortet på den här adressen har 1 relä, inte 2.", "Fel modell" },
         { new(ConnectionProblemKind.CoverProfile, ShellyModels.TwoRelays), "Kortet är inställt på att styra en rullgardin eller markis, inte reläer. Ställ in dess profil på \"switch\" på kortets egen webbsida och kontrollera sedan igen.", "Inställt för rullgardin" },

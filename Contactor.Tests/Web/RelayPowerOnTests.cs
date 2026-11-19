@@ -267,13 +267,15 @@ public sealed class RelayPowerOnTests
 
         board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.Off));
         board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.Off));
-        await Wait.UntilAsync(() => PowerOnEventsAsync(app).GetAwaiter().GetResult().Count > 0);
+        await Wait.UntilAsync(async () => (await PowerOnEventsAsync(app)).Count > 0);
         time.Now += RelayPowerOnHandler.ConfirmFor;
         board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.On));
 
-        // A later write that lands, so the one before has had its turn.
+        // A later write that lands, so the one before has had its turn. The events above are saved in the background,
+        // so one that shouldn't be there (relay 3 twice, relay 5) could land after relay 4's: wait for them first.
         board.RefusePowerOn = false;
         Assert.Null(await handler.SetAsync(4, PowerOnState.On, John, Cancel));
+        await handler.WhenLoggedAsync();
         var events = await PowerOnEventsAsync(app);
         Assert.Equal([(3, """{"from":"on","to":"off"}"""), (4, """{"from":"off","to":"on"}""")], events.OrderBy(e => e.Id).Select(e => (e.RelayId!.Value, e.Details)));
     }
@@ -383,6 +385,76 @@ public sealed class RelayPowerOnTests
         Assert.Empty(board.PowerOnWrites);
         Assert.Null(await app.Services.GetRequiredService<RelayPowerOnHandler>().SetAsync(5, PowerOnState.Off, John, Cancel));
         Assert.Equal([(5, PowerOnState.Off)], board.PowerOnWrites);
+    }
+
+    // A group made between the Relay screen's check of the groups and its write: "Create group" waits for that write,
+    // sees the state it set, and sets the board to Off.
+    [Fact]
+    public async Task Should_MakeAGroupSafe_AfterAWriteWhoseCheckCameBeforeTheGroup()
+    {
+        var board = WholeBoard();
+        board.SetPowerOn(new PowerOnStates(Enumerable.Repeat<PowerOnState?>(PowerOnState.Off, 8)));
+        await using var app = App(board);
+        var handler = app.Services.GetRequiredService<RelayPowerOnHandler>();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        board.HoldPowerOn = release.Task;
+        var write = handler.SetAsync(5, PowerOnState.On, John, Cancel);
+        await Wait.UntilAsync(() => board.PowerOnWritesHeld == 1);
+
+        await AddGroupAsync(app, "Fan", "Heat");
+        int groupId;
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            groupId = await db.RelayGroups.Select(g => g.Id).SingleAsync(Cancel);
+        }
+
+        // It waits for the write under way: before it, the board's state was still Off, so it would set nothing.
+        var safe = handler.MakeGroupSafeAsync(groupId, John, relayIds: null, onSave: true, Cancel);
+        board.HoldPowerOn = null;
+        release.SetResult();
+
+        Assert.Null(await write);
+        Assert.Null(await safe);
+        Assert.Equal(PowerOnState.On, board.PowerOnWrites[0].State);
+        Assert.Equal(PowerOnState.Off, board.PowerOnWrites[^1].State);
+        Assert.Equal(PowerOnState.Off, board.State.PowerOn!.For(5));
+    }
+
+    // The writes take turns per board: a write another board hasn't answered yet doesn't hold this board's "Make it safe".
+    [Fact]
+    public async Task Should_MakeAGroupSafe_WhileAnotherBoardsWriteWaits()
+    {
+        var first = Board();
+        var barn = new FakeRelayBoard(relayCount: 4, inputCount: 2, powerOn: AllStates);
+        barn.SetPowerOn(new PowerOnStates([PowerOnState.Off, PowerOnState.On, PowerOnState.Off, PowerOnState.Off]));
+        await using var boards = await TwoBoards.StartAsync(barn, first);
+        var handler = boards.App.Services.GetRequiredService<RelayPowerOnHandler>();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        first.HoldPowerOn = release.Task;
+        var write = handler.SetAsync(5, PowerOnState.On, John, Cancel);
+        await Wait.UntilAsync(() => first.PowerOnWritesHeld == 1);
+        int groupId;
+        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
+        {
+            var relays = await db.Relays.Where(r => r.BoardId == boards.BarnId).ToDictionaryAsync(r => r.Channel, r => r.Id, Cancel);
+            var group = new RelayGroup { BoardId = boards.BarnId, Name = "Heater", Icon = GroupIcons.Flame };
+            group.AddStep("Fan", [relays[1]]);
+            group.AddStep("Heat", [relays[2]]);
+            await db.AddWithRuntimesAsync(group);
+            groupId = group.Id;
+        }
+
+        // Not awaited at once: with one lock for every board it would wait for the held write, and the test would hang.
+        var safe = handler.MakeGroupSafeAsync(groupId, John, relayIds: null, onSave: false, Cancel);
+        await Wait.UntilAsync(() => safe.IsCompleted);
+
+        Assert.Null(await safe);
+        Assert.Equal([(2, PowerOnState.Off)], barn.PowerOnWrites);
+        Assert.Empty(first.PowerOnWrites);
+        first.HoldPowerOn = null;
+        release.SetResult();
+        Assert.Null(await write);
+        Assert.Equal([(5, PowerOnState.On)], first.PowerOnWrites);
     }
 
     // Without a group on the board every state is allowed; a board with a state per relay is never limited.
