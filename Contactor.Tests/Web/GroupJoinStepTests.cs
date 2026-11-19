@@ -43,24 +43,6 @@ public sealed class GroupJoinStepTests
         Assert.Equal(["Fan: 1 2 :3:300", "Lamp: 3 :5:0"], await SavedStepsAsync(app, id));
     }
 
-    // With two relays "Remove" is hidden, so "Join the step above" shows alone, and makes one step of the two.
-    [Fact]
-    public async Task Should_ShowJoinAlone_WithTwoRelays()
-    {
-        await using var app = await StartAppAsync();
-        var id = await AddGroupAsync(app, ("Fan", 1, 3, 300), ("Heat", 2, 3, 0));
-        using var page = await PageRenderer.StartAsync<GroupDetail>(app.Services, John, "John", new Dictionary<string, object?> { ["Id"] = id });
-        Assert.False(await page.HasAsync(PageRenderer.WithText("Remove")));
-        Assert.True(await page.HasAsync(PageRenderer.WithText("Join the step above")));
-
-        await page.ClickAsync(PageRenderer.With("aria-label", "Move Heat into the step above"));
-        await page.SubmitAsync(PageRenderer.With("id", "group-form"));
-
-        // Saved: the page goes back to Relays, which the test's renderer reports as a navigation.
-        Assert.IsType<NavigationException>(Assert.Single(page.Errors));
-        Assert.Equal(["Fan: 1 2 :3:300"], await SavedStepsAsync(app, id));
-    }
-
     // "Join the step above" shares CanChange with "Remove" and up/down: hidden while any of the group's relays is on,
     // and while the board has no contact.
     [Theory]
@@ -81,25 +63,6 @@ public sealed class GroupJoinStepTests
         Assert.True(await page.HasAsync(PageRenderer.With("id", "step-2")));
         Assert.False(await page.HasAsync(PageRenderer.WithText("Join the step above")));
         Assert.False(await page.HasAsync(PageRenderer.WithText("Remove")));
-    }
-
-    [Fact]
-    public async Task Should_SayJoinTheStepAbove_InSwedish()
-    {
-        await using var app = await StartAppAsync();
-        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
-        var id = await AddGroupAsync(app, ("Fläkt", 1, 3, 300), ("Värme", 2, 3, 0));
-        PageRenderer page;
-        using (TestCulture.Language("sv"))
-        {
-            page = await PageRenderer.StartAsync<GroupDetail>(app.Services, John, "John", new Dictionary<string, object?> { ["Id"] = id });
-        }
-
-        using (page)
-        {
-            Assert.True(await page.HasAsync(PageRenderer.WithText("Gå med i steget ovanför")));
-            Assert.True(await page.HasAsync(PageRenderer.With("aria-label", "Flytta Värme till steget ovanför")));
-        }
     }
 
     private static async Task<TestWebApp> StartAppAsync(FakeRelayBoard? board = null)

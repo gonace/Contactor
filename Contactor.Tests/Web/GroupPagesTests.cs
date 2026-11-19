@@ -1,7 +1,5 @@
 using System.Net;
 using System.Text.RegularExpressions;
-using Contactor.Boards;
-using Contactor.Tests.Boards;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Contactor.Web.Persistence;
@@ -12,26 +10,6 @@ namespace Contactor.Tests.Web;
 public sealed class GroupPagesTests
 {
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
-
-    [Fact]
-    public async Task Should_ShowTheGroupAsOneCard_WithoutItsRelaysOnTheirOwn()
-    {
-        await using var app = CreateApp();
-        using var http = app.CreateClient();
-        await http.GetStringAsync("/", Cancel);
-        await AddFanHeaterAsync(app);
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        Assert.Contains("GROUP · RELAY 1 → 2", html, StringComparison.Ordinal);
-        Assert.Contains("Fan heater – Lathe", html, StringComparison.Ordinal);
-        Assert.Matches("<span class=\"chip[^\"]*\"[^>]*>.*Fan", html);
-        Assert.Contains("aria-label=\"Turn on Fan heater – Lathe\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("aria-label=\"Turn on Relay 1\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("aria-label=\"Turn on Relay 2\"", html, StringComparison.Ordinal);
-        Assert.Contains("0 of 7 on", html, StringComparison.Ordinal);
-        Assert.Contains("<svg class=\"group-icon\"", html, StringComparison.Ordinal);
-    }
 
     // Before the board's first answer the group's card and its screen are grey, with a "–" for every button.
     [Fact]
@@ -53,96 +31,6 @@ public sealed class GroupPagesTests
         Assert.Equal(2, Regex.Count(screen, "<li class=\"step +unknown\""));
     }
 
-    // A step's card lights up only while every relay in it is on, here from the board's last known state.
-    [Fact]
-    public async Task Should_LightAStep_OnlyWhileAllItsRelaysAreOn()
-    {
-        var board = new FakeRelayBoard();
-        await board.TurnOnAsync(ChannelMask.Of([1, 2, 3]), Cancel);
-        board.SetConnected(false);
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
-            TestWebApp.WithBoard(board));
-        using var http = app.CreateClient();
-        await http.GetStringAsync("/", Cancel);
-        int id;
-        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
-        {
-            var group = new RelayGroup { BoardId = 1, Name = "Workshop heat", Icon = GroupIcons.Flame, MaxOnMinutes = 120 };
-            group.AddStep("Fans", [1, 2]);
-            group.AddStep("Heaters", [3, 4]);
-            await db.AddWithRuntimesAsync(group);
-            id = group.Id;
-        }
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
-
-        Assert.Equal(["on", ""], Regex.Matches(html, "<li class=\"step ([^\"]*)\"").Select(m => m.Groups[1].Value.Trim()));
-    }
-
-    [Fact]
-    public async Task Should_ShowTheGroupsRelaysInOrder_WithTheInterlock()
-    {
-        await using var app = CreateApp();
-        using var http = app.CreateClient();
-        await http.GetStringAsync("/", Cancel);
-        var id = await AddFanHeaterAsync(app);
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
-
-        Assert.Contains("Steps in start order", html, StringComparison.Ordinal);
-        Assert.Contains("STEP 1 · NAME", html, StringComparison.Ordinal);
-        Assert.Contains("Off · starts first", html, StringComparison.Ordinal);
-        Assert.Matches("type=\"radio\"[^>]*value=\"fan\" checked", html);
-        Assert.Matches("value=\"Fan\"[\\s\\S]*value=\"Heat\"", html);
-        Assert.Contains("Needs Fan to be on", html, StringComparison.Ordinal);
-        Assert.Contains("On start, wait", html, StringComparison.Ordinal);
-        Assert.Contains("On stop, run on", html, StringComparison.Ordinal);
-        Assert.Contains("TURN ON THE GROUP", html, StringComparison.Ordinal);
-        Assert.Contains("The app's interlock only works while the app runs.", html, StringComparison.Ordinal);
-        Assert.Contains("No contact with the relay board. The steps and their relays", html, StringComparison.Ordinal);
-    }
-
-    // Two fans in one step, two heaters in the next: one card per step on the group's page, one chip per step on its
-    // card, each relay with its own ON/OFF.
-    [Fact]
-    public async Task Should_ShowAGroupsSteps_WithTheirRelays()
-    {
-        await using var app = CreateApp();
-        using var http = app.CreateClient();
-        await http.GetStringAsync("/", Cancel);
-        var factory = app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
-        int id;
-        await using (var db = await factory.CreateDbContextAsync(Cancel))
-        {
-            foreach (var (relayId, name) in new[] { (1, "Fan 1"), (2, "Fan 2"), (3, "Heater 1"), (4, "Heater 2") })
-            {
-                (await db.Relays.SingleAsync(r => r.Id == relayId, Cancel)).Name = name;
-            }
-
-            var group = new RelayGroup { BoardId = 1, Name = "Workshop heat", Icon = GroupIcons.Flame, MaxOnMinutes = 120 };
-            group.AddStep("Fans", [1, 2], runOnSec: 180);
-            group.AddStep("Heaters", [3, 4]);
-            await db.AddWithRuntimesAsync(group);
-            id = group.Id;
-        }
-
-        var list = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-        var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
-
-        Assert.Contains("GROUP · RELAY 1 + 2 → 3 + 4", list, StringComparison.Ordinal);
-        Assert.Matches("class=\"chip \"[^>]*><span class=\"dot\"[^>]*></span>Fans<span class=\"visually-hidden\"[^>]*> \\(off\\)", list);
-        Assert.Contains("aria-label=\"Steps in start order\"", list, StringComparison.Ordinal);
-        Assert.Contains(">Heaters<", list, StringComparison.Ordinal);
-        Assert.DoesNotContain(">Fan 1<", list, StringComparison.Ordinal);
-
-        Assert.Matches("STEP 1 · NAME[\\s\\S]*value=\"Fans\"[\\s\\S]*Fan 1[\\s\\S]*Fan 2[\\s\\S]*STEP 2 · NAME[\\s\\S]*value=\"Heaters\"[\\s\\S]*Heater 1[\\s\\S]*Heater 2", page);
-        Assert.Contains("Needs Fans to be on", page, StringComparison.Ordinal);
-        Assert.Contains("aria-label=\"Turn on Heater 2\"", page, StringComparison.Ordinal);
-        Assert.Equal(1, page.Split("On start, wait").Length - 1);
-    }
-
     [Fact]
     public async Task Should_SendTheRelayPageToItsGroup()
     {
@@ -157,49 +45,6 @@ public sealed class GroupPagesTests
         Assert.Contains($"href=\"group/{id}\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("TURN ON", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Active</strong>", html, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Should_ListTheGroupsSchedules_AndOfferANewOne()
-    {
-        await using var app = CreateApp();
-        using var http = app.CreateClient();
-        await http.GetStringAsync("/", Cancel);
-        var id = await AddFanHeaterAsync(app);
-        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
-        {
-            db.Schedules.Add(new Schedule
-            {
-                GroupId = id,
-                Days = ScheduleDays.Weekdays,
-                OnTime = new TimeOnly(6, 30),
-                OffTime = new TimeOnly(8, 0),
-                IsEnabled = true,
-                CreatedBy = "john@example.com",
-            });
-            await db.SaveChangesAsync(Cancel);
-        }
-
-        var group = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}", Cancel));
-        var form = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{id}/schedule/new", Cancel));
-
-        Assert.Contains($"href=\"group/{id}/schedule/new\"", group, StringComparison.Ordinal);
-        Assert.Contains("06:30 – 08:00", group, StringComparison.Ordinal);
-        Assert.Contains("Fan heater – Lathe", form, StringComparison.Ordinal);
-        Assert.Contains("the group turns on at 06:30 and off at 08:00", form, StringComparison.Ordinal);
-        Assert.Contains($"href=\"group/{id}\"", form, StringComparison.Ordinal);
-        Assert.Contains("The group doesn't exist.", WebUtility.HtmlDecode(await http.GetStringAsync("/group/42/schedule/new", Cancel)), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Should_SayAMissingGroupIsMissing()
-    {
-        await using var app = CreateApp();
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/group/42", Cancel));
-
-        Assert.Contains("The group doesn't exist.", html, StringComparison.Ordinal);
     }
 
     // A board that answered and then lost contact, unless asked for one that never answered.

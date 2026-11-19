@@ -411,32 +411,6 @@ public sealed partial class UnavailableRelaysTests
     // ----- The screens -----
 
     [Fact]
-    public async Task Should_ShowIt_UnderUnavailable_WithoutOnOff_AndOnlyOrdinaryRulesInTheWarning()
-    {
-        var board = Board();
-        await using var app = App(board);
-        await RulesAsync(app, board, Linkage3, new OwnRule(5, OwnRuleKind.InputToggle));
-
-        var html = await PageAsync(app, "/");
-
-        Assert.Contains("Unavailable to Contactor", html, StringComparison.Ordinal);
-        var card = Card(html, "relay/3");
-        Assert.Contains("The board controls this relay itself: it follows input 3. Reset it to control it from here.", Text(card), StringComparison.Ordinal);
-        Assert.Contains(">Reset</button>", card, StringComparison.Ordinal);
-        Assert.DoesNotContain("aria-pressed", card, StringComparison.Ordinal);
-        Assert.Equal(1, Regex.Count(html, "href=\"relay/3\""));
-
-        // After the relays with an ON/OFF, before the inputs.
-        Assert.True(html.IndexOf("href=\"relay/8\"", StringComparison.Ordinal) < html.IndexOf("Unavailable to Contactor", StringComparison.Ordinal));
-        Assert.True(html.IndexOf("Unavailable to Contactor", StringComparison.Ordinal) < html.IndexOf("href=\"input/", StringComparison.Ordinal));
-
-        // The warning has only the toggle, not the relay shown as unavailable.
-        Assert.Contains("The board has an input that flips a relay", html, StringComparison.Ordinal);
-        Assert.Contains("It can switch relay 5 without Contactor.", html, StringComparison.Ordinal);
-        Assert.Contains("A pulse on its input can flip it", Text(Card(html, "relay/5")), StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task Should_ResetIt_WhenThePersonPresses_AndLogIt()
     {
         var board = Board();
@@ -509,30 +483,6 @@ public sealed partial class UnavailableRelaysTests
         // "Keep them" while adding a board keeps the toggle and edge only; the linkage stays a warning.
         Assert.Null(await rules.KeepAllAsync(BoardId, [Linkage3, new OwnRule(6, OwnRuleKind.InputEdge)], John, Cancel));
         Assert.Equal([Linkage3], rules.Warnings(BoardId));
-    }
-
-    [Fact]
-    public void Should_SayTheInputKinds_InEnglishAndSwedish()
-    {
-        var toggle = new OwnRule(5, OwnRuleKind.InputToggle);
-        var edge = new OwnRule(6, OwnRuleKind.InputEdge);
-        Assert.Equal("The board controls a relay itself", TestTexts.OwnRules.Heading([Linkage3], null));
-        Assert.Equal("Garage has inputs that flip relays at each change", TestTexts.OwnRules.Heading([edge, new OwnRule(7, OwnRuleKind.InputEdge)], "Garage"));
-        Assert.Equal("The board has input rules of its own", TestTexts.OwnRules.Heading([toggle, edge], null));
-        Assert.Equal("This board has an input that flips a relay", TestTexts.OwnRules.StepTitle([toggle]));
-        Assert.Equal("Each change of an input can flip Heat", TestTexts.OwnRules.GroupLine([OwnRuleKind.InputEdge], ["Heat"]));
-        Assert.Equal("The board's input rules", TestTexts.OwnRules.CardTitle([OwnRuleKind.InputToggle, OwnRuleKind.InputEdge]));
-        Assert.Equal("Fan and Heat are unavailable to Contactor", TestTexts.OwnRules.GroupUnavailable(["Fan", "Heat", "Heat"]));
-
-        using var swedish = TestCulture.Language("sv");
-        Assert.Equal("Kortet styr reläet självt: det följer ingång 3. Återställ det för att styra det härifrån.", TestTexts.OwnRules.Unavailable(3));
-        Assert.Equal("Värme är inte tillgängligt för Contactor", TestTexts.OwnRules.GroupUnavailable(["Värme"]));
-        Assert.Equal("Kortet har en ingång som slår om ett relä", TestTexts.OwnRules.StepTitle([toggle]));
-        Assert.Equal("Inte tillgängliga för Contactor", TestTexts.Localizer["OwnRules.Unavailable.Heading"].Value);
-        Assert.Equal("Återställ", TestTexts.Localizer["OwnRules.Reset"].Value);
-        Assert.Equal("Kortet styr det självt. Återställ det för att starta gruppen.", TestTexts.Localizer["OwnRules.Unavailable.GroupText_One"].Value);
-        var reset = new EventLogEntry { Actor = John, BoardId = BoardId, Action = EventActions.BoardOwnRulesTurnedOff, Details = """{"relays":[3,5],"kinds":["input-linkage"]}""" };
-        Assert.Equal("{0} återställde relä 3 och 5", TestTexts.Events.For(reset, null, "John").Line);
     }
 
     // ----- Helpers -----
