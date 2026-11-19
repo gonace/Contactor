@@ -57,8 +57,7 @@ public sealed class Vm201Client
 
     // Whether the login in use logged in since the last new address or login, and when the board first refused it after
     // that. Under _stateLock. "Check again" (TryAgain) keeps them: it is the same login.
-    private bool _loginWorked;
-    private DateTimeOffset? _firstRefusalUtc;
+    private readonly RefusedLogin _refusedLogin = new();
 
     // The current connection attempt (connect, session and the wait after it); SetEndpoint cancels it to move at once.
     private CancellationTokenSource? _attempt;
@@ -115,7 +114,7 @@ public sealed class Vm201Client
         lock (_stateLock)
         {
             _logins++;
-            ForgetRefusals();
+            _refusedLogin.Forget();
             ClearProblem();
         }
 
@@ -143,7 +142,7 @@ public sealed class Vm201Client
         lock (_stateLock)
         {
             _logins++;
-            ForgetRefusals();
+            _refusedLogin.Forget();
             if (!Equals(State, Vm201State.Initial))
             {
                 SetState(Vm201State.Initial);
@@ -174,13 +173,6 @@ public sealed class Vm201Client
         }
 
         Reconnect();
-    }
-
-    // A new address or login: it counts as one that never logged in, until it does. Callers hold _stateLock.
-    private void ForgetRefusals()
-    {
-        _loginWorked = false;
-        _firstRefusalUtc = null;
     }
 
     // Ends the current connection, attempt or wait, so the next one starts at once with what was just set.
@@ -373,14 +365,7 @@ public sealed class Vm201Client
     {
         lock (_stateLock)
         {
-            if (!_loginWorked)
-            {
-                return Timeout.InfiniteTimeSpan;
-            }
-
-            var now = _timeProvider.GetUtcNow();
-            _firstRefusalUtc ??= now;
-            return now - _firstRefusalUtc.Value >= RefusedLoginRetries ? Timeout.InfiniteTimeSpan : RefusedLoginPause;
+            return _refusedLogin.WaitAfterRefusal(_timeProvider.GetUtcNow());
         }
     }
 
@@ -435,8 +420,7 @@ public sealed class Vm201Client
                 // The login works, and the time of its refusals starts over. Not for the login before a new one.
                 if (logins == _logins)
                 {
-                    _loginWorked = true;
-                    _firstRefusalUtc = null;
+                    _refusedLogin.Worked();
                 }
             }
 

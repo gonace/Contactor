@@ -126,8 +126,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     // Whether the login in use connected (a poll answered) since the last Restart, and when the board first refused it
     // after that. Under _stateLock. A login that worked is tried again now and then after a refusal, for at most
     // RefusedLoginRetries (Issue #522): the board may refuse it for a while, e.g. while it restarts.
-    private bool _loginWorked;
-    private DateTimeOffset? _firstRefusalUtc;
+    private readonly RefusedLogin _refusedLogin = new();
     private TaskCompletionSource _wake = NewWake();
 
     // The current attempt (connect, polls and the wait after it); Restart cancels it.
@@ -226,8 +225,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
             _restarts++;
             if (newLogin)
             {
-                _loginWorked = false;
-                _firstRefusalUtc = null;
+                _refusedLogin.Forget();
             }
 
             var state = _state;
@@ -643,14 +641,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     {
         lock (_stateLock)
         {
-            if (!_loginWorked)
-            {
-                return Timeout.InfiniteTimeSpan;
-            }
-
-            var now = _timeProvider.GetUtcNow();
-            _firstRefusalUtc ??= now;
-            return now - _firstRefusalUtc.Value >= RefusedLoginRetries ? Timeout.InfiniteTimeSpan : AskedToWaitPause;
+            return _refusedLogin.WaitAfterRefusal(_timeProvider.GetUtcNow());
         }
     }
 
@@ -662,8 +653,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
         {
             if (restarts == _restarts)
             {
-                _loginWorked = true;
-                _firstRefusalUtc = null;
+                _refusedLogin.Worked();
             }
         }
     }

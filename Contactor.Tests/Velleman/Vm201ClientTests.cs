@@ -136,6 +136,87 @@ public sealed class Vm201ClientTests
         Assert.Equal(0, time.PendingTimers);
     }
 
+    // A new address ends a hold at once, and its login counts as one that never worked: held at its first refusal.
+    [Fact]
+    public async Task Should_EndTheHold_AndForgetThatTheLoginWorked_AtANewAddress()
+    {
+        await using var worked = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        worked.Start();
+        await using var first = new Vm201Simulator("admin", "other", NullLogger.Instance);
+        first.Start();
+        await using var second = new Vm201Simulator("admin", "other", NullLogger.Instance);
+        second.Start();
+        var time = new ManualTimeProvider();
+        var trace = new TraceLog();
+        await using var run = ClientRun.Start(worked, username: "admin", password: "secret", traced: trace.Add, time: time);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        // The login worked at the old address, but not at this one: held at once, not tried again in 10 minutes.
+        run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", first.Port));
+        await WaitUntilAsync(() => first.DeniedLoginCount == 1 && Held(trace) == 1);
+        Assert.Equal(0, time.PendingTimers);
+
+        // Another address ends the hold: tried at once, and held again.
+        run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+        await WaitUntilAsync(() => second.DeniedLoginCount == 1 && Held(trace) == 2);
+        Assert.Equal(0, time.PendingTimers);
+        time.Advance(TimeSpan.FromDays(1));
+        Assert.Equal((1, 1), (first.DeniedLoginCount, second.DeniedLoginCount));
+        Assert.DoesNotContain(trace.Entries, e => e.Kind == Vm201TraceKind.Reconnecting);
+    }
+
+    // A login that works again ends the tries, and the 24 hours start over at the next refusal.
+    [Fact]
+    public async Task Should_StartThe24HoursOver_WhenTheLoginWorksInBetween()
+    {
+        var board = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        board.Start();
+        var port = board.Port;
+        var time = new ManualTimeProvider();
+        var trace = new TraceLog();
+        await using var run = ClientRun.Start(board, username: "admin", password: "secret", traced: trace.Add, time: time);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        // The board's password changes on the board: refused, and tried every 10 minutes for 20 hours.
+        await board.DisposeAsync();
+        await WaitUntilAsync(() => time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        board = new Vm201Simulator("admin", "other", NullLogger.Instance);
+        board.Start(port);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => board.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        await TryEvery10MinutesAsync(board, time, TimeSpan.FromHours(20));
+
+        // Changed back: the login works again.
+        await board.DisposeAsync();
+        board = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        board.Start(port);
+        time.Advance(Vm201Client.RefusedLoginPause);
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        // Refused again: tried every 10 minutes past the first 24 hours' end.
+        await board.DisposeAsync();
+        await WaitUntilAsync(() => time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        board = new Vm201Simulator("admin", "other", NullLogger.Instance);
+        board.Start(port);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => board.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        await TryEvery10MinutesAsync(board, time, TimeSpan.FromHours(5));
+
+        Assert.Equal(0, Held(trace));
+        await board.DisposeAsync();
+    }
+
+    // Moves the clock on by the pause, one try each time, for this long.
+    private static async Task TryEvery10MinutesAsync(Vm201Simulator board, ManualTimeProvider time, TimeSpan duration)
+    {
+        for (var i = 0; i < (int)(duration / Vm201Client.RefusedLoginPause); i++)
+        {
+            var denied = board.DeniedLoginCount;
+            time.Advance(Vm201Client.RefusedLoginPause);
+            await WaitUntilAsync(() => board.DeniedLoginCount == denied + 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        }
+    }
+
     // Without a refused login, a lost connection is tried again with the usual backoff: 1 s, 2 s, 4 s.
     [Fact]
     public async Task Should_ReconnectWithBackoff_WhenTheConnectionDropsWithoutARefusal()
