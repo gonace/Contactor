@@ -173,6 +173,7 @@ public static class SimulatorCatalogue
         {
             Protocol = "HTTP",
             PollSeconds = new Vm208Options().PollSeconds,
+            OwnRulesName = "a week schedule per relay",
         },
         .. WaveshareModels.All.Select(model => new SimulatorModel(
             model,

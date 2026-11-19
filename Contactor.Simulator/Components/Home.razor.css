@@ -582,9 +582,14 @@ h3 {
     border-bottom: 0;
 }
 
-.model.header-row {
+/* The model table's own header row, not the traffic's. */
+.model-head {
     padding-block: 8px;
     background: var(--bg);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
     cursor: default;
 }
 
@@ -704,6 +709,11 @@ h3 {
 
     .add-cols {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Each model's numbers are named on the phone, so the table needs no header row. */
+    .model-head {
+        display: none;
     }
 
     .model {

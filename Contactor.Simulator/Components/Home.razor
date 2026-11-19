@@ -49,7 +49,7 @@
             </nav>
 
             <button type="button" class="add-board @(_add.IsOpen ? "open" : null)" aria-expanded="@(_add.IsOpen ? "true" : "false")" aria-controls="add"
-                    @onclick="OpenAdd">+ Add a board</button>
+                    @onclick="ToggleAdd">+ Add a board</button>
         </aside>
 
         <main class="main">
@@ -69,13 +69,13 @@
 
                     <div class="add-cols">
                         <div class="step">
-                            <span class="label" id="manufacturer">1 · MANUFACTURER</span>
+                            <h3 class="label" id="manufacturer">1 · MANUFACTURER</h3>
                             <div class="makers" role="group" aria-labelledby="manufacturer">
                                 @foreach (var manufacturer in SimulatorCatalogue.Manufacturers)
                                 {
                                     var name = manufacturer.Name;
                                     var on = name == _add.Manufacturer.Name;
-                                    <button type="button" class="maker @(on ? "selected" : null)" aria-pressed="@(on ? "true" : "false")" @key="name"
+                                    <button type="button" class="maker @(on ? "selected" : null)" aria-current="@(on ? "true" : null)" @key="name"
                                             @onclick="() => _add.ChooseManufacturer(name)">
                                         <span>@name</span>
                                         <span class="count">@ModelCount(manufacturer)</span>
@@ -85,9 +85,9 @@
                         </div>
 
                         <div class="step">
-                            <span class="label" id="model">2 · MODEL <b>· @_add.Manufacturer.Name</b></span>
+                            <h3 class="label" id="model">2 · MODEL <b>· @_add.Manufacturer.Name</b></h3>
                             <div class="models" role="radiogroup" aria-labelledby="model">
-                                <div class="model header-row" aria-hidden="true">
+                                <div class="model model-head" aria-hidden="true">
                                     <span></span><span>MODEL</span><span>RELAYS</span><span>INPUTS</span><span>ANALOG</span><span>HOW THE APP TALKS TO IT</span><span>PORT</span>
                                 </div>
                                 @foreach (var model in _add.Manufacturer.Models)
@@ -111,7 +111,7 @@
                     </div>
 
                     <div class="step">
-                        <span class="label">3 · @(chosen.LoginFields switch { SimulatorLoginFields.None => "PORT", SimulatorLoginFields.Password => "PORT AND PASSWORD", _ => "PORT AND LOGIN" }) · @chosen.Model.Name.ToUpperInvariant()</span>
+                        <h3 class="label">3 · @(chosen.LoginFields switch { SimulatorLoginFields.None => "PORT", SimulatorLoginFields.Password => "PORT AND PASSWORD", _ => "PORT AND LOGIN" }) · @chosen.Model.Name.ToUpperInvariant()</h3>
                         <div class="where">
                             <div class="field port">
                                 <label for="port">Port</label>
@@ -442,9 +442,17 @@
         _shellyForm.Follow(Selected?.Id);
     }
 
-    private void OpenAdd()
+    // Opens "Add a board" afresh, or closes it while it is open, as its aria-expanded says.
+    private void ToggleAdd()
     {
-        _add.Open();
+        if (_add.IsOpen)
+        {
+            _add.Cancel();
+        }
+        else
+        {
+            _add.Open();
+        }
     }
 
     // Once it runs, the panel closes and the new board shows.
