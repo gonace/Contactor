@@ -21,6 +21,7 @@ public static class Vm201TraceText
             Vm201TraceKind.ConnectionLost => ($"Connection lost: {entry.Detail}", null, true),
             Vm201TraceKind.Reconnecting => ($"Trying again in {entry.Detail} s", null, false),
             Vm201TraceKind.DiscardedBytes => ($"Skipped {entry.Detail} broken bytes from the board", null, true),
+            Vm201TraceKind.Held => ("Not trying again until a new login is saved or a person checks again", null, false),
             _ => (entry.Kind.ToString(), null, false),
         };
     }
