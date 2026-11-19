@@ -2783,6 +2783,15 @@
   <data name="Setup.WayIn.Cloudflare.Name" xml:space="preserve">
     <value>Cloudflare</value>
   </data>
+  <data name="Setup.WayIn.Group.LocalNetwork" xml:space="preserve">
+    <value>Lokalt nätverk</value>
+  </data>
+  <data name="Setup.WayIn.Group.PrivateAccess" xml:space="preserve">
+    <value>Privat åtkomst</value>
+  </data>
+  <data name="Setup.WayIn.Group.PublicAddress" xml:space="preserve">
+    <value>Publik adress</value>
+  </data>
   <data name="Setup.WayIn.Intro" xml:space="preserve">
     <value>Var ska folk kunna öppna Contactor?</value>
   </data>

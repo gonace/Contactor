@@ -233,23 +233,34 @@
             <h1 tabindex="-1" @ref="_heading">@Texts["Setup.WayIn.Title"]</h1>
             <p>@Texts["Setup.WayIn.Intro"]</p>
         </div>
-        <div class="choices" role="radiogroup" aria-label="@Texts["Setup.WayIn.Label"]">
-            @foreach (var way in AccessCatalogue.All)
+        <div class="choices way-in-choices" role="radiogroup" aria-label="@Texts["Setup.WayIn.Label"]">
+            @foreach (var group in Enum.GetValues<AccessGroup>())
             {
-                var id = way.Id;
-                <label class="choice @(id == _wayIn ? "chosen" : null)">
-                    <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
-                    <span class="choice-text">
-                        <span class="title">
-                            <span class="name">@SetupText.Name(way)</span>
-                            @if (way.Simplest)
-                            {
-                                <span class="tag">@Texts["Setup.Simplest"]</span>
-                            }
-                        </span>
-                        <span class="note">@SetupText.Description(way)</span>
-                    </span>
-                </label>
+                var ways = AccessCatalogue.All.Where(way => way.Group == group).ToArray();
+                if (ways.Length > 0)
+                {
+                    <section class="way-in-group" aria-label="@SetupText.Name(group)">
+                        <h2 class="way-in-group-title">@SetupText.Name(group)</h2>
+                        @foreach (var way in ways)
+                        {
+                            var id = way.Id;
+                            <label class="choice way-in-choice @(id == _wayIn ? "chosen" : null)">
+                                <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
+                                <span class="way-in-icon-tile"><AccessMethodIcon MethodId="@id" /></span>
+                                <span class="choice-text">
+                                    <span class="title">
+                                        <span class="name">@SetupText.Name(way)</span>
+                                        @if (way.Simplest)
+                                        {
+                                            <span class="tag">@Texts["Setup.Simplest"]</span>
+                                        }
+                                    </span>
+                                    <span class="note">@SetupText.Description(way)</span>
+                                </span>
+                            </label>
+                        }
+                    </section>
+                }
             }
         </div>
         @if (_wayIn == CloudflareMethods.TunnelId)

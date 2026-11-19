@@ -160,6 +160,46 @@ input[type="password"] {
     gap: 10px;
 }
 
+.way-in-choices {
+    gap: 12px;
+}
+
+.way-in-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.way-in-group-title {
+    margin: 2px 0 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.way-in-choice {
+    align-items: center;
+}
+
+.way-in-icon-tile {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: var(--chip);
+    color: var(--accent);
+}
+
+.access-method-icon {
+    width: 21px;
+    height: 21px;
+}
+
 .choice {
     min-height: 64px;
     padding: 14px;

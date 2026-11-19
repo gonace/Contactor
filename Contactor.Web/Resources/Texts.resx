@@ -3058,6 +3058,15 @@
     <value>Cloudflare</value>
     <comment>A product's name.</comment>
   </data>
+  <data name="Setup.WayIn.Group.LocalNetwork" xml:space="preserve">
+    <value>Local network</value>
+  </data>
+  <data name="Setup.WayIn.Group.PrivateAccess" xml:space="preserve">
+    <value>Private access</value>
+  </data>
+  <data name="Setup.WayIn.Group.PublicAddress" xml:space="preserve">
+    <value>Public address</value>
+  </data>
   <data name="Setup.WayIn.Intro" xml:space="preserve">
     <value>Where should people be able to open Contactor?</value>
   </data>
