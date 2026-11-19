@@ -572,10 +572,12 @@
                                         @if (!passwordOnly)
                                         {
                                             <label class="visually-hidden" for="new-username">New user name</label>
-                                            <input id="new-username" class="mono" placeholder="new user name" autocomplete="off" spellcheck="false" @bind="_loginForm.Username" />
+                                            <input id="new-username" class="mono" placeholder="new user name" autocomplete="off" spellcheck="false"
+                                                   maxlength="@current.Board.Model.LoginMaxLength" @bind="_loginForm.Username" />
                                         }
                                         <label class="visually-hidden" for="new-password">New password</label>
-                                        <input id="new-password" class="mono" placeholder="new password" autocomplete="off" spellcheck="false" @bind="_loginForm.Password" />
+                                        <input id="new-password" class="mono" placeholder="new password" autocomplete="off" spellcheck="false"
+                                               maxlength="@current.Board.Model.LoginMaxLength" @bind="_loginForm.Password" />
                                         <button type="submit">@(passwordOnly ? "Change password" : "Change login")</button>
                                     </form>
                                     <span class="hint">As on the board's own web page: the app's @(passwordOnly ? "password" : "login") no longer fits.</span>

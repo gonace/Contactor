@@ -380,6 +380,8 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
                 return;
             }
 
+            // A slow board answers the login late, once, without holding the gate: other clients and pages go on.
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -467,6 +469,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         }
 
         Interlocked.Increment(ref _deniedLoginCount);
+        await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
         await SendLockedAsync(connection, Vm201PacketCodec.Encode(Vm201Command.AccessDenied), cancellationToken).ConfigureAwait(false);
         await SendLockedAsync(connection, Vm201PacketCodec.Encode(Vm201Command.Closed), cancellationToken).ConfigureAwait(false);
         return false;
@@ -474,6 +477,8 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
 
     private async Task HandleCommandAsync(Connection connection, Vm201Packet packet, CancellationToken cancellationToken)
     {
+        // A slow board takes each command late, once, without holding the gate: other clients and pages go on.
+        await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
         if (packet.Command == Vm201Command.StatusRequest)
         {
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -641,7 +646,6 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     // Callers hold _gate.
     private async Task SendAsync(Connection connection, byte[] packet, CancellationToken cancellationToken)
     {
-        await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
         await connection.Stream.WriteAsync(packet, cancellationToken).ConfigureAwait(false);
         if (Traced is not null)
         {

@@ -412,8 +412,15 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
                 if (Handle(buffer.AsSpan(0, received.ReceivedBytes), received.RemoteEndPoint) is { } answer)
                 {
                     Interlocked.Increment(ref _requestCount);
-                    await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
-                    await socket.SendToAsync(answer, SocketFlags.None, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
+                    if (AnswerDelay > TimeSpan.Zero)
+                    {
+                        // Off the loop, so one slow answer doesn't hold up the datagrams after it.
+                        _ = AnswerLaterAsync(socket, answer, received.RemoteEndPoint, cancellationToken);
+                    }
+                    else
+                    {
+                        await socket.SendToAsync(answer, SocketFlags.None, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
             catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
@@ -427,6 +434,33 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
                 DaenetIp2Log.SimulatorDatagramFailed(_logger, ex);
                 Trace(BoardTraceDirection.None, $"Couldn't answer: {ex.Message}", null, isError: true);
             }
+        }
+    }
+
+    // Sends an answer after AnswerDelay, unless the power was cut meanwhile: then it is lost, as on the board.
+    private async Task AnswerLaterAsync(Socket socket, byte[] answer, EndPoint to, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
+            if (IsPoweredOff)
+            {
+                Unanswered("No answer: the power went before it");
+                return;
+            }
+
+            await socket.SendToAsync(answer, SocketFlags.None, to, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // The simulator is stopping.
+        }
+#pragma warning disable CA1031 // A failed send must not take down the simulated board.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            DaenetIp2Log.SimulatorDatagramFailed(_logger, ex);
+            Trace(BoardTraceDirection.None, $"Couldn't answer: {ex.Message}", null, isError: true);
         }
     }
 

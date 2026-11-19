@@ -210,7 +210,7 @@ public sealed class RunningBoard : IAsyncDisposable
         }
 
         var passwordOnly = Board.Model.PasswordOnly;
-        username = passwordOnly ? "" : username?.Trim() ?? "";
+        username = passwordOnly ? "" : username ?? "";
         password ??= "";
         if (password.Length == 0 || (!passwordOnly && username.Length == 0))
         {
@@ -228,7 +228,8 @@ public sealed class RunningBoard : IAsyncDisposable
         }
         catch (ArgumentException ex)
         {
-            return ex.Message;
+            // Its words only, without the parameter .NET adds.
+            return ex.ParamName is { } name ? ex.Message.Replace($" (Parameter '{name}')", "", StringComparison.Ordinal) : ex.Message;
         }
 
         Username = username;
