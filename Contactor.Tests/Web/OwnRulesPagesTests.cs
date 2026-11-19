@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using Contactor.Boards;
+using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
 using Contactor.Web.Features.BoardRules;
@@ -553,6 +554,24 @@ public sealed partial class OwnRulesPagesTests
         {
             Assert.Equal("Kortet kan också ha regler som Contactor inte ser. Kontrollera kortets egen webbsida.", TestTexts.Localizer["OwnRules.Card.MayHaveUnseen"].Value);
         }
+    }
+
+    // The VM208 reads its week schedules, but a pulse or timer started on its own page lives only in its memory and
+    // can switch a relay hours later: its board page says so, under its rules and with none.
+    [Fact]
+    public async Task Should_SayTheVm208_MayAlsoHaveRulesTheAppCantSee()
+    {
+        const string Also = "This board may also have rules Contactor can't see. Check its own web page.";
+        var board = Board(Vm208Board.Vm208Capabilities.OwnRules);
+        await using var app = App(board);
+        await RulesAsync(app, board, new OwnRules([Timer3]));
+        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Contains(">Turn off</button>", card, StringComparison.Ordinal);
+        Assert.Contains(Also, card, StringComparison.Ordinal);
+
+        board.SetOwnRules(OwnRules.Empty);
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 0);
+        Assert.Contains(Also, RulesCard(await PageAsync(app, $"/board/{BoardId}")), StringComparison.Ordinal);
     }
 
     [Fact]

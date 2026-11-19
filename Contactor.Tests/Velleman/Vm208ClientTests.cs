@@ -18,6 +18,9 @@ public sealed class Vm208ClientTests
 {
     private const string StatusRequest = "GET /status?interface=-1&socket=0";
 
+    // The schedules, read at the first poll of each connection, one relay at a time.
+    private static readonly string[] ScheduleReads = ["GET /getalarms?channel=1", "GET /getalarms?channel=2", "GET /getalarms?channel=3", "GET /getalarms?channel=4"];
+
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -32,7 +35,7 @@ public sealed class Vm208ClientTests
         // Connected, and the first answer reported: the client waits for the next poll.
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.Equal(new Vm208Status(0b0010, true, 0), run.Client.State.Status);
+        Assert.Equal(new Vm208Status(0b0010, true, 0, OwnRules.Empty), run.Client.State.Status);
         Assert.True(run.Client.State.IsOn(2));
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
         Assert.Equal(StatusRequest, simulator.ReceivedRequests[0]);
@@ -98,8 +101,8 @@ public sealed class Vm208ClientTests
             }
         }
 
-        // Three polls, each asked three times.
-        Assert.Equal(1 + (3 * (1 + Vm208Api.BusyRetries)), simulator.RequestCount);
+        // The first poll with the schedules, then three polls, each asked three times.
+        Assert.Equal(1 + Vm208Api.RelayCount + (3 * (1 + Vm208Api.BusyRetries)), simulator.RequestCount);
     }
 
     // A command the board answers busy is sent again: it sets a state, so a relay that switched already stays so.
@@ -140,6 +143,7 @@ public sealed class Vm208ClientTests
         Assert.Equal(
             [
                 StatusRequest,
+                .. ScheduleReads,
                 "POST /relay index=1&state=1&interface=-1&socket=0",
                 "POST /relay index=3&state=1&interface=-1&socket=0",
                 "POST /relay index=1&state=0&interface=-1&socket=0",
@@ -160,7 +164,7 @@ public sealed class Vm208ClientTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOnAsync(0b1_0000, Cancel));
         await run.Client.TurnOffAsync(0, Cancel);
 
-        Assert.Equal([StatusRequest], simulator.ReceivedRequests);
+        Assert.Equal([StatusRequest, .. ScheduleReads], simulator.ReceivedRequests);
     }
 
     [Fact]
@@ -648,7 +652,7 @@ public sealed class Vm208ClientTests
         await run.Client.TurnOnAsync(0b1111, Cancel);
 
         Assert.Equal(0, simulator.AuthorizationCount);
-        Assert.Equal(5, simulator.RequestCount);
+        Assert.Equal(1 + Vm208Api.RelayCount + 4, simulator.RequestCount);
         Assert.All(run.Traces, t => Assert.DoesNotContain("Authorization", $"{t.Text} {t.Bytes}", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -949,6 +953,15 @@ public sealed class Vm208ClientTests
 
                     if (TakeDrop())
                     {
+                        return;
+                    }
+
+                    // The schedules as the board ships them, all alarms off.
+                    if (request.StartsWith("GET /getalarms?", StringComparison.Ordinal) && !HangAll)
+                    {
+                        var alarms = Encoding.ASCII.GetBytes(Vm208Json.WriteAlarms(Vm208Simulator.FactorySchedule));
+                        await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {alarms.Length}\r\nConnection: close\r\n\r\n"), _stop.Token);
+                        await stream.WriteAsync(alarms, _stop.Token);
                         return;
                     }
 
