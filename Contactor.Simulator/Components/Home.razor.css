@@ -465,6 +465,21 @@ h4 {
     align-items: center;
 }
 
+/* One of the board's own rules, with its "Run now". */
+.rule-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+    font-size: 14px;
+}
+
+.rule-line button {
+    height: 34px;
+    flex: none;
+}
+
 .client {
     font-size: 14px;
 }

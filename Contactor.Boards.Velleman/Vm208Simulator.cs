@@ -19,7 +19,7 @@ namespace Contactor.Boards.Velleman;
 /// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. Used by the
 /// tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardPower
+public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardPower, ISimulatedBoardRules
 {
     // The firmware's schedule table: the card's 4 relays and the extension modules' channels (config_vm208.cpp).
     private const int ScheduleTableSize = 268;
@@ -283,6 +283,52 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
             },
             power: true);
         return Task.CompletedTask;
+    }
+
+    // A rule that switches on comes before the one that switches off.
+    private static readonly bool[] OnThenOff = [true, false];
+
+    /// <summary>
+    /// Each relay's schedule that has an alarm on: an "on" alarm switching it on, an "off" alarm switching it off, as the
+    /// firmware does at their times.
+    /// </summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules
+    {
+        get
+        {
+            List<SimulatedRule> rules = [];
+            for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
+            {
+                var alarms = Alarms(relay);
+                foreach (var on in OnThenOff)
+                {
+                    if (alarms.Any(a => a.Enabled && a.TurnsOn == on))
+                    {
+                        rules.Add(new SimulatedRule(
+                            string.Create(CultureInfo.InvariantCulture, $"alarm-{relay}-{(on ? "on" : "off")}"),
+                            string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s schedule: {(on ? "on" : "off")}"),
+                            [new SimulatedRuleSwitch(relay, on)]));
+                    }
+                }
+            }
+
+            return rules;
+        }
+    }
+
+    public async Task<SimulatedRule?> RunRuleAsync(string id)
+    {
+        if (RunnableRules.FirstOrDefault(r => r.Id == id) is not { } rule)
+        {
+            return null;
+        }
+
+        foreach (var change in rule.Switches)
+        {
+            await SwitchRelayAsync(change.Relay, change.TurnOn).ConfigureAwait(false);
+        }
+
+        return rule;
     }
 
     public void DropConnections()

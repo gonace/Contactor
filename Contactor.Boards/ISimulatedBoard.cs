@@ -152,3 +152,28 @@ public interface ISimulatedBoardPower
     /// <summary>Gives the power back: each relay as the board sets it after a power cut, and it answers again. Nothing while it is on.</summary>
     Task RestorePowerAsync();
 }
+
+/// <summary>
+/// One of a simulated board's own rules that the page can run now, as when its time comes: a timer program, a schedule
+/// or an auto-on. The board switches its relays as the rule says, and the app sees a change it didn't ask for.
+/// </summary>
+/// <param name="Id">Its id on this board, e.g. "timer-3-on".</param>
+/// <param name="Name">What it is, in words for the page, e.g. "Relay 3's timer: on".</param>
+/// <param name="Switches">What it does: each relay it switches, and whether on.</param>
+public sealed record SimulatedRule(string Id, string Name, IReadOnlyList<SimulatedRuleSwitch> Switches);
+
+/// <summary>One relay a rule switches.</summary>
+public readonly record struct SimulatedRuleSwitch(int Relay, bool TurnOn);
+
+/// <summary>A simulated board whose own rules the page can run now.</summary>
+public interface ISimulatedBoardRules
+{
+    /// <summary>The rules that are on, which the board would run when their time comes, in the board's order.</summary>
+    IReadOnlyList<SimulatedRule> RunnableRules { get; }
+
+    /// <summary>
+    /// Runs a rule now: switches its relays as it says, as the board's own switch would, and tells the app if anything
+    /// changed. Returns the rule it ran, or null for an id that isn't among <see cref="RunnableRules"/> (any more).
+    /// </summary>
+    Task<SimulatedRule?> RunRuleAsync(string id);
+}

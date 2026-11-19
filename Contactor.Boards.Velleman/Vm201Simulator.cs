@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -14,7 +15,7 @@ namespace Contactor.Boards.Velleman;
 /// ends its pulse, and a new pulse of it starts again. Used by the tests and, in
 /// development, by Contactor.Simulator (started by the Aspire AppHost). It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardNoAnswer, ISimulatedBoardPulses, ISimulatedBoardPower
+public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardNoAnswer, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardRules
 {
     private const int NameLength = Vm201Command.NameDataLength - 1;
     private const int InputChannel = 9;
@@ -236,6 +237,36 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
                 Volatile.Write(ref _poweredOff, 0);
             },
             power: true).ConfigureAwait(false);
+    }
+
+    // A rule that switches on comes before the one that switches off.
+    private static readonly bool[] OnThenOff = [true, false];
+
+    /// <summary>
+    /// Each relay whose timer program is on, twice: its timer switching it on, and off, as the board's program does at
+    /// its times. The app learns of it as of any change at the board, from the status the board pushes.
+    /// </summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules =>
+    [
+        .. Timers.Channels.SelectMany(relay => OnThenOff.Select(on => new SimulatedRule(
+            string.Create(CultureInfo.InvariantCulture, $"timer-{relay}-{(on ? "on" : "off")}"),
+            string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s timer: {(on ? "on" : "off")}"),
+            [new SimulatedRuleSwitch(relay, on)]))),
+    ];
+
+    public async Task<SimulatedRule?> RunRuleAsync(string id)
+    {
+        if (RunnableRules.FirstOrDefault(r => r.Id == id) is not { } rule)
+        {
+            return null;
+        }
+
+        foreach (var change in rule.Switches)
+        {
+            await SwitchRelayAsync(change.Relay, change.TurnOn).ConfigureAwait(false);
+        }
+
+        return rule;
     }
 
     /// <summary>Closes every open connection, as if the network dropped.</summary>

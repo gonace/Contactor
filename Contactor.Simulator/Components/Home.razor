@@ -405,6 +405,25 @@
                                         </div>
                                         <span class="hint">Switch.GetConfig and SetConfig, which the app reads and turns auto-on off with. "Never answered" holds the connection until the simulator stops, for a schedule's Schedule.Update too.</span>
                                     }
+                                    @if (current.RunnableRules is { Count: > 0 } runnable)
+                                    {
+                                        <h4 class="label" id="run-head">RUN NOW, AS WHEN ITS TIME COMES</h4>
+                                        <div class="schedule-list" role="group" aria-labelledby="run-head">
+                                            @foreach (var rule in runnable)
+                                            {
+                                                var ruleId = rule.Id;
+                                                <div class="rule-line" @key="ruleId">
+                                                    <span>@rule.Name</span>
+                                                    <button type="button" disabled="@poweredOff" @onclick="() => current.RunRuleAsync(ruleId)">Run now</button>
+                                                </div>
+                                            }
+                                        </div>
+                                        <span class="hint">The board switches the relay as the rule would, so the app sees a change it didn't ask for.</span>
+                                    }
+                                    else if (current.Board is ISimulatedBoardRules)
+                                    {
+                                        <span class="hint">Turn a rule on to run it now, as when its time comes.</span>
+                                    }
                                 </div>
                             </details>
                         }

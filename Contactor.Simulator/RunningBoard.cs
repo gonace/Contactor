@@ -179,6 +179,25 @@ public sealed class RunningBoard : IAsyncDisposable
         return modes.SetModeAsync(relay, mode);
     }
 
+    /// <summary>The board's own rules the page can run now; empty for a board without (or with none on).</summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules => (Board as ISimulatedBoardRules)?.RunnableRules ?? [];
+
+    /// <summary>
+    /// Runs one of the board's own rules now, as when its time comes: the board switches its relays, and the app sees a
+    /// change it didn't ask for. Nothing for a rule that isn't on (any more), or while the power is cut.
+    /// </summary>
+    public async Task RunRuleAsync(string id)
+    {
+        if (Board is not ISimulatedBoardRules rules || Power?.IsPoweredOff == true || rules.RunnableRules.All(r => r.Id != id))
+        {
+            return;
+        }
+
+        var rule = rules.RunnableRules.First(r => r.Id == id);
+        Add(TrafficKind.AtBoard, $"Run now here: {rule.Name} ({string.Join(", ", rule.Switches.Select(s => string.Create(CultureInfo.InvariantCulture, $"relay {s.Relay} {(s.TurnOn ? "on" : "off")}")))})");
+        await rules.RunRuleAsync(id).ConfigureAwait(false);
+    }
+
     /// <summary>The board's power, which the page can cut; null for a board without (none today).</summary>
     public ISimulatedBoardPower? Power => Board as ISimulatedBoardPower;
 

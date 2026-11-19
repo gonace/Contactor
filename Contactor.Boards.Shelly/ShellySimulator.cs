@@ -23,7 +23,7 @@ namespace Contactor.Boards.Shelly;
 /// device the app must refuse. It never tells the app anything by itself. Used by the tests and, in development, by
 /// Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower
+public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardRules
 {
     /// <summary>How long a client may take to send its whole request before the connection is closed.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -523,6 +523,91 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             },
             power: true);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Each schedule that is on, with the relays its <c>Switch.Set</c> calls switch, and each relay with auto-on, which
+    /// turns it on again, as the device does at their times. A schedule without a <c>Switch.Set</c> the simulator can
+    /// read isn't among them.
+    /// </summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules
+    {
+        get
+        {
+            List<SimulatedRule> rules = [];
+            foreach (var schedule in Schedules.Where(s => s.Enable))
+            {
+                var switches = SwitchSets(schedule.Calls);
+                if (switches.Count > 0)
+                {
+                    rules.Add(new SimulatedRule(
+                        string.Create(CultureInfo.InvariantCulture, $"schedule-{schedule.Id}"),
+                        string.Create(CultureInfo.InvariantCulture, $"Schedule {schedule.Id}: {string.Join(", ", switches.Select(w => string.Create(CultureInfo.InvariantCulture, $"relay {w.Relay} {(w.TurnOn ? "on" : "off")}")))}"),
+                        switches));
+                }
+            }
+
+            for (var relay = 1; relay <= _model.Capabilities.RelayCount; relay++)
+            {
+                if (AutoOn(relay))
+                {
+                    rules.Add(new SimulatedRule(
+                        string.Create(CultureInfo.InvariantCulture, $"auto-on-{relay}"),
+                        string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s auto-on"),
+                        [new SimulatedRuleSwitch(relay, true)]));
+                }
+            }
+
+            return rules;
+        }
+    }
+
+    public async Task<SimulatedRule?> RunRuleAsync(string id)
+    {
+        if (RunnableRules.FirstOrDefault(r => r.Id == id) is not { } rule)
+        {
+            return null;
+        }
+
+        foreach (var change in rule.Switches)
+        {
+            await SwitchRelayAsync(change.Relay, change.TurnOn).ConfigureAwait(false);
+        }
+
+        return rule;
+    }
+
+    // The Switch.Set calls of a job's calls, for a relay the device has; anything else is left out.
+    private List<SimulatedRuleSwitch> SwitchSets(string calls)
+    {
+        List<SimulatedRuleSwitch> switches = [];
+        try
+        {
+            using var document = JsonDocument.Parse(calls);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return switches;
+            }
+
+            foreach (var call in document.RootElement.EnumerateArray())
+            {
+                if (call.ValueKind == JsonValueKind.Object
+                    && call.TryGetProperty("method", out var method) && method.ValueKind == JsonValueKind.String && method.GetString() == "Switch.Set"
+                    && call.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Object
+                    && parameters.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var switchId)
+                    && switchId >= 0 && switchId < _model.Capabilities.RelayCount
+                    && parameters.TryGetProperty("on", out var on) && on.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    switches.Add(new SimulatedRuleSwitch(switchId + 1, on.GetBoolean()));
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Calls a test gave that aren't JSON: nothing the simulator can run.
+        }
+
+        return switches;
     }
 
     public void DropConnections()
