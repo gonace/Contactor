@@ -175,6 +175,12 @@ public sealed class ShellySimulator : ISimulatedBoard
     /// <summary>The schedules whose <c>Schedule.Update</c> is refused with <see cref="Refusal"/>, by job id.</summary>
     public IReadOnlySet<long> FailScheduleUpdates { get; set; } = new HashSet<long>();
 
+    /// <summary>
+    /// The schedules whose <c>Schedule.Update</c> the device never answers, holding the connection until the simulator
+    /// stops, by job id.
+    /// </summary>
+    public IReadOnlySet<long> SilentScheduleUpdates { get; set; } = new HashSet<long>();
+
     /// <summary>The error a relay in <see cref="FailRelays"/> gets: -109 "Overtemp condition present" ("Common Errors").</summary>
     public ShellyRpcError Refusal { get; set; } = new(ShellyApi.FailedPrecondition, "Overtemp condition present");
 
@@ -486,7 +492,7 @@ public sealed class ShellySimulator : ISimulatedBoard
             Interlocked.Increment(ref _requestCount);
             if (response is null)
             {
-                // Never answered (SilentConfigRelays): held until the simulator stops.
+                // Never answered (SilentConfigRelays, SilentScheduleUpdates): held until the simulator stops.
                 await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -995,7 +1001,7 @@ public sealed class ShellySimulator : ISimulatedBoard
     // As "Schedule.Update": "id" required (-103 without it); the docs don't say what an unknown id gets, so -105 as for
     // a switch it hasn't. Only "enable" is taken; every update grows schedule_rev ("incremented on every update").
     // Its result is {"rev":n}.
-    private byte[] UpdateSchedule(ShellyRequest rpc, long? id)
+    private byte[]? UpdateSchedule(ShellyRequest rpc, long? id)
     {
         if (id is not { } jobId)
         {
@@ -1005,6 +1011,12 @@ public sealed class ShellySimulator : ISimulatedBoard
         if (FailScheduleUpdates.Contains(jobId))
         {
             return Error(rpc, Refusal);
+        }
+
+        if (SilentScheduleUpdates.Contains(jobId))
+        {
+            Trace(BoardTraceDirection.None, "No answer to the schedule update", null, isError: true);
+            return null;
         }
 
         var enable = EnableParameter(rpc);

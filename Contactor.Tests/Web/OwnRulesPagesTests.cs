@@ -522,6 +522,39 @@ public sealed partial class OwnRulesPagesTests
         }
     }
 
+    // A board that reads its rules but may have others it can't see (the Shelly): the rules, then "also", never the
+    // line for a board that can't tell, which would deny the rules just listed.
+    [Fact]
+    public async Task Should_SayABoardThatReadsItsRules_MayAlsoHaveOthers()
+    {
+        const string Also = "This board may also have rules Contactor can't see. Check its own web page.";
+        const string CantTell = "This board may have timers of its own. Check its own web page.";
+        var board = Board(new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true));
+        await using (var app = App(board))
+        {
+            await RulesAsync(app, board, new OwnRules([Timer3]));
+            foreach (var path in new[] { $"/board/{BoardId}", "/settings" })
+            {
+                var card = RulesCard(await PageAsync(app, path));
+                Assert.Contains(">Turn off</button>", card, StringComparison.Ordinal);
+                Assert.Contains(Also, card, StringComparison.Ordinal);
+                Assert.DoesNotContain(CantTell, card, StringComparison.Ordinal);
+            }
+
+            // None read: still the card, with the line alone.
+            board.SetOwnRules(OwnRules.Empty);
+            await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 0);
+            var empty = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+            Assert.Contains(Also, empty, StringComparison.Ordinal);
+            Assert.DoesNotContain("<button", empty, StringComparison.Ordinal);
+        }
+
+        using (TestCulture.Language("sv"))
+        {
+            Assert.Equal("Kortet kan också ha regler som Contactor inte ser. Kontrollera kortets egen webbsida.", TestTexts.Localizer["OwnRules.Card.MayHaveUnseen"].Value);
+        }
+    }
+
     [Fact]
     public async Task Should_ShowOnlyKeep_ForABoardThatCantTurnItsRulesOff()
     {

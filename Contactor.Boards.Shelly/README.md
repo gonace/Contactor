@@ -178,6 +178,7 @@ reads are routine in the Debug trace. Only a change in which relays the enabled 
 
 - A `Timer` rule: one `Schedule.Update {id, enable:false}` for every enabled job that switches its relay, as last
   read (the jobs the person saw). The app never deletes a job and never changes its calls or `timespec`.
+  This turns off the whole job, so its other calls (e.g. `Script.Start` or `HTTP.GET`) stop too.
 - An `AutoOn` rule: one `Switch.SetConfig` for that switch, with only `auto_on:false` in `config`.
 - At once or `BoardNotConnectedException`, never queued. `ArgumentOutOfRangeException` for a relay the entry hasn't
   or another kind of rule, before anything is sent. A rule given twice is taken once.
@@ -266,8 +267,8 @@ The `Shelly` section applies to all four entries:
   `Switch.Set` gets -103 without `id` or `on`, and -105 "Bad id=N" for a switch it doesn't have, as "Common Errors"
   shows them.
 - It holds an `initial_state` per switch ("off" at start) and answers `Switch.GetConfig` and `Switch.SetConfig` with
-  the docs' members. `Switch.SetConfig` takes only `initial_state`, and -103 "Invalid argument 'initial_state'" for a
-  value the docs don't list (the docs don't say what the device answers then). `sys.cfg_rev` starts at 10 and grows
+  the docs' members. `Switch.SetConfig` takes only `initial_state` and `auto_on`, and -103 "Invalid argument
+  'initial_state'" for a value the docs don't list (the docs don't say what the device answers then). `sys.cfg_rev` starts at 10 and grows
   with each change, but not for a value set to what it was. `SetInitialState` sets one "at the device" (any text),
   `ChangeAnotherSetting` grows `cfg_rev` alone, and `FailConfigRelays` refuses both methods for those relays.
   `UnreadableConfigRelays` answers `Switch.GetConfig` with a frame cut short, `SilentConfigRelays` never answers it,
@@ -279,7 +280,8 @@ The `Shelly` section applies to all four entries:
   -103 without `id`, -105 "Bad id=N" for a job it hasn't). `sys.schedule_rev` starts at 0 and grows with every job
   added and every update. `AddSchedule` adds a job "at the device" with its calls as JSON, `SetScheduleEnabled` turns
   one on or off, `FailSchedules` refuses `Schedule.List`, `FailScheduleUpdates` refuses `Schedule.Update` for some
-  jobs, and `ReportsScheduleRevision` false leaves `schedule_rev` out of the status.
+  jobs, `SilentScheduleUpdates` never answers it for some, and `ReportsScheduleRevision` false leaves `schedule_rev`
+  out of the status.
 - Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
   other method.
 - With a password it asks for the digest, in the way of the firmware it is set to (`Firmware`, "2.0.0" by default):
