@@ -1008,20 +1008,16 @@ public sealed class ShellyClientTests
     }
 
     // The rules are read before the device's first connected state, so unknown rules while it answers mean they couldn't
-    // be read, which the screens say (issue #551): read, the first connected state has them; refused, it has none.
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Should_ReadTheRules_BeforeTheFirstConnectedState(bool refuse)
+    // be read, which the screens say (issue #551); a refused read is in the test below.
+    [Fact]
+    public async Task Should_ReadTheRules_BeforeTheFirstConnectedState()
     {
         await using var simulator = Start(ShellyModels.TwoRelays);
-        simulator.FailSchedules = refuse;
         await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
 
         await Wait.UntilAsync(() => run.Changes.Any(s => s.IsConnected));
 
-        var first = run.Changes.First(s => s.IsConnected);
-        Assert.Equal(refuse ? null : OwnRules.Empty, first.OwnRules);
+        Assert.Equal(OwnRules.Empty, run.Changes.First(s => s.IsConnected).OwnRules);
     }
 
     [Fact]

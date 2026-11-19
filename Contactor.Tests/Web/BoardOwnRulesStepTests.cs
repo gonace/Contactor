@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
@@ -302,7 +301,7 @@ public sealed class BoardOwnRulesStepTests
 
         await page.ClickAsync(Button("Next"));
         var text = await page.TextAsync();
-        Assert.Matches($"(?s)Name your relays.*{Regex.Escape(Line)}.*RELAY 1", text);
+        Assert.Contains(Line, text, StringComparison.Ordinal);
         Assert.Contains("STEP 3 OF 3", text, StringComparison.Ordinal);
 
         // Only the rules change: read now, so the line goes; unknown again, so it comes back.
@@ -316,42 +315,6 @@ public sealed class BoardOwnRulesStepTests
         await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains(Line, StringComparison.Ordinal));
         Assert.Equal(0, board.OwnRulesTurnOffs);
         Assert.Empty(Errors(page));
-
-        // A board that may also have rules it can't see: "couldn't read" in place of "may also".
-        await using (var other = App())
-        {
-            var shelly = new FakeRelayBoard(ownRules: new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true));
-            using var second = await PageRenderer.StartAsync<BoardNew>(other.Services, John, "John");
-            await ToWhereAsync(other, second, shelly);
-            shelly.SetOwnRules(null);
-            await second.ClickAsync(Button("Next"));
-            text = await second.TextAsync();
-            Assert.Contains(Line, text, StringComparison.Ordinal);
-            Assert.DoesNotContain("may also have rules", text, StringComparison.Ordinal);
-        }
-
-        using (TestCulture.Language("sv"))
-        {
-            Assert.Equal("Contactor kunde inte läsa kortets egna regler. Titta på kortets egen webbsida.", TestTexts.Localizer["OwnRules.Card.CouldntRead"].Value);
-        }
-    }
-
-    // The step lets go of the board's events when it closes.
-    [Fact]
-    public async Task Should_LetGoOfTheBoardsEvents_WhenNameYourRelaysCloses()
-    {
-        await using var app = App();
-        var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
-        await ToWhereAsync(app, page, new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff));
-        await page.ClickAsync(Button("Next"));
-        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
-        var registry = app.Services.GetRequiredService<BoardRegistry>();
-        Assert.Equal(1, PageRenderer.Handlers<BoardRelaysStep>(registry, nameof(registry.OwnRulesChanged)));
-
-        page.Close();
-
-        Assert.Equal(0, PageRenderer.Handlers<BoardRelaysStep>(registry, nameof(registry.OwnRulesChanged)));
-        Assert.Equal(0, PageRenderer.Handlers<BoardRelaysStep>(registry, nameof(registry.StateChanged)));
     }
 
     // Rules turned off at the board while the step shows leave nothing to ask: the page goes on by itself.

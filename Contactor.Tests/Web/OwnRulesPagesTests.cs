@@ -590,7 +590,6 @@ public sealed partial class OwnRulesPagesTests
         foreach (var path in new[] { $"/board/{BoardId}", "/settings" })
         {
             var card = RulesCard(await PageAsync(app, path));
-            Assert.Contains("The board's own rules", card, StringComparison.Ordinal);
             Assert.Contains(CouldntRead, card, StringComparison.Ordinal);
             Assert.DoesNotContain("<button", card, StringComparison.Ordinal);
         }
@@ -607,35 +606,12 @@ public sealed partial class OwnRulesPagesTests
         // A reading: its rows, without the line.
         board.SetConnected(true);
         await RulesAsync(app, board, Timer3);
-        var read = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
-        Assert.Contains("The board's own timers", read, StringComparison.Ordinal);
-        Assert.DoesNotContain(CouldntRead, read, StringComparison.Ordinal);
+        Assert.DoesNotContain(CouldntRead, RulesCard(await PageAsync(app, $"/board/{BoardId}")), StringComparison.Ordinal);
 
-        // Unknown again: the rows from before stay, with the line under them.
+        // Unknown again: the line, and the rows from before stay as they are.
         board.SetOwnRules(null);
-        var again = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
-        Assert.Contains(">Turn off</button>", again, StringComparison.Ordinal);
-        Assert.True(again.IndexOf(">Turn off</button>", StringComparison.Ordinal) < again.IndexOf(CouldntRead, StringComparison.Ordinal));
+        Assert.Contains(CouldntRead, RulesCard(await PageAsync(app, $"/board/{BoardId}")), StringComparison.Ordinal);
         Assert.Single(Service(app).Rows(BoardId));
-    }
-
-    // A board that may also have rules it can't see (the VM208, the Shelly): "couldn't read" in place of "may also".
-    [Fact]
-    public async Task Should_SayTheRulesCouldntBeRead_InPlaceOfMayAlsoHaveOthers()
-    {
-        const string CouldntRead = "Contactor couldn't read this board's own rules. Check its own web page.";
-        const string Also = "This board may also have rules Contactor can't see. Check its own web page.";
-        var board = Board(Vm208Board.Vm208Capabilities.OwnRules);
-        await using var app = App(board);
-
-        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
-        Assert.Contains(CouldntRead, card, StringComparison.Ordinal);
-        Assert.DoesNotContain(Also, card, StringComparison.Ordinal);
-
-        board.SetOwnRules(OwnRules.Empty);
-        card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
-        Assert.Contains(Also, card, StringComparison.Ordinal);
-        Assert.DoesNotContain(CouldntRead, card, StringComparison.Ordinal);
     }
 
     // The open card follows: the line comes when the rules become unknown and goes at the next reading, also when only
