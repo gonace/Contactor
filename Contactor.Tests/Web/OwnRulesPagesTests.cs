@@ -574,6 +574,91 @@ public sealed partial class OwnRulesPagesTests
         Assert.Contains(Also, RulesCard(await PageAsync(app, $"/board/{BoardId}")), StringComparison.Ordinal);
     }
 
+    // A board that answers and reads its rules but couldn't read them (issue #551): the card says so, and goes when a
+    // reading comes; nothing before the board's first answer or while it doesn't answer.
+    [Fact]
+    public async Task Should_SayTheRulesCouldntBeRead_WhileTheBoardAnswersWithoutThem()
+    {
+        const string CouldntRead = "Contactor couldn't read this board's own rules. Check its own web page.";
+        var board = new FakeRelayBoard(connected: false, ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App(board);
+
+        // Not answered yet: its rules are only not known.
+        Assert.DoesNotContain("own-rules-card", await PageAsync(app, $"/board/{BoardId}"), StringComparison.Ordinal);
+
+        board.SetConnected(true);
+        foreach (var path in new[] { $"/board/{BoardId}", "/settings" })
+        {
+            var card = RulesCard(await PageAsync(app, path));
+            Assert.Contains("The board's own rules", card, StringComparison.Ordinal);
+            Assert.Contains(CouldntRead, card, StringComparison.Ordinal);
+            Assert.DoesNotContain("<button", card, StringComparison.Ordinal);
+        }
+
+        // Nothing is sent to the board, and nothing is noted.
+        Assert.Equal(0, board.OwnRulesTurnOffs);
+        Assert.Empty(board.Sent);
+        Assert.Empty(Service(app).Rows(BoardId));
+
+        // While it doesn't answer: nothing.
+        board.SetConnected(false);
+        Assert.DoesNotContain("own-rules-card", await PageAsync(app, $"/board/{BoardId}"), StringComparison.Ordinal);
+
+        // A reading: its rows, without the line.
+        board.SetConnected(true);
+        await RulesAsync(app, board, Timer3);
+        var read = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Contains("The board's own timers", read, StringComparison.Ordinal);
+        Assert.DoesNotContain(CouldntRead, read, StringComparison.Ordinal);
+
+        // Unknown again: the rows from before stay, with the line under them.
+        board.SetOwnRules(null);
+        var again = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Contains(">Turn off</button>", again, StringComparison.Ordinal);
+        Assert.True(again.IndexOf(">Turn off</button>", StringComparison.Ordinal) < again.IndexOf(CouldntRead, StringComparison.Ordinal));
+        Assert.Single(Service(app).Rows(BoardId));
+    }
+
+    // A board that may also have rules it can't see (the VM208, the Shelly): "couldn't read" in place of "may also".
+    [Fact]
+    public async Task Should_SayTheRulesCouldntBeRead_InPlaceOfMayAlsoHaveOthers()
+    {
+        const string CouldntRead = "Contactor couldn't read this board's own rules. Check its own web page.";
+        const string Also = "This board may also have rules Contactor can't see. Check its own web page.";
+        var board = Board(Vm208Board.Vm208Capabilities.OwnRules);
+        await using var app = App(board);
+
+        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Contains(CouldntRead, card, StringComparison.Ordinal);
+        Assert.DoesNotContain(Also, card, StringComparison.Ordinal);
+
+        board.SetOwnRules(OwnRules.Empty);
+        card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Contains(Also, card, StringComparison.Ordinal);
+        Assert.DoesNotContain(CouldntRead, card, StringComparison.Ordinal);
+    }
+
+    // The open card follows: the line comes when the rules become unknown and goes at the next reading, also when only
+    // the rules changed.
+    [Fact]
+    public async Task Should_RedrawTheCard_WhenTheRulesCantBeReadAndComeBack()
+    {
+        const string CouldntRead = "Contactor couldn't read this board's own rules. Check its own web page.";
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, Timer3);
+        using var page = await PageRenderer.StartAsync<BoardPage>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = BoardId });
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("The board's own timers", StringComparison.Ordinal));
+        Assert.DoesNotContain(CouldntRead, await page.TextAsync(), StringComparison.Ordinal);
+
+        board.SetOwnRules(null);
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains(CouldntRead, StringComparison.Ordinal));
+
+        board.SetOwnRules(new OwnRules([Timer3]));
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains(CouldntRead, StringComparison.Ordinal));
+        Assert.Empty(page.Errors);
+    }
+
     [Fact]
     public async Task Should_ShowOnlyKeep_ForABoardThatCantTurnItsRulesOff()
     {

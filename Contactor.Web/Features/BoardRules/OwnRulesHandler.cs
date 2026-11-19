@@ -74,6 +74,18 @@ public sealed partial class OwnRulesHandler
     public static IReadOnlyList<OwnRuleKind> KeptOnlyOutsideGroups { get; } = [.. Enum.GetValues<OwnRuleKind>().Where(k => CanKeep(k, inGroup: false) && !CanKeep(k, inGroup: true))];
 
     /// <summary>
+    /// Whether the board answers and reads its own rules (<see cref="OwnRulesAbility.Reads"/>) but couldn't read them:
+    /// another firmware, a refusal, or a value it can't read. A board that reads them tries to before its first connected
+    /// state (<see cref="BoardState.OwnRules"/>), so null rules while it answers mean that. False without the board, before
+    /// it answered and while it doesn't answer: its rules are only not known yet. The screens then say to check the
+    /// board's own web page (issue #551); nothing is sent to the board.
+    /// </summary>
+    public static bool CouldntRead(LiveBoard? board)
+    {
+        return board is { State: { IsConnected: true, OwnRules: null } } && board.Capabilities.OwnRulesOrCantTell.Reads;
+    }
+
+    /// <summary>
     /// The board's own rules the app warns about: those the board reports now that no person kept. None while the
     /// board's rules aren't known (it can't read them, or hasn't answered), until the app has read which rules people
     /// kept (just after the start), and for a board the app doesn't run.

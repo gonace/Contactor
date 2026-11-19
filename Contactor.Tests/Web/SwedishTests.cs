@@ -89,6 +89,20 @@ public sealed class SwedishTests
         Assert.Contains("Hittades i dag 15:30", page, StringComparison.Ordinal);
     }
 
+    // A board that answers but couldn't read its own rules (issue #551): the card says so in Swedish.
+    [Fact]
+    public async Task Should_SayTheBoardsRulesCouldntBeRead_InSwedish()
+    {
+        var board = new Contactor.Tests.Boards.FakeRelayBoard(ownRules: Contactor.Boards.OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = await SwedishAppAsync(new ManualTimeProvider(NowUtc), board);
+        using var http = app.CreateClient();
+
+        var page = WebUtility.HtmlDecode(await http.GetStringAsync("/board/1", Cancel));
+
+        Assert.Contains("Kortets egna regler", page, StringComparison.Ordinal);
+        Assert.Contains("Contactor kunde inte läsa kortets egna regler. Titta på kortets egen webbsida.", page, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Should_ShowARelaysPage_AndItsEvents_InSwedish()
     {
