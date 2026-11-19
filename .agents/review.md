@@ -40,7 +40,8 @@ by this file; in Claude Code it is the `code-reviewer` agent in `.claude/agents/
   SQLite-specific code only in `Persistence` and `Features/Backup` (Data model), and the board only through
   `IRelayBoard`, `IBoardConnection` and `IBoardTraffic` (Boards).
 - **Tests:** risky paths without a test, tests that can't fail, timing-dependent tests that will be flaky on a busy
-  machine, and tests that depend on the host (its time zone, locale, clock or files).
+  machine, and tests that depend on the host (its time zone, locale, clock or files). Ask for a test only where
+  `AGENTS.md` (Testing) requires one. For layout, the simulator's page and texts, ask for a screenshot instead.
 - **Platform independence:** code and tests must behave the same on Windows, Linux and macOS. Developers run the
   tests on Windows; the app runs in a Linux container on a Raspberry Pi (arm64). Flag path separators, case
   sensitivity, line endings, file locking, time zone ids and culture.
