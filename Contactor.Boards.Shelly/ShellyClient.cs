@@ -241,6 +241,15 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         _poller.Restart();
     }
 
+    /// <summary>
+    /// A person's "Check again": connects again at once while the Shelly isn't connected, also after it refused the
+    /// password, which isn't tried again otherwise. Nothing happens while it is connected.
+    /// </summary>
+    public void TryAgain()
+    {
+        _poller.TryAgain();
+    }
+
     /// <summary>Connects and polls until cancelled. Never throws because of the device. Call it once.</summary>
     public Task RunAsync(CancellationToken cancellationToken)
     {
@@ -492,6 +501,10 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             case BoardPollStep.Waiting:
                 _logger.Reconnecting(detail);
                 Trace(BoardTraceDirection.None, $"Trying again in {detail} s");
+                break;
+            case BoardPollStep.Held:
+                _logger.Held();
+                Trace(BoardTraceDirection.None, "Not trying again until a new password is saved or a person checks again");
                 break;
             case BoardPollStep.Stopped:
                 ForgetLastStatus();

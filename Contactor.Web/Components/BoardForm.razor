@@ -309,6 +309,14 @@
                 _afterSave = moved && State.IsConnected ? AfterSave.Drop : AfterSave.Answer;
                 _savedAt = Time.GetUtcNow();
                 ReactToProblem();
+
+                // The same address and login saved again, e.g. after the password was put right on the board itself:
+                // one attempt now, since a refused login isn't tried again by itself (Issue #522). After the reaction
+                // above, so the problem the person saw still opens the login fields.
+                if (!moved && Live is { } waiting && BoardContact.ShouldTryAgain(waiting.State))
+                {
+                    waiting.TryAgain();
+                }
             }
         }
         finally

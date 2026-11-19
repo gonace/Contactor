@@ -137,7 +137,11 @@ A request goes at most twice:
 - A 401 to a request with a new challenge is a wrong password. The app stops there.
 - A 429 ("Too Many Requests") is never tried again within a call. From 2.0.0 the device answers 429 for a while after
   wrong passwords: 10 s between attempts after 10 of them, and up to 5 minutes after 40. The poller tries again
-  after its own wait, 1 s doubling to 30 s.
+  once after 10 minutes, longer than the device counts wrong passwords for, or at once on "Check again" or a new
+  password (Issue #522).
+- A refused password that never connected isn't tried again by the poller at all: it waits for a new password or a
+  person's "Check again", so the app never keeps the device's brute-force protection going. A password that connected
+  before is tried once every 10 minutes for 24 hours from the first refusal, then held the same way.
 - At 30,000 requests on a nonce the app asks for a new one itself.
 
 The app checks a challenge before it answers: a `Digest` challenge with `algorithm=SHA-256` and `qop` "auth". The
@@ -219,7 +223,7 @@ When the device refuses the connection, the state says why (`ShellyState.Problem
 - `FirmwareTooOld`, with 1.7.0 as `MinFirmware`, for firmware that is too old or that the app can't read.
 - `AskedToWait` for a 429: the screens say that the device asks to wait, and to check the password if it was just
   changed. A 429 comes after wrong passwords or with too many clients, so the words don't say the password is
-  wrong, and the login fields stay as they are. The poller tries again after its own wait.
+  wrong, and the login fields stay as they are. The poller tries again after 10 minutes, or on "Check again".
 
 `ShellyWrongDeviceException.Mismatch` tells the four refusals of the device apart.
 
@@ -315,6 +319,8 @@ The `Shelly` section applies to all four entries:
 - The HTTP status of an error frame for `POST /rpc`. The docs show 200 only.
 - If the device takes `src` in a request frame over HTTP. The docs' HTTP examples leave it out.
 - What the device answers for a wrong password, also after 10 of them (429), and if a 429 has a body.
+- That the device's own wait after wrong passwords runs out by itself while the app holds a refused password, so the
+  right password then connects at once, and that one attempt every 10 minutes after a 429 never keeps it going.
 - If the device takes a kept nonce for `Switch.Set` as well as for `Shelly.GetStatus`.
 - That a 2PM in the cover profile answers `profile` "cover", and a 2PM in the switch profile 2 switches.
 - What a Gen1 device answers to `POST /rpc`. The app expects 404.

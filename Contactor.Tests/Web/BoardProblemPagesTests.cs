@@ -425,6 +425,65 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
+    // Issue #522: a refused password isn't tried again by itself, so "Check again" in the guide sends it again. That the
+    // poller then sends nothing more is proven by the poller's and the clients' tests, on a fake clock.
+    [Fact]
+    public async Task Should_SendTheRefusedPasswordAgain_WhenAPersonChecksAgain()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.OneRelay, "apple", NullLogger.Instance);
+        simulator.Start();
+        await using var boards = await TwoBoards.StartAsync();
+        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
+        await ChooseAsync(page, "Shelly", "shelly-1");
+        await page.ClickAsync(Button("Next"));
+        await AtAsync(page, simulator.Port);
+        await page.ClickAsync(Button("Next"));
+        await page.TypeAsync(PageRenderer.With("id", "password"), "pear");
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("The password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
+        var denied = simulator.DeniedCount;
+
+        await page.ClickAsync(Button("Check again"));
+
+        Assert.Equal(denied + 1, simulator.DeniedCount);
+        Assert.Contains("The password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+    }
+
+    // On Settings, Save with the same password is the person's "Check again": it sends the password again.
+    [Fact]
+    public async Task Should_SendTheRefusedPasswordAgain_WhenTheSameIsSavedOnSettings()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.OneRelay, "apple", NullLogger.Instance);
+        simulator.Start();
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?>
+            {
+                [TestWebApp.SignedInAs] = John,
+                ["Board:Type"] = "shelly-1",
+                ["Shelly:Host"] = "127.0.0.1",
+                ["Shelly:Port"] = simulator.Port.ToString(CultureInfo.InvariantCulture),
+                ["Shelly:Password"] = "pear",
+            });
+        using (var http = app.CreateClient())
+        {
+            await http.GetAsync("/settings", Cancel);
+        }
+
+        var board = app.Services.GetRequiredService<BoardRegistry>().All[0];
+        await BoardTestRig.WaitUntilAsync(() => board.State.Problem is { Kind: ConnectionProblemKind.LoginRefused });
+        Assert.Equal(1, simulator.DeniedCount);
+        using var page = await PageRenderer.StartAsync<BoardForm>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardForm.BoardId)] = board.BoardId });
+
+        await page.SubmitAsync(PageRenderer.With("class", "card"));
+
+        await BoardTestRig.WaitUntilAsync(() => simulator.DeniedCount == 2 && board.State.Problem is not null);
+        Assert.Equal(2, simulator.DeniedCount);
+        Assert.False(board.State.IsConnected);
+        Assert.Empty(page.Errors);
+    }
+
     // A problem that comes long after the Save, e.g. once the board is plugged in, moves nothing: the person may be
     // typing by then. One within the setup guide's 10 s does.
     [Fact]

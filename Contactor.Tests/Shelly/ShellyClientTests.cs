@@ -139,27 +139,65 @@ public sealed class ShellyClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    // Issue #522: each try counts toward the device's brute-force protection, so a refused password isn't tried again
+    // by itself, however long the clock runs.
     [Fact]
-    public async Task Should_StayDisconnectedAndRetry_WhenThePasswordIsWrong()
+    public async Task Should_StayDisconnected_AndNotTryARefusedPasswordAgain()
     {
         await using var simulator = Start(ShellyModels.OneRelay, Password);
         await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
 
-        // Refused, then tried again after the wait: only when the clock gets there.
-        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        run.Time.Advance(TimeSpan.FromSeconds(1));
-        await Wait.UntilAsync(() => simulator.DeniedCount == 2 && run.Time.WaitsOnly(TimeSpan.FromSeconds(2)));
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Not trying again until a new password is saved or a person checks again"));
+        Assert.Equal(1, simulator.DeniedCount);
+        Assert.Equal(0, run.Time.PendingTimers);
+        var sent = simulator.Received.Count;
 
+        run.Time.Advance(TimeSpan.FromDays(1));
+        await Task.Yield();
+
+        Assert.Equal(1, simulator.DeniedCount);
+        Assert.Equal(sent, simulator.Received.Count);
         Assert.False(run.Client.State.IsConnected);
         Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay), run.Client.State.Problem);
         Assert.Single(run.Changes, c => c.Problem is not null);
         Assert.Contains(run.Traces, t => t.Text == "Wrong password" && t.IsError);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Trying again in", StringComparison.Ordinal));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
 
         // A new password connects at once, and clears the problem.
         run.Client.SetPassword(Password);
         Assert.Null(run.Client.State.Problem);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal(1, simulator.DeniedCount);
+    }
+
+    // "Check again" tries the same password once, and holds again when the device refuses it again.
+    [Fact]
+    public async Task Should_TryOnce_WhenAPersonChecksAgain_AfterARefusedPassword()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
+        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && HeldCount(run) == 1);
+
+        run.Client.TryAgain();
+        Assert.Null(run.Client.State.Problem);
+        await Wait.UntilAsync(() => simulator.DeniedCount == 2 && HeldCount(run) == 2);
+        Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay), run.Client.State.Problem);
+
+        run.Time.Advance(TimeSpan.FromHours(1));
+        await Task.Yield();
+        Assert.Equal(2, simulator.DeniedCount);
+
+        run.Client.SetPassword(Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Problem);
+        Assert.Equal(2, simulator.DeniedCount);
+
+        // Connected: "Check again" leaves the connection as it is.
+        var connects = run.Traces.Count(t => t.Text.StartsWith("Connecting to", StringComparison.Ordinal));
+        run.Client.TryAgain();
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(connects, run.Traces.Count(t => t.Text.StartsWith("Connecting to", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -167,14 +205,14 @@ public sealed class ShellyClientTests
     {
         await using var simulator = Start(ShellyModels.OneRelay, Password);
         await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, "wrong");
-        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        await Wait.UntilAsync(() => simulator.DeniedCount == 1 && HeldCount(run) == 1);
         var refused = new ConnectionProblem(ConnectionProblemKind.LoginRefused, ShellyModels.OneRelay);
         Assert.Equal(refused, run.Client.State.Problem);
 
         // The device's brute-force protection answers 429 now: the screens say to wait, not why.
         simulator.Throttle = true;
-        run.Time.Advance(TimeSpan.FromSeconds(1));
-        await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(TimeSpan.FromSeconds(2)));
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
 
         var tooMany = new ConnectionProblem(ConnectionProblemKind.AskedToWait, ShellyModels.OneRelay);
         Assert.Equal(tooMany, run.Client.State.Problem);
@@ -226,7 +264,8 @@ public sealed class ShellyClientTests
         simulator.Throttle = true;
         await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
 
-        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        // Issue #522: not in the poller's quick loop, but after a wait longer than the device counts wrong passwords for.
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 600 s") && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
 
         Assert.Equal(1, simulator.ThrottledCount);
         Assert.Equal([ShellyApi.GetDeviceInfo, ShellyApi.GetStatus], simulator.Received);
@@ -235,9 +274,38 @@ public sealed class ShellyClientTests
         Assert.Contains(run.Traces, t => t.Text.StartsWith("The Shelly asks to wait", StringComparison.Ordinal) && t.IsError);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Connection lost: The Shelly asks to wait", StringComparison.Ordinal));
 
+        // Nothing more until the wait runs out.
+        run.Time.Advance(BoardPoller<ShellyStatus>.AskedToWaitPause - TimeSpan.FromSeconds(1));
+        await Task.Yield();
+        Assert.Equal(1, simulator.ThrottledCount);
+        Assert.Equal(2, simulator.Received.Count);
+
         simulator.Throttle = false;
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
+    }
+
+    // "Check again" doesn't wait for the 10 minutes: one attempt at once.
+    [Fact]
+    public async Task Should_TryOnceAtOnce_WhenAPersonChecksAgain_AfterA429()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        simulator.Throttle = true;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 1 && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
+
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => simulator.ThrottledCount == 2 && run.Time.WaitsOnly(BoardPoller<ShellyStatus>.AskedToWaitPause));
+
+        simulator.Throttle = false;
+        run.Client.TryAgain();
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal(2, simulator.ThrottledCount);
+    }
+
+    private static int HeldCount(ClientRun run)
+    {
+        return run.Traces.Count(t => t.Text == "Not trying again until a new password is saved or a person checks again");
     }
 
     [Theory]

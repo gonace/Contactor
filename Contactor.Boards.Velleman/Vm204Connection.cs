@@ -43,6 +43,11 @@ public sealed class Vm204Connection : IBoardConnection
         return error;
     }
 
+    public void TryAgain()
+    {
+        _client.TryAgain();
+    }
+
     public Task RunAsync(CancellationToken cancellationToken)
     {
         return _client.RunAsync(cancellationToken);

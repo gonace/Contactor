@@ -35,6 +35,15 @@ public interface IBoardConnection
     /// <summary>Why the board can't take this login, or null when it can; the app puts it in words.</summary>
     LoginProblem? CheckLogin(BoardLogin login);
 
+    /// <summary>
+    /// A person's "Check again": tries once more at once while the board isn't connected, also after it refused the
+    /// login, which the connection doesn't try again by itself (Issue #522). Nothing happens while it is connected. By
+    /// default nothing: a connection that never stops trying has nothing to end.
+    /// </summary>
+    void TryAgain()
+    {
+    }
+
     /// <summary>Connects, and reconnects whenever the connection is lost, until cancelled.</summary>
     Task RunAsync(CancellationToken cancellationToken);
 }

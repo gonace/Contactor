@@ -171,6 +171,15 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
         _poller.Restart();
     }
 
+    /// <summary>
+    /// A person's "Check again": connects again at once while the board isn't connected, also after it refused the
+    /// password, which isn't tried again otherwise. Nothing happens while it is connected.
+    /// </summary>
+    public void TryAgain()
+    {
+        _poller.TryAgain();
+    }
+
     /// <summary>Polls until cancelled. Never throws because of the board. Call it once.</summary>
     public Task RunAsync(CancellationToken cancellationToken)
     {
@@ -284,6 +293,10 @@ public sealed class DevantechClient : IPolledBoard<DevantechStatus>, IDisposable
             case BoardPollStep.Waiting:
                 _logger.Reconnecting(detail);
                 Trace(BoardTraceDirection.None, $"Trying again in {detail} s");
+                break;
+            case BoardPollStep.Held:
+                _logger.Held();
+                Trace(BoardTraceDirection.None, "Not trying again until a new password is saved or a person checks again");
                 break;
             case BoardPollStep.Stopped:
                 ForgetLastStatus();
