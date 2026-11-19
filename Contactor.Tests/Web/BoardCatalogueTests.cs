@@ -233,7 +233,7 @@ public sealed class BoardCatalogueTests
         {
             ["vm201"] = reads,
             ["vm204"] = none,
-            ["vm208"] = cantTell,
+            ["vm208"] = reads,
             ["waveshare-8"] = none,
             ["waveshare-8b"] = reads,
             ["waveshare-8c"] = reads,

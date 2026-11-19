@@ -581,14 +581,16 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         string? refusal = null;
         foreach (var rule in asked)
         {
-            // Only to the board the command began with, while it counts as connected.
-            EnsureSameBoard(target, command: true);
             var relay = rule.Relay;
+            var posted = false;
             try
             {
+                // Only to the board the command began with, while it counts as connected.
+                EnsureSameBoard(target, command: true);
                 var alarms = await GetScheduleAsync(relay, routine: false, before: null, cancellationToken).ConfigureAwait(false);
                 EnsureSameBoard(target, command: true);
                 var form = Vm208Api.ScheduleForm(relay, [.. alarms.Select(a => a with { Enabled = false })]);
+                posted = true;
                 var answer = await SendAsync(HttpMethod.Post, Vm208Api.ScheduleSetPath, form, routine: false, cancellationToken).ConfigureAwait(false);
                 if (answer.StatusCode != HttpStatusCode.OK)
                 {
@@ -606,13 +608,18 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             }
             catch (Vm208ProtocolException ex)
             {
+                // A save whose answer can't be read may have been made: the next poll reads every schedule again.
+                _schedulesRead &= !posted;
                 refusal ??= string.Create(CultureInfo.InvariantCulture, $"relay {relay}: {ex.Message}");
                 unreadable ??= ExceptionDispatchInfo.Capture(ex);
                 Trace(BoardTraceDirection.None, $"The VM208 didn't take the change for relay {relay}'s schedule: {ex.Message}", isError: true);
                 continue;
             }
-            catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
+            catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException || (ex is BoardNotConnectedException && done.Count > 0))
             {
+                // No answer, or (after a relay was taken) the board moved or was lost: nothing more goes. A save without
+                // an answer may have been made: the next poll reads every schedule again.
+                _schedulesRead &= !posted;
                 noAnswer = ExceptionDispatchInfo.Capture(ex);
                 break;
             }
@@ -629,7 +636,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
                     _schedules = schedules;
                 }
             }
-            catch (Exception ex) when (ex is Vm208ProtocolException || IsNoAnswer(ex) || ex is UriFormatException)
+            catch (Exception ex) when (ex is Vm208ProtocolException or BoardNotConnectedException || IsNoAnswer(ex) || ex is UriFormatException)
             {
                 _schedules = null;
                 _schedulesRead = false;

@@ -80,7 +80,7 @@ public static class Vm208Api
     /// <c>src/Network/server_VM208.cpp</c> <c>server.on("/shedule_set")</c>, lines 522–572. The relay is read as
     /// <c>toInt() - 1</c> into a 16-bit index with no check, so relay 0 writes far outside the schedule table; the app
     /// only sends relays 1–4. Never <c>POST /setalarm</c> (lines 283–304): it changes one alarm in memory only, and a
-    /// restart brings the old one back. Never <c>/stoptimer</c> or <c>/stoppulse</c> (lines 182–210): both toggle the
+    /// restart brings the old one back. Never <c>/stoptimer</c> or <c>/stoppulse</c> (lines 182–211): both toggle the
     /// relay before they stop anything.
     /// </summary>
     public const string ScheduleSetPath = "/shedule_set";

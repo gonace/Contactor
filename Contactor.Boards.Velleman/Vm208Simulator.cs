@@ -427,7 +427,8 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
         var query = question < 0 ? "" : target[(question + 1)..];
         var isPost = method == "POST";
         var shownForm = isPost ? form : null;
-        Remember(Vm208TraceText.RequestBytes(method, target, shownForm));
+        // Whole, not cut as the traffic shows it: a schedule's form is longer than that.
+        Remember(shownForm is null ? $"{method} {target}" : $"{method} {target} {shownForm}");
         var isStatus = method == "GET" && path == Vm208Api.StatusPath;
         var isAlarms = method == "GET" && path == Vm208Api.AlarmsPath;
         Trace(BoardTraceDirection.Sent, Vm208TraceText.Request(method, path, shownForm, query), Vm208TraceText.RequestBytes(method, target, shownForm), isRoutine: isStatus || isAlarms);

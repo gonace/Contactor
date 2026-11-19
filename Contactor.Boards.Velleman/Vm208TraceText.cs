@@ -6,8 +6,8 @@ namespace Contactor.Boards.Velleman;
 /// <summary>
 /// The VM208's requests and answers in plain words, for the app's Debug screen and the simulator alike, e.g. "Turn on
 /// relay 3" with "POST /relay index=3&amp;state=1&amp;interface=-1&amp;socket=0" below it. The board's API has no
-/// login, key or password, so there is nothing secret to hide; a long answer is cut and anything unprintable shows
-/// as "·".
+/// login, key or password, so there is nothing secret to hide; only the board's settings, its answer to a saved
+/// schedule, are left out (<see cref="SettingsAnswer"/>). A long answer is cut and anything unprintable shows as "·".
 /// </summary>
 public static class Vm208TraceText
 {
