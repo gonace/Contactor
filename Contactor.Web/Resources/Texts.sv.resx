@@ -2214,7 +2214,7 @@
     <value>På</value>
   </data>
   <data name="Relays.PowerOn.Unconfirmed" xml:space="preserve">
-    <value>Contactor kunde inte bekräfta ändringen. Kontrollera den här när kortet svarar.</value>
+    <value>Contactor kunde inte bekräfta ändringen. Se efter här när kortet svarar.</value>
   </data>
   <data name="Relays.PowerOn.Unknown" xml:space="preserve">
     <value>Kan inte se än vad kortet gör med reläet efter ett strömavbrott.</value>

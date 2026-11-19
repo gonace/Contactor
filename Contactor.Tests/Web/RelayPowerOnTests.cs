@@ -267,14 +267,15 @@ public sealed class RelayPowerOnTests
 
         board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.Off));
         board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.Off));
-        await Wait.UntilAsync(() => PowerOnEventsAsync(app).GetAwaiter().GetResult().Count > 0);
+        await Wait.UntilAsync(async () => (await PowerOnEventsAsync(app)).Count > 0);
         time.Now += RelayPowerOnHandler.ConfirmFor;
         board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.On));
 
-        // A later write that lands, so the one before has had its turn.
+        // A later write that lands, so the one before has had its turn. The events above are logged in the background,
+        // so one that shouldn't be there (relay 3 twice, relay 5) may land after relay 4's: the count must settle first.
         board.RefusePowerOn = false;
         Assert.Null(await handler.SetAsync(4, PowerOnState.On, John, Cancel));
-        var events = await PowerOnEventsAsync(app);
+        var events = await SettledPowerOnEventsAsync(app);
         Assert.Equal([(3, """{"from":"on","to":"off"}"""), (4, """{"from":"off","to":"on"}""")], events.OrderBy(e => e.Id).Select(e => (e.RelayId!.Value, e.Details)));
     }
 
@@ -383,6 +384,42 @@ public sealed class RelayPowerOnTests
         Assert.Empty(board.PowerOnWrites);
         Assert.Null(await app.Services.GetRequiredService<RelayPowerOnHandler>().SetAsync(5, PowerOnState.Off, John, Cancel));
         Assert.Equal([(5, PowerOnState.Off)], board.PowerOnWrites);
+    }
+
+    // A group made between the Relay screen's check of the groups and its write: "Create group" waits for that write,
+    // sees the state it set, and sets the board to Off.
+    [Fact]
+    public async Task Should_MakeAGroupSafe_AfterAWriteWhoseCheckCameBeforeTheGroup()
+    {
+        var board = WholeBoard();
+        board.SetPowerOn(new PowerOnStates(Enumerable.Repeat<PowerOnState?>(PowerOnState.Off, 8)));
+        await using var app = App(board);
+        var handler = app.Services.GetRequiredService<RelayPowerOnHandler>();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        board.HoldPowerOn = release.Task;
+        var write = handler.SetAsync(5, PowerOnState.On, John, Cancel);
+        await Wait.UntilAsync(() => board.PowerOnWritesHeld == 1);
+
+        await AddGroupAsync(app, "Fan", "Heat");
+        int groupId;
+        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
+        {
+            groupId = await db.RelayGroups.Select(g => g.Id).SingleAsync(Cancel);
+        }
+
+        var safe = handler.MakeGroupSafeAsync(groupId, John, relayIds: null, onSave: true, Cancel);
+
+        // It waits for the write under way: before it, the board's state was still Off, so it would set nothing.
+        await Task.WhenAny(safe, Task.Delay(TimeSpan.FromMilliseconds(200), Cancel));
+        Assert.False(safe.IsCompleted);
+        board.HoldPowerOn = null;
+        release.SetResult();
+
+        Assert.Null(await write);
+        Assert.Null(await safe);
+        Assert.Equal(PowerOnState.On, board.PowerOnWrites[0].State);
+        Assert.Equal(PowerOnState.Off, board.PowerOnWrites[^1].State);
+        Assert.Equal(PowerOnState.Off, board.State.PowerOn!.For(5));
     }
 
     // Without a group on the board every state is allowed; a board with a state per relay is never limited.
@@ -588,6 +625,22 @@ public sealed class RelayPowerOnTests
         group.AddStep("Fan", [2]);
         group.AddStep("Heat", [3]);
         await db.AddWithRuntimesAsync(group);
+    }
+
+    // The power-on events once their number stayed the same for 10 reads in a row, 20 ms apart: an event logged in the
+    // background has had the time to land.
+    private static async Task<List<EventLogEntry>> SettledPowerOnEventsAsync(TestWebApp app)
+    {
+        var events = await PowerOnEventsAsync(app);
+        for (var same = 0; same < 10;)
+        {
+            await Task.Delay(20, Cancel);
+            var next = await PowerOnEventsAsync(app);
+            same = next.Count == events.Count ? same + 1 : 0;
+            events = next;
+        }
+
+        return events;
     }
 
     private static async Task<List<EventLogEntry>> PowerOnEventsAsync(TestWebApp app)

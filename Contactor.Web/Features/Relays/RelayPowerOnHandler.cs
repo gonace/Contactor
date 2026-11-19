@@ -21,6 +21,11 @@ namespace Contactor.Web.Features.Relays;
 /// A write the board didn't answer may still have been saved on the board. Such a write is kept as unconfirmed for
 /// <see cref="ConfirmFor"/>: when the board's state shows it meanwhile, it is logged with the person then. It is never
 /// sent again on its own; only a person's next Save sends anything.
+/// <para>
+/// One write at a time, the Relay screen's checks and write and a group's together (<c>_writes</c>): a group saved
+/// between the Relay screen's check of the groups and its write is then made safe after that write, and sees its
+/// state.
+/// </para>
 /// </remarks>
 public sealed partial class RelayPowerOnHandler : IDisposable
 {
@@ -37,6 +42,9 @@ public sealed partial class RelayPowerOnHandler : IDisposable
     // Writes the board didn't answer, by relay id: at most one per relay, the latest.
     private readonly Lock _lock = new();
     private readonly Dictionary<int, Unconfirmed> _unconfirmed = [];
+
+    // One write at a time, with the checks before it (see the remarks).
+    private readonly SemaphoreSlim _writes = new(1, 1);
 
     public RelayPowerOnHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -60,6 +68,7 @@ public sealed partial class RelayPowerOnHandler : IDisposable
     {
         _registry.StateChanged -= OnBoardChanged;
         _registry.PowerOnChanged -= OnBoardChanged;
+        _writes.Dispose();
     }
 
     /// <summary>
@@ -76,6 +85,20 @@ public sealed partial class RelayPowerOnHandler : IDisposable
             throw new ArgumentOutOfRangeException(nameof(state), state, "Not a state after a power cut.");
         }
 
+        await _writes.WaitAsync(cancellationToken);
+        try
+        {
+            return await SetUnderLockAsync(relayId, state, userEmail, cancellationToken);
+        }
+        finally
+        {
+            _writes.Release();
+        }
+    }
+
+    // Under _writes: the relay's checks, then the write.
+    private async Task<string?> SetUnderLockAsync(int relayId, PowerOnState state, string userEmail, CancellationToken cancellationToken)
+    {
         Relay? relay;
         bool inGroup;
         await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
@@ -129,6 +152,20 @@ public sealed partial class RelayPowerOnHandler : IDisposable
     public async Task<string?> MakeGroupSafeAsync(int groupId, string userEmail, IReadOnlyCollection<int>? relayIds, bool onSave, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userEmail);
+        await _writes.WaitAsync(cancellationToken);
+        try
+        {
+            return await MakeGroupSafeUnderLockAsync(groupId, userEmail, relayIds, onSave, cancellationToken);
+        }
+        finally
+        {
+            _writes.Release();
+        }
+    }
+
+    // Under _writes: the board's states are read after any write before it.
+    private async Task<string?> MakeGroupSafeUnderLockAsync(int groupId, string userEmail, IReadOnlyCollection<int>? relayIds, bool onSave, CancellationToken cancellationToken)
+    {
         int boardId;
         List<(int RelayId, int Channel)> members;
         await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
