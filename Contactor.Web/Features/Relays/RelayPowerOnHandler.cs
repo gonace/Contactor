@@ -77,7 +77,7 @@ public sealed partial class RelayPowerOnHandler : IDisposable
 
     /// <summary>
     /// Completes once the events of the writes the board's state has confirmed so far are saved (or failed to be): they
-    /// are saved in the background, when the board's state shows them. For the tests, and for a clean shutdown.
+    /// are saved in the background, when the board's state shows them. For the tests.
     /// </summary>
     public Task WhenLoggedAsync()
     {
@@ -393,7 +393,8 @@ public sealed partial class RelayPowerOnHandler : IDisposable
 
         foreach (var write in confirmed)
         {
-            // Kept until saved, for WhenLoggedAsync. LogAsync never throws.
+            // Kept until saved, for WhenLoggedAsync. LogAsync catches a failed save; only a RelayChanges subscriber that
+            // throws could fault it, and the task leaves the set either way.
             var logging = LogAsync(write);
             lock (_lock)
             {
