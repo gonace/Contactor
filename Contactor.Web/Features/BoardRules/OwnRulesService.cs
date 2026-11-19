@@ -358,8 +358,12 @@ public sealed partial class OwnRulesService : BackgroundService
                     {
                         if (await MarkKeptAsync(db, boardId, channel, kind, now, userEmail, cancellationToken) == 0)
                         {
-                            // Rolled back with the transaction: nothing is saved or logged.
-                            return await NotMarkedAsync(db, boardId, channel, kind, cancellationToken);
+                            // Rolled back with the transaction: nothing is saved or logged, also the batch's earlier
+                            // keeps. So "someone kept it meanwhile" is gone here, not done, which would tell the
+                            // person the rest were kept. (Every writer of KeptUtc holds this lock today, so it can't
+                            // happen yet.)
+                            var outcome = await NotMarkedAsync(db, boardId, channel, kind, cancellationToken);
+                            return outcome == KeepOutcome.Done ? KeepOutcome.Gone : outcome;
                         }
                     }
                 }
