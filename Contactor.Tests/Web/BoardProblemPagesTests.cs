@@ -425,10 +425,10 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
-    // Issue #522: a refused password isn't tried again by itself, so "Check again" in the guide sends it once more, and
-    // only once.
+    // Issue #522: a refused password isn't tried again by itself, so "Check again" in the guide sends it again. That the
+    // poller then sends nothing more is proven by the poller's and the clients' tests, on a fake clock.
     [Fact]
-    public async Task Should_SendTheRefusedPasswordOnce_WhenAPersonChecksAgain()
+    public async Task Should_SendTheRefusedPasswordAgain_WhenAPersonChecksAgain()
     {
         await using var simulator = new ShellySimulator(ShellyModels.OneRelay, "apple", NullLogger.Instance);
         simulator.Start();
@@ -450,9 +450,9 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
-    // On Settings, Save with the same password is the person's "Check again": one attempt.
+    // On Settings, Save with the same password is the person's "Check again": it sends the password again.
     [Fact]
-    public async Task Should_SendTheRefusedPasswordOnce_WhenTheSameIsSavedOnSettings()
+    public async Task Should_SendTheRefusedPasswordAgain_WhenTheSameIsSavedOnSettings()
     {
         await using var simulator = new ShellySimulator(ShellyModels.OneRelay, "apple", NullLogger.Instance);
         simulator.Start();

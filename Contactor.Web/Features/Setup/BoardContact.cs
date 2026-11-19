@@ -53,6 +53,18 @@ public sealed class BoardContact : IDisposable
     }
 
     /// <summary>
+    /// Whether a person's "Check again" (or Save with nothing changed) should ask the board's connection to try once more
+    /// (<see cref="IBoardConnection.TryAgain"/>): only while it waits after the board refused the login or asked it to
+    /// wait (Issue #522). Not while it connects anyway, e.g. during a connect that is under way or its usual short wait,
+    /// so one press never sends the password twice.
+    /// </summary>
+    public static bool ShouldTryAgain(BoardState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return !state.IsConnected && state.Problem?.Kind is ConnectionProblemKind.LoginRefused or ConnectionProblemKind.AskedToWait;
+    }
+
+    /// <summary>
     /// "Check again": asks the board for its status and returns true once it answers, false if it doesn't within
     /// <paramref name="timeout"/> or the app has no contact with it. An answer is a status after the request, or a
     /// later <see cref="BoardState.LastContactUtc"/> (a polled board reports only changes).

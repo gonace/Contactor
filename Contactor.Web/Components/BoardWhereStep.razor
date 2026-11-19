@@ -263,9 +263,9 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
                 return false;
             }
 
-            // Nothing changed and no connection: one attempt now, since a refused login isn't tried again by itself
-            // (Issue #522) and a problem from before would otherwise be the answer at once.
-            if (!Values.Moving && !Board.State.IsConnected)
+            // Nothing changed and the board's connection waits after a refusal: one attempt now, since a refused login
+            // isn't tried again by itself (Issue #522) and the problem from before would otherwise be the answer at once.
+            if (!Values.Moving && BoardContact.ShouldTryAgain(Board.State))
             {
                 Board.TryAgain();
             }
