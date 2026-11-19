@@ -192,8 +192,8 @@ input[type="password"] {
     display: grid;
     place-items: center;
     border-radius: 12px;
-    background: var(--accent-tint);
-    color: var(--accent);
+    background: var(--chip);
+    color: var(--muted);
 }
 
 .access-method-icon {
