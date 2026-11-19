@@ -33,7 +33,8 @@ public static class Program
 
         // The simulator's page is its http endpoint, linked from the dashboard; the board itself is its own port. The app
         // runs in a container and reaches the simulator on this computer at host.docker.internal, so the page says so.
-        var simulator = builder.AddProject<Projects.Contactor_Simulator>("simulator")
+        var simulator = builder.AddDotnetProject("simulator",
+                Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "Contactor.Simulator", "Contactor.Simulator.csproj")))
             .WithEnvironment("Simulator__AppAddress", ContainerHost)
             .WithEnvironment("Simulator__Boards__0__Type", "vm201")
             .WithEndpoint(port: Vm201Port, scheme: "tcp", name: "vm201", env: "Simulator__Boards__0__Port", isProxied: false)
@@ -66,7 +67,7 @@ public static class Program
         // given in development, with full paths.
         var root = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, ".."));
         string Output(string project) => Path.Combine(root, project, "bin", Configuration, "net10.0", project + ".dll");
-        builder.AddProject<Projects.Contactor_Demo>("contactor-demo")
+        builder.AddDotnetProject("contactor-demo", Path.Combine(root, "Contactor.Demo", "Contactor.Demo.csproj"))
             .WithEnvironment("Demo__AppPath", Output("Contactor.Web"))
             .WithEnvironment("Demo__SimulatorPath", Output("Contactor.Simulator"))
             .WithEnvironment("Demo__CopyEnvironment", "Development")
