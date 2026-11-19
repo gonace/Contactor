@@ -14,7 +14,7 @@ namespace Contactor.Boards.Velleman;
 /// ends its pulse, and a new pulse of it starts again. Used by the tests and, in
 /// development, by Contactor.Simulator (started by the Aspire AppHost). It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardNoAnswer, ISimulatedBoardPulses
+public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardNoAnswer, ISimulatedBoardPulses, ISimulatedBoardPower
 {
     private const int NameLength = Vm201Command.NameDataLength - 1;
     private const int InputChannel = 9;
@@ -35,6 +35,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private byte _outputs;
+    private int _poweredOff;
     private byte _timerMask;
     private bool _input;
     private int _connectionCount;
@@ -200,6 +201,39 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     }
 
     /// <summary>Closes every open connection, as if the network dropped.</summary>
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off (not yet checked on a real VM201). Its timers stay.";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public async Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return;
+        }
+
+        DropConnections();
+        await ChangeAsync(() =>
+        {
+            Pulses.Cancel(ulong.MaxValue);
+            _outputs = (byte)0;
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public async Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return;
+        }
+
+        await ChangeAsync(() => _outputs = (byte)0).ConfigureAwait(false);
+        Volatile.Write(ref _poweredOff, 0);
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -257,7 +291,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         RaiseChanged();
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }

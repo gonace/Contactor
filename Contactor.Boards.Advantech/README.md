@@ -246,6 +246,7 @@ offers port 8502, because port 502 needs rights that a developer doesn't have.
 - It takes any number of connections at a time: the manual names no limit.
 - Relays can be switched and inputs set "at the module", and connections can be dropped or refused.
 - For the tests, `NoAnswer` stops all answers and `FailRelays` refuses functions 05 and 0F for some relays with code 4.
+- A power cut (`ISimulatedBoardPower`): the manual doesn't say how the relays come back after a power cut (see "To check on a real board"), so the simulator brings them all back off.
 
 ## Settings on the board that switch relays without the app
 

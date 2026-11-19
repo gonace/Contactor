@@ -221,6 +221,13 @@ button.danger {
     color: var(--danger-ink);
 }
 
+button.danger:disabled,
+.relay:disabled {
+    border-color: var(--line);
+    background: var(--card);
+    color: var(--muted);
+}
+
 .error {
     margin: 0;
     font-size: 13px;
@@ -428,6 +435,34 @@ h4 {
 .schedule-list {
     display: flex;
     flex-direction: column;
+}
+
+/* One of a few choices, e.g. a power cut's length. */
+.segments {
+    display: inline-flex;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.segments button {
+    border: 0;
+    border-right: 1px solid var(--line-strong);
+    border-radius: 0;
+}
+
+.segments button:last-child {
+    border-right: 0;
+}
+
+.segments button.on {
+    background: var(--ink);
+    color: var(--on-ink);
+    font-weight: 600;
+}
+
+.button-row {
+    align-items: center;
 }
 
 .client {

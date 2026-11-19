@@ -19,7 +19,7 @@ namespace Contactor.Boards.Devantech;
 /// relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may connect at
 /// once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses
+public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -45,6 +45,8 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
+    private int _poweredOff;
+    private ulong _beforeCut;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -226,6 +228,45 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         return Task.CompletedTask;
     }
 
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => LatchedOutputs ? "Latched Outputs is on: the relays come back as they were." : "Latched Outputs is off: every relay comes back off.";
+
+    /// <summary>"Latched Outputs": the board sets the relays again after a power cut as they were; off, they come back off, as the recorded ETH008-B did. Off by default.</summary>
+    public bool LatchedOutputs { get; set; }
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            Pulses.Cancel(ulong.MaxValue);
+            _beforeCut = _relays;
+            _relays = 0UL;
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(() => _relays = LatchedOutputs ? _beforeCut : 0UL);
+        Volatile.Write(ref _poweredOff, 0);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -275,7 +316,7 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
     private async Task HandleConnectionAsync(TcpClient tcp, CancellationToken cancellationToken)
     {
-        if (RejectConnections)
+        if (RejectConnections || IsPoweredOff)
         {
             tcp.Dispose();
             return;

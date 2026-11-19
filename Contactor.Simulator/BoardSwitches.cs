@@ -68,6 +68,42 @@ public sealed class BoardSwitches
     /// <summary>Whether writes of the relay modes are refused; null for a board without relay modes.</summary>
     public bool? RefuseModeWrites => HasModes(out var waveshare) ? waveshare.RefuseModeWrites : null;
 
+    /// <summary>
+    /// The name of the board's setting that keeps the relays as they were after a power cut, e.g. "Save Outputs"; null
+    /// for a board without one.
+    /// </summary>
+    public string? KeepRelaysName => _board switch
+    {
+        SmartDenSimulator or DaenetIp2Simulator => "Save Outputs",
+        DevantechSimulator => "Latched Outputs",
+        _ => null,
+    };
+
+    /// <summary>Whether that setting is on; null for a board without one.</summary>
+    public bool? KeepRelays => _board switch
+    {
+        SmartDenSimulator smartDen => smartDen.SaveOutputs,
+        DaenetIp2Simulator daenet => daenet.SaveOutputs,
+        DevantechSimulator devantech => devantech.LatchedOutputs,
+        _ => null,
+    };
+
+    /// <summary>Turns the board's setting that keeps the relays after a power cut on or off, as on its own web page.</summary>
+    public void SetKeepRelays(bool keep)
+    {
+        var changed = _board switch
+        {
+            SmartDenSimulator smartDen => Change(() => smartDen.SaveOutputs, v => smartDen.SaveOutputs = v, keep),
+            DaenetIp2Simulator daenet => Change(() => daenet.SaveOutputs, v => daenet.SaveOutputs = v, keep),
+            DevantechSimulator devantech => Change(() => devantech.LatchedOutputs, v => devantech.LatchedOutputs = v, keep),
+            _ => false,
+        };
+        if (changed)
+        {
+            _log($"{KeepRelaysName} turned {(keep ? "on" : "off")} here");
+        }
+    }
+
     public void SetRejectConnections(bool reject)
     {
         if (_board is not ISimulatedBoardRejectConnections board || !Change(() => board.RejectConnections, v => board.RejectConnections = v, reject))

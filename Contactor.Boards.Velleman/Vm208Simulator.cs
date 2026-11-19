@@ -19,7 +19,7 @@ namespace Contactor.Boards.Velleman;
 /// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. Used by the
 /// tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers
+public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardPower
 {
     // The firmware's schedule table: the card's 4 relays and the extension modules' channels (config_vm208.cpp).
     private const int ScheduleTableSize = 268;
@@ -44,6 +44,7 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private Task? _acceptLoop;
     private readonly IReadOnlyList<Vm208Alarm>[] _alarms = [.. Enumerable.Range(0, Vm208Api.RelayCount).Select(_ => FactorySchedule)];
     private byte _relays;
+    private int _poweredOff;
     private bool _input;
     private Vm208Status? _lastStatusSent;
     private int _requestCount;
@@ -245,6 +246,40 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         return Task.CompletedTask;
     }
 
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off (not yet checked on a real VM208). Its saved schedules stay.";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _relays = (byte)0;
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(() => _relays = (byte)0);
+        Volatile.Write(ref _poweredOff, 0);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -296,7 +331,7 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         _connections.TryAdd(tcp, 0);
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }

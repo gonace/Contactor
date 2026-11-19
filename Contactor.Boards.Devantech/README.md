@@ -282,6 +282,7 @@ When `Host` is empty, the setup guide asks for the address.
   dropped or refused.
 - For the tests, `NoAnswer` stops all answers, `FailRelays` refuses some relays, and `ModuleId` makes it answer as
   another model.
+- A power cut (`ISimulatedBoardPower`): with "Latched Outputs" on (`LatchedOutputs`) the relays come back as they were, off they all come back off, as the recorded ETH008-B did. The simulator has it off at start; the manual gives no factory value.
 
 ## To check on a real board
 

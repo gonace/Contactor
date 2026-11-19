@@ -20,7 +20,7 @@ namespace Contactor.Boards.Denkovi;
 /// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only. Its traces show
 /// the PDU only, never a community.
 /// </summary>
-public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays
+public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -39,6 +39,8 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     private Task? _loop;
     private int _p3;
     private int _p5;
+    private int _poweredOff;
+    private ulong _beforeCut;
     private readonly Dictionary<DaenetIp2Port, int> _lastPortSent = [];
 
     // What each analog input of P6 reads, input 1 first. The last values sent only mark the answers that change nothing
@@ -267,6 +269,58 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     }
 
     /// <summary>UDP has no connection to drop: it forgets where the app was heard from.</summary>
+    /// <summary>Whether the power is cut: no request gets an answer, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    /// <summary>
+    /// "Save Outputs" (section 6.3, <c>cfgNewMode</c> bit 0): the board sets the pins again after a restart as they were;
+    /// off, they come back off. Off by default here, as the manual gives no factory value.
+    /// </summary>
+    public bool SaveOutputs { get; set; }
+
+    public string AfterPowerCut => SaveOutputs
+        ? "Save Outputs is on: the relays come back as they were."
+        : "Save Outputs is off: every relay comes back off.";
+
+    /// <summary>Cuts the power: requests go unanswered and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _beforeCut = RelaysUnlocked;
+            SetRelaysUnlocked(0);
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(() => SetRelaysUnlocked(SaveOutputs ? _beforeCut : 0));
+        Volatile.Write(ref _poweredOff, 0);
+        return Task.CompletedTask;
+    }
+
+    // Under _lock: every relay's pin as in relays (bit 0 = relay 1).
+    private void SetRelaysUnlocked(ulong relays)
+    {
+        for (var relay = 1; relay <= Model.Capabilities.RelayCount; relay++)
+        {
+            SetPin(_layout.PinOf(relay), (relays & (1UL << (relay - 1))) != 0);
+        }
+    }
+
     public void DropConnections()
     {
         bool had;
@@ -383,6 +437,11 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         if (community is null)
         {
             return Unanswered("No answer: the community is wrong for it");
+        }
+
+        if (IsPoweredOff)
+        {
+            return Unanswered("No answer: the power is cut");
         }
 
         if (NoAnswer)

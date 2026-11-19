@@ -17,7 +17,7 @@ namespace Contactor.Boards.Waveshare;
 /// board. Several clients may connect at once. Used by the tests and, in development, by Contactor.Simulator. It
 /// listens on the loopback interface only.
 /// </summary>
-public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardRelayModes, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses
+public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardRelayModes, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -32,6 +32,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
+    private int _poweredOff;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -253,6 +254,41 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         return Task.CompletedTask;
     }
 
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off, and the relay modes stay (neither yet checked on a real board).";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            Pulses.Cancel(ulong.MaxValue);
+            _relays = 0UL;
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(() => _relays = 0UL);
+        Volatile.Write(ref _poweredOff, 0);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -302,7 +338,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
     private async Task HandleConnectionAsync(TcpClient tcp, CancellationToken cancellationToken)
     {
-        if (RejectConnections)
+        if (RejectConnections || IsPoweredOff)
         {
             tcp.Dispose();
             return;

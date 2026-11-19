@@ -103,6 +103,7 @@ relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
 ### The simulator
 
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change, a pulse that ends by itself on its `TimeProvider` and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
+- A power cut (`ISimulatedBoardPower`): Velleman's description doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off. Its timer programs stay.
 
 ### Settings on the board that switch relays without the app
 
@@ -152,6 +153,7 @@ It is controlled only through its web server: plain HTTP, port 80 unless changed
 ### The simulator
 
 - `Vm204Simulator`: a small HTTP server on `TcpListener` with the same routes and 400s as the firmware, an optional login, relays and inputs set at the board, the analog value (0–1023, `SetAnalogAsync`, a slider on the simulator's page), a new key, and refused or dropped connections; a connection that sends no whole request head within 5 s is closed. The simulator's page offers port 8204 for a new one (`SimulatorModel.SuggestedPort`), as 80 needs rights a developer doesn't have.
+- A power cut (`ISimulatedBoardPower`): the firmware doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off.
 
 ## VM208
 
@@ -187,6 +189,7 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
 
 - `Vm208Simulator`: a small HTTP server on `TcpListener` with the same routes, relays and the input set at the board, refused or dropped connections, and no answer where the firmware gives none or would crash. The simulator's page offers port 8208.
 - It holds each relay's schedule, the factory one to begin with (`FactorySchedule`, as `data/alarms/0.json`: every alarm off), answers `GET /getalarms` and `POST /shedule_set` as the firmware does (400 for other than 29 parameters), and gives no answer for no channel, channel 0 or a channel above 268 (the firmware crashes) or 5–268 (an extension module's, not simulated). A time out of range, such as 99:00 or -1:30, is kept as the firmware keeps it, in its `uint8_t` fields (99:00, 255:30), and answered so by `GET /getalarms` (`ChannelShedule::setShedule`; the board never runs such an alarm); the app reads such a schedule as unreadable, so the rules are unknown, never none. A request the simulator fails on goes unanswered, never faults its connection. It keeps the schedules but doesn't run them. Tests set them with `SetAlarmsAsync`; as an `ISimulatedBoardTimers`, the simulator's page turns every alarm of a relay on or off at its time.
+- A power cut (`ISimulatedBoardPower`): the firmware doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off. The saved schedules stay, as `writeAlarm` saves them.
 
 ### Settings on the board that switch relays without the app
 
@@ -219,6 +222,7 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
 
 - That `relay/on` and `relay/off` answer properly (their handler in `httpServerUriNotFoundCallback` has a missing return).
 - Whether an input reads `true` closed or open.
+- Whether the relays survive a power cut, and if so in which state (the simulator brings them back off).
 - That the status right after a command already shows it.
 - Logins with symbols and the 48-character total (the firmware's `authUser` also reads past the end of the query).
 - The key's length and characters (its buffer is 32 bytes and the terminator `gen_random` writes overruns it).
@@ -230,6 +234,7 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
 
 - That the answer to `/relay` already shows the change (if the firmware can't take its lock within 100 ms the relay isn't switched).
 - Whether the input reads `true` closed or open (it is the raw pin level).
+- Whether the relays survive a power cut, and if so in which state (the simulator brings them back off).
 - That switching a relay stops its pulse or timer.
 - That the board's own schedules and buttons show on the next poll.
 - `GET /getalarms?channel=1` to `4`: that the answer has the shape above, with the times the board's own page shows.

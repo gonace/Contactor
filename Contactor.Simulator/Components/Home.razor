@@ -168,15 +168,15 @@
                     @* The relays and inputs on top; below them the rest in sections that fold, each open or closed as the person left it. *@
                     <div class="split">
                         <div class="relays-box">
-                            <span class="hint">Relays: click one to switch it, like the board's own buttons</span>
-                            @{ var pulses = current.Switches.Pulsing; }
+                            <span class="hint">@(current.Power?.IsPoweredOff == true ? "Relays: the power is cut, every relay is off" : "Relays: click one to switch it, like the board's own buttons")</span>
+                            @{ var pulses = current.Switches.Pulsing; var poweredOff = current.Power?.IsPoweredOff == true; }
                             <div class="relays" style="--columns: @Math.Min(capabilities.RelayCount, 8).ToString(CultureInfo.InvariantCulture); --narrow-columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
                                 @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                 {
                                     var number = relay;
                                     var on = state.Relays.Contains(number);
                                     var pulsing = on && pulses.Contains(number);
-                                    <button type="button" class="relay @(on ? "on" : null)" aria-pressed="@(on ? "true" : "false")"
+                                    <button type="button" class="relay @(on ? "on" : null)" aria-pressed="@(on ? "true" : "false")" disabled="@poweredOff"
                                             @onclick="() => current.SwitchRelayAsync(number, !on)">
                                         <span class="mono">RELAY @number</span>
                                         <span class="state">@(on ? "ON" : "OFF")</span>
@@ -208,33 +208,60 @@
                     </div>
 
                     <div class="sections">
-                        @if (current.Shelly is { } atBoard)
+                        @if (current.Power is { } power)
                         {
                             <details class="section" open>
-                                <summary><h3 class="name">At the board</h3><span class="sum">after a power cut</span></summary>
+                                <summary><h3 class="name">At the board</h3><span class="sum">@(power.IsPoweredOff ? "power cut" : "power on")</span></summary>
                                 <div class="in">
-                                    <h4 class="label" id="power-on-head">AFTER A POWER CUT (INITIAL_STATE)</h4>
-                                    <div class="mode-relays" role="group" aria-labelledby="power-on-head">
-                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
-                                        {
-                                            var number = relay;
-                                            var initial = atBoard.InitialState(number);
-                                            <label class="mode" @key="number">
-                                                <span>Relay @number</span>
-                                                <select @onchange="e => atBoard.SetInitialState(number, e.Value as string)">
-                                                    @if (!ShellyControls.InitialStates.Contains(initial))
-                                                    {
-                                                        @* A value set by a test, which the docs don't list: shown, not offered. *@
-                                                        <option value="" selected disabled>@initial</option>
-                                                    }
-                                                    @foreach (var value in ShellyControls.InitialStates)
-                                                    {
-                                                        <option value="@value" selected="@(initial == value)">@value</option>
-                                                    }
-                                                </select>
-                                            </label>
-                                        }
+                                    <div class="button-row">
+                                        <button type="button" class="danger" disabled="@power.IsPoweredOff" @onclick="() => CutPower(current)">Power cut</button>
+                                        <span class="hint" id="cut-length">for</span>
+                                        <div class="segments" role="group" aria-labelledby="cut-length">
+                                            @foreach (var seconds in CutLengths)
+                                            {
+                                                var length = seconds;
+                                                <button type="button" class="@(_cutSeconds == length ? "on" : null)" aria-pressed="@(_cutSeconds == length ? "true" : "false")"
+                                                        @onclick="() => _cutSeconds = length">@CutText(length)</button>
+                                            }
+                                        </div>
                                     </div>
+                                    <div class="button-row">
+                                        <button type="button" disabled="@power.IsPoweredOff" @onclick="() => Restart(current)">Restart</button>
+                                        <span class="hint">As a power cut of 1 s.</span>
+                                    </div>
+                                    <span class="hint">Drops the app and gives it no answer while off; every relay is off and pulses end. @power.AfterPowerCut</span>
+                                    @if (current.Switches.KeepRelaysName is { } keepName && current.Switches.KeepRelays is { } keep)
+                                    {
+                                        <label class="check">
+                                            <input type="checkbox" checked="@keep" @onchange="e => current.Switches.SetKeepRelays(e.Value is true)" />
+                                            @keepName (relays as they were after a power cut)
+                                        </label>
+                                    }
+                                    @if (current.Shelly is { } atBoard)
+                                    {
+                                        <h4 class="label" id="power-on-head">AFTER A POWER CUT (INITIAL_STATE)</h4>
+                                        <div class="mode-relays" role="group" aria-labelledby="power-on-head">
+                                            @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                            {
+                                                var number = relay;
+                                                var initial = atBoard.InitialState(number);
+                                                <label class="mode" @key="number">
+                                                    <span>Relay @number</span>
+                                                    <select @onchange="e => atBoard.SetInitialState(number, e.Value as string)">
+                                                        @if (!ShellyControls.InitialStates.Contains(initial))
+                                                        {
+                                                            @* A value set by a test, which the docs don't list: shown, not offered. *@
+                                                            <option value="" selected disabled>@initial</option>
+                                                        }
+                                                        @foreach (var value in ShellyControls.InitialStates)
+                                                        {
+                                                            <option value="@value" selected="@(initial == value)">@value</option>
+                                                        }
+                                                    </select>
+                                                </label>
+                                            }
+                                        </div>
+                                    }
                                 </div>
                             </details>
                         }
@@ -635,6 +662,7 @@
     private AddBoardForm _add = null!;
     private string _address = SimulatorOptions.DefaultAppAddress;
     private bool _trafficOpen;
+    private int _cutSeconds = 30;
     private readonly ShellyForm _shellyForm = new();
 
     private RunningBoard? Selected => _boards.FirstOrDefault(b => b.Id == _selectedId) ?? _boards.FirstOrDefault();
@@ -777,6 +805,25 @@
         }
 
         return board.Board is ISimulatedBoardTimers timers ? $"timers: {TimersText(timers.Timers, capabilities)}" : null;
+    }
+
+    // The lengths a power cut can have, in seconds.
+    private static readonly int[] CutLengths = [5, 30, 120];
+
+    private static string CutText(int seconds)
+    {
+        return seconds % 60 == 0 ? $"{(seconds / 60).ToString(CultureInfo.InvariantCulture)} min" : $"{seconds.ToString(CultureInfo.InvariantCulture)} s";
+    }
+
+    // Started, not awaited: the power comes back on the simulator's clock, whether or not the page is still open.
+    private void CutPower(RunningBoard board)
+    {
+        _ = board.PowerCutAsync(TimeSpan.FromSeconds(_cutSeconds));
+    }
+
+    private static void Restart(RunningBoard board)
+    {
+        _ = board.RestartAsync();
     }
 
     // What "Connection" holds for this board, in a few words.

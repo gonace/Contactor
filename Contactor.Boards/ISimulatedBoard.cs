@@ -129,3 +129,26 @@ public interface ISimulatedBoardPulses
     /// <summary>The relays whose pulse is still running.</summary>
     ChannelMask Pulsing { get; }
 }
+
+/// <summary>
+/// A simulated board whose power can be cut, as a power cut or a restart would: while it is off, nothing answers the app
+/// and every relay is off; when the power comes back, each relay is as the board sets it after a power cut, as its
+/// manual says (or, where the manual doesn't say, as its README states the simulator assumes).
+/// </summary>
+public interface ISimulatedBoardPower
+{
+    /// <summary>Whether the power is cut.</summary>
+    bool IsPoweredOff { get; }
+
+    /// <summary>What the board does when the power comes back, in words for the page, e.g. "Every relay comes back off.".</summary>
+    string AfterPowerCut { get; }
+
+    /// <summary>
+    /// Cuts the power: open connections drop, new ones get nothing, running pulses end and every relay goes off. Nothing
+    /// while it is cut already.
+    /// </summary>
+    Task CutPowerAsync();
+
+    /// <summary>Gives the power back: each relay as the board sets it after a power cut, and it answers again. Nothing while it is on.</summary>
+    Task RestorePowerAsync();
+}

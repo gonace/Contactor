@@ -15,7 +15,7 @@ namespace Contactor.Boards.Velleman;
 /// per connection. It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections
+public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower
 {
     /// <summary>How long a client may take to send its whole request head before the connection is closed.</summary>
     public static readonly TimeSpan RequestHeadTimeout = TimeSpan.FromSeconds(5);
@@ -43,6 +43,7 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private byte _relays;
+    private int _poweredOff;
     private byte _inputs;
     private int _analog;
     private string _key = NewKey();
@@ -189,6 +190,40 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         }
     }
 
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off (not yet checked on a real VM204).";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _relays = (byte)0;
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(() => _relays = (byte)0);
+        Volatile.Write(ref _poweredOff, 0);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -240,7 +275,7 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         _connections.TryAdd(tcp, 0);
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }

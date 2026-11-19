@@ -36,6 +36,7 @@ public sealed class RunningBoard : IAsyncDisposable
     private readonly TimeProvider _time;
     private readonly Lock _lock = new();
     private readonly Queue<TrafficItem> _items = new(Capacity);
+    private readonly CancellationTokenSource _stopping = new();
     private long _nextId = 1;
     private int _hiddenRoutine;
 
@@ -105,6 +106,12 @@ public sealed class RunningBoard : IAsyncDisposable
     /// <summary>Switches a relay as the board's own button would.</summary>
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
+        // Without power nothing switches, not even the board's own buttons.
+        if (Power?.IsPoweredOff == true)
+        {
+            return Task.CompletedTask;
+        }
+
         Add(TrafficKind.AtBoard, string.Create(CultureInfo.InvariantCulture, $"Relay {relay} switched {(turnOn ? "on" : "off")} here"));
         return Board.SwitchRelayAsync(relay, turnOn);
     }
@@ -172,6 +179,60 @@ public sealed class RunningBoard : IAsyncDisposable
         return modes.SetModeAsync(relay, mode);
     }
 
+    /// <summary>The board's power, which the page can cut; null for a board without (none today).</summary>
+    public ISimulatedBoardPower? Power => Board as ISimulatedBoardPower;
+
+    /// <summary>
+    /// Cuts the board's power for <paramref name="off"/> on the simulator's clock, as a power cut would: the app loses it,
+    /// then it comes back with its relays as after a power cut. Ends once the power is back. Nothing while it is cut
+    /// already, for a board without power, or for a length that isn't positive.
+    /// </summary>
+    public Task PowerCutAsync(TimeSpan off)
+    {
+        return CutAsync(off, string.Create(CultureInfo.InvariantCulture, $"Power cut for {Length(off)} here"));
+    }
+
+    /// <summary>Restarts the board: a power cut of <see cref="RestartLength"/>.</summary>
+    public Task RestartAsync()
+    {
+        return CutAsync(RestartLength, "Restarted here");
+    }
+
+    /// <summary>How long a restart is without power.</summary>
+    public static TimeSpan RestartLength { get; } = TimeSpan.FromSeconds(1);
+
+    private async Task CutAsync(TimeSpan off, string text)
+    {
+        if (Power is not { } power || power.IsPoweredOff || off <= TimeSpan.Zero || _stopping.IsCancellationRequested)
+        {
+            return;
+        }
+
+        Add(TrafficKind.AtBoard, text);
+        await power.CutPowerAsync().ConfigureAwait(false);
+        RaiseChanged();
+        try
+        {
+            await Task.Delay(off, _time, _stopping.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The board was removed or the simulator stops: it stays without power.
+            return;
+        }
+
+        await power.RestorePowerAsync().ConfigureAwait(false);
+        Add(TrafficKind.AtBoard, $"Power back here. {power.AfterPowerCut}");
+    }
+
+    // "5 s", "30 s" or "2 min".
+    private static string Length(TimeSpan length)
+    {
+        return length.TotalSeconds % 60 == 0 && length >= TimeSpan.FromMinutes(1)
+            ? string.Create(CultureInfo.InvariantCulture, $"{(int)length.TotalMinutes} min")
+            : string.Create(CultureInfo.InvariantCulture, $"{length.TotalSeconds:0.###} s");
+    }
+
     public void DropConnections()
     {
         Add(TrafficKind.AtBoard, "Connections dropped here");
@@ -180,9 +241,11 @@ public sealed class RunningBoard : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await _stopping.CancelAsync().ConfigureAwait(false);
         await Board.DisposeAsync().ConfigureAwait(false);
         Board.Traced -= OnTraced;
         Board.Changed -= OnChanged;
+        _stopping.Dispose();
     }
 
     private void OnTraced(object? sender, BoardTraceEntry entry)

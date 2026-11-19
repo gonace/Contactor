@@ -253,6 +253,29 @@ public sealed class DaenetIp2SimulatedBoardTests
         Assert.Equal(3, simulator.ReceivedRequests.Count);
     }
 
+    // Without power the board answers nothing; once it is back it answers again.
+    [Fact]
+    public async Task Should_AnswerNothing_WhileThePowerIsCut()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        using var app = Client();
+        await simulator.CutPowerAsync();
+
+        await SendAsync(app, simulator, DaenetIp2Snmp.GetPort(1, ReadOnly, DaenetIp2Port.P5).Message);
+
+        // Until the board has read it: only then may the power come back.
+        while (simulator.UnansweredCount == 0)
+        {
+            await Task.Delay(10, Cancel);
+        }
+
+        await simulator.RestorePowerAsync();
+        var answer = await AskAsync(app, simulator, Hex(DaenetIp2Snmp.GetPort(2, ReadOnly, DaenetIp2Port.P5).Message));
+
+        Assert.Equal(2, DaenetIp2Snmp.Decode(DaenetIp2SnmpTests.Bytes(answer)).RequestId);
+        Assert.Equal(1, simulator.UnansweredCount);
+    }
+
     // A press on the page loses one more request, on top of those still to lose.
     [Fact]
     public async Task Should_LoseOneMoreRequest_PerAddDrop()

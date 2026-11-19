@@ -186,6 +186,7 @@ rights that a developer doesn't have.
   The manual doesn't say which one the board does: see below.
 - Relays can be switched "at the board", and connections can be dropped or refused.
 - For the tests, `NoAnswer` stops all answers and `FailRelays` refuses functions 05, 06 and 0F for some relays with code 4.
+- A power cut (`ISimulatedBoardPower`): with "Save Outputs" on (`SaveOutputs`, section 8.2) the relays come back as they were, off they all come back off. The simulator has it off at start; the manual gives no factory value.
 
 ### Settings on the board that switch relays without the app
 
@@ -464,6 +465,7 @@ rights that a developer doesn't have.
   the sets of some relays, and `FailRelays` refuses the sets of some relays with error-status 5 (it failed).
 - Like the board, it takes a community of 4 to 12 characters only.
 - Its trace shows the PDU of each message, never the community.
+- A power cut (`ISimulatedBoardPower`): no request gets an answer while the power is cut. With "Save Outputs" on (`SaveOutputs`, section 6.3) the relays come back as they were, off they all come back off; "Reset I/O Ports on Restart" isn't simulated. The simulator has "Save Outputs" off at start; the manual gives no factory value.
 
 ### Settings on the board that switch relays without the app
 

@@ -23,7 +23,7 @@ namespace Contactor.Boards.Shelly;
 /// device the app must refuse. It never tells the app anything by itself. Used by the tests and, in development, by
 /// Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections
+public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower
 {
     /// <summary>How long a client may take to send its whole request before the connection is closed.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -71,6 +71,8 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     private long _scheduleRevision;
     private long _nextJobId = 1;
     private byte _relays;
+    private int _poweredOff;
+    private byte _beforeCut;
     private byte _lastStatusSent = byte.MaxValue;
     private long _configRevision = 10;
     private int _deniedCount;
@@ -248,6 +250,26 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
                 return _configRevision;
             }
         }
+    }
+
+    // Under _lock, as the power comes back: each relay as its initial_state says. "match_input" follows the switch's input,
+    // which the simulator doesn't have, so it comes back off.
+    private byte PowerOnRelays()
+    {
+        var relays = 0;
+        for (var relay = 1; relay <= _initialStates.Length; relay++)
+        {
+            var bit = 1 << (relay - 1);
+            var on = _initialStates[relay - 1] switch
+            {
+                "on" => true,
+                "restore_last" => (_beforeCut & bit) != 0,
+                _ => false,
+            };
+            relays |= on ? bit : 0;
+        }
+
+        return (byte)relays;
     }
 
     /// <summary>A relay's <c>initial_state</c>, as <c>Switch.GetConfig</c> gives it: "off" at start.</summary>
@@ -462,6 +484,42 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         }
     }
 
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Each relay comes back as its initial_state says. Forgets its nonces.";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _beforeCut = _relays;
+            _relays = (byte)0;
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        ForgetNonces();
+        Change(() => _relays = PowerOnRelays());
+        Volatile.Write(ref _poweredOff, 0);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -513,7 +571,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         _connections.TryAdd(tcp, 0);
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }
