@@ -742,6 +742,12 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         bool changed;
         lock (_lock)
         {
+            // Without power the board takes no change of any kind, its schedules included.
+            if (IsPoweredOff)
+            {
+                return;
+            }
+
             var before = _alarms.ToArray();
             change();
             changed = !before.Zip(_alarms).All(p => p.First.SequenceEqual(p.Second));

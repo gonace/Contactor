@@ -371,6 +371,11 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         long id;
         lock (_lock)
         {
+            if (IsPoweredOff)
+            {
+                throw new InvalidOperationException("The device has no power: it takes no change.");
+            }
+
             id = _nextJobId++;
             _jobs.Add(new SimulatedJob(id, timespec, calls) { Enable = enable });
             _scheduleRevision++;
@@ -385,6 +390,12 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     {
         lock (_lock)
         {
+            // Without power the device takes no change of any kind.
+            if (IsPoweredOff)
+            {
+                return;
+            }
+
             Job(id).Enable = enable;
             _scheduleRevision++;
         }
@@ -401,7 +412,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         lock (_lock)
         {
             var job = _jobs.Find(j => j.Id == id);
-            if (job is null || job.Enable == enable)
+            if (IsPoweredOff || job is null || job.Enable == enable)
             {
                 return false;
             }
@@ -1153,6 +1164,12 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
                 return Error(rpc, new ShellyRpcError(-105, string.Create(CultureInfo.InvariantCulture, $"Bad id={jobId}")));
             }
 
+            // A request read just before the power went changes nothing: without power the device takes no change.
+            if (IsPoweredOff)
+            {
+                return Error(rpc, Refusal);
+            }
+
             if (enable is { } value)
             {
                 job.Enable = value;
@@ -1176,6 +1193,12 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     {
         lock (_lock)
         {
+            // Without power the board takes no change of any kind (Issue #557).
+            if (IsPoweredOff)
+            {
+                return false;
+            }
+
             if (_autoOn[relay - 1] == autoOn)
             {
                 return false;
@@ -1208,6 +1231,12 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     {
         lock (_lock)
         {
+            // Without power the board takes no change of any kind (Issue #557).
+            if (IsPoweredOff)
+            {
+                return false;
+            }
+
             if (_initialStates[relay - 1] == initialState)
             {
                 return false;

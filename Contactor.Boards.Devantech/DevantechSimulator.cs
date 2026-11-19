@@ -47,6 +47,9 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
     private ulong _relays;
     private int _poweredOff;
     private ulong _beforeCut;
+
+    // The relays as their last permanent change left them, which Latched Outputs saves: not a pulse, nor its end.
+    private ulong _permanent;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -193,6 +196,7 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         {
             Pulses.Cancel(bit);
             _relays = turnOn ? _relays | bit : _relays & ~bit;
+            _permanent = turnOn ? _permanent | bit : _permanent & ~bit;
         });
         return Task.CompletedTask;
     }
@@ -251,8 +255,8 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         DropConnections();
         Change(() =>
         {
-            // Latched Outputs saves the permanent states only: a relay in a pulse is saved as it was before it.
-            _beforeCut = _relays ^ Pulses.Running;
+            // Latched Outputs saves the permanent changes only, not a pulse nor its end.
+            _beforeCut = _permanent;
             Pulses.Cancel(ulong.MaxValue);
             _relays = 0UL;
         }, power: true);
@@ -271,6 +275,7 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
             () =>
             {
                 _relays = LatchedOutputs ? _beforeCut : 0UL;
+                _permanent = _relays;
                 Volatile.Write(ref _poweredOff, 0);
             },
             power: true);
@@ -565,7 +570,11 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         {
             Pulses.Cancel(bit);
             _relays = on ? _relays | bit : _relays & ~bit;
-            if (pulse != DevantechApi.Permanent)
+            if (pulse == DevantechApi.Permanent)
+            {
+                _permanent = on ? _permanent | bit : _permanent & ~bit;
+            }
+            else
             {
                 Pulses.Start(bit, DevantechApi.PulseUnit * pulse, take => Change(() =>
                 {
@@ -591,6 +600,7 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         {
             Pulses.Cancel(Model.Capabilities.AllRelays.Bits);
             _relays = relays;
+            _permanent = relays;
         });
         return Answer([DevantechApi.Success], DevantechTraceText.Relays(relays, Model.Capabilities.RelayCount));
     }

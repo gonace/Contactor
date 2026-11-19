@@ -124,6 +124,39 @@ public sealed class SimulatedPowerTests
         Assert.Equal(1, ((ISimulatedBoardRelayModes)waveshare).Modes[3]);
     }
 
+    // Without power a board takes no change of any kind: not its timers, schedules, relay modes or settings either.
+    [Fact]
+    public async Task Should_TakeNoChangeOfTheBoardsOwnRules_WhileThePowerIsCut()
+    {
+        await using var vm201 = new Vm201Simulator();
+        await using var vm208 = new Vm208Simulator();
+        await using var waveshare = new WaveshareSimulator(WaveshareModels.Relay8B);
+        await using var shelly = new ShellySimulator(ShellyModels.TwoRelays);
+        var job = shelly.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        foreach (var power in new ISimulatedBoardPower[] { vm201, vm208, waveshare, shelly })
+        {
+            await power.CutPowerAsync();
+        }
+
+        await vm201.SetTimerAsync(1, true);
+        var alarms = Vm208Simulator.FactorySchedule.ToArray();
+        alarms[Vm208Alarm.IndexOf(1, turnsOn: true)] = alarms[Vm208Alarm.IndexOf(1, turnsOn: true)] with { Enabled = true };
+        await vm208.SetAlarmsAsync(1, alarms);
+        await ((ISimulatedBoardRelayModes)waveshare).SetModeAsync(1, 1);
+        shelly.SetAutoOn(1, true);
+        shelly.SetInitialState(1, "on");
+        shelly.SetScheduleEnabled(job, false);
+        Assert.False(shelly.TrySetScheduleEnabled(job, false));
+        Assert.Throws<InvalidOperationException>(() => shelly.AddSchedule("[]"));
+
+        Assert.True(vm201.Timers.IsEmpty);
+        Assert.Equal(Vm208Simulator.FactorySchedule, vm208.Alarms(1));
+        Assert.Equal(0, ((ISimulatedBoardRelayModes)waveshare).Modes[0]);
+        Assert.False(shelly.AutoOn(1));
+        Assert.Equal("off", shelly.InitialState(1));
+        Assert.True(Assert.Single(shelly.Schedules).Enable);
+    }
+
     [Fact]
     public async Task Should_BringTheRelaysBack_WithSaveOutputsOrLatchedOutputs()
     {

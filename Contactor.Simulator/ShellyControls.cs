@@ -159,6 +159,12 @@ public sealed class ShellyControls
 
     public void SetAutoOn(int relay, bool autoOn)
     {
+        // Without power the device takes no change.
+        if (_device.IsPoweredOff)
+        {
+            return;
+        }
+
         if (relay < 1 || relay > RelayCount)
         {
             return;
@@ -180,6 +186,12 @@ public sealed class ShellyControls
     /// <summary>Sets a relay's state after a power cut: one of <see cref="InitialStates"/>.</summary>
     public void SetInitialState(int relay, string? initialState)
     {
+        // Without power the device takes no change.
+        if (_device.IsPoweredOff)
+        {
+            return;
+        }
+
         if (relay < 1 || relay > RelayCount || initialState is null || !InitialStates.Contains(initialState))
         {
             return;
@@ -205,6 +217,11 @@ public sealed class ShellyControls
     /// </summary>
     public string? AddSchedule(int relay, bool turnOn, string? time)
     {
+        if (_device.IsPoweredOff)
+        {
+            return "The device has no power.";
+        }
+
         if (relay < 1 || relay > RelayCount)
         {
             return "Choose a relay.";

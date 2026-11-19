@@ -247,6 +247,12 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         ArgumentOutOfRangeException.ThrowIfGreaterThan(mode, WaveshareApi.ModeEdge);
         lock (_lock)
         {
+            // Without power the board takes no change of any kind, its relay modes included.
+            if (IsPoweredOff)
+            {
+                return Task.CompletedTask;
+            }
+
             _modes[relay - 1] = mode;
         }
 
@@ -649,7 +655,11 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
         lock (_lock)
         {
-            values.CopyTo(_modes, address - WaveshareApi.RelayModeRegister);
+            // A request read just before the power went changes nothing.
+            if (!IsPoweredOff)
+            {
+                values.CopyTo(_modes, address - WaveshareApi.RelayModeRegister);
+            }
         }
 
         RaiseChanged();
