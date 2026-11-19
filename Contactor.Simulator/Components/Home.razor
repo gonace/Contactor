@@ -25,10 +25,12 @@
                 @foreach (var board in _boards)
                 {
                     var state = board.Board.State;
-                    <button type="button" class="board @(board.Id == Selected?.Id ? "selected" : null)" aria-current="@(board.Id == Selected?.Id ? "true" : null)"
+                    @* While "Add a board" shows in its place, no board is the one shown. *@
+                    var shown = !_add.IsOpen && board.Id == Selected?.Id;
+                    <button type="button" class="board @(shown ? "selected" : null)" aria-current="@(shown ? "true" : null)"
                             @key="board.Id" @onclick="() => Select(board.Id)">
                         <span class="line">
-                            <span class="name">@Short(board) · @Address(board)</span>
+                            <span class="name">@board.ShortName · @Address(board)</span>
                             <span class="dot @(state.Clients.Count > 0 ? "on" : null)" aria-hidden="true"></span>
                         </span>
                         <span class="hint">@Status(board) · @(board.FromSettings ? "from the settings" : "added here")@LoginText(board)</span>
@@ -46,46 +48,107 @@
                 }
             </nav>
 
-            @* Below 1024 px "Add a board" folds away behind this button; wider, the form is always shown and this is not. *@
-            <button type="button" class="fold add-fold" aria-expanded="@(_addOpen ? "true" : "false")" aria-controls="add"
-                    @onclick="() => _addOpen = !_addOpen">+ Add a board</button>
-
-            <form id="add" class="add @(_addOpen ? "open" : null)" @onsubmit="Add">
-                <span class="label">ADD A BOARD</span>
-                <label for="model" class="visually-hidden">Model</label>
-                <select id="model" @bind="_newType" @bind:after="OnModelChanged">
-                    @foreach (var model in SimulatorCatalogue.All)
-                    {
-                        <option value="@model.Model.Id">@model.Model.Name</option>
-                    }
-                </select>
-                <div class="row">
-                    <div class="field port">
-                        <label for="port">Port</label>
-                        <input id="port" class="mono" inputmode="numeric" maxlength="5" autocomplete="off" @bind="_newPort" />
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="field">
-                        <label for="username">User name</label>
-                        <input id="username" class="mono" placeholder="optional" autocomplete="off" spellcheck="false" @bind="_newUsername" />
-                    </div>
-                    <div class="field">
-                        <label for="password">Password</label>
-                        <input id="password" class="mono" placeholder="optional" autocomplete="off" spellcheck="false" @bind="_newPassword" />
-                    </div>
-                </div>
-                <button type="submit" class="primary">Add board</button>
-                @if (_addError is not null)
-                {
-                    <p class="error" role="alert">@_addError</p>
-                }
-                <span class="hint">Boards added here last until the simulator stops.</span>
-            </form>
+            <button type="button" class="add-board @(_add.IsOpen ? "open" : null)" aria-expanded="@(_add.IsOpen ? "true" : "false")" aria-controls="add"
+                    @onclick="OpenAdd">+ Add a board</button>
         </aside>
 
         <main class="main">
-            @if (Selected is { } current)
+            @if (_add.IsOpen)
+            {
+                var chosen = _add.Model;
+                <form id="add" class="card add" @onsubmit="Add">
+                    <div class="head">
+                        <div class="title">
+                            <h2>Add a board</h2>
+                            <span class="hint">It runs until the simulator stops.</span>
+                        </div>
+                        <div class="actions">
+                            <button type="button" @onclick="_add.Cancel">Cancel</button>
+                        </div>
+                    </div>
+
+                    <div class="add-cols">
+                        <div class="step">
+                            <span class="label" id="manufacturer">1 · MANUFACTURER</span>
+                            <div class="makers" role="group" aria-labelledby="manufacturer">
+                                @foreach (var manufacturer in SimulatorCatalogue.Manufacturers)
+                                {
+                                    var name = manufacturer.Name;
+                                    var on = name == _add.Manufacturer.Name;
+                                    <button type="button" class="maker @(on ? "selected" : null)" aria-pressed="@(on ? "true" : "false")" @key="name"
+                                            @onclick="() => _add.ChooseManufacturer(name)">
+                                        <span>@name</span>
+                                        <span class="count">@ModelCount(manufacturer)</span>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <span class="label" id="model">2 · MODEL <b>· @_add.Manufacturer.Name</b></span>
+                            <div class="models" role="radiogroup" aria-labelledby="model">
+                                <div class="model header-row" aria-hidden="true">
+                                    <span></span><span>MODEL</span><span>RELAYS</span><span>INPUTS</span><span>ANALOG</span><span>HOW THE APP TALKS TO IT</span><span>PORT</span>
+                                </div>
+                                @foreach (var model in _add.Manufacturer.Models)
+                                {
+                                    var id = model.Model.Id;
+                                    var capabilities = model.Model.Capabilities;
+                                    var on = model == chosen;
+                                    <label class="model @(on ? "selected" : null)" @key="id">
+                                        <input type="radio" name="model" value="@id" checked="@on" @onchange="() => _add.ChooseModel(id)" />
+                                        <span class="name">@model.Model.ModelName</span>
+                                        <span data-label="relays">@capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)</span>
+                                        <span data-label="inputs">@Count(capabilities.InputCount)</span>
+                                        <span data-label="analog">@Count(capabilities.AnalogInputCount)</span>
+                                        <span>@model.Talks</span>
+                                        <span class="mono" data-label="port">@model.PortText</span>
+                                    </label>
+                                }
+                            </div>
+                            <span class="hint">@chosen.Rules</span>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <span class="label">3 · @(chosen.LoginFields switch { SimulatorLoginFields.None => "PORT", SimulatorLoginFields.Password => "PORT AND PASSWORD", _ => "PORT AND LOGIN" }) · @chosen.Model.Name.ToUpperInvariant()</span>
+                        <div class="where">
+                            <div class="field port">
+                                <label for="port">Port</label>
+                                <input id="port" class="mono" inputmode="numeric" maxlength="5" autocomplete="off" @bind="_add.Port" @bind:event="oninput" />
+                            </div>
+                            @if (chosen.LoginFields == SimulatorLoginFields.UsernameAndPassword)
+                            {
+                                <div class="field">
+                                    <label for="username">User name</label>
+                                    <input id="username" class="mono" placeholder="none" autocomplete="off" spellcheck="false" @bind="_add.Username" />
+                                </div>
+                            }
+                            @if (chosen.LoginFields != SimulatorLoginFields.None)
+                            {
+                                <div class="field">
+                                    <label for="password">Password</label>
+                                    <input id="password" class="mono" placeholder="none" autocomplete="off" spellcheck="false" @bind="_add.Password" />
+                                </div>
+                            }
+                        </div>
+                        <span class="hint">@chosen.LoginText</span>
+                    </div>
+
+                    <div class="foot">
+                        <button type="submit" class="primary">@_add.AddText</button>
+                        @if (_add.PortNote is { } note)
+                        {
+                            <span class="hint">@note</span>
+                        }
+                    </div>
+                    @if (_add.Error is not null)
+                    {
+                        <p class="error" role="alert">@_add.Error</p>
+                    }
+                </form>
+            }
+            else if (Selected is { } current)
             {
                 var state = current.Board.State;
                 var capabilities = current.Board.Model.Capabilities;
@@ -338,7 +401,7 @@
             else
             {
                 <section class="card none">
-                    <p class="hint">No board selected. Add one under "Add a board".</p>
+                    <p class="hint">No board selected. Add one with "+ Add a board".</p>
                 </section>
             }
         </main>
@@ -348,13 +411,8 @@
 @code {
     private IReadOnlyList<RunningBoard> _boards = [];
     private int? _selectedId;
-    private string _newType = SimulatorCatalogue.All[0].Model.Id;
-    private string _newPort = "";
-    private string _newUsername = "";
-    private string _newPassword = "";
-    private string? _addError;
+    private AddBoardForm _add = null!;
     private string _address = SimulatorOptions.DefaultAppAddress;
-    private bool _addOpen;
     private bool _trafficOpen;
     private readonly ShellyForm _shellyForm = new();
 
@@ -367,7 +425,7 @@
         _address = string.IsNullOrWhiteSpace(Options.Value.AppAddress) ? SimulatorOptions.DefaultAppAddress : Options.Value.AppAddress.Trim();
         _boards = Simulator.Boards;
         _shellyForm.Follow(Selected?.Id);
-        _newPort = NextFreePort();
+        _add = new AddBoardForm(Simulator);
         Simulator.Changed += OnChanged;
     }
 
@@ -376,29 +434,27 @@
         Simulator.Changed -= OnChanged;
     }
 
+    // A board chosen in the list shows in place of "Add a board", which closes.
     private void Select(int id)
     {
+        _add.Cancel();
         _selectedId = id;
         _shellyForm.Follow(Selected?.Id);
     }
 
+    private void OpenAdd()
+    {
+        _add.Open();
+    }
+
+    // Once it runs, the panel closes and the new board shows.
     private void Add()
     {
-        if (!int.TryParse(_newPort.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port))
-        {
-            _addError = "The port is a number from 1 to 65535.";
-            return;
-        }
-
-        _addError = Simulator.Add(_newType, port, _newUsername.Trim(), _newPassword);
-        if (_addError is null)
+        if (_add.Add() is { } port)
         {
             _boards = Simulator.Boards;
             _selectedId = _boards.FirstOrDefault(b => b.Board.Port == port)?.Id;
             _shellyForm.Follow(Selected?.Id);
-            _newPort = NextFreePort();
-            _newUsername = "";
-            _newPassword = "";
         }
     }
 
@@ -407,26 +463,18 @@
         await Simulator.RemoveAsync(board.Id);
         _boards = Simulator.Boards;
         _shellyForm.Follow(Selected?.Id);
-        _newPort = NextFreePort();
     }
 
-    // Another model offers its own port, and an error about the one before no longer applies.
-    private void OnModelChanged()
+    // "3 models", or "1 model".
+    private static string ModelCount(SimulatorManufacturer manufacturer)
     {
-        _newPort = NextFreePort();
-        _addError = null;
+        return manufacturer.Models.Count == 1 ? "1 model" : $"{manufacturer.Models.Count.ToString(CultureInfo.InvariantCulture)} models";
     }
 
-    // The model's suggested port, or the first free one after it; empty when none is free.
-    private string NextFreePort()
+    // A count in the model table: "–" for none.
+    private static string Count(int count)
     {
-        var taken = _boards.Select(b => b.Board.Port).ToHashSet();
-        return SimulatorCatalogue.FreePort(_newType, taken)?.ToString(CultureInfo.InvariantCulture) ?? "";
-    }
-
-    private static string Short(RunningBoard board)
-    {
-        return board.Board.Model.Id.ToUpperInvariant();
+        return count == 0 ? "–" : count.ToString(CultureInfo.InvariantCulture);
     }
 
     // Where the app reaches the board, e.g. "host.docker.internal:9760"; an IPv6 address in brackets, "[::1]:9760".
@@ -541,14 +589,9 @@
         {
             await InvokeAsync(() =>
             {
-                // A port the page offered, not one typed in, is offered afresh: a board added another way may use it now.
-                var offered = _newPort == NextFreePort();
                 _boards = Simulator.Boards;
                 _shellyForm.Follow(Selected?.Id);
-                if (offered)
-                {
-                    _newPort = NextFreePort();
-                }
+                _add.Refresh();
 
                 StateHasChanged();
             });

@@ -60,6 +60,9 @@ public sealed class RunningBoard : IAsyncDisposable
 
     public ISimulatedBoard Board { get; }
 
+    /// <summary>Its short name on the page, its model's id in capitals, e.g. "VM201" or "SHELLY-2".</summary>
+    public string ShortName => Board.Model.Id.ToUpperInvariant();
+
     /// <summary>The user name it asks for, or null without a login. The password is never shown.</summary>
     public string? Username { get; }
 
