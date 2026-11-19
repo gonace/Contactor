@@ -380,12 +380,14 @@ h2 {
 }
 
 .section > summary::after {
+    content: "+";
     content: "+" / "";
     font-family: var(--font-mono);
     color: var(--muted);
 }
 
 .section[open] > summary::after {
+    content: "−";
     content: "−" / "";
 }
 
@@ -840,6 +842,11 @@ h3 {
         gap: 16px;
     }
 
+    /* In a column, a flex-basis is a height: the relays take only what they need. */
+    .relays-box {
+        flex-basis: auto;
+    }
+
     .sections {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -848,8 +855,22 @@ h3 {
         grid-template-columns: repeat(2, auto);
     }
 
+    /* The name and the reading above the slider, so the reading never runs past the section. */
+    .analog {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
     .analog > span:first-child {
         white-space: nowrap;
+    }
+
+    .analog input[type="range"] {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .analog .mono {
+        min-width: 0;
     }
 
     .relays {
