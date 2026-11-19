@@ -17,7 +17,7 @@ namespace Contactor.Boards.Waveshare;
 /// board. Several clients may connect at once. Used by the tests and, in development, by Contactor.Simulator. It
 /// listens on the loopback interface only.
 /// </summary>
-public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayModes
+public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardRelayModes, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;

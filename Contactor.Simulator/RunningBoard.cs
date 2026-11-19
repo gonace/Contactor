@@ -48,6 +48,7 @@ public sealed class RunningBoard : IAsyncDisposable
         FromSettings = fromSettings;
         _time = time;
         Shelly = board is ShellySimulator shelly ? new ShellyControls(shelly, text => Add(TrafficKind.AtBoard, text)) : null;
+        Switches = new BoardSwitches(board, text => Add(TrafficKind.AtBoard, text));
         Board.Traced += OnTraced;
         Board.Changed += OnChanged;
     }
@@ -68,6 +69,9 @@ public sealed class RunningBoard : IAsyncDisposable
 
     /// <summary>The controls for a Shelly's special cases, or null for any other board.</summary>
     public ShellyControls? Shelly { get; }
+
+    /// <summary>The switches for what the board can do wrong: unreachable, hung, a relay refused, and its model's own.</summary>
+    public BoardSwitches Switches { get; }
 
     /// <summary>Started from the settings, so it starts every time; otherwise added on the page.</summary>
     public bool FromSettings { get; }

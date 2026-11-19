@@ -101,3 +101,31 @@ public interface ISimulatedBoardRelayModes
     /// </summary>
     Task SetModeAsync(int relay, int mode);
 }
+
+/// <summary>A simulated board on TCP that can be unreachable.</summary>
+public interface ISimulatedBoardRejectConnections
+{
+    /// <summary>When true, new connections are closed at once, as if the board were unreachable.</summary>
+    bool RejectConnections { get; set; }
+}
+
+/// <summary>A simulated board that can hang: it reads the app's requests and never answers them.</summary>
+public interface ISimulatedBoardNoAnswer
+{
+    /// <summary>When true, the board reads every request and answers none, keeping the connection open.</summary>
+    bool NoAnswer { get; set; }
+}
+
+/// <summary>A simulated board that can refuse to switch a relay, as the real one answers an error.</summary>
+public interface ISimulatedBoardFailRelays
+{
+    /// <summary>The relays (bit 0 = relay 1) whose switch command gets the board's error answer and isn't carried out.</summary>
+    ulong FailRelays { get; set; }
+}
+
+/// <summary>A simulated board that pulses relays (<see cref="SimulatedPulses"/>).</summary>
+public interface ISimulatedBoardPulses
+{
+    /// <summary>The relays whose pulse is still running.</summary>
+    ChannelMask Pulsing { get; }
+}

@@ -17,7 +17,7 @@ namespace Contactor.Boards.Advantech;
 /// connections, since the manual names no limit. It never tells the app anything by itself, as the real module. Used
 /// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class AdamSimulator : ISimulatedBoard
+public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;

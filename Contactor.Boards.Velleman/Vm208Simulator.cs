@@ -19,7 +19,7 @@ namespace Contactor.Boards.Velleman;
 /// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. Used by the
 /// tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
+public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers
 {
     // The firmware's schedule table: the card's 4 relays and the extension modules' channels (config_vm208.cpp).
     private const int ScheduleTableSize = 268;

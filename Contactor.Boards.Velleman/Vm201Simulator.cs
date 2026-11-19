@@ -14,7 +14,7 @@ namespace Contactor.Boards.Velleman;
 /// ends its pulse, and a new pulse of it starts again. Used by the tests and, in
 /// development, by Contactor.Simulator (started by the Aspire AppHost). It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
+public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardNoAnswer, ISimulatedBoardPulses
 {
     private const int NameLength = Vm201Command.NameDataLength - 1;
     private const int InputChannel = 9;
@@ -118,6 +118,13 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     /// When true, the board stops reading and sending without closing the socket, as on a half-open connection.
     /// </summary>
     public bool Unresponsive { get; set; }
+
+    /// <summary>The VM201's way to hang: <see cref="Unresponsive"/>.</summary>
+    bool ISimulatedBoardNoAnswer.NoAnswer
+    {
+        get => Unresponsive;
+        set => Unresponsive = value;
+    }
 
     /// <summary>The packets received from logged-in clients, in order: the newest 1,000.</summary>
     public IReadOnlyList<Vm201Packet> ReceivedCommands => [.. _receivedCommands];

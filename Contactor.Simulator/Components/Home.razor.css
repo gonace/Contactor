@@ -332,6 +332,10 @@ h2 {
     font-weight: 600;
 }
 
+.relay .pulse {
+    font-size: 11px;
+}
+
 .relay.on {
     border-color: var(--accent-border);
     background: var(--accent);

@@ -19,7 +19,7 @@ namespace Contactor.Boards.Devantech;
 /// relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may connect at
 /// once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class DevantechSimulator : ISimulatedBoard
+public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;

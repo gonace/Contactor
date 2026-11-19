@@ -19,7 +19,7 @@ namespace Contactor.Boards.Denkovi;
 /// doesn't say which; see README.md). It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class SmartDenSimulator : ISimulatedBoard
+public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;

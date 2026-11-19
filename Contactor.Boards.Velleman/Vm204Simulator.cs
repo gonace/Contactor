@@ -15,7 +15,7 @@ namespace Contactor.Boards.Velleman;
 /// per connection. It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm204Simulator : ISimulatedBoard
+public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections
 {
     /// <summary>How long a client may take to send its whole request head before the connection is closed.</summary>
     public static readonly TimeSpan RequestHeadTimeout = TimeSpan.FromSeconds(5);

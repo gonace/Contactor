@@ -98,7 +98,7 @@ public sealed class SimulatorPageTests
         Assert.Matches("<span[^>]*>Firmware</span>\\s*<input class=\"mono firmware\" maxlength=\"32\"[^>]*value=\"1.6.0\"", html);
         Assert.Matches("<option value=\"cover\" selected[^>]*>cover</option>", html);
         Assert.Contains(">none</option>", html, StringComparison.Ordinal);
-        Assert.Contains("Switch.Set refused: relay 2", html, StringComparison.Ordinal);
+        Assert.Contains("refused: relay 2", html, StringComparison.Ordinal);
         Assert.Contains("AUTO-ON · RELAY 1", html, StringComparison.Ordinal);
         Assert.Contains("AFTER A POWER CUT (INITIAL_STATE)", html, StringComparison.Ordinal);
         Assert.Matches("<option value=\"restore_last\" selected[^>]*>restore_last</option>", html);

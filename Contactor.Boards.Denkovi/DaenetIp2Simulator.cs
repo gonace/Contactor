@@ -20,7 +20,7 @@ namespace Contactor.Boards.Denkovi;
 /// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only. Its traces show
 /// the PDU only, never a community.
 /// </summary>
-public sealed class DaenetIp2Simulator : ISimulatedBoard
+public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
