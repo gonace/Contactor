@@ -196,11 +196,6 @@ input[type="password"] {
     color: var(--muted);
 }
 
-.access-method-icon {
-    width: 21px;
-    height: 21px;
-}
-
 .choice {
     min-height: 64px;
     padding: 14px;

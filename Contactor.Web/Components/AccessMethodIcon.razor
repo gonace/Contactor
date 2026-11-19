@@ -3,7 +3,7 @@
 @using Contactor.Web.Features.Identity
 @using Contactor.Web.Features.Tailscale
 
-<svg class="access-method-icon @ColourClass" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<svg class="@ColourClass(MethodId)" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     @switch (MethodId)
     {
         case AccessCatalogue.LocalId:
@@ -12,6 +12,7 @@
             <path d="M9 21v-6h6v6" />
             break;
         case CloudflareMethods.TunnelId:
+        case CloudflareMethods.AccessId:
             <path d="M20 17.5H6a4.5 4.5 0 0 1-.25-8.99A6.5 6.5 0 0 1 18.2 7.3 5.1 5.1 0 0 1 20 17.5Z" />
             break;
         case TailscaleMethods.NetworkId:
@@ -22,9 +23,6 @@
             <circle cx="18" cy="18" r="2" />
             <path d="m8 6 8 0M6 8v8m12-8v8m-10 2 8 0" />
             break;
-        case CloudflareMethods.AccessId:
-            <path d="M20 17.5H6a4.5 4.5 0 0 1-.25-8.99A6.5 6.5 0 0 1 18.2 7.3 5.1 5.1 0 0 1 20 17.5Z" />
-            break;
         case SignInCatalogue.NoneId:
             <circle cx="12" cy="8" r="3.5" />
             <path d="M5 21a7 7 0 0 1 14 0M4 4l16 16" />
@@ -33,12 +31,15 @@
 </svg>
 
 @code {
-    private string ColourClass => MethodId switch
+    /// <summary>
+    /// The class that gives a way in's or sign-in's icon its company's colour; none (null) for ours, which
+    /// keep the tile's --muted.
+    /// </summary>
+    public static string? ColourClass(string methodId) => methodId switch
     {
         CloudflareMethods.TunnelId or CloudflareMethods.AccessId => "cloudflare-icon",
         TailscaleMethods.NetworkId or TailscaleMethods.IdentityId => "tailscale-icon",
-        SignInCatalogue.NoneId => "no-sign-in-icon",
-        _ => "",
+        _ => null,
     };
 
     [Parameter, EditorRequired]

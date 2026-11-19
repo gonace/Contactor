@@ -240,8 +240,9 @@
                 var ways = AccessCatalogue.All.Where(way => way.Group == group).ToArray();
                 if (ways.Length > 0)
                 {
-                    <section class="way-in-group" aria-label="@SetupText.Name(group)">
-                        <h2 class="way-in-group-title">@SetupText.Name(group)</h2>
+                    var headingId = GroupHeadingId(group);
+                    <div class="way-in-group" role="group" aria-labelledby="@headingId">
+                        <h2 id="@headingId" class="way-in-group-title">@SetupText.Name(group)</h2>
                         @foreach (var way in ways)
                         {
                             var id = way.Id;
@@ -260,7 +261,7 @@
                                 </span>
                             </label>
                         }
-                    </section>
+                    </div>
                 }
             }
         </div>
@@ -544,6 +545,9 @@
             // The page closed meanwhile.
         }
     }
+
+    /// <summary>The id of a way-in group's heading, which names its group of choices, e.g. "way-in-group-localnetwork".</summary>
+    public static string GroupHeadingId(AccessGroup group) => $"way-in-group-{group.ToString().ToLowerInvariant()}";
 
     /// <summary>
     /// Whether the guide sends the person to the relays: only someone signed in, once Part 1 and the guide are done.

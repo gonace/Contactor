@@ -3,10 +3,12 @@ using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Access;
 using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Setup;
 using Contactor.Web.Persistence;
@@ -970,6 +972,79 @@ public sealed class SetupTests
     public void Should_SummariseTheRelaysInUse(int inUse, int hidden, string text)
     {
         Assert.Equal(text, TestTexts.Setup.RelaysInUse(inUse, hidden));
+    }
+
+    [Theory]
+    [InlineData(AccessGroup.LocalNetwork, "en", "Local network")]
+    [InlineData(AccessGroup.PrivateAccess, "en", "Private access")]
+    [InlineData(AccessGroup.PublicAddress, "en", "Public address")]
+    [InlineData(AccessGroup.LocalNetwork, "sv", "Lokalt nätverk")]
+    [InlineData(AccessGroup.PrivateAccess, "sv", "Privat åtkomst")]
+    [InlineData(AccessGroup.PublicAddress, "sv", "Publik adress")]
+    public void Should_NameEachGroupOfWaysIn(AccessGroup group, string language, string text)
+    {
+        using var culture = TestCulture.Language(language);
+
+        Assert.Equal(text, TestTexts.Setup.Name(group));
+    }
+
+    [Fact]
+    public void Should_RefuseToName_AGroupOfWaysInItDoesNotKnow()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TestTexts.Setup.Name((AccessGroup)99));
+    }
+
+    // "How do people reach the app?": the ways in under their groups' headings, in order, each group a group of choices
+    // named by its heading (not a landmark of its own), and every choice still one radio of the same set.
+    [Fact]
+    public async Task Should_GroupTheWaysIn_UnderTheirHeadings()
+    {
+        await using var app = new TestWebApp(configureServices: services => services.AddSingleton(new LanguageCatalogue([LanguageCatalogue.English])), setUp: false);
+        using (var http = app.CreateClient())
+        {
+            await http.GetAsync("/setup", Cancel);
+        }
+
+        using var page = await PageRenderer.StartAsync<Contactor.Web.Components.SetupGuide>(app.Services, "john@example.com", "John");
+
+        await AssertWaysInGroupedAsync(page, ["Local network", "Private access", "Public address"], "SIMPLEST");
+    }
+
+    /// <summary>
+    /// That the guide's way-in step shows <paramref name="headings"/> in order, each a heading that names a group of
+    /// choices, with every way in a radio of one set and the simplest one tagged <paramref name="simplest"/>.
+    /// </summary>
+    internal static async Task AssertWaysInGroupedAsync(PageRenderer page, string[] headings, string simplest)
+    {
+        var text = await page.TextAsync();
+        var at = headings.Select(h => text.IndexOf(h, StringComparison.Ordinal)).ToArray();
+        Assert.All(at, i => Assert.True(i >= 0, text));
+        Assert.Equal(at.Order(), at);
+        Assert.Contains(simplest, text, StringComparison.Ordinal);
+
+        foreach (var (group, heading) in Enum.GetValues<AccessGroup>().Zip(headings))
+        {
+            var id = Contactor.Web.Components.SetupGuide.GroupHeadingId(group);
+            Assert.True(await page.HasAsync(a => PageRenderer.With("id", id)(a) && PageRenderer.WithText(heading)(a)), heading);
+            Assert.True(await page.HasAsync(a => PageRenderer.With("role", "group")(a) && PageRenderer.With("aria-labelledby", id)(a)), heading);
+        }
+
+        // No group is a landmark, nor named a second time.
+        Assert.False(await page.HasAsync(a => a.ContainsKey("aria-label") && headings.Contains(a["aria-label"]?.ToString())));
+        Assert.True(await page.HasAsync(PageRenderer.With("role", "radiogroup")));
+
+        var radios = new List<string?>();
+        await page.HasAsync(a =>
+        {
+            if (PageRenderer.With("type", "radio")(a))
+            {
+                radios.Add(a.GetValueOrDefault("name")?.ToString());
+            }
+
+            return false;
+        });
+        Assert.Equal(AccessCatalogue.All.Count, radios.Count);
+        Assert.All(radios, name => Assert.Equal("way-in", name));
     }
 
     private static async Task<List<EventLogEntry>> EventsAsync(TestDatabase database)
