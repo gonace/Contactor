@@ -192,7 +192,7 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
             Pulses.Cancel(ulong.MaxValue);
             _beforeCut = _relays;
             _relays = 0UL;
-        });
+        }, power: true);
         return Task.CompletedTask;
     }
 
@@ -204,8 +204,13 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
             return Task.CompletedTask;
         }
 
-        Change(() => _relays = SaveOutputs ? _beforeCut : 0UL);
-        Volatile.Write(ref _poweredOff, 0);
+        Change(
+            () =>
+            {
+                _relays = SaveOutputs ? _beforeCut : 0UL;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -273,6 +278,13 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
             {
                 if (Admit(tcp) is { } remote)
                 {
+                    if (IsPoweredOff)
+                    {
+                        // The power went just as it came: DropConnections may have missed it.
+                        Remove(tcp);
+                        continue;
+                    }
+
                     handlers.Add(HandleConnectionAsync(tcp, remote, cancellationToken));
                 }
             }
@@ -659,11 +671,17 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = _relays;
             change();
             changed = before != _relays;

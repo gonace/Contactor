@@ -200,11 +200,10 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         await ChangeAsync(() => _timerMask = turnOn ? (byte)(_timerMask | mask) : (byte)(_timerMask & ~mask)).ConfigureAwait(false);
     }
 
-    /// <summary>Closes every open connection, as if the network dropped.</summary>
     /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
     public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
 
-    public string AfterPowerCut => "Every relay comes back off (not yet checked on a real VM201). Its timers stay.";
+    public string AfterPowerCut => "Every relay comes back off, and its timers stay (neither yet checked on a real VM201).";
 
     /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
     public async Task CutPowerAsync()
@@ -219,7 +218,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         {
             Pulses.Cancel(ulong.MaxValue);
             _outputs = (byte)0;
-        }).ConfigureAwait(false);
+        }, power: true).ConfigureAwait(false);
     }
 
     /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
@@ -230,10 +229,16 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
             return;
         }
 
-        await ChangeAsync(() => _outputs = (byte)0).ConfigureAwait(false);
-        Volatile.Write(ref _poweredOff, 0);
+        await ChangeAsync(
+            () =>
+            {
+                _outputs = (byte)0;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true).ConfigureAwait(false);
     }
 
+    /// <summary>Closes every open connection, as if the network dropped.</summary>
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -490,7 +495,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     /// Applies a change and pushes the status to every logged-in client, but only if something changed. Does nothing
     /// once the simulator is stopping or stopped, so a button pressed on a page as it shuts down is no error.
     /// </summary>
-    private async Task ChangeAsync(Action change)
+    private async Task ChangeAsync(Action change, bool power = false)
     {
         try
         {
@@ -504,6 +509,12 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         var changed = false;
         try
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = EncodeStatus();
             change();
             var after = EncodeStatus();

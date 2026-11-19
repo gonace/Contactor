@@ -5,6 +5,7 @@ using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
+using Contactor.Boards.Waveshare;
 using Contactor.Simulator;
 using Contactor.Tests.Web;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -54,6 +55,73 @@ public sealed class SimulatedPowerTests
         var read = await ReadAsync(tcp);
 
         Assert.Equal(0, read);
+    }
+
+    [Theory]
+    [MemberData(nameof(Models))]
+    public async Task Should_ChangeNothing_WhileThePowerIsCut(string type)
+    {
+        await using var board = Create(type);
+        var power = (ISimulatedBoardPower)board;
+        await power.CutPowerAsync();
+
+        await board.SwitchRelayAsync(1, true);
+        Assert.True(board.State.Relays.IsEmpty);
+
+        await power.RestorePowerAsync();
+        Assert.True(board.State.Relays.IsEmpty);
+    }
+
+    [Theory]
+    [MemberData(nameof(Models))]
+    public async Task Should_DropTheOpenConnection_AndTakeANewOneOnceThePowerIsBack(string type)
+    {
+        await using var board = Create(type);
+        if (board is not ISimulatedBoardRejectConnections)
+        {
+            return;
+        }
+
+        board.Start();
+        var power = (ISimulatedBoardPower)board;
+        using (var before = new TcpClient())
+        {
+            await before.ConnectAsync(IPAddress.Loopback, board.Port, TestContext.Current.CancellationToken);
+            await WaitUntilAsync(() => board.State.Clients.Count == 1);
+
+            await power.CutPowerAsync();
+
+            Assert.Equal(0, await ReadUntilClosedAsync(before));
+        }
+
+        await power.RestorePowerAsync();
+        await WaitUntilAsync(() => board.State.Clients.Count == 0);
+        using var after = new TcpClient();
+        await after.ConnectAsync(IPAddress.Loopback, board.Port, TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => board.State.Clients.Count == 1);
+    }
+
+    [Fact]
+    public async Task Should_KeepTheBoardsOwnRules_ThroughAPowerCut()
+    {
+        await using var vm201 = new Vm201Simulator();
+        await vm201.SetTimerAsync(3, true);
+        await using var vm208 = new Vm208Simulator();
+        var alarms = Vm208Simulator.FactorySchedule.ToArray();
+        alarms[Vm208Alarm.IndexOf(2, turnsOn: true)] = alarms[Vm208Alarm.IndexOf(2, turnsOn: true)] with { Hour = 7, Enabled = true };
+        await vm208.SetAlarmsAsync(1, alarms);
+        await using var waveshare = new WaveshareSimulator(WaveshareModels.Relay8B);
+        await ((ISimulatedBoardRelayModes)waveshare).SetModeAsync(4, 1);
+
+        foreach (var power in new ISimulatedBoardPower[] { vm201, vm208, waveshare })
+        {
+            await power.CutPowerAsync();
+            await power.RestorePowerAsync();
+        }
+
+        Assert.Equal(ChannelMask.Of(3), vm201.Timers);
+        Assert.Equal(alarms, vm208.Alarms(1));
+        Assert.Equal(1, ((ISimulatedBoardRelayModes)waveshare).Modes[3]);
     }
 
     [Fact]
@@ -120,7 +188,7 @@ public sealed class SimulatedPowerTests
         await cut;
 
         Assert.False(board.Power.IsPoweredOff);
-        Assert.Equal("Power back here. Every relay comes back off (not yet checked on a real VM201). Its timers stay.", board.Traffic[0].Text);
+        Assert.Equal("Power back here. Every relay comes back off, and its timers stay (neither yet checked on a real VM201).", board.Traffic[0].Text);
     }
 
     [Fact]
@@ -140,6 +208,33 @@ public sealed class SimulatedPowerTests
     private static ISimulatedBoard Create(string type)
     {
         return SimulatorCatalogue.Find(type)!.Create(null, null, NullLogger.Instance, TimeProvider.System);
+    }
+
+    // Until the board's state shows it; the test's token stops a board that never does.
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        while (!condition())
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+    }
+
+    // Reads until the board closes the connection, whatever it sent before: 0 then.
+    private static async Task<int> ReadUntilClosedAsync(TcpClient tcp)
+    {
+        var buffer = new byte[256];
+        try
+        {
+            while (await tcp.GetStream().ReadAsync(buffer, TestContext.Current.CancellationToken) > 0)
+            {
+            }
+
+            return 0;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
     }
 
     // Reads until the board closes the connection: 0 then. Ends on its own; the test's token only stops a broken board.

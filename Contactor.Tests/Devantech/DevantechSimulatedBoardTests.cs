@@ -110,6 +110,31 @@ public sealed class DevantechSimulatedBoardTests
         Assert.Equal(0, time.PendingTimers);
     }
 
+    // A power cut ends the pulses; with Latched Outputs a relay comes back as it was before its pulse.
+    [Fact]
+    public async Task Should_EndThePulses_ThroughAPowerCut_AndLatchOnlyThePermanentStates()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        simulator.LatchedOutputs = true;
+        using (var board = await Board.ConnectAsync(simulator))
+        {
+            Assert.Equal("00", await board.AskAsync("20 02 00", 1));
+            Assert.Equal("00", await board.AskAsync("20 01 0A", 1));
+            Assert.Equal("00", await board.AskAsync("21 02 0A", 1));
+        }
+
+        Assert.Equal(ChannelMask.Of([1, 2]), simulator.Pulsing);
+        await simulator.CutPowerAsync();
+
+        Assert.Equal(ChannelMask.None, simulator.Pulsing);
+        Assert.Equal(0, time.PendingTimers);
+        await simulator.RestorePowerAsync();
+
+        // Relay 2 was on for good before its off-pulse; relay 1 only in its pulse.
+        Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
+    }
+
     [Fact]
     public async Task Should_EndAPulse_WhenTheRelayIsSwitchedForGood()
     {

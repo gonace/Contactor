@@ -207,7 +207,7 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         Change(() =>
         {
             _relays = (byte)0;
-        });
+        }, power: true);
         return Task.CompletedTask;
     }
 
@@ -219,8 +219,13 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
             return Task.CompletedTask;
         }
 
-        Change(() => _relays = (byte)0);
-        Volatile.Write(ref _poweredOff, 0);
+        Change(
+            () =>
+            {
+                _relays = (byte)0;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -482,11 +487,17 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         };
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs, _analog);
             change();
             changed = before != (_relays, _inputs, _analog);

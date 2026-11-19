@@ -268,7 +268,6 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         throw new ArgumentOutOfRangeException(nameof(input), input, $"The {Model.Name} has no inputs.");
     }
 
-    /// <summary>UDP has no connection to drop: it forgets where the app was heard from.</summary>
     /// <summary>Whether the power is cut: no request gets an answer, and every relay is off.</summary>
     public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
 
@@ -295,7 +294,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         {
             _beforeCut = RelaysUnlocked;
             SetRelaysUnlocked(0);
-        });
+        }, power: true);
         return Task.CompletedTask;
     }
 
@@ -307,8 +306,13 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
             return Task.CompletedTask;
         }
 
-        Change(() => SetRelaysUnlocked(SaveOutputs ? _beforeCut : 0));
-        Volatile.Write(ref _poweredOff, 0);
+        Change(
+            () =>
+            {
+                SetRelaysUnlocked(SaveOutputs ? _beforeCut : 0);
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -321,6 +325,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         }
     }
 
+    /// <summary>UDP has no connection to drop: it forgets where the app was heard from.</summary>
     public void DropConnections()
     {
         bool had;
@@ -647,11 +652,17 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_p3, _p5);
             change();
             changed = before != (_p3, _p5);

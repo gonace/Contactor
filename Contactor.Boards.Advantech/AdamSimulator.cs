@@ -181,7 +181,7 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
         Change(() =>
         {
             _relays = 0UL;
-        });
+        }, power: true);
         return Task.CompletedTask;
     }
 
@@ -193,8 +193,13 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
             return Task.CompletedTask;
         }
 
-        Change(() => _relays = 0UL);
-        Volatile.Write(ref _poweredOff, 0);
+        Change(
+            () =>
+            {
+                _relays = 0UL;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -258,6 +263,14 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
             {
                 var remote = RemoteOf(tcp);
                 _connections[tcp] = remote;
+                if (IsPoweredOff)
+                {
+                    // The power went just as it came: DropConnections may have missed it.
+                    _connections.TryRemove(tcp, out _);
+                    tcp.Dispose();
+                    continue;
+                }
+
                 RaiseChanged();
                 Trace(BoardTraceDirection.None, $"The app connected from {remote}", null);
                 handlers.Add(HandleConnectionAsync(tcp, remote, cancellationToken));
@@ -561,11 +574,17 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs);
             change();
             changed = before != (_relays, _inputs);

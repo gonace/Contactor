@@ -139,6 +139,26 @@ public sealed class ShellyClientTests
         Assert.True(run.Client.State.IsConnected);
     }
 
+    // A power cut is a reboot: the device forgot its nonces, so the kept one gets a plain 401 and the app takes a new one.
+    [Fact]
+    public async Task Should_TakeANewNonce_AfterAPowerCut()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var challenges = simulator.ChallengeCount;
+
+        await simulator.CutPowerAsync();
+        await simulator.RestorePowerAsync();
+        await run.PollAsync();
+        await run.PollAsync();
+
+        Assert.Equal(challenges + 1, simulator.ChallengeCount);
+        Assert.Equal(0, simulator.StaleCount);
+        Assert.Equal(0, simulator.DeniedCount);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
     // The password changed on the device while the app runs: the kept nonce is refused, the new challenge is answered
     // once, and that is refused too. Nothing more in that request, and no kept nonce for the next.
     [Fact]

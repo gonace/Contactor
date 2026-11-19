@@ -502,7 +502,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         {
             _beforeCut = _relays;
             _relays = (byte)0;
-        });
+        }, power: true);
         return Task.CompletedTask;
     }
 
@@ -515,8 +515,13 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         }
 
         ForgetNonces();
-        Change(() => _relays = PowerOnRelays());
-        Volatile.Write(ref _poweredOff, 0);
+        Change(
+            () =>
+            {
+                _relays = PowerOnRelays();
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -1313,11 +1318,17 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         };
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = _relays;
             change();
             changed = before != _relays;

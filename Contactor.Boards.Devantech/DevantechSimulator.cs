@@ -233,7 +233,11 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
     public string AfterPowerCut => LatchedOutputs ? "Latched Outputs is on: the relays come back as they were." : "Latched Outputs is off: every relay comes back off.";
 
-    /// <summary>"Latched Outputs": the board sets the relays again after a power cut as they were; off, they come back off, as the recorded ETH008-B did. Off by default.</summary>
+    /// <summary>
+    /// "Latched Outputs" ("Configuration", "Module Settings" in the ETH002-B and ETH008-B Technical Documentation): the
+    /// board saves every permanent change of a relay, not a pulsed one, and sets the relays so again after a power cut.
+    /// Off, the simulator brings them back off, which the documentation doesn't say. Off at start: it gives no factory value.
+    /// </summary>
     public bool LatchedOutputs { get; set; }
 
     /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
@@ -247,10 +251,11 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         DropConnections();
         Change(() =>
         {
+            // Latched Outputs saves the permanent states only: a relay in a pulse is saved as it was before it.
+            _beforeCut = _relays ^ Pulses.Running;
             Pulses.Cancel(ulong.MaxValue);
-            _beforeCut = _relays;
             _relays = 0UL;
-        });
+        }, power: true);
         return Task.CompletedTask;
     }
 
@@ -262,8 +267,13 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
             return Task.CompletedTask;
         }
 
-        Change(() => _relays = LatchedOutputs ? _beforeCut : 0UL);
-        Volatile.Write(ref _poweredOff, 0);
+        Change(
+            () =>
+            {
+                _relays = LatchedOutputs ? _beforeCut : 0UL;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -324,6 +334,14 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
         var remote = tcp.Client.RemoteEndPoint?.ToString() ?? "unknown";
         _connections.TryAdd(tcp, remote);
+        if (IsPoweredOff)
+        {
+            // The power went just as it came: DropConnections may have missed it.
+            _connections.TryRemove(tcp, out _);
+            tcp.Dispose();
+            return;
+        }
+
         RaiseChanged();
         Trace(BoardTraceDirection.None, $"The app connected from {remote}", null);
         var session = new Session();
@@ -610,11 +628,17 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs);
             change();
             changed = before != (_relays, _inputs);

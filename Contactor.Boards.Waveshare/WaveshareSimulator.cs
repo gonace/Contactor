@@ -272,7 +272,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         {
             Pulses.Cancel(ulong.MaxValue);
             _relays = 0UL;
-        });
+        }, power: true);
         return Task.CompletedTask;
     }
 
@@ -284,8 +284,13 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
             return Task.CompletedTask;
         }
 
-        Change(() => _relays = 0UL);
-        Volatile.Write(ref _poweredOff, 0);
+        Change(
+            () =>
+            {
+                _relays = 0UL;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -346,6 +351,14 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
         var remote = tcp.Client.RemoteEndPoint?.ToString() ?? "unknown";
         _connections.TryAdd(tcp, remote);
+        if (IsPoweredOff)
+        {
+            // The power went just as it came: DropConnections may have missed it.
+            _connections.TryRemove(tcp, out _);
+            tcp.Dispose();
+            return;
+        }
+
         RaiseChanged();
         Trace(BoardTraceDirection.None, $"The app connected from {remote}", null);
         try
@@ -689,11 +702,17 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs);
             change();
             changed = before != (_relays, _inputs);
