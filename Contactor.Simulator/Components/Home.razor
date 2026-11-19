@@ -205,10 +205,10 @@
                         @if (current.Shelly is { } atBoard)
                         {
                             <details class="section" open>
-                                <summary><span class="name">At the board</span><span class="sum">after a power cut</span></summary>
+                                <summary><h3 class="name">At the board</h3><span class="sum">after a power cut</span></summary>
                                 <div class="in">
-                                    <h4 class="label">AFTER A POWER CUT (INITIAL_STATE)</h4>
-                                    <div class="mode-relays">
+                                    <h4 class="label" id="power-on-head">AFTER A POWER CUT (INITIAL_STATE)</h4>
+                                    <div class="mode-relays" role="group" aria-labelledby="power-on-head">
                                         @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                         {
                                             var number = relay;
@@ -236,12 +236,12 @@
                         @if (OwnRulesSummary(current) is { } rulesSummary)
                         {
                             <details class="section" open>
-                                <summary><span class="name">@(current.Shelly is null ? "The board's own rules" : "The device's own rules")</span><span class="sum">@rulesSummary</span></summary>
+                                <summary><h3 class="name">@(current.Shelly is null ? "The board's own rules" : "The device's own rules")</h3><span class="sum">@rulesSummary</span></summary>
                                 <div class="in">
                                     @if (current.Board is ISimulatedBoardRelayModes relayModes && relayModes.Modes is { Count: > 0 } modes)
                                     {
-                                        <h4 class="label">RELAY MODES</h4>
-                                        <div class="mode-relays">
+                                        <h4 class="label" id="modes-head">RELAY MODES</h4>
+                                        <div class="mode-relays" role="group" aria-labelledby="modes-head">
                                             @for (var relay = 1; relay <= modes.Count; relay++)
                                             {
                                                 var number = relay;
@@ -260,8 +260,8 @@
                                     @if (current.Board is ISimulatedBoardTimers timers)
                                     {
                                         var active = timers.Timers;
-                                        <h4 class="label">TIMERS · @TimersText(active, capabilities).ToUpperInvariant()</h4>
-                                        <div class="timer-relays" style="--columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
+                                        <h4 class="label" id="timers-head">TIMERS · @TimersText(active, capabilities).ToUpperInvariant()</h4>
+                                        <div class="timer-relays" role="group" aria-labelledby="timers-head" style="--columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
                                             @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                             {
                                                 var number = relay;
@@ -275,15 +275,17 @@
                                     @if (current.Shelly is { } rules)
                                     {
                                         var schedules = rules.Schedules;
-                                        <h4 class="label">SCHEDULES · @schedules.Count.ToString(CultureInfo.InvariantCulture) OF @ShellyApi.MaxScheduleJobs.ToString(CultureInfo.InvariantCulture)</h4>
-                                        @foreach (var schedule in schedules)
-                                        {
-                                            var id = schedule.Id;
-                                            <label class="check" @key="id">
-                                                <input type="checkbox" checked="@schedule.Enable" @onchange="e => rules.SetScheduleEnabled(id, e.Value is true)" />
-                                                <span class="schedule">Schedule @id.ToString(CultureInfo.InvariantCulture) · @ShellyControls.Describe(schedule)</span>
-                                            </label>
-                                        }
+                                        <h4 class="label" id="schedules-head">SCHEDULES · @schedules.Count.ToString(CultureInfo.InvariantCulture) OF @ShellyApi.MaxScheduleJobs.ToString(CultureInfo.InvariantCulture)</h4>
+                                        <div class="schedule-list" role="group" aria-labelledby="schedules-head">
+                                            @foreach (var schedule in schedules)
+                                            {
+                                                var id = schedule.Id;
+                                                <label class="check" @key="id">
+                                                    <input type="checkbox" checked="@schedule.Enable" @onchange="e => rules.SetScheduleEnabled(id, e.Value is true)" />
+                                                    <span class="schedule">Schedule @id.ToString(CultureInfo.InvariantCulture) · @ShellyControls.Describe(schedule)</span>
+                                                </label>
+                                            }
+                                        </div>
                                         <form class="schedule-add" @onsubmit="() => _shellyForm.AddSchedule(rules)">
                                             <label class="visually-hidden" for="schedule-relay">Relay</label>
                                             @* Each option says whether it is chosen, so the page shows it from its first drawing on. *@
@@ -306,8 +308,8 @@
                                         {
                                             <p class="error" role="alert">@_shellyForm.ScheduleError</p>
                                         }
-                                        <h4 class="label">AUTO-ON · @MaskText(rules.AutoOn, capabilities).ToUpperInvariant()</h4>
-                                        <div class="timer-relays" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
+                                        <h4 class="label" id="auto-on-head">AUTO-ON · @MaskText(rules.AutoOn, capabilities).ToUpperInvariant()</h4>
+                                        <div class="timer-relays" role="group" aria-labelledby="auto-on-head" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
                                             @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                             {
                                                 var number = relay;
@@ -325,7 +327,7 @@
                         @if (capabilities.Analog is { } analog && state.Analog.Count > 0)
                         {
                             <details class="section" open>
-                                <summary><span class="name">Analog</span><span class="sum">@AnalogSummary(state.Analog.Count)</span></summary>
+                                <summary><h3 class="name">Analog</h3><span class="sum">@AnalogSummary(state.Analog.Count)</span></summary>
                                 <div class="in">
                                     @for (var input = 1; input <= state.Analog.Count; input++)
                                     {
@@ -344,7 +346,7 @@
                         }
 
                         <details class="section" open>
-                            <summary><span class="name">Connection</span><span class="sum">@(current.Shelly is null ? "answers" : "firmware, answers")</span></summary>
+                            <summary><h3 class="name">Connection</h3><span class="sum">@(current.Shelly is null ? "drop it" : "firmware, profile, drop it")</span></summary>
                             <div class="in">
                                 @if (current.Shelly is { } shelly)
                                 {
@@ -385,10 +387,10 @@
                         @if (current.Shelly is { } commands)
                         {
                             <details class="section">
-                                <summary><span class="name">Commands</span><span class="sum">Switch.Set refused: @MaskText(commands.Refused, capabilities)</span></summary>
+                                <summary><h3 class="name">Commands</h3><span class="sum">Switch.Set refused: @MaskText(commands.Refused, capabilities)</span></summary>
                                 <div class="in">
-                                    <h4 class="label">SWITCH.SET REFUSED</h4>
-                                    <div class="timer-relays" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
+                                    <h4 class="label" id="refused-head">SWITCH.SET REFUSED</h4>
+                                    <div class="timer-relays" role="group" aria-labelledby="refused-head" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
                                         @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                         {
                                             var number = relay;
@@ -403,7 +405,7 @@
                         }
 
                         <details class="section">
-                            <summary><span class="name">Clients</span><span class="sum">@ClientsSummary(state.Clients.Count)</span></summary>
+                            <summary><h3 class="name">Clients</h3><span class="sum">@ClientsSummary(state.Clients.Count)</span></summary>
                             <div class="in">
                                 @if (state.Clients.Count == 0)
                                 {

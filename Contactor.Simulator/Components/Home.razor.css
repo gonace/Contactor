@@ -380,16 +380,18 @@ h2 {
 }
 
 .section > summary::after {
-    content: "+";
+    content: "+" / "";
     font-family: var(--font-mono);
     color: var(--muted);
 }
 
 .section[open] > summary::after {
-    content: "−";
+    content: "−" / "";
 }
 
 .section .name {
+    margin: 0;
+    font-size: 15px;
     font-weight: 600;
 }
 
@@ -415,6 +417,11 @@ h4 {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+.schedule-list {
+    display: flex;
+    flex-direction: column;
 }
 
 .client {
