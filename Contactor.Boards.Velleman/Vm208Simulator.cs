@@ -13,11 +13,17 @@ namespace Contactor.Boards.Velleman;
 /// the firmware answers them: the status of the card itself, one relay switched per <c>POST /relay</c>, no login on
 /// either, and one request per connection. A request the firmware would never answer (a status without exactly two
 /// parameters) or would crash on (a relay request without its four parameters, another interface, a relay outside
-/// 1–4) is closed without an answer. It never tells the app anything by itself, as the real board. Used by the tests
-/// and, in development, by Contactor.Simulator. It listens on the loopback interface only.
+/// 1–4) is closed without an answer. It never tells the app anything by itself, as the real board. It also holds each
+/// relay's week schedule (<see cref="Vm208Alarm"/>) and answers <c>GET /getalarms</c> and <c>POST /shedule_set</c> as
+/// the firmware does; channel 0 and a channel above 268 crash the real board, and a channel 5–268 is an extension
+/// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. Used by the
+/// tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm208Simulator : ISimulatedBoard
+public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
 {
+    // The firmware's schedule table: the card's 4 relays and the extension modules' channels (config_vm208.cpp).
+    private const int ScheduleTableSize = 268;
+
     // A request head or form longer than this isn't one the app sends.
     private const int MaxRequestHeadBytes = 8192;
     private const int MaxFormBytes = 1024;
@@ -36,6 +42,7 @@ public sealed class Vm208Simulator : ISimulatedBoard
     private readonly Lock _lock = new();
     private TcpListener? _listener;
     private Task? _acceptLoop;
+    private readonly IReadOnlyList<Vm208Alarm>[] _alarms = [.. Enumerable.Range(0, Vm208Api.RelayCount).Select(_ => FactorySchedule)];
     private byte _relays;
     private bool _input;
     private Vm208Status? _lastStatusSent;
@@ -55,6 +62,13 @@ public sealed class Vm208Simulator : ISimulatedBoard
     }
 
     public event EventHandler? Changed;
+
+    /// <summary>
+    /// A relay's schedule as the board ships it (<c>data/alarms/0.json</c> in the firmware): every alarm disabled, "on"
+    /// at 13:28 and "off" at 13:29.
+    /// </summary>
+    public static IReadOnlyList<Vm208Alarm> FactorySchedule { get; } =
+        [.. Enumerable.Range(0, Vm208Api.AlarmCount).Select(i => new Vm208Alarm(i % 7, 13, i < 7 ? 28 : 29, i < 7, false))];
 
     public event EventHandler<BoardTraceEntry>? Traced;
 
@@ -103,6 +117,82 @@ public sealed class Vm208Simulator : ISimulatedBoard
 
     /// <summary>Requests that came with an <c>Authorization</c> header.</summary>
     public int AuthorizationCount => Volatile.Read(ref _authorizationCount);
+
+    /// <summary>The relays whose schedule has an enabled alarm.</summary>
+    public ChannelMask Timers
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return ChannelMask.Of(Enumerable.Range(1, Vm208Api.RelayCount).Where(r => _alarms[r - 1].Any(a => a.Enabled)));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The relay's schedule (1–4) as it is now. Throws <see cref="ArgumentOutOfRangeException"/> for a relay the board
+    /// doesn't have.
+    /// </summary>
+    public IReadOnlyList<Vm208Alarm> Alarms(int relay)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, Vm208Api.RelayCount);
+        lock (_lock)
+        {
+            return _alarms[relay - 1];
+        }
+    }
+
+    /// <summary>
+    /// Sets a relay's whole schedule as the board's own page would. Throws <see cref="ArgumentOutOfRangeException"/> for
+    /// a relay the board doesn't have, and <see cref="ArgumentException"/> for a schedule the page can't make.
+    /// </summary>
+    public Task SetAlarmsAsync(int relay, IReadOnlyList<Vm208Alarm> alarms)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, Vm208Api.RelayCount);
+        ArgumentNullException.ThrowIfNull(alarms);
+        if (!Vm208Alarm.IsSchedule(alarms))
+        {
+            throw new ArgumentException("A VM208 schedule is 14 alarms in the firmware's order, each at a time of day.", nameof(alarms));
+        }
+
+        IReadOnlyList<Vm208Alarm> copy = [.. alarms];
+        ChangeSchedule(() => _alarms[relay - 1] = copy);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Enables every alarm of the relays in <paramref name="timers"/> and disables the others' alarms, at their times.</summary>
+    public Task SetTimersAsync(ChannelMask timers)
+    {
+        if (!Model.Capabilities.AllRelays.ContainsAll(timers))
+        {
+            throw new ArgumentOutOfRangeException(nameof(timers), timers, "The VM208 has relays 1–4 only.");
+        }
+
+        ChangeSchedule(() =>
+        {
+            for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
+            {
+                _alarms[relay - 1] = Enabled(_alarms[relay - 1], timers.Contains(relay));
+            }
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Enables (or disables) every alarm of one relay's schedule, at their times, as the board's own page would.</summary>
+    public Task SetTimerAsync(int relay, bool turnOn)
+    {
+        // A relay the board doesn't have faults the task instead of throwing at once, as for the VM201.
+        if (relay is < 1 or > Vm208Api.RelayCount)
+        {
+            return Task.FromException(new ArgumentOutOfRangeException(nameof(relay), relay, "The VM208 has relays 1–4 only."));
+        }
+
+        ChangeSchedule(() => _alarms[relay - 1] = Enabled(_alarms[relay - 1], turnOn));
+        return Task.CompletedTask;
+    }
 
     /// <summary>When true, new connections are closed at once, as if the board were unreachable.</summary>
     public bool RejectConnections { get; set; }
@@ -339,7 +429,8 @@ public sealed class Vm208Simulator : ISimulatedBoard
         var shownForm = isPost ? form : null;
         Remember(Vm208TraceText.RequestBytes(method, target, shownForm));
         var isStatus = method == "GET" && path == Vm208Api.StatusPath;
-        Trace(BoardTraceDirection.Sent, Vm208TraceText.Request(method, path, shownForm), Vm208TraceText.RequestBytes(method, target, shownForm), isRoutine: isStatus);
+        var isAlarms = method == "GET" && path == Vm208Api.AlarmsPath;
+        Trace(BoardTraceDirection.Sent, Vm208TraceText.Request(method, path, shownForm, query), Vm208TraceText.RequestBytes(method, target, shownForm), isRoutine: isStatus || isAlarms);
 
         // server.on("/status", HTTP_GET) in src/Network/server_VM208.cpp: exactly two parameters, read by position.
         if (isStatus)
@@ -366,13 +457,68 @@ public sealed class Vm208Simulator : ISimulatedBoard
             return RespondStatus();
         }
 
+        // server.on("/getalarms", HTTP_GET), lines 231–281: the first parameter by position, unchecked, as a 16-bit number;
+        // getShedule(id - 1) is null from index 268 on (channel 0 is 65535), and the handler crashes on it.
+        if (isAlarms)
+        {
+            var values = Vm208TraceText.Values(query);
+            if (values.Count == 0)
+            {
+                return NoAnswer("No answer: the board would crash on a schedule request without its channel");
+            }
+
+            var index = (ushort)((ushort)Vm208TraceText.ToInt(values[0]) - 1);
+            if (index >= ScheduleTableSize)
+            {
+                return NoAnswer("No answer: the board would crash on this channel");
+            }
+
+            if (index >= Vm208Api.RelayCount)
+            {
+                return NoAnswer("No answer: only the card itself is simulated");
+            }
+
+            IReadOnlyList<Vm208Alarm> alarms;
+            lock (_lock)
+            {
+                alarms = _alarms[index];
+            }
+
+            return Respond(HttpStatusCode.OK, Vm208Json.WriteAlarms(alarms), Vm208TraceText.Schedule(index + 1, alarms), isRoutine: true, json: true);
+        }
+
+        // server.on("/shedule_set", HTTP_POST), lines 522–572: exactly 29 parameters (query and form together) or 400;
+        // the relay as toInt() - 1 into a 16-bit index, unchecked (relay 0 writes far outside the table), then saved.
+        if (isPost && path == Vm208Api.ScheduleSetPath)
+        {
+            var all = string.Join('&', new[] { query, form }.Where(p => p.Length > 0));
+            if (Vm208TraceText.ReadScheduleForm(all) is not { } schedule)
+            {
+                return Respond(HttpStatusCode.BadRequest, "", "Refused: not 29 parameters", isError: true);
+            }
+
+            var index = (ushort)(schedule.Relay - 1);
+            if (index >= ScheduleTableSize)
+            {
+                return NoAnswer("No answer: the board would crash on this relay");
+            }
+
+            if (index >= Vm208Api.RelayCount)
+            {
+                return NoAnswer("No answer: only the card itself is simulated");
+            }
+
+            ChangeSchedule(() => _alarms[index] = schedule.Alarms);
+            return Respond(HttpStatusCode.OK, SettingsJson, "Saved the schedule; answered the board's settings", json: true, shownBody: Vm208TraceText.SettingsAnswer(200));
+        }
+
         // The board's own pages, behind HTTP basic authentication (serveStatic(...).setAuthentication).
         if (method == "GET" && (path == "/" || path.EndsWith(".html", StringComparison.Ordinal)))
         {
             return Respond(HttpStatusCode.Unauthorized, "", "Asks for the web page's login", isError: true, extraHeader: "WWW-Authenticate: Basic realm=\"Login Required\"\r\n");
         }
 
-        // Pulses, timers, schedules and settings aren't simulated; the app doesn't use them.
+        // Pulses, timers, /setalarm and settings aren't simulated; the app never sends them.
         return Respond(HttpStatusCode.NotFound, "", "Not found", isError: true);
     }
 
@@ -493,9 +639,10 @@ public sealed class Vm208Simulator : ISimulatedBoard
         bool isError = false,
         bool isRoutine = false,
         bool json = false,
-        string extraHeader = "")
+        string extraHeader = "",
+        string? shownBody = null)
     {
-        Trace(BoardTraceDirection.Received, text, Vm208TraceText.Answer((int)statusCode, body), isError, isRoutine);
+        Trace(BoardTraceDirection.Received, text, shownBody ?? Vm208TraceText.Answer((int)statusCode, body), isError, isRoutine);
         var content = Encoding.UTF8.GetBytes(body);
         var header = string.Create(
             CultureInfo.InvariantCulture,
@@ -512,6 +659,31 @@ public sealed class Vm208Simulator : ISimulatedBoard
             HttpStatusCode.Unauthorized => "Unauthorized",
             _ => "Not Found",
         };
+    }
+
+    // A made-up answer of sendSettings (src/Network/server_VM208.cpp): what the firmware answers a saved schedule.
+    private const string SettingsJson = """{"USERNAME":"admin","BOARDNAME":"VM208","SSID":"","TIMEZONE":0,"DST":0}""";
+
+    private static IReadOnlyList<Vm208Alarm> Enabled(IReadOnlyList<Vm208Alarm> alarms, bool enabled)
+    {
+        return [.. alarms.Select(a => a with { Enabled = enabled })];
+    }
+
+    // A change of the schedules: tells the page when the relays with an enabled alarm changed.
+    private void ChangeSchedule(Action change)
+    {
+        bool changed;
+        lock (_lock)
+        {
+            var before = _alarms.ToArray();
+            change();
+            changed = !before.Zip(_alarms).All(p => p.First.SequenceEqual(p.Second));
+        }
+
+        if (changed)
+        {
+            RaiseChanged();
+        }
     }
 
     private void Change(Action change)

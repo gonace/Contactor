@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,11 +15,24 @@ namespace Contactor.Boards.Velleman;
 /// request at a time (the poller sees to it). Commands are never queued: without a connection they fail at once with
 /// <see cref="BoardNotConnectedException"/>, a poll under way gives way to them, and the board's answer to one, its
 /// status right after, is reported at once. The API has no login, so there is none to send.
+/// The board's own rules are the relays' week schedules on the board (<see cref="Vm208Alarm"/>): the client reads them,
+/// one <c>GET /getalarms</c> per relay, at the first poll of each connection and then every
+/// <see cref="SchedulesInterval"/>, and never writes them on its own: only <see cref="TurnOffOwnRulesAsync"/>, on a
+/// person's press, turns one relay's schedule off with <c>POST /shedule_set</c>.
 /// </summary>
 public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long a request may take before it counts as unanswered.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How often the relays' schedules are read again after the read at connecting. The VM208 has no revision counter
+    /// that says a schedule changed, so every check costs one request per relay on a board that takes one request per
+    /// connection and is already polled every few seconds; once a minute adds 4 requests to about 30 polls, as the
+    /// Waveshare's modes and the Shelly's settings are read. A schedule someone sets on the board's own page shows
+    /// within a minute, and whatever it switches shows at the next poll anyway.
+    /// </summary>
+    public static readonly TimeSpan SchedulesInterval = TimeSpan.FromSeconds(60);
 
     private const int MaxResponseHeadersKilobytes = 8;
 
@@ -29,7 +43,15 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
 
     private BoardEndpoint _endpoint;
     private Vm208Status? _lastTraced;
+    private Vm208Status? _lastReported;
     private int _wasConnected;
+
+    // Under the poller's lock: each relay's schedule as last read (null while unknown), whether it is read on this
+    // connection, when, and whether the last read failed.
+    private IReadOnlyList<Vm208Alarm>[]? _schedules;
+    private bool _schedulesRead;
+    private bool _schedulesFailed;
+    private DateTimeOffset _schedulesReadUtc;
 
     public Vm208Client(IOptions<Vm208Options> options, TimeProvider timeProvider, ILogger<Vm208Client> logger)
     {
@@ -71,6 +93,12 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     /// changed nothing. On the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<Vm208State>? StateChanged;
+
+    /// <summary>
+    /// Raised when only the board's own rules changed (<see cref="Vm208State.OwnRules"/>), not the relays, the input or
+    /// the connection, which come as <see cref="StateChanged"/>. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<Vm208State>? OwnRulesChanged;
 
     /// <summary>Every request and answer and every connection step, in plain words. Handlers must be quick.</summary>
     public event EventHandler<BoardTraceEntry>? Traced;
@@ -122,6 +150,71 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         return CommandAsync(mask, turnOn: false, cancellationToken);
     }
 
+    /// <summary>
+    /// Turns off the board's own <paramref name="rules"/>, as a person asked: for each relay's <see cref="OwnRuleKind.Timer"/>
+    /// rule, its schedule is read (<c>GET /getalarms</c>), sent back with every alarm at its own time and disabled in one
+    /// <c>POST /shedule_set</c>, which the board saves to its flash, and read again. Never <c>/setalarm</c>, which the
+    /// board forgets at a restart, and never <c>/stoptimer</c> or <c>/stoppulse</c>, which toggle the relay. The others
+    /// still go when one relay's fails. A rule given twice is taken once. Returns the rules whose schedule the board
+    /// took (answered 200), in relay order. Throws <see cref="ArgumentOutOfRangeException"/> for a relay above 4 or
+    /// another kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything
+    /// is sent; and <see cref="BoardNotConnectedException"/> when the board took none of them or didn't answer.
+    /// </summary>
+    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        List<OwnRule> asked = [];
+        foreach (var rule in rules)
+        {
+            if (rule is null)
+            {
+                throw new ArgumentException("A rule can't be null.", nameof(rules));
+            }
+
+            if (rule.Kind != OwnRuleKind.Timer)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "A VM208's own rules are its relays' schedules.");
+            }
+
+            if (rule.Relay > Vm208Api.RelayCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Relay, "The VM208 has relays 1–4 only.");
+            }
+
+            if (!asked.Contains(rule))
+            {
+                asked.Add(rule);
+            }
+        }
+
+        if (asked.Count == 0)
+        {
+            return [];
+        }
+
+        if (!State.IsConnected)
+        {
+            throw new BoardNotConnectedException();
+        }
+
+        try
+        {
+            var taken = new StrongBox<IReadOnlyList<OwnRule>>([]);
+            await _poller.RunSwitchesAsync(token => TurnOffSchedulesAndReadAsync([.. asked.OrderBy(r => r.Relay)], taken, token), cancellationToken)
+                .ConfigureAwait(false);
+            return taken.Value ?? [];
+        }
+        catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
+        {
+            // The poller counted it as a failed poll and reads the board at once, schedules included.
+            throw new BoardNotConnectedException("The VM208 didn't answer; its schedules may not have been turned off.", ex);
+        }
+        catch (Exception ex) when (ex is Vm208ProtocolException or BoardRefusedException)
+        {
+            throw new BoardNotConnectedException($"The VM208 didn't turn its schedules off: {ex.Message}", ex);
+        }
+    }
+
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
     public void Refresh()
     {
@@ -153,15 +246,28 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     }
 
     // Nothing to open: the board takes each request on its own connection and has no login. The first answered poll
-    // connects.
+    // connects, and reads the schedules: another board may answer now, or the same one after a restart.
     Task IPolledBoard<Vm208Status>.ConnectAsync(CancellationToken cancellationToken)
     {
+        _schedules = null;
+        _schedulesRead = false;
+        _schedulesFailed = false;
         return Task.CompletedTask;
     }
 
-    Task<Vm208Status> IPolledBoard<Vm208Status>.ReadAsync(CancellationToken cancellationToken)
+    async Task<Vm208Status> IPolledBoard<Vm208Status>.ReadAsync(CancellationToken cancellationToken)
     {
-        return ExchangeStatusAsync(HttpMethod.Get, $"{Vm208Api.StatusPath}?{Vm208Api.StatusQuery}", form: null, routine: true, Endpoint, command: false, cancellationToken);
+        var target = Endpoint;
+        var status = await ExchangeStatusAsync(HttpMethod.Get, $"{Vm208Api.StatusPath}?{Vm208Api.StatusQuery}", form: null, routine: true, target, command: false, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Only once the board answered its status: the schedules never decide whether it is there.
+        if (!_schedulesRead || _timeProvider.GetUtcNow() - _schedulesReadUtc >= SchedulesInterval)
+        {
+            await ReadSchedulesAsync(target, cancellationToken).ConfigureAwait(false);
+        }
+
+        return status with { OwnRules = CurrentOwnRules() };
     }
 
     /// <summary>
@@ -211,6 +317,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
 
     void IPolledBoard<Vm208Status>.OnStateChanged(PolledState<Vm208Status> state)
     {
+        Volatile.Write(ref _lastReported, state.Reading);
         var wasConnected = Interlocked.Exchange(ref _wasConnected, state.IsConnected ? 1 : 0) == 1;
         if (state.IsConnected && !wasConnected)
         {
@@ -218,7 +325,22 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             Vm208Log.Connected(_logger, endpoint.Host, endpoint.Port);
         }
 
-        if (StateChanged is not { } handlers)
+        Raise(StateChanged, state);
+    }
+
+    // The comparer leaves out the transistor outputs and the own rules: tell only a change of the rules.
+    void IPolledBoard<Vm208Status>.OnReadingChanged(PolledState<Vm208Status> state)
+    {
+        var before = Interlocked.Exchange(ref _lastReported, state.Reading);
+        if (before is null || before.OwnRules != state.Reading?.OwnRules)
+        {
+            Raise(OwnRulesChanged, state);
+        }
+    }
+
+    private void Raise(EventHandler<Vm208State>? handlers, PolledState<Vm208Status> state)
+    {
+        if (handlers is null)
         {
             return;
         }
@@ -361,6 +483,196 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         return status;
     }
 
+    // Under the poller's lock: every relay's schedule, one GET /getalarms each, relays 1–4 only. Never fails the poll:
+    // an answer that isn't 200 or can't be read, or no answer, makes the schedules unknown (and stops the read: the
+    // board wouldn't answer the next relay either), and the read is tried again after SchedulesInterval. Only a
+    // cancelled poll (a command takes its place, or the app stops) ends it without a result.
+    private async Task ReadSchedulesAsync(BoardEndpoint target, CancellationToken cancellationToken)
+    {
+        var before = _schedules;
+        var schedules = new IReadOnlyList<Vm208Alarm>[Vm208Api.RelayCount];
+        var failed = false;
+        for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
+        {
+            try
+            {
+                // Never to another board: the poll that began it was for this address.
+                EnsureSameBoard(target, command: false);
+                schedules[relay - 1] = await GetScheduleAsync(relay, routine: true, before?[relay - 1], cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsNoAnswer(ex) || ex is Vm208ProtocolException or UriFormatException or BoardNotConnectedException)
+            {
+                // Traced by SendAsync or GetScheduleAsync; this says what it means. A toast only the first time.
+                Trace(BoardTraceDirection.None, $"The board's schedules can't be read: {ex.Message}", isError: true, isRoutine: _schedulesFailed);
+                failed = true;
+                break;
+            }
+        }
+
+        _schedules = failed ? null : schedules;
+        _schedulesFailed = failed;
+        _schedulesReadUtc = _timeProvider.GetUtcNow();
+        _schedulesRead = true;
+    }
+
+    // One relay's schedule, relays 1–4 only (Vm208Api.AlarmsQuery): GET /getalarms?channel=N. Throws as SendAsync, and
+    // Vm208ProtocolException for an answer that isn't 200 or isn't a schedule. A toast only when it differs from before.
+    private async Task<IReadOnlyList<Vm208Alarm>> GetScheduleAsync(int relay, bool routine, IReadOnlyList<Vm208Alarm>? before, CancellationToken cancellationToken)
+    {
+        var answer = await SendAsync(HttpMethod.Get, $"{Vm208Api.AlarmsPath}?{Vm208Api.AlarmsQuery(relay)}", form: null, routine, cancellationToken).ConfigureAwait(false);
+        if (answer.StatusCode != HttpStatusCode.OK)
+        {
+            throw new Vm208ProtocolException(string.Create(CultureInfo.InvariantCulture, $"The VM208 answered {(int)answer.StatusCode}."));
+        }
+
+        IReadOnlyList<Vm208Alarm> alarms;
+        try
+        {
+            alarms = Vm208Json.ReadAlarms(answer.Body);
+        }
+        catch (Vm208ProtocolException ex)
+        {
+            Trace(BoardTraceDirection.Received, ex.Message, answer.Text, isError: true);
+            throw;
+        }
+
+        var unchanged = before is not null && before.SequenceEqual(alarms);
+        Trace(BoardTraceDirection.Received, Vm208TraceText.Schedule(relay, alarms), answer.Text, isRoutine: routine && unchanged);
+        return alarms;
+    }
+
+    // Under the poller's lock: the own rules as last read, or null while the schedules are unknown. A Timer rule on each
+    // relay whose schedule has an enabled alarm, in relay order; each relay's schedule is its own unit, so turning one
+    // off takes no other rule with it.
+    private OwnRules? CurrentOwnRules()
+    {
+        if (_schedules is not { } schedules)
+        {
+            return null;
+        }
+
+        List<OwnRule> rules = [];
+        for (var relay = 1; relay <= schedules.Length; relay++)
+        {
+            if (schedules[relay - 1].Any(a => a.Enabled))
+            {
+                rules.Add(new OwnRule(relay, OwnRuleKind.Timer));
+            }
+        }
+
+        return rules.Count == 0
+            ? Contactor.Boards.OwnRules.Empty
+            : new OwnRules(rules, rules.Select(r => (IReadOnlyCollection<OwnRule>)[r]));
+    }
+
+    // Under the poller's lock: for each relay asked, in relay order, its schedule read fresh (so each alarm keeps the
+    // time the board has now), one POST /shedule_set with every alarm disabled, and the schedule read back. Then the
+    // status, which the poller takes as a poll's answer. A relay whose read or save isn't answered 200 or can't be read
+    // is left, and the others still go; no answer at all stops the rest.
+    private async Task<CommandReading<Vm208Status>> TurnOffSchedulesAndReadAsync(
+        IReadOnlyList<OwnRule> asked,
+        StrongBox<IReadOnlyList<OwnRule>> taken,
+        CancellationToken cancellationToken)
+    {
+        var target = Endpoint;
+        List<OwnRule> done = [];
+        ExceptionDispatchInfo? noAnswer = null;
+        ExceptionDispatchInfo? unreadable = null;
+        string? refusal = null;
+        foreach (var rule in asked)
+        {
+            // Only to the board the command began with, while it counts as connected.
+            EnsureSameBoard(target, command: true);
+            var relay = rule.Relay;
+            try
+            {
+                var alarms = await GetScheduleAsync(relay, routine: false, before: null, cancellationToken).ConfigureAwait(false);
+                EnsureSameBoard(target, command: true);
+                var form = Vm208Api.ScheduleForm(relay, [.. alarms.Select(a => a with { Enabled = false })]);
+                var answer = await SendAsync(HttpMethod.Post, Vm208Api.ScheduleSetPath, form, routine: false, cancellationToken).ConfigureAwait(false);
+                if (answer.StatusCode != HttpStatusCode.OK)
+                {
+                    // Traced by SendCoreAsync with the board's answer: a 400 has no body.
+                    refusal ??= string.Create(CultureInfo.InvariantCulture, $"relay {relay}: the VM208 answered {(int)answer.StatusCode}");
+                    continue;
+                }
+
+                // The answer is the board's settings: not the app's to show.
+                Trace(
+                    BoardTraceDirection.Received,
+                    string.Create(CultureInfo.InvariantCulture, $"The board saved relay {relay}'s schedule"),
+                    Vm208TraceText.SettingsAnswer((int)answer.StatusCode));
+                done.Add(rule);
+            }
+            catch (Vm208ProtocolException ex)
+            {
+                refusal ??= string.Create(CultureInfo.InvariantCulture, $"relay {relay}: {ex.Message}");
+                unreadable ??= ExceptionDispatchInfo.Capture(ex);
+                Trace(BoardTraceDirection.None, $"The VM208 didn't take the change for relay {relay}'s schedule: {ex.Message}", isError: true);
+                continue;
+            }
+            catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
+            {
+                noAnswer = ExceptionDispatchInfo.Capture(ex);
+                break;
+            }
+
+            // Read back: the next state confirms it. A read that fails makes the schedules unknown until the next read.
+            try
+            {
+                EnsureSameBoard(target, command: true);
+                var after = await GetScheduleAsync(relay, routine: false, before: null, cancellationToken).ConfigureAwait(false);
+                if (_schedules is { } known)
+                {
+                    var schedules = (IReadOnlyList<Vm208Alarm>[])known.Clone();
+                    schedules[relay - 1] = after;
+                    _schedules = schedules;
+                }
+            }
+            catch (Exception ex) when (ex is Vm208ProtocolException || IsNoAnswer(ex) || ex is UriFormatException)
+            {
+                _schedules = null;
+                _schedulesRead = false;
+                if (ex is not Vm208ProtocolException)
+                {
+                    noAnswer = ExceptionDispatchInfo.Capture(ex);
+                    break;
+                }
+            }
+        }
+
+        // Whatever came of it, a schedule not read back is read again at the next poll.
+        if (_schedules is null)
+        {
+            _schedulesRead = false;
+        }
+
+        if (done.Count == 0)
+        {
+            noAnswer?.Throw();
+            unreadable?.Throw();
+            throw new BoardRefusedException($"The VM208 didn't take the change: {refusal}");
+        }
+
+        taken.Value = done;
+        if (noAnswer is not null || Endpoint != target)
+        {
+            // The changes went out; the poller keeps the last state and reads again at once.
+            return default;
+        }
+
+        try
+        {
+            var status = await ExchangeStatusAsync(HttpMethod.Get, $"{Vm208Api.StatusPath}?{Vm208Api.StatusQuery}", form: null, routine: false, target, command: true, cancellationToken)
+                .ConfigureAwait(false);
+            return new CommandReading<Vm208Status>(status);
+        }
+        catch (Exception ex) when (ex is Vm208ProtocolException or BoardNotConnectedException || IsNoAnswer(ex) || ex is UriFormatException)
+        {
+            return default;
+        }
+    }
+
     // A request that got no answer at all.
     private static bool IsNoAnswer(Exception exception)
     {
@@ -390,7 +702,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
 
         var routine = status.SameSwitches(Interlocked.Exchange(ref _lastTraced, status));
         Trace(BoardTraceDirection.Received, Vm208TraceText.Status(status), answer.Text, isRoutine: routine);
-        return status;
+
+        // A command's answer is taken as a poll's: with the rules as last read, so they don't seem to change.
+        return status with { OwnRules = CurrentOwnRules() };
     }
 
     /// <summary>
@@ -399,8 +713,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     /// </summary>
     private async Task<Answer> SendAsync(HttpMethod method, string pathAndQuery, string? form, bool routine, CancellationToken cancellationToken)
     {
-        var path = pathAndQuery.Split('?', 2)[0];
-        Trace(BoardTraceDirection.Sent, Vm208TraceText.Request(method.Method, path, form), Vm208TraceText.RequestBytes(method.Method, pathAndQuery, form), isRoutine: routine);
+        var parts = pathAndQuery.Split('?', 2);
+        var path = parts[0];
+        Trace(BoardTraceDirection.Sent, Vm208TraceText.Request(method.Method, path, form, parts.Length > 1 ? parts[1] : null), Vm208TraceText.RequestBytes(method.Method, pathAndQuery, form), isRoutine: routine);
         try
         {
             return await SendCoreAsync(method, pathAndQuery, form, cancellationToken).ConfigureAwait(false);

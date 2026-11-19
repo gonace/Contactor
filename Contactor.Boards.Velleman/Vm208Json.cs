@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -110,6 +111,91 @@ public static class Vm208Json
             .Append(",\"input\":").Append(Bool(status.Input))
             .Append('}');
         return text.ToString();
+    }
+
+    /// <summary>
+    /// Reads a relay's schedule, as <c>server.on("/getalarms")</c> (<c>src/Network/server_VM208.cpp</c>, lines 231–281)
+    /// writes it: <c>{"Channel":{"alarms":[{"dow":d,"hour":h,"minute":m,"onoff":b,"enabled":b} ×14]}}</c>, the 7 "on"
+    /// alarms Sunday first, then the 7 "off" alarms Sunday first. Every alarm must be in its place (its <c>dow</c> and
+    /// <c>onoff</c>), with a time of day the board's own page can set (0–23, 0–59) and <c>enabled</c> true or false;
+    /// anything else is refused, so a schedule is never half-read and can always be written back exactly.
+    /// </summary>
+    public static IReadOnlyList<Vm208Alarm> ReadAlarms(ReadOnlySpan<byte> json)
+    {
+        if (json.Length > Vm208Api.MaxResponseBytes)
+        {
+            throw new Vm208ProtocolException($"The VM208's answer is longer than {Vm208Api.MaxResponseBytes} bytes.");
+        }
+
+        using var document = Parse(json);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("Channel", out var channel)
+            || channel.ValueKind != JsonValueKind.Object
+            || !channel.TryGetProperty("alarms", out var list)
+            || list.ValueKind != JsonValueKind.Array)
+        {
+            throw new Vm208ProtocolException("The VM208's schedule has no \"Channel\" with \"alarms\".");
+        }
+
+        if (list.GetArrayLength() != Vm208Api.AlarmCount)
+        {
+            throw new Vm208ProtocolException($"The VM208's schedule doesn't have {Vm208Api.AlarmCount} alarms.");
+        }
+
+        List<Vm208Alarm> alarms = [];
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object
+                || Number(item, "dow") is not { } day
+                || Number(item, "hour") is not { } hour
+                || Number(item, "minute") is not { } minute
+                || !item.TryGetProperty("onoff", out var onOff) || !IsBoolean(onOff)
+                || !item.TryGetProperty("enabled", out var enabled) || !IsBoolean(enabled))
+            {
+                throw new Vm208ProtocolException("An alarm in the VM208's schedule isn't one the firmware writes.");
+            }
+
+            alarms.Add(new Vm208Alarm(day, hour, minute, onOff.ValueKind == JsonValueKind.True, enabled.ValueKind == JsonValueKind.True));
+        }
+
+        if (!Vm208Alarm.IsSchedule(alarms))
+        {
+            throw new Vm208ProtocolException("The VM208's schedule isn't 14 alarms in the firmware's order, each at a time of day.");
+        }
+
+        return alarms;
+    }
+
+    /// <summary>A relay's schedule as the firmware writes it, compact (ArduinoJson 5's <c>printTo</c>); for the simulator.</summary>
+    public static string WriteAlarms(IReadOnlyList<Vm208Alarm> alarms)
+    {
+        ArgumentNullException.ThrowIfNull(alarms);
+        if (!Vm208Alarm.IsSchedule(alarms))
+        {
+            throw new ArgumentException("A VM208 schedule is 14 alarms in the firmware's order, each at a time of day.", nameof(alarms));
+        }
+
+        var text = new StringBuilder("{\"Channel\":{\"alarms\":[");
+        for (var i = 0; i < alarms.Count; i++)
+        {
+            var alarm = alarms[i];
+            text.Append(i > 0 ? "," : "")
+                .Append(CultureInfo.InvariantCulture, $"{{\"dow\":{alarm.DayOfWeek},\"hour\":{alarm.Hour},\"minute\":{alarm.Minute}")
+                .Append(",\"onoff\":").Append(Bool(alarm.TurnsOn))
+                .Append(",\"enabled\":").Append(Bool(alarm.Enabled))
+                .Append('}');
+        }
+
+        return text.Append("]}}").ToString();
+    }
+
+    // A whole number the size of the firmware's fields, or null.
+    private static int? Number(JsonElement item, string name)
+    {
+        return item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : null;
     }
 
     private static JsonDocument Parse(ReadOnlySpan<byte> json)
