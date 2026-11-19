@@ -19,7 +19,7 @@ namespace Contactor.Boards.Denkovi;
 /// doesn't say which; see README.md). It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower
+public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -35,6 +35,7 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
     private Task? _acceptLoop;
     private ulong _relays;
     private int _poweredOff;
+    private long _answerDelayTicks;
     private ulong _beforeCut;
     private ulong? _lastRelaysSent;
     private int _requestCount;
@@ -168,6 +169,17 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
     public Task SetInputAsync(int input, bool closed)
     {
         throw new ArgumentOutOfRangeException(nameof(input), input, $"The {Model.Name} has no inputs.");
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
     }
 
     /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
@@ -393,6 +405,7 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
                 }
 
                 Interlocked.Increment(ref _requestCount);
+                await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                 await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -691,6 +704,13 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

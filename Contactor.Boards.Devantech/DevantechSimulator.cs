@@ -19,7 +19,7 @@ namespace Contactor.Boards.Devantech;
 /// relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may connect at
 /// once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower
+public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -30,7 +30,7 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
     private readonly ILogger _logger;
     private readonly DevantechLayout _layout;
-    private readonly string? _password;
+    private volatile string? _password;
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentDictionary<TcpClient, string> _connections = new();
     private readonly ConcurrentQueue<string> _receivedRequests = new();
@@ -46,6 +46,7 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
     private Task? _acceptLoop;
     private ulong _relays;
     private int _poweredOff;
+    private long _answerDelayTicks;
     private ulong _beforeCut;
 
     // The relays as their last permanent change left them, which Latched Outputs saves: not a pulse, nor its end.
@@ -232,6 +233,38 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Changes the login while the board runs, as on its own web page: from then on the app's login no longer fits. A
+    /// session that is in already stays in. Only on a board with a login, and only to another login it takes.
+    /// </summary>
+    /// <remarks>The board's login is a password alone: <paramref name="username"/> is ignored.</remarks>
+    public void ChangeLogin(string username, string password)
+    {
+        ArgumentNullException.ThrowIfNull(password);
+        if (!HasLogin)
+        {
+            throw new InvalidOperationException("The board has no password to change.");
+        }
+
+        if (password.Length == 0 || DevantechModels.CheckPassword(password) is not null)
+        {
+            throw new ArgumentException(DevantechModels.CheckPassword(password)?.ToString() ?? "Give the new password.", nameof(password));
+        }
+
+        _password = password;
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
     /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
     public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
 
@@ -364,6 +397,7 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
 
                 foreach (var answer in HandlePacket(packet.AsSpan(0, read), session))
                 {
+                    await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                     await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -658,6 +692,13 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

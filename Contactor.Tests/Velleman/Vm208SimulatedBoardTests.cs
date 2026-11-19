@@ -47,6 +47,23 @@ public sealed class Vm208SimulatedBoardTests
         Assert.Equal(0, board.BusyNext);
     }
 
+    // A slow board answers after its delay on its own clock, not before.
+    [Fact]
+    public async Task Should_Answer_OnlyAfterItsAnswerDelay()
+    {
+        var time = new Contactor.Tests.Web.ManualTimeProvider();
+        await using var board = new Vm208Simulator { TimeProvider = time };
+        board.Start();
+        board.AnswerDelay = TimeSpan.FromSeconds(6);
+
+        var answer = SendAsync(board.Port, "GET /status?interface=-1&socket=0");
+        await Wait.UntilAsync(() => time.Waits(TimeSpan.FromSeconds(6)));
+        Assert.False(answer.IsCompleted);
+        time.Advance(TimeSpan.FromSeconds(6));
+
+        Assert.EndsWith(Vm208Json.WriteStatus(new Vm208Status(0, false, 0)), await answer, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Should_AnswerAsTheFirmware()
     {

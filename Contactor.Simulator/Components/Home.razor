@@ -515,17 +515,6 @@
                                             <input type="checkbox" checked="@shelly.Throttle" @onchange="e => shelly.SetThrottle(e.Value is true)" />
                                             Ask the app to wait (429)
                                         </label>
-                                        <form class="schedule-add" @onsubmit="() => _shellyForm.ChangePassword(shelly)">
-                                            <label class="visually-hidden" for="new-password">New password</label>
-                                            <input id="new-password" class="mono" placeholder="new password" autocomplete="off" spellcheck="false"
-                                                   maxlength="@ShellyApi.PasswordMaxLength" @bind="_shellyForm.NewPassword" />
-                                            <button type="submit">Change password</button>
-                                        </form>
-                                        <span class="hint">As on the device's own web page: the app's password no longer fits.</span>
-                                        @if (_shellyForm.PasswordError is not null)
-                                        {
-                                            <p class="error" role="alert">@_shellyForm.PasswordError</p>
-                                        }
                                         <div class="button-row">
                                             <button type="button" @onclick="shelly.ExpireNonces">Expire nonces</button>
                                             <button type="button" @onclick="shelly.ForgetNonces">Forget nonces (reboot)</button>
@@ -559,6 +548,41 @@
                                         <input type="checkbox" checked="@noAnalog" @onchange="e => switches.SetNoAnalogAnswer(e.Value is true)" />
                                         Leave the analog inputs unanswered
                                     </label>
+                                }
+                                @if (current.AnswerDelay is { } delay)
+                                {
+                                    <div class="button-row">
+                                        <span class="hint" id="delay-head">Answer after</span>
+                                        <div class="segments" role="group" aria-labelledby="delay-head">
+                                            @foreach (var seconds in AnswerDelays)
+                                            {
+                                                var length = TimeSpan.FromSeconds(seconds);
+                                                <button type="button" class="@(delay == length ? "on" : null)" aria-pressed="@(delay == length ? "true" : "false")"
+                                                        @onclick="() => current.SetAnswerDelay(length)">@(seconds == 0 ? "at once" : CutText(seconds))</button>
+                                            }
+                                        </div>
+                                    </div>
+                                    <span class="hint">Around the app's 5 s timeouts.</span>
+                                }
+                                @if (current.CanChangeLogin)
+                                {
+                                    var passwordOnly = current.Board.Model.PasswordOnly;
+                                    <h4 class="label" id="login-head">@(passwordOnly ? "PASSWORD" : "LOGIN")</h4>
+                                    <form class="schedule-add" role="group" aria-labelledby="login-head" @onsubmit="() => _loginForm.Change(current)">
+                                        @if (!passwordOnly)
+                                        {
+                                            <label class="visually-hidden" for="new-username">New user name</label>
+                                            <input id="new-username" class="mono" placeholder="new user name" autocomplete="off" spellcheck="false" @bind="_loginForm.Username" />
+                                        }
+                                        <label class="visually-hidden" for="new-password">New password</label>
+                                        <input id="new-password" class="mono" placeholder="new password" autocomplete="off" spellcheck="false" @bind="_loginForm.Password" />
+                                        <button type="submit">@(passwordOnly ? "Change password" : "Change login")</button>
+                                    </form>
+                                    <span class="hint">As on the board's own web page: the app's @(passwordOnly ? "password" : "login") no longer fits.</span>
+                                    @if (_loginForm.Error is not null)
+                                    {
+                                        <p class="error" role="alert">@_loginForm.Error</p>
+                                    }
                                 }
                                 <div class="button-row">
                                     <button type="button" disabled="@(state.Clients.Count == 0)" @onclick="current.DropConnections">Drop connection</button>
@@ -683,6 +707,7 @@
     private bool _trafficOpen;
     private int _cutSeconds = 30;
     private readonly ShellyForm _shellyForm = new();
+    private readonly LoginForm _loginForm = new();
 
     private RunningBoard? Selected => _boards.FirstOrDefault(b => b.Id == _selectedId) ?? _boards.FirstOrDefault();
 
@@ -693,6 +718,7 @@
         _address = string.IsNullOrWhiteSpace(Options.Value.AppAddress) ? SimulatorOptions.DefaultAppAddress : Options.Value.AppAddress.Trim();
         _boards = Simulator.Boards;
         _shellyForm.Follow(Selected?.Id);
+        _loginForm.Follow(Selected?.Id);
         _add = new AddBoardForm(Simulator);
         Simulator.Changed += OnChanged;
     }
@@ -708,6 +734,7 @@
         _add.Cancel();
         _selectedId = id;
         _shellyForm.Follow(Selected?.Id);
+        _loginForm.Follow(Selected?.Id);
     }
 
     // Opens "Add a board" afresh, or closes it while it is open, as its aria-expanded says.
@@ -731,6 +758,7 @@
             _boards = Simulator.Boards;
             _selectedId = _boards.FirstOrDefault(b => b.Board.Port == port)?.Id;
             _shellyForm.Follow(Selected?.Id);
+        _loginForm.Follow(Selected?.Id);
         }
     }
 
@@ -739,6 +767,7 @@
         await Simulator.RemoveAsync(board.Id);
         _boards = Simulator.Boards;
         _shellyForm.Follow(Selected?.Id);
+        _loginForm.Follow(Selected?.Id);
     }
 
     // "3 models", or "1 model".
@@ -826,6 +855,9 @@
         return board.Board is ISimulatedBoardTimers timers ? $"timers: {TimersText(timers.Timers, capabilities)}" : null;
     }
 
+    // How long a slow board can wait before each answer, in seconds: around the app's 5 s limit.
+    private static readonly int[] AnswerDelays = [0, 1, 4, 6];
+
     // The lengths a power cut can have, in seconds.
     private static readonly int[] CutLengths = [5, 30, 120];
 
@@ -868,6 +900,11 @@
         if (board.Shelly is { IsGen1: true })
         {
             words.Add("Gen1");
+        }
+
+        if (board.AnswerDelay is { } delay && delay > TimeSpan.Zero)
+        {
+            words.Add($"slow, {CutText((int)delay.TotalSeconds)}");
         }
 
         return words.Count > 0 ? string.Join(" · ", words) : "answers normally";
@@ -960,6 +997,7 @@
             {
                 _boards = Simulator.Boards;
                 _shellyForm.Follow(Selected?.Id);
+                _loginForm.Follow(Selected?.Id);
                 _add.Refresh();
 
                 StateHasChanged();

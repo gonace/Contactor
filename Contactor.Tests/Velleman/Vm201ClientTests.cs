@@ -85,6 +85,25 @@ public sealed class Vm201ClientTests
         Assert.DoesNotContain(trace.Entries, e => e.Kind == Vm201TraceKind.ConnectionLost && e.Detail == Vm201Client.StoppedByApp);
     }
 
+    // The login changed on the board while the app runs: the session that is in stays; the next login is refused.
+    [Fact]
+    public async Task Should_BeRefused_AfterTheLoginChangedOnTheBoard()
+    {
+        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator, username: "admin", password: "secret");
+        await WaitUntilAsync(() => run.Client.State.IsConnected);
+
+        simulator.ChangeLogin("admin", "newpw");
+        await SendMarkerAsync(run.Client, simulator);
+        Assert.True(run.Client.State.IsConnected);
+        simulator.DropConnections();
+
+        await WaitUntilAsync(() => simulator.DeniedLoginCount == 1);
+        Assert.False(run.Client.State.IsConnected);
+        Assert.Throws<ArgumentException>(() => simulator.ChangeLogin("", "x"));
+    }
+
     // A login that worked before may be refused for a while: tried every 10 minutes for 24 hours, then held, as on the
     // polled boards.
     [Fact]

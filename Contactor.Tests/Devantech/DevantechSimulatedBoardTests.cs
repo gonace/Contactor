@@ -299,6 +299,38 @@ public sealed class DevantechSimulatedBoardTests
         Assert.DoesNotContain(simulator.ReceivedRequests, r => r.Contains("61 70", StringComparison.Ordinal));
     }
 
+    // A slow board answers after its delay on its own clock, not before.
+    [Fact]
+    public async Task Should_Answer_OnlyAfterItsAnswerDelay()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        simulator.AnswerDelay = TimeSpan.FromSeconds(4);
+        using var board = await Board.ConnectAsync(simulator);
+
+        var answer = board.AskAsync("24", 1);
+        await Wait.UntilAsync(() => time.Waits(TimeSpan.FromSeconds(4)));
+        Assert.False(answer.IsCompleted);
+        time.Advance(TimeSpan.FromSeconds(4));
+
+        Assert.Equal("00", await answer);
+    }
+
+    // The password changed on the board while it runs: the old one no longer unlocks, the new one does.
+    [Fact]
+    public async Task Should_TakeOnlyTheNewPassword_AfterItChanged()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth002, "apple", time);
+        simulator.ChangeLogin("", "pear");
+        using var board = await Board.ConnectAsync(simulator);
+
+        Assert.Equal("02", await board.AskAsync("79 61 70 70 6C 65", 1));
+        Assert.Equal("01", await board.AskAsync("79 70 65 61 72", 1));
+        Assert.Equal("1E", await board.AskAsync("7A", 1));
+        Assert.Throws<ArgumentException>(() => simulator.ChangeLogin("", ""));
+    }
+
     [Fact]
     public async Task Should_LockAgain_After30sWithoutACommand()
     {

@@ -66,7 +66,7 @@ public sealed class RunningBoard : IAsyncDisposable
     public string ShortName => Board.Model.Id.ToUpperInvariant();
 
     /// <summary>The user name it asks for, or null without a login. The password is never shown.</summary>
-    public string? Username { get; }
+    public string? Username { get; private set; }
 
     /// <summary>The controls for a Shelly's special cases, or null for any other board.</summary>
     public ShellyControls? Shelly { get; }
@@ -177,6 +177,63 @@ public sealed class RunningBoard : IAsyncDisposable
             CultureInfo.InvariantCulture,
             $"Relay {relay} set to {modes.ModeNames[mode]} mode here"));
         return modes.SetModeAsync(relay, mode);
+    }
+
+    /// <summary>How long the board waits before each answer; null for a board that can't be slow.</summary>
+    public TimeSpan? AnswerDelay => (Board as ISimulatedBoardSlowAnswers)?.AnswerDelay;
+
+    /// <summary>Makes the board wait this long before each answer, as a slow board; zero answers at once again.</summary>
+    public void SetAnswerDelay(TimeSpan delay)
+    {
+        if (Board is not ISimulatedBoardSlowAnswers slow || delay < TimeSpan.Zero || slow.AnswerDelay == delay)
+        {
+            return;
+        }
+
+        slow.AnswerDelay = delay;
+        Add(TrafficKind.AtBoard, delay == TimeSpan.Zero ? "Answering at once again here" : $"Answering after {Length(delay)} here");
+    }
+
+    /// <summary>Whether the board's login can be changed while it runs: a board that has one and can.</summary>
+    public bool CanChangeLogin => Board is ISimulatedBoardLogin && Username is not null;
+
+    /// <summary>
+    /// Changes the board's login while it runs, as on its own web page: from then on the app's login no longer fits.
+    /// Checked as when the board was added; the user name is ignored for a model whose login is a password alone.
+    /// Returns null when it is changed, otherwise why not, in words for the page. The password is never logged.
+    /// </summary>
+    public string? ChangeLogin(string? username, string? password)
+    {
+        if (Board is not ISimulatedBoardLogin login || Username is null)
+        {
+            return "The board has no login to change.";
+        }
+
+        var passwordOnly = Board.Model.PasswordOnly;
+        username = passwordOnly ? "" : username?.Trim() ?? "";
+        password ??= "";
+        if (password.Length == 0 || (!passwordOnly && username.Length == 0))
+        {
+            return passwordOnly ? "Write the new password." : "Write the new user name and password.";
+        }
+
+        if (SimulatorCatalogue.Find(Board.Model.Id)?.CheckLogin(username, password) is { } error)
+        {
+            return error;
+        }
+
+        try
+        {
+            login.ChangeLogin(username, password);
+        }
+        catch (ArgumentException ex)
+        {
+            return ex.Message;
+        }
+
+        Username = username;
+        Add(TrafficKind.AtBoard, passwordOnly ? "Password changed here: the app's no longer fits" : $"Login changed here to user {username}: the app's no longer fits");
+        return null;
     }
 
     /// <summary>The board's own rules the page can run now; empty for a board without (or with none on).</summary>

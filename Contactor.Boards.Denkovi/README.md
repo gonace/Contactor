@@ -466,6 +466,7 @@ rights that a developer doesn't have.
 - Like the board, it takes a community of 4 to 12 characters only.
 - Its trace shows the PDU of each message, never the community.
 - A power cut (`ISimulatedBoardPower`): no request gets an answer while the power is cut. With "Save Outputs" on (`SaveOutputs`, section 6.3) the relays come back as they were, off they all come back off; "Reset I/O Ports on Restart" isn't simulated. The simulator has "Save Outputs" off at start; the manual gives no factory value.
+- A new read-write community while it runs (`ChangeLogin`, the user name ignored): from then on a set with the old one gets no answer, as with any wrong community.
 
 ### Settings on the board that switch relays without the app
 

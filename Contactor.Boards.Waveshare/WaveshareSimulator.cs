@@ -17,7 +17,7 @@ namespace Contactor.Boards.Waveshare;
 /// board. Several clients may connect at once. Used by the tests and, in development, by Contactor.Simulator. It
 /// listens on the loopback interface only.
 /// </summary>
-public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardRelayModes, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower
+public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardRelayModes, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -33,6 +33,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
     private Task? _acceptLoop;
     private ulong _relays;
     private int _poweredOff;
+    private long _answerDelayTicks;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -260,6 +261,17 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         return Task.CompletedTask;
     }
 
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
     /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
     public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
 
@@ -386,6 +398,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
                 }
 
                 Interlocked.Increment(ref _requestCount);
+                await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                 await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -732,6 +745,13 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

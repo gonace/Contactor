@@ -307,33 +307,6 @@ public sealed class ShellyControls
         _log(gen1 ? "Answering as a Gen1 device here (the wrong model)" : "Answering as a Gen2+ device again here");
     }
 
-    /// <summary>
-    /// Changes the password, as on the device's own web page while the app runs: the app's password is wrong from now
-    /// on. Only a device with a password, and only to another password the device takes. Returns null when it is
-    /// changed, otherwise why not, in words for the page. The password is never logged.
-    /// </summary>
-    public string? ChangePassword(string? password)
-    {
-        if (!HasPassword)
-        {
-            return "The device has no password to change.";
-        }
-
-        if (string.IsNullOrEmpty(password))
-        {
-            return "Write the new password.";
-        }
-
-        if (ShellyModels.CheckPassword(password) is { } problem)
-        {
-            return problem.ToString();
-        }
-
-        _device.ChangePassword(password);
-        _log("Password changed here: the app's password no longer fits");
-        return null;
-    }
-
     /// <summary>Lets every nonce expire, as an hour later: the app's next request gets a 401 with stale=true.</summary>
     public void ExpireNonces()
     {

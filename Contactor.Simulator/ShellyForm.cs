@@ -42,11 +42,6 @@ public sealed class ShellyForm
 
     public string? ScheduleTime { get; set; } = DefaultTime;
 
-    /// <summary>The new password typed; cleared once the device takes it.</summary>
-    public string NewPassword { get; set; } = "";
-
-    public string? PasswordError { get; set; }
-
     /// <summary>Starts the fields afresh when <paramref name="boardId"/> is another board than the one they are for.</summary>
     public void Follow(int? boardId)
     {
@@ -61,8 +56,6 @@ public sealed class ShellyForm
         ScheduleRelay = 1;
         ScheduleOn = On;
         ScheduleTime = DefaultTime;
-        NewPassword = "";
-        PasswordError = null;
     }
 
     public void SetFirmware(ShellyControls shelly, string? firmware)
@@ -76,16 +69,5 @@ public sealed class ShellyForm
     {
         ArgumentNullException.ThrowIfNull(shelly);
         ScheduleError = shelly.AddSchedule(ScheduleRelay, ScheduleOn == On, ScheduleTime);
-    }
-
-    /// <summary>Changes the device's password to the one typed.</summary>
-    public void ChangePassword(ShellyControls shelly)
-    {
-        ArgumentNullException.ThrowIfNull(shelly);
-        PasswordError = shelly.ChangePassword(NewPassword);
-        if (PasswordError is null)
-        {
-            NewPassword = "";
-        }
     }
 }

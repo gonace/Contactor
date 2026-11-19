@@ -23,7 +23,7 @@ namespace Contactor.Boards.Shelly;
 /// device the app must refuse. It never tells the app anything by itself. Used by the tests and, in development, by
 /// Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardRules
+public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
     /// <summary>How long a client may take to send its whole request before the connection is closed.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -72,6 +72,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     private long _nextJobId = 1;
     private byte _relays;
     private int _poweredOff;
+    private long _answerDelayTicks;
     private byte _beforeCut;
     private byte _lastStatusSent = byte.MaxValue;
     private long _configRevision = 10;
@@ -486,12 +487,34 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         Volatile.Write(ref _password, password);
     }
 
+    /// <summary>The device's login is a password alone: <paramref name="username"/> is ignored (<see cref="ChangePassword"/>).</summary>
+    void ISimulatedBoardLogin.ChangeLogin(string username, string password)
+    {
+        if (ShellyModels.CheckPassword(password) is { } error)
+        {
+            throw new ArgumentException(error.ToString(), nameof(password));
+        }
+
+        ChangePassword(password);
+    }
+
     /// <summary>Forgets every nonce, as after a reboot: the next request with one gets a plain 401.</summary>
     public void ForgetNonces()
     {
         lock (_lock)
         {
             _nonces.Clear();
+        }
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
         }
     }
 
@@ -712,6 +735,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
                 return;
             }
 
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
             await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
@@ -1453,6 +1477,13 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

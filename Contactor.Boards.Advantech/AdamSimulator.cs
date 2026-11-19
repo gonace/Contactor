@@ -17,7 +17,7 @@ namespace Contactor.Boards.Advantech;
 /// connections, since the manual names no limit. It never tells the app anything by itself, as the real module. Used
 /// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower
+public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -37,6 +37,7 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
     private Task? _acceptLoop;
     private ulong _relays;
     private int _poweredOff;
+    private long _answerDelayTicks;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -162,6 +163,17 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
         var bit = 1UL << (input - 1);
         Change(() => _inputs = closed ? _inputs | bit : _inputs & ~bit);
         return Task.CompletedTask;
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
     }
 
     /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
@@ -332,6 +344,7 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
                 }
 
                 Interlocked.Increment(ref _requestCount);
+                await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                 await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -594,6 +607,13 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

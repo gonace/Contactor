@@ -20,7 +20,7 @@ namespace Contactor.Boards.Denkovi;
 /// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only. Its traces show
 /// the PDU only, never a community.
 /// </summary>
-public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower
+public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -30,7 +30,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
 
     private readonly ILogger _logger;
     private readonly DaenetIp2Layout _layout;
-    private readonly string _community;
+    private volatile string _community;
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentQueue<string> _receivedRequests = new();
     private readonly Lock _lock = new();
@@ -40,6 +40,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     private int _p3;
     private int _p5;
     private int _poweredOff;
+    private long _answerDelayTicks;
     private ulong _beforeCut;
     private readonly Dictionary<DaenetIp2Port, int> _lastPortSent = [];
 
@@ -268,6 +269,32 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         throw new ArgumentOutOfRangeException(nameof(input), input, $"The {Model.Name} has no inputs.");
     }
 
+    /// <summary>
+    /// Changes the read-write community while the board runs, as on its own SNMP settings: from then on a request with
+    /// the app's community gets no answer. <paramref name="username"/> is ignored: the community is the board's login.
+    /// </summary>
+    public void ChangeLogin(string username, string password)
+    {
+        ArgumentNullException.ThrowIfNull(password);
+        if (DaenetIp2Models.CheckCommunity(password) is { } error)
+        {
+            throw new ArgumentException(error.ToString(), nameof(password));
+        }
+
+        _community = password;
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
     /// <summary>Whether the power is cut: no request gets an answer, and every relay is off.</summary>
     public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
 
@@ -385,6 +412,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
                 if (Handle(buffer.AsSpan(0, received.ReceivedBytes), received.RemoteEndPoint) is { } answer)
                 {
                     Interlocked.Increment(ref _requestCount);
+                    await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                     await socket.SendToAsync(answer, SocketFlags.None, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -436,7 +464,8 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         }
 
         // A get takes either community, a set the read-write one only. The community itself is never traced.
-        var community = request.HasCommunity(_community) ? _community
+        var readWrite = _community;
+        var community = request.HasCommunity(readWrite) ? readWrite
             : request.PduType == DaenetIp2Api.GetRequest && request.HasCommunity(ReadOnlyCommunity) ? ReadOnlyCommunity
             : null;
         if (community is null)
@@ -672,6 +701,13 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

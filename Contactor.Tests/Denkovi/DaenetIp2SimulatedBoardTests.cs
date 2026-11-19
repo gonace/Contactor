@@ -186,6 +186,21 @@ public sealed class DaenetIp2SimulatedBoardTests
         Assert.Equal(1, simulator.UnansweredCount);
     }
 
+    // The read-write community changed on the board: a set with the old one gets no answer, one with the new one does.
+    [Fact]
+    public async Task Should_TakeOnlyTheNewCommunity_AfterItChanged()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        using var app = Client();
+        simulator.ChangeLogin("", "newcomm");
+
+        await SendAsync(app, simulator, DaenetIp2Snmp.SetPin(1, ReadWrite, new DaenetIp2Pin(DaenetIp2Port.P5, 1), high: true).Message);
+        Assert.Equal("01", Value(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.SetPin(2, "newcomm", new DaenetIp2Pin(DaenetIp2Port.P5, 2), high: true).Message))));
+
+        Assert.Equal(0b10UL, simulator.Relays);
+        Assert.Equal(1, simulator.UnansweredCount);
+    }
+
     [Fact]
     public async Task Should_StaySilent_ForAWrongCommunity_AnotherVersion_AndAnythingButGetAndSet()
     {

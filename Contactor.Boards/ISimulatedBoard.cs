@@ -177,3 +177,24 @@ public interface ISimulatedBoardRules
     /// </summary>
     Task<SimulatedRule?> RunRuleAsync(string id);
 }
+
+/// <summary>A simulated board that can answer slowly, as a busy or far board does.</summary>
+public interface ISimulatedBoardSlowAnswers
+{
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    TimeSpan AnswerDelay { get; set; }
+}
+
+/// <summary>
+/// A simulated board whose login can be changed while it runs, as a person would on the board's own web page: from
+/// then on the app's login no longer fits. Only on a board that has a login, and only to another login it takes.
+/// </summary>
+public interface ISimulatedBoardLogin
+{
+    /// <summary>
+    /// Changes the login; a model whose login is a password alone ignores <paramref name="username"/>. Throws
+    /// <see cref="InvalidOperationException"/> for a board without a login and <see cref="ArgumentException"/> for a
+    /// login the board doesn't take. Never logs the password.
+    /// </summary>
+    void ChangeLogin(string username, string password);
+}

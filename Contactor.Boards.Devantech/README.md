@@ -283,6 +283,7 @@ When `Host` is empty, the setup guide asks for the address.
 - For the tests, `NoAnswer` stops all answers, `FailRelays` refuses some relays, and `ModuleId` makes it answer as
   another model.
 - A power cut (`ISimulatedBoardPower`): with "Latched Outputs" on (`LatchedOutputs`; "Configuration", "Module Settings" in the ETH002-B and ETH008-B Technical Documentation: "automatically save any permanent output state changes (not pulsed) and restore them following power loss") the relays come back as their last permanent state, a pulse's change not counted. Off, the documentation doesn't say; the simulator brings them all back off. It has the setting off at start, as the documentation gives no factory value.
+- A new password while it runs (`ChangeLogin`, the user name ignored): from then on only the new one unlocks; a connection that is unlocked stays so until it locks again.
 
 ## To check on a real board
 

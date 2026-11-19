@@ -105,6 +105,7 @@ relay 2 for 2 s = `02 08 50 02 02 73 2F 03`.
 - `Vm201Simulator`: a `TcpListener`-based fake that implements the whole protocol, optional auth, push on change, a pulse that ends by itself on its `TimeProvider` and a way to simulate a disconnect, as an `ISimulatedBoard` and `ISimulatedBoardTimers`. Its traffic uses the same words as the app's Debug screen (`Vm201TraceDescriber`). It is used in the tests and in development, where `Contactor.Simulator` runs it as its own process through Aspire. The web app has no built-in simulator: it always connects to `Vm201:Host`.
 - "Run now" for a timer program (`ISimulatedBoardRules`): Velleman's description doesn't say what a timer program switches. The simulator assumes it turns its relay on at one time and off at another, so it offers both.
 - A power cut (`ISimulatedBoardPower`): Velleman's description doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off. It assumes the timer programs stay, which is unknown too.
+- A new login while it runs (`ChangeLogin`), as on the board's web page: a session that is logged in stays in; the next login needs the new one. The description doesn't say whether the board ends its sessions then; the simulator assumes it doesn't.
 
 ### Settings on the board that switch relays without the app
 
@@ -155,6 +156,7 @@ It is controlled only through its web server: plain HTTP, port 80 unless changed
 
 - `Vm204Simulator`: a small HTTP server on `TcpListener` with the same routes and 400s as the firmware, an optional login, relays and inputs set at the board, the analog value (0–1023, `SetAnalogAsync`, a slider on the simulator's page), a new key, and refused or dropped connections; a connection that sends no whole request head within 5 s is closed. The simulator's page offers port 8204 for a new one (`SimulatorModel.SuggestedPort`), as 80 needs rights a developer doesn't have.
 - A power cut (`ISimulatedBoardPower`): the firmware doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off.
+- A new login while it runs (`ChangeLogin`): `/api/auth` takes only the new one. The key the app has keeps working until it is made anew (`RegenerateKey`); the firmware doesn't say whether a new login makes a new key, so the simulator assumes it doesn't.
 
 ## VM208
 

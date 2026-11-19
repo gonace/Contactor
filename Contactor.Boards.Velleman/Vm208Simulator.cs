@@ -19,7 +19,7 @@ namespace Contactor.Boards.Velleman;
 /// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. Used by the
 /// tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardPower, ISimulatedBoardRules
+public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers
 {
     // The firmware's schedule table: the card's 4 relays and the extension modules' channels (config_vm208.cpp).
     private const int ScheduleTableSize = 268;
@@ -45,6 +45,7 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private readonly IReadOnlyList<Vm208Alarm>[] _alarms = [.. Enumerable.Range(0, Vm208Api.RelayCount).Select(_ => FactorySchedule)];
     private byte _relays;
     private int _poweredOff;
+    private long _answerDelayTicks;
     private bool _input;
     private Vm208Status? _lastStatusSent;
     private int _requestCount;
@@ -246,6 +247,17 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         return Task.CompletedTask;
     }
 
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
     /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
     public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
 
@@ -420,6 +432,7 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
             }
 
             Interlocked.Increment(ref _requestCount);
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
             await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
@@ -825,6 +838,13 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)
