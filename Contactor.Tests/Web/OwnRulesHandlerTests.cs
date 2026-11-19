@@ -1,8 +1,10 @@
+using System.Data.Common;
 using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Contactor.Tests.Web;
@@ -312,5 +314,80 @@ public sealed class OwnRulesHandlerTests
         await rig.HandledAsync();
         Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count);
         Assert.Equal(2, (await rig.RowsAsync()).Count(r => r.KeptBy == Erik));
+    }
+
+    // A relay joins a group between the check that it is in none and the keep's write (another person saves a group at
+    // that moment): the auto-on isn't kept, and the person reads why. A relay in no group is still kept, and other kinds
+    // on a grouped relay too.
+    [Fact]
+    public async Task Should_NotKeepAnAutoOn_WhoseRelayJoinsAGroupBeforeTheWrite()
+    {
+        var auto2 = new OwnRule(2, OwnRuleKind.AutoOn);
+        var timer2 = new OwnRule(2, OwnRuleKind.Timer);
+        var auto5 = new OwnRule(5, OwnRuleKind.AutoOn);
+        var auto6 = new OwnRule(6, OwnRuleKind.AutoOn);
+        var join = new JoinBeforeTheWrite();
+        await using var rig = await OwnRulesRig.StartAsync(services => services.ConfigureDbContext<ContactorDbContext>(o => o.AddInterceptors(join)));
+        rig.Board.SetOwnRules(new OwnRules([auto2, timer2, auto5, auto6]));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 4);
+
+        join.Arm(() => GroupAsync(rig, 1, 2));
+        var refused = await rig.Handler.KeepAsync(rig.BoardId, 2, OwnRuleKind.AutoOn, Erik, Cancel);
+
+        Assert.Equal(1, join.Joined);
+        Assert.Equal("Can't be kept: Relay 2 is in a group, and the board would turn it on again without the group's order.", refused);
+        Assert.Null(await rig.Handler.KeepAsync(rig.BoardId, 2, OwnRuleKind.Timer, Erik, Cancel));
+        Assert.Null(await rig.Handler.KeepAsync(rig.BoardId, 5, OwnRuleKind.AutoOn, Erik, Cancel));
+
+        // "Keep them" the same way: relay 6 joins a group before the write, and nothing of it is saved.
+        join.Arm(() => GroupAsync(rig, 7, 6));
+        Assert.StartsWith("Can't be kept: Relay 6 is in a group", await rig.Handler.KeepAllAsync(rig.BoardId, [auto6], Erik, Cancel), StringComparison.Ordinal);
+        Assert.Equal(2, join.Joined);
+
+        var rows = await rig.RowsAsync();
+        Assert.Equal(
+            [(2, OwnRuleKinds.Timer, true), (2, OwnRuleKinds.AutoOn, false), (5, OwnRuleKinds.AutoOn, true), (6, OwnRuleKinds.AutoOn, false)],
+            rows.Select(r => (r.Channel, r.Kind, r.KeptUtc is not null)).OrderBy(r => r.Channel).ThenBy(r => r.Kind == OwnRuleKinds.AutoOn));
+        Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleKept)).Count);
+        Assert.Equal([auto2, auto6], rig.Handler.Warnings(rig.BoardId));
+    }
+
+    // A group of two relays of the rig's board, saved straight into the database as a group's save does.
+    private static async Task GroupAsync(OwnRulesRig rig, int fan, int heat)
+    {
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        var group = new RelayGroup { BoardId = rig.BoardId, Name = $"Group {heat}", Icon = GroupIcons.Fan };
+        group.AddStep("Fan", await rig.RelayIdAsync(fan));
+        group.AddStep("Heat", await rig.RelayIdAsync(heat));
+        await db.AddWithRuntimesAsync(group);
+    }
+
+    // Runs a group's save once, just before the next transaction starts: after a keep's check, before its write.
+    private sealed class JoinBeforeTheWrite : DbTransactionInterceptor
+    {
+        private Func<Task>? _join;
+        private int _joined;
+
+        public int Joined => Volatile.Read(ref _joined);
+
+        public void Arm(Func<Task> join)
+        {
+            Volatile.Write(ref _join, join);
+        }
+
+        public override async ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+            DbConnection connection,
+            TransactionStartingEventData eventData,
+            InterceptionResult<DbTransaction> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _join, null) is { } join)
+            {
+                await join();
+                Interlocked.Increment(ref _joined);
+            }
+
+            return result;
+        }
     }
 }
