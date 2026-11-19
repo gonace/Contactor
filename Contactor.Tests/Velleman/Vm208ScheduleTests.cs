@@ -424,7 +424,7 @@ public sealed class Vm208ScheduleTests
         var task = client.RunAsync(stop.Token);
         await Wait.UntilAsync(() => board.State.IsConnected);
 
-        Assert.Equal(OwnRulesAbility.ReadsAndTurnsOff, board.Capabilities.OwnRules);
+        Assert.Equal(new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true), board.Capabilities.OwnRules);
         Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], board.State.OwnRules);
         Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], await board.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
         Assert.Equal(OwnRules.Empty, board.State.OwnRules);

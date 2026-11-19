@@ -39,6 +39,13 @@ public static class Vm208Api
     /// <summary>The port of the board's web server: <c>AsyncWebServer server(80)</c> in <c>src/Network/server_VM208.cpp</c>.</summary>
     public const int DefaultPort = 80;
 
+    /// <summary>
+    /// What the app knows of the board's own rules: it reads each relay's week schedule and turns it off; it can't see a
+    /// pulse or timer started on the board's own page, which lives only in the board's memory and can switch a relay
+    /// hours later (<c>src/PulseAndTimer.cpp</c>), so a person should still check the board's own page.
+    /// </summary>
+    public static OwnRulesAbility OwnRules { get; } = new(Reads: true, TurnsOff: true, MayHaveUnseen: true);
+
     public const int RelayCount = 4;
 
     /// <summary>

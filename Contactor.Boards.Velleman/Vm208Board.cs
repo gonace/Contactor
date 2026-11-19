@@ -5,8 +5,9 @@ namespace Contactor.Boards.Velleman;
 /// <summary>
 /// The VM208 as an <see cref="IRelayBoard"/>: 4 relays and 1 digital input, which it never reports by itself, so
 /// <see cref="Vm208Client"/> polls it. Its two transistor outputs (m1, m2) are not relays and aren't counted. Its own
-/// rules are its relays' week schedules, which the app reads and turns off only on a person's press. This only
-/// translates the client's state and commands.
+/// rules are its relays' week schedules, which the app reads and turns off only on a person's press; a pulse or timer
+/// started on the board's own page it can't see (<see cref="Vm208Api.OwnRules"/>). This only translates the client's
+/// state and commands.
 /// </summary>
 public sealed class Vm208Board : IRelayBoard
 {
@@ -14,7 +15,7 @@ public sealed class Vm208Board : IRelayBoard
         Vm208Api.RelayCount,
         InputCount: Vm208Api.InputCount,
         ReportsChanges: false,
-        OwnRules: OwnRulesAbility.ReadsAndTurnsOff);
+        OwnRules: Vm208Api.OwnRules);
 
     private readonly Vm208Client _client;
     private readonly ILogger<Vm208Board> _logger;
