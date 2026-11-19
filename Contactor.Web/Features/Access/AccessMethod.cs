@@ -18,6 +18,7 @@ public interface IAccessMethod
 /// <param name="SignIns">
 /// The sign-in methods it works with, by id; the first that isn't "Not recommended" is the one the guide recommends.
 /// </param>
+/// <param name="Group">Where the setup guide groups it, by how people reach the app.</param>
 /// <param name="Create">Gets it from the app's services.</param>
 /// <param name="Simplest">Whether the guide tags it "Simplest" and has it chosen to begin with.</param>
 public sealed record AccessMethod(
@@ -25,6 +26,7 @@ public sealed record AccessMethod(
     string Name,
     string Description,
     IReadOnlyList<string> SignIns,
+    AccessGroup Group,
     Func<IServiceProvider, IAccessMethod> Create,
     bool Simplest = false);
 
@@ -41,6 +43,7 @@ public static class AccessCatalogue
             "Only on this network",
             "At home or in the workshop, at the address of the machine Contactor runs on.",
             [SignInCatalogue.NoneId],
+            AccessGroup.LocalNetwork,
             s => s.GetRequiredService<LocalNetwork>(),
             Simplest: true),
         new(
@@ -48,12 +51,14 @@ public static class AccessCatalogue
             "Cloudflare",
             "Cloudflare Tunnel: a public link on your own domain. Needs a Cloudflare account and a domain.",
             [CloudflareMethods.AccessId],
+            AccessGroup.PublicAddress,
             s => s.GetRequiredService<CloudflareTunnel>()),
         new(
             TailscaleMethods.NetworkId,
             "Tailscale",
             "Tailscale Serve: only phones and computers on your Tailscale network can open it. Each needs the Tailscale app.",
             [TailscaleMethods.IdentityId],
+            AccessGroup.PrivateAccess,
             s => s.GetRequiredService<TailscaleNetwork>()),
     ];
 

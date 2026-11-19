@@ -1,5 +1,6 @@
 using Contactor.Boards.Velleman;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -32,13 +33,13 @@ public sealed class BoardHostedServiceTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
             },
             new Dictionary<string, string?>
             {
                 ["Vm201:Host"] = "127.0.0.1",
                 ["Vm201:Port"] = fromSettings.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["Vm201:DisableBoardTimers"] = "false",
             });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");

@@ -86,6 +86,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     public event EventHandler<BoardState>? OwnRulesChanged;
 
     /// <inheritdoc/>
+    public event EventHandler<BoardState>? PowerOnChanged;
+
+    /// <inheritdoc/>
     public event EventHandler<BoardTraceEntry>? Traced;
 
     /// <summary>The board's row (<see cref="Board.Id"/>).</summary>
@@ -269,6 +272,12 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         return Chosen().Board.TurnOffOwnRulesAsync(rules, cancellationToken);
     }
 
+    /// <summary>Throws <see cref="BoardNotConnectedException"/> before a model is chosen, as every command does.</summary>
+    public Task SetPowerOnAsync(int relay, PowerOnState state, CancellationToken cancellationToken = default)
+    {
+        return Chosen().Board.SetPowerOnAsync(relay, state, cancellationToken);
+    }
+
     /// <summary>
     /// Moves the board to <paramref name="endpoint"/>. At a new address the changes the app just asked the old one for
     /// are no longer expected (<see cref="Expected"/>): another board may be there, and its changes are its own.
@@ -290,6 +299,12 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     public void SetLogin(BoardLogin login)
     {
         (Active ?? throw new InvalidOperationException(NotChosen)).Connection.SetLogin(login);
+    }
+
+    /// <summary>A person's "Check again". Nothing happens before a model is chosen, or while the board is connected.</summary>
+    public void TryAgain()
+    {
+        Active?.Connection.TryAgain();
     }
 
     /// <summary>Throws <see cref="InvalidOperationException"/> before a model is chosen; see <see cref="TryCheckLogin"/>.</summary>
@@ -444,6 +459,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
                 board.Board.StateChanged += OnStateChanged;
                 board.Board.AnalogChanged += OnAnalogChanged;
                 board.Board.OwnRulesChanged += OnOwnRulesChanged;
+                board.Board.PowerOnChanged += OnPowerOnChanged;
                 board.Traffic.Traced += OnTraced;
                 Volatile.Write(ref _current, next);
                 if (old is not null)
@@ -451,6 +467,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
                     old.Board.Board.StateChanged -= OnStateChanged;
                     old.Board.Board.AnalogChanged -= OnAnalogChanged;
                     old.Board.Board.OwnRulesChanged -= OnOwnRulesChanged;
+                    old.Board.Board.PowerOnChanged -= OnPowerOnChanged;
                     old.Board.Traffic.Traced -= OnTraced;
                     old.Retired = true;
                 }
@@ -512,6 +529,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
                 slot.Board.Board.StateChanged -= OnStateChanged;
                 slot.Board.Board.AnalogChanged -= OnAnalogChanged;
                 slot.Board.Board.OwnRulesChanged -= OnOwnRulesChanged;
+                slot.Board.Board.PowerOnChanged -= OnPowerOnChanged;
                 slot.Board.Traffic.Traced -= OnTraced;
                 slot.Retired = true;
                 dispose = !slot.Running;
@@ -628,6 +646,18 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
             if (ReferenceEquals(sender, Active?.Board))
             {
                 Raise(OwnRulesChanged, state);
+            }
+        }
+    }
+
+    // As OnAnalogChanged, under the same lock.
+    private void OnPowerOnChanged(object? sender, BoardState state)
+    {
+        lock (_stateLock)
+        {
+            if (ReferenceEquals(sender, Active?.Board))
+            {
+                Raise(PowerOnChanged, state);
             }
         }
     }

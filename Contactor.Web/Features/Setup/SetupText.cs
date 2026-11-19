@@ -73,6 +73,18 @@ public sealed class SetupText
         };
     }
 
+    /// <summary>The setup guide's heading for an access group.</summary>
+    public string Name(AccessGroup group)
+    {
+        return group switch
+        {
+            AccessGroup.LocalNetwork => _texts["Setup.WayIn.Group.LocalNetwork"],
+            AccessGroup.PrivateAccess => _texts["Setup.WayIn.Group.PrivateAccess"],
+            AccessGroup.PublicAddress => _texts["Setup.WayIn.Group.PublicAddress"],
+            _ => throw new ArgumentOutOfRangeException(nameof(group), group, "Unknown access group."),
+        };
+    }
+
     /// <summary>A sign-in's name, e.g. "No sign-in".</summary>
     public string Name(SignInMethod signIn)
     {

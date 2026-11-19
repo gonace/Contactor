@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -57,9 +58,13 @@ public sealed record GroupMemberDraft(
 /// <param name="InputName">An input that controls it, so it can't join a group; null when none does.</param>
 /// <param name="Channel">Its channel on the board, the number the screens show.</param>
 /// <param name="BoardId">Its board: a group's relays are all on one board.</param>
-public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null, int BoardId = 0)
+/// <param name="Unavailable">
+/// Its board controls it by itself and ignores the app's commands for it (<see cref="BoardState.Unavailable"/>), so it
+/// can't join a group until a person resets it.
+/// </param>
+public sealed record GroupCandidate(int RelayId, int Channel, string Name, bool IsActive, string? GroupName, bool HasSchedules, string? InputName = null, int BoardId = 0, bool Unavailable = false)
 {
-    public bool IsFree => GroupName is null && !HasSchedules && InputName is null;
+    public bool IsFree => GroupName is null && !HasSchedules && InputName is null && !Unavailable;
 }
 
 /// <summary>
@@ -83,6 +88,7 @@ public sealed class GroupsHandler
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
     private readonly IStringLocalizer<Texts> _texts;
+    private readonly OwnRulesService _ownRules;
 
     public GroupsHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -90,8 +96,10 @@ public sealed class GroupsHandler
         LocalClock clock,
         RelayChanges changes,
         GroupSequencer sequencer,
-        IStringLocalizer<Texts> texts)
+        IStringLocalizer<Texts> texts,
+        OwnRulesService ownRules)
     {
+        _ownRules = ownRules;
         _texts = texts;
         _dbFactory = dbFactory;
         _registry = registry;
@@ -123,7 +131,10 @@ public sealed class GroupsHandler
         return ToView(group, runtime);
     }
 
-    /// <summary>The relays that can join a group: in none, without schedules of their own, and controlled by no input.</summary>
+    /// <summary>
+    /// The relays that can join a group: in none, without schedules of their own, controlled by no input, and not one its
+    /// board controls by itself (<see cref="BoardState.Unavailable"/>).
+    /// </summary>
     public Task<IReadOnlyList<Relay>> FreeRelaysAsync(CancellationToken cancellationToken)
     {
         return FreeRelaysAsync(null, cancellationToken);
@@ -144,7 +155,13 @@ public sealed class GroupsHandler
                 .Where(r => !taken.Contains(r.Id) && !scheduled.Contains(r.Id) && !controlled.Contains(r.Id))
                 .OrderBy(r => r.SortOrder).ThenBy(r => r.Channel)
                 .ToListAsync(cancellationToken))
-            .Where(IsOnBoard)];
+            .Where(r => IsOnBoard(r) && !IsUnavailable(r))];
+    }
+
+    // The board controls it by itself now, and ignores the app's commands for it.
+    private bool IsUnavailable(Relay relay)
+    {
+        return _registry.Find(relay.BoardId)?.State.Unavailable.Contains(relay.Channel) == true;
     }
 
     /// <summary>Every relay, and whether it can join a new group, for "New group".</summary>
@@ -160,7 +177,7 @@ public sealed class GroupsHandler
 
         // Not the relays of a board "Add a board" hasn't finished: it isn't on Relays, and is removed at the next start.
         return [.. relays.Values.Where(r => _registry.IsShown(r.BoardId)).OrderBy(r => r.BoardId).ThenBy(r => r.Channel).Select(r => new GroupCandidate(
-            r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id), r.BoardId))];
+            r.Id, r.Channel, r.Name, r.IsActive, groups.GetValueOrDefault(r.Id), scheduled.Contains(r.Id), inputs.GetValueOrDefault(r.Id), r.BoardId, IsUnavailable(r)))];
     }
 
     // The name of an input that controls each relay; the first by number (its channel) when several do.
@@ -253,7 +270,11 @@ public sealed class GroupsHandler
         await ForgetRelayRunsAsync(db, group.Members.Select(m => m.RelayId), cancellationToken);
         Log(db, group, userEmail, EventActions.GroupCreate, new { name = group.Name, steps = group.Steps.Select(s => s.Name) });
         await RelayRuns.SaveAsync(db, cancellationToken);
+
+        // A board's auto-on kept on a relay that is in a group now no longer counts as kept (OwnRulesHandler.CanKeep).
+        await OwnRulesService.ForgetKeepsInGroupsAsync(db, group.BoardId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await _ownRules.ReloadAsync(group.BoardId, CancellationToken.None);
         _changes.Notify();
         return (group.Id, null);
     }
@@ -336,7 +357,11 @@ public sealed class GroupsHandler
         group.MaxOnMinutes = draft.MaxOnMinutes;
         Log(db, group, userEmail, EventActions.GroupEdit, new { name = group.Name });
         await RelayRuns.SaveAsync(db, cancellationToken);
+
+        // As when creating one: a relay that joined may have a kept auto-on.
+        await OwnRulesService.ForgetKeepsInGroupsAsync(db, group.BoardId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await _ownRules.ReloadAsync(group.BoardId, CancellationToken.None);
         _changes.Notify();
         return null;
     }
@@ -375,6 +400,9 @@ public sealed class GroupsHandler
         db.RelayGroups.Remove(group);
         Log(db, group, userEmail, EventActions.GroupDelete, new { name = group.Name });
         await db.SaveChangesAsync(cancellationToken);
+
+        // Its relays may be kept again: the screens see it.
+        await _ownRules.ReloadAsync(group.BoardId, CancellationToken.None);
         _changes.Notify();
         return null;
     }
@@ -455,6 +483,12 @@ public sealed class GroupsHandler
             if (relay.BoardId != boardId)
             {
                 return _texts["Groups.Save.OneBoard"];
+            }
+
+            // A member that became unavailable stays (the group shows it, and won't start); none joins as one.
+            if (IsUnavailable(relay) && !await db.RelayGroupMembers.AnyAsync(m => m.RelayId == relayId && m.GroupId == groupId, cancellationToken))
+            {
+                return _texts["Groups.Save.Unavailable", relay.Name];
             }
 
             if (await db.Schedules.AnyAsync(s => s.RelayId == relayId, cancellationToken))

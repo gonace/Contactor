@@ -1,5 +1,6 @@
 using System.Globalization;
 using Contactor.Boards;
+using Contactor.Boards.Shelly;
 
 namespace Contactor.Simulator;
 
@@ -46,6 +47,7 @@ public sealed class RunningBoard : IAsyncDisposable
         Username = username;
         FromSettings = fromSettings;
         _time = time;
+        Shelly = board is ShellySimulator shelly ? new ShellyControls(shelly, text => Add(TrafficKind.AtBoard, text)) : null;
         Board.Traced += OnTraced;
         Board.Changed += OnChanged;
     }
@@ -60,6 +62,9 @@ public sealed class RunningBoard : IAsyncDisposable
 
     /// <summary>The user name it asks for, or null without a login. The password is never shown.</summary>
     public string? Username { get; }
+
+    /// <summary>The controls for a Shelly's special cases, or null for any other board.</summary>
+    public ShellyControls? Shelly { get; }
 
     /// <summary>Started from the settings, so it starts every time; otherwise added on the page.</summary>
     public bool FromSettings { get; }
@@ -141,6 +146,23 @@ public sealed class RunningBoard : IAsyncDisposable
             CultureInfo.InvariantCulture,
             $"The board's own timer for relay {relay} turned {(turnOn ? "on" : "off")} here"));
         return timers.SetTimerAsync(relay, turnOn);
+    }
+
+    /// <summary>
+    /// Sets one relay's control mode, as the board's own tool or web page would; the others stay as they are. Nothing
+    /// for a board without modes, or for a relay or mode it doesn't have: the page offers only those.
+    /// </summary>
+    public Task SetModeAsync(int relay, int mode)
+    {
+        if (Board is not ISimulatedBoardRelayModes modes || relay < 1 || relay > modes.Modes.Count || mode < 0 || mode >= modes.ModeNames.Count)
+        {
+            return Task.CompletedTask;
+        }
+
+        Add(TrafficKind.AtBoard, string.Create(
+            CultureInfo.InvariantCulture,
+            $"Relay {relay} set to {modes.ModeNames[mode]} mode here"));
+        return modes.SetModeAsync(relay, mode);
     }
 
     public void DropConnections()

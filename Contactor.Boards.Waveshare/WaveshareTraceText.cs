@@ -84,7 +84,9 @@ public static class WaveshareTraceText
             WaveshareApi.WriteSingleCoil when value == WaveshareApi.CoilOn => $"Relay {Number(address + 1)} turned on",
             WaveshareApi.WriteSingleCoil when value == WaveshareApi.CoilOff => $"Relay {Number(address + 1)} turned off",
             WaveshareApi.WriteSingleCoil when value == WaveshareApi.CoilToggle => $"Relay {Number(address + 1)} flipped",
-            WaveshareApi.WriteSingleRegister or WaveshareApi.WriteMultipleRegisters when IsModeRegister(address) => "Relay modes written",
+            WaveshareApi.WriteSingleRegister when IsModeRegister(address) =>
+                $"Relay {Number(address - WaveshareApi.RelayModeRegister + 1)} set to {ModeName(value)} mode",
+            WaveshareApi.WriteMultipleRegisters when IsModeRegister(address) => "Relay modes written",
             _ => "Done",
         };
     }

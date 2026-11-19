@@ -315,11 +315,35 @@
   <data name="Boards.Port" xml:space="preserve">
     <value>Port</value>
   </data>
+  <data name="Boards.Problem.AskedToWait" xml:space="preserve">
+    <value>Kortet ber Contactor att vänta en stund. Kontrollera lösenordet om du nyss har ändrat det.</value>
+  </data>
+  <data name="Boards.Problem.AskedToWait.Login" xml:space="preserve">
+    <value>Kortet ber Contactor att vänta en stund. Kontrollera användarnamnet och lösenordet om du nyss har ändrat dem.</value>
+  </data>
+  <data name="Boards.Problem.CoverProfile" xml:space="preserve">
+    <value>Kortet är inställt på att styra en rullgardin eller markis, inte reläer. Ställ in dess profil på "switch" på kortets egen webbsida och kontrollera sedan igen.</value>
+  </data>
+  <data name="Boards.Problem.FirmwareTooOld" xml:space="preserve">
+    <value>Kortets firmware är för gammal. Uppdatera den till {0} eller senare på kortets egen webbsida.</value>
+  </data>
+  <data name="Boards.Problem.FirmwareTooOld.Unknown" xml:space="preserve">
+    <value>Kortets firmware är för gammal. Uppdatera den på kortets egen webbsida.</value>
+  </data>
   <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
     <value>Kortet vill ha ett användarnamn och lösenord.</value>
   </data>
   <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
     <value>Kortet vill ha ett lösenord.</value>
+  </data>
+  <data name="Boards.Problem.Short.AskedToWait" xml:space="preserve">
+    <value>Ber oss vänta</value>
+  </data>
+  <data name="Boards.Problem.Short.CoverProfile" xml:space="preserve">
+    <value>Inställt för rullgardin</value>
+  </data>
+  <data name="Boards.Problem.Short.FirmwareTooOld" xml:space="preserve">
+    <value>Gammal firmware</value>
   </data>
   <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
     <value>Behöver inloggning</value>
@@ -350,6 +374,12 @@
   </data>
   <data name="Boards.Problem.WrongPassword" xml:space="preserve">
     <value>Lösenordet är fel.</value>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount" xml:space="preserve">
+    <value>Kortet på den här adressen har {0}, inte {1}.</value>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount.AddAgain" xml:space="preserve">
+    <value>Lägg till det igen med "{1}", välj det med {0} och ta sedan bort det här.</value>
   </data>
   <data name="Boards.Relays.InGroup" xml:space="preserve">
     <value>I gruppen {0}, som styr det.</value>
@@ -420,6 +450,9 @@
   <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
     <value>{0} ingångsåtgärder</value>
   </data>
+  <data name="Boards.Remove.KeptOn" xml:space="preserve">
+    <value>Relä {0} ({1}) är på så länge relä {2} ({3}) är på.</value>
+  </data>
   <data name="Boards.Remove.Lost" xml:space="preserve">
     <value>{0} har tappat kontakten, så dess reläer kunde inte stängas av. Inget togs bort.</value>
   </data>
@@ -446,6 +479,12 @@
   </data>
   <data name="Boards.Remove.Title" xml:space="preserve">
     <value>Ta bort kortet</value>
+  </data>
+  <data name="Boards.Remove.Unavailable_One" xml:space="preserve">
+    <value>Relä {0} styrs av kortet självt och lämnas som det är.</value>
+  </data>
+  <data name="Boards.Remove.Unavailable_Other" xml:space="preserve">
+    <value>Relä {0} styrs av kortet självt och lämnas som de är.</value>
   </data>
   <data name="Boards.Save.EnterName" xml:space="preserve">
     <value>Skriv ett namn.</value>
@@ -695,9 +734,11 @@
   </data>
   <data name="Events.Board.ModesNotReset" xml:space="preserve">
     <value>{0} kunde inte få sina reläer i normalläge, så dess ingångar kan slå om dem</value>
+    <comment>No longer written; kept for events logged before Issue #497.</comment>
   </data>
   <data name="Events.Board.ModesReset" xml:space="preserve">
     <value>{0} fick sina reläer i normalläge, så att dess ingångar inte slår om dem</value>
+    <comment>No longer written; kept for events logged before Issue #497.</comment>
   </data>
   <data name="Events.Board.Removed" xml:space="preserve">
     <value>{0} tog bort reläkortet {1} ({2})</value>
@@ -818,6 +859,129 @@
   </data>
   <data name="Events.Other" xml:space="preserve">
     <value>{0} {1}</value>
+  </data>
+  <data name="Events.OwnRules.Found.AutoOn" xml:space="preserve">
+    <value>{0} slår på relä {1} igen av sig självt när det har stängts av</value>
+  </data>
+  <data name="Events.OwnRules.Found.Edge" xml:space="preserve">
+    <value>Ingång {1} slår om relä {1} vid varje ändring på {0}</value>
+  </data>
+  <data name="Events.OwnRules.Found.Linkage" xml:space="preserve">
+    <value>Relä {1} blev otillgängligt: {0} styr det självt</value>
+  </data>
+  <data name="Events.OwnRules.Found.Rule" xml:space="preserve">
+    <value>{0} har en egen regel för relä {1}</value>
+  </data>
+  <data name="Events.OwnRules.Found.Timer" xml:space="preserve">
+    <value>{0} har en egen timer för relä {1}</value>
+  </data>
+  <data name="Events.OwnRules.Found.Toggle" xml:space="preserve">
+    <value>Ingång {1} slår om relä {1} vid varje puls på {0}</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.AutoOn" xml:space="preserve">
+    <value>{0} slår nu på relä {1} igen av sig självt när det har stängts av</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Edge" xml:space="preserve">
+    <value>Ingång {1} slår nu om relä {1} vid varje ändring på {0}</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Linkage" xml:space="preserve">
+    <value>Relä {1} blev otillgängligt: {0} styr det självt</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Rule" xml:space="preserve">
+    <value>{0} egna regel för relä {1} slogs på</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Timer" xml:space="preserve">
+    <value>{0} egna timer för relä {1} slogs på</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Toggle" xml:space="preserve">
+    <value>Ingång {1} slår nu om relä {1} vid varje puls på {0}</value>
+  </data>
+  <data name="Events.OwnRules.Kept" xml:space="preserve">
+    <value>{0} behöll {1} {2} för {3}</value>
+  </data>
+  <data name="Events.OwnRules.Kept.AutoOn" xml:space="preserve">
+    <value>{0} lät {1} fortsätta slå på {2} igen av sig självt</value>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRule" xml:space="preserve">
+    <value>egna ingångsregel</value>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRules" xml:space="preserve">
+    <value>egna ingångsregler</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rule" xml:space="preserve">
+    <value>egna regel</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rules" xml:space="preserve">
+    <value>egna regler</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timer" xml:space="preserve">
+    <value>egna timer</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timers" xml:space="preserve">
+    <value>egna timrar</value>
+  </data>
+  <data name="Events.OwnRules.Named" xml:space="preserve">
+    <value>{0}s</value>
+  </data>
+  <data name="Events.OwnRules.NamedEndingInS" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Events.OwnRules.Relay" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="Events.OwnRules.Relays" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="Events.OwnRules.Reset" xml:space="preserve">
+    <value>{0} återställde {1}</value>
+  </data>
+  <data name="Events.OwnRules.TheBoards" xml:space="preserve">
+    <value>kortets</value>
+  </data>
+  <data name="Events.OwnRules.TurnedOff" xml:space="preserve">
+    <value>{0} stängde av {1} {2} för {3}</value>
+  </data>
+  <data name="Events.OwnRules.TurnedOff.AutoOn" xml:space="preserve">
+    <value>{0} gjorde att {1} inte längre slår på {2} igen av sig självt</value>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
+    <value>kortet</value>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoards" xml:space="preserve">
+    <value>Kortets</value>
+  </data>
+  <data name="Events.OwnRules.With" xml:space="preserve">
+    <value>, och därmed {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.AutoOn" xml:space="preserve">
+    <value>det automatiska påslaget för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Rule" xml:space="preserve">
+    <value>regeln för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Rules" xml:space="preserve">
+    <value>reglerna för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Timer" xml:space="preserve">
+    <value>timern för {0}</value>
+  </data>
+  <data name="Events.OwnRules.With.Timers" xml:space="preserve">
+    <value>timrarna för {0}</value>
+  </data>
+  <data name="Events.PowerOn.AsBefore" xml:space="preserve">
+    <value>{0} ställde in att reläet blir som innan efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.Changed" xml:space="preserve">
+    <value>{0} ändrade vad reläet gör efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.FollowsInput" xml:space="preserve">
+    <value>{0} ställde in att reläet följer sin brytare efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.Off" xml:space="preserve">
+    <value>{0} ställde in att reläet förblir avstängt efter ett strömavbrott</value>
+  </data>
+  <data name="Events.PowerOn.On" xml:space="preserve">
+    <value>{0} ställde in att reläet slås på efter ett strömavbrott</value>
   </data>
   <data name="Events.Pulse" xml:space="preserve">
     <value>{0} provkörde i {1}</value>
@@ -1122,6 +1286,12 @@
   <data name="Groups.New.OnBoard" xml:space="preserve">
     <value>PÅ {0}</value>
   </data>
+  <data name="Groups.New.PowerOn" xml:space="preserve">
+    <value>EFTER ETT STRÖMAVBROTT</value>
+  </data>
+  <data name="Groups.New.PowerOnText" xml:space="preserve">
+    <value>Contactor ställer in kortet så att {0} är av efter ett strömavbrott. Contactor startar sedan gruppen i sin ordning.</value>
+  </data>
   <data name="Groups.New.Preview" xml:space="preserve">
     <value>SÅ HÄR SER DEN UT I LISTAN</value>
   </data>
@@ -1170,6 +1340,9 @@
   <data name="Groups.Note.InactiveFree" xml:space="preserve">
     <value>Inaktivt · ledigt</value>
   </data>
+  <data name="Groups.Note.Unavailable" xml:space="preserve">
+    <value>Inte tillgängligt för Contactor</value>
+  </data>
   <data name="Groups.OneBoard" xml:space="preserve">
     <value>En grupps reläer sitter alla på samma kort.</value>
   </data>
@@ -1191,11 +1364,47 @@
   <data name="Groups.Plan.Then" xml:space="preserve">
     <value>{0} → vänta {1} → {2}</value>
   </data>
+  <data name="Groups.PowerOn.CantTell" xml:space="preserve">
+    <value>Kan inte se vad kortet gör efter ett strömavbrott. Kontrollera det på kortet.</value>
+  </data>
+  <data name="Groups.PowerOn.MakeSafe" xml:space="preserve">
+    <value>Gör säkert</value>
+  </data>
+  <data name="Groups.PowerOn.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med kortet, så inget ändrades. Försök igen när kortet svarar.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetCreated" xml:space="preserve">
+    <value>Gruppen skapades, men Contactor kunde inte se till att kortet håller dess reläer av efter ett strömavbrott. Öppna gruppen för att se vad du ska göra.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetCreated.Unknown" xml:space="preserve">
+    <value>Gruppen skapades, men Contactor kunde inte se till att kortet håller dess reläer av efter ett strömavbrott. Kortet har inte visat än vad de gör. Om det visar att det slår på något av dem varnar gruppens sida.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
+    <value>Gruppen sparades, men Contactor kunde inte se till att kortet håller dess nya reläer av efter ett strömavbrott.</value>
+  </data>
+  <data name="Groups.PowerOn.OnSave" xml:space="preserve">
+    <value>När du sparar ställer Contactor in kortet så att {0} är av efter ett strömavbrott.</value>
+  </data>
+  <data name="Groups.PowerOn.Unknown" xml:space="preserve">
+    <value>Kan inte se än vad kortet gör efter ett strömavbrott.</value>
+  </data>
+  <data name="Groups.PowerOn.Warning" xml:space="preserve">
+    <value>Efter ett strömavbrott kan kortet slå på {0} av sig självt, utan gruppens startordning.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_One" xml:space="preserve">
+    <value>"Gör säkert" ställer det på Av på kortet. Contactor startar sedan gruppen i sin ordning.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_Other" xml:space="preserve">
+    <value>"Gör säkert" ställer dem på Av på kortet. Contactor startar sedan gruppen i sin ordning.</value>
+  </data>
   <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
     <value>Kräver att {0} är på.</value>
   </data>
   <data name="Groups.Refusal.NotInGroup" xml:space="preserve">
     <value>Det reläet är inte med i gruppen.</value>
+  </data>
+  <data name="Groups.Refusal.Unavailable" xml:space="preserve">
+    <value>{0} är inte tillgängligt för Contactor: kortet styr det självt.</value>
   </data>
   <data name="Groups.RelayOption" xml:space="preserve">
     <value>Relä {0} · {1}</value>
@@ -1269,11 +1478,26 @@
   <data name="Groups.Save.Twice" xml:space="preserve">
     <value>Ett relä kan bara vara med i gruppen en gång.</value>
   </data>
+  <data name="Groups.Save.Unavailable" xml:space="preserve">
+    <value>{0} kan inte ingå i en grupp: kortet styr det självt.</value>
+  </data>
   <data name="Groups.Save.Wait" xml:space="preserve">
     <value>Väntan vid start är {0}–{1} sekunder.</value>
   </data>
   <data name="Groups.StartWait" xml:space="preserve">
     <value>Vid start, vänta</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_One" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_Other" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_One" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_Other" xml:space="preserve">
+    <value>{0} går så länge {1} är på.</value>
   </data>
   <data name="Groups.Status.Off" xml:space="preserve">
     <value>Av</value>
@@ -1479,6 +1703,294 @@
   <data name="Inputs.WhyUnknownLabel" xml:space="preserve">
     <value>Varför är tiden okänd?</value>
   </data>
+  <data name="OwnRules.Also.AutoOn" xml:space="preserve">
+    <value>Gör också att kortet inte längre slår på {0} igen av sig självt.</value>
+  </data>
+  <data name="OwnRules.Also.Edge" xml:space="preserve">
+    <value>Gör också att ingångarna inte längre slår om {0}.</value>
+  </data>
+  <data name="OwnRules.Also.Input" xml:space="preserve">
+    <value>Gör också att ingångarna inte längre slår om {0}.</value>
+  </data>
+  <data name="OwnRules.Also.Linkage" xml:space="preserve">
+    <value>Återställer också {0}.</value>
+  </data>
+  <data name="OwnRules.Also.Rule" xml:space="preserve">
+    <value>Stänger också av kortets egna regler för {0}.</value>
+  </data>
+  <data name="OwnRules.Also.Timer" xml:space="preserve">
+    <value>Stänger också av kortets timer för {0}.</value>
+  </data>
+  <data name="OwnRules.Also.Toggle" xml:space="preserve">
+    <value>Gör också att ingångarna inte längre slår om {0}.</value>
+  </data>
+  <data name="OwnRules.CanSwitch_One" xml:space="preserve">
+    <value>Den kan slå om {0} utan Contactor.</value>
+  </data>
+  <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
+    <value>De kan slå om {0} utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.CantTell" xml:space="preserve">
+    <value>Kortet kan ha egna timers. Titta på kortets egen webbsida.</value>
+  </data>
+  <data name="OwnRules.Card.Hint" xml:space="preserve">
+    <value>De kan slå på och stänga av reläer utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.MayHaveUnseen" xml:space="preserve">
+    <value>Kortet kan också ha regler som Contactor inte ser. Kontrollera kortets egen webbsida.</value>
+  </data>
+  <data name="OwnRules.Card.Title.AutoOn" xml:space="preserve">
+    <value>Reläer som kortet slår på igen</value>
+  </data>
+  <data name="OwnRules.Card.Title.Edge" xml:space="preserve">
+    <value>Kortets ingångsregler</value>
+  </data>
+  <data name="OwnRules.Card.Title.Input" xml:space="preserve">
+    <value>Kortets ingångsregler</value>
+  </data>
+  <data name="OwnRules.Card.Title.Linkage" xml:space="preserve">
+    <value>Reläer som kortet styr självt</value>
+  </data>
+  <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
+    <value>Kortets egna regler</value>
+  </data>
+  <data name="OwnRules.Card.Title.Timer" xml:space="preserve">
+    <value>Kortets egna timers</value>
+  </data>
+  <data name="OwnRules.Card.Title.Toggle" xml:space="preserve">
+    <value>Kortets ingångsregler</value>
+  </data>
+  <data name="OwnRules.CardLine.AutoOn" xml:space="preserve">
+    <value>Kortet slår på det igen av sig självt när det har stängts av</value>
+  </data>
+  <data name="OwnRules.CardLine.Edge" xml:space="preserve">
+    <value>Varje ändring på dess ingång slår om det</value>
+  </data>
+  <data name="OwnRules.CardLine.Input" xml:space="preserve">
+    <value>Kortets ingångsregel kan slå om det</value>
+  </data>
+  <data name="OwnRules.CardLine.Linkage" xml:space="preserve">
+    <value>Kortet styr det självt</value>
+  </data>
+  <data name="OwnRules.CardLine.Rule" xml:space="preserve">
+    <value>Kortets egen regel kan slå om det</value>
+  </data>
+  <data name="OwnRules.CardLine.Timer" xml:space="preserve">
+    <value>Kortets timer kan slå om det</value>
+  </data>
+  <data name="OwnRules.CardLine.Toggle" xml:space="preserve">
+    <value>En puls på dess ingång kan slå om det</value>
+  </data>
+  <data name="OwnRules.Found.Date" xml:space="preserve">
+    <value>Hittades {0} {1}</value>
+  </data>
+  <data name="OwnRules.Found.Today" xml:space="preserve">
+    <value>Hittades i dag {0}</value>
+  </data>
+  <data name="OwnRules.Found.Yesterday" xml:space="preserve">
+    <value>Hittades i går {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.AutoOn" xml:space="preserve">
+    <value>Kortet slår på {0} igen av sig självt</value>
+  </data>
+  <data name="OwnRules.GroupLine.Edge" xml:space="preserve">
+    <value>Varje ändring på en ingång kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Input" xml:space="preserve">
+    <value>Kortets ingångsregler kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Linkage" xml:space="preserve">
+    <value>Kortet styr {0} självt</value>
+  </data>
+  <data name="OwnRules.GroupLine.Rule" xml:space="preserve">
+    <value>Kortets egen regel kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Timer" xml:space="preserve">
+    <value>Kortets timer kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Toggle" xml:space="preserve">
+    <value>En puls på en ingång kan slå om {0}</value>
+  </data>
+  <data name="OwnRules.Keep" xml:space="preserve">
+    <value>Behåll</value>
+  </data>
+  <data name="OwnRules.Keep.Gone" xml:space="preserve">
+    <value>Kortet har inte längre den regeln.</value>
+  </data>
+  <data name="OwnRules.Keep.InGroup" xml:space="preserve">
+    <value>Kan inte behållas: {0} ingår i en grupp, och kortet skulle slå på det igen utan gruppens ordning.</value>
+  </data>
+  <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
+    <value>Kortet styr reläet självt, så det kan inte behållas. Återställ det i stället.</value>
+  </data>
+  <data name="OwnRules.KeepAll_One" xml:space="preserve">
+    <value>Behåll den</value>
+  </data>
+  <data name="OwnRules.KeepAll_Other" xml:space="preserve">
+    <value>Behåll dem</value>
+  </data>
+  <data name="OwnRules.Kept" xml:space="preserve">
+    <value>Behålls med flit</value>
+  </data>
+  <data name="OwnRules.Relay" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.Relays" xml:space="preserve">
+    <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.Reset" xml:space="preserve">
+    <value>Återställ</value>
+  </data>
+  <data name="OwnRules.Reset.Label" xml:space="preserve">
+    <value>Återställ relä {0}</value>
+  </data>
+  <data name="OwnRules.Step.Intro_One" xml:space="preserve">
+    <value>Den kan slå på och stänga av ett relä utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Step.Intro_Other" xml:space="preserve">
+    <value>De kan slå på och stänga av reläer utan Contactor.</value>
+  </data>
+  <data name="OwnRules.Step.Later" xml:space="preserve">
+    <value>Inte nu</value>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
+    <value>Kortet visar den fortfarande som på. Försök igen, eller behåll den.</value>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_Other" xml:space="preserve">
+    <value>Kortet visar dem fortfarande som på. Försök igen, eller behåll dem.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_One" xml:space="preserve">
+    <value>Vi rekommenderar att du stänger av den.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
+    <value>Vi rekommenderar att du stänger av dem.</value>
+  </data>
+  <data name="OwnRules.Step.Title.AutoOn_One" xml:space="preserve">
+    <value>Kortet slår på ett relä igen av sig självt</value>
+  </data>
+  <data name="OwnRules.Step.Title.AutoOn_Other" xml:space="preserve">
+    <value>Kortet slår på reläer igen av sig självt</value>
+  </data>
+  <data name="OwnRules.Step.Title.Edge_One" xml:space="preserve">
+    <value>Kortet har en ingång som slår om ett relä vid varje ändring</value>
+  </data>
+  <data name="OwnRules.Step.Title.Edge_Other" xml:space="preserve">
+    <value>Kortet har ingångar som slår om reläer vid varje ändring</value>
+  </data>
+  <data name="OwnRules.Step.Title.Input_One" xml:space="preserve">
+    <value>Kortet har en egen ingångsregel</value>
+  </data>
+  <data name="OwnRules.Step.Title.Input_Other" xml:space="preserve">
+    <value>Kortet har egna ingångsregler</value>
+  </data>
+  <data name="OwnRules.Step.Title.Linkage_One" xml:space="preserve">
+    <value>Kortet styr ett relä självt</value>
+  </data>
+  <data name="OwnRules.Step.Title.Linkage_Other" xml:space="preserve">
+    <value>Kortet styr reläer självt</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_One" xml:space="preserve">
+    <value>Kortet har en egen regel</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_Other" xml:space="preserve">
+    <value>Kortet har egna regler</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_One" xml:space="preserve">
+    <value>Kortet har en egen timer</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_Other" xml:space="preserve">
+    <value>Kortet har egna timers</value>
+  </data>
+  <data name="OwnRules.Step.Title.Toggle_One" xml:space="preserve">
+    <value>Kortet har en ingång som slår om ett relä</value>
+  </data>
+  <data name="OwnRules.Step.Title.Toggle_Other" xml:space="preserve">
+    <value>Kortet har ingångar som slår om reläer</value>
+  </data>
+  <data name="OwnRules.TheBoard" xml:space="preserve">
+    <value>Kortet</value>
+  </data>
+  <data name="OwnRules.TurnOff" xml:space="preserve">
+    <value>Stäng av</value>
+  </data>
+  <data name="OwnRules.TurnOff.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med reläkortet. Inget stängdes av.</value>
+  </data>
+  <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
+    <value>Reläkortet stängde inte av dem. Försök igen.</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
+    <value>Stäng av den</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
+    <value>Stäng av dem</value>
+  </data>
+  <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
+    <value>Kortet styr det självt. Återställ det för att starta gruppen.</value>
+  </data>
+  <data name="OwnRules.Unavailable.GroupText_Other" xml:space="preserve">
+    <value>Kortet styr dem självt. Återställ dem för att starta gruppen.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Group_One" xml:space="preserve">
+    <value>{0} är inte tillgängligt för Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Group_Other" xml:space="preserve">
+    <value>{0} är inte tillgängliga för Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Heading" xml:space="preserve">
+    <value>Inte tillgängliga för Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Refused" xml:space="preserve">
+    <value>Kortet styr reläet självt. Återställ det för att styra det härifrån.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Relay" xml:space="preserve">
+    <value>Kortet styr reläet självt: det följer ingång {0}. Återställ det för att styra det härifrån.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Step" xml:space="preserve">
+    <value>Inte tillgängligt för Contactor tills det återställs</value>
+  </data>
+  <data name="OwnRules.Warning.AutoOn_One" xml:space="preserve">
+    <value>{0} slår på ett relä igen av sig självt</value>
+  </data>
+  <data name="OwnRules.Warning.AutoOn_Other" xml:space="preserve">
+    <value>{0} slår på reläer igen av sig självt</value>
+  </data>
+  <data name="OwnRules.Warning.Edge_One" xml:space="preserve">
+    <value>{0} har en ingång som slår om ett relä vid varje ändring</value>
+  </data>
+  <data name="OwnRules.Warning.Edge_Other" xml:space="preserve">
+    <value>{0} har ingångar som slår om reläer vid varje ändring</value>
+  </data>
+  <data name="OwnRules.Warning.Input_One" xml:space="preserve">
+    <value>{0} har en egen ingångsregel</value>
+  </data>
+  <data name="OwnRules.Warning.Input_Other" xml:space="preserve">
+    <value>{0} har egna ingångsregler</value>
+  </data>
+  <data name="OwnRules.Warning.Linkage_One" xml:space="preserve">
+    <value>{0} styr ett relä självt</value>
+  </data>
+  <data name="OwnRules.Warning.Linkage_Other" xml:space="preserve">
+    <value>{0} styr reläer självt</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_One" xml:space="preserve">
+    <value>{0} har en egen regel</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_Other" xml:space="preserve">
+    <value>{0} har egna regler</value>
+  </data>
+  <data name="OwnRules.Warning.Timer_One" xml:space="preserve">
+    <value>{0} har en egen timer</value>
+  </data>
+  <data name="OwnRules.Warning.Timer_Other" xml:space="preserve">
+    <value>{0} har egna timers</value>
+  </data>
+  <data name="OwnRules.Warning.Toggle_One" xml:space="preserve">
+    <value>{0} har en ingång som slår om ett relä</value>
+  </data>
+  <data name="OwnRules.Warning.Toggle_Other" xml:space="preserve">
+    <value>{0} har ingångar som slår om reläer</value>
+  </data>
   <data name="Relays.AllBoardsOff" xml:space="preserve">
     <value>Stäng av alla kort</value>
   </data>
@@ -1649,6 +2161,69 @@
   </data>
   <data name="Relays.Online.Several" xml:space="preserve">
     <value>Anslutet · uppdaterat {0}</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.AsBefore" xml:space="preserve">
+    <value>Kortet ställer själv tillbaka det som det var när strömmen gick, på eller av.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.FollowsInput" xml:space="preserve">
+    <value>Kortet slår på det själv när dess brytare är på, utan Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.Off" xml:space="preserve">
+    <value>Kortet håller det avstängt tills Contactor är igång.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.On" xml:space="preserve">
+    <value>Kortet slår på det själv, utan Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Heading" xml:space="preserve">
+    <value>Efter ett strömavbrott</value>
+  </data>
+  <data name="Relays.PowerOn.Hint" xml:space="preserve">
+    <value>Vad kortet gör med reläet av sig självt när strömmen kommer tillbaka, innan Contactor är igång.</value>
+  </data>
+  <data name="Relays.PowerOn.InGroup" xml:space="preserve">
+    <value>Reläet ingår i en grupp, så det måste vara av efter ett strömavbrott. Gruppens sida visar vad kortet gör.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContact" xml:space="preserve">
+    <value>Ingen kontakt med kortet, så det som reläet gör efter ett strömavbrott ändrades inte. Försök igen när kortet svarar.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContactNow" xml:space="preserve">
+    <value>Ingen kontakt med kortet, så det går inte att ändra nu.</value>
+  </data>
+  <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
+    <value>Kortet tog inte emot ändringen. Försök igen.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOffGroups" xml:space="preserve">
+    <value>{0} ingår i grupper, så kortet kan bara ställas på Av efter ett strömavbrott.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_One" xml:space="preserve">
+    <value>{0} ingår i en grupp, så kortet kan bara ställas på Av efter ett strömavbrott.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_Other" xml:space="preserve">
+    <value>{0} ingår i en grupp, så kortet kan bara ställas på Av efter ett strömavbrott.</value>
+  </data>
+  <data name="Relays.PowerOn.SeeAbove" xml:space="preserve">
+    <value>Resten sparades. Se "Efter ett strömavbrott".</value>
+  </data>
+  <data name="Relays.PowerOn.State.AsBefore" xml:space="preserve">
+    <value>Som innan</value>
+  </data>
+  <data name="Relays.PowerOn.State.FollowsInput" xml:space="preserve">
+    <value>Följer sin brytare</value>
+  </data>
+  <data name="Relays.PowerOn.State.Off" xml:space="preserve">
+    <value>Av</value>
+  </data>
+  <data name="Relays.PowerOn.State.On" xml:space="preserve">
+    <value>På</value>
+  </data>
+  <data name="Relays.PowerOn.Unconfirmed" xml:space="preserve">
+    <value>Contactor kunde inte bekräfta ändringen. Se efter här när kortet svarar.</value>
+  </data>
+  <data name="Relays.PowerOn.Unknown" xml:space="preserve">
+    <value>Kan inte se än vad kortet gör med reläet efter ett strömavbrott.</value>
+  </data>
+  <data name="Relays.PowerOn.WholeBoard" xml:space="preserve">
+    <value>Det gäller alla reläer på kortet.</value>
   </data>
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} Se Inställningar.</value>
@@ -2288,6 +2863,15 @@
   </data>
   <data name="Setup.WayIn.Cloudflare.Name" xml:space="preserve">
     <value>Cloudflare</value>
+  </data>
+  <data name="Setup.WayIn.Group.LocalNetwork" xml:space="preserve">
+    <value>Lokalt nätverk</value>
+  </data>
+  <data name="Setup.WayIn.Group.PrivateAccess" xml:space="preserve">
+    <value>Privat åtkomst</value>
+  </data>
+  <data name="Setup.WayIn.Group.PublicAddress" xml:space="preserve">
+    <value>Publik adress</value>
   </data>
   <data name="Setup.WayIn.Intro" xml:space="preserve">
     <value>Var ska folk kunna öppna Contactor?</value>

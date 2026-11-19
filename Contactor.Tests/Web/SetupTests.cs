@@ -3,9 +3,12 @@ using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.Access;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
+using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Features.Setup;
 using Contactor.Web.Persistence;
@@ -192,9 +195,9 @@ public sealed class SetupTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
-            },
-            new Dictionary<string, string?> { ["Vm201:DisableBoardTimers"] = "false" });
+            });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");
         var connection = database.Services.Live();
@@ -229,9 +232,9 @@ public sealed class SetupTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
-            },
-            new Dictionary<string, string?> { ["Vm201:DisableBoardTimers"] = "false" });
+            });
         await database.Services.InitializeDatabaseAsync(Cancel);
         await database.Services.UseBoardAsync("vm201");
         var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
@@ -450,7 +453,7 @@ public sealed class SetupTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => database.Services.GetRequiredService<BoardChoice>().ApplySavedAsync(Cancel));
-        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, denkovi-smartden-ip-16r-mt, denkovi-daenetip2-v2-16, denkovi-daenetip2-v2-8, denkovi-daenetip2-v2-2, devantech-eth002, devantech-eth008, devantech-eth1610, devantech-eth484, devantech-eth8020, advantech-adam-6060, advantech-adam-6066, advantech-adam-6260.", error.Message);
+        Assert.Equal("Board:Type is \"vm209\", which isn't a board the app knows. Use one of: vm201, vm204, vm208, waveshare-8, waveshare-8b, waveshare-8c, waveshare-16, waveshare-30, denkovi-smartden-ip-16r-mt, denkovi-daenetip2-v2-16, denkovi-daenetip2-v2-8, denkovi-daenetip2-v2-2, devantech-eth002, devantech-eth008, devantech-eth1610, devantech-eth484, devantech-eth8020, advantech-adam-6060, advantech-adam-6066, advantech-adam-6260, shelly-1, shelly-2, shelly-3, shelly-4.", error.Message);
     }
 
     [Fact]
@@ -935,6 +938,24 @@ public sealed class SetupTests
         Assert.Equal(BoardContactResult.NoAnswer, await contact.WaitAsync(moved: true, TimeSpan.FromMilliseconds(100), TimeProvider.System, Cancel));
     }
 
+    // Issue #522: "Check again" asks the connection to try once more only while it waits after a refusal, never during
+    // a connect under way or its usual short wait, so one press never sends the password twice.
+    [Theory]
+    [InlineData(false, null, false)]
+    [InlineData(false, ConnectionProblemKind.LoginRefused, true)]
+    [InlineData(false, ConnectionProblemKind.AskedToWait, true)]
+    [InlineData(false, ConnectionProblemKind.LoginNeeded, false)]
+    [InlineData(false, ConnectionProblemKind.WrongModel, false)]
+    [InlineData(false, ConnectionProblemKind.CoverProfile, false)]
+    [InlineData(true, null, false)]
+    public void Should_TryAgain_OnlyWhileTheConnectionWaitsAfterARefusal(bool connected, ConnectionProblemKind? kind, bool expected)
+    {
+        var problem = kind is { } k ? new ConnectionProblem(k, Vm201Model.Model) : null;
+        var state = new BoardState(connected, ChannelMask.None, ChannelMask.None, null, problem);
+
+        Assert.Equal(expected, BoardContact.ShouldTryAgain(state));
+    }
+
     [Theory]
     [InlineData(8, 1, 0, "8 relays · 1 input")]
     [InlineData(4, 4, 1, "4 relays · 4 inputs · 1 analog input")]
@@ -951,6 +972,79 @@ public sealed class SetupTests
     public void Should_SummariseTheRelaysInUse(int inUse, int hidden, string text)
     {
         Assert.Equal(text, TestTexts.Setup.RelaysInUse(inUse, hidden));
+    }
+
+    [Theory]
+    [InlineData(AccessGroup.LocalNetwork, "en", "Local network")]
+    [InlineData(AccessGroup.PrivateAccess, "en", "Private access")]
+    [InlineData(AccessGroup.PublicAddress, "en", "Public address")]
+    [InlineData(AccessGroup.LocalNetwork, "sv", "Lokalt nätverk")]
+    [InlineData(AccessGroup.PrivateAccess, "sv", "Privat åtkomst")]
+    [InlineData(AccessGroup.PublicAddress, "sv", "Publik adress")]
+    public void Should_NameEachGroupOfWaysIn(AccessGroup group, string language, string text)
+    {
+        using var culture = TestCulture.Language(language);
+
+        Assert.Equal(text, TestTexts.Setup.Name(group));
+    }
+
+    [Fact]
+    public void Should_RefuseToName_AGroupOfWaysInItDoesNotKnow()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TestTexts.Setup.Name((AccessGroup)99));
+    }
+
+    // "How do people reach the app?": the ways in under their groups' headings, in order, each group a group of choices
+    // named by its heading (not a landmark of its own), and every choice still one radio of the same set.
+    [Fact]
+    public async Task Should_GroupTheWaysIn_UnderTheirHeadings()
+    {
+        await using var app = new TestWebApp(configureServices: services => services.AddSingleton(new LanguageCatalogue([LanguageCatalogue.English])), setUp: false);
+        using (var http = app.CreateClient())
+        {
+            await http.GetAsync("/setup", Cancel);
+        }
+
+        using var page = await PageRenderer.StartAsync<Contactor.Web.Components.SetupGuide>(app.Services, "john@example.com", "John");
+
+        await AssertWaysInGroupedAsync(page, ["Local network", "Private access", "Public address"], "SIMPLEST");
+    }
+
+    /// <summary>
+    /// That the guide's way-in step shows <paramref name="headings"/> in order, each a heading that names a group of
+    /// choices, with every way in a radio of one set and the simplest one tagged <paramref name="simplest"/>.
+    /// </summary>
+    internal static async Task AssertWaysInGroupedAsync(PageRenderer page, string[] headings, string simplest)
+    {
+        var text = await page.TextAsync();
+        var at = headings.Select(h => text.IndexOf(h, StringComparison.Ordinal)).ToArray();
+        Assert.All(at, i => Assert.True(i >= 0, text));
+        Assert.Equal(at.Order(), at);
+        Assert.Contains(simplest, text, StringComparison.Ordinal);
+
+        foreach (var (group, heading) in Enum.GetValues<AccessGroup>().Zip(headings))
+        {
+            var id = Contactor.Web.Components.SetupGuide.GroupHeadingId(group);
+            Assert.True(await page.HasAsync(a => PageRenderer.With("id", id)(a) && PageRenderer.WithText(heading)(a)), heading);
+            Assert.True(await page.HasAsync(a => PageRenderer.With("role", "group")(a) && PageRenderer.With("aria-labelledby", id)(a)), heading);
+        }
+
+        // No group is a landmark, nor named a second time.
+        Assert.False(await page.HasAsync(a => a.ContainsKey("aria-label") && headings.Contains(a["aria-label"]?.ToString())));
+        Assert.True(await page.HasAsync(PageRenderer.With("role", "radiogroup")));
+
+        var radios = new List<string?>();
+        await page.HasAsync(a =>
+        {
+            if (PageRenderer.With("type", "radio")(a))
+            {
+                radios.Add(a.GetValueOrDefault("name")?.ToString());
+            }
+
+            return false;
+        });
+        Assert.Equal(AccessCatalogue.All.Count, radios.Count);
+        Assert.All(radios, name => Assert.Equal("way-in", name));
     }
 
     private static async Task<List<EventLogEntry>> EventsAsync(TestDatabase database)
@@ -991,6 +1085,99 @@ public sealed class SetupTests
         Assert.Contains("PART 2 OF 2", html, StringComparison.Ordinal);
         Assert.Contains("STEP 1 OF 4", html, StringComparison.Ordinal);
         Assert.DoesNotContain("class=\"back\"", html, StringComparison.Ordinal);
+    }
+
+    // The guide's board steps with a board that answers with its own timers on for relays 3 and 5 ("This board has
+    // timers of its own" after "Where is the board?", 5 steps in Part 2), and with one that has none (no such step, 4
+    // steps). "Keep them" keeps them as the person's choice, "Turn them off" turns them off at the board, and timers
+    // turned off at the board meanwhile leave nothing to ask; each goes on to the relays, then "All set".
+    [Theory]
+    [InlineData("keep")]
+    [InlineData("turn off")]
+    [InlineData("gone at the board")]
+    [InlineData("none")]
+    public async Task Should_AskAboutTheBoardsOwnTimers_InTheGuide_AndCountItsSteps(string what)
+    {
+        var timers = what != "none";
+        await using var app = SignedInNotSetUp();
+        using (var http = app.CreateClient())
+        {
+            // Signed in once, as anyone who opens the guide is.
+            await http.GetAsync("/setup", Cancel);
+        }
+
+        using var page = await PageRenderer.StartAsync<Contactor.Web.Components.SetupGuide>(app.Services, "john@example.com", "John");
+        Assert.Contains("About you", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(Button("Next"));
+        Assert.Contains("STEP 1 OF 4", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(PageRenderer.With("aria-labelledby", "brand-label brand-value"));
+        await page.ClickAsync(PageRenderer.With("value", "Velleman"));
+        await page.ClickAsync(PageRenderer.With("value", "vm201"));
+        await page.ClickAsync(Button("Next"));
+
+        // The board chosen, run as a board in memory that answers.
+        var registry = app.Services.GetRequiredService<BoardRegistry>();
+        var first = Assert.Single(registry.All);
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await BoardOwnRulesStepTests.AtTheBoardsAddressAsync(app, first.BoardId);
+        await registry.ReplaceAsync(new FakeBoardParts(board).Build(first.BoardId, Vm201Model.Model), Cancel);
+        board.SetOwnRules(timers ? new OwnRules([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(5, OwnRuleKind.Timer)]) : OwnRules.Empty);
+        await page.TypeAsync(PageRenderer.With("id", "host"), "192.168.1.50");
+        await page.TypeAsync(PageRenderer.With("id", "port"), "");
+        var steps = timers ? 5 : 4;
+        Assert.Contains($"STEP 2 OF {steps}", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.ClickAsync(Button("Next"));
+        await using var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel);
+
+        if (timers)
+        {
+            var text = await page.TextAsync();
+            Assert.Contains("This board has timers of its own", text, StringComparison.Ordinal);
+            Assert.Contains("Relay 3", text, StringComparison.Ordinal);
+            Assert.Contains("STEP 3 OF 5", text, StringComparison.Ordinal);
+            if (what == "keep")
+            {
+                await page.ClickAsync(Button("Keep them"));
+            }
+            else if (what == "turn off")
+            {
+                await page.ClickAsync(Button("Turn them off"));
+                Assert.Equal(OwnRules.Empty, board.State.OwnRules);
+                var logged = Assert.Single(await db.EventLog.Where(e => e.BoardId == first.BoardId && e.Action == EventActions.BoardOwnRulesTurnedOff).ToListAsync(Cancel));
+                Assert.Equal("john@example.com", logged.Actor);
+            }
+            else
+            {
+                board.SetOwnRules(OwnRules.Empty);
+                await WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Name your relays", StringComparison.Ordinal));
+            }
+        }
+
+        var relays = await page.TextAsync();
+        Assert.Contains("Name your relays", relays, StringComparison.Ordinal);
+        Assert.Contains($"STEP {steps - 1} OF {steps}", relays, StringComparison.Ordinal);
+        await page.ClickAsync(Button("Next"));
+
+        var done = await page.TextAsync();
+        Assert.Contains("All set", done, StringComparison.Ordinal);
+        Assert.Contains($"STEP {steps} OF {steps}", done, StringComparison.Ordinal);
+        if (what != "keep")
+        {
+            await WaitUntilAsync(() => !db.BoardOwnRules.Any(r => r.BoardId == first.BoardId));
+        }
+
+        var rows = await db.BoardOwnRules.Where(r => r.BoardId == first.BoardId).OrderBy(r => r.Channel).ToListAsync(Cancel);
+        int[] found = what == "keep" ? [3, 5] : [];
+        Assert.Equal(found, rows.Select(r => r.Channel));
+        Assert.All(rows, r => Assert.Equal("john@example.com", r.KeptBy));
+        Assert.Equal(what == "turn off" ? 1 : 0, board.OwnRulesTurnOffs);
+    }
+
+    // A button by its words: only buttons have a type.
+    private static Func<IReadOnlyDictionary<string, object?>, bool> Button(string text)
+    {
+        return attributes => attributes.ContainsKey("type") && PageRenderer.WithText(text)(attributes);
     }
 
     // Part 1 done (Cloudflare and Cloudflare Access, which the test app answers for as John), the guide not yet.
@@ -1056,6 +1243,7 @@ public sealed class SetupTests
                 services.AddEvents(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddSetup(configuration);
             });
             await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);

@@ -1,0 +1,77 @@
+/* "This board has timers of its own": the relays the board's own rules switch, in a red-edged box. */
+.intro {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.intro p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+.rules {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-radius: 14px;
+    border: 1.5px solid var(--danger-border);
+    background: var(--card);
+    overflow: hidden;
+}
+
+.rules li {
+    min-height: 60px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 18px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.rules li + li {
+    border-top: 1px solid var(--line);
+}
+
+.rules svg {
+    flex-shrink: 0;
+    color: var(--danger-ink);
+}
+
+.hint {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+/* Other rules "Turn them off" takes with these, said before the press. */
+.also {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 600;
+}
+
+/* A relay the board controls by itself: it stays unavailable until reset. */
+.rules .note {
+    margin-left: auto;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--muted);
+    text-align: right;
+}

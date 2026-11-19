@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Contactor.Boards.Shelly</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The tests lower ShellyClient.NonceLimit: reaching the device's 30,000 requests a nonce would take too long. -->
+    <InternalsVisibleTo Include="Contactor.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contactor.Boards\Contactor.Boards.csproj" />
+  </ItemGroup>
+
+</Project>

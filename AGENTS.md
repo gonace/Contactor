@@ -32,7 +32,6 @@ The relays drive real machines. Each rule is told in full in its section of `doc
 - .NET 10 (LTS), C#, Blazor Server (interactive server rendering), EF Core + `Microsoft.EntityFrameworkCore.Sqlite`
 - No JavaScript framework. No external CSS framework; one small stylesheet of our own, following the design tokens in `docs/ARCHITECTURE.md`.
 - Target: one container image (`ghcr.io/gonace/contactor`, linux/arm64 and linux/amd64), built from the `Dockerfile` on Ubuntu chiseled-extra, which includes the time zone data the schedules need, with `cloudflared` and Tailscale (`tailscaled`, `tailscale`) copied in; everything it keeps is in `/data`. Run with Docker Compose on the Raspberry Pi. The public demo has its own image (`ghcr.io/gonace/contactor-demo`) from `Contactor.Demo/Dockerfile`, run with `deploy/demo/compose.yml` (`docs/DEMO.md`).
-- Local development with Aspire 13.5.4, pinned on purpose: later releases hang at startup on Windows. Its dashboard's advisories GHSA-f7vh-h5g3-7jrh (its cookie reaching a container opened from it) and GHSA-4g86-54fm-h9h8 (anyone who reaches it can delete its telemetry) are suppressed in the AppHost only, which runs no container but our own app's image and serves the dashboard on localhost; the dashboard isn't in the image. Raise the version once a release starts on Windows (issue #18). The AppHost starts the simulator (a VM201 on port 9760, and its page linked from the dashboard) and the app as its image against it, as on a real installation, on http://localhost:8080 with `/data` in the Docker volume `contactor-dev`; it needs Docker Desktop. It also runs the public demo as `contactor-demo` on http://localhost:5070, which starts its own copies of the app and the simulator from their build output; the AppHost is the one place the demo is set up for development. `dotnet run --project Contactor.Web` runs the app on its own, on this computer only, against `dotnet run --project Contactor.Simulator`.
 
 No `src/` or `tests/` folders: every project sits directly in the repository root. All tests live in **one** test project, `Contactor.Tests`, with a folder per area (`Velleman/`, `Web/` …). Don't create more test projects.
 
@@ -46,6 +45,7 @@ Contactor.Boards/           # What any relay board is to the app: IRelayBoard, I
 Contactor.Boards.Advantech/ # The Advantech ADAM-6060, ADAM-6066 and ADAM-6260 (Modbus TCP): codec, client, simulator and their adapters (AdamBoard, AdamConnection, AdamTraffic). No web/EF. README.md: their protocol
 Contactor.Boards.Denkovi/   # The Denkovi smartDEN IP-16R-MT (Modbus TCP) and the DAEnetIP2 v2 kits (SNMPv1 over UDP): codecs, clients, simulators and their adapters (SmartDen*, DaenetIp2*: Board, Connection, Traffic). No web/EF. README.md: their protocols
 Contactor.Boards.Devantech/ # The Devantech ETH002-B, ETH008-B, ETH1610, ETH484-B and ETH8020-B: binary TCP commands, client, simulator and its adapters (DevantechBoard, DevantechConnection, DevantechTraffic). No web/EF. README.md: its protocol
+Contactor.Boards.Shelly/    # Shelly Gen2+ devices with 1 to 4 relays (HTTP RPC with SHA-256 digest): client, simulator and its adapters (ShellyBoard, ShellyConnection, ShellyTraffic). No web/EF. README.md: its protocol
 Contactor.Boards.Velleman/  # The Velleman VM201 (packet codec), VM204 and VM208 (HTTP clients): their clients, simulators and adapters (Vm201Board, Vm204Connection, Vm208Traffic …). No web/EF. README.md: their protocols and routes
 Contactor.Boards.Waveshare/ # The Waveshare Modbus PoE ETH relays: Modbus RTU codec, client, simulator and its adapters (WaveshareBoard, WaveshareConnection, WaveshareTraffic). No web/EF. README.md: its protocol
 Contactor.Web/            # Blazor app, EF Core, background services, identity
@@ -62,6 +62,7 @@ Contactor.Tests/          # The only test project
   Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
   Denkovi/                  # Modbus TCP and SNMPv1 codecs, trace words, simulators + clients against the simulators
   Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
+  Shelly/                   # RPC JSON, digest, trace words, simulator + client against the simulator
   Simulator/                # The simulator's boards and page
   Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, trace words, connections + clients against the simulator
   Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
@@ -168,4 +169,5 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 - Nullable on, `TreatWarningsAsErrors` in Release.
 - Time: inject `TimeProvider`. Never use `DateTime.Now` directly.
 - Log with `ILogger` and structured fields. Never log the VM201 password.
+- `InternalsVisibleTo` to `Contactor.Tests` only for a limit a test must lower (e.g. `ShellyClient.NonceLimit`), with a comment saying why.
 - Everything in English (see Languages).

@@ -1,3 +1,4 @@
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
 using Contactor.Web.Features.Inputs;
@@ -26,6 +27,8 @@ internal static class TestTexts
     public static RelayStatusText RelayStatus { get; } = new(Localizer);
 
     public static BoardsText Boards { get; } = new(Localizer);
+
+    public static OwnRulesText OwnRules { get; } = new(Localizer, Boards);
 
     public static ScheduleText Schedules { get; } = new(Localizer);
 

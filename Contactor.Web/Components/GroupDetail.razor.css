@@ -432,6 +432,10 @@ button:disabled {
     color: var(--muted);
 }
 
+.safety p + p {
+    margin-top: 8px;
+}
+
 .delete {
     min-height: 48px;
     border-radius: 12px;
@@ -615,4 +619,56 @@ button:disabled {
     background: transparent;
     border: 1.5px dashed var(--inactive-border);
     color: var(--muted);
+}
+
+/* The board controls a relay of the group by itself: the red warning with a filled red "Reset". */
+.offline {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--danger-bg);
+    border: 1.5px solid var(--danger-border);
+    color: var(--danger-ink);
+}
+
+.offline svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.offline div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.offline span {
+    font-size: 14px;
+}
+
+.offline .reset {
+    align-self: flex-start;
+    margin-top: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 12px;
+    background: var(--danger-solid);
+    color: var(--on-danger);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.offline .reset:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.offline .reset-error {
+    margin-top: 4px;
+    font-weight: 600;
 }

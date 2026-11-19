@@ -4,7 +4,9 @@ namespace Contactor.Boards.Waveshare;
 
 /// <summary>
 /// A Waveshare Modbus PoE ETH relay as an <see cref="IRelayBoard"/>: its model's relays and inputs, which it never
-/// reports by itself, so <see cref="WaveshareClient"/> polls it. This only translates the client's state and commands.
+/// reports by itself, so <see cref="WaveshareClient"/> polls it. On the (B) and (C) its own rules are the relays'
+/// control modes (<see cref="ToOwnRules"/>), which the app reads and sets back to normal only on a person's press. This
+/// only translates the client's state and commands.
 /// </summary>
 public sealed class WaveshareBoard : IRelayBoard
 {
@@ -18,9 +20,13 @@ public sealed class WaveshareBoard : IRelayBoard
         _client = client;
         _logger = logger;
         _client.StateChanged += OnStateChanged;
+        _client.OwnRulesChanged += OnOwnRulesChanged;
     }
 
     public event EventHandler<BoardState>? StateChanged;
+
+    /// <inheritdoc/>
+    public event EventHandler<BoardState>? OwnRulesChanged;
 
     public BoardCapabilities Capabilities => _client.Model.Capabilities;
 
@@ -49,17 +55,104 @@ public sealed class WaveshareBoard : IRelayBoard
         return new ChannelMask(await _client.PulseAsync(ToMask(relays), length, cancellationToken).ConfigureAwait(false));
     }
 
+    /// <summary>
+    /// Sets the relays of <paramref name="rules"/> back to normal mode, one FC 06 each (<see cref="WaveshareClient.TurnOffModesAsync"/>).
+    /// Only <see cref="OwnRuleKind.InputLinkage"/>, <see cref="OwnRuleKind.InputToggle"/> and
+    /// <see cref="OwnRuleKind.InputEdge"/> for relays 1–8 on the (B) and (C): any other gets
+    /// <see cref="ArgumentOutOfRangeException"/>, and a model without modes <see cref="NotSupportedException"/>, before
+    /// anything is sent. A relay has one mode, so the rules for a relay are taken together. Returns the rules whose relay
+    /// the board took, each once, in relay order; none, and nothing sent, for none asked.
+    /// </summary>
+    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        if (!Capabilities.OwnRulesOrCantTell.TurnsOff)
+        {
+            throw new NotSupportedException($"The {_client.Model.Name} has no relay control modes.");
+        }
+
+        List<OwnRule> asked = [];
+        foreach (var rule in rules)
+        {
+            if (rule is null)
+            {
+                throw new ArgumentException("A rule can't be null.", nameof(rules));
+            }
+
+            if (rule.Kind is not (OwnRuleKind.InputLinkage or OwnRuleKind.InputToggle or OwnRuleKind.InputEdge))
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "A Waveshare board's own rules are its relays' control modes.");
+            }
+
+            if (rule.Relay > WaveshareApi.RelayModeCount || rule.Relay > Capabilities.RelayCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Relay, $"The {_client.Model.Name} has relay modes for relays 1–{WaveshareApi.RelayModeCount} only.");
+            }
+
+            if (!asked.Contains(rule))
+            {
+                asked.Add(rule);
+            }
+        }
+
+        var mask = ChannelMask.Of(asked.Select(r => r.Relay));
+        if (mask.IsEmpty)
+        {
+            return [];
+        }
+
+        var taken = new ChannelMask(await _client.TurnOffModesAsync(mask.Bits, cancellationToken).ConfigureAwait(false));
+        return [.. asked.Where(r => taken.Contains(r.Relay)).OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
+    }
+
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         _client.Refresh();
         return Task.CompletedTask;
     }
 
-    /// <summary>The board's state as a <see cref="BoardState"/>.</summary>
+    /// <summary>
+    /// The board's state as a <see cref="BoardState"/>, with its own rules (<see cref="ToOwnRules"/>): null while the
+    /// modes aren't known (a model without them, before they were read, or a read that failed), and kept while
+    /// disconnected, as the relays are.
+    /// </summary>
     public static BoardState ToBoardState(WaveshareState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc);
+        return new BoardState(
+            state.IsConnected,
+            new ChannelMask(state.Relays),
+            new ChannelMask(state.Inputs),
+            state.LastContactUtc,
+            OwnRules: state.Modes is { } modes ? ToOwnRules(modes) : null);
+    }
+
+    /// <summary>
+    /// The relays' control modes as rules, in relay order; relay n's mode is tied to input n. Mode 1 (linkage: the relay
+    /// follows its input, and the board ignores commands for it) is <see cref="OwnRuleKind.InputLinkage"/>, 2 (toggle:
+    /// an input pulse flips it) <see cref="OwnRuleKind.InputToggle"/>, 3 (edge: each input change flips it)
+    /// <see cref="OwnRuleKind.InputEdge"/>; 0 (normal) is no rule. Source: the (B)/(C) wiki, §1.5 and §5.3.7.
+    /// </summary>
+    public static OwnRules ToOwnRules(IReadOnlyList<ushort> modes)
+    {
+        ArgumentNullException.ThrowIfNull(modes);
+        List<OwnRule> rules = [];
+        for (var i = 0; i < modes.Count && i < WaveshareApi.RelayModeCount; i++)
+        {
+            OwnRuleKind? kind = modes[i] switch
+            {
+                WaveshareApi.ModeLinkage => OwnRuleKind.InputLinkage,
+                WaveshareApi.ModeToggle => OwnRuleKind.InputToggle,
+                WaveshareApi.ModeEdge => OwnRuleKind.InputEdge,
+                _ => null,
+            };
+            if (kind is { } k)
+            {
+                rules.Add(new OwnRule(i + 1, k));
+            }
+        }
+
+        return rules.Count == 0 ? OwnRules.Empty : new OwnRules(rules);
     }
 
     // Only relays the model has; throws before anything is sent.
@@ -73,10 +166,21 @@ public sealed class WaveshareBoard : IRelayBoard
         return relays.Bits;
     }
 
-    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
     private void OnStateChanged(object? sender, WaveshareState state)
     {
-        if (StateChanged is not { } handlers)
+        Raise(StateChanged, state);
+    }
+
+    // Only the modes changed: not a change the safety services, which listen to StateChanged, must see.
+    private void OnOwnRulesChanged(object? sender, WaveshareState state)
+    {
+        Raise(OwnRulesChanged, state);
+    }
+
+    // Each subscriber on its own, as for the other boards: one that fails must not keep the state from the others.
+    private void Raise(EventHandler<BoardState>? handlers, WaveshareState state)
+    {
+        if (handlers is null)
         {
             return;
         }

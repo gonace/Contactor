@@ -19,6 +19,12 @@ Wiki pages:
 - https://www.waveshare.com/wiki/Modbus_POE_ETH_Relay_16CH
 - https://www.waveshare.com/wiki/Modbus_POE_ETH_Relay_30CH
 
+The relay control modes come from the (B) and (C) pages (the same text on both, checked on 17 Nov 2026): §1.5
+"Operation Modes Introduction", the register table in §5.2 "Register Address Introduction" (`4x1000…4x1007`, "Channel
+1~8 relay control mode", read/write with 0x03, 0x06, 0x10), §5.3.7 "Read Relay Control Mode", §5.3.8 "Set Single Relay
+Control Mode", §5.3.9 "Set Multiple Relay Control Mode", and the FAQ "Why does the device provide command feedback when
+sending relay on/off action commands, but the relay does not activate …".
+
 Sources for the pulse: Waveshare's development protocol pages for the Modbus POE ETH IO 8CH
 (https://docs.waveshare.com/RS232-RS485-CAN-DALI2/Modbus_POE_ETH_IO_8CH/Development-Protocol), the Modbus RTU Module (A)
 (https://docs.waveshare.com/Modbus_RTU_Module_A/Development-Protocol) and the Modbus RTU Relay 16CH
@@ -57,7 +63,8 @@ has an MBAP header and port 502.
 | Switch one relay | 05 | relay − 1 | FF00 on, 0000 off | the request, echoed |
 | Pulse one relay ("flash on") | 05 | 0x0200 + relay − 1 | the time in 100 ms, 0001 to 7FFF | the request, echoed |
 | Read the relay modes, (B) and (C) only | 03 | 0x1000 | quantity = 8 | 16 bytes, a register per relay |
-| Write the relay modes, (B) and (C) only | 10 | 0x1000 | 8 registers | address and quantity |
+| Set one relay's mode, (B) and (C) only | 06 | 0x1000 + relay − 1 | the mode, 0000 to 0003 | the request, echoed |
+| Set all relay modes, (B) and (C) only | 10 | 0x1000 | 8 registers | address and quantity |
 
 A pulse turns the relay on, and the board turns it off again by itself after the time, also when the app stops in
 between. So all five models pulse for 0.1 s to 3276.7 s, in steps of 0.1 s (`WaveshareModels.Pulse`). The board also
@@ -79,6 +86,10 @@ Frames from the wiki, unit 1:
 | `01 02 00 00 00 08 79 CC` | Read 8 inputs |
 | `01 02 01 00 A1 88` | Answer: all inputs off |
 | `01 85 03 02 91` | Exception answer to function 05, code 3 |
+| `01 03 10 00 00 08 40 CC` | Read the 8 relay modes (§5.3.7) |
+| `01 03 10 00 00 … 00 E4 59` | Answer: 16 bytes of 0, every relay in normal mode (§5.3.7) |
+| `01 06 10 00 00 01 4C CA` | Set relay 1 to linkage mode (the answer is the same frame, §5.3.8) |
+| `01 06 10 01 00 02 5D 0B` | Set relay 2 to toggle mode (§5.3.8) |
 
 `WaveshareModbusTests` checks these frames byte for byte.
 
@@ -94,7 +105,8 @@ Frames from the wiki, unit 1:
 - When the connection was open from before (not one just opened while connecting) and turns out broken (the board or the
   network can close a connection that is idle), the client sends the request once more on a new connection. It does this
   only when no byte of the answer came. Each request the client sends has the same result when done twice: reading the
-  relays, the inputs or the modes, switching one relay, starting its pulse again, and setting the modes to normal.
+  relays, the inputs or the modes, switching one relay, starting its pulse again, and setting one relay's mode to
+  normal.
 - Bytes that wait before a request were not asked for. The client drops them and shows them on the Debug screen.
 - `BoardPoller` does the polls, the reconnects and the count of failures, as for the VM204 and the VM208.
 
@@ -130,10 +142,11 @@ The `Waveshare` section applies to all five models:
 "Waveshare": {
   "Host": "",
   "Port": 4196,
-  "PollSeconds": 2,
-  "ResetRelayModes": true
+  "PollSeconds": 2
 }
 ```
+
+`Waveshare:ResetRelayModes` is gone (issue #497); one left in an installation's settings is ignored.
 
 When `Host` is empty, the setup guide asks for the address.
 
@@ -141,7 +154,8 @@ When `Host` is empty, the setup guide asks for the address.
 
 `WaveshareSimulator` simulates each of the five models on a local port. `Contactor.Simulator` offers port 4196.
 
-- It answers functions 01, 02, 03, 05, 06 and 10 as described above.
+- It answers functions 01, 02, 03, 05, 06 and 10 as described above. A relay in linkage mode echoes function 05 and
+  stays as it is, as the wiki's FAQ says the board does.
 - A pulse ("flash on") turns the relay off again after its time, on the simulator's `TimeProvider`. The next poll shows
   it. A later function 05 for the relay ends its pulse; a later pulse starts it again. A relay in linkage mode doesn't
   pulse.
@@ -149,7 +163,8 @@ When `Host` is empty, the setup guide asks for the address.
   value or quantity it does not take (code 3).
 - It gives no answer to a frame with a bad CRC or for another unit, as on a serial Modbus line.
 - On the (B) and (C) it has the mode registers. A relay in mode 1, 2 or 3 follows its input when the input changes.
-- Relays and inputs can be set "at the board", and connections can be dropped or refused.
+- Relays, inputs and each relay's mode (`ISimulatedBoardRelayModes`, a select per relay on the simulator's page) can be
+  set "at the board", and connections can be dropped or refused.
 - For the tests, `NoAnswer` stops all answers and `FailRelays` refuses function 05 for some relays with code 4.
 
 ## Settings on the board that switch relays without the app
@@ -163,30 +178,28 @@ On the (B) and the (C), each relay has a control mode in the registers 0x1000 to
 - 2: toggle. Each pulse on the input flips the relay.
 - 3: edge. Each change of the input flips the relay.
 
-In modes 1 to 3, an input switches a relay without the app. The app sees that only as a change from outside, and a
-group's interlock cannot stop it before it happens. So the client sets all relays to normal mode on each connection:
+Relay n's mode is tied to input n ("corresponding input channel", §5.3.7). In modes 1 to 3, an input switches a relay
+without the app; in mode 1 the board also ignores the app's commands for it: it echoes function 05 and the relay stays
+as it is (§1.5: "The linked mode output is controlled only by input and does not respond to commands", and the FAQ).
 
-1. It reads the 8 mode registers with function 03.
-2. When all are 0, it writes nothing and logs nothing.
-3. When one is not 0, it writes 0 to all 8 with one function 10 request.
-4. When the board refuses the read or its answer cannot be read, the modes are unknown. The client writes 0 to all 8
-   all the same.
-5. When the write succeeds, the client raises `RelayModesReset` with the modes it found, or none when they were
-   unknown. `WaveshareRelayModesService` logs the action `board-relay-modes-reset` with Actor `system` and the details
-   `{"modes":[…]}` or `{"modes":"unknown"}`.
-6. When the board refuses the write or its answer cannot be read, the client raises `RelayModesNotReset`.
-   `WaveshareRelayModesService` logs the action `board-relay-modes-not-reset` with Actor `system` and the reason. The
-   Events screen shows it as a red row: "The board couldn't have its relays set to normal mode, so its inputs may switch
-   them". The board still works. This happens at most once per connection, not on each poll.
-7. When the board does not answer the read or the write, the connection fails and the poller tries again.
+These modes are the board's own rules (issue #497, `docs/ARCHITECTURE.md`, "The board's own rules"). The app never
+changes them on its own:
 
-The client reads first because the board can keep the modes in its flash memory. A write on each reconnect could wear
-the flash, and it would fill the Events screen. Function 10 writes all 8 registers in one request and one answer.
+1. The client reads the 8 mode registers with one function 03 at the first reading on each new connection, and then
+   every minute (`WaveshareClient.ModesInterval`). The modes go in the status (`WaveshareStatus.Modes`).
+2. A read the board refuses, whose answer can't be read, or that holds a mode other than 0 to 3, gives no modes (null):
+   the app then knows no rules for the board, and guesses none. A read with no answer fails the poll, as any read does.
+3. The poller compares only the relays and the inputs, so a change in the modes alone is raised as
+   `OwnRulesChanged`, never as `StateChanged`: the safety services aren't woken by it.
+4. `WaveshareBoard` maps mode 1 to `InputLinkage`, 2 to `InputToggle` and 3 to `InputEdge`; 0 is no rule.
+5. Only a person's press sets a relay back to normal (`TurnOffModesAsync`, through `TurnOffOwnRulesAsync`): one function
+   06 per relay, writing 0 to `0x1000 + relay − 1`, never function 10 over all 8, so the other relays' modes stay as
+   they are. Every relay asked for is sent, also after one is refused; the relays the board took are returned, and the
+   command throws when it took none. The modes are read back in the same command.
 
-The client checks the modes only when it connects. A mode set with the board's own tool while the app is connected
-stays until the next connection.
-
-Set `Waveshare:ResetRelayModes` to `false` to keep the modes.
+A relay in linkage mode is "unavailable to Contactor": the app shows it apart, with "Reset", and never sends it a
+command. Until issue #497 the client wrote all 8 modes to normal at each connection (`Waveshare:ResetRelayModes`); the
+events it logged then (`board-relay-modes-reset`, `board-relay-modes-not-reset`) still read on the Events screen.
 
 ## To check on a real board
 
@@ -194,9 +207,10 @@ Set `Waveshare:ResetRelayModes` to `false` to keep the modes.
 
 - The relay states after a power cut: all off, or the last states.
 - If the mode registers stay after a power cut, and how a relay in linkage mode answers function 05.
+- Whether writing mode 0 to a relay switches it: does a relay in linkage mode that is on stay on when it is reset, or
+  does it go off?
 - The input bit order (bit 0 = input 1), and if a closed input reads 1.
-- What a relay that is on does when the app sets its mode back to normal at connect: does it keep its state? The app
-  must turn nothing off at start.
+- That function 06 on one mode register leaves the other 7 as they are, and that the board echoes it as in §5.3.8.
 - The pulse ("flash on"): its address on each model (0x0200 + relay − 1), the longest time (0x7FFF), that the board
   echoes the request, what a function 05 or a second pulse for the relay does to a pulse that runs, and what a relay in
   linkage mode does with it.

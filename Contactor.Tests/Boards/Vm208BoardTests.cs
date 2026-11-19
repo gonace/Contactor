@@ -17,7 +17,7 @@ public sealed class Vm208BoardTests
     public void Should_HaveFourRelaysAndOneInput_AndNotReportChanges()
     {
         // The two transistor outputs, m1 and m2, aren't relays.
-        Assert.Equal(new BoardCapabilities(4, 1, ReportsChanges: false, OwnRules: OwnRulesAbility.CantTell), Vm208Board.Vm208Capabilities);
+        Assert.Equal(new BoardCapabilities(4, 1, ReportsChanges: false, OwnRules: new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true)), Vm208Board.Vm208Capabilities);
         Assert.Equal(("vm208", "Velleman VM208", 80, 0, null), (Vm208Model.Model.Id, Vm208Model.Model.Name, Vm208Model.Model.DefaultPort, Vm208Model.Model.LoginMaxLength, Vm208Model.Model.LoginHint));
     }
 

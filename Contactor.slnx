@@ -4,6 +4,7 @@
   <Project Path="Contactor.Boards.Advantech/Contactor.Boards.Advantech.csproj" />
   <Project Path="Contactor.Boards.Denkovi/Contactor.Boards.Denkovi.csproj" />
   <Project Path="Contactor.Boards.Devantech/Contactor.Boards.Devantech.csproj" />
+  <Project Path="Contactor.Boards.Shelly/Contactor.Boards.Shelly.csproj" />
   <Project Path="Contactor.Boards.Velleman/Contactor.Boards.Velleman.csproj" />
   <Project Path="Contactor.Boards.Waveshare/Contactor.Boards.Waveshare.csproj" />
   <Project Path="Contactor.Demo/Contactor.Demo.csproj" />

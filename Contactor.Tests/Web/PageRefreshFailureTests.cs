@@ -29,7 +29,6 @@ public sealed class PageRefreshFailureTests
     [InlineData(typeof(InputDetail), "the input")]
     [InlineData(typeof(AnalogInputDetail), "the analog input")]
     [InlineData(typeof(Events), "the events")]
-    [InlineData(typeof(Debug), "the board filter's counts")]
     public async Task Should_LogAFailedRefreshOnce_AndKeepThePage(Type pageType, string what)
     {
         var queries = new FailingQueries();

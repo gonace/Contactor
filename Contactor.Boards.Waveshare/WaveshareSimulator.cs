@@ -17,7 +17,7 @@ namespace Contactor.Boards.Waveshare;
 /// board. Several clients may connect at once. Used by the tests and, in development, by Contactor.Simulator. It
 /// listens on the loopback interface only.
 /// </summary>
-public sealed class WaveshareSimulator : ISimulatedBoard
+public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayModes
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -213,6 +213,24 @@ public sealed class WaveshareSimulator : ISimulatedBoard
             }
         });
         return Task.CompletedTask;
+    }
+
+    IReadOnlyList<string> ISimulatedBoardRelayModes.ModeNames { get; } =
+    [
+        WaveshareTraceText.ModeName(WaveshareApi.ModeNormal),
+        WaveshareTraceText.ModeName(WaveshareApi.ModeLinkage),
+        WaveshareTraceText.ModeName(WaveshareApi.ModeToggle),
+        WaveshareTraceText.ModeName(WaveshareApi.ModeEdge),
+    ];
+
+    // Only the models with modes have any.
+    IReadOnlyList<int> ISimulatedBoardRelayModes.Modes => WaveshareModels.HasRelayModes(Model) ? [.. RelayModes.Select(m => (int)m)] : [];
+
+    Task ISimulatedBoardRelayModes.SetModeAsync(int relay, int mode)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(mode);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(mode, WaveshareApi.ModeEdge);
+        return SetRelayModeAsync(relay, (ushort)mode);
     }
 
     /// <summary>Sets a relay's control mode as the board's own tool (Vircom) or web page would.</summary>

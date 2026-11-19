@@ -2,6 +2,7 @@ using System.Net;
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -210,6 +211,22 @@ public sealed class InputActionsTests
         await rig.RunAsync(closed: true);
 
         Assert.Equal(ChannelMask.Of(3), rig.Board.State.Relays);
+    }
+
+    // A relay its board controls by itself (e.g. a Waveshare relay in linkage mode) ignores commands: the input's
+    // action for it sends and logs nothing, and the rest still run.
+    [Fact]
+    public async Task Should_SkipARelayTheBoardControlsItself_AndRunTheRest()
+    {
+        await using var rig = await RigAsync();
+        await rig.SaveAsync(new InputActionRow(Relay(1), true, null), new InputActionRow(Relay(3), true, null));
+        rig.Board.SetOwnRules(new OwnRules([new OwnRule(1, OwnRuleKind.InputLinkage)]));
+
+        await rig.RunAsync(closed: true);
+
+        Assert.Equal(ChannelMask.Of(3), rig.Board.State.Relays);
+        Assert.DoesNotContain(rig.Board.Sent, s => s.Relays.Contains(1));
+        Assert.Equal([3], (await rig.EventsAsync()).Select(e => e.RelayId ?? 0));
     }
 
     [Fact]
@@ -437,6 +454,7 @@ public sealed class InputActionsTests
             services.AddEvents(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
             services.AddInputs(configuration);
         });
         await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: inputCount, Cancel);

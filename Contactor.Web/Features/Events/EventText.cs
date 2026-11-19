@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Contactor.Boards;
 using Contactor.Web.Components;
 using Contactor.Web.Features.Inputs;
 using Contactor.Web.Features.Schedules;
@@ -86,6 +87,11 @@ public sealed class EventText
         }
 
         var isPerson = IsPersonActor(entry.Actor);
+        if (entry.Action == EventActions.BoardOwnRuleFound && !isPerson)
+        {
+            return OwnRuleFound(entry, relayName, boardName);
+        }
+
         var byInput = EventActors.TryInput(entry.Actor, out var inputId);
         var who = isPerson ? personName ?? entry.Actor
             : byInput ? personName ?? _texts["Events.RemovedInput"]
@@ -105,7 +111,7 @@ public sealed class EventText
         }
 
         // A group's schedule names the group where a relay's names the relay.
-        var (line, target) = LineFor(entry, relay ?? group);
+        var (line, target) = LineFor(entry, relay ?? group, boardName);
 
         // In red, like a safety shut-off: a board whose inputs may switch relays past the app.
         return new EventView(isPerson, badge, who, line, target, IsAlert: entry.Action == EventActions.BoardRelayModesNotReset);
@@ -150,6 +156,155 @@ public sealed class EventText
             Updates.UpdateReasons.Interrupted => _texts["Events.Update.Because.Interrupted"],
             _ => _texts["Events.Update.Because.Other"],
         };
+    }
+
+    // A rule of the board's own the app saw, with the board as the subject: "The board has its own timer for relay 3",
+    // "The board's own timer for relay 3 was turned on" (new: while the app watched), "Relay 3 became unavailable: the
+    // board controls it itself", "The board turns relay 3 on again by itself after it goes off". With two or more boards, the board's name in place of "the board".
+    private EventView OwnRuleFound(EventLogEntry entry, string? relayName, string? boardName)
+    {
+        var isNew = Bool(entry.Details, "new") == true;
+        var relay = RelayNumber(entry.Details);
+        OwnRuleKind? kind = OwnRuleKinds.TryParse(Text(entry.Details, "kind"), out var parsed) ? parsed : null;
+        var theBoard = boardName ?? _texts["Events.OwnRules.Who.TheBoard"];
+        var (key, who) = (kind, isNew) switch
+        {
+            (OwnRuleKind.InputLinkage, false) => ("Events.OwnRules.Found.Linkage", theBoard),
+            (OwnRuleKind.InputLinkage, true) => ("Events.OwnRules.FoundNew.Linkage", theBoard),
+            (OwnRuleKind.InputToggle, false) => ("Events.OwnRules.Found.Toggle", theBoard),
+            (OwnRuleKind.InputToggle, true) => ("Events.OwnRules.FoundNew.Toggle", theBoard),
+            (OwnRuleKind.InputEdge, false) => ("Events.OwnRules.Found.Edge", theBoard),
+            (OwnRuleKind.InputEdge, true) => ("Events.OwnRules.FoundNew.Edge", theBoard),
+            (OwnRuleKind.Timer, false) => ("Events.OwnRules.Found.Timer", boardName ?? _texts["Events.Who.Board"]),
+            (OwnRuleKind.Timer, true) => ("Events.OwnRules.FoundNew.Timer", BoardsOwn(boardName)),
+            (OwnRuleKind.AutoOn, false) => ("Events.OwnRules.Found.AutoOn", boardName ?? _texts["Events.Who.Board"]),
+            (OwnRuleKind.AutoOn, true) => ("Events.OwnRules.FoundNew.AutoOn", boardName ?? _texts["Events.Who.Board"]),
+            (_, false) => ("Events.OwnRules.Found.Rule", boardName ?? _texts["Events.Who.Board"]),
+            (_, true) => ("Events.OwnRules.FoundNew.Rule", BoardsOwn(boardName)),
+        };
+        var target = relayName ?? (entry.RelayId is null ? null : _texts["Events.RemovedRelay"].Value);
+        return new EventView(false, "A", who, Line(key, relay), target);
+    }
+
+    // "The board's" or "Garage's", as the subject of a line.
+    private string BoardsOwn(string? boardName)
+    {
+        return boardName is null ? _texts["Events.OwnRules.Who.TheBoards"] : Genitive(boardName);
+    }
+
+    // A board's name in the genitive: "Garage's", "Garages". Swedish adds no s to a name that ends in s, x or z
+    // ("Lars egna timer"), so such a name has a text of its own.
+    private string Genitive(string boardName)
+    {
+        return boardName.Length > 0 && char.ToLowerInvariant(boardName[^1]) is 's' or 'x' or 'z'
+            ? _texts["Events.OwnRules.NamedEndingInS", boardName]
+            : _texts["Events.OwnRules.Named", boardName];
+    }
+
+    // A person turned off or kept rules of the board's own: "turned off the board's own timers for relays 3 and 5",
+    // "kept Garage's own timer for relay 3", "reset relay 3" (a relay the board controlled by itself), "stopped the board
+    // turning relay 3 on again by itself"; a turn-off adds the rules that went with it.
+    private string OwnRulesLine(string key, EventLogEntry entry, string? boardName)
+    {
+        var board = boardName is null ? _texts["Events.OwnRules.TheBoards"].Value : Genitive(boardName);
+        List<int> relays;
+        List<OwnRuleKind?> kinds;
+        if (entry.Action == EventActions.BoardOwnRuleKept)
+        {
+            relays = Number(entry.Details, "relay") is { } relay ? [relay] : [];
+            kinds = [OwnRuleKinds.TryParse(Text(entry.Details, "kind"), out var kind) ? kind : null];
+        }
+        else
+        {
+            relays = Read(entry.Details, "relays") is { ValueKind: JsonValueKind.Array } list
+                ? [.. list.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Number && e.TryGetInt32(out _)).Select(e => e.GetInt32())]
+                : [];
+            kinds = Read(entry.Details, "kinds") is { ValueKind: JsonValueKind.Array } texts
+                ? [.. texts.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String && OwnRuleKinds.TryParse(e.GetString(), out var k) ? k : (OwnRuleKind?)null)]
+                : [];
+        }
+
+        var several = relays.Count > 1;
+        var distinct = kinds.Distinct().ToList();
+        var which = Which(relays);
+        var also = entry.Action == EventActions.BoardOwnRulesTurnedOff ? AlsoWent(entry.Details) : "";
+
+        // Relays the board controlled by itself, set back to normal: "Erik reset relay 3".
+        if (entry.Action == EventActions.BoardOwnRulesTurnedOff && distinct is [OwnRuleKind.InputLinkage])
+        {
+            return Line("Events.OwnRules.Reset", which) + also;
+        }
+
+        // The board turning relays on again by itself, in the screens' plain words: "Erik stopped the board turning
+        // relay 3 on again by itself".
+        if (distinct is [OwnRuleKind.AutoOn])
+        {
+            return Line(key + ".AutoOn", boardName ?? _texts["Events.OwnRules.Who.TheBoard"].Value, which) + also;
+        }
+
+        var what = distinct switch
+        {
+            [OwnRuleKind.Timer] => several ? "Events.OwnRules.Kind.Timers" : "Events.OwnRules.Kind.Timer",
+            _ when distinct.Count > 0 && distinct.All(k => k is OwnRuleKind.InputLinkage or OwnRuleKind.InputToggle or OwnRuleKind.InputEdge)
+                => several ? "Events.OwnRules.Kind.InputRules" : "Events.OwnRules.Kind.InputRule",
+            _ => several ? "Events.OwnRules.Kind.Rules" : "Events.OwnRules.Kind.Rule",
+        };
+        return Line(key, board, _texts[what], which) + also;
+    }
+
+    // "relay 3", "relays 3, 5 and 7", "relay ?" for none.
+    private string Which(List<int> relays)
+    {
+        var numbers = relays.Count == 0
+            ? _texts["Events.Unknown"].Value
+            : relays.Count == 1
+                ? relays[0].ToString(CultureInfo.CurrentCulture)
+                : string.Join(", ", relays.SkipLast(1).Select(r => r.ToString(CultureInfo.CurrentCulture))) + _texts["Events.List.And"] + relays[^1].ToString(CultureInfo.CurrentCulture);
+        return _texts[relays.Count > 1 ? "Events.OwnRules.Relays" : "Events.OwnRules.Relay", numbers].Value;
+    }
+
+    // The rules that went with a turn-off (its "also": the relay and kind of each), as the end of its line: ", and with it
+    // the timer for relay 5". Nothing when there were none or none can be read. Braces are escaped, as Line leaves the
+    // person's "{0}" in the line.
+    private string AlsoWent(string? details)
+    {
+        if (Read(details, "also") is not { ValueKind: JsonValueKind.Array } list)
+        {
+            return "";
+        }
+
+        List<(int Relay, OwnRuleKind? Kind)> went = [];
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty("relay", out var relay) && relay.ValueKind == JsonValueKind.Number && relay.TryGetInt32(out var number))
+            {
+                var kind = item.TryGetProperty("kind", out var text) && text.ValueKind == JsonValueKind.String && OwnRuleKinds.TryParse(text.GetString(), out var parsed) ? parsed : (OwnRuleKind?)null;
+                went.Add((number, kind));
+            }
+        }
+
+        if (went.Count == 0)
+        {
+            return "";
+        }
+
+        List<int> relays = [.. went.Select(w => w.Relay).Distinct().Order()];
+        var several = relays.Count > 1;
+        var phrase = went.Select(w => w.Kind).Distinct().ToList() switch
+        {
+            [OwnRuleKind.Timer] => several ? "Events.OwnRules.With.Timers" : "Events.OwnRules.With.Timer",
+            [OwnRuleKind.AutoOn] => "Events.OwnRules.With.AutoOn",
+            _ => several ? "Events.OwnRules.With.Rules" : "Events.OwnRules.With.Rule",
+        };
+        return _texts["Events.OwnRules.With", _texts[phrase, Which(relays)].Value].Value
+            .Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal);
+    }
+
+    // The relay's number on the board in an own rule's event, "?" when it can't be read.
+    private string RelayNumber(string? details)
+    {
+        return Number(details, "relay") is { } relay ? relay.ToString(CultureInfo.CurrentCulture) : _texts["Events.Unknown"];
     }
 
     // A group's own events: "John turned on the group" over "Fan heater · Fan → 3 s → Heat", "Run-on for 5 min: Fan",
@@ -267,7 +422,18 @@ public sealed class EventText
             or EventActions.ConnectionRestored
             or EventActions.BoardTimersDisabled
             or EventActions.BoardRelayModesReset
-            or EventActions.BoardRelayModesNotReset;
+            or EventActions.BoardRelayModesNotReset
+            or EventActions.BoardOwnRuleFound;
+    }
+
+    /// <summary>
+    /// An event whose line names its board (<see cref="IsAboutBoard"/>, or a person's turning off or keeping the board's
+    /// own rules), so the Events screen doesn't name it again before the target.
+    /// </summary>
+    public static bool NamesBoard(EventLogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return IsAboutBoard(entry) || entry.Action is EventActions.BoardOwnRulesTurnedOff or EventActions.BoardOwnRuleKept;
     }
 
     private string WhoFor(EventLogEntry entry)
@@ -288,7 +454,7 @@ public sealed class EventText
         };
     }
 
-    private (string Line, string? Target) LineFor(EventLogEntry entry, string? relayName)
+    private (string Line, string? Target) LineFor(EventLogEntry entry, string? relayName, string? boardName)
     {
         return entry.Action switch
         {
@@ -299,6 +465,7 @@ public sealed class EventText
             EventActions.Rename => (Line("Events.Rename", Text(entry.Details, "from") ?? relayName ?? ""), Text(entry.Details, "to") ?? relayName),
             EventActions.Activate => (Line("Events.Activate"), relayName),
             EventActions.Deactivate => (Line("Events.Deactivate"), relayName),
+            EventActions.PowerOnSet => (PowerOnLine(entry.Details), relayName),
             EventActions.ScheduleAdd => (WithSchedule("Events.Schedule.Added", "Events.Schedule.AddedOne", entry.Details), relayName),
             EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is false => (WithSchedule("Events.Schedule.Paused", "Events.Schedule.PausedOne", entry.Details), relayName),
             EventActions.ScheduleEdit when Bool(entry.Details, "enabled") is true => (WithSchedule("Events.Schedule.Resumed", "Events.Schedule.ResumedOne", entry.Details), relayName),
@@ -307,8 +474,11 @@ public sealed class EventText
             EventActions.ConnectionLost => (Line("Events.Board.Lost"), null),
             EventActions.ConnectionRestored => (Line("Events.Board.Restored"), null),
             EventActions.BoardTimersDisabled => (Line("Events.Board.TimersOff"), null),
+            // No longer written; kept for events logged before Issue #497.
             EventActions.BoardRelayModesReset => (Line("Events.Board.ModesReset"), null),
             EventActions.BoardRelayModesNotReset => (Line("Events.Board.ModesNotReset"), null),
+            EventActions.BoardOwnRulesTurnedOff => (OwnRulesLine("Events.OwnRules.TurnedOff", entry, boardName), null),
+            EventActions.BoardOwnRuleKept => (OwnRulesLine("Events.OwnRules.Kept", entry, boardName), relayName),
             EventActions.BoardLoginChanged => (Line("Events.Board.Login"), null),
             EventActions.BoardRenamed => Text(entry.Details, "from") is { } oldName
                 ? (Line("Events.Board.RenamedFrom", oldName, Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null)
@@ -319,6 +489,23 @@ public sealed class EventText
                 : (Line("Events.Board.Address", Text(entry.Details, "to") ?? _texts["Events.Unknown"]), null),
             _ => (Line("Events.Other", entry.Action), relayName),
         };
+    }
+
+    // "set the relay to turn on after a power cut", by the state saved; one this version doesn't know in plain words.
+    private string PowerOnLine(string? details)
+    {
+        if (!PowerOnStateNames.TryParse(Text(details, "to"), out var state))
+        {
+            return Line("Events.PowerOn.Changed");
+        }
+
+        return Line(state switch
+        {
+            PowerOnState.Off => "Events.PowerOn.Off",
+            PowerOnState.AsBefore => "Events.PowerOn.AsBefore",
+            PowerOnState.On => "Events.PowerOn.On",
+            _ => "Events.PowerOn.FollowsInput",
+        });
     }
 
     // "removed relay board Garage (Velleman VM204)", from what the event saved: the board's row is gone.

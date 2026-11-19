@@ -216,6 +216,11 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
             {
                 LogRelayInGroup(change.InputId, action.RelayId);
             }
+            catch (Exception ex) when (ex is RelayUnavailableException or GroupUnavailableException)
+            {
+                // The board controls that relay by itself: nothing was sent.
+                LogUnavailable(change.InputId);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // One relay or group failing doesn't stop the rest.
@@ -396,6 +401,9 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Input {InputId} didn't switch relay {RelayId}: it is in a group now")]
     private partial void LogRelayInGroup(int inputId, int? relayId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Input {InputId} didn't switch its relay or group: the board controls the relay itself")]
+    private partial void LogUnavailable(int inputId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Input {InputId}'s actions failed")]
     private partial void LogFailed(Exception exception, int inputId);

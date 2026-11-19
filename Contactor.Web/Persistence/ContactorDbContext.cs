@@ -33,6 +33,8 @@ public sealed class ContactorDbContext : DbContext
 
     public DbSet<BoardRuntime> BoardRuntimes => Set<BoardRuntime>();
 
+    public DbSet<BoardOwnRule> BoardOwnRules => Set<BoardOwnRule>();
+
     public DbSet<RelayGroup> RelayGroups => Set<RelayGroup>();
 
     public DbSet<RelayGroupStep> RelayGroupSteps => Set<RelayGroupStep>();
@@ -105,6 +107,7 @@ public sealed class ContactorDbContext : DbContext
         modelBuilder.Entity<AnalogInput>(ConfigureAnalogInput);
         modelBuilder.Entity<Board>(ConfigureBoard);
         modelBuilder.Entity<BoardRuntime>(ConfigureBoardRuntime);
+        modelBuilder.Entity<BoardOwnRule>(ConfigureBoardOwnRule);
         modelBuilder.Entity<RelayGroup>(ConfigureRelayGroup);
         modelBuilder.Entity<RelayGroupStep>(ConfigureRelayGroupStep);
         modelBuilder.Entity<RelayGroupMember>(ConfigureRelayGroupMember);
@@ -251,6 +254,22 @@ public sealed class ContactorDbContext : DbContext
         runtime.HasKey(r => r.BoardId);
         runtime.Property(r => r.BoardId).ValueGeneratedNever();
         runtime.HasOne<Board>().WithOne().HasForeignKey<BoardRuntime>(r => r.BoardId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureBoardOwnRule(EntityTypeBuilder<BoardOwnRule> rule)
+    {
+        var kinds = string.Join(", ", OwnRuleKinds.All.Select(k => $"'{k}'"));
+        rule.ToTable("BoardOwnRule", t =>
+        {
+            t.HasCheckConstraint("CK_BoardOwnRule_Channel", $"\"Channel\" BETWEEN 1 AND {ChannelMask.MaxChannels}");
+            t.HasCheckConstraint("CK_BoardOwnRule_Kind", $"\"Kind\" IN ({kinds})");
+        });
+        rule.Property(r => r.Kind).HasMaxLength(OwnRuleKinds.MaxLength);
+        rule.Property(r => r.KeptBy).HasMaxLength(User.EmailMaxLength);
+
+        // One row per rule the board reports: a relay has at most one rule of each kind.
+        rule.HasIndex(r => new { r.BoardId, r.Channel, r.Kind }).IsUnique();
+        rule.HasOne<Board>().WithMany().HasForeignKey(r => r.BoardId).OnDelete(DeleteBehavior.Cascade);
     }
 
     private static void ConfigureInstallation(EntityTypeBuilder<Installation> installation)

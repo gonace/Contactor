@@ -7,11 +7,16 @@ namespace Contactor.Boards.Velleman;
 /// The two MOSFET outputs, bit 0 = <c>m1</c>, bit 1 = <c>m2</c>. They are not relays: the app doesn't count, show or
 /// switch them.
 /// </param>
-public sealed record Vm208Status(byte Relays, bool Input, byte Outputs)
+/// <param name="OwnRules">
+/// The board's own rules as last read (<see cref="Vm208Client.SchedulesInterval"/>): a <see cref="OwnRuleKind.Timer"/>
+/// rule on each relay whose week schedule has an enabled alarm; null while the schedules aren't known.
+/// </param>
+public sealed record Vm208Status(byte Relays, bool Input, byte Outputs, OwnRules? OwnRules = null)
 {
     /// <summary>
     /// Compares the relays and the input only: the app doesn't show the transistor outputs, so a change of those
-    /// alone is no change worth telling every screen about.
+    /// alone is no change worth telling every screen about, and a change of the own rules alone comes as
+    /// <see cref="Vm208Client.OwnRulesChanged"/>.
     /// </summary>
     public static IEqualityComparer<Vm208Status> SwitchesComparer { get; } = new Switches();
 
@@ -49,6 +54,9 @@ public sealed record Vm208State(bool IsConnected, Vm208Status? Status, DateTimeO
     public byte Relays => Status?.Relays ?? 0;
 
     public bool Input => Status?.Input ?? false;
+
+    /// <summary>The board's own rules as last read; null while unknown.</summary>
+    public OwnRules? OwnRules => Status?.OwnRules;
 
     public bool IsOn(int relay)
     {

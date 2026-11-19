@@ -359,6 +359,20 @@ input[type="text"] {
     color: var(--on-accent);
 }
 
+/* After "Create group" saved the group but the board didn't take Off after a power cut. */
+.next a.open-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 56px;
+    border-radius: 12px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 18px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
 .error {
     margin: 0;
     font-size: 14px;

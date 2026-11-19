@@ -80,6 +80,12 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     public event EventHandler<BoardStateChange>? OwnRulesChanged;
 
     /// <summary>
+    /// A board's new state when only its relays' states after a power cut changed (<see cref="LiveBoard.PowerOnChanged"/>),
+    /// raised on that board's connection loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<BoardStateChange>? PowerOnChanged;
+
+    /// <summary>
     /// Raised when a board is added to <see cref="All"/> or removed from it, while the boards are being changed:
     /// handlers must not change them in turn.
     /// </summary>
@@ -249,7 +255,8 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     /// <summary>
     /// Runs <paramref name="model"/> on the board's row from now on, unless it already is its model: the setup guide's
     /// choice. A row made since start (the guide's first board) gets its live board now. Built before anything changes,
-    /// so a model the app can't build (e.g. its settings are wrong) leaves the board as it was. Doesn't save the model.
+    /// so a model the app can't build (e.g. its settings are wrong) leaves the board as it was. The board's own rules the
+    /// app remembered (<see cref="BoardOwnRule"/>) are deleted: they were the old model's. Doesn't save the model.
     /// </summary>
     public async Task<LiveBoard> ReplaceModelAsync(int boardId, BoardModel model, CancellationToken cancellationToken)
     {
@@ -269,6 +276,13 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             var built = Build(registration, BoardSetup.From(row, isFirst));
             try
             {
+                // The rules of their own the old model reported are no rules of this one's (OwnRulesService reads them
+                // afresh from the new model's first state).
+                await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
+                {
+                    await db.BoardOwnRules.Where(r => r.BoardId == boardId).ExecuteDeleteAsync(cancellationToken);
+                }
+
                 live ??= await AddAsync(row);
             }
             catch
@@ -594,6 +608,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             board.StateChanged -= OnStateChanged;
             board.AnalogChanged -= OnAnalogChanged;
             board.OwnRulesChanged -= OnOwnRulesChanged;
+            board.PowerOnChanged -= OnPowerOnChanged;
             await board.DisposeAsync();
         }
 
@@ -612,6 +627,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         live.StateChanged -= OnStateChanged;
         live.AnalogChanged -= OnAnalogChanged;
         live.OwnRulesChanged -= OnOwnRulesChanged;
+        live.PowerOnChanged -= OnPowerOnChanged;
         await live.DisposeAsync();
         RaiseBoardsChanged();
     }
@@ -691,6 +707,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         live.StateChanged += OnStateChanged;
         live.AnalogChanged += OnAnalogChanged;
         live.OwnRulesChanged += OnOwnRulesChanged;
+        live.PowerOnChanged += OnPowerOnChanged;
         lock (_lock)
         {
             if (_disposed)
@@ -698,6 +715,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 live.StateChanged -= OnStateChanged;
                 live.AnalogChanged -= OnAnalogChanged;
                 live.OwnRulesChanged -= OnOwnRulesChanged;
+                live.PowerOnChanged -= OnPowerOnChanged;
                 _ = live.DisposeAsync().AsTask();
                 throw new ObjectDisposedException(nameof(BoardRegistry));
             }
@@ -771,6 +789,11 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     private void OnOwnRulesChanged(object? sender, BoardState state)
     {
         Raise(OwnRulesChanged, sender, state);
+    }
+
+    private void OnPowerOnChanged(object? sender, BoardState state)
+    {
+        Raise(PowerOnChanged, sender, state);
     }
 
     private void Raise(EventHandler<BoardStateChange>? handlers, object? sender, BoardState state)

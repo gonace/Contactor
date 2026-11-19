@@ -1,6 +1,7 @@
 @page "/"
 @implements IDisposable
 @using Contactor.Boards
+@using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Events
 @using Contactor.Web.Features.Groups
@@ -32,8 +33,16 @@
 @inject GroupStatusText GroupStatus
 @inject InputsText InputsText
 @inject AppLanguage Language
+@inject OwnRulesHandler OwnRules
+@inject OwnRulesService OwnRuleRows
+@inject OwnRulesText OwnRulesText
+@inject RelayPowerOnHandler PowerOn
 
 <PageTitle>@(Texts["Common.PageTitle", Texts["Common.Screen.Relays"]])</PageTitle>
+
+@* The board's own rules each board's box and cards show, kept as they are drawn: a change that alters none of them
+   redraws nothing (OnOwnRulesChanged). *@
+@{ KeepShownRules(); }
 
 <div class="screen">
     <header class="header">
@@ -109,6 +118,7 @@
         @* One board: nothing to filter, so no chips; the side menu shows the board (BoardPicker). *@
         <div class="connection">
             @ConnectionLine(State, null)
+            @OwnRulesBox(OnlyOne, null)
             @if (_allOffFailedBoardId is not null)
             {
                 <p class="error" role="alert">@Texts["Common.BoardNotResponding"]</p>
@@ -141,6 +151,7 @@
                 var state = board.State;
                 var count = CountOf(board.BoardId);
                 var relays = VisibleRelaysOf(board.BoardId).ToList();
+                var unavailable = UnavailableRelaysOf(board.BoardId).ToList();
                 var inputs = VisibleInputsOf(board.BoardId).ToList();
                 var analog = VisibleAnalogOf(board.BoardId).ToList();
                 <section class="section board" aria-labelledby="@($"board-{board.BoardId}")" @key="board.BoardId">
@@ -151,6 +162,7 @@
                     </div>
                     <div class="board-line">
                         @ConnectionLine(state, board.Name)
+                        @OwnRulesBox(board, board.Name)
                         @if (_allOffFailedBoardId == board.BoardId)
                         {
                             <p class="error" role="alert">@Texts["Common.BoardNotResponding"]</p>
@@ -163,6 +175,16 @@
                             @foreach (var relay in relays)
                             {
                                 @RelayCard(relay)
+                            }
+                        </div>
+                    }
+                    @if (unavailable.Count > 0)
+                    {
+                        <h3 class="section-title">@Texts["OwnRules.Unavailable.Heading"]</h3>
+                        <div class="cards relay-cards">
+                            @foreach (var relay in unavailable)
+                            {
+                                @UnavailableCard(relay)
                             }
                         </div>
                     }
@@ -197,6 +219,20 @@
                         @foreach (var relay in VisibleRelays)
                         {
                             @RelayCard(relay)
+                        }
+                    </div>
+                </section>
+            }
+
+            @* The relays the board controls by itself (e.g. a Waveshare relay in linkage mode): no ON/OFF, only "Reset". *@
+            @if (UnavailableRelays.Any())
+            {
+                <section class="section" aria-labelledby="unavailable-heading">
+                    <h2 class="section-title" id="unavailable-heading">@Texts["OwnRules.Unavailable.Heading"]</h2>
+                    <div class="cards relay-cards">
+                        @foreach (var relay in UnavailableRelays)
+                        {
+                            @UnavailableCard(relay)
                         }
                     </div>
                 </section>
@@ -265,6 +301,28 @@
 
     // What each analog card shows: a new reading redraws the page only when it changes one (OnAnalogChanged).
     private readonly ShownAnalogValues _shownAnalog = new(showsVolts: false);
+
+    // The board's own rules each board's warning and cards show, by board id: kept as the page is drawn.
+    private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownRules = [];
+
+    // The other rules each board's "Turn them off" takes with it (OwnRulesHandler.AlsoTurnsOff), by board id: kept as
+    // the page is drawn.
+    private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownAlso = [];
+
+    // The relays each board controls by itself, by board id: kept as the page is drawn.
+    private readonly Dictionary<int, ChannelMask> _shownUnavailable = [];
+
+    // "Turn them off" that went wrong, on the board's warning.
+    private (int BoardId, string Message)? _rulesError;
+
+    // "Reset" that went wrong, under the relay's or the group's card, by the relay's or the group's key.
+    private (string Key, string Message)? _resetError;
+
+    // The relays each group's power-cut warning names, by the group's id: kept as the page is drawn.
+    private readonly Dictionary<int, ChannelMask> _shownNotSafe = [];
+
+    // "Make it safe" that went wrong, under the group's warning.
+    private (int GroupId, string Message)? _powerOnError;
 
     // The inputs that control each relay and each group, by its id.
     private ILookup<int, InputControl> _relayInputs = Array.Empty<InputControl>().ToLookup(c => 0);
@@ -393,7 +451,18 @@
             : Texts["Relays.Lost.None"];
     }
 
-    private IEnumerable<Relay> VisibleRelays => _relays.Where(r => (r.IsActive || _showInactive) && Filter.Shows(r.BoardId));
+    // The relays with an ON/OFF: not one its board controls by itself, which has a section of its own.
+    private IEnumerable<Relay> VisibleRelays => _relays.Where(r => (r.IsActive || _showInactive) && Filter.Shows(r.BoardId) && !IsUnavailable(r));
+
+    // The relays the board controls by itself and ignores the app's commands for (BoardState.Unavailable).
+    private IEnumerable<Relay> UnavailableRelays => _relays.Where(r => (r.IsActive || _showInactive) && Filter.Shows(r.BoardId) && IsUnavailable(r));
+
+    private IEnumerable<Relay> UnavailableRelaysOf(int boardId) => UnavailableRelays.Where(r => r.BoardId == boardId);
+
+    private bool IsUnavailable(Relay relay)
+    {
+        return StateOf(relay.BoardId).Unavailable.Contains(relay.Channel);
+    }
 
     private IEnumerable<InputView> VisibleInputs => _inputs.Where(i => (i.IsActive || _showInactive) && Filter.Shows(i.BoardId));
 
@@ -413,7 +482,7 @@
     private int InactiveCount => InactiveRelays + InactiveInputs;
 
     // "Relays" only sets the relays apart from the groups or the inputs (its section is only there over cards).
-    private bool ShowRelaysHeading => _groups.Count > 0 || VisibleInputs.Any() || VisibleAnalog.Any();
+    private bool ShowRelaysHeading => _groups.Count > 0 || VisibleInputs.Any() || VisibleAnalog.Any() || UnavailableRelays.Any();
 
     private string InactiveButtonText => InputsText.Inactive(InactiveRelays, InactiveInputs, _showInactive);
 
@@ -451,6 +520,150 @@
         }
     };
 
+    // A warning under the board's connection line while it has rules of its own that switch relays without the app,
+    // e.g. the VM201's timers, that no person kept. Only while the board answers; nothing for a board that can't tell.
+    private RenderFragment OwnRulesBox(LiveBoard? board, string? boardName) => __builder =>
+    {
+        if (board is null || _shownRules.GetValueOrDefault(board.BoardId) is not { Count: > 0 } rules)
+        {
+            return;
+        }
+
+        <div class="offline own-rules" role="status">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+            <div>
+                <strong>@OwnRulesText.Heading(rules, boardName)</strong>
+                <span>@OwnRulesText.CanSwitch(rules)</span>
+                @if (board.Capabilities.OwnRulesOrCantTell.TurnsOff)
+                {
+                    @* Said before the press: other relays' rules that go with these ("Also turns off the board's timer for Heat."). *@
+                    @if (_shownAlso.GetValueOrDefault(board.BoardId) is { Count: > 0 } also)
+                    {
+                        <span class="also">@OwnRulesText.AlsoTurnsOff(also, RelayNames(board.BoardId))</span>
+                    }
+                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, rules)">@OwnRulesText.TurnOffAll(rules.Count)</button>
+                }
+                @if (_rulesError is { } error && error.BoardId == board.BoardId)
+                {
+                    <span class="rules-error" role="alert">@error.Message</span>
+                }
+            </div>
+        </div>
+    };
+
+    // A line on the card of a relay the board's own rules can switch: "(clock) The board's timer can switch it".
+    private RenderFragment OwnRuleLine(Relay relay) => __builder =>
+    {
+        if (_shownRules.GetValueOrDefault(relay.BoardId) is not { Count: > 0 } rules || !rules.Any(r => r.Relay == relay.Channel))
+        {
+            return;
+        }
+
+        <span class="input-line own-rule-line">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            <span>@OwnRulesText.CardLine(rules.Where(r => r.Relay == relay.Channel).Select(r => r.Kind))</span>
+        </span>
+    };
+
+    // A line on the card of a group whose relays the board's own rules can switch, naming them by their role in the
+    // group: "(clock) The board's timer can switch Heat". The relays have no card of their own.
+    private RenderFragment OwnRuleGroupLine(GroupView group) => __builder =>
+    {
+        if (_shownRules.GetValueOrDefault(group.BoardId) is not { Count: > 0 } rules)
+        {
+            return;
+        }
+
+        var members = group.Members.Where(m => rules.Any(r => r.Relay == m.Channel)).ToList();
+        if (members.Count == 0)
+        {
+            return;
+        }
+
+        var channels = members.Select(m => m.Channel).ToHashSet();
+        <span class="input-line own-rule-line">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            <span>@OwnRulesText.GroupLine(rules.Where(r => channels.Contains(r.Relay)).Select(r => r.Kind), members.Select(m => m.RoleName))</span>
+        </span>
+    };
+
+    // A relay the board controls by itself: its label, name and state, why there is no ON/OFF, and "Reset".
+    private RenderFragment UnavailableCard(Relay relay) => __builder =>
+    {
+        var state = StateOf(relay.BoardId);
+        var on = state.IsOn(relay.Channel);
+        var key = $"r{relay.Id}";
+        <div class="card unavailable" @key="@($"u{relay.Id}")">
+            <div class="text">
+                <a class="title" href="relay/@relay.Id">
+                    <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
+                    <span class="name">@relay.Name</span>
+                </a>
+                <span class="status">@OwnRulesText.Unavailable(relay.Channel)</span>
+                <button type="button" class="reset" aria-label="@Texts["OwnRules.Reset.Label", relay.Channel]" disabled="@(_busy || !state.IsConnected)" @onclick="() => ResetAsync(relay.BoardId, [relay.Channel], key)">@Texts["OwnRules.Reset"]</button>
+                @if (_resetError is { } error && error.Key == key)
+                {
+                    <span class="error" role="alert">@error.Message</span>
+                }
+            </div>
+            @* Read-only: the board switches it, as it follows its input. *@
+            <span class="relay-state @(on ? "on" : null)" role="img" aria-label="@Texts["Common.NameAndState", relay.Name, Texts[on ? "Common.Switch.On" : "Common.Switch.Off"]]"><span class="dot" aria-hidden="true"></span>@Texts[on ? "Common.Switch.On" : "Common.Switch.Off"]</span>
+        </div>
+    };
+
+    // A group with a relay the board controls by itself: it won't start until that relay is reset.
+    private RenderFragment GroupUnavailableBox(GroupView group, IReadOnlyList<GroupMemberView> members) => __builder =>
+    {
+        var key = $"g{group.Id}";
+        <div class="offline group-unavailable" role="status">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+            <div>
+                <strong>@OwnRulesText.GroupUnavailable(members.Select(m => m.RoleName))</strong>
+                <span>@Texts["OwnRules.Unavailable.GroupText" + Plurals.Form(members.Count)]</span>
+                <button type="button" class="turn-off-rules" disabled="@(_busy || !StateOf(group.BoardId).IsConnected)" @onclick="() => ResetAsync(group.BoardId, [.. members.Select(m => m.Channel)], key)">@Texts["OwnRules.Reset"]</button>
+                @if (_resetError is { } error && error.Key == key)
+                {
+                    <span class="rules-error" role="alert">@error.Message</span>
+                }
+            </div>
+        </div>
+    };
+
+    // A group whose board turns some of its relays on by itself after a power cut, without the group's start order
+    // (GroupPowerOn): "Make it safe" sets them to Off on the board. The group can still start.
+    private RenderFragment GroupPowerOnBox(GroupView group, IReadOnlyList<GroupMemberView> members) => __builder =>
+    {
+        var state = StateOf(group.BoardId);
+        <div class="offline group-unavailable power-on" role="status">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+            <div>
+                <strong>@Texts["Groups.PowerOn.Warning", BoardsText.And([.. members.Select(m => m.RoleName).Distinct()])]</strong>
+                <span>@Texts["Groups.PowerOn.WarningText" + Plurals.Form(members.Count)]</span>
+                @if (Registry.Find(group.BoardId)?.Capabilities.PowerOn is { PerRelay: false })
+                {
+                    <span>@Texts["Relays.PowerOn.WholeBoard"]</span>
+                }
+                @if (!state.IsConnected)
+                {
+                    <span>@Texts["Relays.PowerOn.NoContactNow"]</span>
+                }
+                <button type="button" class="turn-off-rules make-safe" disabled="@(_busy || !state.IsConnected)" @onclick="() => MakeSafeAsync(group.Id)">@Texts["Groups.PowerOn.MakeSafe"]</button>
+                @if (_powerOnError is { } error && error.GroupId == group.Id)
+                {
+                    <span class="rules-error" role="alert">@error.Message</span>
+                }
+            </div>
+        </div>
+    };
+
+    // The group's relays whose board turns them on by itself after a power cut (GroupPowerOn).
+    private IReadOnlyList<GroupMemberView> NotSafe(GroupView group)
+    {
+        var board = Registry.Find(group.BoardId);
+        var channels = GroupPowerOn.NotSafe(board?.Capabilities.PowerOn, board?.State.PowerOn, group.Members.Select(m => m.Channel));
+        return [.. group.Members.Where(m => channels.Contains(m.Channel))];
+    }
+
     // The desktop's side menu: every board, to pick which to show.
     private RenderFragment BoardList => __builder =>
     {
@@ -463,6 +676,7 @@
         var groupOn = group.IsOn(state);
         var missing = group.MissingRelay(Registry.Find(group.BoardId)?.Capabilities.RelayCount ?? 0);
         var level = GroupPlanner.Level(group.Steps, state);
+        var unavailable = group.Members.Where(m => state.Unavailable.Contains(m.Channel)).ToList();
         var reach = GroupPlanner.Reach(group.Steps, state);
 
         // Lit while any of it runs in order, e.g. only Fan 1; not while a relay is on out of order.
@@ -477,6 +691,7 @@
                     <span class="name">@group.Name</span>
                     <span class="status @(group.Runtime.Phase != GroupPhases.Idle && state.HasAnswered ? "busy" : null)">@(!state.HasAnswered ? StatusText.Waiting : missing is { } m ? GroupStatus.MissingRelay(m) : GroupStatus.For(group, state, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
                     @InputLines(_groupInputs[group.Id])
+                    @OwnRuleGroupLine(group)
                     @if (_failedGroupId == group.Id)
                     {
                         <span class="error" role="alert">@_groupError</span>
@@ -484,12 +699,13 @@
                 </a>
                 @if (state.HasAnswered)
                 {
+                    @* A group the board controls a relay of by itself doesn't start; it still stops. *@
                     <button type="button"
                             data-vibrate
                             class="toggle"
                             aria-pressed="@(groupOn ? "true" : "false")"
                             aria-label="@Texts[groupOn ? "Common.TurnOff" : "Common.TurnOn", group.Name]"
-                            disabled="@(!state.IsConnected || _busy || missing is not null)"
+                            disabled="@(!state.IsConnected || _busy || missing is not null || (!groupOn && unavailable.Count > 0))"
                             @onclick="() => ToggleGroupAsync(group.Id, groupOn)">@Texts[groupOn ? "Common.Switch.On" : "Common.Switch.Off"]</button>
                 }
                 else
@@ -497,6 +713,14 @@
                     <button type="button" class="toggle unknown" aria-label="@Texts["Common.NameAndState", group.Name, StatusText.Waiting]" disabled>–</button>
                 }
             </div>
+            @if (unavailable.Count > 0)
+            {
+                @GroupUnavailableBox(group, unavailable)
+            }
+            @if (NotSafe(group) is { Count: > 0 } notSafe)
+            {
+                @GroupPowerOnBox(group, notSafe)
+            }
             <ol class="chips" aria-label="@Texts["Groups.Steps"]">
                 @for (var i = 0; i < group.Steps.Count; i++)
                 {
@@ -525,6 +749,7 @@
                 <span class="name">@relay.Name</span>
                 <span class="status">@(state.HasAnswered ? StatusFor(relay, on) : StatusText.Waiting)</span>
                 @InputLines(_relayInputs[relay.Id])
+                @OwnRuleLine(relay)
                 @if (_failedRelayId == relay.Id && _inGroup)
                 {
                     <span class="error" role="alert">@Texts["Relays.InGroup"]</span>
@@ -659,6 +884,9 @@
         Registry.AnalogChanged += OnAnalogChanged;
         Registry.BoardsChanged += OnBoardsChanged;
         Changes.Changed += OnRelaysChanged;
+        Registry.OwnRulesChanged += OnOwnRulesChanged;
+        Registry.PowerOnChanged += OnPowerOnChanged;
+        OwnRuleRows.Changed += OnOwnRuleRowsChanged;
     }
 
     public void Dispose()
@@ -668,6 +896,9 @@
         Registry.AnalogChanged -= OnAnalogChanged;
         Registry.BoardsChanged -= OnBoardsChanged;
         Changes.Changed -= OnRelaysChanged;
+        Registry.OwnRulesChanged -= OnOwnRulesChanged;
+        Registry.PowerOnChanged -= OnPowerOnChanged;
+        OwnRuleRows.Changed -= OnOwnRuleRowsChanged;
         _tick?.Dispose();
     }
 
@@ -812,6 +1043,11 @@
             _failedGroupId = groupId;
             _groupError = Texts["Boards.BeingRemoved"];
         }
+        catch (GroupUnavailableException)
+        {
+            // The card shows which relay and "Reset".
+            _failedGroupId = null;
+        }
         catch (BoardNotConnectedException)
         {
             _failedGroupId = groupId;
@@ -906,9 +1142,215 @@
             _failedRelayId = failedRelayId;
             _inGroup = true;
         }
+        catch (RelayUnavailableException)
+        {
+            // The board took the relay over meanwhile: its card moves to the unavailable ones at the next draw.
+            _failedRelayId = null;
+        }
         finally
         {
             _busy = false;
+        }
+    }
+
+    // "Turn them off": the board's own rules the warning shows, at once, as the person pressed. The board's next state
+    // takes the warning away; nothing is queued without a connection, and the warning says why.
+    private async Task TurnOffRulesAsync(int boardId, IReadOnlyList<OwnRule> rules)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _rulesError = null;
+        try
+        {
+            if (await OwnRules.TurnOffAsync(boardId, rules, _user.Email, CancellationToken.None) is { } message)
+            {
+                _rulesError = (boardId, message);
+            }
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Turning off the own rules of relay board {BoardId} failed", boardId);
+            _rulesError = (boardId, Texts["Common.SomethingWrongTryAgain"]);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // "Reset": sets the relays the board controls by itself back to normal, as the person pressed, and logs it. The
+    // board's next state moves them back among the relays; nothing is queued without a connection.
+    private async Task ResetAsync(int boardId, IReadOnlyList<int> channels, string key)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _resetError = null;
+        try
+        {
+            if (await OwnRules.TurnOffAsync(boardId, [.. channels.Select(c => new OwnRule(c, OwnRuleKind.InputLinkage))], _user.Email, CancellationToken.None) is { } message)
+            {
+                _resetError = (key, message);
+            }
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Resetting relays of relay board {BoardId} failed", boardId);
+            _resetError = (key, Texts["Common.SomethingWrongTryAgain"]);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // What each board's warning shows now: only while the board answers. Not a relay the board controls by itself:
+    // that one is shown as unavailable instead, with its own "Reset".
+    private IReadOnlyList<OwnRule> RulesToShow(LiveBoard board)
+    {
+        return board.State.IsConnected ? [.. OwnRules.Warnings(board.BoardId).Where(r => r.Kind != OwnRuleKind.InputLinkage)] : [];
+    }
+
+    // What turning off the warning's rules takes with it: only for a board that turns them off.
+    private IReadOnlyList<OwnRule> AlsoToShow(LiveBoard board, IReadOnlyList<OwnRule> rules)
+    {
+        return rules.Count > 0 && board.Capabilities.OwnRulesOrCantTell.TurnsOff ? OwnRules.AlsoTurnsOff(board.BoardId, rules) : [];
+    }
+
+    // A board's relays by their channel, to their names.
+    private Dictionary<int, string> RelayNames(int boardId)
+    {
+        return _relays.Where(r => r.BoardId == boardId).GroupBy(r => r.Channel).ToDictionary(g => g.Key, g => g.First().Name);
+    }
+
+    private void KeepShownRules()
+    {
+        _shownRules.Clear();
+        _shownAlso.Clear();
+        _shownUnavailable.Clear();
+        foreach (var board in Boards)
+        {
+            _shownRules[board.BoardId] = RulesToShow(board);
+            _shownAlso[board.BoardId] = AlsoToShow(board, _shownRules[board.BoardId]);
+            _shownUnavailable[board.BoardId] = board.State.Unavailable;
+        }
+
+        _shownNotSafe.Clear();
+        foreach (var group in _groups)
+        {
+            _shownNotSafe[group.Id] = ChannelMask.Of(NotSafe(group).Select(m => m.Channel));
+        }
+    }
+
+    // From a board's read loop: only the relays' states after a power cut changed. A redraw only when a group's warning
+    // would name other relays.
+    private void OnPowerOnChanged(object? sender, BoardStateChange change)
+    {
+        _ = RedrawForPowerOnAsync(change.BoardId);
+    }
+
+    private async Task RedrawForPowerOnAsync(int boardId)
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (_disposed)
+                {
+                    return;
+                }
+
+                if (_groups.Any(g => g.BoardId == boardId && ChannelMask.Of(NotSafe(g).Select(m => m.Channel)) != _shownNotSafe.GetValueOrDefault(g.Id)))
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the change was on its way.
+        }
+    }
+
+    // "Make it safe": sets the group's relays the board turns on by itself after a power cut to Off on the board, as the
+    // person pressed, and logs it. Nothing is sent or queued without a connection.
+    private async Task MakeSafeAsync(int groupId)
+    {
+        if (_user is null || _busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _powerOnError = null;
+        try
+        {
+            if (await PowerOn.MakeGroupSafeAsync(groupId, _user.Email, relayIds: null, onSave: false, CancellationToken.None) is { } message)
+            {
+                _powerOnError = (groupId, message);
+            }
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Making the state after a power cut of group {GroupId} safe failed", groupId);
+            _powerOnError = (groupId, Texts["Common.SomethingWrongTryAgain"]);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // From a board's read loop: only its own rules changed.
+    private void OnOwnRulesChanged(object? sender, BoardStateChange change)
+    {
+        _ = RedrawForRulesAsync(change.BoardId);
+    }
+
+    // A rule kept, found or gone: OwnRulesService's rows, which the warnings leave the kept rules out by.
+    private void OnOwnRuleRowsChanged(object? sender, int boardId)
+    {
+        _ = RedrawForRulesAsync(boardId);
+    }
+
+    // A redraw only when the board's warning or cards would show other rules.
+    private async Task RedrawForRulesAsync(int boardId)
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                // On the page's own thread, as Dispose is: a closed page draws nothing.
+                if (_disposed || Boards.FirstOrDefault(b => b.BoardId == boardId) is not { } board)
+                {
+                    return;
+                }
+
+                var rules = RulesToShow(board);
+                if (!rules.SequenceEqual(_shownRules.GetValueOrDefault(boardId) ?? [])
+                    || !AlsoToShow(board, rules).SequenceEqual(_shownAlso.GetValueOrDefault(boardId) ?? [])
+                    || board.State.Unavailable != _shownUnavailable.GetValueOrDefault(boardId))
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the change was on its way.
         }
     }
 

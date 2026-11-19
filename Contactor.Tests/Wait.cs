@@ -21,4 +21,19 @@ internal static class Wait
             await Task.Delay(10, TestContext.Current.CancellationToken);
         }
     }
+
+    /// <summary>As <see cref="UntilAsync(Func{bool})"/>, for a condition that has to be awaited, e.g. a database read.</summary>
+    public static async Task UntilAsync(Func<Task<bool>> condition)
+    {
+        var deadline = DateTime.UtcNow + Deadline;
+        while (!await condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                Assert.Fail("The condition was not met.");
+            }
+
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+    }
 }

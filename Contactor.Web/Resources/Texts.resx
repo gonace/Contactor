@@ -338,11 +338,37 @@
   <data name="Boards.Port" xml:space="preserve">
     <value>Port</value>
   </data>
+  <data name="Boards.Problem.AskedToWait" xml:space="preserve">
+    <value>The board asks Contactor to wait a while. If you just changed the password, check it.</value>
+    <comment>For a board whose login is a password alone. The board may ask after wrong passwords or with too many clients at once, so the text doesn't say the password is wrong. Contactor tries again by itself.</comment>
+  </data>
+  <data name="Boards.Problem.AskedToWait.Login" xml:space="preserve">
+    <value>The board asks Contactor to wait a while. If you just changed the user name or password, check them.</value>
+  </data>
+  <data name="Boards.Problem.CoverProfile" xml:space="preserve">
+    <value>The board is set up to drive a cover, not relays. Set its profile to "switch" on its own web page, then check again.</value>
+  </data>
+  <data name="Boards.Problem.FirmwareTooOld" xml:space="preserve">
+    <value>The board's firmware is too old. Update it to {0} or later on the board's own web page.</value>
+    <comment>{0} is the oldest firmware version the app takes, e.g. "1.7.0".</comment>
+  </data>
+  <data name="Boards.Problem.FirmwareTooOld.Unknown" xml:space="preserve">
+    <value>The board's firmware is too old. Update it on the board's own web page.</value>
+  </data>
   <data name="Boards.Problem.LoginNeeded" xml:space="preserve">
     <value>The board asks for a user name and password.</value>
   </data>
   <data name="Boards.Problem.PasswordNeeded" xml:space="preserve">
     <value>The board asks for a password.</value>
+  </data>
+  <data name="Boards.Problem.Short.AskedToWait" xml:space="preserve">
+    <value>Asked to wait</value>
+  </data>
+  <data name="Boards.Problem.Short.CoverProfile" xml:space="preserve">
+    <value>Set up for a cover</value>
+  </data>
+  <data name="Boards.Problem.Short.FirmwareTooOld" xml:space="preserve">
+    <value>Old firmware</value>
   </data>
   <data name="Boards.Problem.Short.LoginNeeded" xml:space="preserve">
     <value>Needs a login</value>
@@ -371,11 +397,19 @@
     <comment>{0} is the model found at the address; {1} is Common.AddBoard.</comment>
   </data>
   <data name="Boards.Problem.WrongModel.Unknown" xml:space="preserve">
-    <value>The board at this address is another model, not an {0}.</value>
+    <value>The board at this address is another model, not the {0}.</value>
     <comment>{0} is the model chosen, e.g. "ETH008-B".</comment>
   </data>
   <data name="Boards.Problem.WrongPassword" xml:space="preserve">
     <value>The password is wrong.</value>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount" xml:space="preserve">
+    <value>The board at this address has {0}, not {1}.</value>
+    <comment>{0} is Boards.Relays for the number found, e.g. "4 relays"; {1} is the number the chosen model has, e.g. "2".</comment>
+  </data>
+  <data name="Boards.Problem.WrongRelayCount.AddAgain" xml:space="preserve">
+    <value>Add it again with '{1}' and choose the one with {0}, then remove this one.</value>
+    <comment>{0} is Boards.Relays for the number found, e.g. "4 relays"; {1} is Common.AddBoard.</comment>
   </data>
   <data name="Boards.Relays.InGroup" xml:space="preserve">
     <value>In the group {0}, which switches it.</value>
@@ -449,6 +483,9 @@
   <data name="Boards.Remove.InputActions_Other" xml:space="preserve">
     <value>{0} input actions</value>
   </data>
+  <data name="Boards.Remove.KeptOn" xml:space="preserve">
+    <value>Relay {0} ({1}) stays on while relay {2} ({3}) is on.</value>
+  </data>
   <data name="Boards.Remove.Lost" xml:space="preserve">
     <value>{0} has lost contact, so its relays couldn't be turned off. Nothing was removed.</value>
   </data>
@@ -476,6 +513,12 @@
   </data>
   <data name="Boards.Remove.Title" xml:space="preserve">
     <value>Remove board</value>
+  </data>
+  <data name="Boards.Remove.Unavailable_One" xml:space="preserve">
+    <value>Relay {0} is controlled by the board itself and stays as it is.</value>
+  </data>
+  <data name="Boards.Remove.Unavailable_Other" xml:space="preserve">
+    <value>Relays {0} are controlled by the board itself and stay as they are.</value>
   </data>
   <data name="Boards.Save.EnterName" xml:space="preserve">
     <value>Enter a name.</value>
@@ -757,9 +800,11 @@
   </data>
   <data name="Events.Board.ModesNotReset" xml:space="preserve">
     <value>{0} couldn't have its relays set to normal mode, so its inputs may switch them</value>
+    <comment>No longer written; kept for events logged before Issue #497.</comment>
   </data>
   <data name="Events.Board.ModesReset" xml:space="preserve">
     <value>{0} had its relays set to normal mode, so its inputs don't switch them</value>
+    <comment>No longer written; kept for events logged before Issue #497.</comment>
   </data>
   <data name="Events.Board.Removed" xml:space="preserve">
     <value>{0} removed relay board {1} ({2})</value>
@@ -895,6 +940,155 @@
   <data name="Events.Other" xml:space="preserve">
     <value>{0} {1}</value>
     <comment>An event this version has no words for: {1} is its name in the log.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.AutoOn" xml:space="preserve">
+    <value>{0} turns relay {1} on again by itself after it goes off</value>
+    <comment>{0} is "The board" or its name, {1} the relay's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Edge" xml:space="preserve">
+    <value>Input {1} switches relay {1} at each change on {0}</value>
+    <comment>{0} is the board ("the board", or its name with two or more boards), {1} the relay's and input's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Linkage" xml:space="preserve">
+    <value>Relay {1} became unavailable: {0} controls it itself</value>
+  </data>
+  <data name="Events.OwnRules.Found.Rule" xml:space="preserve">
+    <value>{0} has a rule of its own for relay {1}</value>
+    <comment>{0} is "The board" or its name, {1} the relay's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Timer" xml:space="preserve">
+    <value>{0} has its own timer for relay {1}</value>
+    <comment>{0} is "The board" or its name, {1} the relay's number.</comment>
+  </data>
+  <data name="Events.OwnRules.Found.Toggle" xml:space="preserve">
+    <value>Input {1} switches relay {1} with each pulse on {0}</value>
+    <comment>{0} is the board ("the board", or its name), {1} the relay's and input's number.</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.AutoOn" xml:space="preserve">
+    <value>{0} now turns relay {1} on again by itself after it goes off</value>
+    <comment>Turned on while the app watched the board. {0} is "The board" or its name, {1} the relay's number.</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Edge" xml:space="preserve">
+    <value>Input {1} now switches relay {1} at each change on {0}</value>
+    <comment>Turned on while the app watched the board.</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Linkage" xml:space="preserve">
+    <value>Relay {1} became unavailable: {0} controls it itself</value>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Rule" xml:space="preserve">
+    <value>{0} own rule for relay {1} was turned on</value>
+    <comment>{0} is "The board's" or the board's name in the genitive (Events.OwnRules.Named).</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Timer" xml:space="preserve">
+    <value>{0} own timer for relay {1} was turned on</value>
+    <comment>{0} is "The board's" or the board's name in the genitive (Events.OwnRules.Named).</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.Toggle" xml:space="preserve">
+    <value>Input {1} now switches relay {1} with each pulse on {0}</value>
+    <comment>Turned on while the app watched the board.</comment>
+  </data>
+  <data name="Events.OwnRules.Kept" xml:space="preserve">
+    <value>{0} kept {1} {2} for {3}</value>
+    <comment>{0} is the person, {1} "the board's" or the board's name in the genitive, {2} e.g. "own timer", {3} e.g. "relay 3".</comment>
+  </data>
+  <data name="Events.OwnRules.Kept.AutoOn" xml:space="preserve">
+    <value>{0} let {1} keep turning {2} on again by itself</value>
+    <comment>As Events.OwnRules.TurnedOff.AutoOn, when the person kept it.</comment>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRule" xml:space="preserve">
+    <value>own input rule</value>
+  </data>
+  <data name="Events.OwnRules.Kind.InputRules" xml:space="preserve">
+    <value>own input rules</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rule" xml:space="preserve">
+    <value>own rule</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Rules" xml:space="preserve">
+    <value>own rules</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timer" xml:space="preserve">
+    <value>own timer</value>
+  </data>
+  <data name="Events.OwnRules.Kind.Timers" xml:space="preserve">
+    <value>own timers</value>
+  </data>
+  <data name="Events.OwnRules.Named" xml:space="preserve">
+    <value>{0}'s</value>
+    <comment>A board's name in the genitive, e.g. "Garage's".</comment>
+  </data>
+  <data name="Events.OwnRules.NamedEndingInS" xml:space="preserve">
+    <value>{0}'s</value>
+    <comment>A board's name that ends in s, x or z in the genitive, e.g. "Lars's"; a language may add nothing.</comment>
+  </data>
+  <data name="Events.OwnRules.Relay" xml:space="preserve">
+    <value>relay {0}</value>
+  </data>
+  <data name="Events.OwnRules.Relays" xml:space="preserve">
+    <value>relays {0}</value>
+    <comment>{0} is a list, e.g. "3, 5 and 7".</comment>
+  </data>
+  <data name="Events.OwnRules.Reset" xml:space="preserve">
+    <value>{0} reset {1}</value>
+  </data>
+  <data name="Events.OwnRules.TheBoards" xml:space="preserve">
+    <value>the board's</value>
+    <comment>The board in the genitive, inside a line, with one board.</comment>
+  </data>
+  <data name="Events.OwnRules.TurnedOff" xml:space="preserve">
+    <value>{0} turned off {1} {2} for {3}</value>
+    <comment>{0} is the person, {1} "the board's" or the board's name in the genitive, {2} e.g. "own timers", {3} e.g. "relays 3 and 5".</comment>
+  </data>
+  <data name="Events.OwnRules.TurnedOff.AutoOn" xml:space="preserve">
+    <value>{0} stopped {1} turning {2} on again by itself</value>
+    <comment>{0} is the person, {1} "the board" or the board's name, {2} e.g. "relay 3".</comment>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
+    <value>the board</value>
+    <comment>The board inside a line, with one board.</comment>
+  </data>
+  <data name="Events.OwnRules.Who.TheBoards" xml:space="preserve">
+    <value>The board's</value>
+    <comment>The board in the genitive at the start of a line, with one board.</comment>
+  </data>
+  <data name="Events.OwnRules.With" xml:space="preserve">
+    <value>, and with it {0}</value>
+    <comment>Added to Events.OwnRules.TurnedOff for the rules that went with those turned off: {0} is e.g. "the timer for relay 5" (Events.OwnRules.With.Timer).</comment>
+  </data>
+  <data name="Events.OwnRules.With.AutoOn" xml:space="preserve">
+    <value>the board turning {0} on again by itself</value>
+    <comment>{0} is e.g. "relay 5".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Rule" xml:space="preserve">
+    <value>the rule for {0}</value>
+    <comment>{0} is e.g. "relay 5".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Rules" xml:space="preserve">
+    <value>the rules for {0}</value>
+    <comment>{0} is e.g. "relays 5 and 6".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Timer" xml:space="preserve">
+    <value>the timer for {0}</value>
+    <comment>{0} is e.g. "relay 5".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Timers" xml:space="preserve">
+    <value>the timers for {0}</value>
+    <comment>{0} is e.g. "relays 5 and 6".</comment>
+  </data>
+  <data name="Events.PowerOn.AsBefore" xml:space="preserve">
+    <value>{0} set the relay to go back as it was after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.Changed" xml:space="preserve">
+    <value>{0} changed what the relay does after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.FollowsInput" xml:space="preserve">
+    <value>{0} set the relay to follow its switch after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.Off" xml:space="preserve">
+    <value>{0} set the relay to stay off after a power cut</value>
+  </data>
+  <data name="Events.PowerOn.On" xml:space="preserve">
+    <value>{0} set the relay to turn on after a power cut</value>
   </data>
   <data name="Events.Pulse" xml:space="preserve">
     <value>{0} tried for {1}</value>
@@ -1229,6 +1423,12 @@
     <value>ON {0}</value>
     <comment>{0} is the board's name, in capitals.</comment>
   </data>
+  <data name="Groups.New.PowerOn" xml:space="preserve">
+    <value>AFTER A POWER CUT</value>
+  </data>
+  <data name="Groups.New.PowerOnText" xml:space="preserve">
+    <value>Contactor sets the board to keep {0} off after a power cut. Contactor then starts the group in its order.</value>
+  </data>
   <data name="Groups.New.Preview" xml:space="preserve">
     <value>HOW IT LOOKS IN THE LIST</value>
   </data>
@@ -1279,6 +1479,9 @@
   <data name="Groups.Note.InactiveFree" xml:space="preserve">
     <value>Inactive · free</value>
   </data>
+  <data name="Groups.Note.Unavailable" xml:space="preserve">
+    <value>Unavailable to Contactor</value>
+  </data>
   <data name="Groups.OneBoard" xml:space="preserve">
     <value>A group's relays are all on one board.</value>
   </data>
@@ -1303,12 +1506,48 @@
     <value>{0} → wait {1} → {2}</value>
     <comment>When the group turns on: {0} is the start so far, {1} a wait, {2} the next relay.</comment>
   </data>
+  <data name="Groups.PowerOn.CantTell" xml:space="preserve">
+    <value>Can't see what the board does after a power cut. Check it on the board.</value>
+  </data>
+  <data name="Groups.PowerOn.MakeSafe" xml:space="preserve">
+    <value>Make it safe</value>
+  </data>
+  <data name="Groups.PowerOn.NoContact" xml:space="preserve">
+    <value>No contact with the board, so nothing was changed. Try again when it answers.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetCreated" xml:space="preserve">
+    <value>The group was created, but Contactor couldn't make sure that the board keeps its relays off after a power cut. Open the group to see what to do.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetCreated.Unknown" xml:space="preserve">
+    <value>The group was created, but Contactor couldn't make sure that the board keeps its relays off after a power cut. The board hasn't reported yet what they do. If it reports that it turns one on, the group's page warns.</value>
+  </data>
+  <data name="Groups.PowerOn.NotSetSaved" xml:space="preserve">
+    <value>The group was saved, but Contactor couldn't make sure that the board keeps its new relays off after a power cut.</value>
+  </data>
+  <data name="Groups.PowerOn.OnSave" xml:space="preserve">
+    <value>When you save, Contactor sets the board to keep {0} off after a power cut.</value>
+  </data>
+  <data name="Groups.PowerOn.Unknown" xml:space="preserve">
+    <value>Can't see yet what the board does after a power cut.</value>
+  </data>
+  <data name="Groups.PowerOn.Warning" xml:space="preserve">
+    <value>After a power cut, the board can turn {0} on by itself, without the group's start order.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_One" xml:space="preserve">
+    <value>"Make it safe" sets it to Off on the board. Contactor then starts the group in its order.</value>
+  </data>
+  <data name="Groups.PowerOn.WarningText_Other" xml:space="preserve">
+    <value>"Make it safe" sets them to Off on the board. Contactor then starts the group in its order.</value>
+  </data>
   <data name="Groups.Refusal.NeedsOn" xml:space="preserve">
     <value>Needs {0} to be on.</value>
     <comment>Why a relay of a group can't be turned on: {0} is the name of the relay above it.</comment>
   </data>
   <data name="Groups.Refusal.NotInGroup" xml:space="preserve">
     <value>That relay isn't in the group.</value>
+  </data>
+  <data name="Groups.Refusal.Unavailable" xml:space="preserve">
+    <value>{0} is unavailable to Contactor: the board controls it itself.</value>
   </data>
   <data name="Groups.RelayOption" xml:space="preserve">
     <value>Relay {0} · {1}</value>
@@ -1388,11 +1627,26 @@
   <data name="Groups.Save.Twice" xml:space="preserve">
     <value>A relay can only be in the group once.</value>
   </data>
+  <data name="Groups.Save.Unavailable" xml:space="preserve">
+    <value>{0} can't join a group: the board controls it itself.</value>
+  </data>
   <data name="Groups.Save.Wait" xml:space="preserve">
     <value>The wait on start is {0}–{1} seconds.</value>
   </data>
   <data name="Groups.StartWait" xml:space="preserve">
     <value>On start, wait</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_One" xml:space="preserve">
+    <value>{0} keeps running while {1} are on.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunningWhileSeveral_Other" xml:space="preserve">
+    <value>{0} keep running while {1} are on.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_One" xml:space="preserve">
+    <value>{0} keeps running while {1} is on.</value>
+  </data>
+  <data name="Groups.Status.KeepsRunning_Other" xml:space="preserve">
+    <value>{0} keep running while {1} is on.</value>
   </data>
   <data name="Groups.Status.Off" xml:space="preserve">
     <value>Off</value>
@@ -1616,6 +1870,337 @@
     <value>Why is the time unknown?</value>
     <comment>Read out by screen readers.</comment>
   </data>
+  <data name="OwnRules.Also.AutoOn" xml:space="preserve">
+    <value>Also stops the board turning {0} on again by itself.</value>
+    <comment>Under a "Turn off" for a rule of the board's own, when it takes the board's auto-on for other relays with it: {0} is the relays' names, e.g. "Heat and Fan".</comment>
+  </data>
+  <data name="OwnRules.Also.Edge" xml:space="preserve">
+    <value>Also stops the inputs switching {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for edge rules.</comment>
+  </data>
+  <data name="OwnRules.Also.Input" xml:space="preserve">
+    <value>Also stops the inputs switching {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for the inputs' rules.</comment>
+  </data>
+  <data name="OwnRules.Also.Linkage" xml:space="preserve">
+    <value>Also resets {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for relays the board controls by itself.</comment>
+  </data>
+  <data name="OwnRules.Also.Rule" xml:space="preserve">
+    <value>Also turns off the board's own rules for {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for a mix of kinds of rule.</comment>
+  </data>
+  <data name="OwnRules.Also.Timer" xml:space="preserve">
+    <value>Also turns off the board's timer for {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for the board's timers, e.g. a schedule on the board that switches several relays.</comment>
+  </data>
+  <data name="OwnRules.Also.Toggle" xml:space="preserve">
+    <value>Also stops the inputs switching {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for toggle rules.</comment>
+  </data>
+  <data name="OwnRules.CanSwitch_One" xml:space="preserve">
+    <value>It can switch {0} without Contactor.</value>
+    <comment>Under OwnRules.Warning: {0} is e.g. "relay 3" (OwnRules.Relay).</comment>
+  </data>
+  <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
+    <value>They can switch {0} without Contactor.</value>
+    <comment>Under OwnRules.Warning: {0} is e.g. "relays 3 and 5" (OwnRules.Relays).</comment>
+  </data>
+  <data name="OwnRules.Card.CantTell" xml:space="preserve">
+    <value>This board may have timers of its own. Check its own web page.</value>
+    <comment>A board whose own rules the app can't see.</comment>
+  </data>
+  <data name="OwnRules.Card.Hint" xml:space="preserve">
+    <value>They can turn relays on and off without Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.MayHaveUnseen" xml:space="preserve">
+    <value>This board may also have rules Contactor can't see. Check its own web page.</value>
+    <comment>A board whose own rules the app reads, but which may have others it can't see, e.g. the Shelly's scripts.</comment>
+  </data>
+  <data name="OwnRules.Card.Title.AutoOn" xml:space="preserve">
+    <value>Relays the board turns on again</value>
+    <comment>The card on the board's page, for relays the board turns on again by itself after they go off.</comment>
+  </data>
+  <data name="OwnRules.Card.Title.Edge" xml:space="preserve">
+    <value>The board's input rules</value>
+  </data>
+  <data name="OwnRules.Card.Title.Input" xml:space="preserve">
+    <value>The board's input rules</value>
+  </data>
+  <data name="OwnRules.Card.Title.Linkage" xml:space="preserve">
+    <value>Relays the board controls itself</value>
+  </data>
+  <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
+    <value>The board's own rules</value>
+    <comment>The card on the board's page, for rules other than timers.</comment>
+  </data>
+  <data name="OwnRules.Card.Title.Timer" xml:space="preserve">
+    <value>The board's own timers</value>
+    <comment>The card on the board's page.</comment>
+  </data>
+  <data name="OwnRules.Card.Title.Toggle" xml:space="preserve">
+    <value>The board's input rules</value>
+  </data>
+  <data name="OwnRules.CardLine.AutoOn" xml:space="preserve">
+    <value>The board turns it on again by itself after it goes off</value>
+    <comment>On a relay's card on Relays.</comment>
+  </data>
+  <data name="OwnRules.CardLine.Edge" xml:space="preserve">
+    <value>Each change of its input flips it</value>
+  </data>
+  <data name="OwnRules.CardLine.Input" xml:space="preserve">
+    <value>The board's input rule can switch it</value>
+  </data>
+  <data name="OwnRules.CardLine.Linkage" xml:space="preserve">
+    <value>The board controls it itself</value>
+  </data>
+  <data name="OwnRules.CardLine.Rule" xml:space="preserve">
+    <value>The board's own rule can switch it</value>
+    <comment>On a relay's card on Relays.</comment>
+  </data>
+  <data name="OwnRules.CardLine.Timer" xml:space="preserve">
+    <value>The board's timer can switch it</value>
+    <comment>On a relay's card on Relays.</comment>
+  </data>
+  <data name="OwnRules.CardLine.Toggle" xml:space="preserve">
+    <value>A pulse on its input can flip it</value>
+  </data>
+  <data name="OwnRules.Found.Date" xml:space="preserve">
+    <value>Found {0} at {1}</value>
+    <comment>{0} is a date in Relays.When.DateFormat, {1} a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.Found.Today" xml:space="preserve">
+    <value>Found today at {0}</value>
+    <comment>{0} is a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.Found.Yesterday" xml:space="preserve">
+    <value>Found yesterday at {0}</value>
+    <comment>{0} is a time, e.g. 07:12.</comment>
+  </data>
+  <data name="OwnRules.GroupLine.AutoOn" xml:space="preserve">
+    <value>The board turns {0} on again by itself</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
+  </data>
+  <data name="OwnRules.GroupLine.Edge" xml:space="preserve">
+    <value>Each change of an input can flip {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Input" xml:space="preserve">
+    <value>The board's input rules can switch {0}</value>
+  </data>
+  <data name="OwnRules.GroupLine.Linkage" xml:space="preserve">
+    <value>The board controls {0} itself</value>
+  </data>
+  <data name="OwnRules.GroupLine.Rule" xml:space="preserve">
+    <value>The board's own rule can switch {0}</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
+  </data>
+  <data name="OwnRules.GroupLine.Timer" xml:space="preserve">
+    <value>The board's timer can switch {0}</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
+  </data>
+  <data name="OwnRules.GroupLine.Toggle" xml:space="preserve">
+    <value>A pulse on an input can flip {0}</value>
+  </data>
+  <data name="OwnRules.Keep" xml:space="preserve">
+    <value>Keep</value>
+    <comment>Stop warning about this rule of the board's own.</comment>
+  </data>
+  <data name="OwnRules.Keep.Gone" xml:space="preserve">
+    <value>The board no longer has that rule.</value>
+  </data>
+  <data name="OwnRules.Keep.InGroup" xml:space="preserve">
+    <value>Can't be kept: {0} is in a group, and the board would turn it on again without the group's order.</value>
+    <comment>In place of "Keep" for the board's auto-on of a relay in a group: {0} is the relay's name, e.g. "Heat".</comment>
+  </data>
+  <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
+    <value>The board controls this relay itself, so it can't be kept. Reset it instead.</value>
+  </data>
+  <data name="OwnRules.KeepAll_One" xml:space="preserve">
+    <value>Keep it</value>
+    <comment>The second button of the own rules step while adding a board, for one rule.</comment>
+  </data>
+  <data name="OwnRules.KeepAll_Other" xml:space="preserve">
+    <value>Keep them</value>
+    <comment>The second button of the own rules step while adding a board.</comment>
+  </data>
+  <data name="OwnRules.Kept" xml:space="preserve">
+    <value>Kept on purpose</value>
+    <comment>A rule a person chose to keep.</comment>
+  </data>
+  <data name="OwnRules.Relay" xml:space="preserve">
+    <value>relay {0}</value>
+    <comment>{0} is a relay's number.</comment>
+  </data>
+  <data name="OwnRules.Relays" xml:space="preserve">
+    <value>relays {0}</value>
+    <comment>{0} is a list of numbers, e.g. "3 and 5" (Relays.List.Last).</comment>
+  </data>
+  <data name="OwnRules.Reset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="OwnRules.Reset.Label" xml:space="preserve">
+    <value>Reset relay {0}</value>
+  </data>
+  <data name="OwnRules.Step.Intro_One" xml:space="preserve">
+    <value>It can turn a relay on and off without Contactor.</value>
+    <comment>Under the own rules step's heading, for one rule.</comment>
+  </data>
+  <data name="OwnRules.Step.Intro_Other" xml:space="preserve">
+    <value>They can turn relays on and off without Contactor.</value>
+    <comment>Under the own rules step's heading.</comment>
+  </data>
+  <data name="OwnRules.Step.Later" xml:space="preserve">
+    <value>Not now</value>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_One" xml:space="preserve">
+    <value>The board still shows it on. Try again, or keep it.</value>
+    <comment>"Turn it off" while adding a board: the board took it, but its state still showed it on 5 s later.</comment>
+  </data>
+  <data name="OwnRules.Step.NotConfirmed_Other" xml:space="preserve">
+    <value>The board still shows them on. Try again, or keep them.</value>
+    <comment>"Turn them off" while adding a board: the board took them, but its state still showed them on 5 s later.</comment>
+  </data>
+  <data name="OwnRules.Step.Recommend_One" xml:space="preserve">
+    <value>We recommend turning it off.</value>
+  </data>
+  <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
+    <value>We recommend turning them off.</value>
+  </data>
+  <data name="OwnRules.Step.Title.AutoOn_One" xml:space="preserve">
+    <value>This board turns a relay on again by itself</value>
+  </data>
+  <data name="OwnRules.Step.Title.AutoOn_Other" xml:space="preserve">
+    <value>This board turns relays on again by itself</value>
+  </data>
+  <data name="OwnRules.Step.Title.Edge_One" xml:space="preserve">
+    <value>This board has an input that flips a relay at each change</value>
+  </data>
+  <data name="OwnRules.Step.Title.Edge_Other" xml:space="preserve">
+    <value>This board has inputs that flip relays at each change</value>
+  </data>
+  <data name="OwnRules.Step.Title.Input_One" xml:space="preserve">
+    <value>This board has an input rule of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Input_Other" xml:space="preserve">
+    <value>This board has input rules of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Linkage_One" xml:space="preserve">
+    <value>This board controls a relay itself</value>
+  </data>
+  <data name="OwnRules.Step.Title.Linkage_Other" xml:space="preserve">
+    <value>This board controls relays itself</value>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_One" xml:space="preserve">
+    <value>This board has a rule of its own</value>
+    <comment>The heading of the own rules step while adding a board.</comment>
+  </data>
+  <data name="OwnRules.Step.Title.Rule_Other" xml:space="preserve">
+    <value>This board has rules of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_One" xml:space="preserve">
+    <value>This board has a timer of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Timer_Other" xml:space="preserve">
+    <value>This board has timers of its own</value>
+  </data>
+  <data name="OwnRules.Step.Title.Toggle_One" xml:space="preserve">
+    <value>This board has an input that flips a relay</value>
+  </data>
+  <data name="OwnRules.Step.Title.Toggle_Other" xml:space="preserve">
+    <value>This board has inputs that flip relays</value>
+  </data>
+  <data name="OwnRules.TheBoard" xml:space="preserve">
+    <value>The board</value>
+    <comment>The board at the start of OwnRules.Warning, with one board.</comment>
+  </data>
+  <data name="OwnRules.TurnOff" xml:space="preserve">
+    <value>Turn off</value>
+    <comment>Turns off one rule of the board's own.</comment>
+  </data>
+  <data name="OwnRules.TurnOff.NoContact" xml:space="preserve">
+    <value>No contact with the relay board. Nothing was turned off.</value>
+  </data>
+  <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
+    <value>The relay board didn't turn them off. Try again.</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
+    <value>Turn it off</value>
+  </data>
+  <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
+    <value>Turn them off</value>
+  </data>
+  <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
+    <value>The board controls it itself. Reset it to start the group.</value>
+  </data>
+  <data name="OwnRules.Unavailable.GroupText_Other" xml:space="preserve">
+    <value>The board controls them itself. Reset them to start the group.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Group_One" xml:space="preserve">
+    <value>{0} is unavailable to Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Group_Other" xml:space="preserve">
+    <value>{0} are unavailable to Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Heading" xml:space="preserve">
+    <value>Unavailable to Contactor</value>
+  </data>
+  <data name="OwnRules.Unavailable.Refused" xml:space="preserve">
+    <value>The board controls this relay itself. Reset it to control it from here.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Relay" xml:space="preserve">
+    <value>The board controls this relay itself: it follows input {0}. Reset it to control it from here.</value>
+  </data>
+  <data name="OwnRules.Unavailable.Step" xml:space="preserve">
+    <value>Unavailable to Contactor until it is reset</value>
+  </data>
+  <data name="OwnRules.Warning.AutoOn_One" xml:space="preserve">
+    <value>{0} turns a relay on again by itself</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.AutoOn_Other" xml:space="preserve">
+    <value>{0} turns relays on again by itself</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Edge_One" xml:space="preserve">
+    <value>{0} has an input that flips a relay at each change</value>
+  </data>
+  <data name="OwnRules.Warning.Edge_Other" xml:space="preserve">
+    <value>{0} has inputs that flip relays at each change</value>
+  </data>
+  <data name="OwnRules.Warning.Input_One" xml:space="preserve">
+    <value>{0} has an input rule of its own</value>
+  </data>
+  <data name="OwnRules.Warning.Input_Other" xml:space="preserve">
+    <value>{0} has input rules of its own</value>
+  </data>
+  <data name="OwnRules.Warning.Linkage_One" xml:space="preserve">
+    <value>{0} controls a relay itself</value>
+  </data>
+  <data name="OwnRules.Warning.Linkage_Other" xml:space="preserve">
+    <value>{0} controls relays itself</value>
+  </data>
+  <data name="OwnRules.Warning.Rule_One" xml:space="preserve">
+    <value>{0} has a rule of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Rule_Other" xml:space="preserve">
+    <value>{0} has rules of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Timer_One" xml:space="preserve">
+    <value>{0} has a timer of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Timer_Other" xml:space="preserve">
+    <value>{0} has timers of its own</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.Toggle_One" xml:space="preserve">
+    <value>{0} has an input that flips a relay</value>
+  </data>
+  <data name="OwnRules.Warning.Toggle_Other" xml:space="preserve">
+    <value>{0} has inputs that flip relays</value>
+  </data>
   <data name="Relays.AllBoardsOff" xml:space="preserve">
     <value>Turn off all boards</value>
   </data>
@@ -1814,6 +2399,69 @@
   <data name="Relays.Online.Several" xml:space="preserve">
     <value>Online · updated {0}</value>
     <comment>As Relays.Online.One, under a board's name.</comment>
+  </data>
+  <data name="Relays.PowerOn.Explain.AsBefore" xml:space="preserve">
+    <value>The board puts it back by itself as it was when the power went, on or off.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.FollowsInput" xml:space="preserve">
+    <value>The board turns it on by itself while its switch is on, without Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.Off" xml:space="preserve">
+    <value>The board keeps it off until Contactor runs.</value>
+  </data>
+  <data name="Relays.PowerOn.Explain.On" xml:space="preserve">
+    <value>The board turns it on by itself, without Contactor.</value>
+  </data>
+  <data name="Relays.PowerOn.Heading" xml:space="preserve">
+    <value>After a power cut</value>
+  </data>
+  <data name="Relays.PowerOn.Hint" xml:space="preserve">
+    <value>What the board does with this relay by itself when the power comes back, before Contactor runs.</value>
+  </data>
+  <data name="Relays.PowerOn.InGroup" xml:space="preserve">
+    <value>This relay is in a group, so it must be Off after a power cut. Its group's page shows what the board does.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContact" xml:space="preserve">
+    <value>No contact with the board, so what the relay does after a power cut wasn't changed. Try again when it answers.</value>
+  </data>
+  <data name="Relays.PowerOn.NoContactNow" xml:space="preserve">
+    <value>No contact with the board, so this can't be changed now.</value>
+  </data>
+  <data name="Relays.PowerOn.NotTaken" xml:space="preserve">
+    <value>The board didn't take the change. Try again.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOffGroups" xml:space="preserve">
+    <value>{0} are in groups, so the board can only be set to Off after a power cut.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_One" xml:space="preserve">
+    <value>{0} is in a group, so the board can only be set to Off after a power cut.</value>
+  </data>
+  <data name="Relays.PowerOn.OnlyOff_Other" xml:space="preserve">
+    <value>{0} are in a group, so the board can only be set to Off after a power cut.</value>
+  </data>
+  <data name="Relays.PowerOn.SeeAbove" xml:space="preserve">
+    <value>The rest was saved. See "After a power cut".</value>
+  </data>
+  <data name="Relays.PowerOn.State.AsBefore" xml:space="preserve">
+    <value>As before</value>
+  </data>
+  <data name="Relays.PowerOn.State.FollowsInput" xml:space="preserve">
+    <value>Follows its switch</value>
+  </data>
+  <data name="Relays.PowerOn.State.Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Relays.PowerOn.State.On" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Relays.PowerOn.Unconfirmed" xml:space="preserve">
+    <value>Contactor couldn't confirm the change. Check it here once the board answers.</value>
+  </data>
+  <data name="Relays.PowerOn.Unknown" xml:space="preserve">
+    <value>Can't see yet what the board does with this relay after a power cut.</value>
+  </data>
+  <data name="Relays.PowerOn.WholeBoard" xml:space="preserve">
+    <value>This applies to every relay on the board.</value>
   </data>
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} See Settings.</value>
@@ -2514,6 +3162,15 @@
   <data name="Setup.WayIn.Cloudflare.Name" xml:space="preserve">
     <value>Cloudflare</value>
     <comment>A product's name.</comment>
+  </data>
+  <data name="Setup.WayIn.Group.LocalNetwork" xml:space="preserve">
+    <value>Local network</value>
+  </data>
+  <data name="Setup.WayIn.Group.PrivateAccess" xml:space="preserve">
+    <value>Private access</value>
+  </data>
+  <data name="Setup.WayIn.Group.PublicAddress" xml:space="preserve">
+    <value>Public address</value>
   </data>
   <data name="Setup.WayIn.Intro" xml:space="preserve">
     <value>Where should people be able to open Contactor?</value>

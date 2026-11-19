@@ -263,6 +263,13 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
                 return false;
             }
 
+            // Nothing changed and the board's connection waits after a refusal: one attempt now, since a refused login
+            // isn't tried again by itself (Issue #522) and the problem from before would otherwise be the answer at once.
+            if (!Values.Moving && BoardContact.ShouldTryAgain(Board.State))
+            {
+                Board.TryAgain();
+            }
+
             _checking = true;
             StateHasChanged();
             // "Check again" with nothing changed asks the board itself, so the check is a real one.
@@ -294,7 +301,7 @@ else if (Board.State.IsConnected && Board.Endpoint.HasHost)
     {
         var before = _problem;
         _problem = problem;
-        if (problem is { Kind: ConnectionProblemKind.LoginNeeded or ConnectionProblemKind.LoginRefused } && before?.Kind != problem.Kind && Model.HasLogin)
+        if (problem is { IsAboutLogin: true } && before?.Kind != problem.Kind && Model.HasLogin)
         {
             Values.NoLogin = false;
             _focusLogin = true;

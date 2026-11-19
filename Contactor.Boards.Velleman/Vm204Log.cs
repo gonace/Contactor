@@ -17,6 +17,9 @@ internal static partial class Vm204Log
     [LoggerMessage(Level = LogLevel.Information, Message = "Reconnecting to the VM204 in {DelaySeconds} s")]
     public static partial void Reconnecting(ILogger logger, string? delaySeconds);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The VM204 refused the login: not trying again until a new one is saved or a person checks again")]
+    public static partial void Held(ILogger logger);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "A VM204 subscriber failed")]
     public static partial void SubscriberFailed(ILogger logger, Exception exception);
 

@@ -1,0 +1,223 @@
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.BoardRules
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Languages
+@inject BoardRegistry Registry
+@inject OwnRulesService Rows
+@inject OwnRulesHandler Handler
+@inject OwnRulesText Words
+@inject ILogger<BoardOwnRulesStep> Log
+@inject AppLanguage Language
+
+@* "This board has timers of its own" (issue #497): the board's own rules it reports now, after "Where is the board?".
+   Shared by the setup guide and "Add a board" (BoardNew); the page has the buttons ("Turn them off", "Keep them") and
+   calls TurnOffAsync or KeepAsync. A page shows the step only while ShouldAsk holds. The relays have no names yet, so
+   they are "Relay 3", "Relay 5". When turning them off takes other rules with it, the step says so first. *@
+<div class="intro">
+    <h1 tabindex="-1" @ref="_heading">@Words.StepTitle(_rules)</h1>
+    <p>@Words.StepIntro(_rules.Count)</p>
+</div>
+<ul class="rules">
+    @foreach (var rule in _rules)
+    {
+        <li @key="rule">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            <span>@Texts["Relays.DefaultName", rule.Relay]</span>
+            @if (rule.Kind == OwnRuleKind.InputLinkage)
+            {
+                <span class="note">@Texts["OwnRules.Unavailable.Step"]</span>
+            }
+        </li>
+    }
+</ul>
+<p class="hint">@Words.Recommend(_rules.Count)</p>
+@if (Words.AlsoTurnsOff(_also, null) is { } also)
+{
+    @* Said before the press: rules a person kept earlier that "Turn them off" takes with these. *@
+    <p class="also">@also</p>
+}
+
+@code {
+    private ElementReference _heading;
+    private int _watched;
+    private bool _busy;
+
+    // Set when the step closes, on the page's own thread: an update already on its way draws nothing.
+    private bool _disposed;
+
+    // The rules shown: what the board reports now that no person kept, kept while a press is under way so the list
+    // doesn't change under it.
+    private IReadOnlyList<OwnRule> _rules = [];
+
+    // The other rules turning _rules off takes with it (OwnRulesHandler.AlsoTurnsOff): none on a board that can't.
+    private IReadOnlyList<OwnRule> _also = [];
+
+    /// <summary>The board being added; it must have a model.</summary>
+    [Parameter]
+    [EditorRequired]
+    public LiveBoard Board { get; set; } = null!;
+
+    /// <summary>Who presses, for the event log; nothing is done without.</summary>
+    [Parameter]
+    public string? UserEmail { get; set; }
+
+    /// <summary>Told when a press starts (true) or ends (false), so the page's buttons wait meanwhile.</summary>
+    [Parameter]
+    public EventCallback<bool> BusyChanged { get; set; }
+
+    /// <summary>The message to show, or null to clear it; the page shows it by its buttons.</summary>
+    [Parameter]
+    public EventCallback<string?> ErrorChanged { get; set; }
+
+    /// <summary>
+    /// Whether the steps ask about the board's own rules now: it answers, reads them, and has some no person kept. A board
+    /// that has none, can't tell, or isn't connected skips the step (Relays warns later).
+    /// </summary>
+    public static bool ShouldAsk(LiveBoard? board, OwnRulesHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return board is { State.IsConnected: true } && handler.ToAsk(board.BoardId).Count > 0;
+    }
+
+    /// <summary>Puts the focus on the step's heading, so a screen reader reads where it is.</summary>
+    public ValueTask FocusAsync()
+    {
+        return _heading.FocusAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_watched != Board.BoardId)
+        {
+            Unsubscribe();
+            Registry.StateChanged += OnBoardChanged;
+            Registry.OwnRulesChanged += OnBoardChanged;
+            Rows.Changed += OnRowsChanged;
+            _watched = Board.BoardId;
+        }
+
+        if (!_busy)
+        {
+            Show(Handler.ToAsk(Board.BoardId));
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Unsubscribe();
+    }
+
+    /// <summary>
+    /// "Turn them off": sent to the board at once, never queued, and waited for until the board's state shows them gone
+    /// (<see cref="OwnRulesHandler.TurnOffAndConfirmAsync"/>). True once confirmed, when the page may go on; otherwise
+    /// the reason is shown. A second press while one is under way does nothing.
+    /// </summary>
+    public Task<bool> TurnOffAsync()
+    {
+        return PressAsync((boardId, rules, email) => Handler.TurnOffAndConfirmAsync(boardId, rules, email, CancellationToken.None), "Turning off the board's own rules failed");
+    }
+
+    /// <summary>"Keep them": the app stops warning about them (<see cref="OwnRulesHandler.KeepAllAsync"/>). True when kept.</summary>
+    public Task<bool> KeepAsync()
+    {
+        return PressAsync((boardId, rules, email) => Handler.KeepAllAsync(boardId, rules, email, CancellationToken.None), "Keeping the board's own rules failed");
+    }
+
+    private async Task<bool> PressAsync(Func<int, IReadOnlyList<OwnRule>, string, Task<string?>> press, string what)
+    {
+        // Set before the first await, on the page's own thread: a second press can't come between.
+        if (_busy || UserEmail is not { } email || _rules.Count == 0)
+        {
+            return false;
+        }
+
+        _busy = true;
+        await BusyChanged.InvokeAsync(true);
+        await ErrorChanged.InvokeAsync(null);
+        try
+        {
+            var error = await press(Board.BoardId, _rules, email);
+            await ErrorChanged.InvokeAsync(error);
+            return error is null;
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "{What}", what);
+            await ErrorChanged.InvokeAsync(Texts["Common.SomethingWrongTryAgain"]);
+            return false;
+        }
+        finally
+        {
+            _busy = false;
+            Show(Handler.ToAsk(Board.BoardId));
+            await BusyChanged.InvokeAsync(false);
+        }
+    }
+
+    // The rules to show, and what turning them off takes with them.
+    private void Show(IReadOnlyList<OwnRule> rules)
+    {
+        _rules = rules;
+        _also = Also(rules);
+    }
+
+    private IReadOnlyList<OwnRule> Also(IReadOnlyList<OwnRule> rules)
+    {
+        return Board.Capabilities.OwnRulesOrCantTell.TurnsOff ? Handler.AlsoTurnsOff(Board.BoardId, rules) : [];
+    }
+
+    private void Unsubscribe()
+    {
+        Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnBoardChanged;
+        Rows.Changed -= OnRowsChanged;
+    }
+
+    // From the board's read loop.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == _watched)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    // A rule noted or kept: what is still to ask.
+    private void OnRowsChanged(object? sender, int boardId)
+    {
+        if (boardId == _watched)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    // Redraws only when the rules to ask change, so the board's keep-alive costs nothing.
+    private async Task RefreshAsync()
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (_disposed || _busy || _watched == 0)
+                {
+                    return;
+                }
+
+                var now = Handler.ToAsk(_watched);
+                if (!now.SequenceEqual(_rules) || !Also(now).SequenceEqual(_also))
+                {
+                    Show(now);
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed while the update was on its way.
+        }
+    }
+}

@@ -349,6 +349,7 @@ public sealed partial class EventsDebugBoardsPageTests
         Assert.Empty(page.Errors);
     }
 
+    // "had its own timers turned off" is no longer logged, but rows from before issue #497 still read.
     [Fact]
     public async Task Should_ShowEvents_AsBefore_WithOneBoard()
     {

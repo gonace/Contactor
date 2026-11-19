@@ -65,8 +65,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         _timeProvider = timeProvider;
         _logger = logger;
 
-        // From its making, before the board's connection starts: no status may go unseen.
+        // From its making, before the board's connection starts: no status may go unseen. A change of the board's own
+        // rules alone too: a relay reset from the board controlling it by itself gets the interlock's commands at once.
         _board.StateChanged += OnStateChanged;
+        _board.OwnRulesChanged += OnOwnRulesChanged;
     }
 
     /// <inheritdoc/>
@@ -87,6 +89,7 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         }
 
         _board.StateChanged -= OnStateChanged;
+        _board.OwnRulesChanged -= OnOwnRulesChanged;
 
         // The step or request under way first, while the board's connection still runs; then the loop ends.
         await _gate.WaitAsync(CancellationToken.None);
@@ -146,14 +149,23 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         await RunAsync(null, cancellationToken);
     }
 
-    /// <summary>Starts a group, or carries on from where it is. Throws <see cref="BoardNotConnectedException"/> without the board.</summary>
+    /// <summary>
+    /// Starts a group, or carries on from where it is. Throws <see cref="BoardNotConnectedException"/> without the board,
+    /// and <see cref="GroupUnavailableException"/>, sending nothing for it, while the board controls one of its relays by
+    /// itself (<see cref="BoardState.Unavailable"/>): it would ignore that relay's ON, and the group's order with it.
+    /// </summary>
     public async Task StartGroupAsync(int groupId, string actor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        var unavailable = false;
         await RunAsync(
             (group, steps, state, runtime, now, commands) =>
             {
-                if (group.Id == groupId)
+                if (group.Id == groupId && IsUnavailable(steps))
+                {
+                    unavailable = true;
+                }
+                else if (group.Id == groupId)
                 {
                     // A schedule's OffTime is the end of the run it starts; it gets no auto-off.
                     var maxOnMinutes = actor == EventActors.Schedule ? null : group.MaxOnMinutes;
@@ -163,6 +175,53 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 return null;
             },
             cancellationToken);
+        if (unavailable)
+        {
+            throw new GroupUnavailableException();
+        }
+    }
+
+    // A stop whose OFF waits for a relay the board controls by itself and shows on: the board ignores the OFF, so it
+    // isn't sent again and the wait never times out (a 5 s timeout would send it again, or give up). The stop waits,
+    // as Stopping, while the interlock keeps what is above it on (the fan while the heater is), and carries on as usual
+    // once the board shows that relay off: the run-on above it, then the rest. Its pending time is moved to now only
+    // for the planning, and put back after it unless the planning changed the pending command, so nothing is saved
+    // (or drawn again) while it waits. Returns the pending time to put back, or null when nothing is held.
+    private static DateTime? HoldOffTheBoardIgnores(IReadOnlyList<GroupStepInfo> steps, BoardState state, GroupRuntime runtime, DateTime now)
+    {
+        if (runtime.Phase != GroupPhases.Stopping || runtime.PendingOn || runtime.PendingStep is not { } step || step < 1 || step > steps.Count
+            || runtime.PendingSinceUtc is not { } since)
+        {
+            return null;
+        }
+
+        // Only while every relay of the pending OFF still on is one the board controls by itself: another one's OFF that
+        // got lost is sent again as ever.
+        var unavailable = state.Unavailable;
+        List<GroupRelayInfo> stillOn = [.. steps[step - 1].Relays.Where(r => (runtime.PendingRelayId is not { } id || r.RelayId == id) && state.IsOn(r.Channel))];
+        if (stillOn.Count == 0 || !stillOn.All(r => unavailable.Contains(r.Channel)))
+        {
+            return null;
+        }
+
+        runtime.PendingSinceUtc = now;
+        return since;
+    }
+
+    // Puts back the pending time HoldOffTheBoardIgnores moved, when the planning left the pending command as it was.
+    private static void PutBackHold(GroupRuntime runtime, int? step, DateTime? held, DateTime now)
+    {
+        if (held is { } since && runtime.Phase == GroupPhases.Stopping && !runtime.PendingOn && runtime.PendingStep == step && runtime.PendingSinceUtc == now)
+        {
+            runtime.PendingSinceUtc = since;
+        }
+    }
+
+    // Whether the board controls one of the group's relays by itself now.
+    private bool IsUnavailable(IReadOnlyList<GroupStepInfo> steps)
+    {
+        var unavailable = _board.State.Unavailable;
+        return GroupPlanner.Relays(steps).Any(r => unavailable.Contains(r.Relay.Channel));
     }
 
     /// <summary>Stops a group, with its run-on times. Throws <see cref="BoardNotConnectedException"/> without the board.</summary>
@@ -220,7 +279,13 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
 
                 refusal = null;
-                if (on)
+                if (on && GroupPlanner.Relays(steps).ElementAt(position - 1) is var (step, relay) && _board.State.Unavailable.Contains(relay.Channel))
+                {
+                    // The board ignores its ON: nothing is sent. Named as the group's warning names it: by its step when
+                    // it is the step's only relay, otherwise by its own name.
+                    refusal = _texts["Groups.Refusal.Unavailable", step.Relays.Count == 1 ? step.Name : relay.Name].Value;
+                }
+                else if (on)
                 {
                     refusal = GroupPlanner.MemberOn(steps, state, runtime, position, actor, group.MaxOnMinutes, now, commands, _offOnItsWay) is { } why
                         ? _texts["Groups.Refusal.NeedsOn", why.NeedsOn].Value
@@ -423,7 +488,10 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
                 if (commands.IsEmpty)
                 {
+                    var heldStep = runtime.PendingStep;
+                    var held = HoldOffTheBoardIgnores(steps, state, runtime, now);
                     GroupPlanner.Plan(steps, state, runtime, now, commands, _offOnItsWay, _onOnItsWay);
+                    PutBackHold(runtime, heldStep, held, now);
                 }
 
                 GroupPlanner.GiveOwnerlessAutoOff(steps, state, runtime, group.MaxOnMinutes, now);
@@ -452,6 +520,14 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
                 }
                 events.AddRange(commands.Events.Select(e => (group.Id, e)));
             }
+
+            // A relay the board controls by itself (BoardState.Unavailable) ignores the app's commands: none is sent to it,
+            // so nothing goes out again and again while the planning, the interlock's included, stays as it is. Only a
+            // stop's run-on ON goes, which may be all that keeps a relay below running safely. Once the relay is reset,
+            // the next status plans and sends as ever.
+            var unavailable = state.Unavailable;
+            all.Off = all.Off.Except(unavailable);
+            all.On = all.On.Except(unavailable.Except(runOn));
 
             // OFF first, so a relay never runs alone below a gap. Nothing sent: nothing is saved, and the next step
             // plans again. Once anything went out, what was planned is saved even if the rest fails, so a trip or a
@@ -616,6 +692,17 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         }
 
         _wasConnected = state.IsConnected;
+        Wake();
+    }
+
+    // Only the board's own rules changed: a relay it controlled by itself may take commands again.
+    private void OnOwnRulesChanged(object? sender, BoardState state)
+    {
+        Wake();
+    }
+
+    private void Wake()
+    {
         if (_wake.CurrentCount == 0)
         {
             try
@@ -661,4 +748,26 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Relay group step on relay board {BoardId} failed")]
     private partial void LogStepFailed(Exception exception, int boardId);
+}
+
+/// <summary>
+/// A group was to start while its board controls one of its relays by itself and ignores commands for it (e.g. a
+/// Waveshare relay in linkage mode): nothing was sent. A person resets that relay to start the group.
+/// </summary>
+public sealed class GroupUnavailableException : InvalidOperationException
+{
+    public GroupUnavailableException()
+        : base("The board controls a relay of the group itself; reset it to start the group.")
+    {
+    }
+
+    public GroupUnavailableException(string message)
+        : base(message)
+    {
+    }
+
+    public GroupUnavailableException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }

@@ -52,6 +52,11 @@ public sealed class DevantechConnection : IBoardConnection
             : DevantechModels.CheckPassword(login.Password);
     }
 
+    public void TryAgain()
+    {
+        _client.TryAgain();
+    }
+
     public Task RunAsync(CancellationToken cancellationToken)
     {
         return _client.RunAsync(cancellationToken);

@@ -11,6 +11,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BoardPage> Log
 @inject AppLanguage Language
+@inject Contactor.Web.Features.Relays.BoardsText BoardsText
 
 <PageTitle>@(Texts["Common.PageTitle", _name ?? Texts["Common.Screen.RelayBoard"].Value])</PageTitle>
 
@@ -34,6 +35,7 @@
         else if (_name is not null)
         {
             <BoardForm BoardId="Id" Title="@Texts["Boards.Board"]" WithName="true" NameSaved="OnNameSaved" />
+            <OwnRulesCard BoardId="Id" />
 
             <section class="card remove-card">
                 <h2>@Texts["Boards.Remove.Title"]</h2>
@@ -73,6 +75,16 @@
                 @if (hasContact)
                 {
                     <p>@Texts["Boards.Remove.OffFirst"]</p>
+                    @* A relay the board controls by itself ignores the OFF: said plainly, only when there is one. *@
+                    @if (Live?.State.Unavailable is { IsEmpty: false } unavailable)
+                    {
+                        var numbers = unavailable.Channels.Select(c => c.ToString(System.Globalization.CultureInfo.CurrentCulture)).ToList();
+                        <p class="unavailable">@Texts["Boards.Remove.Unavailable" + Plurals.Form(numbers.Count), BoardsText.And(numbers)]</p>
+                    }
+                    @foreach (var kept in _keptOn)
+                    {
+                        <p class="unavailable">@Texts["Boards.Remove.KeptOn", kept.Channel, kept.Name, kept.ByChannel, kept.ByName]</p>
+                    }
                 }
                 else
                 {
@@ -93,6 +105,9 @@
     private string? _name;
     private bool _loaded;
     private BoardRemovalPreview? _preview;
+
+    // What the removal can't turn off: a group's relay the interlock keeps on above one the board controls by itself.
+    private IReadOnlyList<KeptOnRelay> _keptOn = [];
     private string? _error;
     private bool _busy;
 
@@ -131,6 +146,7 @@
     {
         _error = null;
         _preview = await Removal.PreviewAsync(Id, CancellationToken.None);
+        _keptOn = _preview is null ? [] : await Removal.KeptOnAsync(Id, CancellationToken.None);
         if (_preview is null)
         {
             _name = null;

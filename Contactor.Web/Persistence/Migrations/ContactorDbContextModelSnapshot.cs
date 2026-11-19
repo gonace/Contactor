@@ -121,6 +121,46 @@ namespace Contactor.Web.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Contactor.Web.Persistence.BoardOwnRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BoardId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("FoundUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeptBy")
+                        .HasMaxLength(254)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("KeptUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoardId", "Channel", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("BoardOwnRule", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_BoardOwnRule_Channel", "\"Channel\" BETWEEN 1 AND 64");
+
+                            t.HasCheckConstraint("CK_BoardOwnRule_Kind", "\"Kind\" IN ('timer', 'input-linkage', 'input-toggle', 'input-edge', 'auto-on')");
+                        });
+                });
+
             modelBuilder.Entity("Contactor.Web.Persistence.BoardRuntime", b =>
                 {
                     b.Property<int>("BoardId")
@@ -622,6 +662,15 @@ namespace Contactor.Web.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Contactor.Web.Persistence.AnalogInput", b =>
+                {
+                    b.HasOne("Contactor.Web.Persistence.Board", null)
+                        .WithMany()
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Contactor.Web.Persistence.BoardOwnRule", b =>
                 {
                     b.HasOne("Contactor.Web.Persistence.Board", null)
                         .WithMany()

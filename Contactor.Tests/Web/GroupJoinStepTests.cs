@@ -10,8 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Contactor.Tests.Web;
 
 /// <summary>
-/// "Join the step above" on the group's page, with a board whose relays are all off: what it shows, what it does to
-/// the steps, and that nothing is saved until "Save".
+/// "Join the step above" on the group's page: what it shows, what it does to the steps, that nothing is saved until
+/// "Save", and that it is hidden while the group is on or the board has no contact.
 /// </summary>
 public sealed class GroupJoinStepTests
 {
@@ -61,6 +61,28 @@ public sealed class GroupJoinStepTests
         Assert.Equal(["Fan: 1 2 :3:300"], await SavedStepsAsync(app, id));
     }
 
+    // "Join the step above" shares CanChange with "Remove" and up/down: hidden while any of the group's relays is on,
+    // and while the board has no contact.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_HideJoin_WhileTheGroupIsOnOrTheBoardHasNoContact(bool groupOn)
+    {
+        var board = groupOn ? new FakeRelayBoard() : FakeRelayBoard.LostContact();
+        await using var app = await StartAppAsync(board);
+        var id = await AddGroupAsync(app, ("Fan", 1, 3, 300), ("Heat", 2, 3, 0), ("Lamp", 3, 3, 0));
+        if (groupOn)
+        {
+            board.SetRelay(1, true);
+        }
+
+        using var page = await PageRenderer.StartAsync<GroupDetail>(app.Services, John, "John", new Dictionary<string, object?> { ["Id"] = id });
+
+        Assert.True(await page.HasAsync(PageRenderer.With("id", "step-2")));
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Join the step above")));
+        Assert.False(await page.HasAsync(PageRenderer.WithText("Remove")));
+    }
+
     [Fact]
     public async Task Should_SayJoinTheStepAbove_InSwedish()
     {
@@ -80,12 +102,12 @@ public sealed class GroupJoinStepTests
         }
     }
 
-    private static async Task<TestWebApp> StartAppAsync()
+    private static async Task<TestWebApp> StartAppAsync(FakeRelayBoard? board = null)
     {
         var app = new TestWebApp(
             "Development",
             new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
-            TestWebApp.WithBoard(new FakeRelayBoard()));
+            TestWebApp.WithBoard(board ?? new FakeRelayBoard()));
         using var http = app.CreateClient();
         await http.GetAsync("/", Cancel);
         return app;

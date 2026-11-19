@@ -200,6 +200,113 @@ public sealed class EventTextTests
         Assert.Equal(new EventView(false, "A", "The board", "{0} couldn't have its relays set to normal mode, so its inputs may switch them", null, IsAlert: true), view);
     }
 
+    // A rule of the board's own the app saw: the board is the subject, "The board" with one board, its name with several.
+    [Theory]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", null, "The board", "The board has its own timer for relay 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", null, "The board's", "The board's own timer for relay 3 was turned on")]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", "Garage", "Garage", "Garage has its own timer for relay 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", "Garage", "Garage's", "Garage's own timer for relay 3 was turned on")]
+    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "the board", "Relay 3 became unavailable: the board controls it itself")]
+    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Garage", "Relay 3 became unavailable: Garage controls it itself")]
+    [InlineData("""{"kind":"input-toggle","new":false,"relay":2}""", null, "the board", "Input 2 switches relay 2 with each pulse on the board")]
+    [InlineData("""{"kind":"input-toggle","new":true,"relay":2}""", null, "the board", "Input 2 now switches relay 2 with each pulse on the board")]
+    [InlineData("""{"kind":"input-edge","new":false,"relay":4}""", null, "the board", "Input 4 switches relay 4 at each change on the board")]
+    [InlineData("""{"kind":"input-edge","new":true,"relay":4}""", null, "the board", "Input 4 now switches relay 4 at each change on the board")]
+    [InlineData("""{"kind":"auto-on","new":false,"relay":3}""", null, "The board", "The board turns relay 3 on again by itself after it goes off")]
+    [InlineData("""{"kind":"auto-on","new":true,"relay":3}""", "Garage", "Garage", "Garage now turns relay 3 on again by itself after it goes off")]
+    [InlineData("""{"kind":"later","new":true,"relay":3}""", null, "The board's", "The board's own rule for relay 3 was turned on")]
+    [InlineData("not json", null, "The board", "The board has a rule of its own for relay ?")]
+    public void Should_DescribeABoardsOwnRuleFound(string details, string? boardName, string who, string text)
+    {
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.BoardOwnRuleFound, details), Relay, personName: null, boardName: boardName);
+
+        Assert.Equal((false, "A", who, text, Relay), (view.IsPerson, view.Badge, view.Who, view.Text, view.Target));
+        Assert.True(EventText.IsAboutBoard(Entry(EventActors.System, EventActions.BoardOwnRuleFound, details)));
+    }
+
+    [Theory]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", null, "Kortet har en egen timer för relä 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", null, "Kortets egna timer för relä 3 slogs på")]
+    [InlineData("""{"kind":"timer","new":false,"relay":3}""", "Garage", "Garage har en egen timer för relä 3")]
+    [InlineData("""{"kind":"timer","new":true,"relay":3}""", "Garage", "Garages egna timer för relä 3 slogs på")]
+    [InlineData("""{"kind":"input-linkage","new":false,"relay":3}""", null, "Relä 3 blev otillgängligt: kortet styr det självt")]
+    [InlineData("""{"kind":"input-linkage","new":true,"relay":3}""", "Garage", "Relä 3 blev otillgängligt: Garage styr det självt")]
+    [InlineData("""{"kind":"auto-on","new":false,"relay":3}""", null, "Kortet slår på relä 3 igen av sig självt när det har stängts av")]
+    [InlineData("""{"kind":"auto-on","new":true,"relay":3}""", "Garage", "Garage slår nu på relä 3 igen av sig självt när det har stängts av")]
+    public void Should_DescribeABoardsOwnRuleFound_InSwedish(string details, string? boardName, string text)
+    {
+        using var swedish = TestCulture.Language("sv");
+
+        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.BoardOwnRuleFound, details), Relay, personName: null, boardName: boardName);
+
+        Assert.Equal(text, view.Text);
+    }
+
+    // Swedish adds no s to a name that already ends in s, x or z.
+    [Theory]
+    [InlineData("Garage", "sv", "Garages egna timer för relä 3 slogs på", "Erik behöll Garages egna timer för relä 3")]
+    [InlineData("Lars", "sv", "Lars egna timer för relä 3 slogs på", "Erik behöll Lars egna timer för relä 3")]
+    [InlineData("Fax", "sv", "Fax egna timer för relä 3 slogs på", "Erik behöll Fax egna timer för relä 3")]
+    [InlineData("Ritz", "sv", "Ritz egna timer för relä 3 slogs på", "Erik behöll Ritz egna timer för relä 3")]
+    [InlineData("Lars", "en", "Lars's own timer for relay 3 was turned on", "Erik kept Lars's own timer for relay 3")]
+    public void Should_PutABoardsNameInTheGenitive_AsTheLanguageDoes(string name, string language, string found, string kept)
+    {
+        using var culture = TestCulture.Language(language);
+
+        var foundView = TestTexts.Events.For(Entry(EventActors.System, EventActions.BoardOwnRuleFound, """{"kind":"timer","new":true,"relay":3}"""), Relay, null, boardName: name);
+        var keptView = TestTexts.Events.For(Entry("erik@example.com", EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}"""), Relay, "Erik", boardName: name);
+
+        Assert.Equal((found, kept), (foundView.Text, keptView.Text));
+    }
+
+    // A person turned off or kept the board's own rules: the board is named in the line, so the Events screen doesn't
+    // name it again before the target.
+    [Theory]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer"]}""", null, "Erik turned off the board's own timers for relays 3 and 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"]}""", "Garage", "Erik turned off Garage's own timer for relay 3", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5,7],"kinds":["input-linkage","input-edge"]}""", null, "Erik turned off the board's own input rules for relays 3, 5 and 7", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer","input-edge"]}""", null, "Erik turned off the board's own rules for relays 3 and 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, null, null, "Erik turned off the board's own rule for relay ?", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["auto-on"]}""", null, "Erik stopped the board turning relays 3 and 5 on again by itself", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on","timer"]}""", null, "Erik turned off the board's own rule for relay 3", false)]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik let Garage keep turning relay 3 on again by itself", true)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"timer"}]}""", null, "Erik turned off the board's own timer for relay 3, and with it the timer for relay 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":6,"kind":"timer"},{"relay":5,"kind":"timer"}]}""", null, "Erik turned off the board's own timer for relay 3, and with it the timers for relays 5 and 6", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"auto-on"}]}""", "Garage", "Erik turned off Garage's own timer for relay 3, and with it the board turning relay 5 on again by itself", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on"],"also":[{"relay":5,"kind":"timer"},{"relay":5,"kind":"later"}]}""", null, "Erik stopped the board turning relay 3 on again by itself, and with it the rule for relay 5", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["input-linkage"],"also":[{"relay":"5"},7,{"kind":"timer"}]}""", null, "Erik reset relay 3", false)]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[]}""", null, "Erik turned off the board's own timer for relay 3", false)]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik kept the board's own timer for relay 3", true)]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"input-toggle","relay":3}""", "Garage", "Erik kept Garage's own input rule for relay 3", true)]
+    public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules(string action, string? details, string? boardName, string text, bool hasTarget)
+    {
+        var entry = Entry("erik@example.com", action, details, relayId: hasTarget ? 1 : null);
+
+        var view = TestTexts.Events.For(entry, hasTarget ? Relay : null, "Erik", boardName: boardName);
+
+        Assert.Equal((true, "E", "Erik", text, hasTarget ? Relay : null), (view.IsPerson, view.Badge, view.Who, view.Text, view.Target));
+        Assert.False(EventText.IsAboutBoard(entry));
+        Assert.True(EventText.NamesBoard(entry));
+    }
+
+    [Theory]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3,5],"kinds":["timer"]}""", null, "Erik stängde av kortets egna timrar för relä 3 och 5")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"]}""", "Garage", "Erik stängde av Garages egna timer för relä 3")]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", null, "Erik behöll kortets egna timer för relä 3")]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"timer","relay":3}""", "Garage", "Erik behöll Garages egna timer för relä 3")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["auto-on"]}""", null, "Erik gjorde att kortet inte längre slår på relä 3 igen av sig självt")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"timer"}]}""", null, "Erik stängde av kortets egna timer för relä 3, och därmed timern för relä 5")]
+    [InlineData(EventActions.BoardOwnRulesTurnedOff, """{"relays":[3],"kinds":["timer"],"also":[{"relay":5,"kind":"auto-on"}]}""", "Garage", "Erik stängde av Garages egna timer för relä 3, och därmed det automatiska påslaget för relä 5")]
+    [InlineData(EventActions.BoardOwnRuleKept, """{"kind":"auto-on","relay":3}""", "Garage", "Erik lät Garage fortsätta slå på relä 3 igen av sig självt")]
+    public void Should_DescribeAPersonsTurningOffOrKeepingTheBoardsOwnRules_InSwedish(string action, string details, string? boardName, string text)
+    {
+        using var swedish = TestCulture.Language("sv");
+
+        var view = TestTexts.Events.For(Entry("erik@example.com", action, details), Relay, "Erik", boardName: boardName);
+
+        Assert.Equal(text, view.Text);
+    }
+
     [Theory]
     [InlineData(EventActors.Schedule, "schedule")]
     [InlineData(EventActors.AutoOff, "auto-off")]

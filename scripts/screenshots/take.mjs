@@ -77,73 +77,95 @@ function utc(minutesAgo) {
     return new Date(Date.now() - minutesAgo * 60_000).toISOString().replace('T', ' ').slice(0, 19);
 }
 
-function seed() {
-    const db = new DatabaseSync(database);
-    // By channel: a relay's id is only the database's key.
-    const relays = [
-        [1, 'Fan 1', 1],
-        [2, 'Fan 2', 1],
-        [3, 'Heater 1', 1],
-        [4, 'Heater 2', 1],
-        [5, 'Compressor', 1],
-        [6, 'Ventilation – Paint shop', 1],
-        [7, 'Lighting – Paint shop', 1],
-        [8, 'Relay 8', 0],
-    ];
-    const rename = db.prepare('UPDATE "Relay" SET "Name" = ?, "IsActive" = ? WHERE "BoardId" = 1 AND "Channel" = ?');
-    for (const [channel, name, active] of relays) {
-        rename.run(name, active, channel);
+// The app writes to the same database while the script runs: a write waits up to 10 s for it instead of failing with
+// "database is locked".
+function openDatabase(readOnly = false) {
+    const db = new DatabaseSync(database, { readOnly });
+    db.exec('PRAGMA busy_timeout = 10000');
+    return db;
+}
+
+// Takes the write lock once, so the app can't take it between two of the writes, and the data lands all at once.
+function writeAll(db, write) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+        write();
+        db.exec('COMMIT');
+    } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
     }
+}
 
-    const relayAt = db.prepare('SELECT "Id" FROM "Relay" WHERE "BoardId" = 1 AND "Channel" = ?');
-    const relay = (channel) => relayAt.get(channel).Id;
+function seed() {
+    const db = openDatabase();
+    writeAll(db, () => {
+        // By channel: a relay's id is only the database's key.
+        const relays = [
+            [1, 'Fan 1', 1],
+            [2, 'Fan 2', 1],
+            [3, 'Heater 1', 1],
+            [4, 'Heater 2', 1],
+            [5, 'Compressor', 1],
+            [6, 'Ventilation – Paint shop', 1],
+            [7, 'Lighting – Paint shop', 1],
+            [8, 'Relay 8', 0],
+        ];
+        const rename = db.prepare('UPDATE "Relay" SET "Name" = ?, "IsActive" = ? WHERE "BoardId" = 1 AND "Channel" = ?');
+        for (const [channel, name, active] of relays) {
+            rename.run(name, active, channel);
+        }
 
-    const user = db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (?, ?, 0)');
-    user.run('jane@example.com', 'Jane');
-    user.run('alex@example.com', 'Alex');
+        const relayAt = db.prepare('SELECT "Id" FROM "Relay" WHERE "BoardId" = 1 AND "Channel" = ?');
+        const relay = (channel) => relayAt.get(channel).Id;
 
-    db.prepare('INSERT INTO "RelayGroup" ("Id", "BoardId", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, 1, ?, \'fan\', 120, 1, 1)')
-        .run('Fan heaters');
-    // In steps: both fans first, then both heaters. The heaters go off first, and the fans run on for 5 minutes.
-    const step = db.prepare('INSERT INTO "RelayGroupStep" ("Id", "GroupId", "Position", "Name", "StartDelaySec", "RunOnSec") VALUES (?, 1, ?, ?, 3, ?)');
-    step.run(1, 1, 'Fans', 300);
-    step.run(2, 2, 'Heaters', 0);
-    const member = db.prepare('INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "StepId", "Order") VALUES (1, ?, ?, ?)');
-    member.run(relay(1), 1, 1);
-    member.run(relay(2), 1, 2);
-    member.run(relay(3), 2, 1);
-    member.run(relay(4), 2, 2);
-    db.prepare('INSERT INTO "GroupRuntime" ("GroupId", "Phase", "TargetLevel", "PendingOn") VALUES (1, \'idle\', 0, 0)').run();
+        const user = db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (?, ?, 0)');
+        user.run('jane@example.com', 'Jane');
+        user.run('alex@example.com', 'Alex');
 
-    // The board's input, named, and known since its change below (see "Once the board has answered").
-    db.prepare('UPDATE "Input" SET "Name" = \'Door – Workshop\' WHERE "BoardId" = 1 AND "Channel" = 1').run();
-    db.prepare('UPDATE "BoardRuntime" SET "LongGapEndedUtc" = NULL WHERE "BoardId" = 1').run();
-    // The door turns the compressor off when it opens: a line on the relay's card. Not relay 6 or 7, which "New group"
-    // picks: a relay an input controls can't join a group.
-    db.prepare('INSERT INTO "InputAction" ("InputId", "RelayId", "GroupId", "WhenClosed", "WhenOpened") VALUES (?, ?, NULL, NULL, 0)')
-        .run(db.prepare('SELECT "Id" FROM "Input" WHERE "BoardId" = 1 AND "Channel" = 1').get().Id, relay(5));
+        db.prepare('INSERT INTO "RelayGroup" ("Id", "BoardId", "Name", "Icon", "MaxOnMinutes", "IsActive", "SortOrder") VALUES (1, 1, ?, \'fan\', 120, 1, 1)')
+            .run('Fan heaters');
+        // In steps: both fans first, then both heaters. The heaters go off first, and the fans run on for 5 minutes.
+        const step = db.prepare('INSERT INTO "RelayGroupStep" ("Id", "GroupId", "Position", "Name", "StartDelaySec", "RunOnSec") VALUES (?, 1, ?, ?, 3, ?)');
+        step.run(1, 1, 'Fans', 300);
+        step.run(2, 2, 'Heaters', 0);
+        const member = db.prepare('INSERT INTO "RelayGroupMember" ("GroupId", "RelayId", "StepId", "Order") VALUES (1, ?, ?, ?)');
+        member.run(relay(1), 1, 1);
+        member.run(relay(2), 1, 2);
+        member.run(relay(3), 2, 1);
+        member.run(relay(4), 2, 2);
+        db.prepare('INSERT INTO "GroupRuntime" ("GroupId", "Phase", "TargetLevel", "PendingOn") VALUES (1, \'idle\', 0, 0)').run();
 
-    const schedule = db.prepare('INSERT INTO "Schedule" ("RelayId", "GroupId", "Days", "OnTime", "OffTime", "IsEnabled", "CreatedBy") VALUES (?, ?, ?, ?, ?, 1, ?)');
-    schedule.run(relay(5), null, 31, '06:30', '08:00', 'jane@example.com');
-    schedule.run(null, 1, 31, '06:00', '07:30', 'alex@example.com');
+        // The board's input, named, and known since its change below (see "Once the board has answered").
+        db.prepare('UPDATE "Input" SET "Name" = \'Door – Workshop\' WHERE "BoardId" = 1 AND "Channel" = 1').run();
+        db.prepare('UPDATE "BoardRuntime" SET "LongGapEndedUtc" = NULL WHERE "BoardId" = 1').run();
+        // The door turns the compressor off when it opens: a line on the relay's card. Not relay 6 or 7, which "New group"
+        // picks: a relay an input controls can't join a group.
+        db.prepare('INSERT INTO "InputAction" ("InputId", "RelayId", "GroupId", "WhenClosed", "WhenOpened") VALUES (?, ?, NULL, NULL, 0)')
+            .run(db.prepare('SELECT "Id" FROM "Input" WHERE "BoardId" = 1 AND "Channel" = 1').get().Id, relay(5));
 
-    const event = db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "BoardId", "RelayId", "GroupId", "Actor", "Action", "Details") VALUES (?, 1, ?, ?, ?, ?, ?)');
-    event.run(utc(26 * 60), relay(6), null, 'alex@example.com', 'off', null);
-    event.run(utc(25 * 60), relay(7), null, 'jane@example.com', 'on', null);
-    event.run(utc(24 * 60 + 30), relay(7), null, 'auto-off', 'off', '{"afterMinutes":120}');
-    event.run(utc(6 * 60), relay(5), null, 'schedule', 'on', null);
-    event.run(utc(4 * 60 + 30), relay(5), null, 'schedule', 'off', null);
-    event.run(utc(3 * 60), relay(6), null, 'jane@example.com', 'rename', '{"from":"Relay 6","to":"Ventilation – Paint shop"}');
-    db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "BoardId", "InputId", "Actor", "Action", "Details") VALUES (?, 1, ?, \'external\', \'input-changed\', \'{"on":false}\')')
-        .run(utc(5 * 60), db.prepare('SELECT "Id" FROM "Input" WHERE "BoardId" = 1 AND "Channel" = 1').get().Id);
-    event.run(utc(90), null, 1, 'alex@example.com', 'group-create', '{"name":"Fan heaters","steps":["Fans","Heaters"]}');
+        const schedule = db.prepare('INSERT INTO "Schedule" ("RelayId", "GroupId", "Days", "OnTime", "OffTime", "IsEnabled", "CreatedBy") VALUES (?, ?, ?, ?, ?, 1, ?)');
+        schedule.run(relay(5), null, 31, '06:30', '08:00', 'jane@example.com');
+        schedule.run(null, 1, 31, '06:00', '07:30', 'alex@example.com');
+
+        const event = db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "BoardId", "RelayId", "GroupId", "Actor", "Action", "Details") VALUES (?, 1, ?, ?, ?, ?, ?)');
+        event.run(utc(26 * 60), relay(6), null, 'alex@example.com', 'off', null);
+        event.run(utc(25 * 60), relay(7), null, 'jane@example.com', 'on', null);
+        event.run(utc(24 * 60 + 30), relay(7), null, 'auto-off', 'off', '{"afterMinutes":120}');
+        event.run(utc(6 * 60), relay(5), null, 'schedule', 'on', null);
+        event.run(utc(4 * 60 + 30), relay(5), null, 'schedule', 'off', null);
+        event.run(utc(3 * 60), relay(6), null, 'jane@example.com', 'rename', '{"from":"Relay 6","to":"Ventilation – Paint shop"}');
+        db.prepare('INSERT INTO "EventLog" ("TimestampUtc", "BoardId", "InputId", "Actor", "Action", "Details") VALUES (?, 1, ?, \'external\', \'input-changed\', \'{"on":false}\')')
+            .run(utc(5 * 60), db.prepare('SELECT "Id" FROM "Input" WHERE "BoardId" = 1 AND "Channel" = 1').get().Id);
+        event.run(utc(90), null, 1, 'alex@example.com', 'group-create', '{"name":"Fan heaters","steps":["Fans","Heaters"]}');
+    });
     db.close();
 }
 
 // Past the setup guide with a VM201, only on this network and with no sign-in, so the app runs that board from its
 // next start and opens on the relays. The shared person is called John, so the screens greet someone by name.
 function setUp() {
-    const db = new DatabaseSync(database);
+    const db = openDatabase();
     db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
     db.prepare('INSERT INTO "Board" ("Id", "Name", "Type", "SortOrder") VALUES (1, \'Velleman VM201\', \'vm201\', 1)').run();
     db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (\'someone@contactor.invalid\', \'John\', 0)').run();
@@ -220,7 +242,7 @@ try {
     // Once the board has answered: its first contact on a new database counts as the end of a long gap, which would
     // make the input's seeded time unknown (an installation that has run for a while knows it).
     await waitFor(() => {
-        const db = new DatabaseSync(database, { readOnly: true });
+        const db = openDatabase(true);
         try {
             return !!db.prepare('SELECT "LastContactUtc" FROM "BoardRuntime" WHERE "BoardId" = 1').get()?.LastContactUtc;
         } finally {
@@ -284,13 +306,15 @@ try {
     // Last, as it is the whole app's language: Swedish, chosen in Settings, and the relays in it, with the names a
     // Swedish workshop would give them.
     {
-        const db = new DatabaseSync(database);
-        const rename = db.prepare('UPDATE "Relay" SET "Name" = ? WHERE "BoardId" = 1 AND "Channel" = ?');
-        for (const [channel, name] of [[1, 'Fläkt 1'], [2, 'Fläkt 2'], [3, 'Värme 1'], [4, 'Värme 2'], [5, 'Kompressor'], [6, 'Ventilation – Lackrum'], [7, 'Belysning – Lackrum']]) {
-            rename.run(name, channel);
-        }
-        db.prepare('UPDATE "RelayGroup" SET "Name" = \'Värmefläktar\' WHERE "Id" = 1').run();
-        db.prepare('UPDATE "RelayGroupStep" SET "Name" = CASE "Position" WHEN 1 THEN \'Fläktar\' ELSE \'Värme\' END WHERE "GroupId" = 1').run();
+        const db = openDatabase();
+        writeAll(db, () => {
+            const rename = db.prepare('UPDATE "Relay" SET "Name" = ? WHERE "BoardId" = 1 AND "Channel" = ?');
+            for (const [channel, name] of [[1, 'Fläkt 1'], [2, 'Fläkt 2'], [3, 'Värme 1'], [4, 'Värme 2'], [5, 'Kompressor'], [6, 'Ventilation – Lackrum'], [7, 'Belysning – Lackrum']]) {
+                rename.run(name, channel);
+            }
+            db.prepare('UPDATE "RelayGroup" SET "Name" = \'Värmefläktar\' WHERE "Id" = 1').run();
+            db.prepare('UPDATE "RelayGroupStep" SET "Name" = CASE "Position" WHEN 1 THEN \'Fläktar\' ELSE \'Värme\' END WHERE "GroupId" = 1').run();
+        });
         db.close();
         const page = await browser.newPage({ ...phone, locale: 'sv-SE' });
         await page.goto(base + 'settings');

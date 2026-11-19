@@ -375,6 +375,36 @@ h2 {
     column-gap: 12px;
 }
 
+.mode-relays {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 4px 12px;
+}
+
+.mode {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    font-size: 14px;
+}
+
+.firmware {
+    width: 12em;
+}
+
+/* A simulated Shelly's schedules: each in words, and a line to add one. */
+.schedule {
+    overflow-wrap: anywhere;
+}
+
+.schedule-add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
 .analog {
     display: grid;
     grid-template-columns: auto minmax(120px, 1fr) auto;

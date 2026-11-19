@@ -1,6 +1,7 @@
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -171,6 +172,7 @@ public sealed class RelaySettingsHandlerTests : IAsyncLifetime
             services.AddBoards(configuration);
             services.AddRelays(configuration);
             services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
         });
         var board = new FakeRelayBoard();
         await database.Services.InitializeDatabaseAsync(Cancel);

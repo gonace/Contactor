@@ -23,7 +23,12 @@ namespace Contactor.Boards;
 /// relays are; empty when it has none, and null for a board that can't read them or before it reported them. A change in
 /// it alone comes as <see cref="IRelayBoard.OwnRulesChanged"/>.
 /// </param>
-public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null, OwnRules? OwnRules = null)
+/// <param name="PowerOn">
+/// Each relay's state after a power cut as the board last reported it (<see cref="BoardCapabilities.PowerOn"/>), kept
+/// while disconnected as the relays are; null for a board that can't read it or before it reported it. A change in it
+/// alone comes as <see cref="IRelayBoard.PowerOnChanged"/>.
+/// </param>
+public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null, OwnRules? OwnRules = null, PowerOnStates? PowerOn = null)
 {
     public static BoardState Initial { get; } = new(false, ChannelMask.None, ChannelMask.None, null);
 
@@ -32,6 +37,12 @@ public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMas
     /// <see cref="Inputs"/> are only "none", not what the board reads, and the screens show them as unknown.
     /// </summary>
     public bool HasAnswered => IsConnected || LastContactUtc is not null;
+
+    /// <summary>
+    /// The relays the board controls by itself and ignores the app's commands for (<see cref="Boards.OwnRules.Unavailable"/>);
+    /// none while its rules aren't known.
+    /// </summary>
+    public ChannelMask Unavailable => OwnRules?.Unavailable ?? ChannelMask.None;
 
     /// <summary>Whether a relay is on, 1 being the first.</summary>
     public bool IsOn(int relay)

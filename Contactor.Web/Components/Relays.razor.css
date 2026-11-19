@@ -770,3 +770,129 @@ button:disabled {
     flex-direction: column;
     gap: 10px;
 }
+
+/* A board's own rules (e.g. the VM201's timers) in the red warning box: a filled red button. */
+.own-rules .turn-off-rules {
+    align-self: flex-start;
+    margin-top: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 12px;
+    background: var(--danger-solid);
+    color: var(--on-danger);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* Other relays' rules that go with them, said before the press. */
+.own-rules .also {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.own-rules .rules-error {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+/* On a relay's card: the board's own rule can switch it. */
+.own-rule-line {
+    color: var(--danger-ink);
+}
+
+.own-rule-line svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+/* A relay the board controls by itself: styled like an inactive one, with its state as a read-only chip and "Reset"
+   in place of ON/OFF. */
+.card.unavailable {
+    align-items: flex-start;
+    background: var(--inactive-bg);
+    border: 1.5px dashed var(--inactive-border);
+}
+
+.card.unavailable .title {
+    min-height: 0;
+}
+
+.card.unavailable .reset {
+    align-self: flex-start;
+    margin-top: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 12px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.card.unavailable .reset:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.relay-state {
+    flex-shrink: 0;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.relay-state .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--line-strong);
+}
+
+.relay-state.on {
+    border-color: var(--accent-border);
+    color: var(--accent);
+}
+
+.relay-state.on .dot {
+    background: var(--accent);
+}
+
+/* A group with a relay the board controls by itself: the red warning across the card, with "Reset". */
+.card.group .group-unavailable {
+    align-self: stretch;
+}
+
+.group-unavailable .turn-off-rules {
+    align-self: flex-start;
+    margin-top: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 12px;
+    background: var(--danger-solid);
+    color: var(--on-danger);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.group-unavailable .rules-error {
+    margin-top: 4px;
+    font-weight: 600;
+}

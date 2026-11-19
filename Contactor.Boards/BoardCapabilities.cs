@@ -17,7 +17,12 @@ namespace Contactor.Boards;
 /// catalogue states it; null means "can't tell" (<see cref="OwnRulesOrCantTell"/>), so a board that says nothing is
 /// never taken to have none.
 /// </param>
-public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, AnalogAbility? Analog = null, PulseAbility? Pulse = null, OwnRulesAbility? OwnRules = null)
+/// <param name="PowerOn">
+/// What the board can do about its relays' state after a power cut: which states it has, per relay or for the whole
+/// board. Null means "can't tell": the app can neither read nor set it, and the board may still switch relays by itself
+/// when the power comes back. A model in the catalogue that leaves it null does so on purpose.
+/// </param>
+public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, AnalogAbility? Analog = null, PulseAbility? Pulse = null, OwnRulesAbility? OwnRules = null, PowerOnAbility? PowerOn = null)
 {
     /// <summary>What the app can know and do about the board's own rules: <see cref="OwnRulesAbility.CantTell"/> when it doesn't say.</summary>
     public OwnRulesAbility OwnRulesOrCantTell => OwnRules ?? OwnRulesAbility.CantTell;

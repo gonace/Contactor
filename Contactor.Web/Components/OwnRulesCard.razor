@@ -1,0 +1,271 @@
+@implements IDisposable
+@using Contactor.Boards
+@using Contactor.Web.Features.BoardRules
+@using Contactor.Web.Features.Boards
+@using Contactor.Web.Features.Identity
+@using Contactor.Web.Features.Languages
+@using Contactor.Web.Persistence
+@using Microsoft.EntityFrameworkCore
+@inject BoardRegistry Registry
+@inject OwnRulesService Rows
+@inject OwnRulesHandler Handler
+@inject OwnRulesText Words
+@inject CurrentUser CurrentUser
+@inject LocalClock Clock
+@inject IDbContextFactory<ContactorDbContext> DbFactory
+@inject ILogger<OwnRulesCard> Log
+@inject AppLanguage Language
+
+@* The board's own rules (issue #497), on the board's page and on Settings with one board: each rule the app found,
+   with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself), or a line for a board that may have rules the app can't see. None for a board that has
+   none. A rule whose turn-off takes other relays' rules with it says so under it ("Also turns off the board's timer
+   for Heat."). *@
+@if (Board is { } board && (_rows.Count > 0 || Ability(board).MayHaveUnseen))
+{
+    var ability = Ability(board);
+    var connected = board.State.IsConnected;
+    <section class="card own-rules-card" aria-labelledby="own-rules-@BoardId">
+        <h2 id="own-rules-@BoardId">@Words.CardTitle(_rows.Select(r => r.Kind))</h2>
+        @if (_rows.Count > 0)
+        {
+            <p class="hint">@Texts["OwnRules.Card.Hint"]</p>
+            <ul class="rules">
+                @foreach (var row in _rows)
+                {
+                    var kept = row.KeptUtc is not null;
+                    var id = $"own-rule-{BoardId}-{row.Channel}-{OwnRuleKinds.For(row.Kind)}";
+                    <li class="rule @(kept ? "kept" : null)" @key="id">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                        <span class="text" id="@id">
+                            <span class="label">@Texts["Relays.RelayLabel", row.Channel]</span>
+                            <span class="name">@(_names.GetValueOrDefault(row.Channel) ?? Texts["Relays.DefaultName", row.Channel])</span>
+                            <span class="note">@(kept ? Texts["OwnRules.Kept"] : Words.Found(Clock.ToLocal(row.FoundUtc), Clock.Now))</span>
+                            @if (ability.TurnsOff && Also(row) is { } also)
+                            {
+                                @* Said before the press: the other relays' rules this "Turn off" takes with it. *@
+                                <span class="also">@also</span>
+                            }
+                        </span>
+                        <span class="buttons">
+                            @if (ability.TurnsOff)
+                            {
+                                @* A relay the board controls by itself is reset; the app can't switch it until then. *@
+                                <button type="button" class="@(kept ? "secondary" : "primary")" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => TurnOffAsync(row)">@Texts[row.Kind == OwnRuleKind.InputLinkage ? "OwnRules.Reset" : "OwnRules.TurnOff"]</button>
+                            }
+                            @* Never "Keep" for a relay the board controls by itself: it stays unavailable until reset. Nor
+                               for the auto-on of a relay in a group: a line says why in its place. *@
+                            @if (!kept && OwnRulesHandler.CanKeep(row.Kind, _grouped.ContainsKey(row.Channel)))
+                            {
+                                <button type="button" class="secondary" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => KeepAsync(row)">@Texts["OwnRules.Keep"]</button>
+                            }
+                            else if (!kept && OwnRulesHandler.CanKeep(row.Kind, inGroup: false))
+                            {
+                                <span class="cant-keep">@Handler.InGroup(row.Channel, _names.GetValueOrDefault(row.Channel))</span>
+                            }
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+        @if (ability.MayHaveUnseen)
+        {
+            <p class="hint">@Texts[ability.Reads ? "OwnRules.Card.MayHaveUnseen" : "OwnRules.Card.CantTell"]</p>
+        }
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<OwnRuleRow> _rows = [];
+    private Dictionary<int, string> _names = [];
+
+    // The board's relays in a group, by channel: a rule that can't be kept there has no "Keep" (OwnRulesHandler.CanKeep).
+    private Dictionary<int, string> _grouped = [];
+    private string? _error;
+    private bool _busy;
+    private int? _loadedFor;
+
+    // Counts the loads, on the page's own thread: only the latest one shows its rows.
+    private int _loads;
+
+    // What was drawn: a board's change redraws the card only when its contact or what goes with its rules changes.
+    private bool? _shownConnected;
+    private string _shownAlso = "";
+
+    // Set when the card closes, on the page's own thread: an event already on its way doesn't load or draw it.
+    private bool _disposed;
+
+    /// <summary>The board whose rules the card shows.</summary>
+    [Parameter]
+    [EditorRequired]
+    public int BoardId { get; set; }
+
+    private LiveBoard? Board => Registry.Find(BoardId);
+
+    private static OwnRulesAbility Ability(LiveBoard board)
+    {
+        return board.Capabilities.OwnRulesOrCantTell;
+    }
+
+    // Subscribed before the first load: a change while it loads is loaded again after it.
+    protected override void OnInitialized()
+    {
+        Registry.StateChanged += OnBoardChanged;
+        Registry.OwnRulesChanged += OnBoardChanged;
+        Rows.Changed += OnRowsChanged;
+    }
+
+    // Another board, as a link to another board's page gives: its own rows.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor != BoardId)
+        {
+            _loadedFor = BoardId;
+            _error = null;
+            await LoadAsync();
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _shownConnected = Board?.State.IsConnected;
+        _shownAlso = AlsoShown();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnBoardChanged;
+        Rows.Changed -= OnRowsChanged;
+    }
+
+    // "Also turns off the board's timer for Heat.": what turning off the row's rule takes with it, or null.
+    private string? Also(OwnRuleRow row)
+    {
+        return Words.AlsoTurnsOff(Handler.AlsoTurnsOff(BoardId, [new OwnRule(row.Channel, row.Kind)]), _names);
+    }
+
+    // Every row's "also" words, to tell when the board's rules going together changed.
+    private string AlsoShown()
+    {
+        return Board is { } board && Ability(board).TurnsOff ? string.Join("\n", _rows.Select(Also)) : "";
+    }
+
+    // The rows, in relay order, and the names of their relays. Only the latest load shows: an older one that finishes
+    // after it (two changes close together) would show rows that are gone.
+    private async Task LoadAsync()
+    {
+        var load = ++_loads;
+        var boardId = BoardId;
+        var rows = Rows.Rows(boardId);
+        if (rows.Count == 0)
+        {
+            _rows = [];
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var names = await db.Relays.AsNoTracking().Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Name);
+        var grouped = await OwnRulesService.GroupedRelaysAsync(db, boardId, CancellationToken.None);
+        if (load != _loads)
+        {
+            return;
+        }
+
+        _names = names;
+        _grouped = grouped;
+        _rows = [.. rows.OrderBy(r => r.Channel).ThenBy(r => r.Kind)];
+    }
+
+    private Task TurnOffAsync(OwnRuleRow row)
+    {
+        return RunAsync(email => Handler.TurnOffAsync(BoardId, [new OwnRule(row.Channel, row.Kind)], email, CancellationToken.None));
+    }
+
+    private Task KeepAsync(OwnRuleRow row)
+    {
+        return RunAsync(email => Handler.KeepAsync(BoardId, row.Channel, row.Kind, email, CancellationToken.None));
+    }
+
+    // A press: what went wrong shows on the card; the rows change by the service (Changed).
+    private async Task RunAsync(Func<string, Task<string?>> press)
+    {
+        if (_busy || await CurrentUser.GetAsync() is not { } user)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            _error = await press(user.Email);
+        }
+        catch (Exception ex)
+        {
+            // An exception that leaves the handler would end the page's live connection.
+            Log.LogError(ex, "Changing the own rules of relay board {BoardId} failed", BoardId);
+            _error = Texts["Common.SomethingWrongTryAgain"];
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // From a board's read loop: the buttons follow the board's contact, the "also" words its rules.
+    private void OnBoardChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == BoardId)
+        {
+            _ = RefreshAsync(reload: false);
+        }
+    }
+
+    private void OnRowsChanged(object? sender, int boardId)
+    {
+        if (boardId == BoardId)
+        {
+            _ = RefreshAsync(reload: true);
+        }
+    }
+
+    private async Task RefreshAsync(bool reload)
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                // On the page's own thread, as Dispose is: a closed card loads and draws nothing.
+                if (_disposed)
+                {
+                    return;
+                }
+
+                if (reload)
+                {
+                    await LoadAsync();
+                    StateHasChanged();
+                }
+                else if (Board?.State.IsConnected != _shownConnected || AlsoShown() != _shownAlso)
+                {
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The card closed while the change was on its way.
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Not shown to the person: the card keeps what it shows, and the next change tries again.
+            Log.LogWarning(ex, "The page could not reload {What}", "the board's own rules");
+        }
+    }
+}

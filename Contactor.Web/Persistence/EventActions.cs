@@ -1,3 +1,5 @@
+using Contactor.Boards;
+
 namespace Contactor.Web.Persistence;
 
 /// <summary>What an <see cref="EventLogEntry"/> records.</summary>
@@ -17,9 +19,33 @@ public static class EventActions
     public const string ConnectionLost = "connection-lost";
     public const string ConnectionRestored = "connection-restored";
     public const string InputChanged = "input-changed";
+    /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardTimersDisabled = "board-timers-disabled";
+
+    /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardRelayModesReset = "board-relay-modes-reset";
+
+    /// <summary>No longer written; kept for events logged before Issue #497.</summary>
     public const string BoardRelayModesNotReset = "board-relay-modes-not-reset";
+
+    /// <summary>
+    /// The app saw a rule of the board's own (a <c>BoardOwnRule</c>), logged by "system" with the relay. Details:
+    /// <c>{"kind":"timer","new":true,"relay":3}</c>: <c>new</c> when it came while the app watched the board, <c>relay</c>
+    /// its channel.
+    /// </summary>
+    public const string BoardOwnRuleFound = "board-own-rule-found";
+
+    /// <summary>A person turned off rules of the board's own. Details: <c>{"relays":[3,5],"kinds":["timer"]}</c>, by channel.</summary>
+    public const string BoardOwnRulesTurnedOff = "board-own-rules-turned-off";
+
+    /// <summary>A person kept a rule of the board's own, with the relay. Details: <c>{"kind":"timer","relay":3}</c>.</summary>
+    public const string BoardOwnRuleKept = "board-own-rule-kept";
+
+    /// <summary>
+    /// A person set what the relay does by itself when its board gets power back (Issue #516), with the relay. Details:
+    /// <c>{"from":"off","to":"on"}</c>, as <see cref="PowerOnStateNames"/> saves them; no <c>from</c> when it was unknown.
+    /// </summary>
+    public const string PowerOnSet = "power-on-set";
     public const string BoardAddressChanged = "board-address-changed";
     public const string BoardLoginChanged = "board-login-changed";
 
@@ -55,4 +81,49 @@ public static class EventActions
 
     /// <summary>The helper found nothing newer to download than what runs. Details as for <see cref="UpdateDone"/>.</summary>
     public const string UpdateCurrent = "update-current";
+}
+
+/// <summary>The states after a power cut as the events save them, from <see cref="PowerOnState"/>.</summary>
+public static class PowerOnStateNames
+{
+    public const string Off = "off";
+    public const string AsBefore = "as-before";
+    public const string On = "on";
+    public const string FollowsInput = "follows-input";
+
+    /// <summary>The state as it is saved.</summary>
+    public static string For(PowerOnState state)
+    {
+        return state switch
+        {
+            PowerOnState.Off => Off,
+            PowerOnState.AsBefore => AsBefore,
+            PowerOnState.On => On,
+            PowerOnState.FollowsInput => FollowsInput,
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Not a state after a power cut."),
+        };
+    }
+
+    /// <summary>The state a saved text names; false for one this version doesn't know.</summary>
+    public static bool TryParse(string? text, out PowerOnState state)
+    {
+        switch (text)
+        {
+            case Off:
+                state = PowerOnState.Off;
+                return true;
+            case AsBefore:
+                state = PowerOnState.AsBefore;
+                return true;
+            case On:
+                state = PowerOnState.On;
+                return true;
+            case FollowsInput:
+                state = PowerOnState.FollowsInput;
+                return true;
+            default:
+                state = default;
+                return false;
+        }
+    }
 }

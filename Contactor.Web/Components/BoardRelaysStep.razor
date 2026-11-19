@@ -16,6 +16,12 @@
     <h1 tabindex="-1" @ref="_heading">@Texts["Boards.Relays.Title"]</h1>
     <p>@Texts["Boards.Relays.Intro", (int)SetupHandler.TryLength.TotalSeconds]</p>
 </div>
+@* A board that may have rules of its own the app can't see (issue #497) gets no step for them: this one line. *@
+@if (Board.Capabilities.OwnRulesOrCantTell is { MayHaveUnseen: true } unseen)
+{
+    @* A board that reads its rules (the Shelly) may still have others it can't see: "also". *@
+    <p class="hint own-rules">@Texts[unseen.Reads ? "OwnRules.Card.MayHaveUnseen" : "OwnRules.Card.CantTell"]</p>
+}
 @if (!Board.State.IsConnected)
 {
     <p class="hint">@Texts["Boards.Relays.TryNeedsContact"]</p>
@@ -132,6 +138,10 @@
         catch (RelayInGroupException)
         {
             relay.Error = Texts["Relays.InGroup"];
+        }
+        catch (RelayUnavailableException)
+        {
+            relay.Error = Texts["OwnRules.Unavailable.Refused"];
         }
         catch (Exception ex)
         {

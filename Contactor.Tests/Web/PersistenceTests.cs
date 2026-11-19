@@ -274,6 +274,92 @@ public sealed class PersistenceTests
         Assert.False(await check.BoardRuntimes.AnyAsync(Cancel));
     }
 
+    // One row per rule a board reports: a relay has at most one of each kind, and another board or kind is another row.
+    [Fact]
+    public async Task Should_KeepOneOwnRulePerBoardRelayAndKind()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var other = new Board { Name = "Barn", SortOrder = 2 };
+            db.Boards.Add(other);
+            await db.SaveChangesAsync(Cancel);
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.InputEdge, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 4, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 4, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = other.Id, Channel = 3, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 5, Kind = "schedule", FoundUtc = Earlier });
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 65, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Cancel));
+        }
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(5, await check.BoardOwnRules.CountAsync(Cancel));
+    }
+
+    // The version before the auto-on kind refuses it: going back removes those rows and keeps the others.
+    [Fact]
+    public async Task Should_RemoveAutoOnRules_WhenMigratedBackBeforeTheKind()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 2, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.Timer, FoundUtc = Earlier });
+            await db.SaveChangesAsync(Cancel);
+            await db.GetService<IMigrator>().MigrateAsync("20261117204846_AddBoardOwnRules", cancellationToken: Cancel);
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.Equal([3], await db.Database.SqlQueryRaw<int>("SELECT \"Channel\" AS \"Value\" FROM \"BoardOwnRule\"").ToListAsync(Cancel));
+            await db.Database.MigrateAsync(Cancel);
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 2, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        // Up again: the timer's row came through both rebuilds of the table.
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        var rows = await check.BoardOwnRules.AsNoTracking().OrderBy(r => r.Channel).ToListAsync(Cancel);
+        Assert.Equal([(2, OwnRuleKinds.AutoOn), (3, OwnRuleKinds.Timer)], rows.Select(r => (r.Channel, r.Kind)));
+        Assert.Equal(Earlier, rows[1].FoundUtc);
+    }
+
+    [Fact]
+    public void Should_SaveEveryKindOfOwnRule_AndReadItBack()
+    {
+        Assert.Equal(Enum.GetValues<Contactor.Boards.OwnRuleKind>().Length, OwnRuleKinds.All.Count);
+        foreach (var kind in Enum.GetValues<Contactor.Boards.OwnRuleKind>())
+        {
+            var text = OwnRuleKinds.For(kind);
+            Assert.True(text.Length <= OwnRuleKinds.MaxLength);
+            Assert.True(OwnRuleKinds.TryParse(text, out var back));
+            Assert.Equal(kind, back);
+        }
+
+        Assert.False(OwnRuleKinds.TryParse("schedule", out _));
+        Assert.False(OwnRuleKinds.TryParse(null, out _));
+    }
+
     [Fact]
     public async Task Should_RejectSchedule_WithoutDays()
     {

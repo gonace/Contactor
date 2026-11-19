@@ -3,6 +3,7 @@
 @using System.Globalization
 @using Contactor.Boards
 @using Contactor.Web.Features.Access
+@using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Cloudflare
 @using Contactor.Web.Features.Tailscale
@@ -16,6 +17,9 @@
 @inject BoardAddressHandler Address
 @inject UsersHandler Users
 @inject BoardRegistry Registry
+@inject OwnRulesHandler OwnRules
+@inject OwnRulesService OwnRulesRows
+@inject OwnRulesText OwnRulesWords
 @inject CurrentUser CurrentUser
 @inject NavigationManager Navigation
 @inject AppLanguage Language
@@ -98,6 +102,11 @@
             <BoardWhereStep @ref="_where" Board="chosen" Values="_whereFields" UserEmail="@_user?.Email" Busy="Busy"
                             BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" ChooseModel="() => Back(StepWhere)" />
         }
+        else if (_step == StepRules)
+        {
+            <BoardOwnRulesStep @ref="_rulesStep" Board="chosen" UserEmail="@_user?.Email"
+                               BusyChanged="busy => _stepBusy = busy" ErrorChanged="error => _error = error" />
+        }
         else if (_step == StepRelays)
         {
             <BoardRelaysStep @ref="_relaysStep" Board="chosen" Rows="_relays" UserEmail="@_user?.Email" />
@@ -147,6 +156,18 @@
         {
             <a href="@_elsewhere" class="finish">@Texts["Setup.Open", new Uri(_elsewhere).Host]</a>
         }
+        else if (_step == StepRules && Chosen is { } rulesBoard)
+        {
+            var asked = OwnRules.ToAsk(rulesBoard.BoardId);
+            @if (rulesBoard.Capabilities.OwnRulesOrCantTell.TurnsOff)
+            {
+                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@(asked.Count > 0 && asked.All(r => r.Kind == OwnRuleKind.InputLinkage) ? Texts["OwnRules.Reset"] : OwnRulesWords.TurnOffAll(asked.Count))</button>
+            }
+            @* A relay the board controls by itself is never kept: with only such relays, the step is left as it is. *@
+            @* A board being added has no groups yet; "Keep them" checks them anyway (KeepAllAsync). *@
+            var keepable = asked.Count(r => OwnRulesHandler.CanKeep(r.Kind, inGroup: false));
+            <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@(keepable > 0 ? OwnRulesWords.KeepAll(keepable) : Texts["OwnRules.Step.Later"])</button>
+        }
         else if (_step < StepDone)
         {
             var shown = _step;
@@ -174,15 +195,31 @@
     private const int StepAbout = 3;
     private const int StepBoard = 4;
     private const int StepWhere = 5;
-    private const int StepRelays = 6;
-    private const int StepDone = 7;
-    private const int StepsInPart2 = 4;
+
+    // "This board has timers of its own": only for a board that answers with rules of its own no person kept.
+    private const int StepRules = 6;
+    private const int StepRelays = 7;
+    private const int StepDone = 8;
 
     private bool InPart1 => _step <= StepAbout;
 
-    private int StepsInPart => InPart1 ? SetupCodePage.StepsInPart1(Language.HasChoice) : StepsInPart2;
+    private int StepsInPart => InPart1 ? SetupCodePage.StepsInPart1(Language.HasChoice) : RulesInCount ? 5 : 4;
 
-    private int StepInPart => InPart1 ? _step + (Language.HasChoice ? 2 : 1) : _step - StepAbout;
+    private int StepInPart => InPart1
+        ? _step + (Language.HasChoice ? 2 : 1)
+        : _step - StepAbout - (_step > StepRules && !RulesInCount ? 1 : 0);
+
+    // The rules step counts while it may come (the board answers with rules to ask about), while it shows, and after it;
+    // otherwise it is skipped and never counted.
+    private bool RulesInCount => _step switch
+    {
+        StepRules => true,
+        > StepRules => _throughRules,
+        _ => BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules),
+    };
+
+    // Whether "Name your relays" came after the rules step, so the count keeps it once its rules are gone.
+    private bool _throughRules;
 
     // Not back past the guide's first step (the code is typed), nor from "About you" to the sign-in: that is saved, and
     // this page may be at the new address.
@@ -197,23 +234,35 @@
             <h1 tabindex="-1" @ref="_heading">@Texts["Setup.WayIn.Title"]</h1>
             <p>@Texts["Setup.WayIn.Intro"]</p>
         </div>
-        <div class="choices" role="radiogroup" aria-label="@Texts["Setup.WayIn.Label"]">
-            @foreach (var way in AccessCatalogue.All)
+        <div class="choices way-in-choices" role="radiogroup" aria-label="@Texts["Setup.WayIn.Label"]">
+            @foreach (var group in Enum.GetValues<AccessGroup>())
             {
-                var id = way.Id;
-                <label class="choice @(id == _wayIn ? "chosen" : null)">
-                    <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
-                    <span class="choice-text">
-                        <span class="title">
-                            <span class="name">@SetupText.Name(way)</span>
-                            @if (way.Simplest)
-                            {
-                                <span class="tag">@Texts["Setup.Simplest"]</span>
-                            }
-                        </span>
-                        <span class="note">@SetupText.Description(way)</span>
-                    </span>
-                </label>
+                var ways = AccessCatalogue.All.Where(way => way.Group == group).ToArray();
+                if (ways.Length > 0)
+                {
+                    var headingId = GroupHeadingId(group);
+                    <div class="way-in-group" role="group" aria-labelledby="@headingId">
+                        <h2 id="@headingId" class="way-in-group-title">@SetupText.Name(group)</h2>
+                        @foreach (var way in ways)
+                        {
+                            var id = way.Id;
+                            <label class="choice way-in-choice @(id == _wayIn ? "chosen" : null)">
+                                <input type="radio" name="way-in" checked="@(id == _wayIn)" @onchange="() => _wayIn = id" />
+                                <span class="way-in-icon-tile"><AccessMethodIcon MethodId="@id" /></span>
+                                <span class="choice-text">
+                                    <span class="title">
+                                        <span class="name">@SetupText.Name(way)</span>
+                                        @if (way.Simplest)
+                                        {
+                                            <span class="tag">@Texts["Setup.Simplest"]</span>
+                                        }
+                                    </span>
+                                    <span class="note">@SetupText.Description(way)</span>
+                                </span>
+                            </label>
+                        }
+                    </div>
+                }
             }
         </div>
         @if (_wayIn == CloudflareMethods.TunnelId)
@@ -266,8 +315,9 @@
                 @foreach (var option in options)
                 {
                     var id = option.Method.Id;
-                    <label class="choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
+                    <label class="choice sign-in-choice @(id == _signInId ? "chosen" : null) @(option.Allowed ? null : "off")">
                         <input type="radio" name="sign-in" checked="@(id == _signInId)" disabled="@(!option.Allowed)" @onchange="() => _signInId = id" />
+                        <span class="way-in-icon-tile"><AccessMethodIcon MethodId="@id" /></span>
                         <span class="choice-text">
                             <span class="title">
                                 <span class="name">@SetupText.Name(option.Method)</span>
@@ -366,6 +416,7 @@
     private BoardModelPicker? _picker;
     private BoardWhereStep? _where;
     private BoardRelaysStep? _relaysStep;
+    private BoardOwnRulesStep? _rulesStep;
 
     // What is typed on "Where is the board?", kept while the guide goes back and forth.
     private BoardWhereStep.Fields _whereFields = new();
@@ -448,9 +499,11 @@
         }
 
         Registry.StateChanged += OnBoardChanged;
+        Registry.OwnRulesChanged += OnBoardChanged;
+        OwnRulesRows.Changed += OnRulesChanged;
     }
 
-    // The chosen board's address, login and relays, for steps 3 to 5.
+    // The chosen board's address, login and relays, for its steps "Where is the board?" and "Name your relays".
     private async Task LoadBoardAsync(LiveBoard board)
     {
         _whereFields = await BoardWhereStep.LoadAsync(Address, board, CancellationToken.None);
@@ -461,6 +514,8 @@
     {
         _disposed = true;
         Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnBoardChanged;
+        OwnRulesRows.Changed -= OnRulesChanged;
         SignIns.TunnelChanged -= OnTunnelChanged;
         SignIns.TailscaleChanged -= OnTunnelChanged;
     }
@@ -490,6 +545,9 @@
             // The page closed meanwhile.
         }
     }
+
+    /// <summary>The id of a way-in group's heading, which names its group of choices, e.g. "way-in-group-localnetwork".</summary>
+    public static string GroupHeadingId(AccessGroup group) => $"way-in-group-{group.ToString().ToLowerInvariant()}";
 
     /// <summary>
     /// Whether the guide sends the person to the relays: only someone signed in, once Part 1 and the guide are done.
@@ -547,6 +605,7 @@
             {
                 StepBoard when _picker is not null => _picker.FocusAsync(),
                 StepWhere when _where is not null => _where.FocusAsync(),
+                StepRules when _rulesStep is not null => _rulesStep.FocusAsync(),
                 StepRelays when _relaysStep is not null => _relaysStep.FocusAsync(),
                 _ => _heading.FocusAsync(),
             });
@@ -567,7 +626,9 @@
     {
         if (!Busy && _step == fromStep && CanGoBack)
         {
-            _step--;
+            // Back to the rules step only from the relays that came after it, while it still has something to ask: one
+            // skipped ("Go on without a connection", no rules then) stays skipped, so the count never jumps.
+            _step = _step == StepRelays && !(_throughRules && BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules)) ? StepWhere : _step - 1;
             _sheetOpen = false;
             _error = null;
             _moved = true;
@@ -606,7 +667,8 @@
                 case StepWhere:
                     if (_where is not null && await _where.GoOnAsync())
                     {
-                        Move(StepRelays);
+                        _throughRules = false;
+                        Move(BoardOwnRulesStep.ShouldAsk(Chosen, OwnRules) ? StepRules : StepRelays);
                     }
 
                     break;
@@ -721,6 +783,8 @@
         {
             if (await _where.GoOnWithoutConnectionAsync())
             {
+                // Without a connection, the rules step is skipped: Relays warns once the board answers.
+                _throughRules = false;
                 Move(StepRelays);
             }
         }
@@ -749,6 +813,33 @@
         }
     }
 
+    // "Turn them off": on to the relays once the board's state shows them gone; otherwise the step says why and stays.
+    private async Task TurnOffRulesAsync()
+    {
+        if (!Busy && _step == StepRules && _rulesStep is not null && await _rulesStep.TurnOffAsync())
+        {
+            LeaveRules();
+        }
+    }
+
+    // "Keep them": on to the relays once kept.
+    private async Task KeepRulesAsync()
+    {
+        if (!Busy && _step == StepRules && _rulesStep is not null && await _rulesStep.KeepAsync())
+        {
+            LeaveRules();
+        }
+    }
+
+    private void LeaveRules()
+    {
+        if (_step == StepRules)
+        {
+            _throughRules = true;
+            Move(StepRelays);
+        }
+    }
+
     private void Move(int step)
     {
         _step = step;
@@ -763,12 +854,49 @@
         _error = Texts["Common.SomethingWrongTryAgain"];
     }
 
-    // From a board's read loop: the guide's own board's, for "All set".
+    // From a board's read loop: the guide's own board's, for "All set" and the rules step.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
         if (change.BoardId == _boardId)
         {
-            _ = RefreshAsync();
+            _ = RulesChangedAsync();
+        }
+    }
+
+    // A rule of the board's own noted or kept.
+    private void OnRulesChanged(object? sender, int boardId)
+    {
+        if (boardId == _boardId)
+        {
+            _ = RulesChangedAsync();
+        }
+    }
+
+    // On the rules step, rules that went by themselves (turned off at the board) leave nothing to ask, so the guide
+    // goes on; otherwise the page is drawn again (the count, "All set").
+    private async Task RulesChangedAsync()
+    {
+        using var language = Language.Use();
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                if (_step == StepRules && !Busy && _boardId is { } id && OwnRules.ToAsk(id).Count == 0)
+                {
+                    LeaveRules();
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page closed meanwhile.
         }
     }
 }

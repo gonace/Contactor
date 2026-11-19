@@ -165,6 +165,54 @@ h2 {
     color: var(--on-ink);
 }
 
+/* "After a power cut": one big button per state, its name over what the board then does. */
+.power-on {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.power-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.power-choices button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-height: 56px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.power-choices button[aria-pressed="true"] {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.power-name {
+    font-weight: 600;
+}
+
+.power-explain {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.power-choices button[aria-pressed="true"] .power-explain {
+    color: var(--on-ink);
+}
+
 .hint {
     margin: 0;
     font-size: 14px;
@@ -491,4 +539,29 @@ button:disabled {
     .save button {
         display: none;
     }
+}
+
+/* A relay the board controls by itself: why there is no switch, and a filled "Reset". */
+.in-group.unavailable {
+    background: var(--inactive-bg);
+    border: 1.5px dashed var(--inactive-border);
+}
+
+.in-group .reset {
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 12px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.in-group .reset:disabled {
+    opacity: 0.5;
+    cursor: default;
 }

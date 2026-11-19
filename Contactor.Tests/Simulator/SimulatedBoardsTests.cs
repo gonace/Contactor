@@ -4,6 +4,7 @@ using Contactor.Boards;
 using Contactor.Boards.Advantech;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Devantech;
+using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Boards.Waveshare;
 using Contactor.Simulator;
@@ -166,6 +167,34 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
     }
 
     [Theory]
+    [InlineData("shelly-1", 1)]
+    [InlineData("shelly-2", 2)]
+    [InlineData("shelly-3", 3)]
+    [InlineData(" SHELLY-4 ", 4)]
+    public async Task Should_RunEachShellyEntry_WithOrWithoutAPassword(string type, int relays)
+    {
+        Assert.Null(_boards.Add(type, FreePort(), null, null));
+        Assert.Null(_boards.Add(type, FreePort(), "", "apple"));
+
+        var boards = _boards.Boards;
+        Assert.All(boards, b => Assert.IsType<ShellySimulator>(b.Board));
+        Assert.All(boards, b => Assert.Equal(type.Trim().ToLowerInvariant(), b.Board.Model.Id));
+        Assert.All(boards, b => Assert.Equal(relays, b.Board.Model.Capabilities.RelayCount));
+        Assert.Null(Assert.Single(boards, b => !b.Board.HasLogin).Username);
+        Assert.Equal("", Assert.Single(boards, b => b.Board.HasLogin).Username);
+
+        // Port 80 needs rights a developer doesn't have; the page offers a free high port instead.
+        Assert.Equal((8180, 80), (SimulatorCatalogue.Find(type)!.Port, ShellyApi.DefaultPort));
+        Assert.Equal("The Shelly takes a password only, no user name.", _boards.Add(type, FreePort(), "admin", "apple"));
+        Assert.Equal("The password can be at most 128 characters.", _boards.Add(type, FreePort(), "", new string('a', 129)));
+
+        // Each relay switched at the device, as a person on the simulator's page does.
+        var board = boards[0];
+        await board.SwitchRelayAsync(relays, turnOn: true);
+        Assert.Equal(ChannelMask.Of(relays), board.Board.State.Relays);
+    }
+
+    [Theory]
     [InlineData("vm209", 9760, null, null, "Choose a model.")]
     [InlineData("vm208", 9760, "admin", "secret", "The VM208 takes no login.")]
     [InlineData("", 9760, null, null, "Choose a model.")]
@@ -287,7 +316,44 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         await board.SetTimerAsync(9, turnOn: true);
         Assert.Equal(ChannelMask.Of([3, 8]), timers.Timers);
         Assert.Equal(logged, board.Traffic.Count);
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => timers.SetTimerAsync(9, turnOn: true));
+        // The board itself refuses it in the task it returns, not at once.
+        var refused = timers.SetTimerAsync(9, turnOn: true);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => refused);
+    }
+
+    // The Waveshare (B)'s relay modes, one relay at a time, as its own tool would set them; a relay in linkage mode then
+    // follows its input.
+    [Fact]
+    public async Task Should_SetTheWavesharesRelayModesOneRelayAtATime()
+    {
+        Assert.Null(_boards.Add("waveshare-8b", FreePort(), null, null));
+        var board = _boards.Boards.Single();
+        var modes = (ISimulatedBoardRelayModes)board.Board;
+        Assert.Equal(["normal", "linkage", "toggle", "edge"], modes.ModeNames);
+
+        await board.SetModeAsync(3, 1);
+        await board.SetModeAsync(5, 2);
+
+        Assert.Equal([0, 0, 1, 0, 2, 0, 0, 0], modes.Modes);
+        Assert.Equal("Relay 5 set to toggle mode here", board.Traffic[0].Text);
+
+        // What the page never offers changes nothing.
+        var logged = board.Traffic.Count;
+        await board.SetModeAsync(0, 1);
+        await board.SetModeAsync(9, 1);
+        await board.SetModeAsync(2, 4);
+        await board.SetModeAsync(2, -1);
+        Assert.Equal([0, 0, 1, 0, 2, 0, 0, 0], modes.Modes);
+        Assert.Equal(logged, board.Traffic.Count);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => modes.SetModeAsync(2, 4));
+
+        // Linkage: the input switches the relay.
+        await board.SetInputAsync(3, closed: true);
+        Assert.True(board.Board.State.Relays.Contains(3));
+
+        // A model without inputs has no modes to set.
+        Assert.Null(_boards.Add("waveshare-8", FreePort(), null, null));
+        Assert.Empty(((ISimulatedBoardRelayModes)_boards.Boards.Single(b => b.Board.Model.Id == "waveshare-8").Board).Modes);
     }
 
     [Fact]

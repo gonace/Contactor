@@ -32,7 +32,7 @@ public sealed class WaveshareClientTests
         // Connected, and the first answer reported: the client waits for the next poll.
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
-        Assert.Equal(new WaveshareStatus(0b0010, 0b0100), run.Client.State.Status);
+        Assert.Equal(new WaveshareStatus(0b0010, 0b0100, new ushort[8]), run.Client.State.Status);
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
         Assert.Equal([ReadModes, ReadEightRelays, ReadEightInputs], simulator.ReceivedRequests);
         Assert.Contains(run.Changes, s => s.IsConnected && s.Relays == 0b0010 && s.Inputs == 0b0100);
@@ -494,32 +494,6 @@ public sealed class WaveshareClientTests
     }
 
     [Fact]
-    public async Task Should_NotTryAnotherConnection_WhenANewOneBreaksAtItsRelayModes()
-    {
-        // The board closes the first connection at the relay modes' read: a connection just opened isn't one from
-        // before, so the read doesn't go once more on yet another, and the poller tries again with its backoff.
-        var modeReads = 0;
-        await using var board = ScriptedBoard.Start(
-            request => request[1] switch
-            {
-                WaveshareApi.ReadHoldingRegisters when Interlocked.Increment(ref modeReads) == 1 => [],
-                WaveshareApi.ReadHoldingRegisters => WaveshareModbus.WithCrc([1, 3, 16, .. new byte[16]]),
-                _ => AllOff(request),
-            },
-            closeAfter: request => request[1] == WaveshareApi.ReadHoldingRegisters && Volatile.Read(ref modeReads) == 1);
-        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B);
-
-        await Wait.UntilAsync(() => run.Client.State.IsConnected || (run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1))));
-
-        Assert.False(run.Client.State.IsConnected);
-        Assert.Equal((1, 1), (board.Connections, board.Requests));
-
-        run.Time.Advance(TimeSpan.FromSeconds(1));
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
-        Assert.Equal(2, board.Connections);
-    }
-
-    [Fact]
     public async Task Should_ReturnWhatWasTaken_AndPollAtOnce_WhenTheReadAfterTheSwitchesGetsNoAnswer()
     {
         // The switch is answered; the read after it gets no answer.
@@ -651,7 +625,7 @@ public sealed class WaveshareClientTests
     [Theory]
     [InlineData("waveshare-8b")]
     [InlineData("waveshare-8c")]
-    public async Task Should_SetTheRelaysToNormalMode_WhenConnecting_AndSayWhatItFound(string id)
+    public async Task Should_ReadTheModesWhenConnecting_AndNeverWriteThem(string id)
     {
         var model = WaveshareModels.All.Single(m => m.Id == id);
         await using var simulator = Started(model);
@@ -661,76 +635,132 @@ public sealed class WaveshareClientTests
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.All(simulator.RelayModes, m => Assert.Equal(WaveshareApi.ModeNormal, m));
-        var reset = Assert.Single(run.Resets);
-        Assert.Equal(new ushort[] { 0, 0, 1, 0, 2, 0, 0, 0 }, reset.Modes);
+        Assert.Equal(new ushort[] { 0, 0, 1, 0, 2, 0, 0, 0 }, run.Client.State.Modes);
         Assert.Equal(ReadModes, simulator.ReceivedRequests[0]);
-        Assert.StartsWith("01 10 10 00 00 08 10 00 00", simulator.ReceivedRequests[1], StringComparison.Ordinal);
         Assert.Contains(run.Traces, t => t.Text == "Relay modes: 3 linkage, 5 toggle");
-        Assert.Contains(run.Traces, t => t.Text == "Set every relay to normal mode");
 
-        // The input no longer switches the relay.
+        // Again on a new connection, with the next reading after it: read, never written.
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval) && simulator.ConnectionCount == 1);
+        simulator.DropConnections();
+        await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
+        await run.PollAsync();
+        await run.PollAsync();
+        Assert.Equal(2, simulator.ReceivedRequests.Count(r => r == ReadModes));
+        Assert.True(run.Client.State.IsConnected);
+
+        Assert.Equal(new ushort[] { 0, 0, 1, 0, 2, 0, 0, 0 }, simulator.RelayModes);
+        Assert.DoesNotContain(simulator.ReceivedRequests, IsModeWrite);
+
+        // The input still switches the relay in linkage mode: the app left it as it was.
         await simulator.SetInputAsync(3, true);
-        Assert.Equal(0UL, simulator.Relays);
-    }
-
-    [Fact]
-    public async Task Should_WriteNothing_WhenEveryRelayIsInNormalMode()
-    {
-        await using var simulator = Started(WaveshareModels.Relay8B);
-        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B);
-
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
-
-        Assert.Empty(run.Resets);
-        Assert.DoesNotContain(simulator.ReceivedRequests, r => r.StartsWith("01 10", StringComparison.Ordinal));
-        Assert.Contains(run.Traces, t => t.Text == "Relay modes: all normal");
-    }
-
-    [Fact]
-    public async Task Should_SetTheModesAgain_OnEachNewConnection()
-    {
-        await using var simulator = Started(WaveshareModels.Relay8B);
-        await simulator.SetRelayModeAsync(1, WaveshareApi.ModeLinkage);
-        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Resets.Count == 1);
-
-        // Someone set a mode with the board's own tool, and the connection broke.
-        await simulator.SetRelayModeAsync(2, WaveshareApi.ModeEdge);
-        simulator.NoAnswer = true;
-        for (var poll = 1; poll <= BoardPoller<WaveshareStatus>.DefaultFailuresBeforeLost; poll++)
-        {
-            var failures = poll;
-            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval) && simulator.UnansweredCount == failures - 1);
-            run.Time.Advance(run.PollInterval);
-            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.WaitsOnly(WaveshareClient.RequestTimeout));
-            run.Time.Advance(WaveshareClient.RequestTimeout);
-        }
-
-        await Wait.UntilAsync(() => !run.Client.State.IsConnected && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        simulator.NoAnswer = false;
-        run.Time.Advance(TimeSpan.FromSeconds(1));
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
-
-        Assert.Equal(2, run.Resets.Count);
-        Assert.Equal(new ushort[] { 0, 3, 0, 0, 0, 0, 0, 0 }, run.Resets[1].Modes);
-        Assert.All(simulator.RelayModes, m => Assert.Equal(WaveshareApi.ModeNormal, m));
-    }
-
-    [Fact]
-    public async Task Should_LeaveTheModesAlone_WhenTurnedOffInSettings()
-    {
-        await using var simulator = Started(WaveshareModels.Relay8B);
-        await simulator.SetRelayModeAsync(3, WaveshareApi.ModeLinkage);
-        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B, resetRelayModes: false);
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
-
-        await simulator.SetInputAsync(3, true);
-
-        Assert.Equal(WaveshareApi.ModeLinkage, simulator.RelayModes[2]);
         Assert.Equal(0b0100UL, simulator.Relays);
-        Assert.Empty(run.Resets);
-        Assert.DoesNotContain(simulator.ReceivedRequests, r => r.StartsWith("01 03", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Should_ReadTheModesAgain_OnlyAfterAMinute()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8B);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal(1, simulator.ReceivedRequests.Count(r => r == ReadModes));
+
+        // 30 s: a poll of the relays and inputs only.
+        await run.PollAsync();
+        Assert.Equal(1, simulator.ReceivedRequests.Count(r => r == ReadModes));
+
+        // 60 s: the modes too.
+        await run.PollAsync();
+        Assert.Equal(2, simulator.ReceivedRequests.Count(r => r == ReadModes));
+        Assert.Equal(WaveshareClient.ModesInterval, TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public async Task Should_RaiseOwnRulesChanged_NotStateChanged_WhenOnlyTheModesChange()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8B);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var changes = run.Changes.Count;
+
+        await simulator.SetRelayModeAsync(2, WaveshareApi.ModeEdge);
+        await run.PollAsync();
+        await run.PollAsync();
+
+        var change = Assert.Single(run.OwnRulesChanges);
+        Assert.Equal(new ushort[] { 0, 3, 0, 0, 0, 0, 0, 0 }, change.Modes);
+        Assert.True(change.IsConnected);
+        Assert.Equal(changes, run.Changes.Count);
+        Assert.Equal(new ushort[] { 0, 3, 0, 0, 0, 0, 0, 0 }, run.Client.State.Modes);
+    }
+
+    [Fact]
+    public async Task Should_SetOnlyTheRelayAsked_BackToNormal_WithOneSingleRegisterWrite()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8B);
+        await simulator.SetRelayModeAsync(2, WaveshareApi.ModeLinkage);
+        await simulator.SetRelayModeAsync(3, WaveshareApi.ModeToggle);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        var before = simulator.ReceivedRequests.Count;
+
+        var taken = await run.Client.TurnOffModesAsync(0b0010, Cancel);
+
+        Assert.Equal(0b0010UL, taken);
+        var sent = simulator.ReceivedRequests.Skip(before).ToList();
+        Assert.Equal(WaveshareModbus.Hex(WaveshareModbus.WriteSingleRegister(1, 0x1001, 0).Frame), sent[0]);
+        Assert.Equal("01 06 10 01 00 00 DC CA", sent[0]);
+        Assert.Single(sent, IsModeWrite);
+        Assert.Equal(new ushort[] { 0, 0, 2, 0, 0, 0, 0, 0 }, simulator.RelayModes);
+
+        // Read back in the same command: the state shows it at once.
+        Assert.Contains(ReadModes, sent);
+        Assert.Equal(new ushort[] { 0, 0, 2, 0, 0, 0, 0, 0 }, run.Client.State.Modes);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 2 set to normal mode");
+    }
+
+    [Fact]
+    public async Task Should_KeepGoing_AndNotCountARefusedWrite_AsTaken()
+    {
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.ReadHoldingRegisters => WaveshareModbus.WithCrc([1, 3, 16, 0, 1, 0, 1, 0, 1, .. new byte[10]]),
+            WaveshareApi.WriteSingleRegister when request[3] == 0x00 => WaveshareModbus.WithCrc([1, 0x86, 4]),
+            WaveshareApi.WriteSingleRegister => WaveshareModbus.WithCrc(request.AsSpan(0, 6)),
+            _ => AllOff(request),
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        // Relay 1's write is refused; relays 2 and 3 still go.
+        Assert.Equal(0b0110UL, await run.Client.TurnOffModesAsync(0b0111, Cancel));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("The board didn't take the command for relay 1: ", StringComparison.Ordinal) && t.IsError);
+    }
+
+    [Fact]
+    public async Task Should_Throw_WhenTheBoardTakesNoModeWrite()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8C);
+        await simulator.SetRelayModeAsync(4, WaveshareApi.ModeToggle);
+        simulator.RefuseModeWrites = true;
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8C, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffModesAsync(0b1000, Cancel));
+
+        Assert.Equal(WaveshareApi.ModeToggle, simulator.RelayModes[3]);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_RefuseToTurnOffModes_ItCantWrite_BeforeAnythingIsSent()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.ReceivedRequests.Count;
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => run.Client.TurnOffModesAsync(0b0001, Cancel));
+        Assert.Equal(before, simulator.ReceivedRequests.Count);
     }
 
     [Theory]
@@ -746,82 +776,29 @@ public sealed class WaveshareClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
         Assert.All(simulator.ReceivedRequests, r => Assert.StartsWith("01 01", r, StringComparison.Ordinal));
+        Assert.Null(run.Client.State.Modes);
     }
 
     [Theory]
     [InlineData("refused")]
     [InlineData("unreadable")]
-    public async Task Should_SetTheModesAnyway_WhenTheyCantBeRead(string how)
+    [InlineData("unknown mode")]
+    public async Task Should_GiveNoModes_WhenTheirReadFails(string how)
     {
-        // The modes may be anything: all eight are written to normal all the same.
+        // Unknown: never a guess, and never a write.
         await using var board = ScriptedBoard.Start(request => request[1] switch
         {
             WaveshareApi.ReadHoldingRegisters when how == "refused" => WaveshareModbus.WithCrc([1, 0x83, 4]),
+            WaveshareApi.ReadHoldingRegisters when how == "unknown mode" => WaveshareModbus.WithCrc([1, 3, 16, 0, 4, .. new byte[14]]),
             WaveshareApi.ReadHoldingRegisters => BadCrc(WaveshareModbus.WithCrc([1, 3, 16, .. new byte[16]])),
-            WaveshareApi.WriteMultipleRegisters => WaveshareModbus.WithCrc(request.AsSpan(0, 6)),
             _ => AllOff(request),
         });
         await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B);
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        var reset = Assert.Single(run.Resets);
-        Assert.Null(reset.Modes);
-        Assert.Empty(run.NotResets);
-        Assert.Contains(run.Traces, t => t.Text.StartsWith("Couldn't read the relay modes: ", StringComparison.Ordinal) && t.IsError);
-        Assert.Contains(run.Traces, t => t.Text == "Relay modes written");
-    }
-
-    [Fact]
-    public async Task Should_ReportOnce_WhenTheBoardRefusesTheModesItCouldntRead()
-    {
-        await using var simulator = Started(WaveshareModels.Relay8B);
-        simulator.RefuseModeReads = true;
-        simulator.RefuseModeWrites = true;
-        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B);
-
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
-        await run.PollAsync();
-        await run.PollAsync();
-
-        // Once per connection, not on every poll; the board still works.
-        var notReset = Assert.Single(run.NotResets);
-        Assert.Equal("The board refused it: it failed (code 4).", notReset.Reason);
-        Assert.Empty(run.Resets);
-        Assert.Contains(run.Traces, t => t.Text == "Couldn't set the relays to normal mode: The board refused it: it failed (code 4)." && t.IsError);
-        Assert.Equal(1, simulator.ReceivedRequests.Count(r => r.StartsWith("01 10", StringComparison.Ordinal)));
-    }
-
-    [Fact]
-    public async Task Should_Report_WhenTheBoardRefusesTheModesItRead()
-    {
-        await using var simulator = Started(WaveshareModels.Relay8C);
-        await simulator.SetRelayModeAsync(4, WaveshareApi.ModeToggle);
-        simulator.RefuseModeWrites = true;
-        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8C);
-
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
-
-        Assert.Single(run.NotResets);
-        Assert.Empty(run.Resets);
-        Assert.Equal(WaveshareApi.ModeToggle, simulator.RelayModes[3]);
-    }
-
-    [Fact]
-    public async Task Should_Report_WhenTheWritesAnswerIsUnreadable()
-    {
-        await using var board = ScriptedBoard.Start(request => request[1] switch
-        {
-            WaveshareApi.ReadHoldingRegisters => WaveshareModbus.WithCrc([1, 3, 16, 0, 1, .. new byte[14]]),
-            WaveshareApi.WriteMultipleRegisters => [.. request.AsSpan(0, 6), 0, 0],
-            _ => AllOff(request),
-        });
-        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B);
-
-        await Wait.UntilAsync(() => run.Client.State.IsConnected);
-
-        Assert.Equal("The answer's CRC is wrong.", Assert.Single(run.NotResets).Reason);
-        Assert.Empty(run.Resets);
+        Assert.Null(run.Client.State.Modes);
+        Assert.Contains(run.Traces, t => t.IsError && (t.Text.StartsWith("Couldn't read the relay modes: ", StringComparison.Ordinal) || t.Text.StartsWith("Relay modes the app doesn't know", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -870,9 +847,15 @@ public sealed class WaveshareClientTests
         return simulator;
     }
 
-    private static WaveshareClient CreateClient(int port, TimeProvider time, BoardModel model, int pollSeconds = 2, string host = "127.0.0.1", bool resetRelayModes = true)
+    // A write of the relay modes: FC 06 or FC 10 at 0x1000–0x1007.
+    private static bool IsModeWrite(string request)
     {
-        var options = new WaveshareOptions { Host = host, Port = port, PollSeconds = pollSeconds, ResetRelayModes = resetRelayModes };
+        return request.StartsWith("01 06 10 0", StringComparison.Ordinal) || request.StartsWith("01 10 10 0", StringComparison.Ordinal);
+    }
+
+    private static WaveshareClient CreateClient(int port, TimeProvider time, BoardModel model, int pollSeconds = 2, string host = "127.0.0.1")
+    {
+        var options = new WaveshareOptions { Host = host, Port = port, PollSeconds = pollSeconds };
         return new WaveshareClient(Options.Create(options), model, time, NullLogger<WaveshareClient>.Instance);
     }
 
@@ -882,8 +865,7 @@ public sealed class WaveshareClientTests
         private readonly Task _task;
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<WaveshareState> _changes = [];
-        private readonly List<WaveshareRelayModesReset> _resets = [];
-        private readonly List<WaveshareRelayModesNotReset> _notResets = [];
+        private readonly List<WaveshareState> _ownRulesChanges = [];
 
         private ClientRun(WaveshareClient client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
@@ -893,8 +875,7 @@ public sealed class WaveshareClientTests
             _cts = cts;
             client.Traced += (_, entry) => Add(_traces, entry);
             client.StateChanged += (_, state) => Add(_changes, state);
-            client.RelayModesReset += (_, reset) => Add(_resets, reset);
-            client.RelayModesNotReset += (_, notReset) => Add(_notResets, notReset);
+            client.OwnRulesChanged += (_, state) => Add(_ownRulesChanges, state);
             _task = client.RunAsync(cts.Token);
         }
 
@@ -909,14 +890,12 @@ public sealed class WaveshareClientTests
 
         public List<WaveshareState> Changes => Copy(_changes);
 
-        public List<WaveshareRelayModesReset> Resets => Copy(_resets);
+        public List<WaveshareState> OwnRulesChanges => Copy(_ownRulesChanges);
 
-        public List<WaveshareRelayModesNotReset> NotResets => Copy(_notResets);
-
-        public static ClientRun Start(int port, BoardModel model, int pollSeconds = 2, bool resetRelayModes = true)
+        public static ClientRun Start(int port, BoardModel model, int pollSeconds = 2)
         {
             var time = new ManualTimeProvider();
-            return new ClientRun(CreateClient(port, time, model, pollSeconds, resetRelayModes: resetRelayModes), time, TimeSpan.FromSeconds(pollSeconds), new CancellationTokenSource());
+            return new ClientRun(CreateClient(port, time, model, pollSeconds), time, TimeSpan.FromSeconds(pollSeconds), new CancellationTokenSource());
         }
 
         /// <summary>Moves the clock to the next poll, once the client waits for it, and waits until it was answered.</summary>
