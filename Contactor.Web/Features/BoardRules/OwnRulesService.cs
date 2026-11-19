@@ -11,6 +11,22 @@ namespace Contactor.Web.Features.BoardRules;
 public sealed record OwnRuleRow(int Channel, OwnRuleKind Kind, DateTime FoundUtc, DateTime? KeptUtc, string? KeptBy);
 
 /// <summary>
+/// What became of a person's "Keep" (<see cref="OwnRulesService.KeepAsync"/>): kept (also when it was already), refused
+/// because the relay on <see cref="InGroup"/> is in a group and the rule may not be kept there, or gone.
+/// </summary>
+internal readonly record struct KeepOutcome(bool Kept, int? InGroup)
+{
+    public static KeepOutcome Done { get; } = new(Kept: true, InGroup: null);
+
+    public static KeepOutcome Gone { get; } = new(Kept: false, InGroup: null);
+
+    public static KeepOutcome Grouped(int channel)
+    {
+        return new(Kept: false, InGroup: channel);
+    }
+}
+
+/// <summary>
 /// Remembers the rules of their own each board reports (<see cref="BoardState.OwnRules"/>, issue #497) and logs what it
 /// finds, so the screens can warn about them. It never sends a command to a board: the app changes a board's own rules
 /// only on a person's press (<see cref="OwnRulesHandler"/>).
@@ -197,12 +213,19 @@ public sealed partial class OwnRulesService : BackgroundService
 
     /// <summary>
     /// Marks the board's rule as kept by <paramref name="userEmail"/> and logs it: the app no longer warns about it.
-    /// Returns false when the app has no such rule (any more), also when its row goes meanwhile (a new address or
-    /// another model deletes it), and for a rule no person may keep (<see cref="OwnRulesHandler.CanKeep"/>); true,
+    /// The keep is one conditional write (<see cref="MarkKeptAsync"/>), so a group saved at the same moment is never
+    /// crossed: for the auto-on of a relay that is in a group by then, nothing is saved and the outcome names its
+    /// channel. Gone when the app has no such rule (any more), also when its row goes meanwhile (a new address or
+    /// another model deletes it), and for a kind no person may keep (<see cref="OwnRulesHandler.CanKeep"/>); kept,
     /// logging nothing again, when it was kept already.
     /// </summary>
-    internal async Task<bool> KeepAsync(int boardId, int channel, OwnRuleKind kind, string userEmail, CancellationToken cancellationToken)
+    internal async Task<KeepOutcome> KeepAsync(int boardId, int channel, OwnRuleKind kind, string userEmail, CancellationToken cancellationToken)
     {
+        if (!OwnRulesHandler.CanKeep(kind, inGroup: false))
+        {
+            return KeepOutcome.Gone;
+        }
+
         var changed = false;
         await _work.WaitAsync(cancellationToken);
         try
@@ -211,43 +234,46 @@ public sealed partial class OwnRulesService : BackgroundService
             List<BoardOwnRule> rows;
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
-                var row = await db.BoardOwnRules.SingleOrDefaultAsync(r => r.BoardId == boardId && r.Channel == channel && r.Kind == text, cancellationToken);
-                if (row is null || !OwnRulesHandler.CanKeep(kind, (await GroupedRelaysAsync(db, boardId, cancellationToken)).ContainsKey(channel)))
+                var row = await db.BoardOwnRules.AsNoTracking().SingleOrDefaultAsync(r => r.BoardId == boardId && r.Channel == channel && r.Kind == text, cancellationToken);
+                if (row is null)
                 {
-                    return false;
+                    return KeepOutcome.Gone;
                 }
 
                 if (row.KeptUtc is not null)
                 {
-                    return true;
+                    return KeepOutcome.Done;
                 }
 
-                row.KeptUtc = _clock.UtcNow;
-                row.KeptBy = userEmail;
-                db.EventLog.Add(new EventLogEntry
+                // Read before the write: the transaction holds the database only for the write and its event.
+                var relayId = await db.Relays.Where(r => r.BoardId == boardId && r.Channel == channel).Select(r => (int?)r.Id).SingleOrDefaultAsync(cancellationToken);
+                var now = _clock.UtcNow;
+                await using (var transaction = await db.Database.BeginTransactionAsync(cancellationToken))
                 {
-                    TimestampUtc = row.KeptUtc.Value,
-                    BoardId = boardId,
-                    RelayId = await db.Relays.Where(r => r.BoardId == boardId && r.Channel == channel).Select(r => (int?)r.Id).SingleOrDefaultAsync(cancellationToken),
-                    Actor = userEmail,
-                    Action = EventActions.BoardOwnRuleKept,
-                    Details = JsonSerializer.Serialize(new { kind = text, relay = channel }),
-                });
-                try
-                {
+                    if (await MarkKeptAsync(db, boardId, channel, text, now, userEmail, cancellationToken) == 0)
+                    {
+                        // Nothing written: the relay joined a group, the row went, or someone else kept it meanwhile.
+                        return await NotMarkedAsync(db, boardId, channel, text, cancellationToken);
+                    }
+
+                    db.EventLog.Add(new EventLogEntry
+                    {
+                        TimestampUtc = now,
+                        BoardId = boardId,
+                        RelayId = relayId,
+                        Actor = userEmail,
+                        Action = EventActions.BoardOwnRuleKept,
+                        Details = JsonSerializer.Serialize(new { kind = text, relay = channel }),
+                    });
                     await db.SaveChangesAsync(cancellationToken);
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    // Deleted between the read and the save, e.g. by a new address: nothing was saved or logged.
-                    return false;
+                    await transaction.CommitAsync(cancellationToken);
                 }
 
                 rows = await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
             }
 
             changed = Publish(boardId, rows);
-            return true;
+            return KeepOutcome.Done;
         }
         finally
         {
@@ -264,33 +290,36 @@ public sealed partial class OwnRulesService : BackgroundService
     /// <paramref name="userEmail"/>, and logs each once, also a rule the service hasn't noted yet: its row is made here,
     /// logged as found as the service would, so a person never waits for the service's save (which, after a failure,
     /// is tried again only 30 s later). Runs under the same lock as the service's own work, so the service never
-    /// inserts the same row at the same time, and once this row is there it finds it and logs nothing more. Only rules
-    /// the board reports now are kept; returns false, saving nothing, when it no longer reports one of them, or one is a
-    /// rule no person may keep (<see cref="OwnRulesHandler.CanKeep"/>).
+    /// inserts the same row at the same time, and once this row is there it finds it and logs nothing more. Each keep
+    /// is one conditional write (<see cref="MarkKeptAsync"/>), all in one transaction. Only rules the board reports now
+    /// are kept; gone, saving nothing, when it no longer reports one of them, and refused, saving nothing, with the
+    /// channel, when one is a rule no person may keep on its relay (<see cref="OwnRulesHandler.CanKeep"/>), also when
+    /// the relay joined a group meanwhile.
     /// </summary>
-    internal async Task<bool> KeepReportedAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
+    internal async Task<KeepOutcome> KeepReportedAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(rules);
         var changed = false;
         await _work.WaitAsync(cancellationToken);
         try
         {
-            if (_registry.Find(boardId)?.State.OwnRules is not { } reported || !rules.All(reported.Contains))
+            if (_registry.Find(boardId)?.State.OwnRules is not { } reported || !rules.All(reported.Contains) || !rules.All(r => OwnRulesHandler.CanKeep(r.Kind, inGroup: false)))
             {
-                return false;
+                return KeepOutcome.Gone;
             }
 
             List<BoardOwnRule> rows;
             await using (var db = await _dbFactory.CreateDbContextAsync(cancellationToken))
             {
                 var grouped = await GroupedRelaysAsync(db, boardId, cancellationToken);
-                if (!rules.All(r => OwnRulesHandler.CanKeep(r.Kind, grouped.ContainsKey(r.Relay))))
+                if (rules.FirstOrDefault(r => !OwnRulesHandler.CanKeep(r.Kind, grouped.ContainsKey(r.Relay))) is { } refused)
                 {
-                    return false;
+                    return KeepOutcome.Grouped(refused.Relay);
                 }
 
                 var now = _clock.UtcNow;
                 var existing = await db.BoardOwnRules.Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
+                List<(int Channel, string Kind, int? RelayId)> kept = [];
                 var relays = await db.Relays.Where(r => r.BoardId == boardId).ToDictionaryAsync(r => r.Channel, r => r.Id, cancellationToken);
                 foreach (var rule in rules.Distinct())
                 {
@@ -316,8 +345,33 @@ public sealed partial class OwnRulesService : BackgroundService
                         continue;
                     }
 
-                    row.KeptUtc = now;
-                    row.KeptBy = userEmail;
+                    kept.Add((rule.Relay, kind, relayId));
+                }
+
+                // Read before the writes: the transaction holds the database only for them and their events.
+                await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+                try
+                {
+                    // The new rows first, not kept: each keep is then the same conditional write as for one.
+                    await db.SaveChangesAsync(cancellationToken);
+                    foreach (var (channel, kind, _) in kept)
+                    {
+                        if (await MarkKeptAsync(db, boardId, channel, kind, now, userEmail, cancellationToken) == 0)
+                        {
+                            // Rolled back with the transaction: nothing is saved or logged.
+                            return await NotMarkedAsync(db, boardId, channel, kind, cancellationToken);
+                        }
+                    }
+                }
+                catch (DbUpdateException)
+                {
+                    // A row deleted meanwhile (a new address, another model, which don't take this lock), or one made by
+                    // something else despite the lock: nothing was saved or logged, and the person is told so.
+                    return KeepOutcome.Gone;
+                }
+
+                foreach (var (channel, kind, relayId) in kept)
+                {
                     db.EventLog.Add(new EventLogEntry
                     {
                         TimestampUtc = now,
@@ -325,26 +379,17 @@ public sealed partial class OwnRulesService : BackgroundService
                         RelayId = relayId,
                         Actor = userEmail,
                         Action = EventActions.BoardOwnRuleKept,
-                        Details = JsonSerializer.Serialize(new { kind, relay = rule.Relay }),
+                        Details = JsonSerializer.Serialize(new { kind, relay = channel }),
                     });
                 }
 
-                try
-                {
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-                catch (DbUpdateException)
-                {
-                    // A row deleted meanwhile (a new address, another model, which don't take this lock), or one made by
-                    // something else despite the lock: nothing was saved or logged, and the person is told so.
-                    return false;
-                }
-
+                await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
                 rows = await db.BoardOwnRules.AsNoTracking().Where(r => r.BoardId == boardId).ToListAsync(cancellationToken);
             }
 
             changed = Publish(boardId, rows);
-            return true;
+            return KeepOutcome.Done;
         }
         finally
         {
@@ -354,6 +399,40 @@ public sealed partial class OwnRulesService : BackgroundService
                 RaiseChanged(boardId);
             }
         }
+    }
+
+    // Keeps the board's rule in one statement: only a row not kept yet, and for a kind a person may keep only on a relay
+    // in no group (OwnRulesHandler.KeptOnlyOutsideGroups) only while its relay is in no group. SQLite checks that in the
+    // same UPDATE, so a group saved at the same moment, which doesn't take this service's lock, is never crossed: either
+    // the group's save comes first and nothing is written here, or this comes first and the group's save forgets it
+    // (ForgetKeepsInGroupsAsync). The rows written: 1, or 0.
+    private static Task<int> MarkKeptAsync(ContactorDbContext db, int boardId, int channel, string kind, DateTime now, string userEmail, CancellationToken cancellationToken)
+    {
+        var outsideOnly = OutsideGroupKinds();
+        return db.BoardOwnRules
+            .Where(r => r.BoardId == boardId && r.Channel == channel && r.Kind == kind && r.KeptUtc == null)
+            .Where(r => !outsideOnly.Contains(r.Kind) || !db.RelayGroupMembers.Any(m => m.Relay!.BoardId == boardId && m.Relay.Channel == channel))
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.KeptUtc, now).SetProperty(x => x.KeptBy, userEmail), cancellationToken);
+    }
+
+    // Why a keep wrote nothing: refused when the rule may not be kept on its relay, which is in a group now; done when
+    // someone kept it meanwhile; otherwise gone.
+    private static async Task<KeepOutcome> NotMarkedAsync(ContactorDbContext db, int boardId, int channel, string kind, CancellationToken cancellationToken)
+    {
+        if (OutsideGroupKinds().Contains(kind) && await db.RelayGroupMembers.AnyAsync(m => m.Relay!.BoardId == boardId && m.Relay.Channel == channel, cancellationToken))
+        {
+            return KeepOutcome.Grouped(channel);
+        }
+
+        return await db.BoardOwnRules.AnyAsync(r => r.BoardId == boardId && r.Channel == channel && r.Kind == kind && r.KeptUtc != null, cancellationToken)
+            ? KeepOutcome.Done
+            : KeepOutcome.Gone;
+    }
+
+    // The kinds, as saved, a person may keep only on a relay in no group.
+    private static List<string> OutsideGroupKinds()
+    {
+        return [.. OwnRulesHandler.KeptOnlyOutsideGroups.Select(OwnRuleKinds.For)];
     }
 
     /// <summary>The board's relays that are in a group, by channel, with their names.</summary>
@@ -375,7 +454,7 @@ public sealed partial class OwnRulesService : BackgroundService
     public static async Task ForgetKeepsInGroupsAsync(ContactorDbContext db, int boardId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(db);
-        List<string> kinds = [.. Enum.GetValues<OwnRuleKind>().Where(k => OwnRulesHandler.CanKeep(k, inGroup: false) && !OwnRulesHandler.CanKeep(k, inGroup: true)).Select(OwnRuleKinds.For)];
+        var kinds = OutsideGroupKinds();
         var grouped = db.RelayGroupMembers.Where(m => m.Relay!.BoardId == boardId).Select(m => m.Relay!.Channel);
         await db.BoardOwnRules
             .Where(r => r.BoardId == boardId && r.KeptUtc != null && kinds.Contains(r.Kind) && grouped.Contains(r.Channel))

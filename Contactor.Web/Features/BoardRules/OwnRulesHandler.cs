@@ -67,6 +67,13 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
+    /// The kinds a person may keep only on a relay in no group, from <see cref="CanKeep"/> so the two never differ: the
+    /// database checks them when a rule is kept (<see cref="OwnRulesService"/>) and when a group is saved
+    /// (<see cref="OwnRulesService.ForgetKeepsInGroupsAsync"/>).
+    /// </summary>
+    public static IReadOnlyList<OwnRuleKind> KeptOnlyOutsideGroups { get; } = [.. Enum.GetValues<OwnRuleKind>().Where(k => CanKeep(k, inGroup: false) && !CanKeep(k, inGroup: true))];
+
+    /// <summary>
     /// The board's own rules the app warns about: those the board reports now that no person kept. None while the
     /// board's rules aren't known (it can't read them, or hasn't answered), until the app has read which rules people
     /// kept (just after the start), and for a board the app doesn't run.
@@ -196,7 +203,7 @@ public sealed partial class OwnRulesHandler
             return null;
         }
 
-        return await _rules.KeepReportedAsync(boardId, keepable, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
+        return await WordsAsync(boardId, await _rules.KeepReportedAsync(boardId, keepable, userEmail, cancellationToken), cancellationToken);
     }
 
     /// <summary>
@@ -278,17 +285,28 @@ public sealed partial class OwnRulesHandler
             return _texts["OwnRules.Keep.Unavailable"].Value;
         }
 
-        if (!CanKeep(kind, inGroup: true))
+        // The service refuses the auto-on of a relay in a group in the same write that keeps it (no "Keep" is offered
+        // for it either), so a group saved at the same moment is never crossed.
+        return await WordsAsync(boardId, await _rules.KeepAsync(boardId, channel, kind, userEmail, cancellationToken), cancellationToken);
+    }
+
+    // A keep's outcome in words: null when kept, "Can't be kept: Heat is in a group, …" when the relay is in a group,
+    // otherwise "The board no longer has that rule.".
+    private async Task<string?> WordsAsync(int boardId, KeepOutcome outcome, CancellationToken cancellationToken)
+    {
+        if (outcome.Kept)
         {
-            await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-            if ((await OwnRulesService.GroupedRelaysAsync(db, boardId, cancellationToken)).TryGetValue(channel, out var name))
-            {
-                // No "Keep" is offered for it on a relay in a group; nothing is saved.
-                return InGroup(channel, name);
-            }
+            return null;
         }
 
-        return await _rules.KeepAsync(boardId, channel, kind, userEmail, cancellationToken) ? null : _texts["OwnRules.Keep.Gone"].Value;
+        if (outcome.InGroup is not { } channel)
+        {
+            return _texts["OwnRules.Keep.Gone"].Value;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var name = await db.Relays.Where(r => r.BoardId == boardId && r.Channel == channel).Select(r => r.Name).SingleOrDefaultAsync(cancellationToken);
+        return InGroup(channel, name);
     }
 
     /// <summary>
