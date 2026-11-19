@@ -186,18 +186,23 @@
                             {
                                 <fieldset class="timers">
                                     <legend class="hint">The device's answers</legend>
-                                    <label class="check">
-                                        <input type="checkbox" checked="@shelly.Throttle" @onchange="e => shelly.SetThrottle(e.Value is true)" />
-                                        Ask the app to wait (429)
-                                    </label>
+                                    @* Only a device with a password asks for the digest, and only then can it ask the app to wait. *@
+                                    @if (shelly.HasPassword)
+                                    {
+                                        <label class="check">
+                                            <input type="checkbox" checked="@shelly.Throttle" @onchange="e => shelly.SetThrottle(e.Value is true)" />
+                                            Ask the app to wait (429)
+                                        </label>
+                                    }
                                     <label class="mode">
                                         <span>Firmware</span>
                                         <input class="mono firmware" maxlength="@ShellyControls.MaxFirmwareLength" autocomplete="off" spellcheck="false"
-                                               value="@shelly.Firmware" @onchange="e => _firmwareError = shelly.SetFirmware(e.Value as string)" />
+                                               value="@shelly.Firmware" @onchange="e => _shellyForm.SetFirmware(shelly, e.Value as string)" />
                                     </label>
-                                    @if (_firmwareError is not null)
+                                    <span class="hint">@(shelly.HasPassword ? "Before 1.7.0 the app refuses it; before 2.0.0 the password is asked for on every request." : "Before 1.7.0 the app refuses it.")</span>
+                                    @if (_shellyForm.FirmwareError is not null)
                                     {
-                                        <p class="error" role="alert">@_firmwareError</p>
+                                        <p class="error" role="alert">@_shellyForm.FirmwareError</p>
                                     }
                                     <label class="mode">
                                         <span>Profile</span>
@@ -270,26 +275,27 @@
                                             <span class="schedule">Schedule @id.ToString(CultureInfo.InvariantCulture) · @ShellyControls.Describe(schedule)</span>
                                         </label>
                                     }
-                                    <form class="schedule-add" @onsubmit="() => _scheduleError = shelly.AddSchedule(_scheduleRelay, _scheduleOn, _scheduleTime)">
+                                    <form class="schedule-add" @onsubmit="() => _shellyForm.AddSchedule(shelly)">
                                         <label class="visually-hidden" for="schedule-relay">Relay</label>
-                                        <select id="schedule-relay" @bind="_scheduleRelay">
+                                        @* Each option says whether it is chosen, so the page shows it from its first drawing on. *@
+                                        <select id="schedule-relay" @onchange="e => _shellyForm.SetScheduleRelay(e.Value as string)">
                                             @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                             {
-                                                <option value="@relay.ToString(CultureInfo.InvariantCulture)">Relay @relay</option>
+                                                <option value="@relay.ToString(CultureInfo.InvariantCulture)" selected="@(_shellyForm.ScheduleRelay == relay)">Relay @relay</option>
                                             }
                                         </select>
                                         <label class="visually-hidden" for="schedule-on">On or off</label>
-                                        <select id="schedule-on" @bind="_scheduleOn">
-                                            <option value="true">on</option>
-                                            <option value="false">off</option>
+                                        <select id="schedule-on" @onchange="e => _shellyForm.SetScheduleOn(e.Value as string)">
+                                            <option value="@ShellyForm.On" selected="@(_shellyForm.ScheduleOn == ShellyForm.On)">on</option>
+                                            <option value="@ShellyForm.Off" selected="@(_shellyForm.ScheduleOn == ShellyForm.Off)">off</option>
                                         </select>
                                         <label class="visually-hidden" for="schedule-time">Time</label>
-                                        <input id="schedule-time" type="time" class="mono" value="@_scheduleTime" @onchange="e => _scheduleTime = e.Value as string" />
+                                        <input id="schedule-time" type="time" class="mono" value="@_shellyForm.ScheduleTime" @onchange="e => _shellyForm.ScheduleTime = e.Value as string" />
                                         <button type="submit" disabled="@(schedules.Count >= ShellyApi.MaxScheduleJobs)">Add schedule</button>
                                     </form>
-                                    @if (_scheduleError is not null)
+                                    @if (_shellyForm.ScheduleError is not null)
                                     {
-                                        <p class="error" role="alert">@_scheduleError</p>
+                                        <p class="error" role="alert">@_shellyForm.ScheduleError</p>
                                     }
                                 </fieldset>
                             }
@@ -350,11 +356,7 @@
     private string _address = SimulatorOptions.DefaultAppAddress;
     private bool _addOpen;
     private bool _trafficOpen;
-    private string? _firmwareError;
-    private string? _scheduleError;
-    private int _scheduleRelay = 1;
-    private bool _scheduleOn = true;
-    private string? _scheduleTime = "08:00";
+    private readonly ShellyForm _shellyForm = new();
 
     private RunningBoard? Selected => _boards.FirstOrDefault(b => b.Id == _selectedId) ?? _boards.FirstOrDefault();
 
@@ -364,6 +366,7 @@
     {
         _address = string.IsNullOrWhiteSpace(Options.Value.AppAddress) ? SimulatorOptions.DefaultAppAddress : Options.Value.AppAddress.Trim();
         _boards = Simulator.Boards;
+        _shellyForm.Follow(Selected?.Id);
         _newPort = NextFreePort();
         Simulator.Changed += OnChanged;
     }
@@ -373,17 +376,10 @@
         Simulator.Changed -= OnChanged;
     }
 
-    // Another board: the errors and the new schedule's relay were the one before's.
     private void Select(int id)
     {
-        if (id != Selected?.Id)
-        {
-            _firmwareError = null;
-            _scheduleError = null;
-            _scheduleRelay = 1;
-        }
-
         _selectedId = id;
+        _shellyForm.Follow(Selected?.Id);
     }
 
     private void Add()
@@ -399,6 +395,7 @@
         {
             _boards = Simulator.Boards;
             _selectedId = _boards.FirstOrDefault(b => b.Board.Port == port)?.Id;
+            _shellyForm.Follow(Selected?.Id);
             _newPort = NextFreePort();
             _newUsername = "";
             _newPassword = "";
@@ -409,6 +406,7 @@
     {
         await Simulator.RemoveAsync(board.Id);
         _boards = Simulator.Boards;
+        _shellyForm.Follow(Selected?.Id);
         _newPort = NextFreePort();
     }
 
@@ -546,6 +544,7 @@
                 // A port the page offered, not one typed in, is offered afresh: a board added another way may use it now.
                 var offered = _newPort == NextFreePort();
                 _boards = Simulator.Boards;
+                _shellyForm.Follow(Selected?.Id);
                 if (offered)
                 {
                     _newPort = NextFreePort();

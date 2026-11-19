@@ -76,6 +76,7 @@ public sealed class SimulatorPageTests
             builder.ConfigureLogging(logging => logging.ClearProviders());
             builder.UseSetting("Simulator:Boards:0:Type", "shelly-2");
             builder.UseSetting("Simulator:Boards:0:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            builder.UseSetting("Simulator:Boards:0:Password", "apple");
         });
         using var http = app.CreateClient();
         var shelly = app.Services.GetRequiredService<Contactor.Simulator.SimulatedBoards>().Boards.Single().Shelly!;
@@ -92,6 +93,8 @@ public sealed class SimulatorPageTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
 
         Assert.Matches("<input type=\"checkbox\" checked[^>]*/?>\\s*Ask the app to wait \\(429\\)\\s*</label>", html);
+        Assert.Contains("Before 1.7.0 the app refuses it; before 2.0.0 the password is asked for on every request.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("apple", html, StringComparison.Ordinal);
         Assert.Matches("<span[^>]*>Firmware</span>\\s*<input class=\"mono firmware\" maxlength=\"32\"[^>]*value=\"1.6.0\"", html);
         Assert.Matches("<option value=\"cover\" selected[^>]*>cover</option>", html);
         Assert.Contains(">none</option>", html, StringComparison.Ordinal);
@@ -103,7 +106,31 @@ public sealed class SimulatorPageTests
         Assert.Matches("<input type=\"checkbox\" checked[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 1 · 06:30 every day · relay 2 on</span>", html);
         Assert.Matches("<input type=\"checkbox\"(?! checked)[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 2 · 22:00 every day · relay 1 off</span>", html);
         Assert.Matches("<input id=\"schedule-time\" type=\"time\"[^>]*value=\"08:00\"", html);
+        Assert.Matches("<option value=\"on\" selected[^>]*>on</option>", html);
+        Assert.Matches("<option value=\"off\"(?! selected)[^>]*>off</option>", html);
+        Assert.Matches("<option value=\"1\" selected[^>]*>Relay 1</option>", html);
         Assert.Contains("Add schedule</button>", html, StringComparison.Ordinal);
+    }
+
+    // Without a password the device asks for no digest, so it can't ask the app to wait; its firmware still counts.
+    [Fact]
+    public async Task Should_LeaveOutAskingTheAppToWait_ForAShellyWithoutAPassword()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        await using var app = new WebApplicationFactory<Contactor.Simulator.Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureLogging(logging => logging.ClearProviders());
+            builder.UseSetting("Simulator:Boards:0:Type", "shelly-1");
+            builder.UseSetting("Simulator:Boards:0:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        });
+        using var http = app.CreateClient();
+
+        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
+
+        Assert.DoesNotContain("Ask the app to wait", html, StringComparison.Ordinal);
+        Assert.Matches("<span[^>]*>Firmware</span>", html);
+        Assert.Matches("<span class=\"hint\"[^>]*>Before 1.7.0 the app refuses it.</span>", html);
+        Assert.DoesNotContain("before 2.0.0", html, StringComparison.Ordinal);
     }
 
     [Fact]

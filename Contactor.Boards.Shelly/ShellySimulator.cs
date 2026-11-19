@@ -370,6 +370,28 @@ public sealed class ShellySimulator : ISimulatedBoard
         RaiseChanged();
     }
 
+    /// <summary>
+    /// Turns a job on or off "at the device" when it isn't already, as one step under the device's lock; grows
+    /// <c>schedule_rev</c> only then. Whether it changed: false for a job it doesn't hold, too.
+    /// </summary>
+    public bool TrySetScheduleEnabled(long id, bool enable)
+    {
+        lock (_lock)
+        {
+            var job = _jobs.Find(j => j.Id == id);
+            if (job is null || job.Enable == enable)
+            {
+                return false;
+            }
+
+            job.Enable = enable;
+            _scheduleRevision++;
+        }
+
+        RaiseChanged();
+        return true;
+    }
+
     /// <summary>The schedule jobs, oldest first.</summary>
     public IReadOnlyList<ShellySimulatedSchedule> Schedules
     {

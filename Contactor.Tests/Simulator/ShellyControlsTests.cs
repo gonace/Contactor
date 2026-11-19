@@ -2,6 +2,7 @@ using Contactor.Boards;
 using Contactor.Boards.Shelly;
 using Contactor.Simulator;
 using Contactor.Tests.Web;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Contactor.Tests.Simulator;
 
@@ -10,7 +11,7 @@ public sealed class ShellyControlsTests : IAsyncDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 11, 18, 0, 0, TimeSpan.Zero);
 
-    private readonly ShellySimulator _device = new(ShellyModels.TwoRelays);
+    private readonly ShellySimulator _device = new(ShellyModels.TwoRelays, "pw", NullLogger.Instance);
     private readonly RunningBoard _board;
 
     public ShellyControlsTests()
@@ -47,6 +48,21 @@ public sealed class ShellyControlsTests : IAsyncDisposable
         Controls.SetThrottle(false);
         Assert.False(_device.Throttle);
         Assert.Equal("Asking the app to wait (429) turned off here", _board.Traffic[0].Text);
+    }
+
+    [Fact]
+    public async Task Should_NotAskTheAppToWait_WithoutAPassword()
+    {
+        await using var board = new RunningBoard(2, new ShellySimulator(ShellyModels.OneRelay), null, fromSettings: false, new FixedTimeProvider(Now));
+        var device = (ShellySimulator)board.Board;
+
+        Assert.False(board.Shelly!.HasPassword);
+        Assert.True(Controls.HasPassword);
+
+        // A device without a password asks for no digest, so it never answers 429: the page doesn't offer it.
+        board.Shelly.SetThrottle(true);
+        Assert.False(device.Throttle);
+        Assert.Empty(board.Traffic);
     }
 
     [Theory]

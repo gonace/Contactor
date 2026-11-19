@@ -36,6 +36,12 @@ public sealed class ShellyControls
 
     public int RelayCount => _device.Model.Capabilities.RelayCount;
 
+    /// <summary>
+    /// Whether the device has a password. Only then does it ask for the digest, so only then can it ask the app to wait
+    /// (429), and only then does the firmware choose the digest's way.
+    /// </summary>
+    public bool HasPassword => _device.HasLogin;
+
     /// <summary>Whether every request that needs the password gets 429.</summary>
     public bool Throttle => _device.Throttle;
 
@@ -57,8 +63,14 @@ public sealed class ShellyControls
         return _device.InitialState(relay);
     }
 
+    /// <summary>Makes every request that needs the password get 429; nothing for a device without a password.</summary>
     public void SetThrottle(bool throttle)
     {
+        if (!HasPassword)
+        {
+            return;
+        }
+
         lock (_lock)
         {
             if (_device.Throttle == throttle)
@@ -225,17 +237,10 @@ public sealed class ShellyControls
     /// <summary>Turns a job on or off; nothing for a job the device doesn't hold, or one already so.</summary>
     public void SetScheduleEnabled(long id, bool enable)
     {
-        lock (_lock)
+        if (_device.TrySetScheduleEnabled(id, enable))
         {
-            if (_device.Schedules.FirstOrDefault(s => s.Id == id) is not { } job || job.Enable == enable)
-            {
-                return;
-            }
-
-            _device.SetScheduleEnabled(id, enable);
+            _log(string.Create(CultureInfo.InvariantCulture, $"Schedule {id} turned {(enable ? "on" : "off")} here"));
         }
-
-        _log(string.Create(CultureInfo.InvariantCulture, $"Schedule {id} turned {(enable ? "on" : "off")} here"));
     }
 
     /// <summary>
