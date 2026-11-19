@@ -1,5 +1,6 @@
 using System.Globalization;
 using Contactor.Boards;
+using Contactor.Boards.Shelly;
 
 namespace Contactor.Simulator;
 
@@ -46,6 +47,7 @@ public sealed class RunningBoard : IAsyncDisposable
         Username = username;
         FromSettings = fromSettings;
         _time = time;
+        Shelly = board is ShellySimulator shelly ? new ShellyControls(shelly, text => Add(TrafficKind.AtBoard, text)) : null;
         Board.Traced += OnTraced;
         Board.Changed += OnChanged;
     }
@@ -60,6 +62,9 @@ public sealed class RunningBoard : IAsyncDisposable
 
     /// <summary>The user name it asks for, or null without a login. The password is never shown.</summary>
     public string? Username { get; }
+
+    /// <summary>The controls for a Shelly's special cases, or null for any other board.</summary>
+    public ShellyControls? Shelly { get; }
 
     /// <summary>Started from the settings, so it starts every time; otherwise added on the page.</summary>
     public bool FromSettings { get; }

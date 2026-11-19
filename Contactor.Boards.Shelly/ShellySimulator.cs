@@ -370,6 +370,18 @@ public sealed class ShellySimulator : ISimulatedBoard
         RaiseChanged();
     }
 
+    /// <summary>The schedule jobs, oldest first.</summary>
+    public IReadOnlyList<ShellySimulatedSchedule> Schedules
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _jobs.Select(j => new ShellySimulatedSchedule(j.Id, j.Enable, j.Timespec, j.Calls))];
+            }
+        }
+    }
+
     /// <summary>Whether a job is enabled.</summary>
     public bool ScheduleEnabled(long id)
     {
