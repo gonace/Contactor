@@ -16,8 +16,9 @@ public enum BoardPollStep
     Stopped,
 
     /// <summary>
-    /// The board refused the login: the poller sends nothing more until a person saves a new one or asks to check again
-    /// (<see cref="BoardPoller{TReading}.TryAgain"/>). No detail.
+    /// The board refused a login that never connected, or one that connected before for
+    /// <see cref="BoardPoller{TReading}.RefusedLoginRetries"/>: the poller sends nothing more until a person saves a new
+    /// one or asks to check again (<see cref="BoardPoller{TReading}.TryAgain"/>). No detail.
     /// </summary>
     Held,
 }
@@ -75,10 +76,12 @@ public interface IPolledBoard<TReading>
 /// reports the state only when it changed. <see cref="State"/> itself is refreshed on every poll, so its
 /// <see cref="PolledState{TReading}.LastContactUtc"/> is always current. After <see cref="FailuresBeforeLost"/> failed
 /// polls in a row the board counts as disconnected and the poller connects again, with a wait that doubles from 1 s
-/// to 30 s while it keeps failing. A connect the board refused on purpose isn't tried again in that loop: after a
-/// refused login (<see cref="ConnectionProblemKind.LoginRefused"/>) the poller waits for a new login
-/// (<see cref="Restart"/>) or a person's "Check again" (<see cref="TryAgain"/>), and after the board asked it to wait
-/// (<see cref="ConnectionProblemKind.AskedToWait"/>) it waits <see cref="AskedToWaitPause"/> too. Commands go through
+/// to 30 s while it keeps failing. A connect the board refused on purpose isn't tried again in that loop. After a
+/// refused login (<see cref="ConnectionProblemKind.LoginRefused"/>) that never connected since the last
+/// <see cref="Restart"/>, the poller waits for a new login (<see cref="Restart"/>) or a person's "Check again"
+/// (<see cref="TryAgain"/>). A login that connected before is tried every <see cref="AskedToWaitPause"/> for
+/// <see cref="RefusedLoginRetries"/> from the first refusal, and then held the same way. After the board asked it to
+/// wait (<see cref="ConnectionProblemKind.AskedToWait"/>) it waits <see cref="AskedToWaitPause"/>. Commands go through
 /// <see cref="RunCommandAsync"/>: never behind a poll, and never to a board that is lost. Protocol-neutral: the board's own code does the talking.
 /// </summary>
 public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
@@ -92,6 +95,12 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     /// for (10 minutes, Issue #522), so its own wait runs out and the one attempt after can't keep it going.
     /// </summary>
     public static readonly TimeSpan AskedToWaitPause = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long a login that connected before is still tried after the board refuses it, once every
+    /// <see cref="AskedToWaitPause"/>, counted from the first refusal. After that it is held as a login that never worked.
+    /// </summary>
+    public static readonly TimeSpan RefusedLoginRetries = TimeSpan.FromHours(24);
 
     public const int DefaultFailuresBeforeLost = 3;
     public static readonly TimeSpan DefaultDisposeWait = TimeSpan.FromSeconds(15);
@@ -113,6 +122,12 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     // Which login the connect was for: Restart moves on to the next, so a problem from the attempt before is dropped.
     // Under _stateLock, as _generation.
     private int _restarts;
+
+    // Whether the login in use connected (a poll answered) since the last Restart, and when the board first refused it
+    // after that. Under _stateLock. A login that worked is tried again now and then after a refusal, for at most
+    // RefusedLoginRetries (Issue #522): the board may refuse it for a while, e.g. while it restarts.
+    private bool _loginWorked;
+    private DateTimeOffset? _firstRefusalUtc;
     private TaskCompletionSource _wake = NewWake();
 
     // The current attempt (connect, polls and the wait after it); Restart cancels it.
@@ -197,13 +212,24 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     /// <summary>
     /// Ends the current connection, attempt or wait, and connects again at once, e.g. with a new address or login. The
     /// <see cref="PolledState{TReading}.Problem"/> is cleared, since it was about the last login, and a problem from the
-    /// attempt before still on its way is dropped.
+    /// attempt before still on its way is dropped. The login counts as one that never connected, until it does.
     /// </summary>
     public void Restart()
+    {
+        Restart(newLogin: true);
+    }
+
+    private void Restart(bool newLogin)
     {
         lock (_stateLock)
         {
             _restarts++;
+            if (newLogin)
+            {
+                _loginWorked = false;
+                _firstRefusalUtc = null;
+            }
+
             var state = _state;
             if (state.Problem is not null)
             {
@@ -219,13 +245,14 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
     /// <summary>
     /// A person's "Check again" while the board isn't connected: as <see cref="Restart"/>, it ends the wait (also the
     /// one after a refused login, which only this or a new login ends) and connects again at once, with the problem
-    /// cleared until the board answers again. Nothing happens while the board is connected.
+    /// cleared until the board answers again. Unlike <see cref="Restart"/>, the login is the same: whether it worked
+    /// before, and since when the board refuses it, are kept. Nothing happens while the board is connected.
     /// </summary>
     public void TryAgain()
     {
         if (!State.IsConnected)
         {
-            Restart();
+            Restart(newLogin: false);
         }
     }
 
@@ -437,11 +464,12 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                     }
 
                     // Never a refused login in a loop (Issue #522): each try counts toward a board's lockout, e.g. a
-                    // Shelly's brute-force protection, and the same login gets the same answer. Only Restart (a new
-                    // address or login) or TryAgain (a person's "Check again") ends this wait, by cancelling the attempt.
+                    // Shelly's brute-force protection, and the same login gets the same answer. A login that never
+                    // worked is held: only Restart (a new address or login) or TryAgain (a person's "Check again") ends
+                    // this wait, by cancelling the attempt. One that worked is tried every AskedToWaitPause for a while.
                     var wait = refused switch
                     {
-                        ConnectionProblemKind.LoginRefused => Timeout.InfiniteTimeSpan,
+                        ConnectionProblemKind.LoginRefused => RefusedLoginWait(),
                         ConnectionProblemKind.AskedToWait => AskedToWaitPause,
                         _ => backoff,
                     };
@@ -542,6 +570,7 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
                     var reading = await _board.ReadAsync(poll.Token).ConfigureAwait(false);
                     _failures = 0;
                     answered = true;
+                    LoginWorked(restarts);
                     Apply(reading, generation);
                 }
                 catch (OperationCanceledException) when (poll.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -606,6 +635,37 @@ public sealed class BoardPoller<TReading> : IDisposable, IAsyncDisposable
         }
 
         return (answered, refused);
+    }
+
+    // After a refused login: held (infinite) for a login that never connected since the last Restart, or once its
+    // RefusedLoginRetries from the first refusal are over. Otherwise the next try after AskedToWaitPause.
+    private TimeSpan RefusedLoginWait()
+    {
+        lock (_stateLock)
+        {
+            if (!_loginWorked)
+            {
+                return Timeout.InfiniteTimeSpan;
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            _firstRefusalUtc ??= now;
+            return now - _firstRefusalUtc.Value >= RefusedLoginRetries ? Timeout.InfiniteTimeSpan : AskedToWaitPause;
+        }
+    }
+
+    // A poll answered: the login works, and the time of its refusals starts over. Not for an answer to the login before
+    // a Restart that is still on its way.
+    private void LoginWorked(int restarts)
+    {
+        lock (_stateLock)
+        {
+            if (restarts == _restarts)
+            {
+                _loginWorked = true;
+                _firstRefusalUtc = null;
+            }
+        }
     }
 
     // Until the next poll is due, or PollNow.

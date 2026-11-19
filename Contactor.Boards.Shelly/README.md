@@ -139,8 +139,9 @@ A request goes at most twice:
   wrong passwords: 10 s between attempts after 10 of them, and up to 5 minutes after 40. The poller tries again
   once after 10 minutes, longer than the device counts wrong passwords for, or at once on "Check again" or a new
   password (Issue #522).
-- A refused password isn't tried again by the poller at all: it waits for a new password or a person's "Check again",
-  so the app never keeps the device's brute-force protection going.
+- A refused password that never connected isn't tried again by the poller at all: it waits for a new password or a
+  person's "Check again", so the app never keeps the device's brute-force protection going. A password that connected
+  before is tried once every 10 minutes for 24 hours from the first refusal, then held the same way.
 - At 30,000 requests on a nonce the app asks for a new one itself.
 
 The app checks a challenge before it answers: a `Digest` challenge with `algorithm=SHA-256` and `qop` "auth". The
