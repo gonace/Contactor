@@ -19,13 +19,15 @@
 @* The board's own rules (issue #497), on the board's page and on Settings with one board: each rule the app found,
    with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself), or a line for a board that may have rules the app can't see. None for a board that has
    none. A rule whose turn-off takes other relays' rules with it says so under it ("Also turns off the board's timer
-   for Heat."). *@
-@if (Board is { } board && (_rows.Count > 0 || Ability(board).MayHaveUnseen))
+   for Heat."). A board that answers but couldn't read its rules (issue #551) gets a line saying so, under any rows
+   from before. *@
+@if (Board is { } board && (_rows.Count > 0 || Ability(board).MayHaveUnseen || OwnRulesHandler.CouldntRead(board)))
 {
     var ability = Ability(board);
     var connected = board.State.IsConnected;
+    var couldntRead = OwnRulesHandler.CouldntRead(board);
     <section class="card own-rules-card" aria-labelledby="own-rules-@BoardId">
-        <h2 id="own-rules-@BoardId">@Words.CardTitle(_rows.Select(r => r.Kind))</h2>
+        <h2 id="own-rules-@BoardId">@(_rows.Count == 0 && couldntRead ? Texts["OwnRules.Card.Title.Rule"] : Words.CardTitle(_rows.Select(r => r.Kind)))</h2>
         @if (_rows.Count > 0)
         {
             <p class="hint">@Texts["OwnRules.Card.Hint"]</p>
@@ -67,7 +69,12 @@
                 }
             </ul>
         }
-        @if (ability.MayHaveUnseen)
+        @if (couldntRead)
+        {
+            @* In place of "may also have": the app doesn't know even the rules it can read. *@
+            <p class="hint">@Texts["OwnRules.Card.CouldntRead"]</p>
+        }
+        else if (ability.MayHaveUnseen)
         {
             <p class="hint">@Texts[ability.Reads ? "OwnRules.Card.MayHaveUnseen" : "OwnRules.Card.CantTell"]</p>
         }
@@ -91,8 +98,10 @@
     // Counts the loads, on the page's own thread: only the latest one shows its rows.
     private int _loads;
 
-    // What was drawn: a board's change redraws the card only when its contact or what goes with its rules changes.
+    // What was drawn: a board's change redraws the card only when its contact, whether its rules could be read, or what
+    // goes with its rules changes.
     private bool? _shownConnected;
+    private bool _shownCouldntRead;
     private string _shownAlso = "";
 
     // Set when the card closes, on the page's own thread: an event already on its way doesn't load or draw it.
@@ -132,6 +141,7 @@
     protected override void OnAfterRender(bool firstRender)
     {
         _shownConnected = Board?.State.IsConnected;
+        _shownCouldntRead = OwnRulesHandler.CouldntRead(Board);
         _shownAlso = AlsoShown();
     }
 
@@ -217,7 +227,8 @@
         }
     }
 
-    // From a board's read loop: the buttons follow the board's contact, the "also" words its rules.
+    // From a board's read loop: the buttons follow the board's contact, the "couldn't read" line and the "also" words its
+    // rules.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
         if (change.BoardId == BoardId)
@@ -252,7 +263,7 @@
                     await LoadAsync();
                     StateHasChanged();
                 }
-                else if (Board?.State.IsConnected != _shownConnected || AlsoShown() != _shownAlso)
+                else if (Board?.State.IsConnected != _shownConnected || OwnRulesHandler.CouldntRead(Board) != _shownCouldntRead || AlsoShown() != _shownAlso)
                 {
                     StateHasChanged();
                 }

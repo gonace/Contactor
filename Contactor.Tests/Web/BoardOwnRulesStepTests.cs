@@ -286,6 +286,37 @@ public sealed class BoardOwnRulesStepTests
         }
     }
 
+    // A board that answers but couldn't read its rules (issue #551) gets no rules step, and "Name your relays" says so;
+    // the line follows the board's rules alone, and goes while the board doesn't answer.
+    [Fact]
+    public async Task Should_SayTheRulesCouldntBeRead_OnNameYourRelays()
+    {
+        const string Line = "Contactor couldn't read this board's own rules. Check its own web page.";
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App();
+        using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+        await ToWhereAsync(app, page, board);
+        board.SetOwnRules(null);
+        Assert.Contains("STEP 2 OF 3", await page.TextAsync(), StringComparison.Ordinal);
+
+        await page.ClickAsync(Button("Next"));
+        var text = await page.TextAsync();
+        Assert.Contains(Line, text, StringComparison.Ordinal);
+        Assert.Contains("STEP 3 OF 3", text, StringComparison.Ordinal);
+
+        // Only the rules change: read now, so the line goes; unknown again, so it comes back.
+        board.SetOwnRules(OwnRules.Empty);
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains(Line, StringComparison.Ordinal));
+        board.SetOwnRules(null);
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains(Line, StringComparison.Ordinal));
+
+        // Without an answer its rules are only not known.
+        board.SetConnected(false);
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains(Line, StringComparison.Ordinal));
+        Assert.Equal(0, board.OwnRulesTurnOffs);
+        Assert.Empty(Errors(page));
+    }
+
     // Rules turned off at the board while the step shows leave nothing to ask: the page goes on by itself.
     [Fact]
     public async Task Should_GoOn_WhenTheRulesGoAtTheBoard()
