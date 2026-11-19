@@ -280,7 +280,10 @@ internal sealed class FakeRelayBoard : IRelayBoard
         AnalogChanged?.Invoke(this, state);
     }
 
-    /// <summary>When set, the board refuses to turn its own rules off, and they stay as they are.</summary>
+    /// <summary>
+    /// When set, the board refuses to turn its own rules off, and they stay as they are. As outside
+    /// <c>RunCommandAsync</c> on a real board, the refusal is a <see cref="BoardNotConnectedException"/>.
+    /// </summary>
     public bool RefuseOwnRules { get; set; }
 
     /// <summary>
@@ -334,7 +337,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
         if (RefuseOwnRules)
         {
-            throw new BoardRefusedException("The board refused to turn its own rules off.");
+            throw new BoardNotConnectedException("The board refused to turn its own rules off.");
         }
 
         BoardState state;
@@ -345,7 +348,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             taken = [.. rules.Where(had.Contains).Distinct()];
             if (taken.Count == 0)
             {
-                throw new BoardRefusedException("The board has none of those rules.");
+                throw new BoardNotConnectedException("The board has none of those rules.");
             }
 
             if (HoldOwnRules)
