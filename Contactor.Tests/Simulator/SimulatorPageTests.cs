@@ -36,7 +36,7 @@ public sealed class SimulatorPageTests
         Assert.Contains("from the settings", html, StringComparison.Ordinal);
         Assert.Contains($"Nothing yet. Set the app's board to 127.0.0.1, port {port}, user john.", html, StringComparison.Ordinal);
         Assert.Contains("RELAY 8", html, StringComparison.Ordinal);
-        Assert.Contains("Board's own timers: none on", html, StringComparison.Ordinal);
+        Assert.Contains("TIMERS · NONE ON", html, StringComparison.Ordinal);
         Assert.Matches("<input type=\"checkbox\"[^>]*/?>\\s*Relay 8\\s*</label>", html);
         Assert.DoesNotContain("secret", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Ask the app to wait", html, StringComparison.Ordinal);
@@ -61,7 +61,7 @@ public sealed class SimulatorPageTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
 
-        Assert.Contains("Relay modes (the board's own rules)", html, StringComparison.Ordinal);
+        Assert.Contains("RELAY MODES", html, StringComparison.Ordinal);
         Assert.Equal(8, System.Text.RegularExpressions.Regex.Count(html, "<label class=\"mode\"[^>]*>\\s*<span[^>]*>Relay \\d</span>\\s*<select"));
         Assert.Matches("<span[^>]*>Relay 8</span>\\s*<select", html);
         Assert.Contains(">linkage</option>", html, StringComparison.Ordinal);
@@ -99,10 +99,10 @@ public sealed class SimulatorPageTests
         Assert.Matches("<option value=\"cover\" selected[^>]*>cover</option>", html);
         Assert.Contains(">none</option>", html, StringComparison.Ordinal);
         Assert.Contains("Switch.Set refused: relay 2", html, StringComparison.Ordinal);
-        Assert.Contains("Auto-on: relay 1", html, StringComparison.Ordinal);
-        Assert.Contains("After a power cut (initial_state)", html, StringComparison.Ordinal);
+        Assert.Contains("AUTO-ON · RELAY 1", html, StringComparison.Ordinal);
+        Assert.Contains("AFTER A POWER CUT (INITIAL_STATE)", html, StringComparison.Ordinal);
         Assert.Matches("<option value=\"restore_last\" selected[^>]*>restore_last</option>", html);
-        Assert.Contains("Schedules (the device's own rules): 2 of 20", html, StringComparison.Ordinal);
+        Assert.Contains("SCHEDULES · 2 OF 20", html, StringComparison.Ordinal);
         Assert.Matches("<input type=\"checkbox\" checked[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 1 · 06:30 every day · relay 2 on</span>", html);
         Assert.Matches("<input type=\"checkbox\"(?! checked)[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 2 · 22:00 every day · relay 1 off</span>", html);
         Assert.Matches("<input id=\"schedule-time\" type=\"time\"[^>]*value=\"08:00\"", html);
@@ -226,13 +226,14 @@ public sealed class SimulatorPageTests
         Assert.Matches("<section id=\"traffic\" class=\"card traffic ?\"", html);
         Assert.Contains("TIME", html, StringComparison.Ordinal);
 
-        // Only the fold's own button is hidden at 1024 px and wider; everything else is hidden only below it.
+        // Only the fold's own button, and the browser's marker on a section's title, are hidden at 1024 px and wider;
+        // everything else is hidden only below it.
         var narrow = css.IndexOf("@media (max-width: 1023.98px)", StringComparison.Ordinal);
         Assert.True(narrow > 0, "The page has no layout below 1024 px.");
         var hiddenWide = Regex.Matches(css[..narrow], @"([^{}]+)\{[^{}]*display:\s*none")
             .Select(m => m.Groups[1].Value.Trim())
             .ToList();
-        Assert.Equal([".fold"], hiddenWide.Select(selector => Regex.Replace(selector, @"\[b-[a-z0-9]+\]", "")));
+        Assert.Equal([".section > summary::-webkit-details-marker", ".fold"], hiddenWide.Select(selector => Regex.Replace(selector, @"\[b-[a-z0-9]+\]", "")));
         Assert.DoesNotContain("min-width: 1000px", css, StringComparison.Ordinal);
 
         // Below 1024 px, the traffic is hidden until its fold is opened; "+ Add a board" is never hidden.

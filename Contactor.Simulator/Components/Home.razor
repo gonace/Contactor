@@ -152,7 +152,7 @@
             {
                 var state = current.Board.State;
                 var capabilities = current.Board.Model.Capabilities;
-                <section class="card controls">
+                <section class="card controls" @key="current.Id">
                     <div class="head">
                         <div class="title">
                             <h2>@current.Board.Model.Name · @Address(current)</h2>
@@ -161,11 +161,11 @@
                             </span>
                         </div>
                         <div class="actions">
-                            <button type="button" disabled="@(state.Clients.Count == 0)" @onclick="current.DropConnections">Drop connection</button>
                             <button type="button" class="danger" @onclick="() => RemoveAsync(current)">Remove</button>
                         </div>
                     </div>
 
+                    @* The relays and inputs on top; below them the rest in sections that fold, each open or closed as the person left it. *@
                     <div class="split">
                         <div class="relays-box">
                             <span class="hint">Relays: click one to switch it, like the board's own buttons</span>
@@ -182,81 +182,172 @@
                                 }
                             </div>
                         </div>
-                        <div class="extras">
-                            @for (var input = 1; input <= capabilities.InputCount; input++)
-                            {
-                                var number = input;
-                                var closed = state.Inputs.Contains(number);
-                                <label class="check">
-                                    <input type="checkbox" checked="@closed" @onchange="e => current.SetInputAsync(number, e.Value is true)" />
-                                    Input @number closed
-                                </label>
-                            }
-                            @if (capabilities.Analog is { } analog)
-                            {
-                                @for (var input = 1; input <= state.Analog.Count; input++)
-                                {
-                                    var number = input;
-                                    var counts = state.Analog[number - 1];
-                                    <label class="analog" @key="number">
-                                        <span>Analog @number</span>
-                                        <input type="range" min="0" max="@analog.MaxCounts" step="1" value="@counts"
-                                               aria-valuetext="@AnalogText(analog, counts)"
-                                               @onchange="e => SetAnalogAsync(current, number, e.Value)" />
-                                        <span class="mono">@AnalogText(analog, counts)</span>
-                                    </label>
-                                }
-                            }
-                            @if (current.Board is ISimulatedBoardRelayModes relayModes && relayModes.Modes is { Count: > 0 } modes)
-                            {
-                                <fieldset class="timers">
-                                    <legend class="hint">Relay modes (the board's own rules)</legend>
+                        @if (capabilities.InputCount > 0)
+                        {
+                            <div class="inputs">
+                                <span class="hint">@(capabilities.InputCount == 1 ? "Input" : "Inputs")</span>
+                                <div class="input-list" style="--columns: @Math.Min(capabilities.InputCount, 4).ToString(CultureInfo.InvariantCulture)">
+                                    @for (var input = 1; input <= capabilities.InputCount; input++)
+                                    {
+                                        var number = input;
+                                        var closed = state.Inputs.Contains(number);
+                                        <label class="check" @key="number">
+                                            <input type="checkbox" checked="@closed" @onchange="e => current.SetInputAsync(number, e.Value is true)" />
+                                            Input @number closed
+                                        </label>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="sections">
+                        @if (current.Shelly is { } atBoard)
+                        {
+                            <details class="section" open>
+                                <summary><span class="name">At the board</span><span class="sum">after a power cut</span></summary>
+                                <div class="in">
+                                    <h4 class="label">AFTER A POWER CUT (INITIAL_STATE)</h4>
                                     <div class="mode-relays">
-                                        @for (var relay = 1; relay <= modes.Count; relay++)
+                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                         {
                                             var number = relay;
+                                            var initial = atBoard.InitialState(number);
                                             <label class="mode" @key="number">
                                                 <span>Relay @number</span>
-                                                <select @onchange="e => SetModeAsync(current, number, e.Value)">
-                                                    @for (var mode = 0; mode < relayModes.ModeNames.Count; mode++)
+                                                <select @onchange="e => atBoard.SetInitialState(number, e.Value as string)">
+                                                    @if (!ShellyControls.InitialStates.Contains(initial))
                                                     {
-                                                        <option value="@mode.ToString(CultureInfo.InvariantCulture)" selected="@(modes[number - 1] == mode)">@relayModes.ModeNames[mode]</option>
+                                                        @* A value set by a test, which the docs don't list: shown, not offered. *@
+                                                        <option value="" selected disabled>@initial</option>
+                                                    }
+                                                    @foreach (var value in ShellyControls.InitialStates)
+                                                    {
+                                                        <option value="@value" selected="@(initial == value)">@value</option>
                                                     }
                                                 </select>
                                             </label>
                                         }
                                     </div>
-                                </fieldset>
-                            }
-                            @if (current.Board is ISimulatedBoardTimers timers)
-                            {
-                                var active = timers.Timers;
-                                <fieldset class="timers">
-                                    <legend class="hint">Board's own timers: @TimersText(active, capabilities)</legend>
-                                    <div class="timer-relays" style="--columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
-                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                </div>
+                            </details>
+                        }
+
+                        @if (OwnRulesSummary(current) is { } rulesSummary)
+                        {
+                            <details class="section" open>
+                                <summary><span class="name">@(current.Shelly is null ? "The board's own rules" : "The device's own rules")</span><span class="sum">@rulesSummary</span></summary>
+                                <div class="in">
+                                    @if (current.Board is ISimulatedBoardRelayModes relayModes && relayModes.Modes is { Count: > 0 } modes)
+                                    {
+                                        <h4 class="label">RELAY MODES</h4>
+                                        <div class="mode-relays">
+                                            @for (var relay = 1; relay <= modes.Count; relay++)
+                                            {
+                                                var number = relay;
+                                                <label class="mode" @key="number">
+                                                    <span>Relay @number</span>
+                                                    <select @onchange="e => SetModeAsync(current, number, e.Value)">
+                                                        @for (var mode = 0; mode < relayModes.ModeNames.Count; mode++)
+                                                        {
+                                                            <option value="@mode.ToString(CultureInfo.InvariantCulture)" selected="@(modes[number - 1] == mode)">@relayModes.ModeNames[mode]</option>
+                                                        }
+                                                    </select>
+                                                </label>
+                                            }
+                                        </div>
+                                    }
+                                    @if (current.Board is ISimulatedBoardTimers timers)
+                                    {
+                                        var active = timers.Timers;
+                                        <h4 class="label">TIMERS · @TimersText(active, capabilities).ToUpperInvariant()</h4>
+                                        <div class="timer-relays" style="--columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
+                                            @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                            {
+                                                var number = relay;
+                                                <label class="check" @key="number">
+                                                    <input type="checkbox" checked="@active.Contains(number)" @onchange="e => current.SetTimerAsync(number, e.Value is true)" />
+                                                    Relay @number
+                                                </label>
+                                            }
+                                        </div>
+                                    }
+                                    @if (current.Shelly is { } rules)
+                                    {
+                                        var schedules = rules.Schedules;
+                                        <h4 class="label">SCHEDULES · @schedules.Count.ToString(CultureInfo.InvariantCulture) OF @ShellyApi.MaxScheduleJobs.ToString(CultureInfo.InvariantCulture)</h4>
+                                        @foreach (var schedule in schedules)
                                         {
-                                            var number = relay;
-                                            <label class="check" @key="number">
-                                                <input type="checkbox" checked="@active.Contains(number)" @onchange="e => current.SetTimerAsync(number, e.Value is true)" />
-                                                Relay @number
+                                            var id = schedule.Id;
+                                            <label class="check" @key="id">
+                                                <input type="checkbox" checked="@schedule.Enable" @onchange="e => rules.SetScheduleEnabled(id, e.Value is true)" />
+                                                <span class="schedule">Schedule @id.ToString(CultureInfo.InvariantCulture) · @ShellyControls.Describe(schedule)</span>
                                             </label>
                                         }
-                                    </div>
-                                </fieldset>
-                            }
-                            @if (current.Shelly is { } shelly)
-                            {
-                                <fieldset class="timers">
-                                    <legend class="hint">The device's answers</legend>
-                                    @* Only a device with a password asks for the digest, and only then can it ask the app to wait. *@
-                                    @if (shelly.HasPassword)
+                                        <form class="schedule-add" @onsubmit="() => _shellyForm.AddSchedule(rules)">
+                                            <label class="visually-hidden" for="schedule-relay">Relay</label>
+                                            @* Each option says whether it is chosen, so the page shows it from its first drawing on. *@
+                                            <select id="schedule-relay" @onchange="e => _shellyForm.SetScheduleRelay(e.Value as string)">
+                                                @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                                {
+                                                    <option value="@relay.ToString(CultureInfo.InvariantCulture)" selected="@(_shellyForm.ScheduleRelay == relay)">Relay @relay</option>
+                                                }
+                                            </select>
+                                            <label class="visually-hidden" for="schedule-on">On or off</label>
+                                            <select id="schedule-on" @onchange="e => _shellyForm.SetScheduleOn(e.Value as string)">
+                                                <option value="@ShellyForm.On" selected="@(_shellyForm.ScheduleOn == ShellyForm.On)">on</option>
+                                                <option value="@ShellyForm.Off" selected="@(_shellyForm.ScheduleOn == ShellyForm.Off)">off</option>
+                                            </select>
+                                            <label class="visually-hidden" for="schedule-time">Time</label>
+                                            <input id="schedule-time" type="time" class="mono" value="@_shellyForm.ScheduleTime" @onchange="e => _shellyForm.ScheduleTime = e.Value as string" />
+                                            <button type="submit" disabled="@(schedules.Count >= ShellyApi.MaxScheduleJobs)">Add schedule</button>
+                                        </form>
+                                        @if (_shellyForm.ScheduleError is not null)
+                                        {
+                                            <p class="error" role="alert">@_shellyForm.ScheduleError</p>
+                                        }
+                                        <h4 class="label">AUTO-ON · @MaskText(rules.AutoOn, capabilities).ToUpperInvariant()</h4>
+                                        <div class="timer-relays" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
+                                            @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                            {
+                                                var number = relay;
+                                                <label class="check" @key="number">
+                                                    <input type="checkbox" checked="@rules.AutoOn.Contains(number)" @onchange="e => rules.SetAutoOn(number, e.Value is true)" />
+                                                    Relay @number
+                                                </label>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </details>
+                        }
+
+                        @if (capabilities.Analog is { } analog && state.Analog.Count > 0)
+                        {
+                            <details class="section" open>
+                                <summary><span class="name">Analog</span><span class="sum">@AnalogSummary(state.Analog.Count)</span></summary>
+                                <div class="in">
+                                    @for (var input = 1; input <= state.Analog.Count; input++)
                                     {
-                                        <label class="check">
-                                            <input type="checkbox" checked="@shelly.Throttle" @onchange="e => shelly.SetThrottle(e.Value is true)" />
-                                            Ask the app to wait (429)
+                                        var number = input;
+                                        var counts = state.Analog[number - 1];
+                                        <label class="analog" @key="number">
+                                            <span>Analog @number</span>
+                                            <input type="range" min="0" max="@analog.MaxCounts" step="1" value="@counts"
+                                                   aria-valuetext="@AnalogText(analog, counts)"
+                                                   @onchange="e => SetAnalogAsync(current, number, e.Value)" />
+                                            <span class="mono">@AnalogText(analog, counts)</span>
                                         </label>
                                     }
+                                </div>
+                            </details>
+                        }
+
+                        <details class="section" open>
+                            <summary><span class="name">Connection</span><span class="sum">@(current.Shelly is null ? "answers" : "firmware, answers")</span></summary>
+                            <div class="in">
+                                @if (current.Shelly is { } shelly)
+                                {
                                     <label class="mode">
                                         <span>Firmware</span>
                                         <input class="mono firmware" maxlength="@ShellyControls.MaxFirmwareLength" autocomplete="off" spellcheck="false"
@@ -276,93 +367,54 @@
                                             }
                                         </select>
                                     </label>
-                                </fieldset>
-                                <fieldset class="timers">
-                                    <legend class="hint">Switch.Set refused: @MaskText(shelly.Refused, capabilities)</legend>
-                                    <div class="timer-relays" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
-                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
-                                        {
-                                            var number = relay;
-                                            <label class="check" @key="number">
-                                                <input type="checkbox" checked="@shelly.Refused.Contains(number)" @onchange="e => shelly.SetRefused(number, e.Value is true)" />
-                                                Relay @number
-                                            </label>
-                                        }
-                                    </div>
-                                </fieldset>
-                                <fieldset class="timers">
-                                    <legend class="hint">Auto-on: @MaskText(shelly.AutoOn, capabilities)</legend>
-                                    <div class="timer-relays" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
-                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
-                                        {
-                                            var number = relay;
-                                            <label class="check" @key="number">
-                                                <input type="checkbox" checked="@shelly.AutoOn.Contains(number)" @onchange="e => shelly.SetAutoOn(number, e.Value is true)" />
-                                                Relay @number
-                                            </label>
-                                        }
-                                    </div>
-                                </fieldset>
-                                <fieldset class="timers">
-                                    <legend class="hint">After a power cut (initial_state)</legend>
-                                    <div class="mode-relays">
-                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
-                                        {
-                                            var number = relay;
-                                            var initial = shelly.InitialState(number);
-                                            <label class="mode" @key="number">
-                                                <span>Relay @number</span>
-                                                <select @onchange="e => shelly.SetInitialState(number, e.Value as string)">
-                                                    @if (!ShellyControls.InitialStates.Contains(initial))
-                                                    {
-                                                        @* A value set by a test, which the docs don't list: shown, not offered. *@
-                                                        <option value="" selected disabled>@initial</option>
-                                                    }
-                                                    @foreach (var value in ShellyControls.InitialStates)
-                                                    {
-                                                        <option value="@value" selected="@(initial == value)">@value</option>
-                                                    }
-                                                </select>
-                                            </label>
-                                        }
-                                    </div>
-                                </fieldset>
-                                <fieldset class="timers">
-                                    @{ var schedules = shelly.Schedules; }
-                                    <legend class="hint">Schedules (the device's own rules): @schedules.Count.ToString(CultureInfo.InvariantCulture) of @ShellyApi.MaxScheduleJobs.ToString(CultureInfo.InvariantCulture)</legend>
-                                    @foreach (var schedule in schedules)
+                                    @* Only a device with a password asks for the digest, and only then can it ask the app to wait. *@
+                                    @if (shelly.HasPassword)
                                     {
-                                        var id = schedule.Id;
-                                        <label class="check" @key="id">
-                                            <input type="checkbox" checked="@schedule.Enable" @onchange="e => shelly.SetScheduleEnabled(id, e.Value is true)" />
-                                            <span class="schedule">Schedule @id.ToString(CultureInfo.InvariantCulture) · @ShellyControls.Describe(schedule)</span>
+                                        <label class="check">
+                                            <input type="checkbox" checked="@shelly.Throttle" @onchange="e => shelly.SetThrottle(e.Value is true)" />
+                                            Ask the app to wait (429)
                                         </label>
                                     }
-                                    <form class="schedule-add" @onsubmit="() => _shellyForm.AddSchedule(shelly)">
-                                        <label class="visually-hidden" for="schedule-relay">Relay</label>
-                                        @* Each option says whether it is chosen, so the page shows it from its first drawing on. *@
-                                        <select id="schedule-relay" @onchange="e => _shellyForm.SetScheduleRelay(e.Value as string)">
-                                            @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
-                                            {
-                                                <option value="@relay.ToString(CultureInfo.InvariantCulture)" selected="@(_shellyForm.ScheduleRelay == relay)">Relay @relay</option>
-                                            }
-                                        </select>
-                                        <label class="visually-hidden" for="schedule-on">On or off</label>
-                                        <select id="schedule-on" @onchange="e => _shellyForm.SetScheduleOn(e.Value as string)">
-                                            <option value="@ShellyForm.On" selected="@(_shellyForm.ScheduleOn == ShellyForm.On)">on</option>
-                                            <option value="@ShellyForm.Off" selected="@(_shellyForm.ScheduleOn == ShellyForm.Off)">off</option>
-                                        </select>
-                                        <label class="visually-hidden" for="schedule-time">Time</label>
-                                        <input id="schedule-time" type="time" class="mono" value="@_shellyForm.ScheduleTime" @onchange="e => _shellyForm.ScheduleTime = e.Value as string" />
-                                        <button type="submit" disabled="@(schedules.Count >= ShellyApi.MaxScheduleJobs)">Add schedule</button>
-                                    </form>
-                                    @if (_shellyForm.ScheduleError is not null)
-                                    {
-                                        <p class="error" role="alert">@_shellyForm.ScheduleError</p>
-                                    }
-                                </fieldset>
-                            }
-                        </div>
+                                }
+                                <div class="button-row">
+                                    <button type="button" disabled="@(state.Clients.Count == 0)" @onclick="current.DropConnections">Drop connection</button>
+                                </div>
+                            </div>
+                        </details>
+
+                        @if (current.Shelly is { } commands)
+                        {
+                            <details class="section">
+                                <summary><span class="name">Commands</span><span class="sum">Switch.Set refused: @MaskText(commands.Refused, capabilities)</span></summary>
+                                <div class="in">
+                                    <h4 class="label">SWITCH.SET REFUSED</h4>
+                                    <div class="timer-relays" style="--columns: @capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)">
+                                        @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                        {
+                                            var number = relay;
+                                            <label class="check" @key="number">
+                                                <input type="checkbox" checked="@commands.Refused.Contains(number)" @onchange="e => commands.SetRefused(number, e.Value is true)" />
+                                                Relay @number
+                                            </label>
+                                        }
+                                    </div>
+                                </div>
+                            </details>
+                        }
+
+                        <details class="section">
+                            <summary><span class="name">Clients</span><span class="sum">@ClientsSummary(state.Clients.Count)</span></summary>
+                            <div class="in">
+                                @if (state.Clients.Count == 0)
+                                {
+                                    <span class="hint">No app is connected.</span>
+                                }
+                                @foreach (var client in state.Clients)
+                                {
+                                    <span class="mono client">@client</span>
+                                }
+                            </div>
+                        </details>
                     </div>
                 </section>
 
@@ -536,6 +588,43 @@
         return int.TryParse(value as string, NumberStyles.None, CultureInfo.InvariantCulture, out var mode)
             ? board.SetModeAsync(relay, mode)
             : Task.CompletedTask;
+    }
+
+    // What a section of the board's own rules holds, in a few words; null for a board with none the page can set.
+    private static string? OwnRulesSummary(RunningBoard board)
+    {
+        var capabilities = board.Board.Model.Capabilities;
+        if (board.Shelly is { } shelly)
+        {
+            var on = shelly.Schedules.Count(s => s.Enable);
+            var schedules = on == 1 ? "1 schedule on" : $"{on.ToString(CultureInfo.InvariantCulture)} schedules on";
+            return $"{schedules} · auto-on: {MaskText(shelly.AutoOn, capabilities)}";
+        }
+
+        if (board.Board is ISimulatedBoardRelayModes { Modes.Count: > 0 } modes)
+        {
+            var linked = modes.Modes.Count(m => m != 0);
+            return linked == 0 ? "every relay normal" : $"{linked.ToString(CultureInfo.InvariantCulture)} not normal";
+        }
+
+        return board.Board is ISimulatedBoardTimers timers ? $"timers: {TimersText(timers.Timers, capabilities)}" : null;
+    }
+
+    // "1 analog input" or "4 analog inputs".
+    private static string AnalogSummary(int count)
+    {
+        return count == 1 ? "1 analog input" : $"{count.ToString(CultureInfo.InvariantCulture)} analog inputs";
+    }
+
+    // "no app connected", "1 app connected" or "2 apps connected".
+    private static string ClientsSummary(int count)
+    {
+        return count switch
+        {
+            0 => "no app connected",
+            1 => "1 app connected",
+            _ => $"{count.ToString(CultureInfo.InvariantCulture)} apps connected",
+        };
     }
 
     private static string TimersText(ChannelMask timers, BoardCapabilities capabilities)

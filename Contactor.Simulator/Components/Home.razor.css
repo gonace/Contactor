@@ -230,6 +230,7 @@ button.danger {
 .main {
     flex: 1;
     min-width: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -288,14 +289,17 @@ h2 {
     gap: 8px;
 }
 
+/* The inputs beside the relays while both fit; many inputs go below them. */
 .split {
     display: flex;
-    align-items: flex-end;
-    gap: 32px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px 32px;
 }
 
 .relays-box {
-    flex: 1;
+    flex: 1 1 480px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -334,11 +338,87 @@ h2 {
     color: var(--on-accent);
 }
 
-.extras {
+.inputs {
     flex: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+}
+
+.input-list {
+    display: grid;
+    grid-template-columns: repeat(var(--columns, 4), auto);
+    column-gap: 16px;
+}
+
+/* The rest of the card: sections that fold, two side by side, each opened and closed by the browser itself. */
+.sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.section {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+}
+
+.section > summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+
+.section > summary::-webkit-details-marker {
+    display: none;
+}
+
+.section > summary::after {
+    content: "+";
+    font-family: var(--font-mono);
+    color: var(--muted);
+}
+
+.section[open] > summary::after {
+    content: "−";
+}
+
+.section .name {
+    font-weight: 600;
+}
+
+.section .sum {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--muted);
+    text-align: right;
+}
+
+.section .in {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 14px 14px;
+}
+
+h4 {
+    margin: 6px 0 0;
+}
+
+.button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.client {
+    font-size: 14px;
 }
 
 .check {
@@ -353,18 +433,6 @@ h2 {
     width: 20px;
     height: 20px;
     accent-color: var(--accent);
-}
-
-.timers {
-    margin: 0;
-    padding: 0;
-    border: 0;
-    min-width: 0;
-}
-
-.timers legend {
-    padding: 0;
-    margin-bottom: 2px;
 }
 
 .timer-relays {
@@ -425,9 +493,10 @@ h2 {
     text-align: right;
 }
 
+/* It fills what the card leaves; under a tall card, the page scrolls and it keeps room for a few rows. */
 .traffic {
-    flex: 1;
-    min-height: 0;
+    flex: 1 0 280px;
+    min-height: 280px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -762,6 +831,18 @@ h3 {
         flex-direction: column;
         align-items: stretch;
         gap: 16px;
+    }
+
+    .sections {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .input-list {
+        grid-template-columns: repeat(2, auto);
+    }
+
+    .analog > span:first-child {
+        white-space: nowrap;
     }
 
     .relays {
