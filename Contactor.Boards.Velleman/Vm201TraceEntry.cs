@@ -20,6 +20,11 @@ public enum Vm201TraceKind
 
     /// <summary>Invalid bytes from the board were skipped; <see cref="Vm201TraceEntry.Detail"/> is how many.</summary>
     DiscardedBytes,
+
+    /// <summary>
+    /// The board refused the login: no new attempt until a new address or login, or a person's "Check again". No detail.
+    /// </summary>
+    Held,
 }
 
 /// <summary>

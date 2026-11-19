@@ -19,6 +19,9 @@ internal static partial class Vm201Log
     [LoggerMessage(Level = LogLevel.Error, Message = "The VM201 rejected the user name or password")]
     public static partial void AccessDenied(ILogger logger);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The VM201 refused the login: not trying again until a new one is saved or a person checks again")]
+    public static partial void Held(ILogger logger);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "The VM201 closed the connection")]
     public static partial void ClosedByBoard(ILogger logger);
 
