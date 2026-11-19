@@ -185,8 +185,9 @@ On each new connection, the client:
 1. Sends 0x10. When the module id is not the chosen model's, the client switches nothing. The connection fails with,
    for example, "The board at this address is an ETH484, not an ETH008.". The poller tries again with its backoff.
 2. Sends 0x7A. When the board is locked, the client sends the password. When there is no password, the connection
-   fails, and the poller tries again with its backoff. When the board refuses the password, the connection fails, and
-   the poller doesn't try it again by itself: it waits for a new password or a person's "Check again" (Issue #522).
+   fails, and the poller tries again with its backoff. When the board refuses the password, the connection fails. A
+   password that never connected isn't tried again by itself: the poller waits for a new password or a person's "Check
+   again" (Issue #522). One that connected before is tried every 10 minutes for 24 hours, then held the same way.
 
 When the board refuses the connection in one of these ways, the state says why (`DevantechState.Problem`, a
 `ConnectionProblem`), so the screens can show it:
