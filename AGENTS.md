@@ -170,4 +170,5 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 - Nullable on, `TreatWarningsAsErrors` in Release.
 - Time: inject `TimeProvider`. Never use `DateTime.Now` directly.
 - Log with `ILogger` and structured fields. Never log the VM201 password.
+- `InternalsVisibleTo` to `Contactor.Tests` only for a limit a test must lower (e.g. `ShellyClient.NonceLimit`), with a comment saying why.
 - Everything in English (see Languages).

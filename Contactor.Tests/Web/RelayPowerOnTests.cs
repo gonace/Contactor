@@ -444,8 +444,11 @@ public sealed class RelayPowerOnTests
             groupId = group.Id;
         }
 
-        Assert.Null(await handler.MakeGroupSafeAsync(groupId, John, relayIds: null, onSave: false, Cancel));
+        // Not awaited at once: with one lock for every board it would wait for the held write, and the test would hang.
+        var safe = handler.MakeGroupSafeAsync(groupId, John, relayIds: null, onSave: false, Cancel);
+        await Wait.UntilAsync(() => safe.IsCompleted);
 
+        Assert.Null(await safe);
         Assert.Equal([(2, PowerOnState.Off)], barn.PowerOnWrites);
         Assert.Empty(first.PowerOnWrites);
         first.HoldPowerOn = null;
