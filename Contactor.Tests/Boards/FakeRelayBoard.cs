@@ -307,8 +307,9 @@ internal sealed class FakeRelayBoard : IRelayBoard
     }
 
     /// <summary>
-    /// Turns off the rules it has of those asked, and reports what is left, as a board that reads its rules does. Only on
-    /// a board made with an ability that turns them off.
+    /// Turns off the rules it has of those asked, and with them the rules that go with them (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>),
+    /// and reports what is left, as a board that reads its rules does. Returns only the rules asked. Only on a board made
+    /// with an ability that turns them off.
     /// </summary>
     public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
@@ -352,7 +353,11 @@ internal sealed class FakeRelayBoard : IRelayBoard
                 return Task.FromResult(taken);
             }
 
-            state = _state = Stamp(_state with { OwnRules = new OwnRules(had.Where(r => !taken.Contains(r))) });
+            // Every unit behind a rule taken goes off, and the rules only those units made go too (OwnRules.GoesWith).
+            HashSet<OwnRule> gone = [.. taken, .. had.GoesWith(taken)];
+            List<OwnRule> left = [.. had.Where(r => !gone.Contains(r))];
+            var units = had.Units.Where(u => !u.Any(taken.Contains)).Select(IReadOnlyCollection<OwnRule> (u) => [.. u.Where(left.Contains)]);
+            state = _state = Stamp(_state with { OwnRules = new OwnRules(left, units) });
         }
 
         OwnRulesChanged?.Invoke(this, state);

@@ -9,8 +9,8 @@ namespace Contactor.Web.Features.BoardRules;
 
 /// <summary>
 /// The words about a board's own rules on Relays, the board's page and Settings (issue #497). Each text is keyed by
-/// the rules' kind: "Timer", "Linkage", "Toggle" or "Edge" when all are of that kind, "Input" for a mix of input kinds,
-/// and "Rule" for any other mix, so a board with other kinds only adds keys.
+/// the rules' kind: "Timer", "Linkage", "Toggle", "Edge" or "AutoOn" when all are of that kind, "Input" for a mix of
+/// input kinds, and "Rule" for any other mix, so a board with other kinds only adds keys.
 /// </summary>
 public sealed class OwnRulesText
 {
@@ -128,6 +128,24 @@ public sealed class OwnRulesText
         return _texts["OwnRules.Unavailable.Group" + Plurals.Form(names.Count), _boards.And(names)];
     }
 
+    /// <summary>
+    /// What else a "Turn off" takes with it (<see cref="OwnRulesHandler.AlsoTurnsOff"/>), naming the relays:
+    /// "Also turns off the board's timer for Heat." Null for none. A relay is named by <paramref name="names"/> (its
+    /// channel on the board to its name), or "Relay 3" without one; each relay once, in relay order, also two with the
+    /// same name.
+    /// </summary>
+    public string? AlsoTurnsOff(IReadOnlyCollection<OwnRule> also, IReadOnlyDictionary<int, string>? names)
+    {
+        ArgumentNullException.ThrowIfNull(also);
+        if (also.Count == 0)
+        {
+            return null;
+        }
+
+        List<string> relays = [.. also.Select(r => r.Relay).Distinct().Order().Select(r => names?.GetValueOrDefault(r) is { Length: > 0 } name ? name : _texts["Relays.DefaultName", r].Value)];
+        return _texts[$"OwnRules.Also.{Kind(also.Select(r => r.Kind))}", _boards.And(relays)];
+    }
+
     /// <summary>"relay 3", "relays 3 and 5", "relays 1, 3 and 5": each relay once, in order.</summary>
     public string Relays(IEnumerable<int> relays)
     {
@@ -135,8 +153,8 @@ public sealed class OwnRulesText
         return _texts[numbers.Count == 1 ? "OwnRules.Relay" : "OwnRules.Relays", _boards.And(numbers)];
     }
 
-    // The key's kind: "Timer", "Linkage", "Toggle" or "Edge" when every rule is of that kind ("Timer" when none is
-    // known), "Input" for a mix of input kinds, otherwise "Rule".
+    // The key's kind: "Timer", "Linkage", "Toggle", "Edge" or "AutoOn" when every rule is of that kind ("Timer" when
+    // none is known), "Input" for a mix of input kinds, otherwise "Rule".
     private static string Kind(IEnumerable<OwnRuleKind> kinds)
     {
         List<OwnRuleKind> distinct = [.. kinds.Distinct()];
@@ -146,6 +164,7 @@ public sealed class OwnRulesText
             [OwnRuleKind.InputLinkage] => "Linkage",
             [OwnRuleKind.InputToggle] => "Toggle",
             [OwnRuleKind.InputEdge] => "Edge",
+            [OwnRuleKind.AutoOn] => "AutoOn",
             _ when distinct.All(k => k is OwnRuleKind.InputLinkage or OwnRuleKind.InputToggle or OwnRuleKind.InputEdge) => "Input",
             _ => "Rule",
         };

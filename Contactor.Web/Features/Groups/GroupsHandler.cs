@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Contactor.Boards;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
@@ -87,6 +88,7 @@ public sealed class GroupsHandler
     private readonly RelayChanges _changes;
     private readonly GroupSequencer _sequencer;
     private readonly IStringLocalizer<Texts> _texts;
+    private readonly OwnRulesService _ownRules;
 
     public GroupsHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -94,8 +96,10 @@ public sealed class GroupsHandler
         LocalClock clock,
         RelayChanges changes,
         GroupSequencer sequencer,
-        IStringLocalizer<Texts> texts)
+        IStringLocalizer<Texts> texts,
+        OwnRulesService ownRules)
     {
+        _ownRules = ownRules;
         _texts = texts;
         _dbFactory = dbFactory;
         _registry = registry;
@@ -266,7 +270,11 @@ public sealed class GroupsHandler
         await ForgetRelayRunsAsync(db, group.Members.Select(m => m.RelayId), cancellationToken);
         Log(db, group, userEmail, EventActions.GroupCreate, new { name = group.Name, steps = group.Steps.Select(s => s.Name) });
         await RelayRuns.SaveAsync(db, cancellationToken);
+
+        // A board's auto-on kept on a relay that is in a group now no longer counts as kept (OwnRulesHandler.CanKeep).
+        await OwnRulesService.ForgetKeepsInGroupsAsync(db, group.BoardId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await _ownRules.ReloadAsync(group.BoardId, CancellationToken.None);
         _changes.Notify();
         return (group.Id, null);
     }
@@ -349,7 +357,11 @@ public sealed class GroupsHandler
         group.MaxOnMinutes = draft.MaxOnMinutes;
         Log(db, group, userEmail, EventActions.GroupEdit, new { name = group.Name });
         await RelayRuns.SaveAsync(db, cancellationToken);
+
+        // As when creating one: a relay that joined may have a kept auto-on.
+        await OwnRulesService.ForgetKeepsInGroupsAsync(db, group.BoardId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await _ownRules.ReloadAsync(group.BoardId, CancellationToken.None);
         _changes.Notify();
         return null;
     }
@@ -388,6 +400,9 @@ public sealed class GroupsHandler
         db.RelayGroups.Remove(group);
         Log(db, group, userEmail, EventActions.GroupDelete, new { name = group.Name });
         await db.SaveChangesAsync(cancellationToken);
+
+        // Its relays may be kept again: the screens see it.
+        await _ownRules.ReloadAsync(group.BoardId, CancellationToken.None);
         _changes.Notify();
         return null;
     }

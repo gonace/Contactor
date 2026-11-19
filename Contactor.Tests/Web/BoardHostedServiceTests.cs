@@ -1,5 +1,6 @@
 using Contactor.Boards.Velleman;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -32,6 +33,7 @@ public sealed class BoardHostedServiceTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
             },
             new Dictionary<string, string?>

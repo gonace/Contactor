@@ -941,6 +941,10 @@
     <value>{0} {1}</value>
     <comment>An event this version has no words for: {1} is its name in the log.</comment>
   </data>
+  <data name="Events.OwnRules.Found.AutoOn" xml:space="preserve">
+    <value>{0} turns relay {1} on again by itself after it goes off</value>
+    <comment>{0} is "The board" or its name, {1} the relay's number.</comment>
+  </data>
   <data name="Events.OwnRules.Found.Edge" xml:space="preserve">
     <value>Input {1} switches relay {1} at each change on {0}</value>
     <comment>{0} is the board ("the board", or its name with two or more boards), {1} the relay's and input's number.</comment>
@@ -959,6 +963,10 @@
   <data name="Events.OwnRules.Found.Toggle" xml:space="preserve">
     <value>Input {1} switches relay {1} with each pulse on {0}</value>
     <comment>{0} is the board ("the board", or its name), {1} the relay's and input's number.</comment>
+  </data>
+  <data name="Events.OwnRules.FoundNew.AutoOn" xml:space="preserve">
+    <value>{0} now turns relay {1} on again by itself after it goes off</value>
+    <comment>Turned on while the app watched the board. {0} is "The board" or its name, {1} the relay's number.</comment>
   </data>
   <data name="Events.OwnRules.FoundNew.Edge" xml:space="preserve">
     <value>Input {1} now switches relay {1} at each change on {0}</value>
@@ -982,6 +990,10 @@
   <data name="Events.OwnRules.Kept" xml:space="preserve">
     <value>{0} kept {1} {2} for {3}</value>
     <comment>{0} is the person, {1} "the board's" or the board's name in the genitive, {2} e.g. "own timer", {3} e.g. "relay 3".</comment>
+  </data>
+  <data name="Events.OwnRules.Kept.AutoOn" xml:space="preserve">
+    <value>{0} let {1} keep turning {2} on again by itself</value>
+    <comment>As Events.OwnRules.TurnedOff.AutoOn, when the person kept it.</comment>
   </data>
   <data name="Events.OwnRules.Kind.InputRule" xml:space="preserve">
     <value>own input rule</value>
@@ -1027,6 +1039,10 @@
     <value>{0} turned off {1} {2} for {3}</value>
     <comment>{0} is the person, {1} "the board's" or the board's name in the genitive, {2} e.g. "own timers", {3} e.g. "relays 3 and 5".</comment>
   </data>
+  <data name="Events.OwnRules.TurnedOff.AutoOn" xml:space="preserve">
+    <value>{0} stopped {1} turning {2} on again by itself</value>
+    <comment>{0} is the person, {1} "the board" or the board's name, {2} e.g. "relay 3".</comment>
+  </data>
   <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
     <value>the board</value>
     <comment>The board inside a line, with one board.</comment>
@@ -1034,6 +1050,30 @@
   <data name="Events.OwnRules.Who.TheBoards" xml:space="preserve">
     <value>The board's</value>
     <comment>The board in the genitive at the start of a line, with one board.</comment>
+  </data>
+  <data name="Events.OwnRules.With" xml:space="preserve">
+    <value>, and with it {0}</value>
+    <comment>Added to Events.OwnRules.TurnedOff for the rules that went with those turned off: {0} is e.g. "the timer for relay 5" (Events.OwnRules.With.Timer).</comment>
+  </data>
+  <data name="Events.OwnRules.With.AutoOn" xml:space="preserve">
+    <value>the board turning {0} on again by itself</value>
+    <comment>{0} is e.g. "relay 5".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Rule" xml:space="preserve">
+    <value>the rule for {0}</value>
+    <comment>{0} is e.g. "relay 5".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Rules" xml:space="preserve">
+    <value>the rules for {0}</value>
+    <comment>{0} is e.g. "relays 5 and 6".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Timer" xml:space="preserve">
+    <value>the timer for {0}</value>
+    <comment>{0} is e.g. "relay 5".</comment>
+  </data>
+  <data name="Events.OwnRules.With.Timers" xml:space="preserve">
+    <value>the timers for {0}</value>
+    <comment>{0} is e.g. "relays 5 and 6".</comment>
   </data>
   <data name="Events.PowerOn.AsBefore" xml:space="preserve">
     <value>{0} set the relay to go back as it was after a power cut</value>
@@ -1827,6 +1867,34 @@
     <value>Why is the time unknown?</value>
     <comment>Read out by screen readers.</comment>
   </data>
+  <data name="OwnRules.Also.AutoOn" xml:space="preserve">
+    <value>Also stops the board turning {0} on again by itself.</value>
+    <comment>Under a "Turn off" for a rule of the board's own, when it takes the board's auto-on for other relays with it: {0} is the relays' names, e.g. "Heat and Fan".</comment>
+  </data>
+  <data name="OwnRules.Also.Edge" xml:space="preserve">
+    <value>Also stops the inputs switching {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for edge rules.</comment>
+  </data>
+  <data name="OwnRules.Also.Input" xml:space="preserve">
+    <value>Also stops the inputs switching {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for the inputs' rules.</comment>
+  </data>
+  <data name="OwnRules.Also.Linkage" xml:space="preserve">
+    <value>Also resets {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for relays the board controls by itself.</comment>
+  </data>
+  <data name="OwnRules.Also.Rule" xml:space="preserve">
+    <value>Also turns off the board's own rules for {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for a mix of kinds of rule.</comment>
+  </data>
+  <data name="OwnRules.Also.Timer" xml:space="preserve">
+    <value>Also turns off the board's timer for {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for the board's timers, e.g. a schedule on the board that switches several relays.</comment>
+  </data>
+  <data name="OwnRules.Also.Toggle" xml:space="preserve">
+    <value>Also stops the inputs switching {0}.</value>
+    <comment>As OwnRules.Also.AutoOn, for toggle rules.</comment>
+  </data>
   <data name="OwnRules.CanSwitch_One" xml:space="preserve">
     <value>It can switch {0} without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relay 3" (OwnRules.Relay).</comment>
@@ -1841,6 +1909,10 @@
   </data>
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>They can turn relays on and off without Contactor.</value>
+  </data>
+  <data name="OwnRules.Card.Title.AutoOn" xml:space="preserve">
+    <value>Relays the board turns on again</value>
+    <comment>The card on the board's page, for relays the board turns on again by itself after they go off.</comment>
   </data>
   <data name="OwnRules.Card.Title.Edge" xml:space="preserve">
     <value>The board's input rules</value>
@@ -1861,6 +1933,10 @@
   </data>
   <data name="OwnRules.Card.Title.Toggle" xml:space="preserve">
     <value>The board's input rules</value>
+  </data>
+  <data name="OwnRules.CardLine.AutoOn" xml:space="preserve">
+    <value>The board turns it on again by itself after it goes off</value>
+    <comment>On a relay's card on Relays.</comment>
   </data>
   <data name="OwnRules.CardLine.Edge" xml:space="preserve">
     <value>Each change of its input flips it</value>
@@ -1894,6 +1970,10 @@
     <value>Found yesterday at {0}</value>
     <comment>{0} is a time, e.g. 07:12.</comment>
   </data>
+  <data name="OwnRules.GroupLine.AutoOn" xml:space="preserve">
+    <value>The board turns {0} on again by itself</value>
+    <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
+  </data>
   <data name="OwnRules.GroupLine.Edge" xml:space="preserve">
     <value>Each change of an input can flip {0}</value>
   </data>
@@ -1920,6 +2000,10 @@
   </data>
   <data name="OwnRules.Keep.Gone" xml:space="preserve">
     <value>The board no longer has that rule.</value>
+  </data>
+  <data name="OwnRules.Keep.InGroup" xml:space="preserve">
+    <value>Can't be kept: {0} is in a group, and the board would turn it on again without the group's order.</value>
+    <comment>In place of "Keep" for the board's auto-on of a relay in a group: {0} is the relay's name, e.g. "Heat".</comment>
   </data>
   <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
     <value>The board controls this relay itself, so it can't be kept. Reset it instead.</value>
@@ -1974,6 +2058,12 @@
   </data>
   <data name="OwnRules.Step.Recommend_Other" xml:space="preserve">
     <value>We recommend turning them off.</value>
+  </data>
+  <data name="OwnRules.Step.Title.AutoOn_One" xml:space="preserve">
+    <value>This board turns a relay on again by itself</value>
+  </data>
+  <data name="OwnRules.Step.Title.AutoOn_Other" xml:space="preserve">
+    <value>This board turns relays on again by itself</value>
   </data>
   <data name="OwnRules.Step.Title.Edge_One" xml:space="preserve">
     <value>This board has an input that flips a relay at each change</value>
@@ -2055,6 +2145,14 @@
   </data>
   <data name="OwnRules.Unavailable.Step" xml:space="preserve">
     <value>Unavailable to Contactor until it is reset</value>
+  </data>
+  <data name="OwnRules.Warning.AutoOn_One" xml:space="preserve">
+    <value>{0} turns a relay on again by itself</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
+  </data>
+  <data name="OwnRules.Warning.AutoOn_Other" xml:space="preserve">
+    <value>{0} turns relays on again by itself</value>
+    <comment>{0} is "The board" (OwnRules.TheBoard) or the board's name.</comment>
   </data>
   <data name="OwnRules.Warning.Edge_One" xml:space="preserve">
     <value>{0} has an input that flips a relay at each change</value>

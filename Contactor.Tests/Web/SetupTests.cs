@@ -3,6 +3,7 @@ using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web;
+using Contactor.Web.Features.BoardRules;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Groups;
@@ -192,6 +193,7 @@ public sealed class SetupTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
             });
         await database.Services.InitializeDatabaseAsync(Cancel);
@@ -228,6 +230,7 @@ public sealed class SetupTests
                 services.AddBoards(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddEvents(configuration);
             });
         await database.Services.InitializeDatabaseAsync(Cancel);
@@ -1147,6 +1150,7 @@ public sealed class SetupTests
                 services.AddEvents(configuration);
                 services.AddRelays(configuration);
                 services.AddGroups(configuration);
+                services.AddOwnRules(configuration);
                 services.AddSetup(configuration);
             });
             await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);

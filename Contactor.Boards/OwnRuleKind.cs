@@ -14,4 +14,10 @@ public enum OwnRuleKind
 
     /// <summary>Each change of an input flips the relay, e.g. the Waveshare (B)'s edge mode.</summary>
     InputEdge,
+
+    /// <summary>
+    /// The board turns the relay on again by itself some time after it goes off, e.g. the Shelly's auto-on: an "off" from
+    /// the app or a person doesn't last.
+    /// </summary>
+    AutoOn,
 }
