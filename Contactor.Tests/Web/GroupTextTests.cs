@@ -65,6 +65,23 @@ public sealed class GroupTextTests
         Assert.Equal("the relay above turned on to run on", view.What);
     }
 
+    // Saved details with values of the wrong type: the rules that went with a turn-off are left out, never a failure.
+    [Fact]
+    public void Should_ReadWronglyTypedDetailsWithoutFailing()
+    {
+        var entry = new EventLogEntry
+        {
+            TimestampUtc = Now,
+            Actor = "erik@example.com",
+            Action = EventActions.BoardOwnRulesTurnedOff,
+            Details = """{"relays":[3],"kinds":["input-linkage"],"also":[{"relay":"5"},7,{"kind":"timer"}]}""",
+        };
+
+        var view = TestTexts.Events.For(entry, null, "Erik");
+
+        Assert.Equal("Erik reset relay 3", view.Text);
+    }
+
     [Theory]
     [InlineData(45, "45 s")]
     [InlineData(300, "5 min")]
