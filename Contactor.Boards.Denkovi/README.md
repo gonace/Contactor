@@ -16,9 +16,13 @@ The sections under "smartDEN IP-16R-MT" are about the smartDEN IP-16R-MT.
   (https://denkovi.com/Documents/smartDen-IP-16R/Current-Version/UserManual.pdf):
   - section 8.2: "Save Outputs";
   - section 8.6: the pulse mode of each relay ("Pulse, ms (x100)");
-  - section 8.9: the week schedule;
+  - section 8.7: the auto-reboot and its "Power-up Pulse", which pulse one relay;
+  - section 8.9: the week schedule: up to 30 rows, each a group of relays set on or off at a time on chosen weekdays;
+  - table 10.4 (section 10.1.4, SNMP): a row's enable flag is "Disabled-0, Enabled-1";
   - section 8.13: the Modbus TCP settings (port 502, idle timeout 5 min, one TCP connection at a time);
-  - section 10.2: the Modbus TCP protocol, tables 10.6 to 10.29.
+  - section 10.2: the Modbus TCP protocol, tables 10.6 to 10.29: table 10.6 (functions 03 and 06 for "Configuration
+    parameters"), table 10.7 (the registers, with the notes under it), 10.2.1.3 (function 03, tables 10.21 to 10.23),
+    10.2.1.4 (function 06, tables 10.24 to 10.26) and 10.2.1.5 (function 10, tables 10.27 to 10.29).
 - The product page: https://denkovi.com/smartden-modbus-tcp-ip-ethernet-16-relay-board
 - Denkovi's "DAEnetIP2 v2 User Manual", 21 April 2020
   (https://denkovi.com/Documents/DAEnetIP2v2/Current-Version/UserManual.pdf):
@@ -80,12 +84,31 @@ Modbus TCP, section 10.2 of the manual.
 | Read the relays | 01 | 0 | quantity = 16 | byte count 2, then a bit per relay, bit 0 = relay 1 | 10.2.1.1, tables 10.8–10.12 |
 | Switch one relay | 05 | relay − 1 | FF00 on, 0000 off | the request, echoed | "Write Single Coil" (also numbered 10.2.1.1), tables 10.13–10.15 |
 | Pulse one relay | 06 | 0x0000 + relay − 1 | the length in 100 ms, 0001 to FFFF | the request, echoed | 10.2.1.4, tables 10.7, 10.24–10.26 |
+| Read the week schedule's enable flags | 03 | 0x6200 | quantity = 30 | byte count 60, then a register per row, row 0 first | 10.2.1.3, tables 10.7, 10.21–10.23 |
+| Read the week schedule's outputs codes | 03 | 0x6300 | quantity = 30 | byte count 60, then a register per row | 10.2.1.3, tables 10.7, 10.21–10.23 |
+| Turn off one row of the week schedule | 06 | 0x6200 + row | 0000 | the request, echoed | 10.2.1.4, tables 10.4, 10.7, 10.24–10.26 |
+
+The week schedule (table 10.7) has 30 rows, numbered from 0: "The row number (starting from zero) is defined by the
+low significant byte of the address". Each row has one register in each of six blocks:
+
+| Block | Registers | Values |
+|---|---|---|
+| Row Enable Flag | 0x6200–0x621D | 0 (disabled) or 1 (enabled), table 10.4 |
+| Row Outputs Code | 0x6300–0x631D | 0 to 65535, bit 0 = relay 1, bit 15 = relay 16 |
+| Row Outputs State | 0x6400–0x641D | 0 (off) or 1 (on) |
+| Row Hour | 0x6500–0x651D | 0 to 23 |
+| Row Minute | 0x6600–0x661D | 0 to 59 |
+| Row WeekDays Code | 0x6700–0x671D | 0 to 127, bit 0 = Sunday, bit 6 = Saturday |
+
+A function 03 or 10 must stay inside one block: "If the sum of the start address and number of registers exceeds the
+size of the accessed block of registers, an error response will be returned" (10.2.1.3 and 10.2.1.5). So the app reads
+each block with one request of 30 registers.
 
 A pulse turns the relay on, and the board turns it off again by itself after the length, also when the app stops in
 between. So the board pulses for 0.1 s to 6553.5 s, in steps of 0.1 s (`SmartDenModels.Pulse`).
 
-The board also takes function 05 with FF02 (flip the relay), 0F (write several relays), 03 and 10 (configuration
-registers from 0x6000). The app does not use them.
+The board also takes function 05 with FF02 (flip the relay), 0F (write several relays), 10 (several configuration
+registers) and 03 and 06 at the other configuration registers from 0x6000. The app does not use them.
 
 A refused request gets an exception answer: the function code with 0x80 added, then an exception code (1: unknown
 function, 2: no such address, 3: a value it doesn't take). `SmartDenRefusedException` has the code.
@@ -101,9 +124,16 @@ Frames from the manual:
 | `00 01 00 00 00 03 00 81 02` | Exception answer to function 01, code 2 (table 10.12) |
 | `00 02 00 00 00 06 00 05 00 01 FF 00` | Turn on relay 2 (table 10.13; the answer is the same frame, table 10.14) |
 | `00 05 00 00 00 06 00 06 00 09 00 1E` | Pulse relay 10 for 3 s (table 10.24; the answer is the same frame, table 10.25) |
+| `00 04 00 00 00 06 00 03 61 00 00 03` | Read the week schedule's start date (table 10.21) |
+| `00 04 00 00 00 09 00 03 06 00 0A 00 09 07 E4` | Answer: 10/09/2020 (table 10.22) |
+| `00 04 00 00 00 03 00 83 02` | Exception answer to function 03, code 2 (table 10.23) |
+| `00 06 00 00 00 0D 00 10 61 00 00 03 06 00 0A 00 09 07 E4` | Write the start date 10/09/2020 (table 10.27) |
+| `00 06 00 00 00 06 00 10 61 00 00 03` | Answer to it (table 10.28) |
 
 Table 10.11 gives the length 0x0004, but the unit id, the function, the byte count and two bytes of data are 5. The app
-takes 5, as Modbus TCP says. `SmartDenModbusTests` checks these frames byte for byte.
+takes 5, as Modbus TCP says. `SmartDenModbusTests` checks these frames byte for byte, and `SmartDenSimulatedBoardTests`
+checks the simulator's answers to tables 10.21 and 10.27. The app's own frame to turn off row 0 is
+`00 07 00 00 00 06 00 06 62 00 00 00`, in the format of table 10.24.
 
 ### The app's client
 
@@ -146,6 +176,25 @@ A command (ON, OFF or a pulse) switches the relays in the mask one at a time:
 `SmartDenClient.PulseAsync` and `SmartDenBoard.PulseAsync` throw `ArgumentOutOfRangeException` for a length outside
 0.1 s to 6553.5 s, or not in steps of 0.1 s, before anything is sent.
 
+The week schedule is the board's own rules (`SmartDenApi.OwnRules`: `Reads`, `TurnsOff` and `MayHaveUnseen`):
+
+- The client reads the enable flags and the outputs codes, one function 03 each, after the relays at the first poll on
+  each connection, and then every minute (`SmartDenClient.RulesInterval`, on `TimeProvider`). The board has no revision
+  counter. A read that confirms a switch never reads the schedule, so a group's next step doesn't wait for it.
+- A row that is enabled and has at least one relay in its outputs code is a rule. It is a `Timer` rule on each of its
+  relays, and the row is one unit (`OwnRules.Units`), so the app names the other relays it stops too. A row that turns
+  its relays off counts as one that turns them on: both switch relays without the app. The app doesn't read the state,
+  the time or the weekdays.
+- A read that the board refuses, an answer that can't be read, an enable flag other than 0 or 1, or no answer at all
+  makes the rules unknown (null). It never fails the poll: the relays are read first, and the poll keeps them. A change
+  of the rules alone comes as `OwnRulesChanged`.
+- `TurnOffOwnRulesAsync`, only on a person's press, writes 0 to the enable flag of every row that switches a relay
+  asked, as last read, with one function 06 per row. It never writes the outputs code, so the row's other relays lose
+  their timer too: a row is turned off whole. A refused write doesn't stop the others. It returns the timers whose rows
+  all took it, and reads the schedule back in the same command. When the schedule isn't known, it sends nothing.
+- It doesn't read the pulse width of each relay (0x6000 to 0x600F): the board turns a relay off again after that time,
+  but never on, so it isn't a rule. Nor "Save Outputs" (0x6800), which is what the relays do after a power cut.
+
 `SmartDenBoard`, `SmartDenConnection` and `SmartDenTraffic` are the adapters for the app. `Features/Denkovi` in
 `Contactor.Web` registers them. `SmartDenTraceText` puts each frame in plain words. The polls and the answers that
 change nothing are routine.
@@ -174,9 +223,16 @@ rights that a developer doesn't have.
   carries the request's transaction id and unit id, and a byte for each 8 relays asked for.
 - A pulse turns the relay off again after its length, on the simulator's `TimeProvider`. The next poll shows it. A later
   function 05 for the relay ends its pulse, and a later pulse starts it again.
+- It holds the week schedule's registers: the start date (10/09/2020, as in table 10.22, since the manual gives no
+  factory value) and the six blocks of 30 rows, every row 0 at start. It answers function 03 and writes functions 06
+  and 10 there, inside one block only (code 2 otherwise, also for a quantity of 0), each value in the range table 10.7
+  gives (code 3 otherwise; function 10 then writes none). The other configuration registers get code 2.
+- It keeps the rows over a power cut: the manual doesn't say what the board does. See below.
+- A row that is enabled and has relays can run now (`ISimulatedBoardRules`): its relays go on or off as its state
+  says. The page shows each row with a checkbox, and adds a row (one or two relays, on or off, every day at a time).
+  `RefuseScheduleReads` and `RefuseScheduleWrites` refuse functions 03 and 06/10 there with code 1.
 - It gives an exception answer for a function it does not know (code 1), an address it does not have (code 2), and a
-  value, quantity or PDU length it does not take (code 3). It has no configuration registers: functions 03 and 10 get
-  code 2.
+  value, quantity or PDU length it does not take (code 3).
 - It gives no answer to a frame with another protocol id.
 - A header with a length no Modbus frame has (below 2 or above 254) closes the connection, as nothing after it can be
   read in step. A client that goes away in the middle of a frame closes only its own connection. The simulator takes
@@ -193,13 +249,16 @@ rights that a developer doesn't have.
 The app reads the board's relays on every poll, so the board stays the source of truth. These board settings switch
 relays without the app. The app sees each switch only as a change from outside:
 
-- "Save Outputs" (section 8.2): the board keeps the relay states in its memory and sets them again after a restart.
 - The week schedule (sections 8.9 and 10.2, registers 0x6100 to 0x671D): up to 30 rows that switch relays at set times.
+  The app reads it, warns, and turns a row off when a person asks (see The app's client).
+- The auto-reboot (section 8.7): the board pings a host and pulses one relay after a number of failed pings, and with
+  "Power-up Pulse" each time it starts. Its settings are only on the web page and over SNMP, which the -MT doesn't have:
+  the app can't see them. So the app tells people to check the board's web page.
+- "Save Outputs" (section 8.2): the board keeps the relay states in its memory and sets them again after a restart.
 - The pulse mode of each relay (sections 8.6 and 10.2, registers 0x6000 to 0x600F): when it isn't 0, the board turns
   the relay off again after that time each time it goes on, also after an ON from the app.
 
-The app doesn't read or change these settings. Set them on the board's web page: the week schedule off, and the pulse
-mode 0 for every relay that the app switches.
+Set the others on the board's web page: the auto-reboot off, and the pulse mode 0 for every relay that the app switches.
 
 ## DAEnetIP2 v2
 
@@ -507,6 +566,15 @@ monitoring off or without P5 restart pins, and no analog events on the pins that
 - Which exception codes the board sends for a coil out of range, a quantity above 16, and a function 05 value other than
   FF00, 0000 or FF02.
 - How the board handles a poll every 2 s for days.
+- That function 03 reads 30 registers at 0x6200 and at 0x6300 in one request each, and which exception code a read
+  across two blocks gets.
+- What the enable flag and the outputs code hold for a row the web page never used or deleted: 0, as the app expects,
+  or something else.
+- That a function 06 of 0 to a row's enable flag stops the row, that the web page then shows it as off or deleted, and
+  that its relays, state and time stay as they were.
+- Whether a row turned off over Modbus stays off after a restart, or comes back: the manual says EEPROM only for "Save
+  Outputs". The app reads the schedule again at each connection, so a row that comes back shows as a new warning.
+- That the web page's "Delete Selected" sets the row's enable flag to 0, or moves the rows after it up.
 
 ### On a DAEnetIP2 v2 kit
 
