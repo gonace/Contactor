@@ -292,9 +292,11 @@ public sealed partial class OwnRulesService : BackgroundService
     /// is tried again only 30 s later). Runs under the same lock as the service's own work, so the service never
     /// inserts the same row at the same time, and once this row is there it finds it and logs nothing more. Each keep
     /// is one conditional write (<see cref="MarkKeptAsync"/>), all in one transaction. Only rules the board reports now
-    /// are kept; gone, saving nothing, when it no longer reports one of them, and refused, saving nothing, with the
-    /// channel, when one is a rule no person may keep on its relay (<see cref="OwnRulesHandler.CanKeep"/>), also when
-    /// the relay joined a group meanwhile.
+    /// are kept. Gone, saving nothing, has two meanings here: the board no longer reports one of them (or its row was
+    /// deleted meanwhile), or someone kept one of them meanwhile, which rolls back the whole batch so the person isn't
+    /// told the rest were kept (it can't happen yet: every writer of KeptUtc holds this lock). Refused, saving nothing,
+    /// with the channel, when one is a rule no person may keep on its relay (<see cref="OwnRulesHandler.CanKeep"/>),
+    /// also when the relay joined a group meanwhile.
     /// </summary>
     internal async Task<KeepOutcome> KeepReportedAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {

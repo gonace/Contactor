@@ -509,7 +509,7 @@
                                         <input class="mono firmware" maxlength="@ShellyControls.MaxFirmwareLength" autocomplete="off" spellcheck="false"
                                                value="@shelly.Firmware" @onchange="e => _shellyForm.SetFirmware(shelly, e.Value as string)" />
                                     </label>
-                                    <span class="hint">@(shelly.HasPassword ? "Before 1.7.0 the app refuses it; before 2.0.0 the password is asked for on every request." : "Before 1.7.0 the app refuses it.")</span>
+                                    <span class="hint">@(shelly.HasPassword ? "The app refuses a version before 1.7.0, or a version it can't read. Before 2.0.0 the password is asked for on every request." : "The app refuses a version before 1.7.0, or a version it can't read.")</span>
                                     @if (_shellyForm.FirmwareError is not null)
                                     {
                                         <p class="error" role="alert">@_shellyForm.FirmwareError</p>

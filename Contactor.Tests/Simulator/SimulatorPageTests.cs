@@ -93,7 +93,7 @@ public sealed class SimulatorPageTests
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
 
         Assert.Matches("<input type=\"checkbox\" checked[^>]*/?>\\s*Ask the app to wait \\(429\\)\\s*</label>", html);
-        Assert.Contains("Before 1.7.0 the app refuses it; before 2.0.0 the password is asked for on every request.", html, StringComparison.Ordinal);
+        Assert.Contains("The app refuses a version before 1.7.0, or a version it can't read. Before 2.0.0 the password is asked for on every request.", html, StringComparison.Ordinal);
         Assert.DoesNotContain("apple", html, StringComparison.Ordinal);
         Assert.Matches("<span[^>]*>Firmware</span>\\s*<input class=\"mono firmware\" maxlength=\"32\"[^>]*value=\"1.6.0\"", html);
         Assert.Matches("<option value=\"cover\" selected[^>]*>cover</option>", html);
@@ -129,8 +129,8 @@ public sealed class SimulatorPageTests
 
         Assert.DoesNotContain("Ask the app to wait", html, StringComparison.Ordinal);
         Assert.Matches("<span[^>]*>Firmware</span>", html);
-        Assert.Matches("<span class=\"hint\"[^>]*>Before 1.7.0 the app refuses it.</span>", html);
-        Assert.DoesNotContain("before 2.0.0", html, StringComparison.Ordinal);
+        Assert.Matches("<span class=\"hint\"[^>]*>The app refuses a version before 1.7.0, or a version it can't read.</span>", html);
+        Assert.DoesNotContain("Before 2.0.0", html, StringComparison.Ordinal);
     }
 
     [Fact]
